@@ -3,16 +3,9 @@ node_modules/
 /abracode.yaml
 /abracode.yaml.*.tmp
 /.abracode/
-.beads/
 /.opencrew/
 coverage/
 .lavish/
-
-# Beads / Dolt files (added by bd init)
-.dolt/
-.beads-credential-key
-.beads/proxieddb/
-*.gate.lock*
 
 # Vite+ build and task cache
 dist/

@@ -9,6 +9,7 @@ import {
   policyAllows,
   protectedControlPath,
 } from "../../src/opencode/role-policy.ts";
+import { engineeringSkillIds } from "../../src/opencode/engineering-skills.ts";
 import { RequiredToolSchema } from "../../src/opencode/capability-contracts.ts";
 
 test("managed roles preserve distinct authority and scoped native edits", () => {
@@ -29,8 +30,10 @@ test("managed roles preserve distinct authority and scoped native edits", () => 
     assert.ok(!nativePermissions(role).some((rule) => rule.action === "edit"));
   assert.ok(policyAllows("review", "abra_review_report"));
   assert.ok(!policyAllows("research", "abra_review_report"));
-  assert.ok(protectedControlPath("/owned/sub/AGENTS.md", "/owned"));
-  assert.ok(protectedControlPath("/owned/.opencode/agent.md", "/owned"));
+  assert.ok(!protectedControlPath("/owned/sub/AGENTS.md", "/owned", "apply"));
+  assert.ok(protectedControlPath("/owned/sub/AGENTS.md", "/owned", "explore"));
+  assert.ok(protectedControlPath("/owned/.opencode/agent.md", "/owned", "apply"));
+  assert.ok(protectedControlPath("/owned/.git/config", "/owned", "apply"));
 });
 
 test("capability prerequisites are additive, bounded and cannot grant tools", () => {
@@ -45,13 +48,13 @@ test("capability prerequisites are additive, bounded and cannot grant tools", ()
   const req = capabilityRequirements("apply", "lightweight-fix", {
     required_skills: [Skill.ID.make("custom")],
   });
-  assert.deepEqual(req.skills, ["abra-browser", "custom"]);
+  assert.deepEqual(req.skills, [...engineeringSkillIds("apply", "lightweight-fix"), "custom"]);
   assert.ok(req.tools.some((group) => group.any_of.includes(ToolName.make("patch"))));
   assert.ok(!req.tools.some((group) => group.any_of.includes(ToolName.make("abra_spec"))));
-  assert.deepEqual(capabilityRequirements("research", "research-only").skills, ["abra-browser"]);
+  assert.deepEqual(capabilityRequirements("research", "research-only").skills, []);
   assert.deepEqual(capabilityRequirements("review", "full-openspec").skills, [
-    "abra-browser",
     "abra-openspec-execution",
+    ...engineeringSkillIds("review", "full-openspec"),
   ]);
 });
 
@@ -77,9 +80,14 @@ test("browser command permissions and evidence reads preserve role ceilings", ()
     );
     for (const workflow of ["research-only", "lightweight-fix", "full-openspec"] as const) {
       const req = capabilityRequirements(role, workflow);
-      assert.ok(req.skills.includes(Skill.ID.make("abra-browser")));
+      assert.ok(!req.skills.includes(Skill.ID.make("abra-browser")));
+      assert.ok(!req.tools.some((group) => group.any_of.includes(ToolName.make("shell"))));
+      const browser = capabilityRequirements(role, workflow, {
+        required_skills: [Skill.ID.make("abra-browser")],
+      });
+      assert.ok(browser.skills.includes(Skill.ID.make("abra-browser")));
       assert.ok(
-        req.tools.some((group) => group.any_of.length === 1 && group.any_of[0] === "shell"),
+        browser.tools.some((group) => group.any_of.length === 1 && group.any_of[0] === "shell"),
       );
     }
   }

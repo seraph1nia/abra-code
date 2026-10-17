@@ -1,14 +1,21 @@
 import { AbsolutePath } from "../identities.ts";
-import { directoryIdentity, sameDirectory, removeGenerated } from "./retirement.ts";
+import {
+  directoryIdentity,
+  sameDirectory,
+  removeGenerated,
+  generatedPaths,
+  inspectGeneratedPath,
+} from "./retirement.ts";
 import { domainEffect } from "../effect.ts";
 import { CrewError, type ManagedExecution, type Project } from "../domain.ts";
 import { Effect } from "effect";
 import { pathExists, readdir } from "../filesystem.ts";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 
 import { type Runtime } from "../opencode/runtime.ts";
 import { Git } from "./repository.ts";
 import { RepositorySources } from "./source.ts";
+import { inspectCleanup } from "./cleanup.ts";
 export class Workspaces {
   constructor(
     private git: Git,
@@ -16,6 +23,27 @@ export class Workspaces {
     private runtime: Runtime,
     private root: AbsolutePath,
   ) {}
+  /** No staging, journaling, directory disposal or native removal is allowed here. */
+  preflight = Effect.fn("Workspaces.preflight")(
+    function* (this: Workspaces, p: Project, e: ManagedExecution) {
+      if (!(e.worktree_directory && p.project_id && e.worktree_identity))
+        return yield* new CrewError(
+          "OWNERSHIP",
+          "Cleanup preflight requires retained worktree identity",
+        );
+      yield* this.git.validate(p, e);
+      if (!(yield* this.runtime.inventory(p.project_id)).includes(e.worktree_directory))
+        return yield* new CrewError("OWNERSHIP", "Worktree missing from native inventory");
+      if (!sameDirectory(e.worktree_identity, yield* directoryIdentity(e.worktree_directory)))
+        return yield* new CrewError("CLEANUP_REPLACEMENT", "Owned worktree directory was replaced");
+      const paths = yield* generatedPaths(e);
+      for (const path of paths)
+        if (yield* pathExists(join(e.worktree_directory, path)))
+          yield* inspectGeneratedPath(this.git, e, path);
+      return yield* inspectCleanup(this.git, e.worktree_directory, paths);
+    }.bind(this),
+    domainEffect,
+  );
   provision = Effect.fn("Workspaces.provision")(
     function* (
       this: Workspaces,
@@ -140,20 +168,15 @@ export class Workspaces {
           yield* save();
         }
         yield* removeGenerated(this.git, e, save);
-        if (yield* this.git.dirty(e.worktree_directory))
-          return yield* new CrewError(
-            "DIRTY_WORKTREE",
-            "Uncommitted/untracked work prevents cleanup",
+        const blocker = yield* inspectCleanup(this.git, e.worktree_directory);
+        if (blocker) return blocker;
+        if (e.cleanup_blocker) {
+          delete e.cleanup_blocker;
+          e.attention = e.attention?.map((a) =>
+            a.code === "cleanup_blocked" ? { ...a, status: "superseded" as const } : a,
           );
-        if (
-          yield* this.git.run(e.worktree_directory, [
-            "ls-files",
-            "--others",
-            "--ignored",
-            "--exclude-standard",
-          ])
-        )
-          return yield* new CrewError("IGNORED_WORK", "Unapproved ignored files prevent cleanup");
+          yield* save();
+        }
         if (!sameDirectory(e.worktree_identity, yield* directoryIdentity(e.worktree_directory)))
           return yield* new CrewError(
             "CLEANUP_REPLACEMENT",

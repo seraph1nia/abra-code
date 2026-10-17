@@ -224,9 +224,15 @@ workers:
       - any_of: [bash, shell]
 ```
 
-The named skill must resolve with usable content in the assigned worktree's native inventory. A central-only skill is insufficient. Configure the target repository's native discovery or repair an explicitly registered skill; AbraCode does not copy project instructions or search unrelated agent homes. Every worker requires the portable `abra-browser` skill and an effective native shell tool (`shell` for Explore/Review/Research; `bash` or `shell` for Apply). Full-spec roles additionally require `abra-openspec-execution`; research and lightweight work still require no OpenSpec setup. The shared skills are registered at worker locations without copying repository control files.
+The named skill must resolve with usable content in the assigned worktree's native inventory. A central-only skill is insufficient. Configure the target repository's native discovery or repair an explicitly registered skill; AbraCode does not copy project instructions or search unrelated agent homes. Full-spec roles require `abra-openspec-execution`; research and lightweight work require no OpenSpec setup. Apply requires a development shell (`bash` or `shell`). Browser guidance and browser-only shell access remain available to all workers, but ordinary admission does not require them. Workers load `abra-browser` when browser work is needed and report missing prerequisites for that work without installing them.
+
+For assignments that must use a browser, explicitly add `abra-browser` to the selected worker profile's `required_skills`. Its guidance is then checked before admission, and the effective browser shell tool becomes required (`shell` for Explore/Review/Research; Apply keeps its development-shell alternative). Shared skills remain registered at worker locations without copying repository control files.
+
+New coding admissions also require bundled engineering guidance: Explore full-spec selects `abra-codebase-design`, `abra-domain-modeling` and `abra-verification`; Apply full-spec/lightweight selects those plus `abra-diagnosing-bugs` and `abra-blast-radius`; Review selects design, verification and blast radius. Research-only has no new coding prerequisites. Availability is a prerequisite; invocation is conditional on the task. See [triggers and scope](engineering-skills.md). Retained prompts validate exactly their captured skill/tool requirements and provenance without acquiring new defaults; a deliberate fresh turn captures current defaults. The permission-policy hash is unchanged by guidance alone.
 
 Requirements outside the role ceiling are configuration errors, including a forbidden alternative mixed with a permitted one. Tools are checked against actual model-visible names before the provider request, so GPT-family `patch` can satisfy editing after native removal of `edit`/`write`. Skill availability is recorded separately from observed loading. New configuration applies to new executions; active work and uncertain submissions retain their captured settings and identities.
+
+Role policy revisions invalidate incompatible captured contexts rather than silently rewriting them. After upgrading, use diagnostics and an explicit new worker turn when an existing admission reports `CONTEXT_POLICY`; do not replay an incompatible retained prompt.
 
 ## Browser setup
 

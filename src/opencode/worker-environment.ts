@@ -41,14 +41,48 @@ export function resolveSkills(
   directory: string,
 ) {
   const required = capabilityRequirements(role, workflow, configured);
+  return resolveRequirementSkills(
+    role,
+    required.skills.map((id) => ({
+      id,
+      source: configured?.required_skills?.includes(id)
+        ? `workers.${role}.required_skills`
+        : "role-policy",
+    })),
+    required.tools,
+    inventory,
+    directory,
+  );
+}
+
+/** Retained admissions validate their captured requirements, never today's defaults. */
+export function resolveCapturedSkills(
+  role: Role,
+  environment: WorkerEnvironment,
+  inventory: readonly Skill.Info[],
+  directory: string,
+) {
+  return resolveRequirementSkills(
+    role,
+    environment.skills,
+    environment.tools,
+    inventory,
+    directory,
+  ).pipe(Effect.as({ tools: environment.tools, skills: environment.skills }));
+}
+
+function resolveRequirementSkills(
+  role: Role,
+  required: readonly { id: Skill.ID; source: string }[],
+  tools: WorkerEnvironment["tools"],
+  inventory: readonly Skill.Info[],
+  directory: string,
+) {
   return Effect.gen(function* () {
     const skills: (typeof SkillResolutionSchema.Type)[] = [];
-    for (const id of required.skills) {
+    for (const { id, source } of required) {
       const matches = inventory.filter((skill) => skill.id === id);
       const skill = matches[0];
-      const source = configured?.required_skills?.includes(id)
-        ? `workers.${role}.required_skills`
-        : "role-policy";
       if (matches.length !== 1 || !skill?.content.trim() || !skill.path)
         return yield* new CrewError(
           "SKILL_UNAVAILABLE",
@@ -68,7 +102,7 @@ export function resolveSkills(
         loading: "unobserved",
       });
     }
-    return { tools: required.tools, skills };
+    return { tools, skills };
   });
 }
 export function missingTools(

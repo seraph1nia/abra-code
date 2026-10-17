@@ -1,3 +1,4 @@
+import { DeliveryOutcomeSchema, OperationInProgressSchema } from "../workflow/delivery-outcome.ts";
 import { WorkerContextSummarySchema } from "../workflow/worker-context-contracts.ts";
 import { ReviewerSuggestions } from "../git/reviewers.ts";
 import { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
@@ -26,6 +27,10 @@ import { SpecStatusSchema, ApplyStatusSchema, InstructionsSchema } from "../open
 import { VerificationSchema } from "../config/contracts.ts";
 import { WorkEventSchema } from "../work/graph.ts";
 const execution = ExecutionStateSchema;
+const deliveryExecution = Schema.Struct({
+  ...execution.fields,
+  outcome: Schema.optional(DeliveryOutcomeSchema),
+});
 const setupExecution = Schema.Struct({
   ...ExecutionStateSchema.fields,
   setup: Schema.Literal(true),
@@ -178,6 +183,7 @@ export const toolOutputs = {
   }),
   work_status: Schema.Struct({
     execution,
+    outcome: Schema.optional(DeliveryOutcomeSchema),
     issue: IssueSchema,
     history: Schema.Array(WorkEventSchema),
     openspec: Schema.Union([
@@ -191,10 +197,16 @@ export const toolOutputs = {
   }),
   work_control: execution,
   work_approve: Schema.Union([
-    execution,
-    Schema.Struct({ execution, approval_required: Schema.Boolean, form_id: Id.FormId }),
+    deliveryExecution,
+    Schema.Struct({
+      execution,
+      approval_required: Schema.Boolean,
+      form_id: Id.FormId,
+      outcome: Schema.optional(DeliveryOutcomeSchema),
+    }),
+    OperationInProgressSchema,
   ]),
-  work_finish: execution,
+  work_finish: Schema.Union([deliveryExecution, OperationInProgressSchema]),
   work_reconcile: Schema.Array(execution),
   spec: Schema.Union([SpecStatusSchema, ApplyStatusSchema, InstructionsSchema]),
   review_report: execution,

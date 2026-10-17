@@ -77,3 +77,9 @@ work uses `abra_work_scope`. After archival, full-spec correction uses a new
 revision change and preserves the old archive. Do not rewrite plans to match
 implementation, weaken CI policy, mark conflicts resolved without evidence, or
 treat a decision answer as checkpoint authorization.
+
+## Conditional engineering procedures
+
+New coding admissions select role-relevant native engineering skills. Explore loads `abra-codebase-design`, `abra-domain-modeling` or `abra-verification` for relevant planning decisions; Apply can also load `abra-diagnosing-bugs` and `abra-blast-radius` for difficult bugs and concrete safety assumptions. Review loads design, verification or blast-radius guidance only for applicable read-only assessments. Procedures remain conditional; trivial tasks do not need every technique. Research has no new coding prerequisites.
+
+Review includes current staged, unstaged and untracked implementation and proof, not only a committed diff ending at HEAD. Match proof to accepted scenarios, the verified worktree and existing controller check receipts. Inaccessible Apply output or scratch paths are not automatically available evidence. Full-spec applicable missing proof is `not_verified` under the existing dimensions; lightweight Review keeps the short contract. Skill loading proves no behavior and changes no gate, permission, scope or correction budget.

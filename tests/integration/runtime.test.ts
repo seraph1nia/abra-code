@@ -68,15 +68,3 @@ test("command overrides are preserved and unavailable workflow CLIs fail before 
   );
   await assert.rejects(access(join(home, ".abracode")), /ENOENT/);
 });
-
-test("legacy Beads configuration requires explicit migration rather than silently using an empty database", async (t) => {
-  const home = await mkdtemp(join(tmpdir(), "abracode-legacy-config-"));
-  t.onTestFinished(() => rm(home, { recursive: true, force: true }));
-  for (const input of [
-    "beads_workspace: /some/other/central-home\n",
-    "commands:\n  beads: /old/bd\n",
-  ]) {
-    await writeFile(join(home, "abracode.yaml"), input);
-    await assert.rejects(run(loadConfig(home)), /AbraCode configuration/);
-  }
-});

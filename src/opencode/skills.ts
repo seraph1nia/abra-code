@@ -9,12 +9,14 @@ import { Skill } from "@opencode/plugin";
 import { type Context } from "@opencode/plugin/effect/plugin";
 import { parseYaml } from "../config/contracts.ts";
 import { decode } from "../decode.ts";
+import { engineeringSkills } from "./engineering-skills.ts";
 export function registerSkills(ctx: Context, home: AbsolutePath, central: boolean) {
   return domainEffect(
     Effect.gen(function* () {
-      const names = central
+      const workflowNames = central
         ? ["orchestration", "openspec-execution", "project-onboarding", "recovery", "browser"]
         : ["openspec-execution", "browser"];
+      const names = [...workflowNames, ...engineeringSkills.map(({ name }) => name)];
       const skills = yield* Effect.forEach(
         names,
         (name) =>

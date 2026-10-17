@@ -5,6 +5,7 @@ import { Skill } from "@opencode/schema/skill";
 import { join } from "node:path";
 import { readFile, writeFile } from "../../src/filesystem.ts";
 import * as Id from "../../src/identities.ts";
+import { engineeringSkillIds } from "../../src/opencode/engineering-skills.ts";
 import { resolveSkills, missingTools } from "../../src/opencode/worker-environment.ts";
 import { WorkerContexts, readWorkerContext } from "../../src/workflow/worker-context.ts";
 import { WorkerContextSchema } from "../../src/workflow/worker-context-contracts.ts";
@@ -394,18 +395,36 @@ test("browser context derives distinct session names and evidence directories wi
   assert.deepEqual(await run(readWorkerContext(f.records.store, previous.prompt_id)), previous);
 });
 
-test("missing default browser guidance and shell are capability blockers even without OpenSpec", async () => {
+test("browser prerequisites are optional unless explicitly required, without dropping development shell requirements", async () => {
   for (const role of ["explore", "apply", "review", "research"] as const) {
+    const defaults = engineeringSkillIds(role, "lightweight-fix").map((id) => ({
+      id,
+      name: Skill.Name.make(id),
+      path: Id.AbsolutePath.make(`/installed/${id}.md`),
+      content: "Offline guidance",
+    }));
+    const ordinary = await run(resolveSkills(role, "lightweight-fix", {}, defaults, "/foreign"));
+    assert.deepEqual(
+      ordinary.skills.map((s) => s.id),
+      defaults.map((s) => s.id),
+    );
+    const withoutShell = ordinary.tools
+      .flatMap((g) => g.any_of)
+      .filter((n) => n !== "shell" && n !== "bash");
+    const missingOrdinary = missingTools(ordinary.tools, withoutShell);
+    assert.equal(missingOrdinary.length, role === "apply" ? 1 : 0);
+    const required = { required_skills: [Skill.ID.make("abra-browser")] };
     await assert.rejects(
-      run(resolveSkills(role, "research-only", {}, [], "/foreign")),
-      /abra-browser.*role-policy/,
+      run(resolveSkills(role, "lightweight-fix", required, defaults, "/foreign")),
+      /abra-browser.*required_skills/,
     );
     const { tools, skills } = await run(
       resolveSkills(
         role,
         "lightweight-fix",
-        {},
+        required,
         [
+          ...defaults,
           {
             id: Skill.ID.make("abra-browser"),
             name: Skill.Name.make("abra-browser"),
@@ -418,7 +437,7 @@ test("missing default browser guidance and shell are capability blockers even wi
     );
     assert.deepEqual(
       skills.map((s) => s.id),
-      ["abra-browser"],
+      [...defaults.map((s) => s.id), "abra-browser"],
     );
     const missing = missingTools(
       tools,

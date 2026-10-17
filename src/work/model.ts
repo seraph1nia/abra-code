@@ -1,4 +1,4 @@
-import { LegacyAssignee, IssueId, RepositoryId, RequestId, ExecutionId } from "../identities.ts";
+import { IssueId, RepositoryId, RequestId, ExecutionId } from "../identities.ts";
 
 import { ScopeDraftSchema, ReportReferenceSchema } from "./scope.ts";
 import { PolicySchema, Priority, NonEmpty } from "../contracts.ts";
@@ -20,7 +20,7 @@ export const IssueSchema = Schema.Struct({
   description: Schema.String,
   status: Schema.Literals(["open", "in_progress", "blocked", "closed"]),
   priority: Priority,
-  assignee: Schema.optional(Schema.Union([ExecutionId, LegacyAssignee])),
+  assignee: Schema.optional(ExecutionId),
   dependencies: Schema.Array(IssueId),
 });
 export type Issue = typeof IssueSchema.Type;

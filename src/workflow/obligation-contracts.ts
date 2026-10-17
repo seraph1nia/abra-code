@@ -9,6 +9,7 @@ import {
 } from "../identities.ts";
 import { Schema } from "effect";
 import { Count, NonEmpty, Positive } from "../contracts.ts";
+import { FinishingTargetSchema, FinishingAnswerSchema } from "./finishing-contracts.ts";
 const bounded = NonEmpty.check(Schema.isMaxLength(8192));
 export const QuestionInputSchema = Schema.Struct({
   key: ObligationKey,
@@ -27,6 +28,19 @@ export const DecisionSchema = Schema.Struct({
   form_session: Schema.optional(SessionId),
   answer: Schema.optional(bounded),
   resolved_at: Schema.optional(Count),
+  finishing_target: Schema.optional(FinishingTargetSchema),
+  finishing_answer: Schema.optional(FinishingAnswerSchema),
+  finishing_history: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        form_id: FormId,
+        form_session: SessionId,
+        target: FinishingTargetSchema,
+        answer: Schema.optional(FinishingAnswerSchema),
+        resolved_at: Count,
+      }),
+    ).check(Schema.isMaxLength(64)),
+  ),
 });
 const waitFields = {
   key: ObligationKey,

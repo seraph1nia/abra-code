@@ -120,8 +120,6 @@ export const Executable = Schema.NonEmptyString.pipe(Schema.brand("abracode/Exec
 export type Executable = typeof Executable.Type;
 export const ViewKey = Schema.NonEmptyString.pipe(Schema.brand("abracode/ViewKey"));
 export type ViewKey = typeof ViewKey.Type;
-export const LegacyAssignee = Schema.NonEmptyString.pipe(Schema.brand("abracode/LegacyAssignee"));
-export type LegacyAssignee = typeof LegacyAssignee.Type;
 
 export const OperationAction = Schema.NonEmptyString.pipe(Schema.brand("abracode/OperationAction"));
 export type OperationAction = typeof OperationAction.Type;

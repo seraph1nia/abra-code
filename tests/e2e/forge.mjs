@@ -96,6 +96,12 @@ if (args[0] === "pr") {
       }).trim() !== "true"
     )
       throw Error("Only this fixture's local bare remote may receive a write");
+    if (state.merge_delay_ms) {
+      if (state.merge_delay_ms > 5000) throw Error("Fixture delay exceeds its bound");
+      state.merge_started = true;
+      save();
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, state.merge_delay_ms);
+    }
     git("push", "origin", `${pr.headRefOid}:refs/heads/${state.base}`);
     state.pr = {
       ...pr,

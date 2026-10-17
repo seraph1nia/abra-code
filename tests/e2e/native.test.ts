@@ -2,6 +2,9 @@ import { parseDocument } from "yaml";
 import { configuration } from "../../src/config/protocol.ts";
 import { installSource, installationRoot } from "./install.ts";
 import { browserCalls, browserPage, assertBrowserWorker, browserIsolation } from "./browser.ts";
+import { capturePreSuite, assertPreSuiteAfterRestart } from "./engineering-recovery.ts";
+import { engineeringCalls, assertEngineeringWorker } from "./engineering.ts";
+import { engineeringSkills } from "../../src/opencode/engineering-skills.ts";
 import { workerContextCapabilities } from "./worker-context.ts";
 import { prFeedbackLifecycle } from "./pr-feedback.ts";
 import * as Id from "../../src/identities.ts";
@@ -10,7 +13,7 @@ import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdir, writeFile, rm, symlink, readFile } from "node:fs/promises";
+import { mkdir, writeFile, rm, symlink, readFile, access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { OpenCode } from "@opencode/client";
 import { Rpc } from "@opencode/plugin";
@@ -65,6 +68,8 @@ test(
     const git = new Git(r);
     let child: ChildProcess | undefined;
     let logs = "";
+    const engineeringEvidence: unknown[] = [];
+    const reviewedTrees = new Set<string>();
     let failFirstExplore = true;
     let missingToolProviderCalls = 0;
     let directWorkerProviderCalls = 0;
@@ -99,6 +104,21 @@ test(
             : user.includes("AbraCode review")
               ? "review"
               : "supervisor";
+      if (
+        role === "review" &&
+        user.includes("engineering-acceptance") &&
+        !user.includes("Approved short scope:") &&
+        !reviewedTrees.has(user)
+      ) {
+        reviewedTrees.add(user);
+        const directory = /Worktree: ([^\n]+)/.exec(user)![1];
+        const status = await run(
+          git.run(Id.AbsolutePath.make(directory), ["status", "--porcelain"]),
+        );
+        assert.match(status, / M source.txt/);
+        assert.match(status, /\?\? sample-proof.mjs/);
+        engineeringEvidence.push({ review_tree: directory, status });
+      }
       if (role === "explore" && failFirstExplore) {
         failFirstExplore = false;
         res.writeHead(403, { "Content-Type": "application/json" });
@@ -203,6 +223,17 @@ test(
         );
       } else if (role === "explore") {
         const base = `openspec/changes/${change}`;
+        if (user.includes("decision-routing-acceptance"))
+          calls.push({
+            name: "abra_worker_question",
+            args: {
+              key: "native-inventory",
+              generation: Number(/Control generation: (\d+)/.exec(user)![1]),
+              scope: "Planning evidence",
+              owner: "supervisor",
+              question: "Provide retained controller inventory evidence",
+            },
+          });
         calls.push(
           {
             name: "abra_worker_progress",
@@ -306,9 +337,44 @@ test(
               : {}),
           },
         });
+      if (role === "apply" && user.includes("instruction-edit-acceptance"))
+        calls.push({
+          name: "write",
+          args: {
+            path: "AGENTS.md",
+            content: "Repository navigation: source.txt implements the sample.\n",
+          },
+        });
       if (role === "supervisor" && user.startsWith("AbraCode attention for ")) {
         const issueID = /AbraCode attention for ([^. ]+)\./.exec(user)![1];
-        if (user.includes(": pr_feedback."))
+        if (user.includes(": decision_pending.")) {
+          const decision = JSON.parse(user.split(": decision_pending. ")[1].split("\n")[0]);
+          calls.push(
+            { name: "abra_work_status", args: { issue_id: issueID } },
+            {
+              name: "abra_work_decision",
+              args: {
+                issue_id: issueID,
+                key: decision.key,
+                generation: Number(/generation (\d+)/.exec(user)![1]),
+                action: decision.owner === "user" ? "collect" : "answer",
+                ...(decision.owner === "supervisor"
+                  ? { answer: "Retained native fixture inventory evidence" }
+                  : {}),
+              },
+            },
+            {
+              name: "abra_work_attention",
+              args: {
+                issue_id: issueID,
+                incident_id: /Incident ([^,]+),/.exec(user)![1],
+                generation: Number(/generation (\d+)/.exec(user)![1]),
+                action: "handled",
+                reason: "Answered the retained worker question in the main Supervisor session",
+              },
+            },
+          );
+        } else if (user.includes(": pr_feedback."))
           calls.push({
             name: "abra_work_attention",
             args: {
@@ -323,7 +389,38 @@ test(
         else
           calls.push({ name: "abra_work_control", args: { issue_id: issueID, action: "retry" } });
       }
+      if (role === "explore" && user.includes("engineering-unavailable-evidence")) {
+        const spec = calls.find((c) => c.args.path?.endsWith("specs/sample/spec.md"))!;
+        spec.args.content +=
+          "\n### Requirement: Runtime evidence\nThe system SHALL expose runtime audit evidence for the sample.\n#### Scenario: Inspect runtime audit\n- **WHEN** the sample is exercised in the runtime\n- **THEN** its runtime audit evidence can be inspected\n";
+      }
+      if (role === "review" && user.includes("engineering-unavailable-evidence")) {
+        calls.unshift(
+          { name: "skill", args: { id: "abra-verification" } },
+          { name: "read", args: { path: "unavailable-proof.json" } },
+        );
+        const report = calls.find((c) => c.name === "abra_review_report")!.args;
+        report.passed = false;
+        report.findings =
+          "Required behavior proof unavailable; loaded guidance does not verify it. Keep accepted planning unchanged.";
+        report.scope_status = "uncertain";
+        report.spec_verification.correctness = {
+          status: "not_verified",
+          evidence:
+            "unavailable-proof.json is absent and the configured source check cannot establish the additional claimed runtime observation.",
+        };
+      }
       calls.unshift(...browserCalls(user, role, `http://127.0.0.1:${address.port}`, messages));
+      calls.unshift(...engineeringCalls(user, role));
+      if (
+        role === "apply" &&
+        user.includes("engineering-acceptance") &&
+        !user.includes("Approved short scope:")
+      )
+        calls.push({
+          name: "shell",
+          args: { command: "node sample-proof.mjs # original-scenario recheck" },
+        });
       // GPT-family models receive OpenCode's native patch tool, not edit/write.
       for (const call of calls) {
         if (call.name === "write") {
@@ -354,7 +451,15 @@ test(
       }
       const next = calls.find((c) => !used.has(JSON.stringify(c.args)));
       const toolNames = (input.tools ?? []).map((x: any) => x.function?.name);
-      if (next && !toolNames.includes(next.name) && role !== "research") {
+      if (
+        next &&
+        !toolNames.includes(next.name) &&
+        role !== "research" &&
+        !(
+          user.includes("engineering-acceptance") &&
+          ["abra_work_finish", "task"].includes(next.name)
+        )
+      ) {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -406,6 +511,26 @@ test(
       port: number;
     };
     t.onTestFinished(async () => {
+      if (process.env.ABRACODE_TEST_EVIDENCE_DIR) {
+        const evidenceDir = resolve(process.env.ABRACODE_TEST_EVIDENCE_DIR);
+        assert.ok(!evidenceDir.startsWith(root + "/"), "Evidence must survive fixture teardown");
+        await mkdir(evidenceDir, { recursive: true });
+        await writeFile(
+          join(evidenceDir, "native-engineering.json"),
+          JSON.stringify(
+            {
+              fixture: "tests/e2e/native.test.ts",
+              result: t.task.result?.state,
+              observed_at: new Date().toISOString(),
+              isolation:
+                "Disposable service/data/config, loopback provider and local bare remotes; no operator service or user remote",
+              observations: engineeringEvidence,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+      }
       if (t.task.result?.state === "fail")
         console.error(
           logs
@@ -497,7 +622,7 @@ test(
     });
     await writeFile(
       join(home, "abracode.yaml"),
-      `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture } }\nworktree_root: ${root}/trees\nserver_url: http://127.0.0.1:${port}\nreconcile_interval_ms: 1000\ncommands:\n  forge: ${fakeForge}\n`,
+      `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture } }\nworktree_root: ${root}/trees\nserver_url: http://127.0.0.1:${port}\nreconcile_interval_ms: 1000\nmax_executions: 8\ncommands:\n  forge: ${fakeForge}\n`,
     );
     const password = "abracode-disposable-test-password";
     const globalPlugins = join(root, "config/opencode/plugins");
@@ -596,7 +721,7 @@ test(
         : undefined,
     );
     const progressUpdates: any[] = [];
-    const invoke = async (tool: string, args: any) => {
+    const invoke = async (tool: string, args: any, observeBusy = false) => {
       const deadline = Date.now() + 5000;
       while (true) {
         try {
@@ -607,6 +732,14 @@ test(
             ok: true,
             ...(result.result === undefined ? {} : { result: result.result }),
           });
+          if (
+            !observeBusy &&
+            result.result?.category === "operation_in_progress" &&
+            Date.now() < deadline
+          ) {
+            await delay(50);
+            continue;
+          }
           return result.result;
         } catch (error: any) {
           if (
@@ -633,6 +766,7 @@ test(
             "-e",
             'const fs=require("fs");if(fs.readFileSync("source.txt","utf8")!=="sample\\n")process.exit(1)',
           ],
+          ...(i === 1 ? [[process.execPath, "sample-proof.mjs"]] : []),
         ],
         delivery: "branch",
       });
@@ -735,7 +869,8 @@ test(
     const goal = {
       repository_id: "api",
       title: "Sample API",
-      description: "Add the sample API behavior through a full OpenSpec flow. browser-acceptance",
+      description:
+        "Add the sample API behavior and update AGENTS.md navigation through a full OpenSpec flow. browser-acceptance decision-routing-acceptance instruction-edit-acceptance engineering-acceptance",
       request_id: "sample-api",
     };
     const intake = await invoke("abra_work_create", goal);
@@ -851,6 +986,24 @@ test(
         ? status.execution
         : undefined;
     }, 40000);
+    const routed = await eventually(async () => {
+      const state = (await invoke("abra_work_status", { issue_id: issue.id })).execution;
+      return state.attention?.some(
+        (a: any) => a.code === "decision_pending" && a.status === "handled",
+      )
+        ? state
+        : undefined;
+    });
+    assert.equal(
+      routed.decisions.find((d: any) => d.key === "native-inventory").answer,
+      "Retained native fixture inventory evidence",
+    );
+    assert.equal(
+      routed.attention_turns,
+      1,
+      "Question routing must work after diagnostics are exhausted",
+    );
+    assert.deepEqual(routed.approval_receipts, []);
     assert.equal(await readFile(join(e.worktree_directory!, "source.txt"), "utf8"), "original\n");
     await assertBrowserWorker(client, home, e.explore_session_id!);
     const sidebarSnapshot = await observer.snapshot({}, loc);
@@ -905,6 +1058,17 @@ test(
       localSkills.some((s) => s.id === "abra-browser" && s.content.includes("skills get core")),
     );
     assert.ok(localSkills.some((s) => s.name === "local-fixture"));
+    for (const { name } of engineeringSkills) {
+      assert.ok(
+        localSkills.some((s) => s.id === `abra-${name}` && s.content.includes("Adapted from")),
+      );
+      assert.ok((await client.skill.list(loc)).data.some((s) => s.id === `abra-${name}`));
+    }
+    engineeringEvidence.push(
+      await assertEngineeringWorker(client, e.explore_session_id!, "explore"),
+    );
+    for (const file of ["docs/verification/README.md", "GLOSSARY.md", ".cursor/skills"])
+      await assert.rejects(access(join(e.worktree_directory!, file)), /ENOENT/);
     assert.equal(
       await readFile(join(e.worktree_directory!, "AGENTS.md"), "utf8"),
       "Preserve foreign repository instructions.\n",
@@ -1038,6 +1202,11 @@ test(
       .rpc(configuration)
       .reconcile({ session_id: supervisor.id, action: "apply" }, loc);
     assert.equal(applied.outcomes.find((d) => d.id === "api")?.status, "registered/ready");
+    const preSuitePath = await capturePreSuite(
+      client,
+      (await invoke("abra_work_status", { issue_id: issue.id })).execution,
+      home,
+    );
     child!.kill("SIGTERM");
     await new Promise<void>((done) => child!.once("exit", () => done()));
     start();
@@ -1045,6 +1214,15 @@ test(
     await client.location.get({ location: { directory: home } });
     const recovered = await invoke("abra_work_status", { issue_id: issue.id });
     assert.equal(recovered.execution.current_phase, "awaiting_plan_approval");
+    engineeringEvidence.push(
+      await assertPreSuiteAfterRestart(
+        recovered.execution,
+        home,
+        preSuitePath,
+        `http://127.0.0.1:${port}`,
+        password,
+      ),
+    );
     assert.equal(recovered.execution.worktree_directory, e.worktree_directory);
     assert.equal(recovered.execution.explore_session_id, e.explore_session_id);
     assert.equal(
@@ -1075,8 +1253,44 @@ test(
       throw Error(JSON.stringify(s));
     }, 40000)) as Execution;
     assert.ok(done.apply_session_id && done.review_session_id);
+    assert.equal(
+      await run(
+        git.run(Id.AbsolutePath.make(managedAPI.path), [
+          "show",
+          `${done.delivered_commit}:AGENTS.md`,
+        ]),
+      ),
+      "Repository navigation: source.txt implements the sample.",
+    );
     await assertBrowserWorker(client, home, done.apply_session_id);
     await assertBrowserWorker(client, home, done.review_session_id);
+    engineeringEvidence.push(await assertEngineeringWorker(client, done.apply_session_id, "apply"));
+    engineeringEvidence.push(
+      await assertEngineeringWorker(client, done.review_session_id, "review"),
+    );
+    const deliveredFiles = await run(
+      git.run(Id.AbsolutePath.make(managedAPI.path), [
+        "ls-tree",
+        "-r",
+        "--name-only",
+        done.delivered_commit!,
+      ]),
+    );
+    assert.ok(
+      !deliveredFiles
+        .split("\n")
+        .some(
+          (file) =>
+            file === "GLOSSARY.md" ||
+            file.startsWith("docs/verification/") ||
+            file.startsWith(".cursor/"),
+        ),
+    );
+    engineeringEvidence.push({
+      verification: done.verification_receipt,
+      review: done.review_receipt,
+      outcome: done.current_phase,
+    });
     await browserIsolation(
       home,
       [e.explore_session_id!, done.apply_session_id],
@@ -1201,7 +1415,7 @@ test(
       await invoke("abra_work_create", {
         repository_id: "research",
         title: "Small native fix",
-        description: "Implement the explicit scoped request",
+        description: "Implement the explicit scoped request. engineering-acceptance",
         workflow_policy: "lightweight-fix",
         scope: { goal: "Return sample", acceptance: ["Source returns sample"], constraints: [] },
         request_id: "native-lightweight",
@@ -1231,7 +1445,7 @@ test(
       await invoke("abra_work_create", {
         repository_id: "research",
         title: "Exhaust native correction budget",
-        description: "Keep failed scoped evidence",
+        description: "Keep failed scoped evidence. engineering-acceptance",
         workflow_policy: "lightweight-fix",
         scope: { goal: "Return sample", acceptance: ["Source returns sample"], constraints: [] },
         request_id: "native-exhausted",
@@ -1252,10 +1466,53 @@ test(
       exhausted.decisions.find((d: any) => d.status === "open").question,
       /budget exhausted/,
     );
+    const unavailableIssue = (
+      await invoke("abra_work_create", {
+        repository_id: "worker",
+        title: "Unavailable engineering proof",
+        description:
+          "Implement sample; runtime observation unavailable. engineering-unavailable-evidence",
+        request_id: "engineering-unavailable",
+      })
+    ).issue;
+    await invoke("abra_work_start", { issue_id: unavailableIssue.id });
+    await eventually(async () => {
+      const current = (await invoke("abra_work_status", { issue_id: unavailableIssue.id }))
+        .execution;
+      return current.current_phase === "awaiting_plan_approval" ? current : undefined;
+    });
+    const approval = await invoke("abra_work_approve", {
+      issue_id: unavailableIssue.id,
+      kind: "plan",
+    });
+    assert.ok(approval?.form_id);
+    await client.session.form.reply({
+      sessionID: supervisor.id,
+      formID: approval.form_id,
+      answer: { authorize: true },
+    });
+    const unavailable = await eventually(async () => {
+      const current = (await invoke("abra_work_status", { issue_id: unavailableIssue.id }))
+        .execution;
+      return current.current_phase === "blocked" && current.review_receipt ? current : undefined;
+    });
+    assert.equal(unavailable.review_receipt.passed, false);
+    assert.equal(unavailable.review_receipt.spec_verification.correctness.status, "not_verified");
+    assert.equal(unavailable.delivery_receipt, undefined);
+    assert.ok(unavailable.decisions.some((d: any) => d.status === "open"));
+    const unavailableMessages = await client.session.context({
+      sessionID: unavailable.review_session_id,
+    });
+    assert.ok(JSON.stringify(unavailableMessages).includes("unavailable-proof.json"));
+    engineeringEvidence.push({
+      unavailable_evidence: unavailable.review_receipt,
+      phase: unavailable.current_phase,
+    });
     const feedbackIssue = await prFeedbackLifecycle({
       root,
       forgeState,
       invoke,
+      observeBusy: (tool, args) => invoke(tool, args, true),
       eventually,
       approve: async (formID) => {
         await client.session.form.reply({
@@ -1277,7 +1534,7 @@ test(
     await writeFile(
       join(home, "abracode.yaml"),
       configBeforeRestart +
-        "max_executions: 8\nworkers:\n  explore: {agent: central-only}\n  research: {required_skills: [missing-worker-skill]}\n",
+        "workers:\n  explore: {agent: central-only}\n  research: {required_skills: [missing-worker-skill]}\n",
     );
     child!.kill("SIGTERM");
     await new Promise<void>((done) => child!.once("exit", () => done()));
@@ -1308,6 +1565,22 @@ test(
       ).length,
       1,
     );
+    const retainedCleanup = await invoke("abra_work_status", { issue_id: feedbackIssue.id });
+    assert.equal(retainedCleanup.execution.current_phase, "cleaning");
+    assert.equal(retainedCleanup.outcome.delivery.state, "verified");
+    assert.equal(retainedCleanup.outcome.cleanup.state, "blocked");
+    assert.equal(
+      (await observer.detail({ issue_id: feedbackIssue.id }, loc)).work.outcome?.cleanup.state,
+      "blocked",
+    );
+    assert.ok(retainedCleanup.execution.worktree_directory.startsWith(root + "/"));
+    await rm(join(retainedCleanup.execution.worktree_directory, ".cleanup-residue"), {
+      recursive: true,
+    });
+    const cleanupDone = await invoke("abra_work_finish", { issue_id: feedbackIssue.id });
+    assert.equal(cleanupDone.outcome.closure, "closed");
+    assert.equal(cleanupDone.outcome.cleanup.state, "retired");
+    assert.equal(JSON.parse(await readFile(forgeState, "utf8")).counts.merge, 1);
     const recoveredAttention = (await invoke("abra_work_status", { issue_id: issue.id })).execution
       .attention;
     assert.equal(

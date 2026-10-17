@@ -1,6 +1,11 @@
 import { workerProfile } from "../config/snapshot.ts";
 import { readWorkerContext, compatibleContext } from "../workflow/worker-context.ts";
-import { resolveSkills, awaitWorkerPlugin, type WorkerEnvironment } from "./worker-environment.ts";
+import {
+  resolveSkills,
+  resolveCapturedSkills,
+  awaitWorkerPlugin,
+  type WorkerEnvironment,
+} from "./worker-environment.ts";
 import { nativePermissions } from "./role-policy.ts";
 import { workerBrowser } from "./browser.ts";
 import { provisionedEvidence } from "../workflow/evidence.ts";
@@ -35,6 +40,13 @@ import { Effect, Schema } from "effect";
 import { Session, SessionMessage, Agent, Model } from "@opencode/client/effect";
 import { Service } from "@opencode/client/effect/service";
 import { type Context } from "@opencode/plugin/effect/plugin";
+import { createHash } from "node:crypto";
+import {
+  FinishingAnswerSchema,
+  validFinishingAnswer,
+  type FinishingAnswer,
+  type FinishingTarget,
+} from "../workflow/finishing-contracts.ts";
 import { Records, NativeStore } from "../storage/store.ts";
 import { decode } from "../decode.ts";
 import { WorkerModelSchema } from "../contracts.ts";
@@ -62,7 +74,23 @@ export interface SessionState {
 export type QuestionAnswer =
   | { status: "pending" | "cancelled"; answer?: never }
   | { status: "answered"; answer: string };
+export type DispositionAnswer =
+  | { status: "pending" | "cancelled" }
+  | { status: "answered"; answer: FinishingAnswer };
 export interface Runtime {
+  requestDisposition?(
+    session: SessionId,
+    form: FormId,
+    question: string,
+    identity: QuestionIdentity,
+    target: FinishingTarget,
+  ): Effect.Effect<FormId, CrewError>;
+  disposition?(
+    session: SessionId,
+    form: FormId,
+    identity: QuestionIdentity,
+    target: FinishingTarget,
+  ): Effect.Effect<DispositionAnswer, CrewError>;
   preflight(
     e: ManagedExecution,
     role: Role,
@@ -101,7 +129,7 @@ export interface Runtime {
     steer?: boolean,
   ): Effect.Effect<void, CrewError>;
   interrupt(id: SessionId, promptID?: MessageId): Effect.Effect<void, CrewError>;
-  notify(id: SessionId, text: string): Effect.Effect<void, CrewError>;
+  notify(id: SessionId, text: string, message?: MessageId): Effect.Effect<void, CrewError>;
   requestQuestion(
     session: SessionId,
     formID: FormId,
@@ -128,6 +156,133 @@ export class NativeRuntime implements Runtime {
     private config: Config,
   ) {}
   client = Effect.fn("NativeRuntime.client")(() => this.acquired);
+  requestDisposition = Effect.fn("NativeRuntime.requestDisposition")(
+    function* (
+      this: NativeRuntime,
+      sessionID: SessionId,
+      id: FormId,
+      question: string,
+      identity: QuestionIdentity,
+      target: FinishingTarget,
+    ) {
+      const forms = (yield* this.client()).session.form;
+      const fingerprint = createHash("sha256").update(JSON.stringify(target)).digest("hex");
+      const existing = yield* forms
+        .get({ sessionID, formID: id })
+        .pipe(Effect.catchTag("FormNotFoundError", () => Effect.void));
+      if (existing) {
+        if (
+          existing.metadata?.decision_identity !== identity ||
+          existing.metadata?.finishing_target !== fingerprint
+        )
+          return yield* new CrewError(
+            "DECISION_FORM",
+            "Finishing form belongs to another exact target",
+          );
+        return existing.id;
+      }
+      const residue = target.kind === "residue" ? target : undefined;
+      return (yield* forms.create({
+        sessionID,
+        id,
+        title: question.slice(0, 512),
+        metadata: {
+          source: "abracode",
+          decision_identity: identity,
+          finishing_target: fingerprint,
+        },
+        fields: [
+          {
+            key: "action",
+            type: "string",
+            required: true,
+            custom: false,
+            default: "defer",
+            title: "Choose how to handle this work",
+            description: residue
+              ? "Generated directories: authorize disposal of generated contents in the selected exact directories after delivery is preserved. Include: send selected files through scope assessment, checks and Review. Preserve: move selected items elsewhere, then automatic inspection must confirm absence. Defer: keep everything and wait."
+              : "Authorize assessment of this exact retained content only; this grants no repair, merge or arbitrary deletion permission.",
+            options: [
+              ...(residue
+                ? [
+                    ...(residue.directories.length
+                      ? [{ value: "generated", label: "Authorize generated-directory cleanup" }]
+                      : []),
+                    ...(residue.files.length
+                      ? [{ value: "include", label: "Include files in delivery" }]
+                      : []),
+                    { value: "preserve", label: "I will preserve selected items elsewhere" },
+                  ]
+                : [{ value: "authorize", label: "Authorize this exact assessment" }]),
+              { value: "defer", label: "Defer and preserve everything" },
+            ],
+          },
+          ...(residue
+            ? (["generated", "include", "preserve"] as const).flatMap((action) => {
+                const paths =
+                  action === "generated"
+                    ? residue.directories.map((d) => d.path)
+                    : action === "include"
+                      ? residue.files.map((f) => f.path)
+                      : residue.paths.map((p) => p.path);
+                return paths.length
+                  ? [
+                      {
+                        key: `${action}_paths`,
+                        type: "multiselect" as const,
+                        required: true,
+                        custom: false,
+                        title: "Exact paths",
+                        minItems: 1,
+                        maxItems: 64,
+                        when: [{ key: "action", op: "eq" as const, value: action }],
+                        options: paths.map((path) => ({
+                          value: path,
+                          label: JSON.stringify(path),
+                        })),
+                      },
+                    ]
+                  : [];
+              })
+            : []),
+        ],
+      })).id;
+    }.bind(this),
+    domainEffect,
+  );
+  disposition = Effect.fn("NativeRuntime.disposition")(
+    function* (
+      this: NativeRuntime,
+      sessionID: SessionId,
+      formID: FormId,
+      identity: QuestionIdentity,
+      target: FinishingTarget,
+    ) {
+      const form = yield* (yield* this.client()).session.form.get({ sessionID, formID });
+      const fingerprint = createHash("sha256").update(JSON.stringify(target)).digest("hex");
+      if (
+        form.metadata?.decision_identity !== identity ||
+        form.metadata?.finishing_target !== fingerprint
+      )
+        return yield* new CrewError("DECISION_FORM", "Finishing answer belongs to another target");
+      if (form.state.status !== "answered") return { status: form.state.status };
+      const answer = yield* decode(
+        FinishingAnswerSchema,
+        {
+          action: form.state.answer.action,
+          paths: form.state.answer[`${form.state.answer.action}_paths`] ?? [],
+        },
+        "Native finishing answer",
+      );
+      if (!validFinishingAnswer(target, answer))
+        return yield* new CrewError(
+          "DECISION_ANSWER",
+          "Disposition is outside the exact retained target",
+        );
+      return { status: "answered" as const, answer };
+    }.bind(this),
+    domainEffect,
+  );
   private discoverClient = Effect.fn("NativeRuntime.discoverClient")(
     function* (this: NativeRuntime) {
       const endpoint = this.config.server_url
@@ -391,12 +546,6 @@ export class NativeRuntime implements Runtime {
         ? {
             agent: captured.environment.agent,
             model: captured.environment.model,
-            required_skills: captured.environment.skills
-              .filter((skill) => skill.source !== "role-policy")
-              .map((skill) => skill.id),
-            required_tools: captured.environment.tools.filter(
-              (group) => group.source !== "role-policy",
-            ),
           }
         : workerProfile(e, role, this.config);
       const location = { directory: e.worktree_directory };
@@ -437,13 +586,9 @@ export class NativeRuntime implements Runtime {
       );
       return {
         ...selected,
-        ...(yield* resolveSkills(
-          role,
-          e.workflow_policy,
-          profile,
-          skills.data,
-          e.worktree_directory,
-        )),
+        ...(yield* captured
+          ? resolveCapturedSkills(role, captured.environment, skills.data, e.worktree_directory)
+          : resolveSkills(role, e.workflow_policy, profile, skills.data, e.worktree_directory)),
       };
     }.bind(this),
     domainEffect,
@@ -501,11 +646,32 @@ export class NativeRuntime implements Runtime {
     domainEffect,
   );
   notify = Effect.fn("NativeRuntime.notify")(
-    function* (this: NativeRuntime, sessionID: SessionId, text: string) {
+    function* (this: NativeRuntime, sessionID: SessionId, text: string, id?: MessageId) {
+      if (id) {
+        const client = yield* this.client();
+        const pending = (yield* client.session.inbox.list({ sessionID })).find(
+          (item) => item.id === id,
+        );
+        const recorded = (yield* client.session.context({ sessionID })).find(
+          (item) => item.id === id,
+        );
+        if (pending || recorded) {
+          if (
+            (pending && (pending.type !== "synthetic" || pending.payload.text !== text)) ||
+            (recorded && (recorded.type !== "synthetic" || recorded.text !== text))
+          )
+            return yield* new CrewError(
+              "NOTICE_IDENTITY",
+              "Completion notice identity belongs to another message",
+            );
+          return;
+        }
+      }
       // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
       yield* this.ctx.session
         .synthetic({
           sessionID: sessionID,
+          id,
           text,
           metadata: { source: "abracode", notification: true },
         })

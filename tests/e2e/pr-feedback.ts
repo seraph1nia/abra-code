@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { type FormId, type IssueId } from "../../src/identities.ts";
 import { type toolOutputs } from "../../src/opencode/tool-contracts.ts";
 import { type FeedbackPageSchema } from "../../src/workflow/feedback-contracts.ts";
+import { join } from "node:path";
 import { repo } from "../fixtures.ts";
 import { run } from "../effects.ts";
 
@@ -15,6 +16,7 @@ interface Context {
   root: string;
   forgeState: string;
   invoke: Invoke;
+  observeBusy: Invoke;
   approve: (form: FormId) => Promise<void>;
   feedback: (issue: IssueId) => Promise<typeof FeedbackPageSchema.Type>;
   eventually: <T>(action: () => Promise<T | undefined>, timeout?: number) => Promise<T>;
@@ -23,12 +25,14 @@ export async function prFeedbackLifecycle({
   root,
   forgeState,
   invoke,
+  observeBusy,
   approve,
   feedback,
   eventually,
 }: Context) {
   // Complete PR feedback lifecycle against a recording local forge, with real native workers and Git preservation.
   const feedbackPath = await run(repo(root, "feedback"));
+  await writeFile(join(feedbackPath, ".git/info/exclude"), "\n.cleanup-residue/\n");
   await writeFile(
     forgeState,
     JSON.stringify({
@@ -267,7 +271,12 @@ export async function prFeedbackLifecycle({
     finding_id: threadFinding.id,
   });
   const releasableForge = JSON.parse(await readFile(forgeState, "utf8"));
-  releasableForge.merge_hold = false;
+  await mkdir(join(feedbackExecution.worktree_directory!, ".cleanup-residue"));
+  await writeFile(
+    join(feedbackExecution.worktree_directory!, ".cleanup-residue/keep.txt"),
+    "Fixture-owned residue; preserve until explicit test disposition.",
+  );
+  releasableForge.merge_hold = true;
   await writeFile(forgeState, JSON.stringify(releasableForge));
   const newMerge = await invoke("abra_work_approve", {
     issue_id: feedbackIssue.id,
@@ -277,12 +286,57 @@ export async function prFeedbackLifecycle({
   assert.notEqual(newMerge.form_id, oldMerge.form_id);
   assert.equal(newMerge.approval_required, true);
   await approve(newMerge.form_id);
-  const feedbackDone: Execution = await eventually(async () => {
+  const acceptedMerge = await invoke("abra_work_approve", {
+    issue_id: feedbackIssue.id,
+    kind: "merge",
+  });
+  assert.ok("current_phase" in acceptedMerge);
+  assert.equal(acceptedMerge.outcome!.approval.state, "recorded");
+  assert.notEqual(acceptedMerge.outcome!.delivery.state, "verified");
+  const authorizedForge = JSON.parse(await readFile(forgeState, "utf8"));
+  assert.equal(authorizedForge.counts.merge ?? 0, 0);
+  authorizedForge.merge_hold = false;
+  authorizedForge.merge_delay_ms = 3000;
+  await writeFile(forgeState, JSON.stringify(authorizedForge));
+  // Reconciliation or explicit finish owns the delayed local merge; an overlapping
+  // approval collection observes busy ownership and must not repeat the mutation.
+  const finishing = invoke("abra_work_finish", { issue_id: feedbackIssue.id }).then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  );
+  await eventually(
+    async () => (JSON.parse(await readFile(forgeState, "utf8")).merge_started ? true : undefined),
+    40000,
+  );
+  const busy = await observeBusy("abra_work_approve", {
+    issue_id: feedbackIssue.id,
+    kind: "merge",
+  });
+  assert.ok("category" in busy);
+  assert.equal(busy.category, "operation_in_progress");
+  assert.equal(busy.performed, false);
+  const finishResult = await finishing;
+  if ("error" in finishResult) throw finishResult.error;
+  const blockedStatus = await eventually(async () => {
     const status = await feedbackStatus();
-    if (["blocked", "failed", "recovery_required"].includes(status.execution!.current_phase))
+    if (["blocked", "failed", "recovery_required"].includes(status.execution.current_phase))
       throw Error(JSON.stringify(status));
-    return status.execution!.current_phase === "completed" ? status.execution! : undefined;
+    return status.execution.current_phase === "cleaning" && status.execution.cleanup_blocker
+      ? status
+      : undefined;
   }, 40000);
+  const feedbackDone: Execution = blockedStatus.execution;
+  assert.equal(blockedStatus.outcome!.approval.state, "recorded");
+  assert.equal(blockedStatus.outcome!.delivery.state, "verified");
+  assert.equal(blockedStatus.outcome!.cleanup.state, "blocked");
+  assert.equal(blockedStatus.outcome!.closure, "open");
+  assert.equal(feedbackDone.cleanup_blocker!.paths[0].path, ".cleanup-residue");
+  const collected = await invoke("abra_work_approve", {
+    issue_id: feedbackIssue.id,
+    kind: "merge",
+  });
+  assert.ok("current_phase" in collected);
+  assert.equal(collected.outcome!.approval.state, "recorded");
   const finalForge = JSON.parse(await readFile(forgeState, "utf8"));
   assert.equal(finalForge.counts.create, 1);
   assert.equal(finalForge.counts.rerun, 1);

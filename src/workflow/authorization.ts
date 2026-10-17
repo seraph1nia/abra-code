@@ -6,6 +6,20 @@ import { type Execution, CrewError } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { type Runtime } from "../opencode/runtime.ts";
 
+export const assertApprovalActor = (e: Execution, supervisor: SessionId) =>
+  Effect.gen(function* () {
+    if (
+      [
+        e.explore_session_id,
+        e.apply_session_id,
+        e.review_session_id,
+        e.research_session_id,
+        e.session_intent?.id,
+      ].includes(supervisor)
+    )
+      return yield* new CrewError("SELF_APPROVAL", "Workers cannot authorize decisions");
+  });
+
 /** Owns exact-content forms and retained receipts; callers own lifecycle advancement. */
 export const collectApproval = Effect.fn("Authorization.collect")(function* (
   runtime: Runtime,
@@ -15,16 +29,7 @@ export const collectApproval = Effect.fn("Authorization.collect")(function* (
   fingerprint: Fingerprint | Commit,
   save: () => Effect.Effect<unknown, CrewError>,
 ) {
-  if (
-    [
-      e.explore_session_id,
-      e.apply_session_id,
-      e.review_session_id,
-      e.research_session_id,
-      e.session_intent?.id,
-    ].includes(supervisor)
-  )
-    return yield* new CrewError("SELF_APPROVAL", "Workers cannot authorize decisions");
+  yield* assertApprovalActor(e, supervisor);
   if (!fingerprint)
     return yield* new CrewError("STALE_CHECKPOINT", "Checkpoint identity is missing");
   let receipt = e.approval_receipts.find(

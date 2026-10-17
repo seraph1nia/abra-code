@@ -47,7 +47,28 @@ pnpm run doctor
 
 The `test` block in `vite.config.ts` defines three Vitest projects: `unit`, `integration` (30-second timeout for real CLIs), and `e2e` (120-second timeout for the native server). `pnpm test` selects unit and integration; `pnpm test:e2e` selects the native-server test. Cleanup uses Vitest test-scoped hooks. `pnpm exec vp test run` runs all three projects.
 
-Skill frontmatter is validated with the bundled skill-creator validator (using a temporary `uv` environment for its PyYAML dependency); linked local references and documented scripts are checked separately. CI runs the same code/integration/native-server checks on Linux with Node 24.
+Skill frontmatter is validated with the bundled skill-creator validator (using a temporary `uv` environment for its PyYAML dependency); linked local references and documented scripts are checked separately.
+
+## Continuous integration
+
+The `test` workflow runs on pushes to `main` and pull requests targeting `main`, including opened, reopened and updated PRs. Other branch pushes and PR bases do not trigger it. One Ubuntu job uses the Node version pinned in `mise.toml` and pnpm from `package.json`, caches the pnpm store, and runs:
+
+```sh
+pnpm install --frozen-lockfile --prod=false
+pnpm format:check
+pnpm config:schema
+pnpm licenses:check
+pnpm check
+pnpm report:browser:install --with-deps
+pnpm test
+pnpm browser:install --with-deps
+pnpm test:e2e
+pnpm build
+```
+
+The frozen install includes developer dependencies and lifecycle scripts for Effect tooling, and populates the store used by offline installation tests. `pnpm check` includes linting, TypeScript, Effect diagnostics and report-template type checking. Named steps fail on errors without automatically formatting or fixing files. Reporter Playwright Chromium is provisioned before integration tests, and the native browser is provisioned before end-to-end tests. Both setup steps install Ubuntu browser libraries with `--with-deps`; local systems can use the commands without that flag and supply compatible system libraries. Fixtures use temporary repositories, local model endpoints and disposable local bare remotes, with no personal credentials or user-remote pushes.
+
+Repository permissions remain read-only. Each job has a 30-minute timeout; a newer run cancels the previous run for the same PR/ref while unrelated refs keep running.
 
 ## Effect tooling
 
@@ -63,7 +84,7 @@ The `lint` block in `vite.config.ts` enables the recommended Effect rules and ex
 
 Effect regressions cover application connections surviving registration until host scope closure, failed plugin setup releasing leadership, command interruption waiting for an uncooperative child, interruption preserving provisioning intent for recovery, monitor shutdown closing its subscription and in-flight reconciliation, failure releasing a real kernel lock, and cancellation of surviving command descendants. Tests execute production Effects at the test-runner seam and use temporary repositories; the real-server vertical slice continues to validate native host loading, permissions, schema interoperability and restart recovery.
 
-Work graph integration tests cover durable reopen, normalized request retries, request rebinding, rollback after an injected SQL failure, competing creation and claims across processes, ownership-guarded transitions/history, atomic Beads import, missing edges/cycles/duplicate identities, raw export preservation, startup migration gates and exclusion of a live coordinator during import.
+Work graph integration tests cover durable reopen, normalized request retries, request rebinding, rollback after an injected SQL failure, competing creation and claims across processes, ownership-guarded transitions/history, missing dependencies, schema upgrades and workflow/scope/report persistence.
 
 Git observation tests verify that status and fingerprints leave the index untouched when file timestamps change, preventing index-refresh races with delivery.
 
@@ -170,7 +191,7 @@ On Ubuntu CI the explicit setup step uses `pnpm browser:install --with-deps`. Lo
 
 `tests/e2e/browser.ts` extends the existing native server's model-scripted tool calls; browser commands traverse the real native tool executor rather than a fake CLI. All four roles load `abra-browser`, run `skills get core` and `--version`, browse a local HTTP counter, inspect a snapshot, click its reference, capture a generated screenshot outside the repository, read its PNG through the native file tool and close the assigned name. Browser-only roles attempt both an unrelated command and a forbidden command chained to an allowed CLI command. The test checks native refusal and absence of their output files. A separate driver check opens two real worker-named browsers concurrently and verifies navigation/storage isolation and close independence. Local bare remotes remain the only Git remotes used by these fixtures.
 
-The browser setup integration test runs the actual doctor entrypoint in a disposable home with a recording executable: only absolute-central `--version` is invoked, and a missing executable reports the central install/build clearing action. Unit tests cover browser prerequisites without OpenSpec, per-session context naming, narrow evidence read rules and unchanged recovery captures. Browser skill frontmatter also passes the skill validator. CLI/browser acceptance was verified on 2026-10-17 with agent-browser 0.39.1 and Chrome 155.0.8059.84; native API evidence is retained in [supported APIs](supported-apis.md#agent-browser-cli-and-native-command-permissions).
+The browser setup integration test runs the actual doctor entrypoint in a disposable home with a recording executable: only absolute-central `--version` is invoked, and a missing executable reports the central install/build clearing action. Unit tests cover ordinary admission without browser guidance or browser-only shell tools, explicit browser prerequisites without OpenSpec, retained Apply development-shell requirements, per-session context naming, narrow evidence read rules and unchanged recovery captures. Browser skill frontmatter also passes the skill validator. CLI/browser acceptance was verified on 2026-10-17 with agent-browser 0.39.1 and Chrome 155.0.8059.84; native API evidence is retained in [supported APIs](supported-apis.md#agent-browser-cli-and-native-command-permissions).
 
 ## AbraCode source-release acceptance
 
@@ -179,3 +200,13 @@ The browser setup integration test runs the actual doctor entrypoint in a dispos
 `native.test.ts` also installs the frozen source fixture, then exercises the installed plugin/CLI against a deterministic loopback provider and disposable local bare Git remotes. It covers controller-owned work, direct foreground/queued prompt denial before provider calls, Abra-only questions/forms, preserved approval identity, config edit/application, declaration removal/restoration, captured settings across restart, delivery and retained history. Browser prerequisites are provisioned explicitly before the suite. Nothing pushes to a user remote or calls a paid provider.
 
 `configuration.test.ts` and `declarations.test.ts` cover strict decoding, role overrides, schema/example agreement, exact ignore rules, generated settings in two roots, legacy-path refusal, comment preservation, cooperating concurrent writes, independent edit conflicts, unwritable/interrupted writes, pending failures and omission semantics. Release CI additionally runs `pnpm config:schema` and offline `pnpm licenses:check`; changed or unreviewed evidence is a release failure.
+
+Delivery-outcome regressions cover receipt-only merge approval, actual execution-lock contention versus helper/body failures, independent stage projection, safe bounded path samples, cleanup backoff and attention deduplication, and cleanup-only continuation after restart. The native forge fixture delays a local-only merge to exercise an overlapping approval request, retains ignored fixture residue through service restart, compares status/detail outcomes, then explicitly disposes of that residue and verifies one merge and confirmed retirement before closure. Its existing local bare-remote guard remains mandatory; no user remote is a test target.
+
+## Engineering procedures and verification recipes
+
+Use the [executable recipe and feature map](verification/README.md) for isolated journeys and evidence that survives teardown. `engineering-skills.test.ts` tests portable registration, local preservation, exact IDs and role/default/configured selection. `engineering-recovery.test.ts` exercises NativeRuntime preflight against a serialized pre-suite context with only old inventory, lost admitted responses, original provenance, current policy incompatibility and fresh admission defaults. Existing immutable-context/request-tool and lost-response lifecycle regressions remain applicable.
+
+`tests/e2e/engineering.ts` supplies deterministic native tool calls within the existing real-server fixture: applicable skill loading by every coding role, post-loading management/delegation and edit/shell denials, a symptom-specific failing consumer invocation followed by the original green recheck, and Review reading unstaged/untracked proof under controller receipts. A separate full-spec unavailable-evidence report uses existing `not_verified` and scope decisions. The lightweight fixture retains correction budgets. The foreign repository has no upstream package or AbraCode recipe, preserves local skills/control files and uses existing documented checks. No automatic recipe/glossary/host setup is performed.
+
+Set `ABRACODE_TEST_EVIDENCE_DIR` outside the disposable installation root to retain `native-engineering.json`; bounded tool text, actual outcomes and matching receipts survive teardown. Screenshots remain scratch and are not claimed as durable attachments. These are scripted integration assertions, not an evaluation of autonomous model quality or proof of live remote behavior.

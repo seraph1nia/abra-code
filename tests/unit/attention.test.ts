@@ -7,6 +7,166 @@ import { run } from "../effects.ts";
 import { fixture } from "../fixtures.ts";
 import { Controller } from "../../src/workflow/controller.ts";
 import { CrewError } from "../../src/domain.ts";
+import { type Context } from "@opencode/plugin/effect/plugin";
+import { type ToolEditor } from "@opencode/plugin/effect/tool";
+import { Tool } from "@opencode/schema/tool";
+import { Agent } from "@opencode/schema/agent";
+import { registerTools } from "../../src/opencode/tools.ts";
+import { ConfigApplication } from "../../src/config/application.ts";
+
+test("worker questions wake the retained Supervisor without a stall or diagnostic budget, once per decision across restart", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const supervisor = Id.SessionId.make("ses_supervisor");
+  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
+  f.work.add(Id.IssueId.make("abra-1"));
+  const project = (await run(f.records.project(Id.RepositoryId.make("frontend"))))!;
+  project.diagnostic_turns = 0;
+  await run(f.records.saveProject(project));
+  const e = await run(f.controller.start(Id.IssueId.make("abra-1"), supervisor));
+  e.attention = [
+    {
+      schema_version: 1,
+      id: Id.IncidentId.make("old-stall"),
+      key: "old-stall",
+      generation: 0,
+      code: "suspected_stall",
+      evidence: "Previous diagnostic budget exhausted",
+      created_at: 0,
+      status: "exhausted",
+      attempts: 1,
+    },
+  ];
+  await run(f.records.save(e));
+  const prompt = f.runtime.prompt.bind(f.runtime);
+  const notices: string[] = [];
+  f.runtime.prompt = (session, text, id) => {
+    notices.push(text);
+    assert.equal(session, supervisor);
+    return prompt(session, text, id);
+  };
+  for (const owner of ["supervisor", "user"] as const)
+    await run(
+      f.controller.workerQuestion(e.explore_session_id!, {
+        key: Id.ObligationKey.make(owner),
+        generation: 0,
+        owner,
+        scope: "Cleanup inventory",
+        question: `Provide ${owner} inventory evidence`,
+      }),
+    );
+  await run(
+    f.controller.workerWait(e.explore_session_id!, {
+      key: Id.ObligationKey.make("inventory-wait"),
+      generation: 0,
+      kind: "user",
+      reference: Id.ObligationKey.make("supervisor"),
+      condition: "Await inventory evidence",
+      owner: "supervisor",
+      expires_in_ms: 60000,
+    }),
+  );
+  const count = f.runtime.prompts;
+  await run(f.controller.supervise());
+  const incident = (await run(f.controller.get(e.issue_id))).attention!.find(
+    (a) => a.code === "decision_pending",
+  )!;
+  assert.equal(incident.code, "decision_pending");
+  assert.equal(incident.status, "admitted");
+  assert.equal(incident.session_id, supervisor);
+  assert.match(incident.evidence, /Provide supervisor inventory evidence/);
+  assert.match(notices[0], /abra_work_decision/);
+  assert.match(notices[0], /collect a user-owned question/);
+  assert.equal(f.runtime.prompts, count + 1);
+  assert.equal((await run(f.controller.get(e.issue_id))).attention_turns ?? 0, 0);
+  const c = new Controller(
+    f.config,
+    f.records,
+    f.work,
+    f.spec,
+    f.git,
+    f.runtime,
+    f.delivery,
+    f.locks,
+  );
+  await run(c.workerProgress(e.explore_session_id!, 0, "Unrelated progress"));
+  await run(c.supervise());
+  assert.equal(f.runtime.prompts, count + 1);
+  await run(
+    c.attentionDisposition(
+      e.issue_id,
+      incident.id,
+      0,
+      "user_needed",
+      "Requested inventory evidence",
+    ),
+  );
+  await run(c.supervise());
+  const next = (await run(c.get(e.issue_id))).attention!.at(-1)!;
+  assert.equal(next.code, "decision_pending");
+  assert.equal(next.status, "admitted");
+  assert.notEqual(next.prompt_id, incident.prompt_id);
+  assert.match(next.evidence, /Provide user inventory evidence/);
+  assert.equal(f.runtime.prompts, count + 2);
+  await run(c.supervise());
+  assert.equal(f.runtime.prompts, count + 2);
+  assert.deepEqual((await run(c.get(e.issue_id))).approval_receipts, []);
+});
+
+test("resolved and paused questions do not wake Abra; a queued resolved question releases its reservation", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const supervisor = Id.SessionId.make("ses_supervisor");
+  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
+  f.work.add(Id.IssueId.make("abra-1"));
+  const e = await run(f.controller.start(Id.IssueId.make("abra-1"), supervisor));
+  const question = {
+    key: Id.ObligationKey.make("inventory"),
+    generation: 0,
+    owner: "supervisor" as const,
+    scope: "Cleanup",
+    question: "Provide inventory evidence",
+  };
+  await run(f.controller.workerQuestion(e.explore_session_id!, question));
+  const count = f.runtime.prompts;
+  await run(
+    f.controller.decision(e.issue_id, question.key, 0, supervisor, "answer", "Retained evidence"),
+  );
+  await run(f.controller.supervise());
+  assert.equal(f.runtime.prompts, count);
+  await run(
+    f.controller.workerQuestion(e.explore_session_id!, {
+      ...question,
+      key: Id.ObligationKey.make("next"),
+    }),
+  );
+  await run(f.controller.supervise());
+  const current = await run(f.controller.get(e.issue_id));
+  current.attention = current.attention!.map((a) => ({ ...a, status: "uncertain" as const }));
+  await run(f.records.save(current));
+  await run(
+    f.controller.decision(
+      e.issue_id,
+      Id.ObligationKey.make("next"),
+      0,
+      supervisor,
+      "answer",
+      "Evidence supplied",
+    ),
+  );
+  await run(f.controller.supervise());
+  assert.equal((await run(f.controller.get(e.issue_id))).attention![0].status, "superseded");
+  assert.equal(f.runtime.prompts, count + 1);
+  await run(
+    f.controller.workerQuestion(e.explore_session_id!, {
+      ...question,
+      key: Id.ObligationKey.make("paused"),
+    }),
+  );
+  await run(f.controller.control(e.issue_id, "pause"));
+  await run(f.controller.supervise());
+  assert.equal(f.runtime.prompts, count + 1);
+});
 
 test("busy polls don't reset progress; one stall prompt is retained across restart until handled", async (t) => {
   const f = await run(fixture);
@@ -251,6 +411,43 @@ test("diagnostic message provenance cannot authorize lifecycle changes, and paus
     Id.MessageId.make("msg_foreground-assistant"),
     Id.MessageId.make("msg_user-request"),
   );
+  const tools = new Map<string, Tool.Info>();
+  const editor: ToolEditor = {
+    list: () => [],
+    get: () => undefined,
+    namespace: () => {},
+    remove: () => {},
+    update: () => {},
+    add: (tool) => {
+      tools.set(tool.name, tool);
+    },
+  };
+  const ctx = {
+    tool: {
+      transform: (transform: (editor: ToolEditor) => void) => Effect.sync(() => transform(editor)),
+    },
+  } as unknown as Context;
+  await run(
+    registerTools(
+      ctx,
+      f.controller,
+      f.onboarding,
+      true,
+      f.setup,
+      undefined,
+      new ConfigApplication(f.config, f.records, f.onboarding),
+    ),
+  );
+  const invoke = (name: string, input: object) =>
+    run(
+      tools.get(name)!.execute(input, {
+        sessionID: Id.SessionId.make("ses_supervisor"),
+        agent: Agent.ID.make("abra"),
+        messageID: Id.MessageId.make("msg_diagnostic-assistant"),
+        id: Tool.CallID.make("call_diagnostic"),
+        progress: () => Effect.void,
+      }),
+    );
   for (const tool of [
     "work_start",
     "work_control",
@@ -259,37 +456,17 @@ test("diagnostic message provenance cannot authorize lifecycle changes, and paus
     "project_setup",
     "work_create",
   ])
-    await assert.rejects(
-      run(
-        f.controller.guardAttention(
-          Id.SessionId.make("ses_supervisor"),
-          Id.MessageId.make("msg_diagnostic-assistant"),
-          tool,
-        ),
-      ),
-      /diagnostic turn/,
-    );
-  await run(
-    f.controller.guardAttention(
-      Id.SessionId.make("ses_supervisor"),
-      Id.MessageId.make("msg_diagnostic-assistant"),
-      "work_diagnostics",
-    ),
-  );
-  await run(
-    f.controller.guardAttention(
-      Id.SessionId.make("ses_supervisor"),
-      Id.MessageId.make("msg_diagnostic-assistant"),
-      "work_correct",
-    ),
-  );
+    await assert.rejects(invoke(tool, {}), /diagnostic turn/);
   await run(
     f.controller.guardAttention(
       Id.SessionId.make("ses_supervisor"),
       Id.MessageId.make("msg_foreground-assistant"),
-      "work_control",
+      false,
     ),
   );
+  await invoke("config", { action: "status" });
+  await assert.rejects(invoke("config", { action: "apply" }), /diagnostic turn/);
+  await invoke("work_diagnostics", { issue_id: e.issue_id });
   await run(f.controller.control(e.issue_id, "pause"));
   assert.equal((await run(f.controller.get(e.issue_id))).attention![0].status, "superseded");
   await assert.rejects(
@@ -297,7 +474,7 @@ test("diagnostic message provenance cannot authorize lifecycle changes, and paus
       f.controller.guardAttention(
         Id.SessionId.make("ses_supervisor"),
         Id.MessageId.make("msg_diagnostic-assistant"),
-        "work_control",
+        false,
       ),
     ),
     /diagnostic turn/,

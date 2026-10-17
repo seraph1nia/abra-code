@@ -1,0 +1,32 @@
+# Tasks
+
+## 1. Shared evidence contracts and outcome projection
+
+- [x] 1.1 Add schema-owned independent approval/delivery/cleanup/closure output states and optional retained cleanup-blocker evidence, including identity, path limits, observation times, completeness and retry scheduling. Verify contract tests accept supported older records without inventing diagnostics and reject malformed additions without rewriting evidence.
+- [x] 1.2 Implement one read-only outcome projection from retained receipts, captured policy, retirement and actual graph status. Verify unit cases for pending/accepted approval, unconfirmed merge, verified delivery with open issue, branch/research preservation, missing evidence and restart reconstruction; assert projection performs no lifecycle or native mutations.
+- [x] 1.3 Document ownership of the new retained evidence and derived output in `docs/architecture.md` and `docs/recovery.md`; verify the documented contract distinguishes observation time from receipt time and does not introduce a second lifecycle authority.
+
+## 2. Independent approval and bounded contention outcomes
+
+- [x] 2.1 Change merge approval collection in `advancement.ts` to return after receipt persistence, preserving pending form identity and plan-approval behavior; make matching accepted receipts idempotent in `cleaning` and `completed`. Verify delivery-wait/approval tests assert no inline merge or retirement, one form, unchanged exact-content authorization and subsequent automatic progress through reconciliation, including restart and pending CI.
+- [x] 2.2 Distinguish genuine execution-lock acquisition contention from helper/IO/body failures in the lock/operation boundary and return a typed unexecuted-action observation for explicit approval/finish. Extend real-lock coordination tests with manual/reconciliation races and an unrelated ticket; assert prompt bounded return, no overwritten intent, no duplicate form/mutation and `performed: false` even when retained owner details are unavailable.
+- [x] 2.3 Extend `work_approve`/`work_finish` output schemas and tool mapping with compatible existing result fields, optional `outcome` and the new busy branch; keep genuine rejection/defect/cancellation channels. Verify `tool-contracts.test.ts` covers structured output/content agreement, stale/rejected approval, lock-helper failure, downstream lock errors and no fabricated successful requested action.
+- [x] 2.4 Update tool descriptions, `docs/operations.md` and orchestration guidance to explain receipt-only merge approval, automatic delivery and observation after busy results. Verify every documented result/next action matches the declared output schema and never implies a busy request was queued or another server was identified.
+
+## 3. Actionable cleanup blockers and safe continuation
+
+- [x] 3.1 Add bounded NUL-safe remaining-path inspection in the retirement boundary, returning typed ordinary post-preservation ignored/untracked residue while retaining unsafe/error classifications. Extend `retirement.test.ts` for mixed files, directory samples, whitespace/newline/shell filenames, truncation, output/read failures, unsafe links and tracked drift; assert unknown content is preserved, diagnostics contain no file contents, and native removal is never called on blockers.
+- [x] 3.2 Persist cleanup-blocker observations through a shared finalization path used by explicit finish and reconciliation; retain `cleaning`, preservation receipts, claim and open graph status. Verify both entry points produce matching blocked outcomes rather than generic recovery, and negative cases for pre-preservation drift, changed ownership, unavailable preservation and uncertain native removal remain failed.
+- [x] 3.3 Add bounded cleanup reinspection/backoff and deduplicated attention keyed to stable blocker evidence. Verify controlled-clock tests cover the 30-second to five-minute schedule, unchanged polls without extra diagnostic turns, explicit finish bypass, changed evidence and pause suppression; update `docs/recovery.md` with the resulting retry behavior.
+- [x] 3.4 Implement fresh cleanup-only continuation after explicit file disposition and clear resolved diagnostics/attention without repeating merge. Verify restart and retirement tests cover changed paths, existing non-force native removal, closure only after confirmed absence, replacement-directory refusal, unchanged captured generated-path authority and no automatic resume of legacy unsafe recovery records; document the inspect/preserve-or-explicitly-remove/finish procedure.
+
+## 4. Consistent Supervisor and native ticket presentation
+
+- [x] 4.1 Expose the shared outcome and bounded cleanup evidence through status and native detail protocol/read-model projection. Extend visibility and contract tests to compare tool/detail states after approval, busy operation, preserved delivery, blocked cleanup and closure; verify separate requests observe newer commits and unavailable reads preserve valid evidence.
+- [x] 4.2 Update native presentation and detail views to show approval, delivery, cleanup and closure independently, including retained paths, truncation, snapshot freshness and next action. Verify native renderer/visibility coverage for narrow layout, stale/offline views, pending external confirmation, branch/research labels and blocked cleanup without a false failed-merge or closed-issue label.
+- [x] 4.3 Align Supervisor orchestration/recovery guidance and user-facing examples in `docs/operations.md` with the new outcomes. Verify the examples lead with committed stage evidence, reserve unsafe recovery for actual unsafe conditions and direct cleanup to the owned worktree without broad deletion commands.
+
+## 5. End-to-end acceptance and required validation
+
+- [x] 5.1 Extend the native end-to-end fixture with answered merge approval racing reconciliation, a fake-forge merge and ignored residue. Verify native successful classified results, at most one merge, durable receipt-only approval, consistent status/detail after restart, and cleanup-only finish reaching closure after fixture-owned file disposition; use only temporary repositories and fake/local remotes. Update `docs/testing.md` with this acceptance coverage.
+- [x] 5.2 Run `pnpm check`, `pnpm test` and `pnpm test:e2e`, plus `pnpm exec openspec validate improve-delivery-outcome-reporting --strict`; verify all pass, record any unrelated baseline failures separately, and confirm no test pushes to a user remote.

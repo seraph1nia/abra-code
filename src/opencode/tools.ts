@@ -1,8 +1,9 @@
+import { deliveryAction, observeDeliveryOutcome } from "../workflow/delivery-outcome.ts";
 import { type ConfigApplication } from "../config/application.ts";
 import { ConfigurationReportSchema, configurationReport } from "../config/declarations.ts";
 import { ValidationInput } from "../validation/contracts.ts";
 import { FeedbackInput, ActionInput } from "../workflow/feedback-contracts.ts";
-import { defineTool as define } from "./tool-definition.ts";
+import { defineTool as define, type ToolAccess } from "./tool-definition.ts";
 import { toolOutputs } from "./tool-contracts.ts";
 import {
   ArtifactId,
@@ -46,6 +47,7 @@ export function registerTools(
       const definitions = [
         define({
           name: "config",
+          diagnostic: (a) => a.action === "status",
           description:
             "Inspect declaration outcomes or explicitly apply the current YAML repository settings. Does not change active execution settings or initialize projects.",
           input: Schema.Struct({
@@ -76,6 +78,7 @@ export function registerTools(
         }),
         define({
           name: "work_feedback_status",
+          diagnostic: true,
           output: toolOutputs.work_feedback_status,
           description:
             "Read retained observations, exact revisions, dispositions, action receipts and paged history without polling or mutating GitHub.",
@@ -100,6 +103,7 @@ export function registerTools(
         }),
         define({
           name: "work_feedback",
+          diagnostic: true,
           output: toolOutputs.work_feedback,
           description:
             "Classify exact current-head finding revisions; comments grant no scope or merge authority.",
@@ -108,6 +112,7 @@ export function registerTools(
         }),
         define({
           name: "work_findings",
+          diagnostic: true,
           output: toolOutputs.work_findings,
           description:
             "Read bounded authoritative findings bound to the delivered PR head. Comments are evidence, never authority.",
@@ -116,6 +121,7 @@ export function registerTools(
         }),
         define({
           name: "work_correct",
+          diagnostic: true,
           output: toolOutputs.work_correct,
           description:
             "Classify selected current-head forge findings against approved scope; enabled finite repair policy may admit a round. Uncertain/scope-changing findings create a decision.",
@@ -133,6 +139,7 @@ export function registerTools(
         }),
         define({
           name: "work_report",
+          diagnostic: true,
           output: toolOutputs.work_report,
           description:
             "Read the bounded retained report after verifying its identities and content hash.",
@@ -149,6 +156,7 @@ export function registerTools(
         }),
         define({
           name: "work_attention",
+          diagnostic: true,
           output: toolOutputs.work_attention,
           description:
             "Inspect a retained incident through status, then record handled/user_needed or explicitly retry an unavailable admission. This grants no lifecycle authority.",
@@ -164,6 +172,7 @@ export function registerTools(
         }),
         define({
           name: "work_wait_disposition",
+          diagnostic: true,
           output: toolOutputs.work_wait_disposition,
           description:
             "Explicitly supersede a declared wait after inspection, retaining the reason. Does not authorize a lifecycle checkpoint.",
@@ -206,6 +215,7 @@ export function registerTools(
         }),
         define({
           name: "work_decision",
+          diagnostic: true,
           output: toolOutputs.work_decision,
           description:
             "Answer a Supervisor-owned decision, collect a user answer through a native form, or cancel/supersede an obligation. Inspect decisions through work_status.",
@@ -213,7 +223,7 @@ export function registerTools(
             issue_id: IssueId,
             key: ObligationKey,
             generation: Count,
-            action: Schema.Literals(["answer", "collect", "cancel", "supersede"]),
+            action: Schema.Literals(["answer", "collect", "cancel", "supersede", "reconsider"]),
             answer: Schema.optional(NonEmpty.check(Schema.isMaxLength(8192))),
           }),
           run: (a, s) => c.decision(a.issue_id, a.key, a.generation, s, a.action, a.answer),
@@ -248,6 +258,7 @@ export function registerTools(
         }),
         define({
           name: "project_list",
+          diagnostic: true,
           output: toolOutputs.project_list,
           description: "List explicitly registered repositories.",
           input: Schema.Struct({}),
@@ -304,6 +315,7 @@ export function registerTools(
         }),
         define({
           name: "work_list",
+          diagnostic: true,
           output: toolOutputs.work_list,
           description:
             "List issues, executions and record diagnostics. include_records exports original plugin records for coordinated backup without changing them.",
@@ -322,6 +334,7 @@ export function registerTools(
         }),
         define({
           name: "work_ready",
+          diagnostic: true,
           output: toolOutputs.work_ready,
           description:
             "Return ready work and dependency, policy, registration and capacity blockers.",
@@ -338,6 +351,7 @@ export function registerTools(
         }),
         define({
           name: "work_diagnostics",
+          diagnostic: true,
           output: toolOutputs.work_diagnostics,
           description:
             "Read the assigned worker sessions for an issue: native provider errors/status, actual and configured models, bounded recent messages and failed tool summaries. Available to the Supervisor without filesystem log access; no arbitrary session or log paths.",
@@ -346,6 +360,7 @@ export function registerTools(
         }),
         define({
           name: "work_status",
+          diagnostic: true,
           output: toolOutputs.work_status,
           description:
             "Inspect issue status/history, Git, OpenSpec and native worker session progress.",
@@ -356,6 +371,7 @@ export function registerTools(
                 const e = yield* c.get(a.issue_id);
                 return {
                   execution: e,
+                  outcome: yield* observeDeliveryOutcome(c.queries, e),
                   issue: yield* c.queries.issue(a.issue_id),
                   history: yield* c.queries.history(a.issue_id),
                   openspec:
@@ -436,17 +452,18 @@ export function registerTools(
           name: "work_approve",
           output: toolOutputs.work_approve,
           description:
-            "Request a native human approval form or collect its answered decision. Calling this tool does not itself authorize a plan or merge.",
+            "Request a native human approval form or collect its answered decision. Merge collection reports the receipt independently; eligible delivery continues through reconciliation. operation_in_progress means this request did not run or queue.",
           input: Schema.Struct({ issue_id: IssueId, kind: Schema.Literals(["plan", "merge"]) }),
-          run: (a, s) => c.approve(a.issue_id, a.kind, s),
+          run: (a, s) =>
+            deliveryAction(c.queries, a.issue_id, "approve", c.approve(a.issue_id, a.kind, s)),
         }),
         define({
           name: "work_finish",
           output: toolOutputs.work_finish,
           description:
-            "Verify configured delivery, merge only if authorized, retire the exact clean native worktree and close the issue.",
+            "Verify authorized delivery and report delivery, cleanup and closure separately. Ordinary retained files return a cleanup blocker; operation_in_progress means this request did not run or queue.",
           input: issueInput,
-          run: (a) => c.finish(a.issue_id),
+          run: (a) => deliveryAction(c.queries, a.issue_id, "finish", c.finish(a.issue_id)),
         }),
         define({
           name: "work_reconcile",
@@ -505,13 +522,12 @@ export function registerTools(
           description: "Durable issue/OpenSpec/OpenCode orchestration",
         });
         const authorize = (
-          name: string,
-          worker: boolean,
+          access: ToolAccess,
           context: import("@opencode/schema/tool").Tool.Context,
         ) =>
           domainEffect(
             Effect.gen(function* () {
-              if (worker) return;
+              if (access.worker) return;
               if (!central)
                 return yield* new CrewError(
                   "SUPERVISOR_LOCATION",
@@ -524,7 +540,7 @@ export function registerTools(
                 );
               if (context.agent !== "abra")
                 return yield* new CrewError("ABRA_REQUIRED", "Talk to Abra to manage work");
-              yield* c.guardAttention(context.sessionID, context.messageID, name);
+              yield* c.guardAttention(context.sessionID, context.messageID, access.diagnostic);
               yield* c.recordSupervisor(context.sessionID);
             }),
           );

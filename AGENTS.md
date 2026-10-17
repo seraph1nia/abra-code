@@ -11,4 +11,4 @@ Workflow references:
 - [Onboarding](.agents/skills/project-onboarding/SKILL.md): inspect and explicitly register repositories.
 - [Recovery](.agents/skills/recovery/SKILL.md): reconcile incomplete executions.
 
-For work on this orchestrator, run `pnpm check`, `pnpm test`, and `pnpm test:e2e`. Tests use temporary repositories and must never push to user remotes. Consult [API evidence](docs/supported-apis.md) before changing native integrations. Keep lifecycle gates in the controller, not solely in prompts.
+For work on this orchestrator, run `pnpm check`, `pnpm test`, and `pnpm test:e2e`. Tests use temporary repositories and must never push to user remotes. Use the [verification recipe](docs/verification/README.md) for disposable native journeys and retained evidence. Consult [API evidence](docs/supported-apis.md) before changing native integrations. Keep lifecycle gates in the controller, not solely in prompts.

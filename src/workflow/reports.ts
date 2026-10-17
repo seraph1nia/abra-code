@@ -12,6 +12,7 @@ import { mkdir, lstat, open, pathExists, readFile, realpath, rename, rm } from "
 import { type Git } from "../git/repository.ts";
 import { type Locks } from "../storage/lock.ts";
 import { ReportInputSchema, type ReportReceiptSchema } from "./report-contracts.ts";
+import { isActiveWorker } from "./worker-assignment.ts";
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 export class Reports {
   constructor(
@@ -55,10 +56,7 @@ export class Reports {
               if (
                 !(
                   e.workflow_policy === "research-only" &&
-                  e.current_phase === "researching" &&
-                  e.active_role === "research" &&
-                  !e.stop_status &&
-                  e.control_generation === a.generation &&
+                  isActiveWorker(e, session, { role: "research", generation: a.generation }) &&
                   e.scope
                 )
               )

@@ -15,6 +15,7 @@ import { createExecution } from "../workflow/execution.ts";
 
 import { Clock, Effect } from "effect";
 import { inputFingerprint } from "../workflow/operations.ts";
+import { observePreflight } from "../workflow/finishing-readiness.ts";
 import { domainEffect } from "../effect.ts";
 
 import { randomUUID } from "node:crypto";
@@ -47,6 +48,32 @@ interface SetupDependencies {
 // Setup has native resources and delivery checkpoints, but is not a WorkGraph execution.
 export class ProjectSetup {
   constructor(private c: SetupDependencies) {}
+  private readiness = Effect.fn("ProjectSetup.readiness")(
+    function* (this: ProjectSetup, p: import("../domain.ts").Project, e: SetupExecution) {
+      for (const session of [
+        e.explore_session_id,
+        e.apply_session_id,
+        e.review_session_id,
+        e.research_session_id,
+      ])
+        if (session && (yield* this.c.runtime.session(session)).busy)
+          return yield* new CrewError(
+            "WRITER_BUSY",
+            "An active or queued writer prevents setup merge",
+          );
+      const observation = yield* observePreflight(this.c.git, this.c.workspaces, p, e);
+      e.finishing = { ...e.finishing, schema_version: 1, preflight: observation };
+      yield* this.save(e);
+      if (observation.status !== "ready")
+        return yield* new CrewError(
+          "CLEANUP_PREFLIGHT",
+          `Setup merge waits for retained-file disposition: ${JSON.stringify(observation.paths)}${observation.truncated ? " (incomplete sample)" : ""}`,
+        );
+      if (e.archived_tree !== (yield* this.c.git.tree(e.worktree_directory!)))
+        return yield* new CrewError("SETUP_CHANGED", "Prepared setup tree changed before merge");
+    }.bind(this),
+    domainEffect,
+  );
   private save = Effect.fn("ProjectSetup.save")(
     function* (this: ProjectSetup, e: SetupExecution) {
       e.updated_at = yield* timestamp;
@@ -289,6 +316,17 @@ export class ProjectSetup {
         )
           return yield* new CrewError("SETUP_CHANGED", "Delivered setup worktree changed");
         if (action === "approve") {
+          const pr = yield* this.c.delivery.inspect(p, e);
+          if (
+            !(
+              pr &&
+              pr.url === e.pull_request_reference &&
+              pr.headRefOid === e.delivered_commit &&
+              pr.baseRefName === e.target_branch
+            )
+          )
+            return yield* new CrewError("PR_HEAD", "Setup PR identity changed before approval");
+          yield* this.readiness(p, e);
           if (!(p.delivery === "github-pr"))
             return yield* new CrewError(
               "DELIVERY_POLICY",
@@ -342,7 +380,8 @@ export class ProjectSetup {
               "MERGE_APPROVAL",
               "Human authorization is required before setup merge",
             );
-          const result = yield* this.c.delivery.merge(p, e);
+          yield* this.readiness(p, e);
+          const result = yield* this.c.delivery.merge(p, e, undefined, () => this.readiness(p, e!));
           if (result.category !== "completed") {
             e.error_or_recovery_reason = result.reason;
             return yield* this.save(e);
@@ -352,7 +391,14 @@ export class ProjectSetup {
         e.current_phase = "cleaning";
         yield* this.save(e);
       }
-      yield* this.c.workspaces.retire(p, e, () => this.save(e!));
+      const blocker = yield* this.c.workspaces.retire(p, e, () => this.save(e!));
+      if (blocker)
+        return yield* new CrewError(
+          blocker.paths.some((path) => path.category === "untracked")
+            ? "DIRTY_WORKTREE"
+            : "IGNORED_WORK",
+          `Setup cleanup blocked; preserve retained paths ${JSON.stringify(blocker.paths).slice(0, 4096)}${blocker.truncated ? " (truncated sample)" : ""} before retrying setup finish`,
+        );
       // A preserved branch alone does not make the default branch ready for normal work.
       const base = yield* this.c.sources.fetch(
         p.path,

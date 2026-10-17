@@ -34,6 +34,17 @@ Explore SHALL edit only its assigned planning change and SHALL have no delegatio
 - **WHEN** a previously assigned session invokes a tool after another session owns the active role
 - **THEN** the invocation is rejected even if the historical session retains valid context records
 
+#### Scenario: Apply updates repository guidance
+
+- **WHEN** the current Apply worker edits a repository `AGENTS.md` within its owned worktree and approved scope
+- **THEN** native file tools permit the edit without granting controller authority
+- **AND** worktree containment, `.git` and `.opencode` protection, planning-only Explore writes and read-only Review/Research restrictions remain effective
+
+#### Scenario: Worker ownership checks agree across entry points
+
+- **WHEN** a prompt, native tool call, context observation or worker report identifies a stopped, replaced, wrong-role or wrong-phase worker, or supplies a stale generation
+- **THEN** the shared assignment policy rejects that operation at its existing validation point
+
 #### Scenario: Worker requests delivery through a capability declaration
 
 - **WHEN** a worker profile declares a required management or delivery tool
@@ -63,3 +74,13 @@ Worker configuration SHALL accept optional required skill identifiers and requir
 
 - **WHEN** a required skill describes a browser workflow but browser tools are not allowed for the role
 - **THEN** loading the skill does not enable a browser tool and an explicit forbidden tool requirement is rejected
+
+### Requirement: Tool definitions declare diagnostic eligibility
+
+Management tool definitions SHALL own their diagnostic eligibility, defaulting to denied and permitting action-specific predicates. Attention provenance SHALL continue to distinguish automatic diagnostic turns from explicit user requests. The registration wrapper MUST enforce diagnostic eligibility and central Supervisor identity before invoking a tool handler. Diagnostic eligibility MUST NOT authorize lifecycle checkpoints or bypass endpoint-specific correction, approval or delivery gates.
+
+#### Scenario: Diagnostic turn inspects configuration
+
+- **WHEN** an automatic diagnostic turn invokes configuration status inspection
+- **THEN** the tool definition permits inspection
+- **AND** applying configuration or invoking ordinary lifecycle controls is rejected before its handler runs

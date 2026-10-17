@@ -13,11 +13,12 @@ import { readFile, realpath } from "../filesystem.ts";
 import { resolve, dirname, isAbsolute, sep } from "node:path";
 import { CrewError, type Execution, type Role } from "../domain.ts";
 import { type Controller } from "../workflow/controller.ts";
+import { isActiveWorker, historicalWorkers } from "../workflow/worker-assignment.ts";
 export function workerFor(controller: Controller, sessionID: SessionId) {
   return controller.queries.assignment(sessionID);
 }
 export function roleFor(e: Execution, id: SessionId): Role {
-  const retained = e.rounds?.flatMap((r) => r.worker_sessions ?? []).find((s) => s.id === id);
+  const retained = historicalWorkers(e).find((s) => s.id === id);
   if (retained) return retained.role;
   return e.research_session_id === id
     ? "research"
@@ -40,10 +41,7 @@ export function requireOwnedPrompt(
   if (
     e.prompt_id !== message ||
     e.worker_context_id !== message ||
-    e.active_role !== role ||
-    e[`${role}_session_id`] !== session ||
-    e.stop_status ||
-    !["exploring", "planning", "applying", "verifying", "researching"].includes(e.current_phase)
+    !isActiveWorker(e, session, { role })
   )
     throw new CrewError(
       "WORKER_PROMPT_ONLY",
@@ -185,15 +183,7 @@ export function installGuards(
             const role = roleFor(e, event.sessionID);
             if (!permittedTools(role).has(ToolName.make(event.tool)))
               return yield* new CrewError("WORKER_TOOL", `${role} cannot use ${event.tool}`);
-            if (
-              !(
-                e.active_role === role &&
-                e[`${role}_session_id`] === event.sessionID &&
-                ["exploring", "planning", "applying", "verifying", "researching"].includes(
-                  e.current_phase,
-                )
-              )
-            )
+            if (!isActiveWorker(e, event.sessionID, { role }))
               return yield* new CrewError(
                 "INACTIVE_WORKER",
                 "Worker no longer owns an active workflow phase",
@@ -231,7 +221,7 @@ export function installGuards(
                   ? AbsolutePath.make(file)
                   : AbsolutePath.make(resolve(e.worktree_directory!, file));
                 yield* contained(absolute, root);
-                if (protectedControlPath(absolute, e.worktree_directory!))
+                if (protectedControlPath(absolute, e.worktree_directory!, role))
                   return yield* new CrewError(
                     "CONTROL_FILE",
                     "Worker cannot modify orchestration/permission files",

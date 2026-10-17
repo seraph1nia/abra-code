@@ -5,7 +5,12 @@ import { verifiedSpec } from "./helpers/spec-review.ts";
 import { decode } from "../src/decode.ts";
 import { ConfigSchema } from "../src/config/contracts.ts";
 import { SpecStatusSchema, ApplyStatusSchema, OpenSpec } from "../src/openspec/adapter.ts";
-import { type QuestionAnswer, type Runtime, type SessionState } from "../src/opencode/runtime.ts";
+import {
+  type DispositionAnswer,
+  type QuestionAnswer,
+  type Runtime,
+  type SessionState,
+} from "../src/opencode/runtime.ts";
 import * as Id from "../src/identities.ts";
 import { domainEffect } from "../src/effect.ts";
 import { Effect, Semaphore } from "effect";
@@ -430,6 +435,16 @@ export class FakeRuntime implements Runtime {
     return domainEffect(Effect.sync(() => {}));
   }
   questions = new Map<Id.FormId, QuestionAnswer>();
+  dispositions = new Map<Id.FormId, DispositionAnswer>();
+  requestDisposition(_session: Id.SessionId, id: Id.FormId) {
+    return Effect.sync(() => {
+      if (!this.dispositions.has(id)) this.dispositions.set(id, { status: "pending" });
+      return id;
+    });
+  }
+  disposition(_session: Id.SessionId, id: Id.FormId) {
+    return Effect.sync(() => this.dispositions.get(id) ?? { status: "pending" as const });
+  }
   requestQuestion(_session: Id.SessionId, id: Id.FormId) {
     return Effect.sync(() => {
       if (!this.questions.has(id)) this.questions.set(id, { status: "pending" });
@@ -469,6 +484,7 @@ export class FakeDelivery implements Delivery {
     function* (this: FakeDelivery, _p: Project, e: ManagedExecution) {
       this.calls++;
       const commit = yield* this.git.commit(e.worktree_directory!, e.issue_id);
+      yield* this.git.run(e.worktree_directory!, ["push", "origin", e.branch]);
       this.pr ??= {
         url: Id.PullRequestUrl.make("https://example.invalid/fixture/api/pull/1"),
         state: "OPEN",

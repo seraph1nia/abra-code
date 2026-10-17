@@ -1,3 +1,4 @@
+import { historicalWorkers } from "./worker-assignment.ts";
 import { loadConfig } from "../config/load.ts";
 import { declarationDigest } from "../config/declarations.ts";
 import { workerProfile } from "../config/snapshot.ts";
@@ -87,9 +88,7 @@ export class Queries {
               (error) => new CrewError("WORKER_UNAVAILABLE", diagnosticText(error.message)),
             ),
           );
-        const historical = execution.rounds
-          ?.flatMap((round) => round.worker_sessions ?? [])
-          .find((worker) => worker.id === session);
+        const historical = historicalWorkers(execution).find((worker) => worker.id === session);
         const role =
           historical?.role ??
           (["explore", "apply", "review", "research"] as const).find(
@@ -124,7 +123,7 @@ export class Queries {
               e.review_session_id,
               e.research_session_id,
               e.session_intent?.id,
-              ...(e.rounds?.flatMap((r) => r.worker_sessions?.map((s) => s.id) ?? []) ?? []),
+              ...historicalWorkers(e).map((s) => s.id),
             ].includes(sessionID),
           ),
         ),

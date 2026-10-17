@@ -3,10 +3,10 @@ import { AbsolutePath, Timestamp, timestamp, ExecutionId, IssueId } from "../ide
 
 import { ScopeDraftSchema, ReportReferenceSchema } from "./scope.ts";
 import { Effect, Schema } from "effect";
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { dirname, join } from "node:path";
-import { exists, mkdir } from "../filesystem.ts";
+import { dirname } from "node:path";
+import { mkdir } from "../filesystem.ts";
 import { CrewError, ensure, identifier, type Config } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 
@@ -22,34 +22,16 @@ import {
 export type { NewIssue, ReadyExplanation } from "./model.ts";
 
 export const WorkEventSchema = Schema.Struct({
-  kind: Schema.Literals([
-    "created",
-    "claimed",
-    "open",
-    "in_progress",
-    "blocked",
-    "closed",
-    "imported",
-  ]),
-  actor: Schema.Union([Schema.Literals(["supervisor", "migration"]), ExecutionId]),
+  kind: Schema.Literals(["created", "claimed", "open", "in_progress", "blocked", "closed"]),
+  actor: Schema.Union([Schema.Literal("supervisor"), ExecutionId]),
   reason: Schema.String,
   at: Timestamp,
 });
 export type WorkEvent = typeof WorkEventSchema.Type;
 
-/** Shared startup/doctor/plugin preflight: never silently replace an existing work graph. */
-export function openWorkGraph(config: Pick<Config, "home" | "work_database">) {
-  return domainEffect(
-    Effect.gen(function* () {
-      const work = yield* SqliteWorkGraph.open(config.work_database);
-      if (!(!(yield* exists(join(config.home, ".beads"))) || (yield* work.hasImport())))
-        return yield* new CrewError(
-          "WORK_MIGRATION_REQUIRED",
-          "Existing Beads data needs import before startup. Stop the old service, export with bd export, then run pnpm work:import <export.jsonl>. The old data is retained.",
-        );
-      return work;
-    }),
-  );
+/** Open the configured SQLite work graph. */
+export function openWorkGraph(config: Pick<Config, "work_database">) {
+  return domainEffect(SqliteWorkGraph.open(config.work_database));
 }
 /** All ownership checks and writes are atomic, including across independent processes. */
 export interface WorkGraph {
@@ -122,17 +104,7 @@ export class SqliteWorkGraph implements WorkGraph {
             at TEXT NOT NULL
           );
           CREATE INDEX IF NOT EXISTS work_events_issue ON work_events(issue_id, sequence);
-          CREATE TABLE IF NOT EXISTS imports (digest TEXT PRIMARY KEY, source TEXT NOT NULL);
         `);
-          if (
-            version === 1 &&
-            !db
-              .prepare("PRAGMA table_info(imports)")
-              .all()
-              .some((column) => column.name === "source")
-          ) {
-            db.exec("ALTER TABLE imports ADD COLUMN source TEXT NOT NULL DEFAULT ''");
-          }
           const columns = db.prepare("PRAGMA table_info(issues)").all();
           if (!columns.some((c) => c.name === "scope_json"))
             db.exec("ALTER TABLE issues ADD COLUMN scope_json TEXT");
@@ -353,65 +325,5 @@ export class SqliteWorkGraph implements WorkGraph {
         .all(id)
         .map((row) => Schema.decodeUnknownSync(WorkEventSchema)(row));
     });
-  }
-
-  hasImport() {
-    return sqlEffect(() => !!this.db.prepare("SELECT 1 FROM imports LIMIT 1").get());
-  }
-
-  /** Import a complete, validated snapshot atomically; a repeated export is a no-op. */
-  importIssues(issues: readonly Issue[], source: string) {
-    return sqlEffect((at) =>
-      this.transaction(() => {
-        const digest = createHash("sha256").update(source).digest("hex");
-        if (this.db.prepare("SELECT 1 FROM imports WHERE digest = ?").get(digest)) {
-          // Backfill export evidence for a receipt from the early schema.
-          this.db
-            .prepare("UPDATE imports SET source = ? WHERE digest = ? AND source = ''")
-            .run(source, digest);
-          return 0;
-        }
-        for (const issue of issues) {
-          decodeIssue(issue);
-          ensure(
-            issue.priority >= 0 && issue.priority <= 4,
-            "ISSUE_PRIORITY",
-            "Priority must be an integer from 0 to 4",
-          );
-          this.insert(
-            issue,
-            JSON.stringify({
-              repository_id: issue.repository_id,
-              title: issue.title.trim(),
-              description: issue.description.trim(),
-              priority: issue.priority,
-              dependencies: [...issue.dependencies].sort(),
-              request_id: issue.request_id,
-            }),
-          );
-        }
-        const link = this.db.prepare(
-          "INSERT INTO dependencies (issue_id, dependency_id) VALUES (?, ?)",
-        );
-        for (const issue of issues) {
-          for (const dependency of issue.dependencies) link.run(issue.id, identifier(dependency));
-          this.event(issue.id, "imported", "migration", at);
-        }
-        const graph = new Map(this.issues().map((issue) => [issue.id, issue.dependencies]));
-        const visited = new Set<IssueId>(),
-          active = new Set<IssueId>();
-        const visit = (id: IssueId) => {
-          ensure(!active.has(id), "DEPENDENCY_CYCLE", `Dependency cycle at ${id}`);
-          if (visited.has(id)) return;
-          active.add(id);
-          for (const dependency of graph.get(id) ?? []) visit(dependency);
-          active.delete(id);
-          visited.add(id);
-        };
-        for (const id of graph.keys()) visit(id);
-        this.db.prepare("INSERT INTO imports (digest, source) VALUES (?, ?)").run(digest, source);
-        return issues.length;
-      }),
-    );
   }
 }

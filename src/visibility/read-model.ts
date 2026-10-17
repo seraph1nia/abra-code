@@ -1,7 +1,9 @@
+import { historicalWorkers } from "../workflow/worker-assignment.ts";
+import { deliveryOutcome } from "../workflow/delivery-outcome.ts";
 import { actionable } from "../workflow/feedback-contracts.ts";
 import { RelativePath, IssueId, timestamp } from "../identities.ts";
 
-import { Effect, Schema } from "effect";
+import { Clock, Effect, Schema } from "effect";
 import { domainEffect } from "../effect.ts";
 import { CrewError, identifier, type Execution } from "../domain.ts";
 
@@ -16,12 +18,7 @@ function sessions(e?: Execution): WorkItem["sessions"] {
     return id ? [{ id, role }] : [];
   });
   return [
-    ...new Map(
-      [...(e?.rounds?.flatMap((r) => r.worker_sessions ?? []) ?? []), ...current].map((s) => [
-        s.id,
-        s,
-      ]),
-    ).values(),
+    ...new Map([...(e ? historicalWorkers(e) : []), ...current].map((s) => [s.id, s])).values(),
   ];
 }
 function supervision(e?: Execution) {
@@ -236,6 +233,13 @@ export class Visibility {
               error: diagnostic.message,
             });
         }
+        const observedAt = yield* Clock.currentTimeMillis;
+        for (const item of work) {
+          const execution = executions.find((e) => e.issue_id === item.issue_id);
+          const issue = issues.find((i) => i.id === item.issue_id);
+          if (execution)
+            Object.assign(item, { outcome: deliveryOutcome(execution, issue?.status, observedAt) });
+        }
         work.sort(
           (a, b) =>
             Number(!a.phase) - Number(!b.phase) ||
@@ -289,6 +293,10 @@ export class Visibility {
         eligible: false,
         blockers: [],
       };
+      if (e && !work.outcome)
+        Object.assign(work, {
+          outcome: deliveryOutcome(e, issue.status, yield* Clock.currentTimeMillis),
+        });
       const result: {
         -readonly [K in keyof WorkDetail]: WorkDetail[K];
       } & {

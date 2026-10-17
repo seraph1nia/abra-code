@@ -1,3 +1,4 @@
+import { deliveryOutcomeLines } from "../workflow/delivery-outcome.ts";
 import { FeedbackView } from "./feedback-view.ts";
 import { Show } from "solid-js";
 import { type Context, type PanelInput } from "@opencode/plugin/tui/context";
@@ -63,6 +64,14 @@ export function TicketView(
         }),
         text(ctx, () => `Ticket status: ${work().issue_status} · Priority ${work().priority}`),
         text(ctx, () => `Workflow phase: ${phaseLabel(work().phase)}`),
+        text(
+          ctx,
+          () =>
+            work().outcome
+              ? deliveryOutcomeLines(work().outcome!).join("\n")
+              : "Delivery evidence unavailable",
+          true,
+        ),
         text(
           ctx,
           () => {

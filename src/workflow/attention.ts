@@ -20,6 +20,14 @@ import { type Locks } from "../storage/lock.ts";
 import { type Attention } from "./attention-contracts.ts";
 import { workerSessionID } from "./sessions.ts";
 const hash = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 40);
+const decisionKey = (generation: number, key: string) => `decision:${generation}:${hash(key)}`;
+const hasDecision = (e: Execution, a: Attention) =>
+  e.decisions?.some(
+    (d) =>
+      d.status === "open" &&
+      d.generation === e.control_generation &&
+      decisionKey(d.generation, d.key) === a.key,
+  );
 const paused = (e: Execution) =>
   e.stop_status !== undefined ||
   e.current_phase === "interrupted" ||
@@ -34,30 +42,19 @@ export class AttentionService {
     private locks: Locks,
   ) {}
   guard = Effect.fn("Attention.guard")(
-    function* (this: AttentionService, session: SessionId, message: MessageId, tool: string) {
+    function* (
+      this: AttentionService,
+      session: SessionId,
+      message: MessageId,
+      diagnosticAllowed: boolean,
+    ) {
       const owned = (yield* this.records.executions())
         .flatMap((e) => e.attention ?? [])
         .filter((a) => a.session_id === session && a.prompt_id);
       if (!owned.length) return;
       const origin = yield* this.runtime.promptOrigin(session, message);
       if (origin && !owned.some((a) => a.prompt_id === origin)) return;
-      const diagnostic = new Set([
-        "config_status",
-        "project_list",
-        "work_list",
-        "work_ready",
-        "work_status",
-        "work_diagnostics",
-        "work_report",
-        "work_findings",
-        "work_feedback_status",
-        "work_feedback",
-        "work_attention",
-        "work_decision",
-        "work_wait_disposition",
-        "work_correct",
-      ]);
-      if (!diagnostic.has(tool))
+      if (!diagnosticAllowed)
         return yield* new CrewError(
           "ATTENTION_AUTHORITY",
           "A diagnostic turn cannot start, resume, steer, revise scope or deliver work. Use the finite correction route for supported in-scope findings or request an explicit user action.",
@@ -115,6 +112,55 @@ export class AttentionService {
                   Effect.gen({ self: this }, function* () {
                     const sid = workerSessionID(record);
                     if (sid) yield* this.observe(sid).pipe(Effect.ignore);
+                    yield* this.records.update(record.issue_id, (current) => {
+                      const obsolete = (a: Attention) => {
+                        if (["handled", "superseded"].includes(a.status)) return false;
+                        if (a.generation !== current.control_generation) return true;
+                        if (a.code === "decision_pending") return !hasDecision(current, a);
+                        if (a.code === "suspected_stall")
+                          return (
+                            (current.progress?.generation === a.generation &&
+                              (!a.observed_session ||
+                                current.progress.session_id === a.observed_session) &&
+                              current.progress.at > a.created_at) ||
+                            (!current.active_role &&
+                              !current.worker_failure &&
+                              !current.error_or_recovery_reason &&
+                              ["awaiting_merge", "cleaning", "completed"].includes(
+                                current.current_phase,
+                              ) &&
+                              !!current.delivered_commit)
+                          );
+                        if (a.code === "cleanup_blocked")
+                          return (
+                            current.current_phase === "cleaning" &&
+                            (!current.cleanup_blocker ||
+                              a.key !==
+                                `cleanup:${current.control_generation}:${current.cleanup_blocker.preservation}:${current.cleanup_blocker.fingerprint}`)
+                          );
+                        if (a.code === "operation_stall")
+                          return (
+                            current.operation?.status === "completed" &&
+                            current.operation.id === a.observed_operation
+                          );
+                        return false;
+                      };
+                      const stale = current.attention?.some(obsolete);
+                      if (!stale) return;
+                      return {
+                        ...current,
+                        attention: current.attention?.map((a) =>
+                          obsolete(a)
+                            ? {
+                                ...a,
+                                status: "superseded" as const,
+                                disposition:
+                                  "Superseded by current generation, meaningful progress or confirmed finishing postcondition",
+                              }
+                            : a,
+                        ),
+                      };
+                    });
                     const e = (yield* this.records.execution(record.issue_id))!;
                     const now = yield* Clock.currentTimeMillis;
                     const invalid = e.waits?.find(
@@ -132,8 +178,30 @@ export class AttentionService {
                     );
                     let code: Attention["code"] | undefined;
                     let evidence = "";
+                    const decisions =
+                      e.decisions?.filter(
+                        (d) => d.status === "open" && d.generation === e.control_generation,
+                      ) ?? [];
+                    const decision = decisions.find(
+                      (d) =>
+                        !e.attention?.some(
+                          (a) =>
+                            a.key === decisionKey(d.generation, d.key) &&
+                            !["pending", "uncertain"].includes(a.status),
+                        ),
+                    );
                     const feedback = pendingFindings(e.feedback);
-                    if (
+                    if (decision) {
+                      code = "decision_pending";
+                      evidence = JSON.stringify({
+                        key: decision.key,
+                        generation: decision.generation,
+                        owner: decision.owner,
+                        question: decision.question,
+                        scope: decision.scope,
+                      }).slice(0, 8192);
+                    } else if (decisions.length) return;
+                    else if (
                       feedback.length &&
                       (e.current_phase === "awaiting_merge" ||
                         (e.current_phase === "blocked" && !!e.delivery_block)) &&
@@ -155,6 +223,13 @@ export class AttentionService {
                           url: f.url,
                         })),
                       ).slice(0, 8192);
+                    } else if (
+                      e.cleanup_blocker?.generation === e.control_generation &&
+                      !e.error_or_recovery_reason &&
+                      e.current_phase === "cleaning"
+                    ) {
+                      code = "cleanup_blocked";
+                      evidence = `Delivery preserved; cleanup requires file disposition in the owned worktree. ${JSON.stringify(e.cleanup_blocker.paths).slice(0, 6000)}${e.cleanup_blocker.truncated ? " (truncated sample)" : ""}. Inspect status for captured generated paths and next action; this is not deletion authority.`;
                     } else if (invalid) {
                       code = invalid.status === "invalid" ? "wait_invalid" : "wait_expired";
                       evidence = `${invalid.condition}; owner: ${invalid.owner}; expires: ${invalid.expires_at}`;
@@ -195,10 +270,13 @@ export class AttentionService {
                       }
                     }
                     if (!code) return;
-                    const key =
-                      code === "pr_feedback"
-                        ? `pr_feedback:${e.control_generation}:${e.delivered_commit}:${hash(evidence)}`
-                        : `${e.control_generation}:${e.prompt_id ?? "controller"}:${code}:${invalid?.key ?? e.worker_failure?.at ?? e.progress?.at ?? e.worker_started_at ?? e.operation?.started_at}`;
+                    const key = decision
+                      ? decisionKey(decision.generation, decision.key)
+                      : code === "cleanup_blocked"
+                        ? `cleanup:${e.control_generation}:${e.cleanup_blocker!.preservation}:${e.cleanup_blocker!.fingerprint}`
+                        : code === "pr_feedback"
+                          ? `pr_feedback:${e.control_generation}:${e.delivered_commit}:${hash(evidence)}`
+                          : `${e.control_generation}:${e.prompt_id ?? "controller"}:${code}:${invalid?.key ?? e.worker_failure?.at ?? e.progress?.at ?? e.worker_started_at ?? e.operation?.started_at}`;
                     const incident = yield* this.coordination.with(() =>
                       domainEffect(
                         Effect.gen({ self: this }, function* () {
@@ -208,11 +286,9 @@ export class AttentionService {
                             current.control_generation !== e.control_generation
                           )
                             return;
-                          const existing =
-                            current.attention?.find((a) => a.key === key) ??
-                            current.attention?.find(
-                              (a) => !["handled", "user_needed", "superseded"].includes(a.status),
-                            );
+                          const existing = current.attention?.find(
+                            (a) => a.key === key && a.generation === current.control_generation,
+                          );
                           if (existing) return existing;
                           if (!((current.attention?.length ?? 0) < 256))
                             return yield* new CrewError(
@@ -222,6 +298,11 @@ export class AttentionService {
                           const a: Attention = {
                             schema_version: 1,
                             id: IncidentId.make(`incident-${hash(`${e.execution_id}:${key}`)}`),
+                            observed_operation:
+                              code === "operation_stall" ? e.operation?.id : undefined,
+                            observed_session:
+                              code === "suspected_stall" ? workerSessionID(e) : undefined,
+                            observed_prompt: code === "suspected_stall" ? e.prompt_id : undefined,
                             key,
                             generation: e.control_generation,
                             code: code!,
@@ -277,6 +358,13 @@ export class AttentionService {
               !["pending", "uncertain"].includes(a.status)
             )
               return;
+            if (a.code === "decision_pending" && !hasDecision(e, a)) {
+              e.attention = e.attention!.map((item) =>
+                item.id === a.id ? { ...item, status: "superseded" as const } : item,
+              );
+              yield* this.records.save(e);
+              return;
+            }
             const supervisor =
               a.session_id ?? e.supervisor_session_id ?? (yield* this.records.supervisor());
             const admitted = (yield* this.records.executions())
@@ -284,9 +372,20 @@ export class AttentionService {
               .filter(
                 (item) => item.id !== a.id && ["uncertain", "admitted"].includes(item.status),
               );
-            if (admitted.length >= this.config.attention_capacity) return;
+            if (a.code === "decision_pending") {
+              // Native queued admission serializes the explanatory turn. Mandatory forms
+              // are delivered separately and never need this optional diagnostic slot.
+              if (
+                admitted.some(
+                  (item) => item.code === "decision_pending" && item.session_id === supervisor,
+                )
+              )
+                return;
+            } else if (admitted.length >= this.config.attention_capacity) return;
             const budget = e.effective_policy.diagnostic_turns;
-            const exhausted = !a.prompt_id && (e.attention_turns ?? 0) >= budget;
+            // Routing a declared question is required even when optional diagnostics are disabled.
+            const diagnostic = a.code !== "decision_pending";
+            const exhausted = diagnostic && !a.prompt_id && (e.attention_turns ?? 0) >= budget;
             const next: Attention = {
               ...a,
               session_id: supervisor,
@@ -319,7 +418,8 @@ export class AttentionService {
                   },
                 ];
             }
-            if (!a.prompt_id && next.prompt_id) e.attention_turns = (e.attention_turns ?? 0) + 1;
+            if (diagnostic && !a.prompt_id && next.prompt_id)
+              e.attention_turns = (e.attention_turns ?? 0) + 1;
             e.attention = e.attention!.map((a) => (a.id === incidentID ? next : a));
             yield* this.records.save(e);
             return { e, a: next };
@@ -349,7 +449,7 @@ export class AttentionService {
               );
             yield* this.runtime.prompt(
               a.session_id!,
-              `AbraCode attention for ${e.issue_id}. Incident ${a.id}, generation ${a.generation}: ${a.code}. ${a.evidence}\n${a.batch ? `PR feedback batch: ${JSON.stringify(a.batch)}. Inspect abra_work_feedback_status for exact retained source text, original/assessed heads and dispositions. Classify against accepted scope with abra_work_feedback. Only already-enabled finite repair policy may authorize abra_work_correct; uncertain or scope-changing findings require decisions.` : ""}\nInspect abra_work_status/abra_work_diagnostics, then record abra_work_attention disposition. One diagnostic turn is authorized; this notice grants no repair, resume, plan, merge or deletion authority. Retain any pause and ask the user when authority is missing.`,
+              `AbraCode attention for ${e.issue_id}. Incident ${a.id}, generation ${a.generation}: ${a.code}. ${a.evidence}\n${a.code === "decision_pending" ? "A worker is waiting on a retained decision. Inspect abra_work_status for its full question, key, generation and owner. Use abra_work_decision to answer a supervisor-owned question from available evidence, or collect a user-owned question through its native form. If user input is needed, bring the question to this conversation. Record handled only after routing or answering it, or user_needed with a concrete blocker. A decision answer grants no plan or merge approval." : ""}\n${a.batch ? `PR feedback batch: ${JSON.stringify(a.batch)}. Inspect abra_work_feedback_status for exact retained source text, original/assessed heads and dispositions. Classify against accepted scope with abra_work_feedback. Only already-enabled finite repair policy may authorize abra_work_correct; uncertain or scope-changing findings require decisions.` : ""}\nInspect abra_work_status/abra_work_diagnostics, then record abra_work_attention disposition. One diagnostic turn is authorized; this notice grants no repair, resume, plan, merge or deletion authority. Retain any pause and ask the user when authority is missing.`,
               a.prompt_id!,
             );
           }),

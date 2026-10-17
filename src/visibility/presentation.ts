@@ -39,6 +39,18 @@ export function section(work: WorkItem): Section {
     return "attention";
   if (work.issue_status === "closed") return "done";
   if (
+    work.outcome?.finishing?.questions.length &&
+    work.outcome.finishing.questions.every((q) => q.routing === "deferred") &&
+    work.phase !== "recovery_required"
+  )
+    return "blocked";
+  if (
+    work.outcome?.finishing?.questions.length ||
+    work.outcome?.finishing?.preflight?.status === "blocked"
+  )
+    return "attention";
+  if (work.outcome?.cleanup.state === "blocked") return "attention";
+  if (
     work.decisions?.some((d) => d.status === "open") ||
     work.waits?.some((w) => ["expired", "invalid"].includes(w.status)) ||
     work.attention?.some((a) => !["handled", "superseded"].includes(a.status))
@@ -47,6 +59,11 @@ export function section(work: WorkItem): Section {
   if (work.delivery_wait || work.command_wait || work.waits?.some((w) => w.status === "waiting"))
     return "working";
   if (work.capacity_wait) return "queued";
+  if (
+    work.phase === "awaiting_merge" &&
+    ["recorded", "not_required"].includes(work.outcome?.approval.state ?? "")
+  )
+    return "working";
   if (work.phase && phases[work.phase]?.section === "attention") return "attention";
   if ((work.phase && phases[work.phase]?.section === "blocked") || work.issue_status === "blocked")
     return "blocked";
@@ -69,7 +86,22 @@ export function stateLabel(work: WorkItem) {
   const group = section(work);
   if (group === "done") return "Closed";
   const decision = work.decisions?.find((d) => d.status === "open");
-  if (decision) return `Answer needed · ${decision.owner}: ${decision.question}`;
+  if (decision) {
+    const routing = work.outcome?.finishing?.questions.find((q) => q.key === decision.key)?.routing;
+    return `Answer needed · ${decision.owner}${routing === "undelivered" ? " (form undelivered)" : ""}: ${decision.question}`;
+  }
+  if (work.outcome?.cleanup.state === "blocked")
+    return "Delivery verified · Cleanup blocked · inspect retained files";
+  const finishing = work.outcome?.finishing;
+  if (finishing?.questions.length)
+    return `Finishing decision · ${finishing.questions[0].routing}: ${finishing.questions[0].question}`;
+  if (
+    finishing?.synchronization &&
+    !["published", "failed"].includes(finishing.synchronization.stage)
+  )
+    return `Synchronizing · ${finishing.synchronization.stage} · ${finishing.consumed} attempts consumed`;
+  if (finishing?.preflight?.status === "blocked")
+    return "Cleanup preflight blocked · decide retained files before merge";
   const attention = work.attention?.findLast((a) => !["handled", "superseded"].includes(a.status));
   if (attention) return `${attention.code.replaceAll("_", " ")} · ${attention.status}`;
   const wait = work.waits?.find((w) => !["cleared", "superseded"].includes(w.status));
@@ -80,6 +112,11 @@ export function stateLabel(work: WorkItem) {
   if (work.command_wait) return `Checking · ${work.command_wait.command}`;
   if (work.capacity_wait) return `Waiting for ${work.capacity_wait.role} capacity`;
   if (work.phase === "awaiting_plan_approval") return "Approve plan";
+  if (
+    work.phase === "awaiting_merge" &&
+    ["recorded", "not_required"].includes(work.outcome?.approval.state ?? "")
+  )
+    return "Delivery in progress · final result unconfirmed";
   if (work.phase === "awaiting_merge") return "Review merge";
   if (work.phase === "recovery_required") return "Recovery required";
   if (group === "attention") return work.error ?? "Inspect execution state";

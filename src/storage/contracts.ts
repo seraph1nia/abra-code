@@ -51,8 +51,13 @@ import {
   ProgressSchema,
 } from "../workflow/obligation-contracts.ts";
 import { GeneratedPathsSchema } from "../config/paths.ts";
-import { DirectoryIdentitySchema, RetirementSchema } from "../git/retirement-contracts.ts";
+import {
+  DirectoryIdentitySchema,
+  RetirementSchema,
+  CleanupBlockerSchema,
+} from "../git/retirement-contracts.ts";
 import { Schema } from "effect";
+import { FinishingSchema, validFinishingGenerations } from "../workflow/finishing-contracts.ts";
 
 import { ForgeObservationSchema } from "../git/readiness-contracts.ts";
 
@@ -110,6 +115,7 @@ export const ProjectRecordSchema = Schema.Struct({
   delivery: DeliveryPolicySchema,
 });
 const fields = {
+  finishing: Schema.optional(FinishingSchema),
   configuration_snapshot: Schema.optional(ConfigurationSnapshotSchema),
   worker_context_id: Schema.optional(MessageId),
   delivery_block: Schema.optional(Schema.Literals(["CI_FAILED", "CI_CANCELLED", "REVIEW_FAILED"])),
@@ -143,6 +149,7 @@ const fields = {
   research_session_id: Schema.optional(SessionId),
   worktree_identity: Schema.optional(DirectoryIdentitySchema),
   retirement: Schema.optional(RetirementSchema),
+  cleanup_blocker: Schema.optional(CleanupBlockerSchema),
   intent: Schema.optional(Schema.Struct({ title: NonEmpty, description: Schema.String })),
   forge_observation: Schema.optional(ForgeObservationSchema),
   ...metadata,
@@ -240,7 +247,7 @@ export const executionRecordFields = fields;
 export const ExecutionStateSchema = Schema.Struct({
   ...fields,
   setup: Schema.optional(Schema.Boolean),
-});
+}).check(Schema.makeFilter(validFinishingGenerations));
 const provisioned = {
   worktree_directory: AbsolutePath,
   base_commit: Commit,
@@ -329,6 +336,8 @@ export const ExecutionRecordSchema = Schema.Union([
   }),
 ]).check(
   Schema.makeFilter((e) => {
+    const finishing = validFinishingGenerations(e);
+    if (finishing !== true) return finishing;
     if (e.setup) return "Use the setup record contract";
     if (
       e.plan_approval_required !== e.effective_policy.plan_approval ||
@@ -362,6 +371,8 @@ export const SetupRecordSchema = Schema.Struct({
   openspec_change: Schema.Union([ChangeName, Schema.Literal("")]),
 }).check(
   Schema.makeFilter((e) => {
+    const finishing = validFinishingGenerations(e);
+    if (finishing !== true) return finishing;
     if (
       e.plan_approval_required !== e.effective_policy.plan_approval ||
       e.merge_approval_required !== e.effective_policy.merge_approval ||

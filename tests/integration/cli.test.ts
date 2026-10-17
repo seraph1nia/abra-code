@@ -15,7 +15,7 @@ import { Git } from "../../src/git/repository.ts";
 import { OpenSpec } from "../../src/openspec/adapter.ts";
 import { FileLocks } from "../../src/storage/lock.ts";
 
-import { type Execution } from "../../src/domain.ts";
+import { CrewError, type Execution } from "../../src/domain.ts";
 const bin = (name: string) => resolve("node_modules/.bin", name);
 test("installed OpenSpec: schema planning, strict validation, unfinished tasks, completed tasks and canonical archive", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "abracode-openspec-"));
@@ -85,7 +85,10 @@ test("real kernel lock excludes independent controllers and releases safely", as
   await run(
     a.acquire(Id.LockKey.make("controller")).pipe(Effect.provideService(Scope.Scope, scope)),
   );
-  await assert.rejects(run(b.acquire(Id.LockKey.make("controller"))), /owned/);
+  await assert.rejects(
+    run(b.acquire(Id.LockKey.make("controller"))),
+    (error: unknown) => error instanceof CrewError && error.code === "LOCKED",
+  );
   await run(Scope.close(scope, Exit.void));
   await run(b.acquire(Id.LockKey.make("controller")));
 });

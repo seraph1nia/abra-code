@@ -1,5 +1,7 @@
 # Recovery runbook
 
+The additive `finishing` evidence used by `complete-work-reliably` distinguishes deliverable content from ignored residue. A clean Git status does not prove cleanup readiness: preflight inspects ignored/untracked paths and generated-directory safety without deleting output. Its bounded name sample and fingerprint describe inventory, not file ownership or content-based disposal authorization. Incomplete or unavailable inventory cannot establish readiness. Recheck resource identity, publication/content, authorization revision and the full inventory before relying on an observation; a saved successful preflight alone is insufficient. Missing finishing evidence on an older record means unobserved, never ready, and does not authorize resuming historical unsafe recovery.
+
 Start with `pnpm start` (or `pnpm service:restart`), then `abra_work_status`, `abra_work_diagnostics` and `abra_work_reconcile`. Record the exact issue, execution, worktree, branch and session IDs before any repair. Never delete an execution record to make a red indicator disappear.
 
 ## Normal interruptions
@@ -43,7 +45,9 @@ If native worktree creation partially registered a directory, use the native wor
 
 If archive moved files but strict canonical validation failed, correct canonical specs in the retained worktree, review the repair, then retry from archiving. If the approved plan changed, use `replan` before archival. A changed archived/delivered tree is blocked rather than committed without review.
 
-After merge, uncommitted/untracked/ignored files prevent cleanup. Preserve them outside the worktree or explicitly remove known disposable output yourself, then finish. Native retirement uses `force:false`; it never force-deletes build output. If removal succeeded but the work database is temporarily unavailable, leave the execution in cleaning and retry closure.
+After verified preservation, ordinary untracked/ignored files keep the execution in `cleaning`. Inspect `abra_work_status.result.outcome.cleanup` for the owned worktree, captured generated paths and blocker evidence: path samples are worktree-relative data with category, file/directory kind, observation time and explicit truncation. Directory samples represent their contents collectively; a truncated sample is not an exhaustive inventory. No file contents are read for these diagnostics. Inspect and preserve unknown files outside the worktree or explicitly remove known disposable output yourself, then call `abra_work_finish`. Filenames and ignore rules never grant deletion permission. Tracked drift, invalid ownership, failed inspection and uncertain native removal remain failures.
+
+Unchanged cleanup blockers recheck after 30 seconds with exponential backoff capped at five minutes. Explicit finish inspects immediately; pause suppresses automatic work. A stable blocker creates one deduplicated attention incident, and resolved cleanup supersedes it. Retry revalidates preservation, quiescence and owned resource identity without another merge or fresh approval for unchanged content. Native retirement uses `force:false`; closure follows confirmed retirement. Changing project `generated_paths` does not broaden this execution's captured authority. If removal succeeded but the work database is temporarily unavailable, leave the execution in cleaning and retry closure. Legacy `recovery_required` records are not automatically resumed from their error text; inspect and use the existing explicit recovery route.
 
 ## Worker diagnostics
 
@@ -57,7 +61,7 @@ AbraCode uses explicit `models.default` and role overrides, not the latest Abra 
 
 ## Issue creation recovery
 
-For `abra_work_create`, preserve the original input and `request_id`. Retry with the same key and goal after a lost response. Request identity and issue creation share one SQLite transaction, so a committed request returns the same issue and a rolled-back request can be tried again. `REQUEST_REBIND` means that key belongs to different normalized input. Choose a new key only for deliberately separate work. `abra_work_status` includes the persisted issue history. For old Beads installations, follow [migration](work-graph.md) before restarting the service.
+For `abra_work_create`, preserve the original input and `request_id`. Retry with the same key and goal after a lost response. Request identity and issue creation share one SQLite transaction, so a committed request returns the same issue and a rolled-back request can be tried again. `REQUEST_REBIND` means that key belongs to different normalized input. Choose a new key only for deliberately separate work. `abra_work_status` includes the persisted issue history.
 
 ## Repository setup recovery
 
@@ -67,7 +71,7 @@ Missing managed storage while an execution or setup owns resources blocks re-onb
 
 ## Server and lock failures
 
-A kernel lock disappears on process exit. Never unlink a live lock file: a replacement inode would defeat exclusion. `LOCKED` means another controller is still working or the bounded acquisition wait expired. `scheduler-leader` prevents two active central coordinators. Use the dedicated service; stop a stale second server through its native lifecycle rather than killing arbitrary processes.
+A kernel lock disappears on process exit. Never unlink a live lock file: a replacement inode would defeat exclusion. `LOCKED` means ownership is busy or its bounded acquisition wait expired; it does not identify another process. Approval/finish expose execution-acquisition contention as successful `operation_in_progress` observations. Lock-helper/system failures remain failures (`LOCK_ERROR` for an unsuccessful helper exit). `scheduler-leader` prevents two active central coordinators. Use the dedicated service; stop a stale second server through its native lifecycle rather than killing arbitrary processes.
 
 If no central plugin is active after a raw restart, activate the central location or run the bootstrap. `pnpm start` checks native plugin diagnostics before presenting a Supervisor. The periodic fallback is useful only while the plugin is loaded. Session history and active work do not require an attached UI.
 
@@ -158,3 +162,9 @@ Browser rollout changes role-policy identities. Retained uncertain admissions ke
 A deliberate new admission into an existing idle native session refreshes its policy-derived native permissions, including that same session's evidence directory, before capturing the new prompt. Ordinary admission reconciliation never refreshes permissions or rewrites the old capture. This allows pre-browser sessions to gain the declared browser exception through explicit retry while keeping their browser identity stable.
 
 Service start/client/stop resolve existing runtime path ancestors and refuse paths into legacy `.opencrew/`, including symlinks. Stop also confirms this installation's retained Abra/config controller route before terminating the endpoint. If bootstrap failed before Abra could be retained, inspect the registration and native process explicitly; do not point AbraCode's registration at another service to stop it. Switching `ABRACODE_CONFIG` requires stopping with the current selection and restarting with the new one.
+
+### Approval and delivery observations
+
+Merge approval collection commits the native form's matching receipt and returns without merging or cleaning inline. Automatic reconciliation continues eligible delivery; an approval response is not proof of merge or closure. Accepted receipts can be collected again after cleanup/completion without another form. `outcome` separates approval, delivery, cleanup and graph closure; its snapshot time is distinct from older receipt times. A merge observed by the forge without verified preservation is still unconfirmed for retirement.
+
+Approval/finish may return successful `category: operation_in_progress` with `performed: false`. The request neither ran nor queued; inspect status again and recollect approval only if its matching receipt is missing. Retained operation details are observations and may be unavailable. Busy ownership does not establish a second server or prove the PR remains unmerged. Other lock-system failures, rejected authority and unsafe effects remain native failed tools. On those failures, inspect current status for earlier committed successes before repeating any action.

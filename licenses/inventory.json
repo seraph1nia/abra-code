@@ -15295,7 +15295,7 @@
     },
     {
       "file": ".agents/skills/openspec-execution/SKILL.md",
-      "sha256": "8e06b43d8bf93d7924aab8717f568e323a08ab368c28103efbfc1567ddc5dcba",
+      "sha256": "1366a012d2a93242e968123b5f2cde6bf27d66500f081c0d3e844fa2171672b3",
       "license": "MIT",
       "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v1.13.2",
       "notice": "licenses/openspec.txt",
@@ -15428,6 +15428,46 @@
       "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v1.13.2",
       "notice": "licenses/openspec.txt",
       "modifications": "AbraCode workflow adaptation; upstream copyright retained in notice"
+    },
+    {
+      "file": ".agents/skills/codebase-design/SKILL.md",
+      "sha256": "0c51e552c6f43a41ca555206911a42ce54104c04a2aad12d6fa8be98b442e4b2",
+      "license": "MIT",
+      "upstream": "https://github.com/mattpocock/skills/tree/49dd158d1076134a641b33efb035946536778336",
+      "notice": "licenses/aihero-skills.txt",
+      "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
+    },
+    {
+      "file": ".agents/skills/domain-modeling/SKILL.md",
+      "sha256": "de830b58fec5e91ce33ad07889136203c94d966d4304da9bbfd3eab4d6cf7b87",
+      "license": "MIT",
+      "upstream": "https://github.com/mattpocock/skills/tree/49dd158d1076134a641b33efb035946536778336",
+      "notice": "licenses/aihero-skills.txt",
+      "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
+    },
+    {
+      "file": ".agents/skills/diagnosing-bugs/SKILL.md",
+      "sha256": "b2cfecdf021f61a93429dd772a92b332bab3d2d7bbc98f68e75ff724730ceebb",
+      "license": "MIT",
+      "upstream": "https://github.com/mattpocock/skills/tree/49dd158d1076134a641b33efb035946536778336",
+      "notice": "licenses/aihero-skills.txt",
+      "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
+    },
+    {
+      "file": ".agents/skills/verification/SKILL.md",
+      "sha256": "59ce33db36528b9a37079f039f7b2c84687418b1fb85b336732b3a5b6c2acebd",
+      "license": "MIT",
+      "upstream": "https://github.com/cursor/plugins/tree/0317eb8b858c991c57721358daaee19dbe8c814d/pstack",
+      "notice": "licenses/pstack.txt",
+      "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
+    },
+    {
+      "file": ".agents/skills/blast-radius/SKILL.md",
+      "sha256": "881275d291c9b95e707533b6b014aa9f4d0fa9d70ed6b163031761332e1a3338",
+      "license": "MIT",
+      "upstream": "https://github.com/cursor/plugins/tree/0317eb8b858c991c57721358daaee19dbe8c814d/pstack",
+      "notice": "licenses/pstack.txt",
+      "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
     }
   ],
   "assets": [
@@ -15437,11 +15477,19 @@
     },
     {
       "file": "THIRD_PARTY_NOTICES.md",
-      "sha256": "88cad814906de231bef7d24cd2ca0ff85cfebf20576384578a37fc1732f86dda"
+      "sha256": "5211e941490a1d4e3ffb6e119fcdd5b3f5818c261bd01f236a3a748c98f20503"
     },
     {
       "file": "licenses/openspec.txt",
       "sha256": "c3c7235bea1214ab62df643473975c2e8b8848f528901a976693f7d069713e64"
+    },
+    {
+      "file": "licenses/aihero-skills.txt",
+      "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5"
+    },
+    {
+      "file": "licenses/pstack.txt",
+      "sha256": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e"
     }
   ]
 }

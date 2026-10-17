@@ -65,6 +65,7 @@ export interface Delivery {
     p: Project,
     e: ManagedExecution,
     assessment?: DeliveryAssessment,
+    beforeSubmit?: () => Effect.Effect<void, CrewError>,
   ): Effect.Effect<OperationResult, CrewError>;
   evidence(
     p: Project,
@@ -147,6 +148,23 @@ export class GitHubDelivery implements Delivery {
     function* (this: GitHubDelivery, p: Project, e: ManagedExecution, draft = false) {
       yield* progress({ stage: "deliver", status: "started" });
       if (!e.worktree_directory) return yield* new CrewError("WORKTREE", "Missing worktree");
+      const sync = e.finishing?.synchronization?.at(-1);
+      const synchronization = sync?.stage === "publishing" ? sync : undefined;
+      if (synchronization && p.delivery === "github-pr") {
+        const prior = yield* this.inspect(p, e);
+        if (
+          !(
+            prior?.state === "OPEN" &&
+            prior.url === synchronization.pr &&
+            prior.baseRefName === e.target_branch &&
+            [synchronization.published, synchronization.intended_commit].includes(prior.headRefOid)
+          )
+        )
+          return yield* new CrewError(
+            "PR_HEAD",
+            "Synchronization PR is no longer the exact owned open publication",
+          );
+      }
       const commit = yield* this.git.commit(
         e.worktree_directory,
         e.issue_id,
@@ -162,17 +180,35 @@ export class GitHubDelivery implements Delivery {
         "origin",
         `refs/heads/${e.branch}`,
       ]);
+      if (synchronization && !remote.startsWith(`${commit}\t`)) {
+        if (!remote.startsWith(`${synchronization.published}\t`))
+          return yield* new CrewError(
+            "DELIVERY_CHANGED",
+            "Synchronization remote branch changed independently",
+          );
+        yield* this.git.run(e.worktree_directory, [
+          "merge-base",
+          "--is-ancestor",
+          synchronization.published,
+          commit,
+        ]);
+      }
       if (
         e.provisional &&
         !remote.startsWith(`${commit}\t`) &&
         !remote.startsWith(`${e.provisional.head}\t`) &&
-        !remote.startsWith(`${e.rounds?.at(-1)?.prior_delivered_commit}\t`)
+        !remote.startsWith(`${e.rounds?.at(-1)?.prior_delivered_commit}\t`) &&
+        !remote.startsWith(`${synchronization?.published}\t`)
       )
         return yield* new CrewError(
           "DELIVERY_CHANGED",
           "Provisional remote branch changed outside controller publication",
         );
-      if (!remote.startsWith(`${commit}\t`) && e.rounds?.at(-1)?.prior_delivered_commit) {
+      if (
+        !synchronization &&
+        !remote.startsWith(`${commit}\t`) &&
+        e.rounds?.at(-1)?.prior_delivered_commit
+      ) {
         const previous = e.rounds.at(-1)!.prior_delivered_commit!;
         if (!remote.startsWith(`${previous}\t`))
           return yield* new CrewError(
@@ -295,6 +331,7 @@ export class GitHubDelivery implements Delivery {
       p: Project,
       e: ManagedExecution,
       assessed?: DeliveryAssessment,
+      beforeSubmit?: () => Effect.Effect<void, CrewError>,
     ) {
       yield* progress({ stage: "merge", status: "started" });
       const pr = yield* this.inspect(p, e);
@@ -326,6 +363,12 @@ export class GitHubDelivery implements Delivery {
       if (!(current.state !== "CLOSED"))
         return yield* new CrewError("PR_CLOSED", "PR closed during readiness observation");
       if (current.state === "MERGED") return { category: "completed", value: undefined } as const;
+      if (!beforeSubmit)
+        return yield* new CrewError(
+          "MERGE_GUARD",
+          "Controller finishing readiness guard is required before merge submission",
+        );
+      yield* beforeSubmit();
       const method = e.effective_policy.merge_method;
       yield* this.client.run(p, [
         "pr",

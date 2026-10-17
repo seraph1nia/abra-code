@@ -7,6 +7,7 @@ import { type Context } from "@opencode/plugin/effect/plugin";
 import { CrewError, type Role, type Policy } from "../domain.ts";
 import { ToolName } from "../identities.ts";
 import { type CapabilityRequirements } from "./capability-contracts.ts";
+import { engineeringSkillIds } from "./engineering-skills.ts";
 
 export const managedRoles = ["supervisor", "explore", "apply", "review", "research"] as const;
 type ManagedRole = (typeof managedRoles)[number];
@@ -45,12 +46,14 @@ export const permittedTools = (role: Role) =>
   new Set(policies[role].tools.map((name) => ToolName.make(name)));
 export const policyIdentity = (role: ManagedRole) =>
   createHash("sha256")
-    .update(JSON.stringify({ version: 1, role, ...policies[role] }))
+    .update(JSON.stringify({ version: 2, role, ...policies[role] }))
     .digest("hex");
-export const protectedControlPath = (file: string, root: string) => {
+export const protectedControlPath = (file: string, root: string, role: Role) => {
   const segments = relative(root, file).split(sep);
   return (
-    segments.includes(".git") || segments.includes(".opencode") || basename(file) === "AGENTS.md"
+    segments.includes(".git") ||
+    segments.includes(".opencode") ||
+    (role !== "apply" && basename(file) === "AGENTS.md")
   );
 };
 export function nativePermissions(
@@ -105,7 +108,8 @@ export function capabilityRequirements(
   if (role === "explore" || role === "apply")
     tools.push({ any_of: editing.map((name) => ToolName.make(name)) });
   if (role === "apply") tools.push({ any_of: [ToolName.make("bash"), ToolName.make("shell")] });
-  else tools.push({ any_of: [ToolName.make("shell")] });
+  else if (configured.required_skills?.includes(Skill.ID.make("abra-browser")))
+    tools.push({ any_of: [ToolName.make("shell")] });
   if (role === "review") tools.push({ any_of: [ToolName.make("abra_review_report")] });
   if (role === "research") tools.push({ any_of: [ToolName.make("abra_research_report")] });
   const configuredTools = configured.required_tools ?? [];
@@ -126,8 +130,8 @@ export function capabilityRequirements(
   ];
   const skills = [
     ...new Set([
-      Skill.ID.make("abra-browser"),
       ...(workflow === "full-openspec" ? [Skill.ID.make("abra-openspec-execution")] : []),
+      ...engineeringSkillIds(role, workflow),
       ...(configured.required_skills ?? []),
     ]),
   ];

@@ -3,13 +3,11 @@ import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Effect, Exit, Scope } from "effect";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { run } from "../effects.ts";
 import { SqliteWorkGraph, openWorkGraph, type NewIssue } from "../../src/work/graph.ts";
-import { parseBeadsExport } from "../../src/work/import.ts";
-import { FileLocks } from "../../src/storage/lock.ts";
 import { ProcessRunner } from "../../src/process.ts";
 
 const goal = (request_id: string, dependencies: string[] = []): NewIssue => ({
@@ -200,122 +198,7 @@ test("invalid creation, missing dependencies and normalized retries do not chang
   assert.deepEqual(first.dependencies, [a.id, b.id].sort());
 });
 
-const legacy = (id: string, dependencies: string[] = []) => ({
-  id,
-  title: id,
-  description: `Goal: ${id}`,
-  status: "open",
-  priority: 2,
-  metadata: { repository_id: "api", workflow_policy: "full-openspec", abracode_request_id: id },
-  dependencies: dependencies.map((depends_on_id) => ({ depends_on_id, type: "blocks" })),
-});
-const exportText = (issues: unknown[]) => issues.map((issue) => JSON.stringify(issue)).join("\n");
-
-test("Beads migration preserves identity, claims, dependencies, retry keys and raw evidence", async (t) => {
-  const { graph, path } = await database(t);
-  const source = exportText([
-    {
-      ...legacy("abra-a"),
-      status: "in_progress",
-      assignee: "execution-a",
-      notes: "Historical blocker",
-      comments: [{ text: "Evidence" }],
-    },
-    { ...legacy("abra-b", ["abra-a"]), metadata: undefined, labels: ["repo:frontend"] },
-  ]);
-  assert.equal(await run(graph.importIssues(parseBeadsExport(source), source)), 2);
-  assert.equal((await run(graph.show(Id.IssueId.make("abra-b")))).repository_id, "frontend");
-  assert.equal((await run(graph.show(Id.IssueId.make("abra-a")))).assignee, "execution-a");
-  assert.equal((await run(graph.create({ ...goal("abra-a"), title: "abra-a" }))).id, "abra-a");
-  await run(graph.close(Id.IssueId.make("abra-a"), Id.ExecutionId.make("execution-a")));
-  assert.deepEqual(
-    (await run(graph.ready)).map((i) => i.id),
-    ["abra-b"],
-  );
-  assert.equal(await run(graph.importIssues(parseBeadsExport(source), source)), 0);
-  assert.equal((await run(graph.show(Id.IssueId.make("abra-a")))).status, "closed");
-  const db = new DatabaseSync(path);
-  try {
-    assert.equal(db.prepare("SELECT source FROM imports").get()!.source, source);
-  } finally {
-    db.close();
-  }
-});
-
-test("legacy assignees keep their original identity without becoming execution IDs", async (t) => {
-  const { graph } = await database(t);
-  const source = exportText([
-    { ...legacy("legacy-owner"), status: "in_progress", assignee: "bart@example.invalid" },
-  ]);
-  await run(graph.importIssues(parseBeadsExport(source), source));
-  assert.equal(
-    (await run(graph.show(Id.IssueId.make("legacy-owner")))).assignee,
-    "bart@example.invalid",
-  );
-  await assert.rejects(
-    run(graph.close(Id.IssueId.make("legacy-owner"), Id.ExecutionId.make("unrelated"))),
-    /owns issue/,
-  );
-});
-
-test("migration rejects partial graphs, cycles, duplicate identities and unsupported semantics atomically", async (t) => {
-  const { graph } = await database(t);
-  for (const issues of [
-    [legacy("a", ["missing"])],
-    [legacy("a", ["b"]), legacy("b", ["a"])],
-    [legacy("a", ["a"])],
-    [legacy("a"), legacy("a")],
-    [legacy("a"), { ...legacy("b"), metadata: legacy("a").metadata }],
-    [{ ...legacy("a"), labels: ["repo:other"] }],
-    [{ ...legacy("a"), status: "deferred" }],
-    [{ ...legacy("a"), dependencies: [{ depends_on_id: "b", type: "related" }] }],
-  ]) {
-    const source = exportText(issues);
-    await assert.rejects(
-      run(Effect.suspend(() => graph.importIssues(parseBeadsExport(source), source))),
-    );
-    assert.deepEqual(await run(graph.list), []);
-    assert.equal(await run(graph.hasImport()), false);
-  }
-});
-
-test("legacy startup requires migration; import CLI refuses a live coordinator and permits safe retries", async (t) => {
-  const { root, path, scope } = await database(t);
-  const config = { home: Id.AbsolutePath.make(root), work_database: Id.AbsolutePath.make(path) };
-  await mkdir(join(root, ".beads"));
-  // Repeated preflight must keep refusing even though it already created the SQLite file.
-  for (let i = 0; i < 2; i++) await assert.rejects(run(openWorkGraph(config)), /needs import/);
-  await writeFile(
-    join(root, "abracode.yaml"),
-    `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture } }\nwork_database: ${path}\n`,
-  );
-  const file = join(root, "issues.jsonl");
-  await writeFile(file, exportText([legacy("abra-import")]));
-  const command = () =>
-    new ProcessRunner().run(
-      Id.Executable.make(process.execPath),
-      ["--import", "tsx", resolve("scripts/import-work.ts"), file],
-      Id.AbsolutePath.make(process.cwd()),
-      { ABRACODE_HOME: root },
-    );
-  const lockScope = Scope.makeUnsafe();
-  await run(
-    new FileLocks(Id.AbsolutePath.make(join(root, ".abracode/locks")))
-      .acquire(Id.LockKey.make("scheduler-leader"))
-      .pipe(Effect.provideService(Scope.Scope, lockScope)),
-  );
-  try {
-    await assert.rejects(run(command()), /owned by another controller/);
-  } finally {
-    await run(Scope.close(lockScope, Exit.void));
-  }
-  assert.match(await run(command()), /Imported 1 issues/);
-  assert.match(await run(command()), /Imported 0 issues/);
-  const imported = await run(openWorkGraph(config).pipe(Effect.provideService(Scope.Scope, scope)));
-  assert.equal((await run(imported.show(Id.IssueId.make("abra-import")))).status, "open");
-});
-
-test("early SQLite schema upgrades preserve work and permit Beads import", async (t) => {
+test("early SQLite schema upgrades preserve work, ownership and history", async (t) => {
   const { graph, path, scope } = await database(t);
   const existing = await run(graph.create(goal("existing")));
   await run(graph.claim(existing.id, Id.ExecutionId.make("existing-owner")));
@@ -323,25 +206,24 @@ test("early SQLite schema upgrades preserve work and permit Beads import", async
   const db = new DatabaseSync(path);
   try {
     db.exec(
-      "DROP TABLE imports; CREATE TABLE imports (digest TEXT PRIMARY KEY); PRAGMA user_version = 1",
+      "ALTER TABLE issues DROP COLUMN scope_json; ALTER TABLE issues DROP COLUMN report_reference_json; ALTER TABLE issues DROP COLUMN quality_profile; PRAGMA user_version = 1",
     );
   } finally {
     db.close();
   }
-  const source = exportText([legacy("abra-legacy")]);
   await run(
     Effect.gen(function* () {
-      const upgraded = yield* SqliteWorkGraph.open(path);
+      const upgraded = yield* openWorkGraph({ work_database: path });
       assert.equal((yield* upgraded.show(existing.id)).assignee, "existing-owner");
       assert.equal((yield* upgraded.history(existing.id)).length, 2);
-      assert.equal(yield* upgraded.importIssues(parseBeadsExport(source), source), 1);
-      assert.equal((yield* upgraded.show(Id.IssueId.make("abra-legacy"))).status, "open");
+      const created = yield* upgraded.create(goal("after-upgrade"));
+      assert.equal(created.status, "open");
+      assert.equal((yield* upgraded.list).length, 2);
     }),
   );
   const verify = new DatabaseSync(path);
   try {
     assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 4);
-    assert.equal(verify.prepare("SELECT source FROM imports").get()!.source, source);
     verify.exec("PRAGMA user_version = 5");
   } finally {
     verify.close();

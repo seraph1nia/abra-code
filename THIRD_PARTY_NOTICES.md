@@ -6,6 +6,10 @@ AbraCode-owned code is MIT licensed. This file and the inventory preserve separa
 
 The adapted OpenSpec skills and commands retain the [OpenSpec contributors copyright and MIT terms](licenses/openspec.txt). AbraCode-specific workflow changes are modifications to those instructions.
 
+## Engineering skill adaptations
+
+The bundled codebase-design, domain-modeling and diagnosing-bugs procedures adapt Matt Pocock’s skills (Copyright (c) 2026 Matt Pocock; [MIT notice](licenses/aihero-skills.txt)). Verification and blast-radius adapt Lauren Tan’s pstack (Copyright (c) 2026 Lauren Tan; [MIT notice](licenses/pstack.txt)). See [the source revision and adaptation inventory](docs/engineering-skills.md) for scope and immutable upstream links.
+
 ## Installed components
 
 Full pinned provenance and review dispositions: [inventory](licenses/inventory.json). Dependency binaries are downloaded by the operator from their suppliers; they are not included in the source clone. Preserve these notices when distributing derived bundles.

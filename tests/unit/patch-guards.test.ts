@@ -6,15 +6,18 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { symlink } from "node:fs/promises";
 import { type Context } from "@opencode/plugin/effect/plugin";
-import { fixture } from "../fixtures.ts";
+import { applying, fixture } from "../fixtures.ts";
 import { installGuards } from "../../src/opencode/guards.ts";
-async function guard(t: TestContext) {
+async function guard(t: TestContext, role: "explore" | "apply" = "explore") {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   f.work.add(Id.IssueId.make("abra-1"));
   const e = await run(
-    f.controller.start(Id.IssueId.make("abra-1"), Id.SessionId.make("ses_supervisor")),
+    role === "apply"
+      ? applying(f)
+      : f.controller.start(Id.IssueId.make("abra-1"), Id.SessionId.make("ses_supervisor")),
   );
+  const sessionID = e[`${role}_session_id`];
   let before: (event: any) => import("effect").Effect.Effect<void>;
   const ctx = {
     session: { hook: () => Effect.void },
@@ -30,9 +33,10 @@ async function guard(t: TestContext) {
   return {
     f,
     e,
-    invoke: (tool: string) => before!({ tool, sessionID: e.explore_session_id, input: {} }),
-    check: (patchText: string) =>
-      before!({ tool: "patch", sessionID: e.explore_session_id, input: { patchText } }),
+    invoke: (tool: string) => before!({ tool, sessionID, input: {} }),
+    edit: (tool: "write" | "edit", filePath: string) =>
+      before!({ tool, sessionID, input: { filePath } }),
+    check: (patchText: string) => before!({ tool: "patch", sessionID, input: { patchText } }),
   };
 }
 test("native patch validates every file and move destination inside the Explore change", async (t) => {
@@ -89,4 +93,30 @@ test("execution checks reject forbidden management and inactive assigned session
   await assert.rejects(run(invoke("abra_work_finish")), /cannot use/);
   await run(f.records.update(e.issue_id, (current) => ({ ...current, active_role: undefined })));
   await assert.rejects(run(invoke("read")), /no longer owns/);
+});
+
+test("Apply can edit repository instructions while control paths and worktree containment stay guarded", async (t) => {
+  const { e, check, edit } = await guard(t, "apply");
+  for (const path of ["AGENTS.md", "docs/AGENTS.md"]) {
+    await run(check(`*** Begin Patch\n*** Add File: ${path}\n+Repository guidance\n*** End Patch`));
+    await run(edit("write", path));
+    await run(edit("edit", path));
+  }
+  for (const path of [".git", "docs/.git/config", ".opencode/agents/apply.md"])
+    await assert.rejects(
+      run(check(`*** Begin Patch\n*** Add File: ${path}\n+Forbidden\n*** End Patch`)),
+      /orchestration/,
+    );
+  await assert.rejects(
+    run(
+      check(
+        "*** Begin Patch\n*** Update File: AGENTS.md\n*** Move to: .opencode/AGENTS.md\n@@\n-Old\n+New\n*** End Patch",
+      ),
+    ),
+    /orchestration/,
+  );
+  await assert.rejects(
+    run(edit("write", join(e.worktree_directory!, "../AGENTS.md"))),
+    /write root/,
+  );
 });

@@ -21,9 +21,10 @@ import { diagnosticError } from "../opencode/diagnostics.ts";
 import { type Capacity } from "./capacity.ts";
 import { type Coordination } from "./coordination.ts";
 import { type Queries } from "./queries.ts";
+import { type Git } from "../git/repository.ts";
+import { workerSessionID } from "./worker-assignment.ts";
 
-export const workerSessionID = (e: Execution, role = e.active_role) =>
-  role ? e[`${role}_session_id`] : undefined;
+export { workerSessionID } from "./worker-assignment.ts";
 type WorkerTurn =
   | { kind: "absent" }
   | { kind: "waiting" }
@@ -45,6 +46,7 @@ export class WorkerSessions {
     private capacity: Capacity,
     private coordination: Coordination,
     private queries: Queries,
+    private git: Git,
   ) {
     this.contexts = new WorkerContexts(records, config);
   }
@@ -87,6 +89,17 @@ export class WorkerSessions {
       const state = yield* this.runtime.session(this.sessionID(e)!);
       if (state.busy) return { kind: "waiting" };
       if (state.outcome) {
+        const current = yield* this.records.execution(e.issue_id);
+        if (
+          !(
+            current &&
+            current.control_generation === e.control_generation &&
+            current.prompt_id === e.prompt_id
+          )
+        )
+          return yield* new CrewError("STALE_OPERATION", "Worker observation was superseded");
+        // A reporting tool can commit while the native completion read is in flight.
+        synchronizeExecution(e, current);
         e.capacity_observed_idle = true;
         delete e.capacity_reservation;
       }
@@ -117,6 +130,21 @@ export class WorkerSessions {
       if (turn.kind !== "completed") {
         const outcome = turn.kind === "stopped" ? turn.phase : (turn.outcome ?? "unknown");
         return yield* new CrewError("SESSION_OUTCOME", `Worker outcome is ${outcome}`);
+      }
+      if (turn.role === "apply" && e.worktree_directory && e.apply_session_id && e.prompt_id) {
+        e.finishing = {
+          ...e.finishing,
+          schema_version: 1,
+          attribution: {
+            schema_version: 1,
+            generation: e.control_generation,
+            fingerprint: yield* this.git.fingerprint(e.worktree_directory),
+            head: yield* this.git.head(e.worktree_directory),
+            session_id: e.apply_session_id,
+            prompt_id: e.prompt_id,
+            at: yield* timestamp,
+          },
+        };
       }
       delete e.active_role;
       return turn.role;
@@ -188,6 +216,16 @@ export class WorkerSessions {
     domainEffect,
   );
   launch = (e: Execution, role: Role) => this.admit(e, role);
+  notifyCompletion = (
+    session: SessionId,
+    message: import("../identities.ts").MessageId,
+    issue: IssueId,
+  ) =>
+    this.runtime.notify(
+      session,
+      `[AbraCode ${issue} completed] Delivery confirmed, worktree retired, issue closed. Dependent work recalculated.`,
+      message,
+    );
   private admit = Effect.fn("WorkerSessions.admit")(
     function* (this: WorkerSessions, e: Execution, role: Role) {
       if (externalOwns(e))

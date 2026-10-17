@@ -17,6 +17,8 @@ import {
 } from "../identities.ts";
 
 import { Finalization } from "./finalization.ts";
+import { Finishing } from "./finishing.ts";
+import { admitSynchronization, activeSynchronization } from "./synchronization.ts";
 import { ExecutionTransitions } from "./transitions.ts";
 import { synchronizeExecution, Records } from "../storage/store.ts";
 
@@ -53,7 +55,7 @@ import { type Delivery } from "../git/delivery.ts";
 import { type Runtime } from "../opencode/runtime.ts";
 import { RepositorySources } from "../git/source.ts";
 import { Workspaces } from "../git/workspaces.ts";
-import { collectApproval } from "./authorization.ts";
+import { collectApproval, assertApprovalActor } from "./authorization.ts";
 import { Queries } from "./queries.ts";
 import { CodingChecks } from "./checks.ts";
 import { specVerificationPassed } from "./review-contracts.ts";
@@ -64,6 +66,7 @@ import { type Coordination } from "./coordination.ts";
 
 export class Advancement {
   private finalization: Finalization;
+  private finishing: Finishing;
   private transitions: ExecutionTransitions;
   private corrections: Corrections;
   readonly prFeedback: PRFeedback;
@@ -111,6 +114,7 @@ export class Advancement {
       this.capacity,
       this.coordination,
       this.queries,
+      git,
     );
     this.checks = new CodingChecks(
       records,
@@ -151,7 +155,23 @@ export class Advancement {
       corrections: this.corrections,
       transitions: this.transitions,
     });
+    this.finishing = new Finishing({
+      git,
+      records,
+      delivery,
+      workspaces: this.workspaces,
+      sessions: this.sessions,
+      obligations: this.obligations,
+      synchronize: (e, p, observation) =>
+        Effect.gen({ self: this }, function* () {
+          const next = yield* admitSynchronization(git, records, e, observation);
+          if (next === "planning") yield* this.launch(e, "explore");
+          else yield* this.verify(e, p);
+          return e;
+        }),
+    });
     this.finalization = new Finalization({
+      finishing: this.finishing,
       feedback: this.prFeedback,
       git,
       spec,
@@ -450,7 +470,10 @@ export class Advancement {
           const changed = yield* this.git.run(e.worktree_directory!, [
             "diff",
             "--name-only",
-            e.planning_base_commit ?? e.openspec_update_commit ?? e.base_commit!,
+            activeSynchronization(e)?.planning_base_tree ??
+              e.planning_base_commit ??
+              e.openspec_update_commit ??
+              e.base_commit!,
           ]);
           const untracked = yield* this.git.run(e.worktree_directory!, [
             "ls-files",
@@ -588,6 +611,10 @@ export class Advancement {
     function* (this: Advancement, e: Execution, p: Project) {
       if (e.workflow_policy === "full-openspec") yield* this.spec.plan(e);
       yield* this.assertPlan(e, p);
+      if (activeSynchronization(e)) {
+        yield* this.transitions.move(e, "verifying");
+        return yield* this.verify(e, p);
+      }
       const research = e.workflow_policy === "research-only";
       yield* this.transitions.move(e, research ? "researching" : "applying");
       yield* this.launch(e, research ? "research" : "apply");
@@ -605,6 +632,21 @@ export class Advancement {
           Effect.gen({ self: this }, function* () {
             const e = yield* this.get(id);
             const p = yield* this.project(e);
+            yield* assertApprovalActor(e, supervisor);
+            if (
+              kind === "merge" &&
+              ["cleaning", "completed"].includes(e.current_phase) &&
+              e.approval_receipts.some(
+                (a) =>
+                  a.kind === "merge" &&
+                  a.fingerprint === e.delivered_commit &&
+                  a.authorized_at &&
+                  !a.rejected_at,
+              )
+            ) {
+              // The receipt is already committed; do not touch a retired worktree or create a form.
+              return e;
+            }
             yield* this.idle(e);
             if (
               !(e.current_phase === (kind === "plan" ? "awaiting_plan_approval" : "awaiting_merge"))
@@ -613,6 +655,7 @@ export class Advancement {
                 "APPROVAL_PHASE",
                 "Approval does not match current phase",
               );
+            if (kind === "merge" && !(yield* this.finishing.prepare(e, p))) return e;
             const fp =
               kind === "plan"
                 ? e.workflow_policy === "full-openspec"
@@ -642,7 +685,7 @@ export class Advancement {
               );
               return yield* new CrewError("APPROVAL_REJECTED", "Human rejected this checkpoint");
             }
-            return yield* kind === "plan" ? this.beginApply(e, p) : this.finalization.finish(e, p);
+            return yield* kind === "plan" ? this.beginApply(e, p) : Effect.succeed(e);
           }),
         ),
       );
@@ -827,7 +870,9 @@ export class Advancement {
     function* (this: Advancement, id?: IssueId) {
       const records = id
         ? [yield* this.get(id)]
-        : (yield* this.records.executions()).filter((e) => !terminal(e));
+        : (yield* this.records.executions()).filter(
+            (e) => !terminal(e) || e.finishing?.completion_notice?.status === "pending",
+          );
       return yield* Effect.forEach(
         records,
         (record) =>
@@ -887,7 +932,10 @@ export class Advancement {
     "Advancement.reconcileOne",
   )(
     function* (this: Advancement, e: Execution) {
-      if (terminal(e)) return e;
+      if (terminal(e))
+        return e.finishing?.completion_notice?.status === "pending"
+          ? yield* this.finalization.notifyCompletion(e)
+          : e;
       synchronizeExecution(e, yield* this.obligations.collectPending(e));
       if (e.stop_status === "requested") return yield* this.transitions.confirmStop(e);
       const assessment = yield* this.prFeedback.poll(e);
@@ -934,15 +982,49 @@ export class Advancement {
       if (!(issue.workflow_policy === e.workflow_policy))
         return yield* new CrewError("POLICY_DRIFT", "Issue workflow policy changed");
       const p = yield* this.project(e);
-      if (e.current_phase === "cleaning") return yield* this.finalization.cleanup(e, p);
+      if (e.current_phase === "cleaning") {
+        if (
+          e.cleanup_blocker?.generation === e.control_generation &&
+          !e.error_or_recovery_reason &&
+          (yield* Clock.currentTimeMillis) < e.cleanup_blocker.next_check_at
+        )
+          return e;
+        return yield* this.finalization.cleanup(e, p);
+      }
       yield* this.git.validate(p, e);
       yield* this.sessions.validateLocations(e);
       if (["blocked", "interrupted", "failed", "recovery_required"].includes(e.current_phase))
         return e;
       if (e.current_phase === "validating_external") return yield* this.checkpoint(e);
+      if (e.current_phase === "awaiting_merge" && !(yield* this.finishing.prepare(e, p))) return e;
       if (yield* this.obligations.recheck(e)) return e;
       if (e.current_phase === "awaiting_plan_approval" || e.current_phase === "awaiting_merge") {
-        for (const a of e.approval_receipts.filter((a) => !a.authorized_at && !a.rejected_at)) {
+        if (
+          e.current_phase === "awaiting_merge" &&
+          p.delivery === "github-pr" &&
+          e.merge_approval_required &&
+          e.supervisor_session_id &&
+          !e.approval_receipts.some(
+            (a) => a.kind === "merge" && a.fingerprint === e.delivered_commit && !a.rejected_at,
+          ) &&
+          (yield* this.delivery.inspect(p, e))?.state === "OPEN"
+        )
+          yield* collectApproval(
+            this.runtime,
+            e,
+            "merge",
+            e.supervisor_session_id,
+            e.delivered_commit!,
+            () => this.records.save(e),
+          );
+        for (const a of e.approval_receipts.filter(
+          (a) =>
+            !a.authorized_at &&
+            !a.rejected_at &&
+            (e.current_phase === "awaiting_merge"
+              ? a.kind === "merge" && a.fingerprint === e.delivered_commit
+              : a.kind === "plan" && a.fingerprint === e.plan_fingerprint),
+        )) {
           const { decision } = yield* collectApproval(
             this.runtime,
             e,

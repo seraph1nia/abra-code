@@ -7,6 +7,8 @@ import { decodeJSON } from "../decode.ts";
 import { ToolProgress } from "./progress.ts";
 import { diagnosticText } from "./diagnostics.ts";
 
+export type ToolAccess = { worker: boolean; diagnostic: boolean };
+
 /** Keep strict decoding at the host boundary, including the pinned host's schema bridge. */
 export function strictInput<S extends Schema.Codec<unknown, unknown>>(schema: S) {
   const standard = Schema.toStandardSchemaV1(schema);
@@ -51,6 +53,7 @@ export function defineTool<I, O>(d: {
   output: Schema.Codec<O, unknown>;
   run: (input: NoInfer<I>, session: SessionId) => Effect.Effect<NoInfer<O>, CrewError>;
   worker?: boolean;
+  diagnostic?: boolean | ((input: NoInfer<I>) => boolean);
 }) {
   const output: Schema.Codec<{ readonly ok: true; readonly result?: O }, unknown> = Schema.Struct({
     ok: Schema.Literal(true),
@@ -60,11 +63,7 @@ export function defineTool<I, O>(d: {
     worker: d.worker,
     register(
       editor: ToolEditor,
-      authorize: (
-        name: string,
-        worker: boolean,
-        context: Tool.Context,
-      ) => Effect.Effect<void, CrewError>,
+      authorize: (access: ToolAccess, context: Tool.Context) => Effect.Effect<void, CrewError>,
       provide: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E>,
     ) {
       editor.add({
@@ -74,11 +73,18 @@ export function defineTool<I, O>(d: {
         output,
         options: { namespace: "abra", codemode: false, permission: `abra_${d.name}` },
         execute: (input, context) =>
-          authorize(d.name, !!d.worker, context).pipe(
+          authorize(
+            {
+              worker: !!d.worker,
+              diagnostic:
+                typeof d.diagnostic === "function" ? d.diagnostic(input) : d.diagnostic === true,
+            },
+            context,
+          ).pipe(
             Effect.andThen(
-              d
-                .run(input, context.sessionID)
-                .pipe(Effect.provideService(ToolProgress, context.progress)),
+              Effect.suspend(() => d.run(input, context.sessionID)).pipe(
+                Effect.provideService(ToolProgress, context.progress),
+              ),
             ),
             Effect.flatMap((result) =>
               decodeJSON(output, JSON.stringify({ ok: true, result }), `abra_${d.name} output`),

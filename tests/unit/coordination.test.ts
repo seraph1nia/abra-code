@@ -1,3 +1,4 @@
+import { deliveryAction } from "../../src/workflow/delivery-outcome.ts";
 import { verifiedSpec } from "../helpers/spec-review.ts";
 import * as Id from "../../src/identities.ts";
 import { Deferred, Effect, Fiber } from "effect";
@@ -7,7 +8,8 @@ import { join } from "node:path";
 import { fixture, applying, planned } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { FileLocks } from "../../src/storage/lock.ts";
-import { Operations } from "../../src/workflow/operations.ts";
+import { Operations, ExecutionBusy } from "../../src/workflow/operations.ts";
+import { CrewError } from "../../src/domain.ts";
 import { Controller } from "../../src/workflow/controller.ts";
 import { GitHubDelivery, type PR } from "../../src/git/delivery.ts";
 
@@ -103,11 +105,73 @@ test("independent operation owners use kernel exclusion and preserve intent befo
         );
         assert.equal(peer._tag, "Failure");
         if (peer._tag === "Failure") assert.equal(peer.failure.code, "LOCKED");
+        for (const action of ["approve", "finish"] as const) {
+          let entered = false;
+          const busy = yield* deliveryAction(
+            f.controller.queries,
+            e.issue_id,
+            action,
+            b.owned(e.issue_id, Id.OperationAction.make(action), () => {
+              entered = true;
+              return Effect.succeed(e);
+            }),
+          );
+          assert.ok("category" in busy);
+          assert.equal(busy.category, "operation_in_progress");
+          assert.equal(busy.performed, false);
+          assert.equal(busy.operation!.id, saved.operation!.id);
+          assert.equal(entered, false);
+          assert.equal((yield* f.controller.get(e.issue_id)).operation!.id, saved.operation!.id);
+        }
         yield* Fiber.interrupt(owner);
       }),
     ),
   );
   await run(b.owned(e.issue_id, Id.OperationAction.make("recovered"), () => Effect.void));
+  await assert.rejects(
+    run(
+      deliveryAction(
+        f.controller.queries,
+        e.issue_id,
+        "finish",
+        b.owned(e.issue_id, Id.OperationAction.make("finish"), () =>
+          Effect.fail(new CrewError("LOCKED", "Downstream lock failed")),
+        ),
+      ),
+    ),
+    /Downstream lock failed/,
+  );
+  await assert.rejects(
+    run(
+      deliveryAction(
+        f.controller.queries,
+        e.issue_id,
+        "finish",
+        b.owned(e.issue_id, Id.OperationAction.make("finish"), () =>
+          Effect.fail(new ExecutionBusy(e.issue_id)),
+        ),
+      ),
+    ),
+    /already owns/,
+  );
+  const binary = process.env.ABRACODE_NODE_BINARY;
+  try {
+    process.env.ABRACODE_NODE_BINARY = "/missing/abracode-test-node";
+    await assert.rejects(
+      run(
+        deliveryAction(
+          f.controller.queries,
+          e.issue_id,
+          "finish",
+          b.owned(e.issue_id, Id.OperationAction.make("finish"), () => Effect.succeed(e)),
+        ),
+      ),
+      /Lock helper failed/,
+    );
+  } finally {
+    if (binary === undefined) delete process.env.ABRACODE_NODE_BINARY;
+    else process.env.ABRACODE_NODE_BINARY = binary;
+  }
 });
 
 test("operation commits preserve newer independent diagnostic observations", async (t) => {
@@ -158,6 +222,69 @@ test("Review can publish during prompt admission without competing for execution
     ),
   );
 });
+
+for (const during of ["decision recheck", "native completion read"] as const)
+  test(`a concurrent Review report survives ${during} after a worker question`, async (t) => {
+    const f = await run(fixture);
+    t.onTestFinished(() => run(f.close()));
+    const e = await run(applying(f));
+    const key = Id.ObligationKey.make("inventory");
+    await run(
+      f.controller.workerQuestion(e.apply_session_id!, {
+        key,
+        generation: e.control_generation,
+        scope: "Inventory",
+        question: "Provide inventory",
+        owner: "supervisor",
+      }),
+    );
+    await run(
+      f.controller.decision(
+        e.issue_id,
+        key,
+        e.control_generation,
+        Id.SessionId.make("ses_supervisor"),
+        "answer",
+        "Retained inventory",
+      ),
+    );
+    f.spec.done = true;
+    f.runtime.success(e.apply_session_id!);
+    const reviewing = await run(f.controller.advance(e.issue_id));
+    f.runtime.success(reviewing.review_session_id!);
+    let published = false;
+    const report = () =>
+      Effect.gen(function* () {
+        if (published) return;
+        published = true;
+        yield* f.controller.reviewReport(
+          reviewing.review_session_id!,
+          true,
+          "Pass",
+          undefined,
+          verifiedSpec,
+        );
+      });
+    if (during === "decision recheck") {
+      const validate = f.git.validate.bind(f.git);
+      f.git.validate = (...args) => validate(...args).pipe(Effect.tap(report));
+    } else {
+      const session = f.runtime.session.bind(f.runtime);
+      let reads = 0;
+      f.runtime.session = (id) =>
+        session(id).pipe(
+          // The first read validates location; the next observes completion.
+          Effect.tap(() =>
+            id === reviewing.review_session_id && ++reads === 2 ? report() : Effect.void,
+          ),
+        );
+    }
+    const result = (await run(f.controller.reconcile(e.issue_id)))[0];
+    assert.equal(published, true);
+    assert.equal(result.current_phase, "awaiting_merge");
+    assert.equal(result.review_receipt?.passed, true);
+    assert.equal(result.decisions![0].status, "answered");
+  });
 
 test("lost native session creation response reuses the retained intent without a second worker", async (t) => {
   const f = await run(fixture);

@@ -95,17 +95,65 @@ export const inspectGenerated = Effect.fn("inspectGenerated")(function* (
   yield* walk(cursor, 0);
   return yield* directoryIdentity(cursor);
 }, domainEffect);
+/** Shared by read-only preflight and post-preservation disposal. */
+export const generatedPaths = Effect.fn("generatedPaths")(function* (e: ManagedExecution) {
+  const paths = [...e.effective_policy.generated_paths];
+  for (const authorization of e.finishing?.authorizations ?? []) {
+    if (authorization.generation !== e.control_generation) continue;
+    if (!e.worktree_identity || !sameDirectory(authorization.worktree, e.worktree_identity))
+      return yield* new CrewError(
+        "CLEANUP_REPLACEMENT",
+        "Cleanup authorization belongs to another worktree",
+      );
+    paths.push(...authorization.directories.map((d) => d.path));
+  }
+  return yield* decode(GeneratedPathsSchema, paths, "retained generated paths");
+}, domainEffect);
+
+export const inspectGeneratedPath = Effect.fn("inspectGeneratedPath")(function* (
+  git: Git,
+  e: ManagedExecution,
+  path: RelativePath,
+) {
+  const root = e.worktree_directory!;
+  const identity = yield* inspectGenerated(root, path);
+  const prior = e.retirement?.generated.find((entry) => entry.path === path);
+  if (prior?.state === "removed" || (prior && !sameDirectory(prior.identity, identity)))
+    return yield* new CrewError(
+      "CLEANUP_REPLACEMENT",
+      "Previously inspected generated directory was replaced",
+    );
+  const authorized = e.finishing?.authorizations
+    ?.filter((a) => a.generation === e.control_generation)
+    .flatMap((a) => a.directories)
+    .find((d) => d.path === path);
+  if (authorized && !sameDirectory(authorized.identity, identity))
+    return yield* new CrewError(
+      "CLEANUP_REPLACEMENT",
+      "Authorized generated directory was replaced",
+    );
+  if (
+    (yield* git.run(root, ["ls-files", "-z", "--", `:(literal)${path}`], { trim: false })) ||
+    (yield* git.run(
+      root,
+      ["--literal-pathspecs", "ls-tree", "-r", "--name-only", "-z", "HEAD", "--", path],
+      { trim: false },
+    ))
+  )
+    return yield* new CrewError(
+      "CLEANUP_TRACKED",
+      "Tracked descendants prevent generated-directory cleanup",
+    );
+  return identity;
+}, domainEffect);
+
 export const removeGenerated = Effect.fn("removeGenerated")(function* (
   git: Git,
   e: ManagedExecution,
   save: () => Effect.Effect<unknown, CrewError>,
 ) {
   const root = e.worktree_directory!;
-  const paths = yield* decode(
-    GeneratedPathsSchema,
-    e.effective_policy.generated_paths,
-    "retained generated paths",
-  );
+  const paths = yield* generatedPaths(e);
   e.retirement ??= { generated: [], native: "not_started" };
   for (const path of paths) {
     let entry: (typeof RetirementSchema.Type)["generated"][number] | undefined =
@@ -127,24 +175,9 @@ export const removeGenerated = Effect.fn("removeGenerated")(function* (
         "CLEANUP_REPLACEMENT",
         "Previously removed generated directory was replaced",
       );
-    const identity = yield* inspectGenerated(root, path);
+    const identity = yield* inspectGeneratedPath(git, e, path);
     if (!(!entry || sameDirectory(entry.identity, identity)))
       return yield* new CrewError("CLEANUP_REPLACEMENT", "Generated directory identity changed");
-    const args = ["--", `:(literal)${path}`];
-    if (
-      !(
-        !(yield* git.run(root, ["ls-files", "-z", ...args], { trim: false })) &&
-        !(yield* git.run(
-          root,
-          ["--literal-pathspecs", "ls-tree", "-r", "--name-only", "-z", "HEAD", "--", path],
-          { trim: false },
-        ))
-      )
-    )
-      return yield* new CrewError(
-        "CLEANUP_TRACKED",
-        "Tracked descendants prevent generated-directory cleanup",
-      );
     if (!entry) {
       entry = { path, identity, state: "authorized" };
       e.retirement = { ...e.retirement, generated: [...e.retirement.generated, entry] };
@@ -157,7 +190,7 @@ export const removeGenerated = Effect.fn("removeGenerated")(function* (
       ),
     };
     yield* save();
-    const current = yield* inspectGenerated(root, path);
+    const current = yield* inspectGeneratedPath(git, e, path);
     if (!sameDirectory(identity, current))
       return yield* new CrewError(
         "CLEANUP_REPLACEMENT",

@@ -1,20 +1,25 @@
 import { FeedbackBatchSchema } from "./feedback-contracts.ts";
-import { IncidentId, SessionId, MessageId } from "../identities.ts";
+import { IncidentId, SessionId, MessageId, OperationId } from "../identities.ts";
 import { Schema } from "effect";
 import { Count, NonEmpty, Positive } from "../contracts.ts";
 export const AttentionSchema = Schema.Struct({
   schema_version: Schema.Literal(1),
   batch: Schema.optional(FeedbackBatchSchema),
   id: IncidentId,
+  observed_operation: Schema.optional(OperationId),
+  observed_session: Schema.optional(SessionId),
+  observed_prompt: Schema.optional(MessageId),
   generation: Count,
   key: NonEmpty,
   code: Schema.Literals([
+    "decision_pending",
     "pr_feedback",
     "suspected_stall",
     "wait_expired",
     "wait_invalid",
     "worker_failure",
     "operation_stall",
+    "cleanup_blocked",
   ]),
   evidence: NonEmpty.check(Schema.isMaxLength(8192)),
   created_at: Count,

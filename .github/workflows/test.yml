@@ -1,22 +1,45 @@
 name: test
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+      - name: Set up Node.js and pnpm cache
+        uses: actions/setup-node@v4
         with:
           node-version: 24.21.0
           cache: pnpm
-      - run: pnpm install --frozen-lockfile --prod=false
-      - run: pnpm config:schema
-      - run: pnpm licenses:check
-      - run: pnpm check
-      - run: pnpm test
-      - run: pnpm browser:install --with-deps
-      - run: pnpm test:e2e
-      - run: pnpm build
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prod=false
+      - name: Check formatting
+        run: pnpm format:check
+      - name: Check configuration schema
+        run: pnpm config:schema
+      - name: Check license evidence
+        run: pnpm licenses:check
+      - name: Check lint, types, and Effect diagnostics
+        run: pnpm check
+      - name: Install reporter browser prerequisites
+        run: pnpm report:browser:install --with-deps
+      - name: Run unit and integration tests
+        run: pnpm test
+      - name: Install browser prerequisites
+        run: pnpm browser:install --with-deps
+      - name: Run end-to-end tests
+        run: pnpm test:e2e
+      - name: Build plugin
+        run: pnpm build

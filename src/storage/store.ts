@@ -357,6 +357,7 @@ export class Records {
                 "attention",
                 "attention_turns",
                 "resume_after_decision",
+                "finishing",
               ]) {
                 if (field in prior) Object.assign(record, { [field]: prior[field] });
                 else Reflect.deleteProperty(record, field);

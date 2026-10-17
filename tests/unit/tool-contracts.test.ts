@@ -10,6 +10,57 @@ import { progress } from "../../src/opencode/progress.ts";
 import { SessionId } from "../../src/identities.ts";
 import { CrewError } from "../../src/domain.ts";
 import { run } from "../effects.ts";
+import { toolOutputs } from "../../src/opencode/tool-contracts.ts";
+import { deliveryAction } from "../../src/workflow/delivery-outcome.ts";
+import { ExecutionBusy } from "../../src/workflow/operations.ts";
+import { IssueId } from "../../src/identities.ts";
+
+test("native finish output preserves unexecuted busy observations and genuine failed actions", async () => {
+  const registered: Tool.Info[] = [];
+  const editor: ToolEditor = {
+    list: () => [],
+    get: () => undefined,
+    namespace: () => {},
+    remove: () => {},
+    update: () => {},
+    add: (tool) => {
+      registered.push(tool);
+    },
+  };
+  const id = IssueId.make("busy-ticket");
+  const reads = {
+    execution: () => Effect.fail(new CrewError("READ", "Unavailable")),
+    issue: () => Effect.fail(new CrewError("READ", "Unavailable")),
+  };
+  defineTool({
+    name: "work_finish",
+    description: "Observe acquisition contention",
+    input: Schema.Struct({}),
+    output: toolOutputs.work_finish,
+    run: () => deliveryAction(reads, id, "finish", Effect.fail(new ExecutionBusy(id))),
+  }).register(
+    editor,
+    () => Effect.void,
+    (effect) => effect,
+  );
+  const context: Tool.Context = {
+    sessionID: SessionId.make("ses_supervisor"),
+    agent: Agent.ID.make("abra"),
+    messageID: SessionMessage.ID.make("msg_busy"),
+    id: Tool.CallID.make("busy"),
+    progress: () => Effect.void,
+  };
+  const result = await run(registered[0].execute({}, context));
+  assert.deepEqual(JSON.parse(result.content as string), result.output);
+  const output = result.output as {
+    ok: boolean;
+    result: { category: string; performed: boolean; outcome?: unknown };
+  };
+  assert.equal(output.ok, true);
+  assert.equal(output.result.category, "operation_in_progress");
+  assert.equal(output.result.performed, false);
+  assert.equal(output.result.outcome, undefined);
+});
 
 test("native tool registration validates outputs, reports bounded progress and preserves native error causes", async () => {
   defineTool({
@@ -94,4 +145,29 @@ test("native tool registration validates outputs, reports bounded progress and p
   }
   const defect = await run(Effect.exit(tool.execute({ mode: "defect" }, context)));
   if (defect._tag === "Failure") assert.equal(defect.cause.reasons[0]._tag, "Die");
+
+  let handlerInvocations = 0;
+  defineTool({
+    name: "blocked",
+    description: "Authorization must precede handler invocation",
+    input: Schema.Struct({ action: Schema.Literals(["status", "apply"]) }),
+    output: Schema.Struct({ count: Schema.Int }),
+    diagnostic: ({ action }) => action === "status",
+    run: () => {
+      handlerInvocations++;
+      return Effect.succeed({ count: 1 });
+    },
+  }).register(
+    editor,
+    (access) =>
+      access.diagnostic
+        ? Effect.void
+        : Effect.fail(new CrewError("ATTENTION_AUTHORITY", "Blocked before the handler")),
+    (effect) => effect,
+  );
+  const blocked = registered[1];
+  await assert.rejects(run(blocked.execute({ action: "apply" }, context)), /Blocked before/);
+  assert.equal(handlerInvocations, 0);
+  await run(blocked.execute({ action: "status" }, context));
+  assert.equal(handlerInvocations, 1);
 });

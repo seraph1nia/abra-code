@@ -16,7 +16,8 @@ import { domainEffect } from "../effect.ts";
 import { CrewError, type Project, type ManagedExecution } from "../domain.ts";
 import { Effect } from "effect";
 import { createHash } from "node:crypto";
-import { realpath, access, readdir, readFile } from "../filesystem.ts";
+import { realpath, access, readdir, readFile, copyFile, mkdtemp, rm } from "../filesystem.ts";
+import { tmpdir } from "node:os";
 import { resolve, join, isAbsolute } from "node:path";
 
 import { type Runner, type RunOptions } from "../process.ts";
@@ -101,6 +102,36 @@ export class Git {
       Effect.flatMap((value) => decode(GitTree, value, "Git tree")),
     );
   }
+  /** Project current deliverable content into a private index before admitting a mutation. */
+  candidateTree = Effect.fn("Git.candidateTree")(
+    function* (this: Git, root: AbsolutePath, include: readonly RelativePath[] = []) {
+      return yield* Effect.acquireUseRelease(
+        mkdtemp(join(tmpdir(), "abracode-index-")),
+        (directory) =>
+          domainEffect(
+            Effect.gen({ self: this }, function* () {
+              const index = join(directory, "index");
+              const current = resolve(
+                root,
+                yield* this.run(root, ["rev-parse", "--git-path", "index"]),
+              );
+              yield* copyFile(current, index);
+              const run = (args: string[]) =>
+                this.runner.run(Executable.make("git"), args, root, {
+                  GIT_INDEX_FILE: index,
+                  GIT_OPTIONAL_LOCKS: "0",
+                });
+              yield* run(["add", "--all"]);
+              for (const path of include)
+                yield* run(["--literal-pathspecs", "add", "--force", "--", path]);
+              return yield* decode(GitTree, yield* run(["write-tree"]), "Candidate Git tree");
+            }),
+          ),
+        (directory) => rm(directory, { recursive: true }).pipe(Effect.ignore),
+      );
+    }.bind(this),
+    domainEffect,
+  );
   dirty(path: AbsolutePath) {
     return this.run(path, ["status", "--porcelain=v1", "--untracked-files=all"]);
   }

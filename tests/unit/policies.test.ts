@@ -1,3 +1,4 @@
+import { deliveryOutcome } from "../../src/workflow/delivery-outcome.ts";
 import * as Id from "../../src/identities.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -83,6 +84,10 @@ test("research runs without OpenSpec/checks and retains a hashed report and sess
   f.runtime.success(e.research_session_id!);
   const done = await run(f.controller.advance(issue.id));
   assert.equal(done.current_phase, "completed");
+  const outcome = deliveryOutcome(done, "closed", 100);
+  assert.equal(outcome.delivery.kind, "report");
+  assert.equal(outcome.delivery.state, "verified");
+  assert.equal(outcome.approval.kind, "plan");
   assert.equal(f.delivery.calls, 0);
   assert.equal(done.pull_request_reference, undefined);
   assert.equal(done.delivery_receipt, undefined);
@@ -241,10 +246,13 @@ test("lightweight uses short scope, checks and independent Review with no OpenSp
   );
   assert.ok("form_id" in pending);
   f.runtime.forms.set(pending.form_id, "approved");
-  const done = await run(
+  const approved = await run(
     f.controller.approve(issue.id, "merge", Id.SessionId.make("ses_supervisor")),
   );
-  assert.ok("current_phase" in done);
+  assert.ok("current_phase" in approved);
+  assert.equal(approved.current_phase, "awaiting_merge");
+  assert.equal(f.delivery.merged, false);
+  const done = (await run(f.controller.reconcile(issue.id)))[0];
   assert.equal(done.current_phase, "completed");
   assert.ok(done.delivery_receipt);
   assert.equal(f.delivery.calls, 1);

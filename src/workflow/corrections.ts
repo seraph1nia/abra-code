@@ -140,7 +140,13 @@ export class Corrections {
   );
   assertArchives = Effect.fn("Corrections.assertArchives")(
     function* (this: Corrections, e: Execution) {
-      for (const round of e.rounds ?? [])
+      for (const round of [
+        ...(e.rounds ?? []),
+        ...(e.finishing?.synchronization?.map((a) => ({
+          archive_path: a.prior_archive,
+          starting_head: a.head,
+        })) ?? []),
+      ])
         if (round.archive_path) {
           if (
             !(

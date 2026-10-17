@@ -24,7 +24,7 @@ OpenCrew SHALL supply a version-pinned agent-browser executable from its central
 
 ### Requirement: Browser guidance is available in every worker location
 
-Explore, Apply, Review and Research SHALL have one portable OpenCrew browser skill available through the native skill tool in their assigned worktrees for all supported workflows. The skill SHALL load the installed CLI's upstream workflow instructions and describe OpenCrew's browser session, screenshot and scope conventions. Its availability SHALL be checked using the existing worker-location capability validation. Skill loading MUST NOT install tools or overwrite managed repository instructions.
+Explore, Apply, Review and Research SHALL have one portable OpenCrew browser skill available through the native skill tool in their assigned worktrees for all supported workflows. The skill SHALL load the installed CLI's upstream workflow instructions and describe OpenCrew's browser session, screenshot and scope conventions. Ordinary admission MUST NOT require browser guidance or browser-only shell tools. A worker profile explicitly requiring the browser skill SHALL validate its availability through the existing worker-location capability validation and require its effective native shell tool. Apply SHALL retain its development-shell prerequisite independently of browser use. Workers SHALL load browser guidance when browser work is needed and report unavailable prerequisites for that work. Skill loading MUST NOT install tools or overwrite managed repository instructions.
 
 #### Scenario: Repository supplies no browser skill
 
@@ -32,10 +32,16 @@ Explore, Apply, Review and Research SHALL have one portable OpenCrew browser ski
 - **THEN** its native inventory contains the shared OpenCrew browser skill with usable content
 - **AND** existing local skills and instructions remain intact
 
-#### Scenario: Shared skill is unavailable
+#### Scenario: Explicitly required shared skill is unavailable
 
-- **WHEN** the required shared browser skill is absent or unusable in a worker's native inventory
+- **WHEN** a worker profile explicitly requires the shared browser skill and it is absent or unusable in the worker's native inventory
 - **THEN** new admission reports the existing location-specific capability blocker instead of assuming central-only discovery is sufficient
+
+#### Scenario: Ordinary work does not need browser prerequisites
+
+- **WHEN** a worker profile does not explicitly require browser guidance and the assignment does not use a browser
+- **THEN** admission succeeds without browser guidance or a browser-only shell tool when its other role and workflow prerequisites are met
+- **AND** Apply still requires its development-shell capability
 
 ### Requirement: Workers use the CLI through native shell tooling
 

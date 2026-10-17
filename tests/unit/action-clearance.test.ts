@@ -78,7 +78,12 @@ for (const automaticReplies of [true, false])
     f.runtime.forms.set(pending.form_id, "approved");
     const before = forge.calls.filter((a) => a[1].includes("/check-runs")).length;
     await run(c.approve(e.issue_id, "merge", Id.SessionId.make("ses_supervisor")));
-    const current = await run(c.get(e.issue_id));
+    assert.equal(
+      forge.calls.filter((a) => a[1].includes("/check-runs")).length,
+      before,
+      "Approval does not execute merge preflight",
+    );
+    const current = await run(c.finish(e.issue_id));
     assert.equal(
       forge.calls.filter((a) => a[1].includes("/check-runs")).length - before,
       1,

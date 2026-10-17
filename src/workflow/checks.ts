@@ -15,6 +15,7 @@ import { type Coordination } from "./coordination.ts";
 import { type WorkerSessions } from "./sessions.ts";
 import { type Queries } from "./queries.ts";
 import { decode } from "../decode.ts";
+import { isActiveWorker } from "./worker-assignment.ts";
 import {
   ReviewReportSchema,
   reviewScope,
@@ -194,11 +195,10 @@ export class CodingChecks {
             const e = yield* this.get(assigned.issue_id);
             if (
               !(
-                e.review_session_id === session &&
-                e.current_phase === "verifying" &&
-                e.active_role === "review" &&
-                e.control_generation === assigned.control_generation &&
-                e.verification_receipt?.fingerprint === fingerprint
+                isActiveWorker(e, session, {
+                  role: "review",
+                  generation: assigned.control_generation,
+                }) && e.verification_receipt?.fingerprint === fingerprint
               )
             )
               return yield* new CrewError(

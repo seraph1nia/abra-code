@@ -72,6 +72,8 @@ test("one restart retains migrated full-spec delivery authorization, decisions, 
   full = (await run(
     f.controller.approve(full.issue_id, "merge", Id.SessionId.make("ses_supervisor")),
   )) as Execution;
+  assert.equal(full.current_phase, "awaiting_merge");
+  [full] = await run(f.controller.reconcile(full.issue_id));
   assert.ok(full.delivery_wait);
   assert.ok(
     await run(
@@ -202,6 +204,8 @@ test("one restart retains migrated full-spec delivery authorization, decisions, 
   l = (await run(
     f.controller.approve(l.issue_id, "merge", Id.SessionId.make("ses_supervisor")),
   )) as Execution;
+  assert.equal(l.current_phase, "awaiting_merge");
+  [l] = await run(f.controller.reconcile(l.issue_id));
   assert.equal(l.current_phase, "completed");
   assert.deepEqual(
     [full.explore_session_id, l.apply_session_id, l.review_session_id, r.research_session_id],

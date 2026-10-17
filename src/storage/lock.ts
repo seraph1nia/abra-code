@@ -41,6 +41,8 @@ export class FileLocks implements Locks {
               "flock",
               [
                 "--no-fork",
+                "-E",
+                "75",
                 ...(waitSeconds ? ["-w", String(waitSeconds)] : ["-n"]),
                 join(this.root, `${key}.lock`),
                 process.env.ABRACODE_NODE_BINARY ?? "node",
@@ -62,10 +64,15 @@ export class FileLocks implements Locks {
         );
         yield* Effect.callback<void, CrewError>((resume) => {
           const ready = () => resume(Effect.void);
-          const failed = () =>
+          const failed = (code: number | null) =>
             resume(
               Effect.fail(
-                new CrewError("LOCKED", `${key} is owned by another controller; retry later`),
+                code === 75
+                  ? new CrewError("LOCKED", `${key} is busy; observe current progress`)
+                  : new CrewError(
+                      "LOCK_ERROR",
+                      `Lock helper failed for ${key}; ownership was not acquired`,
+                    ),
               ),
             );
           const error = (cause: Error) => resume(Effect.fail(CrewError.from(cause)));

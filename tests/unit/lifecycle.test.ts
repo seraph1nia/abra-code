@@ -256,9 +256,13 @@ test("merge, safe cleanup and WorkGraph closure unblock cross-repository depende
     form_id: string;
   };
   f.runtime.forms.set(Id.FormId.make(pending.form_id), "approved");
-  const done = (await run(
+  const accepted = await run(
     f.controller.approve(Id.IssueId.make("abra-1"), "merge", Id.SessionId.make("ses_supervisor")),
-  )) as typeof e;
+  );
+  assert.ok("current_phase" in accepted);
+  assert.equal(accepted.current_phase, "awaiting_merge");
+  assert.equal(f.delivery.merged, false);
+  const done = (await run(f.controller.reconcile(Id.IssueId.make("abra-1"))))[0];
   assert.equal(done.current_phase, "completed");
   await assert.rejects(access(e.worktree_directory!));
   assert.equal(f.work.issues.get("abra-1")!.status, "closed");
@@ -275,7 +279,11 @@ test("untracked or ignored work prevents cleanup after externally confirmed merg
   f.delivery.merged = true;
   f.delivery.pr!.state = "MERGED";
   await writeFile(join(e.worktree_directory!, "unpreserved.txt"), "keep");
-  await assert.rejects(run(f.controller.finish(Id.IssueId.make("abra-1"))), /changed/);
+  const waiting = await run(f.controller.finish(Id.IssueId.make("abra-1")));
+  assert.equal(waiting.current_phase, "awaiting_merge");
+  assert.ok(
+    waiting.decisions?.some((d) => d.status === "open" && d.finishing_target?.kind === "follow_on"),
+  );
   assert.equal(f.work.issues.get("abra-1")!.status, "in_progress");
   await access(e.worktree_directory!);
 });

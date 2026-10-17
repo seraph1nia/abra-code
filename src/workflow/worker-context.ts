@@ -29,6 +29,7 @@ import {
   WorkerContextSummarySchema,
 } from "./worker-context-contracts.ts";
 import { workerPrompt } from "./prompts.ts";
+import { isActiveWorker } from "./worker-assignment.ts";
 
 const contextKey = (id: MessageId) => StorageKey.make(`worker-context/${id}`);
 const statusKey = (e: Execution, role: Role) =>
@@ -118,7 +119,7 @@ export class WorkerContexts {
           prompt:
             workerPrompt(e, issue, role) +
             `\nRequired skills (load through the native skill tool when relevant): ${environment.skills.map((skill) => skill.id).join(", ") || "none"}. Skill availability does not grant tools.\n` +
-            `For website interaction and application behavior checks, load abra-browser and use agent-browser through the native shell tool. Browser session: ${browser.name}. Screenshot directory: ${browser.directory}/. Use --session ${browser.name} on every invocation; close only that named browser when finished. Browser checks supplement required repository verification.\n`,
+            `When website interaction or application behavior checks are needed, load abra-browser and use agent-browser through the native shell tool. If browser guidance, shell or browser prerequisites are unavailable, report the blocker for browser-dependent work; ordinary work does not require them. Browser session: ${browser.name}. Screenshot directory: ${browser.directory}/. Use --session ${browser.name} on every invocation; close only that named browser when finished. Browser checks supplement required repository verification.\n`,
           scope_fingerprint:
             e.workflow_policy === "full-openspec" ? e.plan_fingerprint : e.scope?.fingerprint,
           approvals: e.approval_receipts,
@@ -235,10 +236,11 @@ export class WorkerContexts {
             const current = yield* this.records.execution(e.issue_id);
             if (
               !current ||
-              current.control_generation !== context.generation ||
-              current.worker_context_id !== context.prompt_id ||
-              current.active_role !== context.role ||
-              current[`${context.role}_session_id`] !== context.session_id
+              !isActiveWorker(current, context.session_id, {
+                role: context.role,
+                generation: context.generation,
+              }) ||
+              current.worker_context_id !== context.prompt_id
             )
               return yield* new CrewError(
                 "STALE_CONTEXT",
@@ -278,11 +280,7 @@ export class WorkerContexts {
       model: WorkerModel,
       names: import("../identities.ts").ToolName[],
     ) {
-      if (
-        e.active_role !== role ||
-        e[`${role}_session_id`] !== session ||
-        !["exploring", "planning", "applying", "verifying", "researching"].includes(e.current_phase)
-      )
+      if (!isActiveWorker(e, session, { role }))
         return yield* new CrewError(
           "INACTIVE_WORKER",
           "Worker no longer owns an active workflow phase",

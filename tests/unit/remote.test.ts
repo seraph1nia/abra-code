@@ -403,10 +403,29 @@ test("OpenSpec setup uses an owned worktree and a durable human merge gate befor
   assert.ok("form_id" in pending);
   assert.equal(f.delivery.merged, false);
   f.runtime.forms.set(pending.form_id, "approved");
+  await writeFile(join(project.git_common_dir, "info/exclude"), "fixture-residue\n");
+  await writeFile(join(path, "fixture-residue"), "preserve setup residue");
+  await assert.rejects(
+    run(
+      f.setup.run(
+        Id.RepositoryId.make("remote"),
+        "approve",
+        Id.SessionId.make("ses_supervisor"),
+        false,
+      ),
+    ),
+    /Setup cleanup blocked/,
+  );
+  assert.equal(
+    (await run(f.records.setup(Id.RepositoryId.make("remote"))))!.current_phase,
+    "cleaning",
+  );
+  await access(join(path, "fixture-residue"));
+  await rm(join(path, "fixture-residue"));
   const done = await run(
     f.setup.run(
       Id.RepositoryId.make("remote"),
-      "approve",
+      "finish",
       Id.SessionId.make("ses_supervisor"),
       false,
     ),

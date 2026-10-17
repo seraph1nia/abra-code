@@ -1,3 +1,4 @@
+import { type DeliveryOutcome } from "../../src/workflow/delivery-outcome.ts";
 import { type FeedbackPage } from "../../src/workflow/feedback-contracts.ts";
 import { feedbackFixture } from "./feedback-fixtures.ts";
 import * as Id from "../../src/identities.ts";
@@ -553,6 +554,76 @@ try {
       frame.includes("Overview") && frame.includes("Diff") && frame.includes("Ticket status"),
   );
   assert.equal(feedbackReads, 0, "Feedback must remain lazy while opening overview");
+  const originalWork = snapshot.work[0];
+  const outcome: DeliveryOutcome = {
+    execution_id: Id.ExecutionId.make("execution-view"),
+    generation: 0,
+    delivered_commit: Id.Commit.make("a".repeat(40)),
+    observed_at: 100,
+    approval: { kind: "merge", state: "recorded" },
+    delivery: { kind: "github-pr", state: "verified" },
+    cleanup: {
+      state: "blocked",
+      worktree: Id.AbsolutePath.make("/fixture/tree"),
+      generated_paths: [],
+      blocker: {
+        paths: [{ path: Id.RelativePath.make(".cache"), kind: "directory", category: "ignored" }],
+        truncated: true,
+        observed_at: 90,
+        generation: 0,
+        preservation: Id.Commit.make("a".repeat(40)),
+        fingerprint: Id.Fingerprint.make("residue"),
+        attempts: 1,
+        next_check_at: 30090,
+      },
+    },
+    closure: "open",
+    next_action: "Inspect retained files; preserve unknown work, then finish.",
+  };
+  snapshot = {
+    ...snapshot,
+    work: snapshot.work.map((w, i) => (i === 0 ? { ...w, phase: "cleaning", outcome } : w)),
+  };
+  await run("abracode.refresh");
+  screen.resize(90, 85);
+  await screen.waitForFrame(
+    (frame) =>
+      frame.includes("Delivery (github-pr): verified") &&
+      frame.includes("Cleanup: blocked") &&
+      frame.includes("Path sample truncated"),
+  );
+  assert.match(screen.captureCharFrame(), /Issue: open/);
+  screen.resize(38, 85);
+  await screen.waitForFrame(
+    (frame) => frame.includes("Cleanup: blocked") && frame.includes('ignored directory: ".cache"'),
+  );
+  assert.ok(
+    screen
+      .captureCharFrame()
+      .split("\n")
+      .every((line) => line.length <= 38),
+  );
+  snapshot = {
+    ...snapshot,
+    work: snapshot.work.map((w, i) =>
+      i === 0
+        ? {
+            ...w,
+            phase: "awaiting_merge",
+            outcome: {
+              ...outcome,
+              delivery: { kind: "github-pr", state: "unconfirmed" },
+              cleanup: { state: "not_started", generated_paths: [] },
+            },
+          }
+        : w,
+    ),
+  };
+  await run("abracode.refresh");
+  await screen.waitForFrame((frame) => frame.includes("unconfirmed"));
+  snapshot = { ...snapshot, work: snapshot.work.map((w, i) => (i === 0 ? originalWork : w)) };
+  await run("abracode.refresh");
+
   screen.resize(90, 85);
   await screen.waitForFrame((frame) => frame.includes("Feedback"));
   await click("Feedback");

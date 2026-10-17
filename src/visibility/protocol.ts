@@ -1,3 +1,4 @@
+import { DeliveryOutcomeSchema } from "../workflow/delivery-outcome.ts";
 import { WorkerInspectionSchema } from "./worker.ts";
 import { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
 import { AutomationFields, QualityReceipt } from "../config/policy.ts";
@@ -45,6 +46,7 @@ const session = Schema.Struct({
   role: RoleSchema,
 });
 const work = Schema.Struct({
+  outcome: Schema.optional(DeliveryOutcomeSchema),
   generation: Schema.optional(Count),
   delivered_head: Schema.optional(Commit),
   implementation_head: Schema.optional(Commit),
