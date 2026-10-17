@@ -14,7 +14,7 @@ import {
   finishingAction,
   type PublicationObservation,
 } from "./finishing-readiness.ts";
-import { synchronizationAuthority } from "./synchronization.ts";
+import { activeSynchronization, synchronizationAuthority } from "./synchronization.ts";
 import { applyDispositions, residueTarget } from "./finishing-disposition.ts";
 import { type CleanupSample } from "../git/cleanup.ts";
 import { type FinishingTarget } from "./finishing-contracts.ts";
@@ -38,6 +38,38 @@ interface Dependencies {
 /** Coordinates existing evidence owners within the caller's owned execution operation. */
 export class Finishing {
   constructor(private c: Dependencies) {}
+  recoverAdmission = Effect.fn("Finishing.recoverAdmission")(
+    function* (this: Finishing, e: Execution, p: Project) {
+      const attempt = activeSynchronization(e);
+      if (
+        e.current_phase !== "recovery_required" ||
+        e.resume_phase !== "awaiting_merge" ||
+        e.stop_status ||
+        externalOwns(e) ||
+        attempt?.stage !== "admitted" ||
+        attempt.plan !== e.plan_fingerprint
+      )
+        return undefined;
+      if (yield* this.c.obligations.recheck(e)) return undefined;
+      yield* this.c.sessions.idle(e);
+      yield* this.c.workspaces.preflight(p, e).pipe(
+        Effect.catchIf(
+          (error) => error.code === "DELIVERY_CHANGED",
+          () => Effect.void,
+        ),
+      );
+      if ((yield* this.c.git.candidateTree(e.worktree_directory!)) !== attempt.input_tree)
+        return undefined;
+      const observation = yield* observePublication(this.c.git, this.c.delivery, p, e);
+      if (observation.remote !== attempt.published || observation.state === "merged")
+        return undefined;
+      e.current_phase = "awaiting_merge";
+      delete e.error_or_recovery_reason;
+      yield* this.c.records.save(e);
+      return yield* this.c.synchronize(e, p, observation);
+    }.bind(this),
+    domainEffect,
+  );
   residue = Effect.fn("Finishing.residue")(
     function* (this: Finishing, e: Execution, sample: CleanupSample) {
       const target = yield* residueTarget(this.c.git, e, sample);
@@ -80,11 +112,44 @@ export class Finishing {
     }.bind(this),
     domainEffect,
   );
+  followOn = Effect.fn("Finishing.followOn")(
+    function* (this: Finishing, e: Execution, p: Project) {
+      if (
+        (yield* this.c.git.head(e.worktree_directory!)) === e.delivered_commit &&
+        !(yield* this.c.git.run(e.worktree_directory!, ["diff", "--name-only", "HEAD"]))
+      )
+        return false;
+      const observation = yield* observePublication(this.c.git, this.c.delivery, p, e);
+      if (observation.head === observation.published && !observation.dirty) return false;
+      // Untracked/ignored notes use the ordinary preservation/disposal form. Tracked
+      // edits or new commits cannot be folded into an already preserved delivery.
+      if (
+        observation.head === observation.published &&
+        !(yield* this.c.git.run(e.worktree_directory!, ["diff", "--name-only", "HEAD"]))
+      )
+        return false;
+      yield* this.decision(
+        e,
+        observation,
+        "follow_on",
+        "Preserved delivery has additional unpublished work. Preserve these exact edits and arrange a separately authorized follow-on before retirement.",
+      );
+      return true;
+    }.bind(this),
+    domainEffect,
+  );
   prepare = Effect.fn("Finishing.prepare")(
     function* (this: Finishing, e: Execution, p: Project): Effect.fn.Return<boolean, CrewError> {
       if (e.stop_status || externalOwns(e)) return false;
       yield* this.c.sessions.idle(e);
       let observation = yield* observePublication(this.c.git, this.c.delivery, p, e);
+      if (observation.state === "merged")
+        yield* this.c.workspaces.preflight(p, e).pipe(
+          Effect.catchIf(
+            (error) => error.code === "DELIVERY_CHANGED",
+            () => Effect.void,
+          ),
+        );
       if (yield* this.c.obligations.recheck(e)) {
         const pending =
           e.decisions?.filter(
@@ -110,6 +175,10 @@ export class Finishing {
         const disposition = yield* applyDispositions(this.c.git, this.c.records, e);
         if (disposition.included)
           observation = yield* observePublication(this.c.git, this.c.delivery, p, e);
+      }
+      if (activeSynchronization(e)?.stage === "admitted") {
+        yield* this.c.synchronize(e, p, observation);
+        return false;
       }
       const authority = synchronizationAuthority(e, observation);
       const action = finishingAction(e, {
@@ -181,7 +250,7 @@ export class Finishing {
             at: yield* timestamp,
           },
         };
-        yield* this.c.records.save(e);
+        yield* this.c.records.saveFinishing(e, ["publication"]);
       } else if (
         e.finishing.publication.commit !== observation.head ||
         e.finishing.publication.archived_tree !== e.archived_tree ||
@@ -198,9 +267,36 @@ export class Finishing {
   );
   preflight = Effect.fn("Finishing.preflight")(
     function* (this: Finishing, e: Execution, p: Project) {
+      const inspected =
+        e.decisions
+          ?.filter(
+            (d) =>
+              d.generation === e.control_generation &&
+              d.status === "open" &&
+              d.finishing_target?.kind === "residue",
+          )
+          .map((d) => d.key) ?? [];
       const observation = yield* observePreflight(this.c.git, this.c.workspaces, p, e);
-      e.finishing = { ...e.finishing, schema_version: 1, preflight: observation };
-      yield* this.c.records.save(e);
+      const saved = yield* this.c.records.update(e.issue_id, (current) => {
+        if (
+          current.control_generation !== observation.generation ||
+          current.operation?.id !== observation.operation_id
+        )
+          throw new CrewError("STALE_OPERATION", "Preflight ownership changed");
+        if (
+          (current.finishing?.authorizations?.at(-1)?.revision ?? 0) !==
+          observation.authorization_revision
+        )
+          throw new CrewError(
+            "FINISHING_CHANGED",
+            "Cleanup authorization changed during inspection",
+          );
+        return {
+          ...current,
+          finishing: { ...current.finishing, schema_version: 1, preflight: observation },
+        };
+      });
+      synchronizeExecution(e, saved);
       if (observation.status !== "ready") {
         yield* this.residue(e, {
           paths: observation.paths,
@@ -210,15 +306,7 @@ export class Finishing {
         return false;
       }
       // Fresh absence resolves only residue questions. Preserve unrelated obligations.
-      e.finishing = { ...e.finishing, current_question: undefined };
-      e.decisions = e.decisions?.map((d) =>
-        d.generation === e.control_generation &&
-        d.status === "open" &&
-        d.finishing_target?.kind === "residue"
-          ? { ...d, status: "superseded" }
-          : d,
-      );
-      yield* this.c.records.save(e);
+      yield* this.c.obligations.supersedeResidue(e, inspected);
       return !(yield* this.c.obligations.recheck(e));
     }.bind(this),
     domainEffect,

@@ -145,6 +145,7 @@ export class WorkerSessions {
             at: yield* timestamp,
           },
         };
+        yield* this.records.saveFinishing(e, ["attribution"]);
       }
       delete e.active_role;
       return turn.role;

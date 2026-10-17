@@ -110,6 +110,12 @@ export const admitSynchronization = Effect.fn("Synchronization.admit")(function*
     );
   const revision = e.workflow_policy === "full-openspec" && !!e.archive_path;
   const inputTree = yield* git.candidateTree(e.worktree_directory);
+  if (
+    !existing &&
+    (observation.head !== (yield* git.head(e.worktree_directory)) ||
+      observation.content !== (yield* git.fingerprint(e.worktree_directory)))
+  )
+    return yield* new CrewError("SYNCHRONIZATION_STALE", "Input changed during admission");
   if (existing && inputTree !== existing.input_tree)
     return yield* new CrewError("SYNCHRONIZATION_STALE", "Admitted input changed during recovery");
   const attempt = existing ?? {
@@ -147,7 +153,12 @@ export const admitSynchronization = Effect.fn("Synchronization.admit")(function*
     current_question: undefined,
   };
   // Persist the allowance and original input before staging, checks or native admission.
-  yield* records.save(e);
+  yield* records.saveFinishing(e, ["synchronization", "preflight", "current_question"]);
+  if (e.decisions?.some((d) => d.generation === e.control_generation && d.status === "open"))
+    return yield* new CrewError(
+      "FINISHING_CHANGED",
+      "Resolve the current decision before staging admitted content",
+    );
   yield* git.run(e.worktree_directory, ["add", "--all"]);
   const planningBase = yield* git.tree(e.worktree_directory);
   if (planningBase !== attempt.input_tree)
@@ -164,6 +175,7 @@ export const admitSynchronization = Effect.fn("Synchronization.admit")(function*
         : a,
     ),
   };
+  yield* records.saveFinishing(e, ["synchronization"]);
   delete e.verification_receipt;
   delete e.review_receipt;
   delete e.delivery_receipt;

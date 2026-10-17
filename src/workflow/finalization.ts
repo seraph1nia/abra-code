@@ -44,6 +44,131 @@ interface Dependencies {
 /** Reviewed content proceeds through archival, delivery evidence and safe retirement. */
 export class Finalization {
   constructor(private c: Dependencies) {}
+  recoverFinalization = Effect.fn("Finalization.recoverFinalization")(
+    function* (this: Finalization, e: Execution, p: Project) {
+      if (e.current_phase !== "recovery_required" || e.stop_status || externalOwns(e))
+        return undefined;
+      const issue = yield* this.c.work.show(e.issue_id);
+      if (
+        issue.status !== "closed" &&
+        (issue.status !== "in_progress" || issue.assignee !== e.execution_id)
+      )
+        return undefined;
+      if (
+        e.resume_phase === "awaiting_merge" &&
+        e.finishing?.publication?.commit === e.delivered_commit &&
+        p.delivery === "github-pr"
+      ) {
+        const pr = yield* this.c.delivery.inspect(p, e);
+        if (
+          pr?.state !== "MERGED" ||
+          pr.url !== e.pull_request_reference ||
+          pr.headRefOid !== e.delivered_commit ||
+          pr.baseRefName !== e.target_branch
+        )
+          return undefined;
+        yield* this.c.sessions.idle(e);
+        yield* this.c.transitions.move(e, "awaiting_merge");
+        return yield* this.finish(e, p);
+      }
+      if (
+        e.resume_phase !== "cleaning" ||
+        !e.worktree_directory ||
+        !(e.workflow_policy === "research-only" ? e.report_receipt : e.delivery_receipt)
+      )
+        return undefined;
+      const native = e.retirement?.native;
+      const removing = e.retirement?.generated.filter((entry) => entry.state === "removing") ?? [];
+      if (native === "requested" || native === "confirmed") {
+        if (yield* pathExists(e.worktree_directory)) return undefined;
+      } else if (removing.length) {
+        for (const entry of removing)
+          if (yield* pathExists(join(e.worktree_directory, entry.path))) return undefined;
+      } else return undefined;
+      yield* this.c.transitions.move(e, "cleaning");
+      return yield* this.cleanup(e, p);
+    }.bind(this),
+    domainEffect,
+  );
+  /** Adopt an observed exact push postcondition; never replay an uncertain push. */
+  recoverPublication = Effect.fn("Finalization.recoverPublication")(
+    function* (this: Finalization, e: Execution, p: Project) {
+      const attempt = activeSynchronization(e);
+      const binding = e.finishing?.publication;
+      if (
+        e.current_phase !== "recovery_required" ||
+        e.resume_phase !== "delivering" ||
+        e.stop_status ||
+        externalOwns(e) ||
+        attempt?.stage !== "publishing" ||
+        !e.worktree_directory ||
+        !e.archived_tree ||
+        !e.review_receipt?.passed
+      )
+        return undefined;
+      const issue = yield* this.c.work.show(e.issue_id);
+      if (issue.status !== "in_progress" || issue.assignee !== e.execution_id) return undefined;
+      yield* this.c.sessions.idle(e);
+      yield* this.c.git.validate(p, e);
+      // Includes native inventory and directory identity, without disposing of residue.
+      yield* this.c.workspaces.preflight(p, e);
+      if (!attempt.intended_commit) {
+        // The commit intent predates the native Git call; no push was admitted.
+        if (
+          attempt.publication_tree !== e.archived_tree ||
+          (yield* this.c.git.dirty(e.worktree_directory)) ||
+          (yield* this.c.git.tree(e.worktree_directory)) !== e.archived_tree
+        )
+          return undefined;
+        yield* this.c.git.run(e.worktree_directory, [
+          "merge-base",
+          "--is-ancestor",
+          attempt.published,
+          "HEAD",
+        ]);
+        yield* this.c.transitions.move(e, "delivering");
+        return yield* this.deliver(e, p);
+      }
+      if (
+        !binding ||
+        binding.commit !== attempt.intended_commit ||
+        binding.archived_tree !== e.archived_tree ||
+        binding.verification !== e.verification_receipt?.fingerprint ||
+        binding.review !== e.review_receipt.fingerprint
+      )
+        return undefined;
+      if (
+        (yield* this.c.git.head(e.worktree_directory)) !== binding.commit ||
+        (yield* this.c.git.dirty(e.worktree_directory)) ||
+        (yield* this.c.git.tree(e.worktree_directory)) !== binding.archived_tree
+      )
+        return undefined;
+      const pr = p.delivery === "github-pr" ? yield* this.c.delivery.inspect(p, e) : undefined;
+      if (
+        p.delivery === "github-pr" &&
+        !(
+          pr &&
+          ["OPEN", "MERGED"].includes(pr.state) &&
+          pr.url === attempt.pr &&
+          pr.headRefOid === binding.commit &&
+          pr.baseRefName === e.target_branch
+        )
+      )
+        return undefined;
+      if (pr?.state !== "MERGED") {
+        const remote = yield* this.c.git.run(e.worktree_directory, [
+          "ls-remote",
+          "--heads",
+          "origin",
+          `refs/heads/${e.branch}`,
+        ]);
+        if (remote !== `${binding.commit}\trefs/heads/${e.branch}`) return undefined;
+      }
+      yield* this.c.transitions.move(e, "delivering");
+      return yield* this.deliver(e, p);
+    }.bind(this),
+    domainEffect,
+  );
   notifyCompletion = Effect.fn("Finalization.notifyCompletion")(
     function* (this: Finalization, e: Execution) {
       if (e.current_phase !== "completed") return e;
@@ -64,7 +189,7 @@ export class Finalization {
         current_question: undefined,
         completion_notice: notice,
       };
-      yield* this.c.records.save(e);
+      yield* this.c.records.saveFinishing(e, ["completion_notice", "current_question"]);
       const result = notice.session_id
         ? yield* Effect.result(
             this.c.sessions.notifyCompletion(notice.session_id, notice.message_id, e.issue_id),
@@ -86,7 +211,7 @@ export class Finalization {
                 : undefined,
         },
       };
-      return yield* this.c.records.save(e);
+      return yield* this.c.records.saveFinishing(e, ["completion_notice"]);
     }.bind(this),
     domainEffect,
   );
@@ -180,8 +305,20 @@ export class Finalization {
         e.intent = { title: issue.title, description: issue.description };
         yield* this.c.records.save(e);
       }
-      const commit = yield* this.c.git.commit(evidence.worktree_directory, e.issue_id);
       const synchronization = activeSynchronization(e);
+      if (synchronization && synchronization.stage !== "publishing") {
+        e.finishing = {
+          ...e.finishing,
+          schema_version: 1,
+          synchronization: e.finishing!.synchronization!.map((a) =>
+            a.ordinal === synchronization.ordinal
+              ? { ...a, stage: "publishing", publication_tree: e.archived_tree! }
+              : a,
+          ),
+        };
+        yield* this.c.records.saveFinishing(e, ["synchronization"]);
+      }
+      const commit = yield* this.c.git.commit(evidence.worktree_directory, e.issue_id);
       e.finishing = {
         ...e.finishing,
         schema_version: 1,
@@ -203,15 +340,13 @@ export class Finalization {
             : a,
         ),
       };
-      yield* this.c.records.save(e);
+      yield* this.c.records.saveFinishing(e, ["publication", "preflight", "synchronization"]);
       const result = yield* this.c.delivery.deliver(p, e);
       if (result.commit !== commit)
         return yield* new CrewError(
           "DELIVERY_CHANGED",
           "Published commit differs from retained reviewed publication binding",
         );
-      e.delivered_commit = result.commit;
-      e.pull_request_reference = result.pr;
       e.finishing = {
         ...e.finishing,
         schema_version: 1,
@@ -220,6 +355,9 @@ export class Finalization {
           a.ordinal === synchronization?.ordinal ? { ...a, stage: "published" } : a,
         ),
       };
+      yield* this.c.records.saveFinishing(e, ["publication", "synchronization"]);
+      e.delivered_commit = result.commit;
+      e.pull_request_reference = result.pr;
       yield* this.c.transitions.move(e, "awaiting_merge");
       yield* this.c.transitions.notice(
         e,
@@ -247,6 +385,17 @@ export class Finalization {
               code: error.code,
               reason: error.message,
               owner: "forge",
+            }),
+        ),
+        Effect.catchIf(
+          (error) =>
+            ["FINISHING_CHANGED", "DELIVERY_CHANGED"].includes(error.code) &&
+            e.current_phase === "awaiting_merge",
+          () =>
+            Effect.gen({ self: this }, function* () {
+              // The failed guard submitted nothing. Re-evaluate the new revision next poll.
+              delete e.delivery_wait;
+              return yield* this.c.records.save(e);
             }),
         ),
       );
@@ -410,6 +559,10 @@ export class Finalization {
         return yield* new CrewError("DELIVERY_REQUIRED", "No verified preservation receipt");
       yield* this.c.sessions.idle(e);
       if (yield* pathExists(evidence.worktree_directory)) {
+        if (e.workflow_policy !== "research-only") {
+          const observation = yield* this.c.finishing.followOn(e, p);
+          if (observation) return e;
+        }
         yield* applyDispositions(this.c.git, this.c.records, e);
         if (
           e.decisions?.some(
@@ -419,17 +572,18 @@ export class Finalization {
               d.finishing_target?.kind === "residue",
           )
         ) {
+          const inspected = e.decisions
+            .filter(
+              (d) =>
+                d.generation === e.control_generation &&
+                d.status === "open" &&
+                d.finishing_target?.kind === "residue",
+            )
+            .map((d) => d.key);
           const residue = yield* this.c.workspaces.preflight(p, e);
           if (residue) return yield* this.blockCleanup(e, residue);
           if (!residue) {
-            e.decisions = e.decisions.map((d) =>
-              d.generation === e.control_generation &&
-              d.status === "open" &&
-              d.finishing_target?.kind === "residue"
-                ? { ...d, status: "superseded" }
-                : d,
-            );
-            yield* this.c.records.save(e);
+            yield* this.c.obligations.supersedeResidue(e, inspected);
           }
         }
       }

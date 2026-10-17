@@ -1,10 +1,14 @@
+import { Effect } from "effect";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { mkdir, writeFile, rename, access } from "node:fs/promises";
+import { mkdir, writeFile, rename, access, rm } from "node:fs/promises";
 import { join } from "node:path";
 import * as Id from "../../src/identities.ts";
 import { delivered, fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
+import { deliveryOutcome, DeliveryOutcomeSchema } from "../../src/workflow/delivery-outcome.ts";
+import { section, stateLabel } from "../../src/visibility/presentation.ts";
+import { Schema } from "effect";
 
 async function retained(files: string[]) {
   const f = await run(fixture);
@@ -15,6 +19,68 @@ async function retained(files: string[]) {
   await writeFile(exclude, files.map((path) => `${path}\n`).join(""));
   return { f, e, root: e.worktree_directory! };
 }
+
+test("undelivered finishing forms remain visible and observers preserve the retained snapshot", async (t) => {
+  const { f, e, root } = await retained(["cache/"]);
+  t.onTestFinished(() => run(f.close()));
+  delete e.supervisor_session_id;
+  await run(f.records.save(e));
+  await mkdir(join(root, "cache"));
+  await writeFile(join(root, "cache/value"), "preserve");
+  let current = await run(f.controller.finish(e.issue_id));
+  const question = current.decisions!.find((d) => d.status === "open")!;
+  assert.equal(current.finishing!.routing![0].status, "undelivered");
+  const before = structuredClone(current);
+  const outcome = deliveryOutcome(current, "in_progress", Date.now());
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(Schema.decodeSync(DeliveryOutcomeSchema)(JSON.parse(JSON.stringify(outcome)))),
+    ),
+    JSON.parse(JSON.stringify(outcome)),
+  );
+  assert.equal(outcome.finishing!.questions[0].routing, "undelivered");
+  assert.match(outcome.next_action, /undelivered/);
+  const item = {
+    issue_id: e.issue_id,
+    title: "Finishing",
+    priority: 1,
+    issue_status: "in_progress" as const,
+    eligible: false,
+    phase: current.current_phase,
+    sessions: [],
+    blockers: [],
+    decisions: current.decisions,
+    outcome,
+  };
+  assert.equal(section(item), "attention");
+  assert.match(stateLabel(item), /form undelivered/);
+  assert.deepEqual(current, before);
+  await assert.rejects(
+    run(
+      f.controller.decision(
+        e.issue_id,
+        question.key,
+        current.control_generation,
+        e.apply_session_id!,
+        "collect",
+      ),
+    ),
+    { code: "WORKER_FORBIDDEN" },
+  );
+  await run(
+    f.controller.decision(
+      e.issue_id,
+      question.key,
+      current.control_generation,
+      Id.SessionId.make("ses_supervisor"),
+      "collect",
+    ),
+  );
+  current = await run(f.controller.get(e.issue_id));
+  assert.ok(current.decisions!.find((d) => d.key === question.key)!.form_id);
+  assert.equal(current.finishing!.authorizations, undefined);
+  await access(join(root, "cache/value"));
+});
 
 test("defer stays quiet and explicit reconsideration retains old form history", async (t) => {
   const { f, e, root } = await retained(["build-output/"]);
@@ -95,13 +161,11 @@ test("preservation is verified by absence and resumes post-merge closure without
   assert.equal(waiting.current_phase, "cleaning");
   assert.ok(waiting.delivery_receipt);
   const question = waiting.decisions!.find((d) => d.status === "open")!;
-  assert.equal(question.finishing_target!.kind, "residue");
-  if (question.finishing_target!.kind === "residue")
-    assert.deepEqual(
-      question.finishing_target.files,
-      [],
-      "Post-merge notes must not be included in a merged PR",
-    );
+  const target = question.finishing_target;
+  assert.ok(target);
+  assert.equal(target.kind, "residue");
+  if (target.kind === "residue")
+    assert.deepEqual(target.files, [], "Post-merge notes must not be included in a merged PR");
   f.runtime.dispositions.set(question.form_id!, {
     status: "answered",
     answer: { action: "preserve", paths: [Id.RelativePath.make("private-note")] },
@@ -158,4 +222,37 @@ test("changed selected file content invalidates inclusion before staging", async
   assert.equal(await run(f.git.run(root, ["ls-files", "--", "selected-note"])), "");
   assert.equal(f.delivery.calls, 1);
   await access(join(root, "selected-note"));
+});
+
+test("fresh residue absence survives a concurrent observation update and closes preserved work", async (t) => {
+  const { f, e, root } = await retained(["private-note"]);
+  t.onTestFinished(() => run(f.close()));
+  await writeFile(join(root, "private-note"), "fixture-owned note");
+  f.delivery.pr!.state = "MERGED";
+  f.delivery.merged = true;
+  const waiting = await run(f.controller.finish(e.issue_id));
+  assert.equal(waiting.current_phase, "cleaning");
+  await rm(join(root, "private-note"));
+  const command = f.git.run.bind(f.git);
+  let updated = false;
+  let observed = 0;
+  f.git.run = (...args) =>
+    command(...args).pipe(
+      Effect.tap((output) =>
+        Effect.gen(function* () {
+          if (updated || !args[1].includes("--ignored") || output) return;
+          updated = true;
+          yield* f.records.update(e.issue_id, (current) => {
+            observed = (current.attention_turns ?? 0) + 1;
+            return { ...current, attention_turns: observed };
+          });
+        }),
+      ),
+    );
+  const done = await run(f.controller.finish(e.issue_id));
+  assert.ok(updated);
+  assert.equal(done.current_phase, "completed");
+  assert.equal(done.attention_turns, observed);
+  assert.ok(!done.decisions?.some((d) => d.status === "open"));
+  assert.equal((await run(f.work.show(e.issue_id))).status, "closed");
 });

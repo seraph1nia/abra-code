@@ -16,6 +16,7 @@ import { type WorkerSessions } from "./sessions.ts";
 import { type Queries } from "./queries.ts";
 import { decode } from "../decode.ts";
 import { isActiveWorker } from "./worker-assignment.ts";
+import { activeSynchronization } from "./synchronization.ts";
 import {
   ReviewReportSchema,
   reviewScope,
@@ -162,6 +163,18 @@ export class CodingChecks {
           "CHECKS_MUTATED",
           "Checks modified tracked/untracked content; preserve or ignore generated output and retry",
         );
+      const synchronization = activeSynchronization(e);
+      if (synchronization)
+        e.finishing = {
+          ...e.finishing,
+          schema_version: 1,
+          synchronization: e.finishing!.synchronization!.map((attempt) =>
+            attempt.ordinal === synchronization.ordinal
+              ? { ...attempt, stage: "reviewing" }
+              : attempt,
+          ),
+        };
+      if (synchronization) yield* this.records.saveFinishing(e, ["synchronization"]);
       e.verification_receipt = {
         fingerprint: before,
         commands: p.verification,

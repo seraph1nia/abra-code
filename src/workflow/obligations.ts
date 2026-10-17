@@ -8,7 +8,7 @@ import { synchronizeExecution, type Records } from "../storage/store.ts";
 import { type Runtime } from "../opencode/runtime.ts";
 import { type WorkGraph } from "../work/graph.ts";
 import { type Coordination } from "./coordination.ts";
-import { isActiveWorker, workerSessionID } from "./worker-assignment.ts";
+import { historicalWorkers, isActiveWorker, workerSessionID } from "./worker-assignment.ts";
 import { decode } from "../decode.ts";
 import { createHash } from "node:crypto";
 import {
@@ -29,6 +29,59 @@ export class Obligations {
     private work: WorkGraph,
     private coordination: Coordination,
   ) {}
+  /** Fresh absence resolves only the residue questions inspected by the owning operation. */
+  supersedeResidue = Effect.fn("Obligations.supersedeResidue")(
+    function* (this: Obligations, e: Execution, keys: readonly ObligationKey[]) {
+      const now = yield* Clock.currentTimeMillis;
+      const saved = yield* this.records.update(e.issue_id, (current) => {
+        if (
+          current.control_generation !== e.control_generation ||
+          current.operation?.id !== e.operation?.id
+        )
+          throw new CrewError("STALE_OPERATION", "Residue inspection ownership changed");
+        const resolved = new Set(
+          current.decisions
+            ?.filter(
+              (d) =>
+                d.generation === e.control_generation &&
+                d.status === "open" &&
+                d.finishing_target?.kind === "residue" &&
+                keys.includes(d.key),
+            )
+            .map((d) => d.key),
+        );
+        return {
+          ...current,
+          decisions: current.decisions?.map((d) =>
+            resolved.has(d.key) && d.generation === e.control_generation
+              ? { ...d, status: "superseded" as const, resolved_at: now }
+              : d,
+          ),
+          finishing: current.finishing
+            ? {
+                ...current.finishing,
+                current_question: current.decisions?.some(
+                  (d) =>
+                    d.key === current.finishing?.current_question &&
+                    d.generation === e.control_generation &&
+                    d.status === "open" &&
+                    !resolved.has(d.key),
+                )
+                  ? current.finishing.current_question
+                  : undefined,
+                routing: current.finishing.routing?.map((r) =>
+                  r.generation === e.control_generation && resolved.has(r.key)
+                    ? { ...r, status: "superseded" as const, observed_at: now }
+                    : r,
+                ),
+              }
+            : undefined,
+        };
+      });
+      synchronizeExecution(e, saved);
+    }.bind(this),
+    domainEffect,
+  );
   openFinishing = Effect.fn("Obligations.openFinishing")(
     function* (this: Obligations, e: Execution, target: FinishingTarget, question: string) {
       const digest = createHash("sha256").update(JSON.stringify(target)).digest("hex").slice(0, 40);
@@ -256,6 +309,8 @@ export class Obligations {
             e.apply_session_id,
             e.review_session_id,
             e.research_session_id,
+            e.session_intent?.id,
+            ...historicalWorkers(e).map((worker) => worker.id),
           ].includes(session),
         )
       )

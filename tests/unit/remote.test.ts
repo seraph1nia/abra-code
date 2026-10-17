@@ -414,18 +414,23 @@ test("OpenSpec setup uses an owned worktree and a durable human merge gate befor
         false,
       ),
     ),
-    /Setup cleanup blocked/,
+    /Setup merge waits for retained-file disposition/,
   );
   assert.equal(
     (await run(f.records.setup(Id.RepositoryId.make("remote"))))!.current_phase,
-    "cleaning",
+    "awaiting_merge",
+  );
+  assert.equal(
+    f.delivery.merged,
+    false,
+    "Residue blocks submission even after the approval answer",
   );
   await access(join(path, "fixture-residue"));
   await rm(join(path, "fixture-residue"));
   const done = await run(
     f.setup.run(
       Id.RepositoryId.make("remote"),
-      "finish",
+      "approve",
       Id.SessionId.make("ses_supervisor"),
       false,
     ),
@@ -498,6 +503,19 @@ test("setup refuses changed content before delivery and retains resources after 
     /cleanup/,
   );
   f.runtime.removeWorktree = remove;
+  await assert.rejects(
+    run(
+      setup.run(
+        Id.RepositoryId.make("remote"),
+        "finish",
+        Id.SessionId.make("ses_supervisor"),
+        false,
+      ),
+    ),
+    { code: "CLEANUP_UNKNOWN" },
+  );
+  // Complete the original fixture-owned request rather than replaying an uncertain removal.
+  await run(remove((await run(f.records.project(Id.RepositoryId.make("remote"))))!, e));
   const done = await run(
     setup.run(Id.RepositoryId.make("remote"), "finish", Id.SessionId.make("ses_supervisor"), false),
   );

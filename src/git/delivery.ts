@@ -153,6 +153,15 @@ export class GitHubDelivery implements Delivery {
       if (synchronization && p.delivery === "github-pr") {
         const prior = yield* this.inspect(p, e);
         if (
+          prior?.state === "MERGED" &&
+          prior.url === synchronization.pr &&
+          prior.baseRefName === e.target_branch &&
+          prior.headRefOid === synchronization.intended_commit &&
+          (yield* this.git.head(e.worktree_directory)) === synchronization.intended_commit &&
+          !(yield* this.git.dirty(e.worktree_directory))
+        )
+          return { commit: synchronization.intended_commit!, pr: prior.url };
+        if (
           !(
             prior?.state === "OPEN" &&
             prior.url === synchronization.pr &&

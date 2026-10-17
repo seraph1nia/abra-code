@@ -175,6 +175,11 @@ export const removeGenerated = Effect.fn("removeGenerated")(function* (
         "CLEANUP_REPLACEMENT",
         "Previously removed generated directory was replaced",
       );
+    if (entry?.state === "removing")
+      return yield* new CrewError(
+        "CLEANUP_UNKNOWN",
+        "Generated-directory removal was submitted but absence is unconfirmed; inspect before recovery",
+      );
     const identity = yield* inspectGeneratedPath(git, e, path);
     if (!(!entry || sameDirectory(entry.identity, identity)))
       return yield* new CrewError("CLEANUP_REPLACEMENT", "Generated directory identity changed");

@@ -299,6 +299,14 @@ test("cleanup failure remains cleaning, recovery never repeats merge", async (t)
   await assert.rejects(run(f.controller.finish(Id.IssueId.make("abra-1"))), /unavailable/);
   assert.equal((await run(f.controller.get(Id.IssueId.make("abra-1")))).current_phase, "cleaning");
   f.runtime.removeWorktree = remove;
+  await assert.rejects(run(f.controller.finish(Id.IssueId.make("abra-1"))), {
+    code: "CLEANUP_UNKNOWN",
+  });
+  const pending = await run(f.controller.get(Id.IssueId.make("abra-1")));
+  assert.equal(pending.retirement!.native, "requested");
+  assert.equal((await run(f.work.show(pending.issue_id))).status, "in_progress");
+  // Model the original native request completing; the controller never resubmits it.
+  await run(remove((await run(f.records.project(pending.repository_id)))!, pending));
   assert.equal(
     (await run(f.controller.finish(Id.IssueId.make("abra-1")))).current_phase,
     "completed",

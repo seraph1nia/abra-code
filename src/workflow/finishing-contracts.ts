@@ -169,6 +169,7 @@ export const SynchronizationAttemptSchema = Schema.Struct({
   review_session: Schema.optional(SessionId),
   review_prompt: Schema.optional(MessageId),
   intended_commit: Schema.optional(Commit),
+  publication_tree: Schema.optional(GitTree),
   admitted_at: Timestamp,
   prior_change: ChangeName,
   prior_archive: Schema.optional(RelativePath),

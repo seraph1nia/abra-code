@@ -31,7 +31,7 @@ Use a fresh evidence directory per run to avoid confusing old output with a new 
 
 `ABRACODE_TEST_JOURNEY=engineering` selects the complete engineering journey through approval, diagnosis, independent Review, preserved branch/retirement, restart, lightweight correction and the missing-evidence decision. The default suite additionally runs the separate PR-feedback and post-merge-residue assertions; use `pnpm test:e2e` for that full acceptance. The focused recipe does not claim those additional assertions passed.
 
-After the runner exits, confirm both files still exist and the recorded `result` is `pass`. The JSON includes bounded text observations rather than screenshot image payloads. Browser screenshots remain disposable scratch evidence; they are read/asserted during the test and are not claimed as retained attachments. A report that names a deleted screenshot cannot use that path as later proof.
+After the runner exits, confirm both files still exist and the recorded `result` is `pass` with `cleanup_complete: true`. The JSON includes bounded text observations rather than screenshot image payloads. Browser screenshots remain disposable scratch evidence; they are read/asserted during the test and are not claimed as retained attachments. A report that names a deleted screenshot cannot use that path as later proof.
 
 ## Cleanup and limits
 
@@ -41,4 +41,17 @@ The [feature map](features/README.md) describes other journeys and their limitat
 
 ## Recorded exercise
 
-Implementation validation will record the exact invocation and observed result here after the native journey passes. Planned finishing behavior is not a passed baseline merely because it appears in `complete-work-reliably` artifacts. This map describes only currently exercised assertions, not that change's completion.
+Executed on 2026-10-17 using:
+
+```sh
+ABRACODE_TEST_JOURNEY=engineering \
+ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-engineering-journey \
+  pnpm exec vp test run --project e2e tests/e2e/native.test.ts \
+  > /tmp/abra-engineering-journey/native.log 2>&1
+```
+
+Observed one native test passed in 105.29 seconds. The consumer invocation returned exit 1 before the scoped source edit and exit 0 afterward with `sample consumer observed sample`. Independent Review read the untracked proof under matching controller receipts; the unavailable runtime audit case retained `not_verified` and an open decision without delivery. The seeded historical capture remained unchanged across the native restart, and fresh preflight selected current defaults. After the server/provider stopped and the temporary installation root was removed, `native.log` and `native-engineering.json` remained at the named external paths; the JSON recorded `result: pass` and `cleanup_complete: true`. This focused run excludes the separate PR-feedback/post-merge-residue assertions and does not measure autonomous model quality.
+
+Finishing behavior requires the full default native run. The focused engineering recipe excludes the additional PR synchronization and native finishing forms; neither planning artifacts nor an older engineering result establish those acceptance cases.
+
+Full acceptance completed on 2026-10-18: `pnpm check`, `pnpm test` (349 tests in 59 files), `pnpm test:e2e` (both native and source-installation tests), `pnpm licenses:check`, and strict validation of `add-worker-engineering-skills` passed. The full native run used `ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-engineering-final-acceptance`; its JSON recorded `result: pass` and `cleanup_complete: true` after teardown. It covered the PR-feedback/post-merge-residue path in addition to the focused engineering journey.

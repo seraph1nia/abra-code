@@ -21,6 +21,7 @@ export function engineeringCalls(user: string, role: string) {
   ).map(({ name }) => ({ name: "skill", args: { id: `abra-${name}` } }));
   if (role === "apply" && !user.includes("Approved short scope:"))
     calls.push(
+      { name: "read", args: { path: "README.md" } },
       { name: "write", args: { path: "sample-proof.mjs", content: proofSource } },
       { name: "shell", args: { command: "node sample-proof.mjs" } },
       {
@@ -79,6 +80,15 @@ export async function assertEngineeringWorker(
     assert.ok(call?.type === "tool" && call.state.status === "error", JSON.stringify(call));
   }
   if (role === "apply") {
+    const documentedCheck = calls.find(
+      (p) =>
+        p.type === "tool" &&
+        p.name === "read" &&
+        p.state.status !== "streaming" &&
+        p.state.input.path === "README.md",
+    );
+    assert.ok(documentedCheck?.type === "tool" && documentedCheck.state.status === "completed");
+    assert.match(JSON.stringify(documentedCheck.state.content), /existing source-content check/);
     const runs = calls.filter(
       (p) =>
         p.type === "tool" &&

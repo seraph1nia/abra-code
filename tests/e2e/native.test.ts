@@ -13,7 +13,7 @@ import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdir, writeFile, rm, symlink, readFile, access } from "node:fs/promises";
+import { mkdir, writeFile, rm, rename, symlink, readFile, access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { OpenCode } from "@opencode/client";
 import { Rpc } from "@opencode/plugin";
@@ -71,6 +71,7 @@ test(
     const engineeringEvidence: unknown[] = [];
     const reviewedTrees = new Set<string>();
     let failFirstExplore = true;
+    let stallFirstExplore = false;
     let missingToolProviderCalls = 0;
     let directWorkerProviderCalls = 0;
     const provider = createServer(async (req, res) => {
@@ -121,6 +122,10 @@ test(
       }
       if (role === "explore" && failFirstExplore) {
         failFirstExplore = false;
+        if (stallFirstExplore) {
+          stallFirstExplore = false;
+          await delay(2500);
+        }
         res.writeHead(403, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -268,7 +273,9 @@ test(
             name: "write",
             args: {
               path: `${base}/tasks.md`,
-              content: "## Implementation\n- [ ] 1.1 Implement sample\n",
+              content: user.includes("Synchronize existing content revision")
+                ? "## Implementation\n- [x] 1.1 Revalidate the existing sample revision\n"
+                : "## Implementation\n- [ ] 1.1 Implement sample\n",
             },
           },
         );
@@ -521,16 +528,23 @@ test(
       port: number;
     };
     t.onTestFinished(async () => {
-      if (process.env.ABRACODE_TEST_EVIDENCE_DIR) {
+      const recordEvidence = async (cleanupComplete: boolean) => {
+        if (!process.env.ABRACODE_TEST_EVIDENCE_DIR) return;
         const evidenceDir = resolve(process.env.ABRACODE_TEST_EVIDENCE_DIR);
-        assert.ok(!evidenceDir.startsWith(root + "/"), "Evidence must survive fixture teardown");
+        assert.ok(
+          evidenceDir !== root && !evidenceDir.startsWith(root + "/"),
+          "Evidence must survive fixture teardown",
+        );
         await mkdir(evidenceDir, { recursive: true });
+        const path = join(evidenceDir, "native-engineering.json");
         await writeFile(
-          join(evidenceDir, "native-engineering.json"),
+          path,
           JSON.stringify(
             {
               fixture: "tests/e2e/native.test.ts",
-              result: t.task.result?.state,
+              result: cleanupComplete ? t.task.result?.state : "fail",
+              cleanup_complete: cleanupComplete,
+              errors: t.task.result?.errors?.map((error) => error.message),
               observed_at: new Date().toISOString(),
               isolation:
                 "Disposable service/data/config, loopback provider and local bare remotes; no operator service or user remote",
@@ -540,19 +554,34 @@ test(
             2,
           ) + "\n",
         );
+        await access(path);
+      };
+      try {
+        if (t.task.result?.state === "fail")
+          console.error(
+            logs
+              .split("\n")
+              .filter((line) => /error|warn|failed/i.test(line))
+              .join("\n")
+              .replace(/server password .*/g, "[redacted]"),
+          );
+        const owned = child;
+        if (owned && owned.exitCode === null && owned.signalCode === null)
+          await new Promise<void>((done) => {
+            const timeout = setTimeout(() => owned.kill("SIGKILL"), 5000);
+            owned.once("exit", () => {
+              clearTimeout(timeout);
+              done();
+            });
+            owned.kill("SIGTERM");
+          });
+        await new Promise<void>((done) => provider.close(() => done()));
+        await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+        await recordEvidence(true);
+      } catch (error) {
+        await recordEvidence(false);
+        throw error;
       }
-      if (t.task.result?.state === "fail")
-        console.error(
-          logs
-            .split("\n")
-            .filter((line) => /error|warn|failed/i.test(line))
-            .join("\n")
-            .replace(/server password .*/g, "[redacted]"),
-        );
-      child?.kill("SIGTERM");
-      await delay(200);
-      await new Promise<void>((done) => provider.close(() => done()));
-      await rm(root, { recursive: true, force: true });
     });
     const home = await run(repo(root, "central"));
     const projects = await Promise.all(
@@ -580,6 +609,10 @@ test(
       "---\nname: local-fixture\ndescription: Preserve local discovery\n---\nLocal instructions.\n",
     );
     await writeFile(join(projects[1], "AGENTS.md"), "Preserve foreign repository instructions.\n");
+    await writeFile(
+      join(projects[1], "README.md"),
+      '# Fixture verification\n\nThe existing source-content check is:\n\n```sh\nnode -e \'if(require("fs").readFileSync("source.txt","utf8")!=="sample\\n")process.exit(1)\'\n```\n\nNo runtime audit service or verification recipe is supplied.\n',
+    );
     await run(git.run(Id.AbsolutePath.make(projects[1]), ["add", "."]));
     await run(
       git.run(Id.AbsolutePath.make(projects[1]), ["commit", "-m", "Foreign control files"]),
@@ -1207,6 +1240,15 @@ test(
       e.worktree_directory,
     );
     activeConfiguration.set("repositories", activeConfiguration.createNode(declared));
+    // Later finishing acceptance observes a real exhausted stall under a short
+    // fixture-only watchdog; initial authentication/attention checks use defaults.
+    activeConfiguration.set("progress_timeout_ms", {
+      explore: 500,
+      apply: 1800000,
+      review: 900000,
+      research: 900000,
+      operation: 300000,
+    });
     await writeFile(personalPath, activeConfiguration.toString());
     const applied = await client
       .rpc(configuration)
@@ -1543,6 +1585,13 @@ test(
       invoke,
       observeBusy: (tool, args) => invoke(tool, args, true),
       eventually,
+      failExploreOnce: () => {
+        failFirstExplore = true;
+        stallFirstExplore = true;
+      },
+      answerDisposition: async (formID, answer) => {
+        await client.session.form.reply({ sessionID: supervisor.id, formID, answer });
+      },
       approve: async (formID) => {
         await client.session.form.reply({
           sessionID: supervisor.id,
@@ -1603,12 +1652,83 @@ test(
       "blocked",
     );
     assert.ok(retainedCleanup.execution.worktree_directory.startsWith(root + "/"));
-    await rm(join(retainedCleanup.execution.worktree_directory, ".cleanup-residue"), {
-      recursive: true,
+    const disposition = await eventually(async () => {
+      const status = await invoke("abra_work_status", { issue_id: feedbackIssue.id });
+      const question = status.execution.decisions?.find(
+        (d: any) => d.status === "open" && d.finishing_target?.kind === "residue" && d.form_id,
+      );
+      if (
+        question &&
+        (await client.session.form
+          .get({ sessionID: supervisor.id, formID: question.form_id })
+          .catch(() => undefined))
+      )
+        return question;
     });
-    const cleanupDone = await invoke("abra_work_finish", { issue_id: feedbackIssue.id });
-    assert.equal(cleanupDone.outcome.closure, "closed");
+    const unknown = join(retainedCleanup.execution.worktree_directory, "unknown-note.txt");
+    await writeFile(
+      unknown,
+      "Unknown content must survive the directory-only answer after restart.",
+    );
+    await client.session.form.reply({
+      sessionID: supervisor.id,
+      formID: disposition.form_id,
+      answer: { action: "generated", generated_paths: [".cleanup-residue"] },
+    });
+    const retainedUnknown = await eventually(async () => {
+      const status = await invoke("abra_work_status", { issue_id: feedbackIssue.id });
+      const question = status.execution.decisions?.find(
+        (d: any) =>
+          d.status === "open" &&
+          d.finishing_target?.kind === "residue" &&
+          d.finishing_target.paths.some((p: any) => p.path === "unknown-note.txt") &&
+          d.form_id,
+      );
+      if (
+        question &&
+        (await client.session.form
+          .get({ sessionID: supervisor.id, formID: question.form_id })
+          .catch(() => undefined))
+      )
+        return question;
+    });
+    await access(unknown);
+    assert.equal(
+      (await invoke("abra_work_status", { issue_id: feedbackIssue.id })).outcome.closure,
+      "open",
+    );
+    await client.session.form.reply({
+      sessionID: supervisor.id,
+      formID: retainedUnknown.form_id,
+      answer: { action: "preserve", preserve_paths: ["unknown-note.txt"] },
+    });
+    const preservedNote = join(root, "preserved-unknown-note.txt");
+    await rename(unknown, preservedNote);
+    const cleanupDone = await eventually(async () => {
+      const status = await invoke("abra_work_status", { issue_id: feedbackIssue.id });
+      return status.outcome.closure === "closed" ? status : undefined;
+    });
+    assert.equal(cleanupDone.outcome.closure, "closed", JSON.stringify(cleanupDone));
     assert.equal(cleanupDone.outcome.cleanup.state, "retired");
+    assert.match(await readFile(preservedNote, "utf8"), /must survive/);
+    const feedbackProject = (await invoke("abra_project_list", {})).find(
+      (p: any) => p.id === "feedback",
+    );
+    assert.equal(
+      await run(
+        git.run(Id.AbsolutePath.make(feedbackProject.path), [
+          "show",
+          `${cleanupDone.execution.delivered_commit}:source.txt`,
+        ]),
+      ),
+      "sample late validated revision",
+    );
+    engineeringEvidence.push({
+      finishing: cleanupDone.outcome,
+      same_pr: cleanupDone.execution.pull_request_reference,
+      restart_unknown_preserved: true,
+      merge_count: JSON.parse(await readFile(forgeState, "utf8")).counts.merge,
+    });
     assert.equal(JSON.parse(await readFile(forgeState, "utf8")).counts.merge, 1);
     const recoveredAttention = (await invoke("abra_work_status", { issue_id: issue.id })).execution
       .attention;

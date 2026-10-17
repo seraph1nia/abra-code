@@ -302,7 +302,13 @@ test("cleanup samples preserve odd filenames, bound output and refuse failed ins
   }
   f.git.run = original;
   await writeFile(join(e.worktree_directory!, "source.txt"), "tracked drift");
-  await assert.rejects(run(f.controller.finish(e.issue_id)), /changed/);
+  const retained = await run(f.controller.finish(e.issue_id));
+  assert.ok(
+    retained.decisions?.some(
+      (d) => d.status === "open" && d.finishing_target?.kind === "follow_on",
+    ),
+  );
+  await access(join(e.worktree_directory!, "source.txt"));
 });
 
 test("legacy unsafe recovery is not resumed from ignored-file error text", async (t) => {

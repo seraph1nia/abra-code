@@ -266,11 +266,16 @@ export class NativeRuntime implements Runtime {
       )
         return yield* new CrewError("DECISION_FORM", "Finishing answer belongs to another target");
       if (form.state.status !== "answered") return { status: form.state.status };
+      const action = yield* decode(
+        FinishingAnswerSchema.fields.action,
+        form.state.answer.action,
+        "Native finishing action",
+      );
       const answer = yield* decode(
         FinishingAnswerSchema,
         {
-          action: form.state.answer.action,
-          paths: form.state.answer[`${form.state.answer.action}_paths`] ?? [],
+          action,
+          paths: form.state.answer[`${action}_paths`] ?? [],
         },
         "Native finishing answer",
       );

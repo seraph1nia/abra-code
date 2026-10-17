@@ -184,7 +184,11 @@ export function deliveryOutcome(
         : questions.length
           ? questions.some((q) => q.routing === "undelivered")
             ? "A required finishing form is undelivered. Restore the retained Abra session and collect its exact-action decision; files remain preserved."
-            : "Answer the current finishing form in Abra. Matching dispositions resume eligible work automatically; preservation still requires fresh absence inspection."
+            : questions.some((q) => q.routing === "pending")
+              ? "Answer the current finishing form in Abra. Matching dispositions resume eligible work automatically; preservation still requires fresh absence inspection."
+              : questions.some((q) => q.routing === "deferred")
+                ? "Finishing is deferred. Reconsider the current decision in Abra when ready; retained files remain preserved."
+                : "The finishing answer is recorded. Preserve selected items outside the worktree when requested; automatic inspection resumes eligible work. Follow-on work requires separate authorization."
           : blocked
             ? "Finishing waits on retained files. Use the current exact-action form or preserve the files elsewhere; automatic inspection continues without another finish request."
             : retired && status === "closed"

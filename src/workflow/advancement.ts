@@ -165,8 +165,10 @@ export class Advancement {
       synchronize: (e, p, observation) =>
         Effect.gen({ self: this }, function* () {
           const next = yield* admitSynchronization(git, records, e, observation);
-          if (next === "planning") yield* this.launch(e, "explore");
-          else yield* this.verify(e, p);
+          if (next === "planning") {
+            yield* this.spec.create(e);
+            yield* this.launch(e, "explore");
+          } else yield* this.verify(e, p);
           return e;
         }),
     });
@@ -938,6 +940,17 @@ export class Advancement {
           : e;
       synchronizeExecution(e, yield* this.obligations.collectPending(e));
       if (e.stop_status === "requested") return yield* this.transitions.confirmStop(e);
+      if (e.current_phase === "recovery_required") {
+        const p = yield* this.project(e);
+        const issue = yield* this.work.show(e.issue_id);
+        const recovered =
+          (issue.status === "in_progress" && issue.assignee === e.execution_id
+            ? yield* this.finishing.recoverAdmission(e, p)
+            : undefined) ??
+          (yield* this.finalization.recoverPublication(e, p)) ??
+          (yield* this.finalization.recoverFinalization(e, p));
+        if (recovered) return recovered;
+      }
       const assessment = yield* this.prFeedback.poll(e);
       if (["blocked", "interrupted", "failed", "recovery_required"].includes(e.current_phase))
         return e;
@@ -1102,6 +1115,8 @@ export class Advancement {
       }
       const pendingRole = phaseRole(e.current_phase);
       if (pendingRole && pendingRole !== "review" && !e.session_intent) {
+        if (e.current_phase === "planning" && e.workflow_policy === "full-openspec")
+          yield* this.spec.create(e);
         if (e.current_phase === "applying") {
           if (e.workflow_policy === "full-openspec") yield* this.spec.plan(e);
           yield* this.assertPlan(e, p);

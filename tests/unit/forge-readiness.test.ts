@@ -41,7 +41,27 @@ for (const mode of ["merge", "squash", "rebase"] as const) {
     const forge = forgeFixture(p, () => pr);
     const delivery = new GitHubDelivery(f.git, forge.runner, Id.Executable.make("fake-forge"));
     p.merge_method = mode === "merge" ? "squash" : "merge";
-    assert.equal((await run(delivery.merge(p, e))).category, "completed");
+    await assert.rejects(run(delivery.merge(p, e)), { code: "MERGE_GUARD" });
+    assert.ok(!forge.calls.some((a) => a[0] === "pr" && a[1] === "merge"));
+    await assert.rejects(
+      run(
+        delivery.merge(p, e, undefined, () =>
+          Effect.fail(
+            new CrewError("FINISHING_CHANGED", "Local content changed during forge reads"),
+          ),
+        ),
+      ),
+      { code: "FINISHING_CHANGED" },
+    );
+    assert.ok(!forge.calls.some((a) => a[0] === "pr" && a[1] === "merge"));
+    let guardCalls = 0;
+    const guarded = () =>
+      Effect.sync(() => {
+        guardCalls++;
+        assert.ok(!forge.calls.some((a) => a[0] === "pr" && a[1] === "merge"));
+      });
+    assert.equal((await run(delivery.merge(p, e, undefined, guarded))).category, "completed");
+    assert.equal(guardCalls, 1);
     const request = forge.calls.find((a) => a[0] === "pr" && a[1] === "merge")!;
     assert.deepEqual(request, [
       "pr",
@@ -93,7 +113,12 @@ for (const scenario of ["advisory", "missing", "wrong-app", "latest", "default-f
             ? [check(1, "build", 10, "failure"), check(2, "build", 10, "success")]
             : [check(1, "build", 10, "success"), check(2, "advisory", 20, "failure")];
     const result = await run(
-      new GitHubDelivery(f.git, forge.runner, Id.Executable.make("fake-forge")).merge(p, e),
+      new GitHubDelivery(f.git, forge.runner, Id.Executable.make("fake-forge")).merge(
+        p,
+        e,
+        undefined,
+        () => Effect.void,
+      ),
     );
     assert.equal(
       result.category,
@@ -172,9 +197,12 @@ for (const condition of [
         : forge.runner;
     const delivery = new GitHubDelivery(f.git, runner, Id.Executable.make("fake-forge"));
     if (condition === "unreadable")
-      await assert.rejects(run(delivery.merge(p, e)), /observation unavailable/);
+      await assert.rejects(
+        run(delivery.merge(p, e, undefined, () => Effect.void)),
+        /observation unavailable/,
+      );
     else {
-      const result = await run(delivery.merge(p, e));
+      const result = await run(delivery.merge(p, e, undefined, () => Effect.void));
       assert.equal(
         result.category,
         condition === "skipped" || condition === "allow-empty"
@@ -218,7 +246,14 @@ test("readiness refuses a head that changes during observation", async (t) => {
       ),
   };
   await assert.rejects(
-    run(new GitHubDelivery(f.git, runner, Id.Executable.make("fake-forge")).merge(p, e)),
+    run(
+      new GitHubDelivery(f.git, runner, Id.Executable.make("fake-forge")).merge(
+        p,
+        e,
+        undefined,
+        () => Effect.void,
+      ),
+    ),
     /head/,
   );
   assert.equal(

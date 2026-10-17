@@ -99,17 +99,33 @@ export class Reports {
                 bytes,
                 path: this.path(e, a.report_id),
               };
-              if (!(!e.report_intent || e.report_intent.receipt.hash === receipt.hash))
-                return yield* new CrewError(
-                  "REPORT_REBIND",
-                  "Report publication already identifies different content",
-                );
-              if (!(!e.report_receipt || e.report_receipt.hash === receipt.hash))
-                return yield* new CrewError("REPORT_IMMUTABLE", "Published report is immutable");
-              e.report_intent = { receipt, content };
-              e.report_acceptance_met = a.acceptance.every((r) => r.met);
-              yield* this.records.save(e);
-              return yield* this.publish(e);
+              const current = yield* this.records.update(e.issue_id, (current) => {
+                if (
+                  !(
+                    current.execution_id === e.execution_id &&
+                    current.base_commit === receipt.base_commit &&
+                    current.scope?.fingerprint === receipt.scope_fingerprint &&
+                    isActiveWorker(current, session, { role: "research", generation: a.generation })
+                  )
+                )
+                  throw new CrewError(
+                    "REPORT_STALE",
+                    "Research assignment changed during report validation",
+                  );
+                if (current.report_intent && current.report_intent.receipt.hash !== receipt.hash)
+                  throw new CrewError(
+                    "REPORT_REBIND",
+                    "Report publication already identifies different content",
+                  );
+                if (current.report_receipt && current.report_receipt.hash !== receipt.hash)
+                  throw new CrewError("REPORT_IMMUTABLE", "Published report is immutable");
+                return {
+                  ...current,
+                  report_intent: { receipt, content },
+                  report_acceptance_met: a.acceptance.every((r) => r.met),
+                };
+              });
+              return yield* this.publish(current);
             }),
           ),
       );
@@ -174,16 +190,19 @@ export class Reports {
         );
       }
       yield* this.readReceipt(e, receipt);
-      const current = (yield* this.records.execution(e.issue_id))!;
-      if (
-        !(
-          current.control_generation === e.control_generation &&
-          current.report_intent?.receipt.hash === receipt.hash
+      const current = yield* this.records.update(e.issue_id, (current) => {
+        if (
+          !(
+            current.execution_id === e.execution_id &&
+            current.control_generation === e.control_generation &&
+            current.research_session_id === receipt.session_id &&
+            current.scope?.fingerprint === receipt.scope_fingerprint &&
+            current.report_intent?.receipt.hash === receipt.hash
+          )
         )
-      )
-        return yield* new CrewError("REPORT_STALE", "Report publication was superseded");
-      current.report_receipt = receipt;
-      yield* this.records.save(current);
+          throw new CrewError("REPORT_STALE", "Report publication was superseded");
+        return { ...current, report_receipt: receipt };
+      });
       synchronizeExecution(e, current);
       return receipt;
     }.bind(this),

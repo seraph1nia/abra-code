@@ -154,6 +154,7 @@ export const applyDispositions = Effect.fn("Finishing.applyDispositions")(functi
         ],
       };
       e.finishing = { ...e.finishing, preflight: undefined };
+      yield* records.saveFinishing(e, ["authorizations", "preflight"]);
       delete e.cleanup_blocker;
       yield* records.save(e);
     } else if (answer.action === "include") {
@@ -210,7 +211,7 @@ export const applyDispositions = Effect.fn("Finishing.applyDispositions")(functi
               },
             ],
       };
-      yield* records.save(e);
+      yield* records.saveFinishing(e, ["inclusions"]);
       for (const file of selected)
         yield* git.run(e.worktree_directory!, [
           "--literal-pathspecs",
@@ -233,7 +234,7 @@ export const applyDispositions = Effect.fn("Finishing.applyDispositions")(functi
         ),
       };
       e.finishing = { ...e.finishing, preflight: undefined };
-      yield* records.save(e);
+      yield* records.saveFinishing(e, ["inclusions", "preflight"]);
       included = true;
     }
   }

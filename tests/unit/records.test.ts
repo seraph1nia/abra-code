@@ -6,6 +6,71 @@ import { applying, delivered, fixture, planned } from "../fixtures.ts";
 import { Records } from "../../src/storage/store.ts";
 import { Visibility } from "../../src/visibility/read-model.ts";
 
+test("owned finishing receipts survive concurrent observations without dropping newer questions", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(delivered(f));
+  const key = Id.ObligationKey.make("concurrent-question");
+  await run(
+    f.records.update(e.issue_id, (current) => ({
+      ...current,
+      decisions: [
+        ...(current.decisions ?? []),
+        {
+          schema_version: 1,
+          generation: current.control_generation,
+          key,
+          scope: "finishing",
+          question: "Preserve this independent question",
+          owner: "user",
+          session_id: "controller",
+          status: "open",
+          opened_at: 0,
+        },
+      ],
+      finishing: { ...current.finishing, schema_version: 1, current_question: key },
+    })),
+  );
+  e.finishing = {
+    ...e.finishing,
+    schema_version: 1,
+    attribution: {
+      schema_version: 1,
+      generation: e.control_generation,
+      session_id: e.apply_session_id!,
+      prompt_id: Id.MessageId.make("msg_concurrent"),
+      head: e.delivered_commit!,
+      fingerprint: Id.Fingerprint.make("new-evidence"),
+      at: Id.timestampAt(0),
+    },
+  };
+  await run(f.records.saveFinishing(e, ["attribution"]));
+  const saved = (await run(f.records.execution(e.issue_id)))!;
+  assert.equal(saved.finishing!.attribution!.fingerprint, "new-evidence");
+  assert.equal(saved.finishing!.current_question, key);
+  assert.equal(saved.decisions!.find((d) => d.key === key)!.status, "open");
+});
+
+test("malformed finishing additions retain original evidence and cannot manufacture readiness", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(delivered(f));
+  const key = Id.StorageKey.make(`execution/${e.issue_id}`);
+  for (const finishing of [
+    { schema_version: 9 },
+    { schema_version: 1, synchronization: [{}] },
+    { schema_version: 1, preflight: { status: "ready" } },
+    { schema_version: 1, routing: [{ status: "pending" }] },
+  ]) {
+    const raw = { ...((await run(f.records.store.get(key))) as object), finishing };
+    await run(f.records.store.set(key, raw));
+    const scan = await run(f.records.executionScan());
+    assert.equal(scan.values.length, 0);
+    assert.ok(scan.diagnostics.length);
+    assert.deepEqual(await run(f.records.store.get(key)), raw);
+  }
+});
+
 test("versioned phase records reject missing preservation and planning evidence", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));

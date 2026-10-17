@@ -12,6 +12,7 @@ import { Workspaces } from "../../src/git/workspaces.ts";
 import { RepositorySources } from "../../src/git/source.ts";
 import { directoryIdentity } from "../../src/git/retirement.ts";
 import { ExecutionStateSchema } from "../../src/storage/contracts.ts";
+import { CrewError } from "../../src/domain.ts";
 import {
   CleanupPreflightSchema,
   FinishingSchema,
@@ -101,9 +102,12 @@ test("finishing schemas preserve legacy absence and reject unsafe evidence rathe
       Schema.is(FinishingTargetSchema)({
         schema_version: 1,
         generation: 0,
-        kind: "generated_directories",
+        kind: "residue",
         worktree,
         fingerprint: content,
+        paths: [{ path, category: "ignored", kind: "directory" }],
+        truncated: false,
+        files: [],
         directories: [{ path, identity: { ...worktree, path: join(worktree.path, path) } }],
       }),
       false,
@@ -113,12 +117,29 @@ test("finishing schemas preserve legacy absence and reject unsafe evidence rathe
     Schema.is(FinishingTargetSchema)({
       schema_version: 1,
       generation: 0,
-      kind: "generated_directories",
+      kind: "residue",
       worktree,
       fingerprint: content,
+      paths: [{ path: "cache", category: "ignored", kind: "directory" }],
+      truncated: false,
+      files: [],
       directories: [{ path: "cache", identity: { ...worktree, path: "/tmp/elsewhere" } }],
     }),
     false,
+  );
+  assert.equal(
+    Schema.is(FinishingTargetSchema)({
+      schema_version: 1,
+      generation: 0,
+      kind: "residue",
+      worktree,
+      fingerprint: content,
+      paths: [{ path: "cache", category: "ignored", kind: "directory" }],
+      truncated: false,
+      files: [],
+      directories: [{ path: "cache", identity: { ...worktree, path: "/tmp/owned/cache" } }],
+    }),
+    true,
   );
 });
 
@@ -340,99 +361,142 @@ test("mandatory generated-directory decision bypasses exhausted diagnostics and 
   assert.equal((await run(f.work.show(e.issue_id))).status, "closed");
 });
 
-test("late edits are adopted, revised, independently reviewed and republished to the same PR before fresh approval", async (t) => {
-  const f = await run(fixture);
-  t.onTestFinished(() => run(f.close()));
-  let e = await run(delivered(f));
-  const original = e.delivered_commit!;
-  const pr = e.pull_request_reference;
-  const archive = e.archive_path!;
-  const old = await run(f.controller.approve(e.issue_id, "merge", e.supervisor_session_id!));
-  assert.ok("form_id" in old);
-  await writeFile(join(e.worktree_directory!, "source.txt"), "sample late edits\n");
-  f.runtime.forms.set(old.form_id, "approved");
-  await run(f.controller.approve(e.issue_id, "merge", e.supervisor_session_id!));
-  e = await run(f.controller.get(e.issue_id));
-  const adoption = e.decisions!.find(
-    (d) => d.status === "open" && d.finishing_target?.kind === "adopt",
-  )!;
-  assert.ok(adoption.form_id);
-  f.runtime.dispositions.set(adoption.form_id!, {
-    status: "answered",
-    answer: { action: "authorize", paths: [] },
-  });
-  e = (await run(f.controller.reconcile(e.issue_id)))[0];
-  assert.equal(e.current_phase, "planning");
-  assert.equal(e.finishing!.synchronization!.length, 1);
-  assert.equal(e.rounds?.length ?? 0, 0);
-  assert.equal(e.effective_policy.repair_rounds, 0);
-  assert.notEqual(e.openspec_change, e.finishing!.synchronization![0].prior_change);
-  assert.equal(e.finishing!.synchronization![0].prior_archive, archive);
-  assert.equal(
-    await readFile(join(e.worktree_directory!, "source.txt"), "utf8"),
-    "sample late edits\n",
-  );
-  await run(writePlan(e.worktree_directory!, e.openspec_change, true));
-  f.runtime.success(e.explore_session_id!);
-  e = (await run(f.controller.reconcile(e.issue_id)))[0];
-  assert.equal(e.current_phase, "awaiting_plan_approval");
-  const plan = await run(f.controller.approve(e.issue_id, "plan", e.supervisor_session_id!));
-  assert.ok("form_id" in plan);
-  f.runtime.forms.set(plan.form_id, "approved");
-  await run(f.controller.approve(e.issue_id, "plan", e.supervisor_session_id!));
-  e = await run(f.controller.get(e.issue_id));
-  assert.equal(e.active_role, "review");
-  assert.equal(e.apply_session_id, undefined, "Existing edits must not admit new coding");
-  await run(
-    f.controller.reviewReport(
-      e.review_session_id!,
-      true,
-      "Existing edits fit scope",
-      "in_scope",
-      verifiedSpec,
-    ),
-  );
-  f.runtime.success(e.review_session_id!);
-  e = (await run(f.controller.reconcile(e.issue_id)))[0];
-  assert.equal(e.current_phase, "awaiting_merge");
-  assert.notEqual(e.delivered_commit, original);
-  assert.equal(e.pull_request_reference, pr);
-  assert.equal(e.finishing!.synchronization![0].stage, "published");
-  assert.equal(e.finishing!.publication!.commit, e.delivered_commit);
-  assert.equal(f.delivery.calls, 2);
-  assert.ok(
-    !e.approval_receipts.some(
-      (a) => a.kind === "merge" && a.fingerprint === e.delivered_commit && a.authorized_at,
-    ),
-  );
-  await access(join(e.worktree_directory!, archive));
-  e = (await run(f.controller.reconcile(e.issue_id)))[0];
-  const fresh = e.approval_receipts.find(
-    (a) => a.kind === "merge" && a.fingerprint === e.delivered_commit,
-  )!;
-  assert.notEqual(fresh.form_id, old.form_id);
-  f.runtime.forms.set(fresh.form_id, "approved");
-  const restarted = new Controller(
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
-  );
-  t.onTestFinished(() => run(restarted.close()));
-  e = (await run(restarted.reconcile(e.issue_id)))[0];
-  assert.equal(e.current_phase, "completed");
-  assert.equal(e.finishing!.synchronization!.length, 1);
-  assert.equal(
+for (const fault of ["commit", "push"] as const)
+  test(`late edits are adopted, reviewed and republished to the same PR after lost ${fault} response`, async (t) => {
+    const f = await run(fixture);
+    t.onTestFinished(() => run(f.close()));
+    let e = await run(delivered(f));
+    const original = e.delivered_commit!;
+    const pr = e.pull_request_reference;
+    const archive = e.archive_path!;
+    const old = await run(f.controller.approve(e.issue_id, "merge", e.supervisor_session_id!));
+    assert.ok("form_id" in old);
+    await writeFile(join(e.worktree_directory!, "source.txt"), "sample late edits\n");
+    f.runtime.forms.set(old.form_id, "approved");
+    await run(f.controller.approve(e.issue_id, "merge", e.supervisor_session_id!));
+    e = await run(f.controller.get(e.issue_id));
+    const adoption = e.decisions!.find(
+      (d) => d.status === "open" && d.finishing_target?.kind === "adopt",
+    )!;
+    assert.ok(adoption.form_id);
+    f.runtime.dispositions.set(adoption.form_id!, {
+      status: "answered",
+      answer: { action: "authorize", paths: [] },
+    });
+    e = (await run(f.controller.reconcile(e.issue_id)))[0];
+    assert.equal(e.current_phase, "planning");
+    assert.equal(e.finishing!.synchronization!.length, 1);
+    assert.equal(e.rounds?.length ?? 0, 0);
+    assert.equal(e.effective_policy.repair_rounds, 0);
+    assert.notEqual(e.openspec_change, e.finishing!.synchronization![0].prior_change);
+    assert.equal(e.finishing!.synchronization![0].prior_archive, archive);
+    assert.equal(
+      await readFile(join(e.worktree_directory!, "source.txt"), "utf8"),
+      "sample late edits\n",
+    );
+    await run(writePlan(e.worktree_directory!, e.openspec_change, true));
+    f.runtime.success(e.explore_session_id!);
+    e = (await run(f.controller.reconcile(e.issue_id)))[0];
+    assert.equal(e.current_phase, "awaiting_plan_approval");
+    const plan = await run(f.controller.approve(e.issue_id, "plan", e.supervisor_session_id!));
+    assert.ok("form_id" in plan);
+    f.runtime.forms.set(plan.form_id, "approved");
+    await run(f.controller.approve(e.issue_id, "plan", e.supervisor_session_id!));
+    e = await run(f.controller.get(e.issue_id));
+    assert.equal(e.active_role, "review");
+    assert.equal(e.apply_session_id, undefined, "Existing edits must not admit new coding");
     await run(
-      f.git.run((await run(f.records.project(e.repository_id)))!.path, [
-        "show",
-        `${e.delivered_commit}:source.txt`,
-      ]),
-    ),
-    "sample late edits",
-  );
-});
+      f.controller.reviewReport(
+        e.review_session_id!,
+        true,
+        "Existing edits fit scope",
+        "in_scope",
+        verifiedSpec,
+      ),
+    );
+    const publish = f.delivery.deliver.bind(f.delivery);
+    const commitCall = f.git.commit.bind(f.git);
+    if (fault === "push")
+      f.delivery.deliver = (...args) =>
+        publish(...args).pipe(
+          Effect.andThen(Effect.fail(new CrewError("RESPONSE_LOST", "Push response lost"))),
+        );
+    else
+      f.git.commit = (...args) =>
+        commitCall(...args).pipe(
+          Effect.andThen(Effect.fail(new CrewError("RESPONSE_LOST", "Commit response lost"))),
+        );
+    f.runtime.success(e.review_session_id!);
+    e = (await run(f.controller.reconcile(e.issue_id)))[0];
+    assert.equal(e.current_phase, "recovery_required");
+    const intended =
+      e.finishing!.synchronization![0].intended_commit ??
+      (await run(f.git.head(e.worktree_directory!)));
+    const countBefore = await run(
+      f.git.run(e.worktree_directory!, ["rev-list", "--count", "HEAD"]),
+    );
+    f.delivery.deliver = publish;
+    f.git.commit = commitCall;
+    const recovery = new Controller(
+      f.config,
+      f.records,
+      f.work,
+      f.spec,
+      f.git,
+      f.runtime,
+      f.delivery,
+      f.locks,
+    );
+    t.onTestFinished(() => run(recovery.close()));
+    e = (await run(recovery.reconcile(e.issue_id)))[0];
+    assert.equal(e.current_phase, "awaiting_merge");
+    assert.equal(e.delivered_commit, intended);
+    assert.equal(
+      await run(f.git.run(e.worktree_directory!, ["rev-list", "--count", "HEAD"])),
+      countBefore,
+    );
+    assert.notEqual(e.delivered_commit, original);
+    assert.equal(e.pull_request_reference, pr);
+    assert.equal(e.finishing!.synchronization![0].stage, "published");
+    assert.equal(e.finishing!.publication!.commit, e.delivered_commit);
+    assert.equal(
+      f.delivery.calls,
+      fault === "push" ? 3 : 2,
+      "Recovery reuses the intended commit and existing PR",
+    );
+    assert.ok(
+      !e.approval_receipts.some(
+        (a) => a.kind === "merge" && a.fingerprint === e.delivered_commit && a.authorized_at,
+      ),
+    );
+    await access(join(e.worktree_directory!, archive));
+    e = (await run(f.controller.reconcile(e.issue_id)))[0];
+    const fresh = e.approval_receipts.find(
+      (a) => a.kind === "merge" && a.fingerprint === e.delivered_commit,
+    )!;
+    assert.notEqual(fresh.form_id, old.form_id);
+    f.runtime.forms.set(fresh.form_id, "approved");
+    const restarted = new Controller(
+      f.config,
+      f.records,
+      f.work,
+      f.spec,
+      f.git,
+      f.runtime,
+      f.delivery,
+      f.locks,
+    );
+    t.onTestFinished(() => run(restarted.close()));
+    e = (await run(restarted.reconcile(e.issue_id)))[0];
+    assert.equal(e.current_phase, "completed");
+    assert.equal(e.finishing!.synchronization!.length, 1);
+    assert.equal(
+      await run(
+        f.git.run((await run(f.records.project(e.repository_id)))!.path, [
+          "show",
+          `${e.delivered_commit}:source.txt`,
+        ]),
+      ),
+      "sample late edits",
+    );
+  });

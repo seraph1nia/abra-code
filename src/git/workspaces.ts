@@ -167,6 +167,11 @@ export class Workspaces {
           e.worktree_identity = identity;
           yield* save();
         }
+        if (e.retirement?.native === "requested" || e.retirement?.native === "confirmed")
+          return yield* new CrewError(
+            "CLEANUP_UNKNOWN",
+            "Native removal was submitted but absence is unconfirmed; reconcile the original request before recovery",
+          );
         yield* removeGenerated(this.git, e, save);
         const blocker = yield* inspectCleanup(this.git, e.worktree_directory);
         if (blocker) return blocker;

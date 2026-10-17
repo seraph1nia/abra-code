@@ -504,6 +504,27 @@ export class Records {
     );
   }
   /** Read, validate and change current state under the same commit lock. */
+  saveFinishing(e: Execution, fields: readonly (keyof NonNullable<Execution["finishing"]>)[]) {
+    return this.update(e.issue_id, (current) => {
+      ensure(
+        current.control_generation === e.control_generation &&
+          current.operation?.id === e.operation?.id,
+        "STALE_OPERATION",
+        "Finishing evidence ownership changed",
+      );
+      const finishing = { ...current.finishing, schema_version: 1 as const };
+      for (const field of fields) {
+        if (e.finishing && field in e.finishing)
+          Object.assign(finishing, { [field]: e.finishing[field] });
+        else Reflect.deleteProperty(finishing, field);
+      }
+      return { ...current, finishing };
+    }).pipe(
+      Effect.tap((saved) => Effect.sync(() => synchronizeExecution(e, saved))),
+      Effect.as(e),
+    );
+  }
+  /** Read, validate and change current state under the same commit lock. */
   update(id: IssueId, change: (current: Execution) => Execution | undefined) {
     return this.coordinateCommit(() =>
       domainEffect(

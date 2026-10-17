@@ -151,9 +151,11 @@ test("delivery waits preserve pauses, retry transient observations and refuse ch
   await run(clock.setTime(current.delivery_wait!.next_check_at));
   assert.equal((await observe())[0].current_phase, "interrupted");
   assert.equal(reads, count);
-  current = await run(c.get(e.issue_id));
-  current.current_phase = "awaiting_merge";
-  await run(f.records.save(current));
+  const resumed = await run(
+    c.control(e.issue_id, "resume").pipe(Effect.provideService(Clock.Clock, clock)),
+  );
+  assert.equal(resumed.stop_status, undefined);
+  await run(clock.setTime(resumed.delivery_wait!.next_check_at));
   pr.headRefOid = Id.Commit.make("f".repeat(40));
   const refused = (await observe())[0];
   assert.equal(refused.current_phase, "recovery_required");

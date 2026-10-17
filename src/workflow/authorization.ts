@@ -5,6 +5,7 @@ import { Form } from "@opencode/schema/form";
 import { type Execution, CrewError } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { type Runtime } from "../opencode/runtime.ts";
+import { historicalWorkers } from "./worker-assignment.ts";
 
 export const assertApprovalActor = (e: Execution, supervisor: SessionId) =>
   Effect.gen(function* () {
@@ -15,6 +16,7 @@ export const assertApprovalActor = (e: Execution, supervisor: SessionId) =>
         e.review_session_id,
         e.research_session_id,
         e.session_intent?.id,
+        ...historicalWorkers(e).map((worker) => worker.id),
       ].includes(supervisor)
     )
       return yield* new CrewError("SELF_APPROVAL", "Workers cannot authorize decisions");

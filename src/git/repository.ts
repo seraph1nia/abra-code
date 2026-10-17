@@ -16,7 +16,17 @@ import { domainEffect } from "../effect.ts";
 import { CrewError, type Project, type ManagedExecution } from "../domain.ts";
 import { Effect } from "effect";
 import { createHash } from "node:crypto";
-import { realpath, access, readdir, readFile, copyFile, mkdtemp, rm } from "../filesystem.ts";
+import {
+  realpath,
+  access,
+  readdir,
+  readFile,
+  readlink,
+  lstat,
+  copyFile,
+  mkdtemp,
+  rm,
+} from "../filesystem.ts";
 import { tmpdir } from "node:os";
 import { resolve, join, isAbsolute } from "node:path";
 
@@ -151,8 +161,22 @@ export class Git {
         .update(scope ? "" : head)
         .update(tracked)
         .update(staged);
-      for (const name of untracked.split("\0").filter(Boolean).sort())
-        hash.update(name).update(yield* this.run(path, ["hash-object", "--", name]));
+      for (const name of untracked.split("\0").filter(Boolean).sort()) {
+        const file = join(path, name);
+        const stat = yield* lstat(file);
+        if (stat.isSymbolicLink())
+          hash
+            .update(name)
+            .update("symlink:")
+            .update(yield* readlink(file));
+        else if (stat.isFile())
+          hash.update(name).update(yield* this.run(path, ["hash-object", "--", name]));
+        else
+          return yield* new CrewError(
+            "CONTENT_UNAVAILABLE",
+            "Special untracked path prevents content observation",
+          );
+      }
       return Fingerprint.make(hash.digest("hex"));
     }.bind(this),
     domainEffect,

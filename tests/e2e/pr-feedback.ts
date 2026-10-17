@@ -6,6 +6,9 @@ import { type FeedbackPageSchema } from "../../src/workflow/feedback-contracts.t
 import { join } from "node:path";
 import { repo } from "../fixtures.ts";
 import { run } from "../effects.ts";
+import { Git } from "../../src/git/repository.ts";
+import { ProcessRunner } from "../../src/process.ts";
+import { AbsolutePath } from "../../src/identities.ts";
 
 type Execution = (typeof toolOutputs)["work_pr_action"]["Type"];
 type Invoke = <K extends keyof typeof toolOutputs>(
@@ -18,6 +21,8 @@ interface Context {
   invoke: Invoke;
   observeBusy: Invoke;
   approve: (form: FormId) => Promise<void>;
+  answerDisposition: (form: FormId, answer: Record<string, string | string[]>) => Promise<void>;
+  failExploreOnce: () => void;
   feedback: (issue: IssueId) => Promise<typeof FeedbackPageSchema.Type>;
   eventually: <T>(action: () => Promise<T | undefined>, timeout?: number) => Promise<T>;
 }
@@ -27,12 +32,17 @@ export async function prFeedbackLifecycle({
   invoke,
   observeBusy,
   approve,
+  answerDisposition,
+  failExploreOnce,
   feedback,
   eventually,
 }: Context) {
   // Complete PR feedback lifecycle against a recording local forge, with real native workers and Git preservation.
   const feedbackPath = await run(repo(root, "feedback"));
-  await writeFile(join(feedbackPath, ".git/info/exclude"), "\n.cleanup-residue/\n");
+  await writeFile(
+    join(feedbackPath, ".git/info/exclude"),
+    "\n.cleanup-residue/\n.generated-residue/\n",
+  );
   await writeFile(
     forgeState,
     JSON.stringify({
@@ -58,7 +68,7 @@ export async function prFeedbackLifecycle({
     delivery: "github-pr",
     plan_approval: false,
     repair_rounds: 1,
-    diagnostic_turns: 2,
+    diagnostic_turns: 0,
     publication: "draft-until-verified",
     ci_retry: { max_reruns: 1, workflows: [".github/workflows/ci.yml"] },
     reviewers: {
@@ -77,8 +87,17 @@ export async function prFeedbackLifecycle({
       request_id: "native-pr-feedback",
     })
   ).issue;
+  failExploreOnce();
   await invoke("abra_work_start", { issue_id: feedbackIssue.id });
   const feedbackStatus = () => invoke("abra_work_status", { issue_id: feedbackIssue.id });
+  const exhausted = await eventually(async () => {
+    const current = (await feedbackStatus()).execution!;
+    return current.current_phase === "failed" &&
+      current.attention?.some((a) => a.code === "suspected_stall" && a.status === "exhausted")
+      ? current
+      : undefined;
+  }, 40000);
+  await invoke("abra_work_control", { issue_id: feedbackIssue.id, action: "retry" });
   let feedbackExecution: Execution = await eventually(async () => {
     const status = await feedbackStatus();
     if (["blocked", "failed", "recovery_required"].includes(status.execution!.current_phase))
@@ -226,6 +245,27 @@ export async function prFeedbackLifecycle({
     disposition: "in_scope",
     reason: "Retain accepted sample behavior without expanding scope",
   });
+  // Disabled diagnostics retain feedback-inspection questions too. Record the
+  // explicit inspection above through their native forms before correcting.
+  for (const d of (await feedbackStatus()).execution!.decisions ?? []) {
+    if (d.status !== "open" || !d.key.startsWith("feedback-budget-")) continue;
+    const collected = await invoke("abra_work_decision", {
+      issue_id: feedbackIssue.id,
+      key: d.key,
+      generation: d.generation,
+      action: "collect",
+    });
+    await answerDisposition(collected.form_id!, {
+      answer:
+        "Inspected the exact retained feedback and classified it in scope; proceed through the configured corrective policy.",
+    });
+    await invoke("abra_work_decision", {
+      issue_id: feedbackIssue.id,
+      key: d.key,
+      generation: d.generation,
+      action: "collect",
+    });
+  }
   feedbackExecution = await invoke("abra_work_correct", {
     issue_id: feedbackIssue.id,
     expected_head: feedbackHead,
@@ -271,19 +311,75 @@ export async function prFeedbackLifecycle({
     finding_id: threadFinding.id,
   });
   const releasableForge = JSON.parse(await readFile(forgeState, "utf8"));
-  await mkdir(join(feedbackExecution.worktree_directory!, ".cleanup-residue"));
-  await writeFile(
-    join(feedbackExecution.worktree_directory!, ".cleanup-residue/keep.txt"),
-    "Fixture-owned residue; preserve until explicit test disposition.",
-  );
   releasableForge.merge_hold = true;
   await writeFile(forgeState, JSON.stringify(releasableForge));
+  const staleMerge = await invoke("abra_work_approve", {
+    issue_id: feedbackIssue.id,
+    kind: "merge",
+  });
+  assert.ok("form_id" in staleMerge);
+  const lateHead = feedbackExecution.delivered_commit;
+  const git = new Git(new ProcessRunner());
+  const directory = AbsolutePath.make(feedbackExecution.worktree_directory!);
+  await writeFile(join(directory, "source.txt"), "sample late validated revision\n");
+  await run(git.run(directory, ["add", "source.txt"]));
+  await run(git.run(directory, ["commit", "-m", "Existing accepted late revision"]));
+  await approve(staleMerge.form_id);
+  await invoke("abra_work_approve", { issue_id: feedbackIssue.id, kind: "merge" });
+  const adoption = await eventually(async () => {
+    const current = (await feedbackStatus()).execution!;
+    return current.decisions?.find(
+      (d) => d.status === "open" && d.finishing_target?.kind === "adopt" && d.form_id,
+    );
+  }, 40000);
+  await answerDisposition(adoption.form_id!, { action: "authorize" });
+  feedbackExecution = await eventually(async () => {
+    const current = (await feedbackStatus()).execution!;
+    if (["blocked", "failed", "recovery_required"].includes(current.current_phase))
+      throw Error(JSON.stringify(current));
+    return current.current_phase === "awaiting_merge" && current.delivered_commit !== lateHead
+      ? current
+      : undefined;
+  }, 40000);
+  assert.equal(feedbackExecution.finishing!.synchronization!.length, 1);
+  for (const incident of exhausted.attention!.filter((a) => a.code === "suspected_stall"))
+    assert.equal(
+      feedbackExecution.attention!.find((a) => a.id === incident.id)!.status,
+      "superseded",
+    );
+  assert.equal(feedbackExecution.apply_session_id, undefined);
+  assert.equal(feedbackExecution.pull_request_reference, initialForge.pr.url);
+  assert.ok(
+    !feedbackExecution.approval_receipts.some(
+      (a) =>
+        a.kind === "merge" &&
+        a.fingerprint === feedbackExecution.delivered_commit &&
+        a.authorized_at,
+    ),
+  );
+  await mkdir(join(directory, ".generated-residue"));
+  await writeFile(join(directory, ".generated-residue/cache"), "Generated fixture output");
+  await invoke("abra_work_approve", { issue_id: feedbackIssue.id, kind: "merge" });
+  const residue = await eventually(async () =>
+    (await feedbackStatus()).execution!.decisions?.find(
+      (d) => d.status === "open" && d.finishing_target?.kind === "residue" && d.form_id,
+    ),
+  );
+  assert.equal((await feedbackStatus()).execution!.attention_turns ?? 0, 0);
+  await answerDisposition(residue.form_id!, {
+    action: "generated",
+    generated_paths: [".generated-residue"],
+  });
+  await eventually(async () =>
+    (await feedbackStatus()).execution!.finishing?.authorizations?.length ? true : undefined,
+  );
   const newMerge = await invoke("abra_work_approve", {
     issue_id: feedbackIssue.id,
     kind: "merge",
   });
   assert.ok("form_id" in newMerge);
   assert.notEqual(newMerge.form_id, oldMerge.form_id);
+  assert.notEqual(newMerge.form_id, staleMerge.form_id);
   assert.equal(newMerge.approval_required, true);
   await approve(newMerge.form_id);
   const acceptedMerge = await invoke("abra_work_approve", {
@@ -307,6 +403,12 @@ export async function prFeedbackLifecycle({
   await eventually(
     async () => (JSON.parse(await readFile(forgeState, "utf8")).merge_started ? true : undefined),
     40000,
+  );
+  // Residue arrives after the guarded merge was submitted, exercising post-merge cleanup.
+  await mkdir(join(feedbackExecution.worktree_directory!, ".cleanup-residue"));
+  await writeFile(
+    join(feedbackExecution.worktree_directory!, ".cleanup-residue/keep.txt"),
+    "Fixture-owned residue; preserve until explicit test disposition.",
   );
   const busy = await observeBusy("abra_work_approve", {
     issue_id: feedbackIssue.id,

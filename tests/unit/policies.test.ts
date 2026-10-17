@@ -326,3 +326,48 @@ test("scope revision cannot resume an intentionally paused worker", async (t) =>
   assert.equal((await run(f.controller.get(issue.id))).current_phase, "interrupted");
   assert.equal(f.runtime.prompts, prompts);
 });
+
+for (const drift of ["reconcile", "pause"] as const)
+  test(`Research reporting ${drift === "reconcile" ? "preserves rotated operation ownership" : "rejects a superseded assignment"} during input inspection`, async (t) => {
+    const { f, issue } = await setup("research-only");
+    t.onTestFinished(() => run(f.close()));
+    const e = await run(f.controller.start(issue.id));
+    const head = f.git.head.bind(f.git);
+    let changed = false;
+    let currentOperation = e.operation?.id;
+    f.git.head = (...args) =>
+      head(...args).pipe(
+        Effect.tap(() =>
+          Effect.gen(function* () {
+            if (changed) return;
+            changed = true;
+            if (drift === "reconcile") {
+              const [current] = yield* f.controller.reconcile(issue.id);
+              currentOperation = current.operation?.id;
+            } else yield* f.controller.control(issue.id, "pause");
+          }),
+        ),
+      );
+    const submission = () =>
+      run(
+        f.controller.researchReport(
+          e.research_session_id!,
+          report(e.control_generation, e.base_commit!),
+        ),
+      );
+    if (drift === "reconcile") {
+      const receipt = await submission();
+      assert.ok(changed);
+      assert.notEqual(currentOperation, e.operation?.id);
+      const saved = await run(f.controller.get(issue.id));
+      assert.equal(saved.operation?.id, currentOperation);
+      assert.equal(saved.report_receipt?.hash, receipt.hash);
+      await access(receipt.path);
+    } else {
+      await assert.rejects(submission(), { code: "REPORT_STALE" });
+      const saved = await run(f.controller.get(issue.id));
+      assert.equal(saved.current_phase, "interrupted");
+      assert.equal(saved.report_intent, undefined);
+      assert.equal(saved.report_receipt, undefined);
+    }
+  });
