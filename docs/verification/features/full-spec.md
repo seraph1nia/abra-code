@@ -10,7 +10,7 @@ Create/start an issue for a registered disposable repository using `abra_work_cr
 
 ## Driving it with the native harness
 
-Run `pnpm exec vp test run --project e2e tests/e2e/native.test.ts` with `ABRACODE_TEST_EVIDENCE_DIR` set as shown in the recipe. The main “Sample API” issue loads applicable engineering skills through native tool calls. Explore source edits and post-loading management/delegation calls are rejected. Plan approval is required, preserved through a service restart, and replied to through Abra's native form.
+Run `pnpm exec vp test run --project e2e tests/e2e/native.test.ts` with `ABRACODE_TEST_JOURNEY=engineering` and `ABRACODE_TEST_EVIDENCE_DIR` set as shown in the recipe. The main “Sample API” issue loads applicable engineering skills through native tool calls. Explore source edits and post-loading management/delegation calls are rejected. Plan approval is required, preserved through a service restart, and replied to through Abra's native form.
 
 Apply writes `sample-proof.mjs`, observes its consumer fail against `original`, changes the scoped source to `sample`, and reruns the original consumer successfully. Configured controller checks include that proof. Review reads `source.txt` and the untracked proof; the test records unstaged/untracked status before Review and matching check/review receipts. The expected final state is completed/closed with a preserved local branch and no registered native worktree. No skill invocation alone can establish that state.
 

@@ -145,20 +145,53 @@ export class Finishing {
       if (observation.state === "merged") return true;
       const checked = e.verification_receipt;
       const reviewed = e.review_receipt;
-      if (!(checked && reviewed?.passed && checked.fingerprint === reviewed.fingerprint && e.archived_tree &&
-        (e.workflow_policy !== "full-openspec" || specVerificationPassed(reviewed.spec_verification))))
-        return yield* new CrewError("VERIFICATION_REQUIRED", "Current publication lacks its verification and independent Review evidence");
+      if (
+        !(
+          checked &&
+          reviewed?.passed &&
+          checked.fingerprint === reviewed.fingerprint &&
+          e.archived_tree &&
+          (e.workflow_policy !== "full-openspec" ||
+            specVerificationPassed(reviewed.spec_verification))
+        )
+      )
+        return yield* new CrewError(
+          "VERIFICATION_REQUIRED",
+          "Current publication lacks its verification and independent Review evidence",
+        );
       if ((yield* this.c.git.tree(e.worktree_directory!)) !== e.archived_tree)
-        return yield* new CrewError("DELIVERY_CHANGED", "Publication tree differs from retained reviewed archival output");
+        return yield* new CrewError(
+          "DELIVERY_CHANGED",
+          "Publication tree differs from retained reviewed archival output",
+        );
       if (!e.finishing?.publication) {
-        e.finishing = { ...e.finishing, schema_version: 1, publication: {
-          schema_version: 1, generation: e.control_generation, operation_id: e.operation!.id,
-          verification: checked.fingerprint, review: reviewed.fingerprint, review_session: reviewed.session_id,
-          archived_tree: e.archived_tree, commit: observation.head, pr: e.pull_request_reference, at: yield* timestamp,
-        } };
+        e.finishing = {
+          ...e.finishing,
+          schema_version: 1,
+          publication: {
+            schema_version: 1,
+            generation: e.control_generation,
+            operation_id: e.operation!.id,
+            verification: checked.fingerprint,
+            review: reviewed.fingerprint,
+            review_session: reviewed.session_id,
+            archived_tree: e.archived_tree,
+            commit: observation.head,
+            pr: e.pull_request_reference,
+            at: yield* timestamp,
+          },
+        };
         yield* this.c.records.save(e);
-      } else if (e.finishing.publication.commit !== observation.head || e.finishing.publication.archived_tree !== e.archived_tree || e.finishing.publication.verification !== checked.fingerprint || e.finishing.publication.review !== reviewed.fingerprint)
-        return yield* new CrewError("DELIVERY_CHANGED", "Publication binding no longer matches current content evidence");
+      } else if (
+        e.finishing.publication.commit !== observation.head ||
+        e.finishing.publication.archived_tree !== e.archived_tree ||
+        e.finishing.publication.verification !== checked.fingerprint ||
+        e.finishing.publication.review !== reviewed.fingerprint
+      )
+        return yield* new CrewError(
+          "DELIVERY_CHANGED",
+          "Publication binding no longer matches current content evidence",
+        );
       return yield* this.preflight(e, p);
     }.bind(this),
     domainEffect,

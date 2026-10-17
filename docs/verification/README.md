@@ -21,12 +21,15 @@ Run the mapped [full-spec journey](features/full-spec.md) from the repository ro
 
 ```sh
 mkdir -p /tmp/abracode-verification-evidence
+ABRACODE_TEST_JOURNEY=engineering \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abracode-verification-evidence \
   pnpm exec vp test run --project e2e tests/e2e/native.test.ts \
   > /tmp/abracode-verification-evidence/native.log 2>&1
 ```
 
 Use a fresh evidence directory per run to avoid confusing old output with a new observation. It must be outside the fixture installation root. A successful exit and Vitest result are required; read `native.log` on failure. `native-engineering.json` records the actual result, timestamp, native tool outcomes, red/green consumer observations, reviewed worktree status and controller receipts. Neither an old file nor a skill invocation establishes a pass.
+
+`ABRACODE_TEST_JOURNEY=engineering` selects the complete engineering journey through approval, diagnosis, independent Review, preserved branch/retirement, restart, lightweight correction and the missing-evidence decision. The default suite additionally runs the separate PR-feedback and post-merge-residue assertions; use `pnpm test:e2e` for that full acceptance. The focused recipe does not claim those additional assertions passed.
 
 After the runner exits, confirm both files still exist and the recorded `result` is `pass`. The JSON includes bounded text observations rather than screenshot image payloads. Browser screenshots remain disposable scratch evidence; they are read/asserted during the test and are not claimed as retained attachments. A report that names a deleted screenshot cannot use that path as later proof.
 

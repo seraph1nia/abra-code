@@ -199,8 +199,9 @@ test("cleanup waits back off, deduplicate attention, survive restart and finish 
   await timed(f.controller.supervise());
   assert.equal(f.runtime.prompts, prompts);
   assert.equal(
-    (await run(f.controller.get(e.issue_id))).attention!.filter((a) => a.code === "decision_pending")
-      .length,
+    (await run(f.controller.get(e.issue_id))).attention!.filter(
+      (a) => a.code === "decision_pending",
+    ).length,
     1,
   );
   const restart = new Controller(

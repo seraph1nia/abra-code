@@ -150,7 +150,11 @@ export const admitSynchronization = Effect.fn("Synchronization.admit")(function*
   yield* records.save(e);
   yield* git.run(e.worktree_directory, ["add", "--all"]);
   const planningBase = yield* git.tree(e.worktree_directory);
-  if (planningBase !== attempt.input_tree) return yield* new CrewError("SYNCHRONIZATION_STALE", "Content changed during synchronization staging");
+  if (planningBase !== attempt.input_tree)
+    return yield* new CrewError(
+      "SYNCHRONIZATION_STALE",
+      "Content changed during synchronization staging",
+    );
   e.finishing = {
     ...e.finishing,
     schema_version: 1,

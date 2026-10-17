@@ -394,6 +394,16 @@ test(
         spec.args.content +=
           "\n### Requirement: Runtime evidence\nThe system SHALL expose runtime audit evidence for the sample.\n#### Scenario: Inspect runtime audit\n- **WHEN** the sample is exercised in the runtime\n- **THEN** its runtime audit evidence can be inspected\n";
       }
+      if (role === "apply" && user.includes("engineering-unavailable-evidence")) {
+        calls.push({
+          name: "abra_worker_progress",
+          args: {
+            generation: Number(/Control generation: (\d+)/.exec(user)![1]),
+            summary:
+              "Runtime audit prerequisite is unavailable in this foreign fixture. Existing documented source check covers sample content only; no local recipe can establish the required runtime audit observation. No recipe, glossary or host setup was created.",
+          },
+        });
+      }
       if (role === "review" && user.includes("engineering-unavailable-evidence")) {
         calls.unshift(
           { name: "skill", args: { id: "abra-verification" } },
@@ -1476,7 +1486,7 @@ test(
       })
     ).issue;
     await invoke("abra_work_start", { issue_id: unavailableIssue.id });
-    await eventually(async () => {
+    const unavailablePlan = await eventually(async () => {
       const current = (await invoke("abra_work_status", { issue_id: unavailableIssue.id }))
         .execution;
       return current.current_phase === "awaiting_plan_approval" ? current : undefined;
@@ -1499,6 +1509,16 @@ test(
     assert.equal(unavailable.review_receipt.passed, false);
     assert.equal(unavailable.review_receipt.spec_verification.correctness.status, "not_verified");
     assert.equal(unavailable.delivery_receipt, undefined);
+    assert.equal(unavailable.plan_fingerprint, unavailablePlan.plan_fingerprint);
+    for (const file of ["docs/verification/README.md", "GLOSSARY.md", ".cursor/skills"])
+      await assert.rejects(access(join(unavailable.worktree_directory, file)), /ENOENT/);
+    const unavailableApplyMessages = await client.session.context({
+      sessionID: unavailable.apply_session_id,
+    });
+    assert.match(
+      JSON.stringify(unavailableApplyMessages),
+      /Runtime audit prerequisite is unavailable/,
+    );
     assert.ok(unavailable.decisions.some((d: any) => d.status === "open"));
     const unavailableMessages = await client.session.context({
       sessionID: unavailable.review_session_id,
@@ -1508,6 +1528,15 @@ test(
       unavailable_evidence: unavailable.review_receipt,
       phase: unavailable.current_phase,
     });
+    // A recipe may drive just this complete journey; the default suite still exercises all PR/finishing assertions.
+    if (process.env.ABRACODE_TEST_JOURNEY === "engineering") {
+      engineeringEvidence.push({
+        journey: "engineering",
+        complete: true,
+        limitation: "PR-feedback and post-merge residue scenarios belong to the full native run",
+      });
+      return;
+    }
     const feedbackIssue = await prFeedbackLifecycle({
       root,
       forgeState,

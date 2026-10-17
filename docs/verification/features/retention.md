@@ -21,6 +21,8 @@ Native expected state: delivery is verified while cleanup remains blocked across
 
 Unit expected state: unknown/replacement paths survive cleanup, lost removal responses reconcile without another removal, and uncertain admissions preserve prompt/session/payload identities across controller reconstruction. Native-runtime preflight tests serialize a pre-suite capture, expose only old skill inventory, and require its exact requirements/provenance. Lost admitted responses skip inventory. Incompatible permission policy still blocks unsubmitted recovery; a deliberate fresh turn selects current defaults.
 
+The engineering recipe also serializes a seeded historical capture before its native-server restart and checks exact retained prerequisites against the restarted server inventory; it does not submit the historical prompt. Fresh preflight selects current defaults.
+
 The tests own their temp roots and cleanup; preserve runner logs using the recipe's external evidence directory. Unit fixtures do not start a service and need no browser.
 
 ## Gotchas
