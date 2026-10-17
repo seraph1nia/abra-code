@@ -1,0 +1,40 @@
+packages:
+  - templates/reporter
+
+overrides:
+  "vite@*": npm:@voidzero-dev/vite-plus-core@1.2.0
+  "vitest@*": 5.0.4
+
+allowBuilds:
+  "@opencode/cli": true
+  agent-browser: true
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - "@voidzero-dev/vite-plus-core@1.2.0"
+  - "@voidzero-dev/vite-plus-darwin-arm64@1.2.0"
+  - "@voidzero-dev/vite-plus-darwin-x64@1.2.0"
+  - "@voidzero-dev/vite-plus-linux-arm64-gnu@1.2.0"
+  - "@voidzero-dev/vite-plus-linux-arm64-musl@1.2.0"
+  - "@voidzero-dev/vite-plus-linux-x64-gnu@1.2.0"
+  - "@voidzero-dev/vite-plus-linux-x64-musl@1.2.0"
+  - "@voidzero-dev/vite-plus-win32-arm64-msvc@1.2.0"
+  - "@voidzero-dev/vite-plus-win32-x64-msvc@1.2.0"
+  - vite-plus@1.2.0
+  - "@effect/tsgo-darwin-arm64@0.53.0"
+  - "@effect/tsgo-darwin-x64@0.53.0"
+  - "@effect/tsgo-linux-arm64@0.53.0"
+  - "@effect/tsgo-linux-arm@0.53.0"
+  - "@effect/tsgo-linux-x64@0.53.0"
+  - "@effect/tsgo-win32-arm64@0.53.0"
+  - "@effect/tsgo-win32-x64@0.53.0"
+  - "@effect/tsgo@0.53.0"
+
+# The Vite+ core alias uses the toolchain version rather than Vite's version.
+peerDependencyRules:
+  allowedVersions:
+    "vitest>vite": "1.2.0"
+    "vite-plugin-solid>vite": "1.2.0"
+    "vite-plugin-singlefile>vite": "1.2.0"
+    # Type-only peer; native terminal integration tests verify the pinned FFI package.
+    "bun-ffi-structs>typescript": "7.0.2"

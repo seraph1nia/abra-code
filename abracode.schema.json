@@ -1,0 +1,1020 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "number",
+      "enum": [1]
+    },
+    "models": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "$ref": "#/$defs/Model.Ref"
+        },
+        "overrides": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "supervisor": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Model.Ref"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "explore": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Model.Ref"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "apply": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Model.Ref"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "review": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Model.Ref"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "research": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Model.Ref"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["default"],
+      "additionalProperties": false
+    },
+    "attention_capacity": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "progress_timeout_ms": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "explore": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "apply": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "review": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "research": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "operation": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": ["explore", "apply", "review", "research", "operation"],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "work_database": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AbsolutePath"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "worktree_root": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AbsolutePath"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "repository_root": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AbsolutePath"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "server_url": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "default_workflow": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": ["full-openspec", "research-only", "lightweight-fix"]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "auto_schedule": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "max_workers": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "max_executions": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "research_capacity": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "explore_capacity": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "review_capacity": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reconcile_interval_ms": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1,
+          "allOf": [
+            {
+              "minimum": 1000
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "commands": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "openspec": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "forge": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "workers": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "research": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "required_skills": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "maxItems": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "required_tools": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "any_of": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                },
+                                "minItems": 1,
+                                "maxItems": 16
+                              }
+                            },
+                            "required": ["any_of"],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "agent": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/Agent.ID"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "explore": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "required_skills": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "maxItems": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "required_tools": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "any_of": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                },
+                                "minItems": 1,
+                                "maxItems": 16
+                              }
+                            },
+                            "required": ["any_of"],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "agent": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/Agent.ID"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "apply": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "required_skills": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "maxItems": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "required_tools": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "any_of": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                },
+                                "minItems": 1,
+                                "maxItems": 16
+                              }
+                            },
+                            "required": ["any_of"],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "agent": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/Agent.ID"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "review": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "required_skills": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "maxItems": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "required_tools": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "any_of": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                },
+                                "minItems": 1,
+                                "maxItems": 16
+                              }
+                            },
+                            "required": ["any_of"],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "agent": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/Agent.ID"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "repositories": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "publication": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["ready", "draft-until-verified", "manual-ready"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reviewers": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "users": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "teams": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "request": {
+                        "type": "string",
+                        "enum": ["manual", "on-ready"]
+                      },
+                      "rerequest_after_correction": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["users", "teams", "request", "rerequest_after_correction"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "discussion": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "replies": {
+                        "type": "string",
+                        "enum": ["manual", "verified"]
+                      },
+                      "resolve_threads": {
+                        "type": "string",
+                        "enum": ["manual", "addressed"]
+                      }
+                    },
+                    "required": ["replies", "resolve_threads"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "ci_retry": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "max_reruns": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 5
+                      },
+                      "workflows": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": ["max_reruns", "workflows"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "validation": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "engine": {
+                        "type": "string",
+                        "enum": ["native", "no-mistakes"]
+                      },
+                      "bin": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "home": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/$defs/AbsolutePath"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "max_runs": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 6
+                      }
+                    },
+                    "required": ["engine", "max_runs"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "quality_profile": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["strict", "standard", "quick"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "diagnostic_turns": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 5
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "repair_rounds": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 5
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "generated_paths": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "merge_method": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["merge", "squash", "rebase"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "ci_policy": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["all-reported", "required"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "allow_no_checks": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/AbsolutePath"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "remote": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "target_branch": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "branch_policy": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["default", "fixed"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "managed": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "verification": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "minItems": 1
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "argv": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "minItems": 1
+                            },
+                            "deadline_ms": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "max_output_bytes": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "env": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": ["argv"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "max_workers": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "max_executions": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "plan_approval": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "merge_approval": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "delivery": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["github-pr", "branch"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+          },
+          "maxItems": 128
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": ["version", "models"],
+  "additionalProperties": false,
+  "$defs": {
+    "Provider.ID": {
+      "type": "string"
+    },
+    "Model.Ref": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "providerID": {
+          "$ref": "#/$defs/Provider.ID"
+        },
+        "variant": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "providerID"],
+      "additionalProperties": false
+    },
+    "AbsolutePath": {
+      "type": "string"
+    },
+    "Agent.ID": {
+      "type": "string"
+    }
+  }
+}

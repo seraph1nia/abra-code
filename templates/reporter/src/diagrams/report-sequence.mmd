@@ -1,0 +1,8 @@
+sequenceDiagram
+    participant Author
+    participant Validator
+    participant Reader
+    Author->>Validator: Check Mermaid sources
+    Validator-->>Author: Syntax and rendering results
+    Author->>Reader: Share the built HTML
+    Note over Reader: Prepared SVGs work offline

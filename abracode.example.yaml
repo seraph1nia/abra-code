@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=./abracode.schema.json
+# Copy to abracode.yaml. Set a model supported by your authenticated provider.
+version: 1
+models:
+  default:
+    providerID: your-provider
+    id: your-model
+    # variant: supported-native-variant
+  # Each role override is a COMPLETE selection; omitted variant = that model's default.
+  # overrides:
+  #   apply: { providerID: your-provider, id: your-implementation-model, variant: high }
+  #   review: { providerID: your-provider, id: your-review-model }
+# Defaults: full-openspec, manual scheduling, 2 workers/executions, approvals required.
+# Provider credentials belong in native auth storage or the environment, never here.
+repositories: []
+# Add repositories through Abra, or edit declarations then run pnpm config:apply.
+# repositories:
+#   - id: example
+#     remote: https://github.com/your-account/your-repository.git
+#     verification: [[pnpm, test], [pnpm, build]]
+#     delivery: github-pr
+# Omit target_branch to follow the remote default branch.
+# workers:
+#   apply:
+#     agent: build
+#     required_skills: [project-conventions]

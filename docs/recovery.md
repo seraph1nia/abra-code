@@ -1,0 +1,160 @@
+# Recovery runbook
+
+Start with `pnpm start` (or `pnpm service:restart`), then `abra_work_status`, `abra_work_diagnostics` and `abra_work_reconcile`. Record the exact issue, execution, worktree, branch and session IDs before any repair. Never delete an execution record to make a red indicator disappear.
+
+## Normal interruptions
+
+- `interrupted`: the session stopped. `work_control resume` validates ownership and reuses its session/worktree. A busy session prevents a new writer.
+- `blocked` / `failed`: inspect the concrete gate error and issue blocker. For worker failures, `abra_work_diagnostics` exposes native error type/message/status and actual/configured models without global log-file access. Correct the provider/model/tool problem, then `retry`. Guarded issue status changes restore in-progress ownership. Failed Review returns its findings to the existing Apply session.
+- `awaiting_plan_approval`: request/answer the plan form. If requirements changed, use `replan` while idle; pause the writer first if necessary. A rejected plan blocks the issue and returns to Explore on retry.
+- `awaiting_merge`: pending/failed CI or missing review leaves the PR and worktree intact. Resolve forge checks/review and then request merge approval or finish. No merge is attempted without the required receipt.
+- `cleaning`: delivery has already been verified. Retry `work_finish`; never rerun merge to force cleanup.
+
+## Crash windows
+
+| Checkpoint                      | Reconciliation                                                                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Issue creation response lost    | Reuse creation input/request_id; transactionally return the original issue, or create it if the earlier transaction rolled back |
+| Claim response lost             | Re-read issue assignee/status using the unique execution actor; claim only genuinely ready, unassigned work                     |
+| Remote clone interrupted        | Adopt only a completed clone matching its saved intent; retain ambiguous partial directories for repair                         |
+| Fetched base recorded           | Reuse the saved SHA and target; its Git base ref retains it across force-pushes and garbage collection                          |
+| Worktree response lost          | Match exactly one native inventory entry with the execution name; unexpected orphan/collision requires repair                   |
+| Branch provisioning interrupted | Require native detached HEAD at the recorded base before creating the issue branch                                              |
+| Session response lost           | Retry the stored native session ID; native creation returns the existing session                                                |
+| Prompt admission interrupted    | Re-submit the stored message ID; native durable inbox de-duplicates admission                                                   |
+| Worker stopped                  | Inspect native busy/outcome and location; succeeded still needs actual OpenSpec/test/review gates                               |
+| Pending form lost               | Recreate the recorded native form; a lost, unpersisted answer requires fresh human authorization                                |
+| Archive response lost           | Identify one archive and no active change, then validate canonical specs                                                        |
+| Commit/push response lost       | Inspect the archived tree/current commit and exact remote branch; push only if it differs                                       |
+| PR response lost                | Query all matching head/base PRs before considering creation; more than one is ambiguous                                        |
+| Merge response lost             | Inspect PR and fetch the target; require intended head and merge evidence/ancestry                                              |
+| Worktree removal response lost  | Confirm exact owned path is absent; the issue may then be closed                                                                |
+| Issue closure response lost     | Re-read closed status, then persist completed                                                                                   |
+
+The plugin stores orchestration metadata in native storage; there is no standalone JSON execution database to edit. `recovery_required` retains the prior checkpoint and evidence. Safe resume is attempted only after reconciliation explains that checkpoint. Never use force flags, guess a session ID, steal another actor's claim, or blindly repeat PR/merge/deletion operations.
+
+Worker admission recovery belongs to `WorkerSessions`. An uncertain session creation reuses `session_intent.id`. An uncertain prompt submission reuses the retained session and `prompt_id`, preserving `worker_started_at` and progress rather than starting another turn. Busy native work is left running; unknown admission retains its compute reservation. Explicit advancement only observes completion and never resubmits a prompt. An authorized retry/resume may reuse the role session with a fresh prompt ID, start time and progress interval; an answered question alone does not resume paused work or approve a plan.
+
+## Ambiguous or drifted resources
+
+`GIT_IDENTITY`, `WORKTREE_IDENTITY`, `WORKTREE_BRANCH`, `SESSION_LOCATION`, `WORK_DRIFT`, or `POLICY_DRIFT` means the recorded relationship no longer matches an authority. Restore the intended repository/branch/session/association, or inspect preserved work manually and resolve it explicitly. An externally closed issue with incomplete delivery is not treated as completed. A reopened completed issue needs a new work item in this MVP.
+
+If native worktree creation partially registered a directory, use the native worktree `refresh` operation with the registered project ID, inspect inventory and Git identity, then reconcile. A directory whose ownership remains unclear must not be adopted/deleted automatically.
+
+If archive moved files but strict canonical validation failed, correct canonical specs in the retained worktree, review the repair, then retry from archiving. If the approved plan changed, use `replan` before archival. A changed archived/delivered tree is blocked rather than committed without review.
+
+After merge, uncommitted/untracked/ignored files prevent cleanup. Preserve them outside the worktree or explicitly remove known disposable output yourself, then finish. Native retirement uses `force:false`; it never force-deletes build output. If removal succeeded but the work database is temporarily unavailable, leave the execution in cleaning and retry closure.
+
+## Worker diagnostics
+
+`abra_work_diagnostics` accepts only an issue ID and optional assigned role. It reads the issue's recorded sessions through the native session API and reports recent assistant text, tool status/errors, available tool names, model references and structured provider errors. Response bodies, headers, tool inputs and reasoning are omitted; text is bounded and credential patterns/environment secrets are redacted. It never opens arbitrary filesystem logs or grants workers management access.
+
+Native failures are saved with session ID, role, model and timestamp and included in the issue blocker/Supervisor notification. If a session or context read is unavailable, diagnostics report that read failure and retain the saved worker failure. Historical failures remain evidence after retry; compare phase and busy/outcome with the latest native summary instead of treating an old error as a new failure.
+
+If a worker reports no file-writing tool, inspect `available_tools.names` alongside its model. GPT-family models use native `patch`; all patch paths and move destinations must stay within the assigned write root. A source edit, escaping symlink or orchestration-file edit remains denied.
+
+AbraCode uses explicit `models.default` and role overrides, not the latest Abra assistant message as a worker default. Repair credentials or availability for a captured selection and retry while preserving session/worktree identity. Configuration edits and restart affect new executions; they do not silently replace active captured settings. There is no OpenCrew state migration in this fresh release.
+
+## Issue creation recovery
+
+For `abra_work_create`, preserve the original input and `request_id`. Retry with the same key and goal after a lost response. Request identity and issue creation share one SQLite transaction, so a committed request returns the same issue and a rolled-back request can be tried again. `REQUEST_REBIND` means that key belongs to different normalized input. Choose a new key only for deliberately separate work. `abra_work_status` includes the persisted issue history. For old Beads installations, follow [migration](work-graph.md) before restarting the service.
+
+## Repository setup recovery
+
+Use `abra_project_list` for setup phase, saved worktree/base/target, approval receipts and the last error. Setup is separate from issue executions; do not use `abra_work_status` or delete a setup record to retry it. Repeat `abra_project_setup` with `prepare` while provisioning, `deliver` while prepared/delivering, `approve` for a pending merge form, or `finish` after merge/preservation or during cleaning. Saved native names and exact tree/commit evidence prevent duplicate worktrees or delivery of changed content. Recreate a lost form with `approve`; an unpersisted answer requires fresh authorization.
+
+Missing managed storage while an execution or setup owns resources blocks re-onboarding. Restore the cache and reconcile native inventory instead of recloning over an active relationship. Ambiguous partial clones and changed setup files are retained. Preserving a setup branch does not configure the target: merge it and refresh the registration before normal work.
+
+## Server and lock failures
+
+A kernel lock disappears on process exit. Never unlink a live lock file: a replacement inode would defeat exclusion. `LOCKED` means another controller is still working or the bounded acquisition wait expired. `scheduler-leader` prevents two active central coordinators. Use the dedicated service; stop a stale second server through its native lifecycle rather than killing arbitrary processes.
+
+If no central plugin is active after a raw restart, activate the central location or run the bootstrap. `pnpm start` checks native plugin diagnostics before presenting a Supervisor. The periodic fallback is useful only while the plugin is loaded. Session history and active work do not require an attached UI.
+
+## Delivery observations
+
+Pending CI and required forge review keep an authorized ticket in `awaiting_merge`. `abra_work_status` exposes `execution.delivery_wait` with its category, reason, owner, exact delivered fingerprint and `next_check_at` (Unix milliseconds). Reconciliation rechecks after 30 seconds, backing off to five minutes for unchanged conditions. It retains matching human or standing authorization; it does not create model turns. Temporary forge observation failures use the same schedule with category `retryable`. Failed checks or requested changes are verification feedback; changed heads/targets remain recovery conditions. A manual pause suppresses these observations.
+
+Records already stranded in `recovery_required` by an older runtime are not automatically resumed. Inspect `abra_work_status` and the exact PR head/target and existing authorization first, then explicitly retry after resolving ambiguous evidence. Do not rewrite a phase to manufacture authorization.
+
+## Versioned plugin records and backup
+
+Project, setup and execution records use schema version 1. Durable execution variants require phase-specific ownership and preservation evidence. Reads decode records individually and normalize supported legacy data in memory. A coordinated save retains `legacy-original/<original-key>` before the first migration write, preserves additive evidence, and increments the record revision. Unknown versions, mismatched keys and incomplete legacy evidence remain unchanged and visible through `abra_work_list`, readiness, the native work surface and `pnpm doctor` when the service is available. One unavailable record does not hide valid history; new admission and registry changes remain blocked until its ownership is resolved.
+
+Legacy records without a retained verification receipt normalize with an empty verification snapshot: no new commands are guessed from a later project configuration. Preserve their sessions, claims, approvals and worktrees and inspect the missing evidence before an explicit policy revision. A phase name never creates a receipt or authorization. New executions snapshot verification and delivery policy at admission.
+
+Before upgrading real retained work, disable automatic admission, confirm all owned workers and operations have stopped, and export `abra_work_list({include_records:true})`. Save the complete `records` envelope, including unsupported entries and legacy originals, outside disposable worktrees. Keep the native session/worktree inventory and retained report files with that backup. Take a consistent SQLite backup using Node's `node:sqlite` `backup(database, destination)` API while admission is quiescent; do not copy only a live main database file and omit its WAL. Verify the exported identities and restore into a disposable environment before relying on the backup.
+
+Rollback requires writer quiescence. Do not start old code against schema versions it cannot read. A pre-upgrade snapshot is safe to restore only if no later external effects or new work need reconciliation; otherwise retain the upgraded read/recovery path and reconcile forward. Never reset delivery receipts or discard worktrees to make a rollback appear clean.
+
+## Owned operations and stop confirmation
+
+`execution.operation` records the action, stable operation ID, control generation, input fingerprint and expected postcondition before external work. A lost response requires inspecting the recorded native session/prompt, worktree, archive or exact remote ref/PR. Restart reuses IDs and reconciles postconditions; it does not infer completion from a command exit or elapsed lease.
+
+Pause first saves `stop_status: requested` and advances control generation. It interrupts the owned command scope outside shared coordination. Once exclusive execution ownership is available, it cancels the exact queued native prompt, interrupts native workers and confirms quiescence before saving `confirmed`. Resume cannot admit a replacement writer while stop remains requested. A late old-generation check cannot create a valid receipt or close the issue. If a native creation/admission outcome remains uncertain, retain the intent and inspect it; never unlink a live lock or invent an idle result.
+
+The controller owns the stop request, generation and execution lock. Under that ownership, `WorkerSessions` confirms native stop and only then clears active worker/capacity fields; one controller helper persists the confirmed stop and stopped-operation checkpoint from pause or restart reconciliation. A failed read, failed interrupt or still-busy session leaves stopping pending and compute reserved. Native waits never hold shared coordination. Claims, worktrees and session history remain retained.
+
+A busy execution lock returns a bounded `LOCKED` result. Other tickets remain controllable during long checks. Worker Review reports use fingerprint-checked short commits, so reporting does not compete with the controller's prompt-admission ownership. A successful native Review without its report is an explicit missing-evidence stop.
+
+`SPEC_VERIFICATION_REQUIRED` at the Review checkpoint means the full-spec report lacks completeness, correctness or coherence evidence. Explicit `retry` reruns checks and admits independent Review to replace a legacy pass. `REVIEW_CONTRADICTION` rejects a claimed pass with failed/unverified applicable assessments or unresolved conflicts. A failed report's referenced conflicts retain uncertain scope even if labeled `in_scope`; inspect and resolve its durable decision before retrying. If accepted requirements change, use `replan` before archival and obtain configured fresh approval; never rewrite approved artifacts during Apply/Review to silence CI or another review.
+
+Capacity waits preserve the intended worker role and any matching check receipt. Idle PRs, pauses and blocked work retain their claims/resource slots; only confirmed native idle/stop releases active compute reservations. An uncertain prompt still consumes compute. Increase `max_executions` explicitly if retained work is intentionally expected to exceed active workers; do not clear reservations or claims to work around a limit.
+
+## GitHub readiness and transformed preservation
+
+Inspect `execution.forge_observation` for the observed head, effective CI policy, confirmed required contexts/app IDs, check buckets, advisory diagnostics and bounded summaries. Waiting reports the check/review/policy owner and recheck time. A changed PR URL/head/target is a recovery conflict, not new merge authorization. Unsupported required-workflow identity or queue policy stays waiting; obtain an explicit supported policy rather than forcing a merge.
+
+After an uncertain merge response, reconcile the same recorded PR before retrying. Preservation receipts retain the original source commit, expected target, PR identity, configured method and forge-reported result commit. Cleanup revalidates preservation while the owned worktree still exists and requires that result on a freshly fetched target. Merge commits additionally retain original source ancestry; squash/rebase use the exact authoritative PR/source/result relationship. Similar patches and premerge test commits are insufficient. Deleted source refs do not invalidate proven target preservation; rewritten-away target results prevent retirement.
+
+PR summaries use `abracode:summary` markers. Updates retain user text outside the owned section. Missing, duplicated or partial markers require inspection; the controller refuses to replace an unknown body. Retries rediscover the same exact PR and remote head before creating or pushing anything else.
+
+## Interrupted retirement
+
+Retirement retains the owned directory's canonical path, device, inode and birth time, each authorized generated-directory removal, and native removal submission/confirmation. A replacement directory at an old path is a conflict, even when the pathname matches. Restore ownership evidence and inspect it; do not clear identity or progress to force cleanup. Missing paths are accepted only for ENOENT/ENOTDIR, and native inventory must also confirm absence before closing the original claim. A lost removal response reconciles absence without another destructive submission. Session and delivery history remain retained.
+
+Questions and declared waits are versioned records within the execution. Use matching `key` and `generation`; unrelated progress cannot replace them. Inspect the retained owner and clearing condition. A user form is in-memory upstream, so a lost unpersisted reply must be entered again on its reconstituted form. `abra_work_decision` and `abra_work_wait_disposition` retain answers/dispositions; they never authorize plan/merge, release claims or delete resources.
+
+Research publication retains its bounded content and exact receipt intent before atomic file publication. If the service stops after publication, the same report identity/hash is rediscovered; a different payload cannot replace a published report. Restore missing/tampered report storage from a verified backup before completion. Research cleanup verifies the unchanged retained base and report; it requires no delivery receipt. Lightweight and research scope changes use `abra_work_scope` while workers are quiescent, then the configured fresh scope approval. Keep the issue's original request identity and original policy intact.
+
+Correction rounds are append-only and consume the original execution's finite repair budget. Do not clear history, rewrite old archives or change the request to reset it. Scope changes and exhausted budgets retain decisions; inspect them with the Supervisor. After a changed delivered head, stale merge forms remain historical and cannot authorize the new head. Full-spec revision cycles retain the original issue base for ticket-wide diff while validating their new plan against the prior delivered round.
+
+Scope revision refuses paused work until an explicit resume. Revising an unfinished research contract retains its previous published report receipt/files in report_history, requires the new scope approval, and uses a new report ID. A completed research outcome remains immutable.
+
+## Retained PR actions and external custody
+
+For a delivered GitHub PR, inspect `abra_work_feedback_status` before retrying work. Known failed-check/review delivery blocks continue due observation; when authoritative blocking sources clear, reconciliation resumes eligibility without a manual retry. Same-head ordinary readiness waits retain existing authorization. Changed heads, incomplete source reads, unresolved scope decisions and unfinished outward actions block guarded merge.
+
+A prepared outward action has not yet been sent. A running or uncertain receipt may already have changed GitHub. Reissue `abra_work_pr_action` with the retained `action_id`, current generation/head and original kind to reconcile its original identity, including when its failure finding has disappeared; do not create another request or manually replay an API call. Ready state, pending/submitted reviews, exact authenticated reply content/marker, thread state and run-attempt progression provide separate confirmation. Removed or edited reply markers leave the result uncertain and require inspection. Rerun reconciliation never repeats the POST merely because its response was lost. Reserved retry slots persist across new heads and restarts.
+
+Early drafts retain provisional publication evidence separately from final delivery. Retry the owned verification/delivery checkpoint to inspect and reuse the existing PR. A draft, its pending-gates body, or an uncertain ready transition cannot authorize closure, preservation or retirement. Managed-summary marker ambiguity remains a recovery error; preserve user text.
+
+For no-mistakes, retain the original launch nonce, generation, submitted head, intent digest and run ID. A lost launch response reuses proof-mode admission. A lost gate response is inspected against the exact current run and gate; the next gate must never receive the previous answer. Unknown protocols/outcomes, truncated substantive gates, extra skips/overrides and unavailable daemon evidence remain explicit blockers.
+
+While external custody is reserved, active or uncertain, do not launch Apply/correction, publish, revise scope or delete the worktree. Pause suppresses new controller answers but retains external ownership. Resume reconnects to the same run. Use the exact bound abort/adopt control to confirm termination and obtain the engine's offered guarded custody return. AbraCode accepts only its supported exact sync/recover/adopt commands and refuses substituted `--keep-local` recovery. Preserve missing/divergent pipeline commits for manual reconciliation; never reset, stash, rewrite gate records or restart a shared daemon as a shortcut. Returned content still needs fresh native verification and independent Review.
+
+## PR action preparation and submission
+
+The controller retains version-2 PR actions with kind-specific targets and explicit submission evidence. `prepared` plus `submission.stage: unsubmitted` means no write has been admitted. A retryable `preflight` reason describes a failed read-only identity, source or permission check; it does not mean a GitHub write may have occurred. A permanently ineligible reviewer or changed target is refused or superseded with a reason. Reconcile an unchanged prepared action through `abra_work_pr_action` using its action ID, current generation and delivered head; existing bound human approval remains attached to the unchanged request. Automatic retries respect their due time and do not retry permanent denials in a loop.
+
+After durable send admission, interruption, lost output, deadlines and malformed responses are potentially submitted. The controller observes the exact source before settling the action; it never resends merely because a receipt is absent. Replies require the retained marker, exact body, authenticated author and inline parent identity when applicable. Reruns are keyed by repository/PR/head/workflow/run/source attempt, so several failed job findings reserve one retry and cannot dispatch duplicate run-level requests while the old attempt is still visible.
+
+Supported version-1 actions normalize without changing their IDs, approval forms, payloads, own-reply markers, receipts, finding history or consumed reservations. Their original record is retained as legacy evidence. A historical running/uncertain record stays potentially submitted, including one whose error text mentions permission. Historical duplicate reservations are preserved and are not refunded. Unknown action versions or incomplete target identity remain preserved and unavailable for sending; use a compatible runtime and inspect authoritative source evidence. Older runtimes cannot resume version-2 actions and must not attempt a lossy downgrade.
+
+Every controller merge route evaluates required actions from current policy and fresh source evidence. A missing outbox record is pending work, not clearance; valid same-head approval remains retained while the required ready/reviewer/reply/resolution/rerun work is reconciled. Rejecting a required action does not silently waive the policy. Manual discussion defaults create no new automatic obligation.
+
+## Captured worker admissions
+
+New admissions store immutable `worker-context/<prompt-id>` payloads before prompt submission. `worker-context-status/<execution-id>/<role>` retains latest prerequisite/request evidence, and execution `worker_context_id` binds the active payload. The existing `abra_work_list({include_records:true})` export includes these native records; keep that export with native session evidence and the SQLite backup. Context remains readable after worktree retirement.
+
+For an uncertain submission, reconcile native inbox/transcript identity first. An already-admitted prompt is not sent again because configuration or inventory changed. An absent prompt reuses the captured supplied text and role guidance; it is not rebuilt from the latest issue or Markdown. Changed enforcement policy produces `CONTEXT_POLICY` rather than silently widening permissions. Inspect custody and request an explicit new turn to change its context. Missing legacy payloads are not reconstructed as historical evidence.
+
+An explicit new turn captures current decisions and the execution's retained configuration under a new prompt identity. Context observation updates are fenced by generation, session and prompt, so a replaced worker cannot replace current evidence. Definitely unsubmitted preflight failures release compute capacity while retaining claims/worktrees; uncertain admissions remain conservative. Pause and external branch custody remain authoritative.
+
+Before rolling back code, stop workers and preserve context records in the normal export. Do not use an older admission implementation to replay an uncertain new-format prompt. Keep a compatible recovery reader until its native custody is resolved.
+
+Browser rollout changes role-policy identities. Retained uncertain admissions keep their original context and prompt IDs; do not insert the browser skill, names or new permissions into historic captures. Inspect native admission evidence and use the existing explicit-new-turn recovery when a captured policy is incompatible. A continuing native session keeps `abracode-<native-session-id>`; a replacement native session receives a different name and screenshot directory. Restart never replays browser actions. If a worker left a browser open, an operator can close exactly its recorded name using the central CLI; do not close unrelated sessions or personal profiles.
+
+A deliberate new admission into an existing idle native session refreshes its policy-derived native permissions, including that same session's evidence directory, before capturing the new prompt. Ordinary admission reconciliation never refreshes permissions or rewrites the old capture. This allows pre-browser sessions to gain the declared browser exception through explicit retry while keeping their browser identity stable.
+
+Service start/client/stop resolve existing runtime path ancestors and refuse paths into legacy `.opencrew/`, including symlinks. Stop also confirms this installation's retained Abra/config controller route before terminating the endpoint. If bootstrap failed before Abra could be retained, inspect the registration and native process explicitly; do not point AbraCode's registration at another service to stop it. Switching `ABRACODE_CONFIG` requires stopping with the current selection and restarting with the new one.

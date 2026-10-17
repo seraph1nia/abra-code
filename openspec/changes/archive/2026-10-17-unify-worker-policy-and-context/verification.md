@@ -1,0 +1,29 @@
+# Implementation verification
+
+Verified on 2026-10-17. All 24 implementation tasks are complete. The change remains unarchived for review.
+
+## Checks
+
+- `pnpm test`: 50 test files, 307 tests passed in the final separate run. One earlier concurrent run hit an existing five-second action-recovery test timeout; separate full runs passed without changing that test or its deadline.
+- `pnpm test:e2e`: the expanded real-native suite passed, including foreign worktrees, missing prerequisites, no provider call when required tools are missing, restart and retired-context reads. Tests used deterministic providers and disposable local bare remotes.
+- `pnpm typecheck`, `pnpm lint:effect`, `pnpm check:lsp` and `pnpm report:check`: passed. Effect diagnostics reported zero errors or warnings.
+- Formatting checks passed for this change's files; `git diff --check` and `openspec validate unify-worker-policy-and-context --strict` passed.
+- `pnpm check` remains blocked at its formatting stage by the same 18 pre-existing modified skill/command Markdown files observed before implementation. Those files were left untouched. This is not a fully green repository-wide check.
+
+## Requirement review
+
+The nine requirements and their 28 delta scenarios were reviewed against implementation and evidence below. Detailed test scope is also documented in `docs/testing.md`.
+
+| Requirement                                                   | Evidence                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Managed roles have one authoritative permission policy        | `src/opencode/role-policy.ts` drives native rules, central profile transforms and request/execution authorization; role-policy and native profile assertions verify restrictions. Role Markdown no longer maintains separate permission tables.                                                                                               |
+| Preserve role boundaries and controller checkpoints           | Patch guard tests cover every affected path, moves, symlinks, protected control files and inactive calls. Native research excludes editing/shell/management tools, and existing approval/delivery and Review verification suites still pass. Apply's trusted shell boundary remains explicit.                                                 |
+| Capability requirements never grant permissions               | Configuration and role-policy tests cover old configuration, bounded alternatives, forbidden mixed groups, additive defaults and skill resolution without shell authority. Native patch-only requests satisfy editing requirements.                                                                                                           |
+| Assemble an explicit worker assignment context                | Context captures the assignment, resolved selection, accepted scope fingerprint/approval references, role guidance, declared artifacts, repository instruction references and decisions. Full-spec, lightweight and research lifecycle tests pass; assembly reads project instructions without copying central configuration into the target. |
+| Retain supplied context before uncertain submission           | Immutable payload, partial-publication, deliberate retry and lost-response/lost-submission tests preserve text, role guidance and identities. Assignment compatibility rejects another role, prompt or generation. Export includes context records; native restart/retirement preserves them.                                                 |
+| Resolve required skills at the worker location                | Native-ID, missing, ambiguous and unusable skill tests; bounded cold-plugin activation tests; native portable-skill success and pre-session missing-skill failure. Availability is explicitly distinct from observed loading.                                                                                                                 |
+| Validate actual tools before a managed model request          | Missing-tool request tests retain a blocker and patch alternatives succeed. The native fixture removes an allowed required tool before request assembly and asserts zero matching provider calls.                                                                                                                                             |
+| Expose bounded context diagnostics without creating authority | Pre-session blockers, bounded references/omitted counts, sensitive-text redaction, legacy/malformed evidence and isolated invalid-role summaries are tested. Inspection with an open question leaves retained state unchanged. Current inventory and complete native context are not inferred from historical capture.                        |
+| Validate worker selection at its native location              | Existing model/variant/tool-support tests and native central-only-agent rejection remain valid. Inbox/transcript admission proof precedes fresh inventory checks; uncertain reservations remain conservative, and definitely unsubmitted prerequisite failures release compute capacity without removing owned resources.                     |
+
+No application delivery, push to a user remote, issue closure or OpenSpec archival was performed by this apply workflow.

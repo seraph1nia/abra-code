@@ -1,0 +1,17 @@
+{
+  "name": "abracode-plugin",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./tui": "./tui.ts"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": "2.0.28",
+    "@opentui/core": "0.5.17",
+    "@opentui/solid": "0.5.17",
+    "effect": "4.0.1",
+    "solid-js": ">=1.9.0"
+  }
+}

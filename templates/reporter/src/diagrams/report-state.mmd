@@ -1,0 +1,7 @@
+stateDiagram-v2
+    [*] --> Draft
+    Draft --> Checked: validate
+    Checked --> Draft: revise
+    Checked --> Built: build
+    Built --> Shared: hand off HTML
+    Shared --> [*]
