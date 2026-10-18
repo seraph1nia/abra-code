@@ -15,6 +15,12 @@ import { type DiffScope, type WorkDetail, type WorkItem, type WorkSnapshot } fro
 import { fleetCounts, fleetState, fleetLabels, localDay, fleetRepositories } from "./fleet.ts";
 import { supervisionSummary } from "./supervision.ts";
 import { messageRequests, requiresResponse } from "../workflow/message-contracts.ts";
+function communication(e?: Execution): NonNullable<WorkItem["communication"]> {
+  return {
+    total: e?.messages?.length ?? 0,
+    outstanding: messageRequests(e?.messages).filter(requiresResponse).length,
+  };
+}
 function sessions(e?: Execution): WorkItem["sessions"] {
   const current = (["explore", "apply", "review", "research"] as const).flatMap((role) => {
     const id = e?.[`${role}_session_id`];
@@ -245,10 +251,7 @@ export class Visibility {
           if (execution)
             Object.assign(item, { outcome: deliveryOutcome(execution, issue?.status, observedAt) });
           Object.assign(item, {
-            communication: {
-              total: execution?.messages?.length ?? 0,
-              outstanding: messageRequests(execution?.messages).filter(requiresResponse).length,
-            },
+            communication: communication(execution),
             supervision:
               aggregate.tasks.find((task) => task.issue_id === item.issue_id) ??
               supervisionSummary({
@@ -367,6 +370,7 @@ export class Visibility {
         phase: e?.current_phase,
         active_role: e?.active_role,
         sessions: sessions(e),
+        communication: communication(e),
         eligible: false,
         blockers: [],
       };

@@ -97,10 +97,10 @@ export class Queries {
               const available =
                 native?.directory === this.config.home && native.agent === "project-lead";
               const activity = nativeActivity(native);
-              const state: LeadSummary["state"] = !lead.enabled
-                ? "disabled"
-                : lead.stop_pending
-                  ? "stopping"
+              const state: LeadSummary["state"] = lead.stop_pending
+                ? "stopping"
+                : !lead.enabled
+                  ? "disabled"
                   : !lead.provisioned
                     ? "provisioning"
                     : !available

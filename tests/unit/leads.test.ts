@@ -67,6 +67,35 @@ test("lead observer isolates malformed registrations while authority remains den
   );
 });
 
+test("lead inspection shows pending shutdown before disabled without changing authority", async (t) => {
+  const { f, lead } = await prepare();
+  t.onTestFinished(() => run(f.close()));
+  const bundle = await run(f.controller.queries.observe());
+  const effects = {
+    prompts: f.runtime.prompts,
+    creates: f.runtime.creates,
+    forms: f.runtime.forms.size,
+  };
+  for (const [enabled, stop_pending, expected] of [
+    [true, false, "idle"],
+    [true, true, "stopping"],
+    [false, true, "stopping"],
+    [false, false, "disabled"],
+  ] as const) {
+    const retained = { ...lead, enabled, stop_pending };
+    await run(f.records.store.set(Id.StorageKey.make(`lead/${lead.id}`), retained));
+    const { leads } = await run(f.controller.queries.leadOverview(bundle));
+    assert.equal(leads[0]!.state, expected);
+    assert.equal(leads[0]!.enabled, enabled);
+    assert.equal(leads[0]!.session_available, true);
+    assert.deepEqual((await run(readLeads(f.records)))[0], retained);
+  }
+  assert.deepEqual(
+    { prompts: f.runtime.prompts, creates: f.runtime.creates, forms: f.runtime.forms.size },
+    effects,
+  );
+});
+
 async function recoverableLead(t: TestContext, budget = 2) {
   const { f, lead } = await prepare();
   t.onTestFinished(() => run(f.close()));

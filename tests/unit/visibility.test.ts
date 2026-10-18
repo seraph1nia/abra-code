@@ -166,6 +166,104 @@ test("document selection stays inside the planning change and retired work is pa
   assert.equal((await run(view.snapshot(100))).closed_page, 1);
 });
 
+test("older closed issue detail preserves communication counts outside the loaded history page", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(planned(f));
+  const at = Id.Timestamp.make("2026-10-01T00:00:00.000Z");
+  const request = {
+    schema_version: 1 as const,
+    assignment_id: e.prompt_id!,
+    generation: e.control_generation,
+    sender_session_id: e.supervisor_session_id!,
+    recipient_session_id: e.explore_session_id!,
+    role: "explore" as const,
+    prompt: "Retained historical question",
+    delivery: "queue" as const,
+    response: "answer" as const,
+    created_at: at,
+    acknowledged_at: at,
+  };
+  e.messages = [
+    {
+      ...request,
+      request_id: Id.RequestId.make("answered"),
+      prompt_id: Id.MessageId.make("msg_answered"),
+      status: "answered",
+      reply: { body: "Retained answer", at, evidence: [] },
+    },
+    {
+      ...request,
+      request_id: Id.RequestId.make("awaiting-answer"),
+      prompt_id: Id.MessageId.make("msg_awaiting"),
+      status: "acknowledged",
+    },
+    {
+      ...request,
+      request_id: Id.RequestId.make("acknowledged"),
+      prompt_id: Id.MessageId.make("msg_acknowledged"),
+      response: "acknowledgement",
+      status: "acknowledged",
+    },
+  ];
+  e.current_phase = "completed";
+  e.delivered_commit = await run(f.git.head(e.worktree_directory!));
+  e.delivery_receipt = { commit: e.delivered_commit, target: e.target_branch!, at };
+  await run(f.records.save(e));
+  await run(f.work.close(e.issue_id, e.execution_id));
+  const retained = (await run(f.records.execution(e.issue_id)))!;
+  const newer = Array.from({ length: 51 }, (_, n) => {
+    const id = Id.IssueId.make(`newer-closed-${n}`);
+    f.work.add(id);
+    f.work.issues.get(id)!.status = "closed";
+    return { ...retained, issue_id: id, messages: undefined };
+  });
+  const empty = Id.IssueId.make("closed-without-execution");
+  f.work.add(empty);
+  f.work.issues.get(empty)!.status = "closed";
+  const bundle = await run(f.controller.queries.observe());
+  // Supply retained completion timestamps through the existing read-model seam;
+  // no additional native workers or worktrees are needed for historical rows.
+  bundle.executions = [{ ...retained, updated_at: at }, ...newer];
+  f.controller.queries.observe = () => Effect.succeed(bundle);
+  f.runtime.session = () => {
+    throw Error("Closed history must not inspect native sessions");
+  };
+  f.runtime.promptAdmissions = () => {
+    throw Error("Summary must not inspect message admissions");
+  };
+  const before = await run(f.records.export());
+  const effects = {
+    prompts: f.runtime.prompts,
+    creates: f.runtime.creates,
+    forms: f.runtime.forms.size,
+  };
+  const view = new Visibility(f.controller);
+  assert.equal(
+    (await run(view.snapshot())).work.some((w) => w.issue_id === e.issue_id),
+    false,
+  );
+  const visible = (await run(view.snapshot(1))).work.find((w) => w.issue_id === e.issue_id)!;
+  const detail = await run(view.detail(e.issue_id));
+  assert.deepEqual(detail.work.communication, { total: 3, outstanding: 1 });
+  assert.deepEqual(detail.work.communication, visible.communication);
+  assert.deepEqual((await run(view.detail(empty))).work.communication, {
+    total: 0,
+    outstanding: 0,
+  });
+  bundle.executions[0] = { ...bundle.executions[0]!, messages: undefined };
+  assert.deepEqual((await run(view.detail(e.issue_id))).work.communication, {
+    total: 0,
+    outstanding: 0,
+  });
+  assert.deepEqual(await run(f.records.export()), before);
+  assert.deepEqual(
+    { prompts: f.runtime.prompts, creates: f.runtime.creates, forms: f.runtime.forms.size },
+    effects,
+  );
+  assert.ok("value" in (await visibility.methods.detail.output["~standard"].validate(detail)));
+});
+
 test("bounded supervision projection preserves record history and exposes read-only report access", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));

@@ -1,6 +1,6 @@
 # Reliability and visibility checkpoint — 2026-10-18
 
-The operator stopped expansion and requested a reviewable checkpoint. This change retains implemented reliability fixes and visibility improvements. It is **not a green operational acceptance or deployment**. No push, merge, archive, production-service manipulation, real-provider call or Firstmate run was performed.
+The original checkpoint below records commit `581df64`; subsequent small UI follow-up results are recorded at the end. The operator stopped expansion and requested a reviewable checkpoint. This change retains implemented reliability fixes and visibility improvements. It is **not a green operational acceptance or deployment**. No push, merge, archive, production-service manipulation, real-provider call or Firstmate run was performed.
 
 ## Delivered scope
 
@@ -48,9 +48,26 @@ Author review inspected immutable request/recovery transitions, exact prompt gua
 1. Native lead-decision routing is flaky: Abra may answer a supervisor-owned question before a scoped lead receives it. A stronger actor-specific fixture timed out and was reverted. Neither the original failure nor all scheduling/capacity causes are resolved.
 2. Earlier full runs also hit a lead management-capacity refusal and a report compiler-readiness timeout. A stale stall-slot bug and a main-thread-only compiler probe were independently reproduced and fixed; the exact causes of those historical full-run failures were not proven. Later passes must not be presented as causal proof.
 3. Repeated full operational acceptance is not green. Cycle-2 cleanup receipts show removed roots and no recorded native children; the final [read-only resource inventory](evidence/checkpoint-resources.json) checks recorded report groups as well. It does not establish absence of every possible unrecorded descendant.
-4. Disabled-but-stopping lead display currently favors “disabled”; detail fallback for a closed issue outside the loaded page can omit its communication summary although the paginated message endpoint remains available. Additional report/PR shortcuts and cross-task digest behavior are deferred.
+4. The stopping-state precedence and older closed-issue communication-summary gaps were fixed in the small UI follow-up described below. Additional report/PR shortcuts and cross-task digest behavior remain deferred.
 5. Retention bounds remain unchanged; unresolved records fail visibly at limits rather than being silently evicted. Long-lived provider behavior, multi-day storage pressure, comparative model quality and complete intervention/token accounting remain unverified.
 
 The change remains locally checkpointed with acceptance tasks open. Do not archive it or enable delegated authority on the strength of this checkpoint.
 
 Raw evidence is retained byte-for-byte. The unrestricted staged whitespace check flags trailing blank lines in captured test logs and one blank context line in the retained baseline patch; the source/planning check excluding `evidence/*` passes. These evidence formatting flags are not hidden as a fully clean unrestricted check.
+
+## Small UI follow-up — 2026-10-18
+
+This separate follow-up fixes only the two recorded projection gaps. A lead with `stop_pending` displays `stopping` before considering its enabled flag, then `disabled` after shutdown confirmation. Snapshot rows and older closed-issue detail fallbacks share the same retained communication-count calculation. No API, persisted state, controller authority or additional native read is introduced. Delegation and other expansion remain untouched.
+
+The new lead regression covers enabled/disabled states with and without pending shutdown while preserving registration and model-turn/form counters. The history regression uses 52 retained closed executions plus an issue without an execution, verifies the target is outside the first 50-row page, compares its detail and history-page counts, distinguishes acknowledgement from answer, covers empty history, validates the output schema and rejects native session/admission inspection. Controller records, prompts and forms remain unchanged.
+
+| Follow-up check                  | Actual result                                                                                                                                                                                                                                |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Focused lead/visibility suites   | Passed: 24 tests in 2 files, 10.88 seconds (`/tmp/abra-small-ui-focused.log`). An initial missing evidence field in the new fixture was corrected before this pass.                                                                          |
+| Final changed history regression | Passed on final fixture content: 1 test, 1.15 seconds (`/tmp/abra-small-ui-final-regression.log`).                                                                                                                                           |
+| `pnpm check`                     | Passed (`/tmp/abra-small-ui-check-2.log`), including type/lint/LSP/report checks. Initial new-fixture typing errors were corrected; the initial failed log remains `/tmp/abra-small-ui-check.log`.                                           |
+| `pnpm test`                      | **Failed overall**: 483 tests passed in 74 files; the Vitest worker received `SIGSEGV` while running `tests/integration/cli.test.ts`. Duration 287.43 seconds. No completed result for that file; no retry (`/tmp/abra-small-ui-test.log`). |
+| `pnpm test:e2e`                  | **Failed overall**: 1 test passed; the Vitest worker received `SIGSEGV` while running `tests/e2e/native.test.ts`. Duration 60.63 seconds. No native scenario result; no retry (`/tmp/abra-small-ui-e2e.log`).                               |
+| Formatting / whitespace          | Passed `pnpm format:check` and changed-file `git diff --check`; final documentation is formatted before commit.                                                                                                                              |
+
+The native crash occurred before a native child was recorded. The original `/tmp/abra-small-ui-native/resources.json` remains unchanged with cleanup pending. A separate `/tmp/abra-small-ui-native/manual-cleanup.json` records the dead runner, empty native-child list, no process using the fixture cwd and removal of only its exact disposable root. CLI crash cleanup has no per-run resource receipt; no unidentified directory or process was removed. Neither crash is attributed to this UI patch or declared environmental without diagnosis. Full-suite verification remains incomplete, and the earlier native lead-routing and operational risks remain unresolved.
