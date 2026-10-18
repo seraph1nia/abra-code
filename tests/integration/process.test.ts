@@ -190,3 +190,20 @@ test("verification deadline can exceed the former blanket deadline using a contr
     /deadline_ms/,
   );
 });
+
+test("an externally signalled command retains its actual termination reason", async () => {
+  await assert.rejects(
+    run(
+      new ProcessRunner().run(
+        Id.Executable.make(process.execPath),
+        ["-e", "process.kill(process.pid, 'SIGTERM')"],
+        Id.AbsolutePath.make("/tmp"),
+      ),
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /SIGTERM/);
+      return true;
+    },
+  );
+});

@@ -39,7 +39,7 @@ New prompts directed at assigned or historical managed worker sessions SHALL be 
 #### Scenario: Prompt identity is rebound
 
 - **WHEN** a caller reuses an owned message ID with changed text, attachments or another session
-- **THEN** the prompt is refused and the retained original remains unchanged
+- **THEN** controller tools refuse conflicting input; native replay may return the immutable original before the prompt hook, but changed content is never admitted, and another session cannot adopt that identity
 
 #### Scenario: Assignment changes before consumption
 

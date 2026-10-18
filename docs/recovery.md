@@ -169,6 +169,42 @@ Merge approval collection commits the native form's matching receipt and returns
 
 Approval/finish may return successful `category: operation_in_progress` with `performed: false`. The request neither ran nor queued; inspect status again and recollect approval only if its matching receipt is missing. Retained operation details are observations and may be unavailable. Busy ownership does not establish a second server or prove the PR remains unmerged. Other lock-system failures, rejected authority and unsafe effects remain native failed tools. On those failures, inspect current status for earlier committed successes before repeating any action.
 
+## Worker communication recovery
+
+Inspect `abra_work_messages` before retrying a request. Keep its issue/request ID
+and exact content; an admission error does not authorize another identity or
+session. The controller reconciles native inbox and context against retained
+prompt text, including attachment absence. Queued means admitted, not answered.
+Unavailable or unexplained absent evidence retains uncertainty and capacity;
+replanning cannot replace that uncertain instruction. Use the existing explicit
+pause/confirmed-stop route before superseding unresolved ownership.
+
+If a retained request is still queued after restart and native execution is
+idle, reconciliation wakes the queue with the verified same ID/payload. It does
+not create a new worker or instruction. Compaction can hide an older input from
+current context; exact native message reads and bounded native history provide
+the fallback evidence. A later message's success cannot mask an earlier failed
+assignment.
+
+Replies, required-response blockers and findings coalesce into retained
+Attention incidents. Optional diagnostic budgets and capacity still apply;
+exhaustion leaves the message and mandatory worker questions visible. A lost
+communication-notice admission response keeps its prompt ID for bounded retry.
+Native notice admission is separate from a handled disposition.
+
+Pause cancels owned queued assignment/follow-up IDs before one interrupt. A
+consumed message's effects remain history. Resolved replies keep their answer or
+acknowledgement across generation changes; old generations cannot send new work
+or replies. An identical management retry may retrieve its historical intent
+without reviving the worker. Unanswered required requests survive failure and
+block their checkpoint; inspection never manufactures a response.
+
+See [message tools](operations.md#correlated-messages) for bounded input and
+inspection contracts. Captured legacy role policies are not silently widened
+to add reply tools: use existing explicit worker retry when a policy-incompatible
+capture blocks native requests. Retained research findings remain available
+after worktree retirement and are evidence only when forwarded.
+
 ## Finishing existing work
 
 Before requesting merge approval and immediately before submitting merge, the controller checks the exact local/remote publication, native quiescence and read-only cleanup safety. Existing late edits need attributable worker evidence or a native exact-content adoption receipt. They consume one of two automatic synchronization attempts and pass current checks and independent Review; archived full-spec work gets a revision plan with the configured fresh planning approval. This is revalidation of present edits, not permission to code. Head changes, restart and repeated polling do not replenish the allowance. An additional-attempt form authorizes one specified input once. Fresh commits require fresh merge approval and forge readiness.

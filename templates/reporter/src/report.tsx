@@ -1,16 +1,17 @@
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { FeedbackForm } from "./components/feedback.tsx";
+import { createSignal, Show } from "solid-js";
+import {
+  FindingList,
+  ReportHeader,
+  Section,
+  SectionNavigation,
+  type Finding,
+} from "./components/report.tsx";
+import VerificationExample from "./examples/verification.tsx";
 import { MermaidDiagram } from "./mermaid-diagram.tsx";
 import flow from "./diagrams/report-flow.mmd";
 import sequence from "./diagrams/report-sequence.mmd";
 import state from "./diagrams/report-state.mmd";
-
-type Finding = {
-  title: string;
-  category: "Authoring" | "Delivery" | "Interaction";
-  summary: string;
-  evidence: string;
-  source: { label: string; href: string };
-};
 
 // Start here: replace this example's content and compose ordinary Solid/HTML below.
 const findings: Finding[] = [
@@ -43,32 +44,23 @@ const findings: Finding[] = [
   },
 ];
 
-export default function Report() {
-  const [query, setQuery] = createSignal("");
-  const visible = createMemo(() => {
-    const term = query().trim().toLowerCase();
-    return findings.filter((finding) =>
-      `${finding.title} ${finding.category} ${finding.summary} ${finding.evidence}`
-        .toLowerCase()
-        .includes(term),
-    );
-  });
-
+function FieldNotes() {
   return (
     <main>
-      <header class="report-header">
-        <p class="eyebrow">AbraCode / Field notes / 001</p>
-        <h1>A small report, ready to share.</h1>
-        <p class="lede">
-          Author in Solid. Build once. Read in the conversation’s HTML preview or open the same file
-          in a browser.
-        </p>
-        <div class="meta">
-          <span>Example report</span>
-          <span>Local interactions</span>
-          <span>One HTML file</span>
-        </div>
-      </header>
+      <ReportHeader
+        eyebrow="AbraCode / Field notes / 001"
+        title="A small report, ready to share."
+        summary="Author in Solid. Build once. Read in the conversation’s HTML preview or open the same file in a browser."
+        labels={["Example report", "Local interactions", "One HTML file"]}
+      />
+      <SectionNavigation
+        sections={[
+          { id: "findings", title: "Findings" },
+          { id: "delivery", title: "Delivery" },
+          { id: "diagrams", title: "Diagrams" },
+          { id: "feedback", title: "Feedback" },
+        ]}
+      />
 
       <section class="recommendation" aria-labelledby="recommendation-title">
         <p class="eyebrow">Recommendation</p>
@@ -79,45 +71,11 @@ export default function Report() {
         </p>
       </section>
 
-      <section id="findings" aria-labelledby="findings-title">
-        <div class="section-heading">
-          <h2 id="findings-title">Findings</h2>
-          <p aria-live="polite">
-            {visible().length} of {findings.length} shown
-          </p>
-        </div>
-        <label for="finding-filter">Filter findings</label>
-        <input
-          id="finding-filter"
-          type="search"
-          placeholder="Try delivery or evidence…"
-          value={query()}
-          onInput={(event) => setQuery(event.currentTarget.value)}
-        />
-        <div class="findings">
-          <For each={visible()}>
-            {(finding) => (
-              <article class="finding">
-                <span class="tag">{finding.category}</span>
-                <h3>{finding.title}</h3>
-                <p>{finding.summary}</p>
-                <details>
-                  <summary>Read evidence</summary>
-                  <p>{finding.evidence}</p>
-                  <a href={finding.source.href}>
-                    {finding.source.label} <span aria-hidden="true">↗</span>
-                  </a>
-                </details>
-              </article>
-            )}
-          </For>
-          <Show when={visible().length === 0}>
-            <p class="empty">No findings match. Try a different search.</p>
-          </Show>
-        </div>
-      </section>
+      <Section id="findings" title="Findings">
+        <FindingList findings={findings} />
+      </Section>
 
-      <section aria-labelledby="delivery-title">
+      <section id="delivery" aria-labelledby="delivery-title">
         <h2 id="delivery-title">Two ways to read</h2>
         <div class="table-scroll" role="region" aria-label="Delivery comparison" tabIndex={0}>
           <table>
@@ -144,7 +102,7 @@ export default function Report() {
           </table>
         </div>
       </section>
-      <section aria-labelledby="diagrams-title">
+      <section id="diagrams" aria-labelledby="diagrams-title">
         <p class="eyebrow">Visual explanations</p>
         <h2 id="diagrams-title">Choose the view that answers the question.</h2>
         <p>Use a flowchart for steps, a sequence for interactions, or states for a lifecycle.</p>
@@ -164,7 +122,43 @@ export default function Report() {
           caption="A state diagram shows valid transitions and the revision loop."
         />
       </section>
+      <Section id="feedback" title="Local review feedback">
+        <FeedbackForm
+          sections={[
+            { id: "findings", title: "Findings" },
+            { id: "delivery", title: "Delivery" },
+            { id: "diagrams", title: "Diagrams" },
+          ]}
+        />
+      </Section>
       <footer>Prepared with the AbraCode report template · Presentation only</footer>
     </main>
+  );
+}
+
+export default function Report() {
+  const [view, setView] = createSignal<"field-notes" | "verification">("field-notes");
+  return (
+    <>
+      <nav class="example-nav" aria-label="Example reports">
+        <button
+          type="button"
+          aria-pressed={view() === "field-notes"}
+          onClick={() => setView("field-notes")}
+        >
+          Field notes
+        </button>
+        <button
+          type="button"
+          aria-pressed={view() === "verification"}
+          onClick={() => setView("verification")}
+        >
+          Verification example
+        </button>
+      </nav>
+      <Show when={view() === "field-notes"} fallback={<VerificationExample />}>
+        <FieldNotes />
+      </Show>
+    </>
   );
 }

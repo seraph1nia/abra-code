@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { basename, relative, sep } from "node:path";
 import { Effect } from "effect";
-import { type Agent } from "@opencode/schema/agent";
+import { Agent } from "@opencode/schema/agent";
 import { Skill } from "@opencode/schema/skill";
 import { type Context } from "@opencode/plugin/effect/plugin";
 import { CrewError, type Role, type Policy } from "../domain.ts";
@@ -12,7 +12,12 @@ import { engineeringSkillIds } from "./engineering-skills.ts";
 export const managedRoles = ["supervisor", "explore", "apply", "review", "research"] as const;
 type ManagedRole = (typeof managedRoles)[number];
 const reading = ["read", "glob", "grep", "list", "skill"];
-const reporting = ["abra_worker_question", "abra_worker_progress", "abra_worker_wait"];
+const reporting = [
+  "abra_worker_question",
+  "abra_worker_progress",
+  "abra_worker_wait",
+  "abra_worker_reply",
+];
 const editing = ["edit", "write", "patch"];
 const policies = {
   supervisor: { tools: [...reading, "abra_*"], write_scope: "none" },
@@ -89,6 +94,12 @@ export const installRoleProfiles = (ctx: Context, central: boolean) =>
             editor.update(agent.id, (item) => {
               item.hidden = true;
             });
+        editor.update(Agent.ID.make("project-lead"), (agent) => {
+          agent.permissions = [
+            { action: "*", resource: "*", effect: "deny" },
+            { action: "abra_lead_action", resource: "*", effect: "allow" },
+          ];
+        });
         for (const role of managedRoles)
           editor.update(role === "supervisor" ? "abra" : role, (agent) => {
             agent.permissions = nativePermissions(role);

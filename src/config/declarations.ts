@@ -1,3 +1,4 @@
+import { DispatchProfilesSchema } from "./dispatch.ts";
 import { Effect, Schema } from "effect";
 import { parseDocument } from "yaml";
 import { randomUUID } from "node:crypto";
@@ -7,7 +8,7 @@ import { type Locks } from "../storage/lock.ts";
 import { type Records } from "../storage/store.ts";
 import { readFile, writeFile, rename, rm } from "../filesystem.ts";
 import { configDigest, resolveConfig } from "./load.ts";
-import { ProjectInputSchema } from "./contracts.ts";
+import { ProjectInputSchema, ModelsSchema } from "./contracts.ts";
 import { digest } from "../digest.ts";
 import { decode } from "../decode.ts";
 import { domainEffect } from "../effect.ts";
@@ -27,12 +28,32 @@ export const DeclarationOutcomeSchema = Schema.Struct({
 });
 export type DeclarationOutcome = typeof DeclarationOutcomeSchema.Type;
 export const ConfigurationReportSchema = Schema.Struct({
+  dispatch: Schema.optional(
+    Schema.Struct({
+      models: ModelsSchema,
+      profiles: DispatchProfilesSchema,
+      inventory: Schema.Literal("not_observed"),
+    }),
+  ),
   outcomes: Schema.Array(DeclarationOutcomeSchema).check(Schema.isMaxLength(128)),
   total: Count,
   next_page: Schema.optional(Count),
   restart_required_for_process_settings: Schema.Boolean,
 });
-export const configurationReport = (outcomes: DeclarationOutcome[], page = 0) => ({
+export const configurationReport = (
+  outcomes: DeclarationOutcome[],
+  page = 0,
+  settings?: Pick<Config, "models" | "profiles">,
+) => ({
+  ...(settings
+    ? {
+        dispatch: {
+          models: settings.models,
+          profiles: settings.profiles ?? {},
+          inventory: "not_observed" as const,
+        },
+      }
+    : {}),
   outcomes: outcomes.slice(page * 128, (page + 1) * 128),
   total: outcomes.length,
   ...((page + 1) * 128 < outcomes.length ? { next_page: page + 1 } : {}),

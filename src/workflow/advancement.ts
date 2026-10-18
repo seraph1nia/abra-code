@@ -1,4 +1,9 @@
+import { Leads } from "./leads.ts";
+import { decode } from "../decode.ts";
+import { BatchInputSchema, type BatchInput } from "../work/batch.ts";
 import { WorkerContexts } from "./worker-context.ts";
+import { type Messages } from "./messages.ts";
+import { MessageSendSchema, messageRequests, requiresResponse } from "./message-contracts.ts";
 import { ExternalValidation } from "./external-validation.ts";
 import { externalOwns } from "../validation/contracts.ts";
 import { PRFeedback } from "./pr-feedback.ts";
@@ -14,6 +19,7 @@ import {
   timestamp,
   IssueId,
   SessionId,
+  RequestId,
 } from "../identities.ts";
 
 import { Finalization } from "./finalization.ts";
@@ -36,7 +42,6 @@ import { Obligations } from "./obligations.ts";
 import { Clock, Effect } from "effect";
 import { domainEffect } from "../effect.ts";
 
-import { SessionMessage } from "@opencode/schema/session-message";
 import {
   CrewError,
   identifier,
@@ -72,6 +77,7 @@ export class Advancement {
   readonly prFeedback: PRFeedback;
   readonly external: ExternalValidation;
   readonly reports: Reports;
+  readonly leads: Leads;
   private scopes: Scopes;
   readonly attention: AttentionService;
   readonly obligations: Obligations;
@@ -82,6 +88,7 @@ export class Advancement {
   private checks: CodingChecks;
   readonly queries: Queries;
   readonly workerContexts: WorkerContexts;
+  readonly messages: Messages;
   private sources: RepositorySources;
   private workspaces: Workspaces;
   constructor(
@@ -102,8 +109,15 @@ export class Advancement {
     this.operations = new Operations(records, locks, this.coordination);
     this.capacity = new Capacity(config, records, this.coordination);
     this.scopes = new Scopes(records);
-    this.corrections = new Corrections(records, git);
-    this.reports = new Reports(config.home, records, git, locks);
+    this.corrections = new Corrections(records, git, config);
+    this.reports = new Reports(
+      config.home,
+      records,
+      git,
+      locks,
+      work,
+      runtime.notify.bind(runtime),
+    );
     this.queries = new Queries(config, records, work, spec, git, runtime, (e) =>
       this.reports.read(e),
     );
@@ -115,6 +129,17 @@ export class Advancement {
       this.coordination,
       this.queries,
       git,
+    );
+    this.messages = this.sessions.messages;
+    this.leads = new Leads(
+      config,
+      records,
+      work,
+      runtime,
+      locks,
+      this.obligations,
+      (a, s) => this.createWorkBatch(a, s),
+      (a, s) => this.workMessage(a, s),
     );
     this.checks = new CodingChecks(
       records,
@@ -204,8 +229,8 @@ export class Advancement {
         this.records.store.set(StorageKey.make(`worker-tools/${sessionID}`), { model, names, at }),
       ),
     );
-  createWork = Effect.fn("Advancement.createWork")(
-    function* (this: Advancement, input: WorkInput, supervisor: SessionId) {
+  private prepareIntake = Effect.fn("Advancement.prepareIntake")(
+    function* (this: Advancement, input: WorkInput) {
       if (input.report_reference) {
         const reference = input.report_reference;
         const research = yield* this.get(reference.issue_id);
@@ -232,6 +257,13 @@ export class Advancement {
           dependencies: [...new Set([...(input.dependencies ?? []), research.issue_id])],
         };
       }
+      return input;
+    }.bind(this),
+    domainEffect,
+  );
+  createWork = Effect.fn("Advancement.createWork")(
+    function* (this: Advancement, input: WorkInput, supervisor: SessionId) {
+      input = yield* this.prepareIntake(input);
       return yield* this.locked(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
@@ -239,9 +271,55 @@ export class Advancement {
               this.work,
               this.records,
               this.config.default_workflow,
+              this.config,
             ).create(input, supervisor);
             const readiness = (yield* this.ready()).find((row) => row.issue.id === issue.id);
             return { issue, readiness };
+          }),
+        ),
+      );
+    }.bind(this),
+    domainEffect,
+  );
+  createWorkBatch = Effect.fn("Advancement.createWorkBatch")(
+    function* (this: Advancement, input: BatchInput, supervisor: SessionId) {
+      input = yield* decode(BatchInputSchema, input, "Work batch");
+      const tasks: Array<BatchInput["tasks"][number]> = [];
+      for (const task of input.tasks) {
+        const { client_key, dependencies, ...fields } = task;
+        const prepared = yield* this.prepareIntake({
+          ...fields,
+          dependencies: (dependencies ?? []).flatMap((d) =>
+            d.type === "existing" ? [d.issue_id] : [],
+          ),
+        });
+        const { request_id: _id, dependencies: existing, ...definition } = prepared;
+        tasks.push({
+          ...definition,
+          client_key,
+          dependencies: [
+            ...(dependencies ?? []).filter((d) => d.type === "local"),
+            ...(existing ?? []).map((issue_id) => ({ type: "existing" as const, issue_id })),
+          ],
+        });
+      }
+      return yield* this.locked(() =>
+        domainEffect(
+          Effect.gen({ self: this }, function* () {
+            const result = yield* new WorkIntake(
+              this.work,
+              this.records,
+              this.config.default_workflow,
+              this.config,
+            ).createBatch({ ...input, tasks }, supervisor);
+            const readiness = yield* this.ready();
+            return {
+              ...result,
+              tasks: result.tasks.map((task) => ({
+                ...task,
+                readiness: readiness.find((row) => row.issue.id === task.issue.id),
+              })),
+            };
           }),
         ),
       );
@@ -288,6 +366,7 @@ export class Advancement {
                         description: candidate.issue.description,
                       },
                       quality_profile: candidate.issue.quality_profile,
+                      dispatch: candidate.issue.dispatch,
                       workflow_policy: candidate.issue.workflow_policy,
                       current_phase: "claiming",
                       branch: BranchName.make(`work/${id}`),
@@ -454,6 +533,15 @@ export class Advancement {
       const p = yield* this.project(e);
       yield* this.git.validate(p, e);
       if (yield* this.obligations.recheck(e)) return e;
+      if (
+        messageRequests(e.messages).some(
+          (m) =>
+            m.generation === e.control_generation &&
+            m.assignment_id === e.prompt_id &&
+            requiresResponse(m),
+        )
+      )
+        return e;
       yield* this.idle(e);
       yield* this.corrections.assertArchives(e);
       const completedRole = yield* this.sessions.requireCompleted(e);
@@ -719,12 +807,25 @@ export class Advancement {
     }.bind(this),
     domainEffect,
   );
+  workMessage = Effect.fn("Advancement.workMessage")(
+    function* (this: Advancement, input: typeof MessageSendSchema.Type, sender: SessionId) {
+      return yield* this.operations.owned(input.issue_id, OperationAction.make("message"), () =>
+        Effect.gen({ self: this }, function* () {
+          const e = yield* this.get(input.issue_id);
+          const saved = yield* this.messages.request(e, sender, input);
+          return messageRequests(saved.messages).find((m) => m.request_id === input.request_id)!;
+        }),
+      );
+    }.bind(this),
+    domainEffect,
+  );
   control = Effect.fn("Advancement.control")(
     function* (
       this: Advancement,
       id: IssueId,
       action: "pause" | "interrupt" | "resume" | "retry" | "steer" | "advance" | "replan",
       text?: string,
+      request?: { id: RequestId; sender: SessionId },
     ) {
       if (action === "advance") return yield* this.advance(id);
       if (action === "pause" || action === "interrupt") return yield* this.transitions.pause(id);
@@ -738,13 +839,12 @@ export class Advancement {
                   "STEER",
                   "An active session and steering text are required",
                 );
-              yield* this.runtime.prompt(
-                this.sessionID(e)!,
-                text,
-                SessionMessage.ID.create(),
-                true,
-              );
-              return e;
+              if (!request)
+                return yield* new CrewError(
+                  "MESSAGE_ID",
+                  "Steering requires a stable request identity and trusted sender",
+                );
+              return yield* this.sessions.messages.send(e, request.sender, request.id, text);
             }
             if (action === "replan" && externalOwns(e))
               return yield* new CrewError(
@@ -1077,7 +1177,7 @@ export class Advancement {
         }
         return e;
       }
-      if (e.capacity_wait) {
+      if (e.capacity_wait && !e.capacity_wait.request_id) {
         if ((yield* Clock.currentTimeMillis) < e.capacity_wait.next_check_at) return e;
         const role = e.capacity_wait.role;
         if (role === "apply") {
@@ -1103,6 +1203,7 @@ export class Advancement {
       if (e.current_phase === "planning" && e.workflow_policy !== "full-openspec")
         return yield* this.checkpoint(e);
       if (e.active_role) {
+        if (e.resume_after_decision) yield* this.messages.deliverAnswers(e);
         const turn = yield* this.sessions.reconcile(e);
         if (turn.kind === "stopped") return yield* this.transitions.fail(e, turn.error, turn.phase);
         if (turn.kind === "completed" && e.resume_after_decision) {

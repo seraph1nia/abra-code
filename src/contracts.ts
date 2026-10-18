@@ -84,7 +84,15 @@ export const WorkerErrorSchema = Schema.Struct({
   status: Schema.optional(Count),
 });
 export const ReadinessBlockerSchema = Schema.Struct({
-  code: Schema.Literals(["dependency", "status", "policy", "setup", "execution", "capacity"]),
+  code: Schema.Literals([
+    "dependency",
+    "status",
+    "policy",
+    "setup",
+    "execution",
+    "capacity",
+    "authority",
+  ]),
   message: Schema.String,
   capacity_kind: Schema.optional(Schema.Literals(["active", "retained", "role"])),
   consuming: Schema.optional(Schema.mutable(Schema.Array(IssueId))),

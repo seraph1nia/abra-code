@@ -1,6 +1,6 @@
 # Report template
 
-Edit **`src/report.tsx`** to write a report. It is ordinary Solid + TypeScript: replace the example content, compose semantic HTML and add local interactions as needed. `src/styles.css` supplies plain responsive CSS. There is no report schema, UI kit or `@opencode/ui` dependency.
+Edit **`src/report.tsx`** to write a report. It is ordinary Solid + TypeScript: replace the example content, compose semantic HTML and add local interactions as needed. `src/styles.css` supplies plain responsive CSS. Manual authoring needs no data schema or UI kit. The optional snapshot renderer uses a bounded evidence contract.
 
 From the repository root, after the normal `pnpm install --frozen-lockfile --prod=false`:
 
@@ -16,6 +16,69 @@ pnpm report:preview --port 4180    # explicit alternate port (also works for dev
 ```
 
 Dev defaults to `127.0.0.1:5173`; preview defaults to `127.0.0.1:4173`. Both fail if the requested port is occupied. Preview requires a build. Use the actual URL printed after successful startup; Ctrl+C stops the process. Neither building nor opening the file starts a server.
+
+## Authored examples and shared components
+
+`src/report.tsx` remains an ordinary manual TSX entry. The default Field notes
+example demonstrates the report architecture with three prepared diagrams. Its
+local example selector also opens `src/examples/verification.tsx`, which shows
+code/diff excerpts, evidence limitations and a clearly labelled static status
+snapshot. The verification content is illustrative: it deliberately reports
+missing evidence and checks that have not run.
+
+`src/components/report.tsx` contains the components used by those examples:
+`ReportHeader`, `SectionNavigation`, `Section`, `FindingList`/`EvidenceCard`,
+`CodePanel` and `StatusTimeline`. Compose them or write semantic HTML directly;
+there is no mandatory page layout. Source/evidence strings and code render as
+text. Evidence links accept only HTTP(S) URLs without credentials or local
+section anchors; an invalid/missing link is shown as unavailable. Status views
+require an observation time and provenance, and never poll the controller.
+
+Both examples share the existing CSS and system fonts. Section links, search,
+native disclosures, focusable code regions and example selection work locally,
+including the opaque-origin native preview. Add components only when an actual
+report needs them.
+
+## Optional validated evidence snapshots
+
+`src/snapshot-data.ts` owns the optional `ReportSnapshotSchema`, its inferred
+TypeScript type, `validateSnapshot(input)` and `snapshotJSON(input)`. Use it for
+read-only issue/execution identity, UTC observation time, provenance, findings,
+check evidence, lifecycle observations, source/code/diff excerpts and limitations.
+Missing evidence stays unavailable; passed/failed checks require explicit evidence.
+The contract bounds arrays, UTF-8 payloads and the complete 512 KiB snapshot.
+Evidence links require HTTP(S) without credentials. Source paths are inert labels,
+never instructions to read files or execute repository code.
+
+`SnapshotReport` in `src/snapshot-report.tsx` composes the same primitives and local
+feedback controls. Authors can import it into their own TSX. For a data-driven
+build, an authorized producer validates data and uses `snapshotJSON` to put the
+escaped JSON in an **`application/json`** script with ID `abracode-report-data`,
+then selects `/src/snapshot-entry.tsx` as the module entry in its own build input.
+The entry parses that inert data; it ships no Effect validator to the reader.
+Use a separate owned workspace/output when generating another report; shared
+`report.tsx` and `dist/index.html` remain manual authoring resources.
+
+Always use the escaped JSON helper for the data script body. It escapes angle
+brackets and JavaScript line separators; repository text is never authored script
+or HTML. The renderer uses ordinary text nodes for summaries, source references,
+code and diffs. Produce snapshots from retained evidence, keep unknown values
+explicit, and label authored examples as such. Status is an observation snapshot,
+with its time and provenance visible; page interactions affect presentation only.
+
+## Offline feedback export
+
+Both examples use `FeedbackForm` from `src/components/feedback.tsx`. A reader can
+record general comments, severity, an affected section, suggested changes and
+questions, then prepare Markdown or JSON. The export is labelled review input,
+not approval. **Select export** selects the ordinary read-only text field for
+manual copying; it needs no clipboard permission, downloads, network or storage.
+Markdown quotes supplied comments so their boundary remains clear.
+
+Feedback lives only in the currently open view. Export before switching examples
+or closing the report. Nothing is sent to Abra, an agent session or a service,
+and no workflow state changes. The native opaque-origin sandbox uses the same
+local controls and selectable-text fallback.
 
 ## Mermaid diagrams
 
@@ -88,3 +151,29 @@ The build produces **`dist/index.html`**, with Solid, application JS and CSS inl
 Use this template only where you already have permission to edit files and run builds. It grants no additional shell or authoring permission to Supervisor or read-only research sessions. Retained research reports still use AbraCode's immutable Markdown submission/receipt path. This page does not submit agent prompts, approve work, change issue status or publish research evidence.
 
 Project and bundled report-runtime license notices are embedded in `dist/index.html` under `abracode-license-notices`. Preserve them in exported reports. Added dependencies or assets need their own license review and attribution; the project's MIT license does not replace their terms.
+
+### Controller-owned builds
+
+The installed toolkit now also serves `abra_work_report action:generate` and the
+Research report's optional keyed `render` request. Ordinary manual `report.tsx`
+authoring remains the default package entry. Controller builds copy a small
+trusted source set into a fresh owned workspace, supply validated inert snapshot
+JSON, precompile constrained Mermaid, and publish an immutable HTML revision.
+`reportConfiguration({installationRoot, cacheDir})` parameterizes license and
+diagram caches for those workspaces. The CLI uses Node 24's native config loader;
+Vite's runner loader rewrites a browser callback's dynamic import and is unsuitable
+for this build path. No worker edits the shared template to author an attachment.
+
+The snapshot view shows retained structured research findings (checked against
+its Markdown), check/Review receipts, source/commit/OpenSpec identities, diagram
+annotations, code evidence, timeline and limitations. Authored diagram data has
+no HTML, directives, links or external resources. Missing or legacy structured
+input falls back to verified Markdown text. Presentation inputs are captured per
+request; they are not workflow truth. Large labels/history/reference text is
+explicitly truncated, with full evidence kept in the existing controller tools.
+
+Published files remain under the installation's `.abracode/reports/generated/`
+after worktree cleanup. Move only the HTML for offline sharing; sibling build or
+controller files are unnecessary. See [operations](../../docs/operations.md#portable-visual-reports)
+and the [report verification recipe](../../docs/verification/features/visual-reports.md)
+for request/retry, retention, real compiler/browser proof and native GUI limits.

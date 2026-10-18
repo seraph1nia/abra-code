@@ -10,6 +10,7 @@ import { writeFile, access } from "node:fs/promises";
 import { join } from "node:path";
 import { fixture, planned, applying, delivered } from "../fixtures.ts";
 import { Controller } from "../../src/workflow/controller.ts";
+import { Agent } from "@opencode/schema/agent";
 import { Scheduler } from "../../src/scheduler/scheduler.ts";
 test("onboards three independent repositories, preserving instructions and stable identity", async (t) => {
   const f = await run(fixture);
@@ -318,9 +319,17 @@ test("scheduler is opt-in and respects global/per-project capacity", async (t) =
   f.work.add(Id.IssueId.make("abra-1"));
   f.work.add(Id.IssueId.make("abra-2"));
   f.work.add(Id.IssueId.make("abra-3"), Id.RepositoryId.make("frontend"));
-  const scheduler = new Scheduler(f.controller);
+  const scheduler = new Scheduler(f.controller, f.records);
   assert.equal((await run(scheduler.tick())).length, 0);
   f.config.auto_schedule = true;
+  const supervisor = Id.SessionId.make("ses_supervisor");
+  await run(f.controller.recordSupervisor(supervisor));
+  f.runtime.sessions.set(supervisor, {
+    id: supervisor,
+    directory: f.config.home,
+    agent: Agent.ID.make("abra"),
+    busy: false,
+  });
   await run(scheduler.tick());
   assert.equal((await run(f.records.executions())).length, 2);
   assert.equal(f.runtime.trees.length, 2);

@@ -39,6 +39,7 @@ export default Plugin.define({
         },
         models: [
           Model.Info.default(providerID, Model.ID.make("gpt-fixture")),
+          Model.Info.default(providerID, Model.ID.make("gpt-specialist")),
           Model.Info.default(providerID, Model.ID.make("fallback")),
         ],
       }),
@@ -61,7 +62,7 @@ export default Plugin.define({
         try {
           result = await tool.execute(a.args, {
             sessionID: a.session,
-            agent: "abra",
+            agent: (await ctx.session.get({ sessionID: a.session as any })).agent ?? "abra",
             messageID:
               (await ctx.session.context({ sessionID: a.session as any })).find(
                 (m) => m.type === "assistant",

@@ -1,3 +1,9 @@
+import {
+  normalizeBatch,
+  batchRequests,
+  type BatchInput,
+  type BatchResult,
+} from "../src/work/batch.ts";
 import { capabilityRequirements } from "../src/opencode/role-policy.ts";
 import { type WorkerEnvironment } from "../src/opencode/worker-environment.ts";
 import { Agent } from "@opencode/schema/agent";
@@ -102,6 +108,10 @@ export class TestLocks implements Locks {
 export class FakeWorkGraph implements WorkGraph {
   issues = new Map<string, { -readonly [K in keyof Issue]: Issue[K] }>();
   requests = new Map<string, { input: string; id: Id.IssueId }>();
+  private batches = new Map<
+    string,
+    { input: string; tasks: Array<{ client_key: string; id: Id.IssueId }> }
+  >();
   claims = 0;
   creations = 0;
   readonly list = domainEffect(
@@ -121,6 +131,11 @@ export class FakeWorkGraph implements WorkGraph {
   create = Effect.fn("FakeWorkGraph.create")(
     function* (this: FakeWorkGraph, input: NewIssue) {
       const encoded = JSON.stringify(input);
+      ensure(
+        !this.batches.has(input.request_id),
+        "REQUEST_REBIND",
+        "Request identity belongs to batch intake",
+      );
       const saved = this.requests.get(input.request_id);
       if (saved) {
         ensure(
@@ -137,6 +152,7 @@ export class FakeWorkGraph implements WorkGraph {
       const issue = this.issues.get(id)!;
       issue.title = input.title;
       issue.description = input.description;
+      issue.dispatch = input.dispatch;
       issue.priority = input.priority;
       issue.workflow_policy = input.workflow_policy ?? "full-openspec";
       issue.scope = input.scope;
@@ -146,6 +162,80 @@ export class FakeWorkGraph implements WorkGraph {
     }.bind(this),
     domainEffect,
   );
+  createBatch(input: BatchInput) {
+    return domainEffect(
+      Effect.sync(() => {
+        const batch = normalizeBatch(input),
+          encoded = JSON.stringify(batch);
+        ensure(
+          !this.requests.has(batch.request_id),
+          "REQUEST_REBIND",
+          "Batch identity belongs to single-item intake",
+        );
+        const saved = this.batches.get(batch.request_id);
+        if (saved) {
+          ensure(
+            saved.input === encoded,
+            "REQUEST_REBIND",
+            "Batch identity belongs to different definitions",
+          );
+          return {
+            request_id: batch.request_id,
+            tasks: saved.tasks.map((task) => ({
+              client_key: task.client_key,
+              issue: structuredClone(this.issues.get(task.id)!),
+            })),
+          } satisfies BatchResult;
+        }
+        for (const task of batch.tasks)
+          for (const dependency of task.dependencies)
+            if (dependency.type === "existing")
+              ensure(this.issues.has(dependency.issue_id), "MISSING", "Missing issue");
+        const ids = new Map(
+          batch.tasks.map((task, index) => [
+            task.client_key,
+            Id.IssueId.make(`abra-created-${this.creations + index + 1}`),
+          ]),
+        );
+        const planned = batchRequests(batch, ids),
+          local = new Set(ids.values());
+        for (const { input } of planned) {
+          ensure(
+            !this.requests.has(input.request_id),
+            "REQUEST_REBIND",
+            "Batch item identity already owned",
+          );
+          for (const dependency of input.dependencies)
+            ensure(
+              local.has(dependency) || this.issues.has(dependency),
+              "MISSING",
+              "Missing issue",
+            );
+        }
+        for (const { id, input } of planned) {
+          this.issues.set(id, {
+            ...input,
+            id,
+            status: "open",
+            workflow_policy: input.workflow_policy ?? "full-openspec",
+          });
+          this.requests.set(input.request_id, { id, input: JSON.stringify(input) });
+        }
+        this.creations += planned.length;
+        this.batches.set(batch.request_id, {
+          input: encoded,
+          tasks: planned.map(({ client_key, id }) => ({ client_key, id })),
+        });
+        return {
+          request_id: batch.request_id,
+          tasks: planned.map(({ client_key, id }) => ({
+            client_key,
+            issue: structuredClone(this.issues.get(id)!),
+          })),
+        } satisfies BatchResult;
+      }),
+    );
+  }
   claim = (id: Id.IssueId, actor: Id.ExecutionId) => {
     return domainEffect(
       Effect.sync(() => {
@@ -293,6 +383,27 @@ export function writePlan(path: string, change: string, done = false) {
   );
 }
 export class FakeRuntime implements Runtime {
+  managementSession(id: Id.SessionId, _parent: Id.SessionId, model: WorkerModel, lead: string) {
+    return domainEffect(
+      Effect.sync(() => {
+        const old = this.sessions.get(id);
+        if (old && old.metadata?.abracode_lead !== lead)
+          throw new CrewError("LEAD_SESSION", "Conflict");
+        if (!old)
+          this.sessions.set(id, {
+            id,
+            directory: this.managementHome,
+            agent: Agent.ID.make("project-lead"),
+            model,
+            metadata: { abracode_lead: lead },
+            busy: false,
+            executing: false,
+          });
+      }),
+    );
+  }
+
+  managementHome = Id.AbsolutePath.make("/fixture");
   permissionRefreshes = 0;
   refreshPermissions() {
     return Effect.sync(() => {
@@ -334,6 +445,15 @@ export class FakeRuntime implements Runtime {
   forms = new Map<Id.FormId, "pending" | "approved" | "rejected">();
   prompts: number = 0;
   admissions = new Set<Id.MessageId>();
+  promptAdmission(
+    _session: Id.SessionId,
+    message: Id.MessageId,
+    _text: string,
+  ): Effect.Effect<"queued" | "consumed" | "absent"> {
+    return Effect.succeed(
+      this.admissions.has(message) ? ("consumed" as const) : ("absent" as const),
+    );
+  }
   creates: number = 0;
   constructor(private git: Git) {}
   project(path: Id.AbsolutePath) {
@@ -423,7 +543,7 @@ export class FakeRuntime implements Runtime {
       }),
     );
   }
-  interrupt(id: Id.SessionId) {
+  interrupt(id: Id.SessionId, _prompt?: Id.MessageId, _additional?: readonly Id.MessageId[]) {
     return domainEffect(
       Effect.sync(() => {
         this.sessions.get(id)!.busy = false;
@@ -431,7 +551,7 @@ export class FakeRuntime implements Runtime {
       }),
     );
   }
-  notify() {
+  notify(_id: Id.SessionId, _text: string, _message?: Id.MessageId) {
     return domainEffect(Effect.sync(() => {}));
   }
   questions = new Map<Id.FormId, QuestionAnswer>();
@@ -585,6 +705,7 @@ export const fixture = domainEffect(
     const work = new FakeWorkGraph();
     const spec = new FakeSpec();
     const runtime = new FakeRuntime(git);
+    runtime.managementHome = root;
     const delivery = new FakeDelivery(git);
     const config: Config = yield* decode(
       ConfigSchema,
@@ -643,7 +764,7 @@ export const fixture = domainEffect(
         },
         false,
       );
-    const { controller, setup } = createWorkflow(
+    const { controller, setup, scheduler } = createWorkflow(
       config,
       records,
       work,
@@ -666,6 +787,7 @@ export const fixture = domainEffect(
       onboarding,
       controller,
       setup,
+      scheduler,
       close: () =>
         controller.close().pipe(Effect.andThen(rm(root, { recursive: true, force: true }))),
     };

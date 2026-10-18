@@ -1,3 +1,4 @@
+import { ProjectDispatchSchema, DispatchProfilesSchema } from "./dispatch.ts";
 import { CapabilityFields } from "../opencode/capability-contracts.ts";
 import {
   Executable,
@@ -47,6 +48,7 @@ export function verificationCommand(command: VerificationCommand) {
 import { AutomationFields, QualityProfile } from "./policy.ts";
 
 export const ProjectInputFields = {
+  dispatch: Schema.optional(ProjectDispatchSchema),
   ...AutomationFields,
   quality_profile: Schema.optional(QualityProfile),
   diagnostic_turns: Schema.optional(
@@ -93,9 +95,15 @@ export const ModelsSchema = Schema.Struct({
   default: WorkerModelSchema,
   overrides: Schema.optional(ModelOverridesSchema),
 });
+export const SupervisionModeSchema = Schema.Literals([
+  "manual",
+  "attended-automatic",
+  "unattended",
+]);
 export const ConfigInputSchema = Schema.Struct({
   version: Schema.Literal(1),
   models: ModelsSchema,
+  profiles: Schema.optional(DispatchProfilesSchema),
   attention_capacity: Schema.optional(Positive),
   progress_timeout_ms: Schema.optional(WatchdogPolicySchema),
   work_database: Schema.optional(AbsolutePath),
@@ -103,6 +111,7 @@ export const ConfigInputSchema = Schema.Struct({
   repository_root: Schema.optional(AbsolutePath),
   server_url: Schema.optional(NonEmpty),
   default_workflow: PolicySchema.pipe(Schema.withDecodingDefault(Effect.succeed("full-openspec"))),
+  supervision_mode: Schema.optional(SupervisionModeSchema),
   auto_schedule: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   max_workers: Positive.pipe(Schema.withDecodingDefault(Effect.succeed(2))),
   max_executions: Schema.optional(Positive),

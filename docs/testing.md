@@ -223,6 +223,33 @@ The cleanup concurrency regression in `finishing-decisions.test.ts` first reprod
 
 The full native PR journey in `pr-feedback.ts` uses an actual local-ahead commit after publication and a stale merge form. Exact-content adoption starts revision planning, configured checks and independent native Review without Apply, then fast-forwards the same owned PR. A fresh head needs its own merge form. The source asserted after restart is the validated late revision; forge creation and merge counts stay one. Revision OpenSpec metadata is created by the controller before native Explore admission, including recovery of a persisted planning phase.
 
-That journey disables diagnostics, retains an exhausted initial worker failure and brings unexpected generated output into pre-merge inspection. The exact native directory form is still delivered and does not consume a diagnostic turn. Matching authorization permits normal approval and merge. Post-submission residue survives service restart; the pending form is recreated under its retained identity before reply. A new unknown sibling survives that directory-only answer, receives a new preservation question and closes only after explicit preservation and a fresh absence scan. No shell cleanup or explicit finish is used to dispose of authorized generated output.
+That journey disables diagnostics and holds an initial Explore response under a short fixture watchdog to observe a real exhausted suspected stall. An explicit retry retains that history, and successful work supersedes it before unexpected generated output enters pre-merge inspection. The exact native directory form is still delivered and does not consume a diagnostic turn. Matching authorization permits normal approval and merge. Post-submission residue survives service restart; the pending form is recreated under its retained identity before reply. A new unknown sibling survives that directory-only answer, receives a new preservation question and closes only after explicit preservation and a fresh absence scan. No shell cleanup or explicit finish is used to dispose of authorized generated output.
 
 Focused `finishing`, `finishing-decisions` and `finishing-recovery` tests cover legacy/malformed evidence, read-only preflight and publication, exact directory identity/regeneration/replacement, file-hash-bound inclusion, preservation/defer/reconsider, undelivered forms, shared read-only output, two durable synchronization admissions and one exact-input extra receipt under concurrent reconciliation. Lost native form, staging, commit, push and retirement responses retain existing identities; notification failure leaves closure intact. `records.test.ts` additionally preserves malformed original evidence and concurrent questions while committing owned finishing receipts. Native form selections are scripted integration proof, not model judgment or live GitHub evidence.
+
+## Native communication, batch scheduling and report snapshots
+
+The native fixture exercises retained steering and correlated replies, queued
+admission across restart, failed-worker obligations, atomic batch retry identity,
+and a two-slot automatic research batch. The parallel journey starts two of three
+tasks, preserves their native session/prompt/worktree identities across restart,
+and releases a third task before a lower-priority dependent task. All providers,
+repositories and bare remotes belong to the disposable fixture.
+
+`reporter.test.ts` preserves manual TSX authoring and exercises local navigation,
+filtering, evidence disclosures, code/diffs, narrow layouts and feedback exports.
+`report-snapshot.test.ts` validates bounded evidence/provenance and builds a real
+isolated snapshot report, moves the HTML, then checks offline and opaque-sandbox
+rendering. Hostile markup and script delimiters remain inert text. Checks with
+missing evidence stay unavailable. Feedback is local review input and grants no
+controller authority. See the reporter README for the optional safe data path.
+
+`dispatch.test.ts` and the SQLite work-graph suite cover task/repository profile
+validation, complete model precedence, snapshot immutability and schema-6 receipt
+compatibility. The native model journey uses the existing deterministic provider
+inventory and disposable Research sessions to observe a task-selected model,
+restart with a changed profile, recover explicitly in the same session/worktree,
+and refuse unavailable model/variant selections before session creation. See the
+[model-dispatch recipe](verification/features/model-dispatch.md) for the focused
+invocation and the full native suite for combined Apply/batch coverage. Fixture
+models test routing and authority; they do not measure model quality or cost.

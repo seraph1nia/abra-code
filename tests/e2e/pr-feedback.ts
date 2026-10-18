@@ -92,10 +92,18 @@ export async function prFeedbackLifecycle({
   const feedbackStatus = () => invoke("abra_work_status", { issue_id: feedbackIssue.id });
   const exhausted = await eventually(async () => {
     const current = (await feedbackStatus()).execution!;
-    return current.current_phase === "failed" &&
+    if (
+      current.current_phase === "failed" &&
       current.attention?.some((a) => a.code === "suspected_stall" && a.status === "exhausted")
-      ? current
-      : undefined;
+    )
+      return current;
+    throw new Error(
+      JSON.stringify({
+        phase: current.current_phase,
+        attention: current.attention,
+        last_error: current.error_or_recovery_reason,
+      }),
+    );
   }, 40000);
   await invoke("abra_work_control", { issue_id: feedbackIssue.id, action: "retry" });
   let feedbackExecution: Execution = await eventually(async () => {

@@ -1,3 +1,4 @@
+import { type Dispatch } from "../config/dispatch.ts";
 import { captureConfiguration } from "../config/snapshot.ts";
 import { type Config } from "../domain.ts";
 import {
@@ -11,7 +12,7 @@ import { timestamp, type ChangeName } from "../identities.ts";
 import { verificationCommand } from "../config/contracts.ts";
 import { Effect } from "effect";
 
-type NewExecution = { quality_profile?: QualityProfile } & Pick<
+type NewExecution = { quality_profile?: QualityProfile; dispatch?: Dispatch } & Pick<
   ManagedExecution,
   | "issue_id"
   | "repository_id"
@@ -61,10 +62,13 @@ export function createExecution(
     diagnostic_turns: project.diagnostic_turns,
     repair_rounds: project.repair_rounds,
   } as const;
+  const { dispatch, ...executionInput } = input;
   return timestamp.pipe(
     Effect.map((at) => ({
-      ...input,
-      ...(config ? { configuration_snapshot: captureConfiguration(config) } : {}),
+      ...executionInput,
+      ...(config
+        ? { configuration_snapshot: captureConfiguration(config, project.dispatch, dispatch) }
+        : {}),
       schema_version: 1,
       revision: 1,
       control_generation: 0,

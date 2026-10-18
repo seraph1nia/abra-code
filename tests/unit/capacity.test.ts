@@ -71,6 +71,11 @@ test("Review capacity waits preserve verified content and do not rerun checks", 
   assert.equal(waiting.current_phase, "verifying");
   assert.equal(waiting.capacity_wait!.role, "review");
   assert.equal(waiting.review_session_id, undefined);
+  assert.ok(
+    (await run(f.controller.ready()))
+      .find((row) => row.issue.id === second.issue_id)!
+      .blocker_details.some((block) => block.code === "capacity" && block.capacity_kind === "role"),
+  );
   assert.ok(waiting.verification_receipt);
   assert.equal(checks, 2);
   await run(

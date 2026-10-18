@@ -1,4 +1,11 @@
+import { SelectionSourceSchema } from "../config/dispatch.ts";
+import { SupervisionSummarySchema, SupervisionAggregateSchema } from "../visibility/supervision.ts";
 import { DeliveryOutcomeSchema, OperationInProgressSchema } from "../workflow/delivery-outcome.ts";
+import {
+  CommunicationSchema,
+  MessageIntentSchema,
+  MessagesPageSchema,
+} from "../workflow/message-contracts.ts";
 import { WorkerContextSummarySchema } from "../workflow/worker-context-contracts.ts";
 import { ReviewerSuggestions } from "../git/reviewers.ts";
 import { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
@@ -15,6 +22,7 @@ import {
   WorkerErrorSchema,
 } from "../contracts.ts";
 import { ExecutionStateSchema, ProjectRecordSchema } from "../storage/contracts.ts";
+import { BatchItemResultSchema, BatchResultSchema } from "../work/batch.ts";
 import { IssueSchema } from "../work/model.ts";
 import {
   DecisionSchema,
@@ -22,11 +30,20 @@ import {
   DeclaredWaitSchema,
 } from "../workflow/obligation-contracts.ts";
 import { ForgeFindingSchema } from "../workflow/correction-contracts.ts";
-import { ReportReceiptSchema } from "../workflow/report-contracts.ts";
+import { VisualBuildSummarySchema, ReportReceiptSchema } from "../workflow/report-contracts.ts";
 import { SpecStatusSchema, ApplyStatusSchema, InstructionsSchema } from "../openspec/contracts.ts";
 import { VerificationSchema } from "../config/contracts.ts";
 import { WorkEventSchema } from "../work/graph.ts";
-const execution = ExecutionStateSchema;
+const execution = Schema.Struct({
+  ...ExecutionStateSchema.fields,
+  visual_reports: Schema.optional(Schema.Array(VisualBuildSummarySchema)),
+});
+const {
+  messages: _messages,
+  report_intent: _reportIntent,
+  ...bulkExecutionFields
+} = execution.fields;
+const bulkExecution = Schema.Struct(bulkExecutionFields);
 const deliveryExecution = Schema.Struct({
   ...execution.fields,
   outcome: Schema.optional(DeliveryOutcomeSchema),
@@ -93,6 +110,7 @@ export const SessionObservationSchema = Schema.Struct({
   directory: Schema.optional(Id.AbsolutePath),
   outcome: Session.Info.fields.outcome,
   busy: Schema.optional(Schema.Boolean),
+  executing: Schema.optional(Schema.Boolean),
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   model: Schema.optional(WorkerModelSchema),
   error: Schema.optional(WorkerErrorSchema),
@@ -124,6 +142,9 @@ const inspection = Schema.Struct({
   setup: Schema.optional(setup),
 });
 export const toolOutputs = {
+  work_message: MessageIntentSchema,
+  worker_reply: CommunicationSchema,
+  work_messages: MessagesPageSchema,
   work_reviewers: ReviewerSuggestions,
   work_feedback_status: FeedbackPageSchema,
   work_validation: execution,
@@ -131,8 +152,15 @@ export const toolOutputs = {
   work_feedback: execution,
   work_findings: Schema.Array(ForgeFindingSchema),
   work_correct: execution,
-  research_report: ReportReceiptSchema,
-  work_report: Schema.String,
+  research_report: Schema.Struct({
+    ...ReportReceiptSchema.fields,
+    visual: Schema.optional(VisualBuildSummarySchema),
+  }),
+  work_report: Schema.Union([
+    Schema.String,
+    VisualBuildSummarySchema,
+    Schema.Array(VisualBuildSummarySchema),
+  ]),
   work_scope: execution,
   work_attention: execution,
   work_wait_disposition: execution,
@@ -151,9 +179,16 @@ export const toolOutputs = {
   ),
   project_setup: setup,
   work_create: Schema.Struct({ issue: IssueSchema, readiness: Schema.optional(ready) }),
+  work_create_batch: Schema.Struct({
+    ...BatchResultSchema.fields,
+    tasks: Schema.Array(
+      Schema.Struct({ ...BatchItemResultSchema.fields, readiness: Schema.optional(ready) }),
+    ).check(Schema.isMinLength(1), Schema.isMaxLength(32)),
+  }),
   work_list: Schema.Struct({
+    supervision: SupervisionAggregateSchema,
     issues: Schema.Array(IssueSchema),
-    executions: Schema.Array(execution),
+    executions: Schema.Array(bulkExecution),
     record_diagnostics: Schema.Array(RecordDiagnosticSchema),
     records: Schema.optional(
       Schema.Struct({
@@ -178,10 +213,12 @@ export const toolOutputs = {
         ...SessionObservationSchema.fields,
         role: RoleSchema,
         configured_model: Schema.optional(WorkerModelSchema),
+        model_source: Schema.optional(SelectionSourceSchema),
       }),
     ),
   }),
   work_status: Schema.Struct({
+    supervision: SupervisionSummarySchema,
     execution,
     outcome: Schema.optional(DeliveryOutcomeSchema),
     issue: IssueSchema,

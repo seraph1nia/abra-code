@@ -1,4 +1,7 @@
+import { LeadActionSchema, LeadControlSchema } from "../workflow/lead-contracts.ts";
 import { deliveryAction, observeDeliveryOutcome } from "../workflow/delivery-outcome.ts";
+import { MessageInputSchema, WorkerReplySchema } from "../workflow/message-contracts.ts";
+import { createHash } from "node:crypto";
 import { type ConfigApplication } from "../config/application.ts";
 import { ConfigurationReportSchema, configurationReport } from "../config/declarations.ts";
 import { ValidationInput } from "../validation/contracts.ts";
@@ -12,13 +15,15 @@ import {
   ObligationKey,
   IncidentId,
   SessionId,
+  RequestId,
 } from "../identities.ts";
 
 import { CorrectionInputSchema } from "../workflow/correction-contracts.ts";
 import { ReviewReportSchema } from "../workflow/review-contracts.ts";
 import { ScopeSchema } from "../work/scope.ts";
+import { BatchInputSchema } from "../work/batch.ts";
 import { WorkInputSchema } from "../work/model.ts";
-import { ReportInputSchema } from "../workflow/report-contracts.ts";
+import { WorkReportInputSchema, ReportInputSchema } from "../workflow/report-contracts.ts";
 import { NonEmpty, RoleSchema, Count } from "../contracts.ts";
 import { QuestionInputSchema, WaitInputSchema } from "../workflow/obligation-contracts.ts";
 import { domainEffect } from "../effect.ts";
@@ -46,6 +51,55 @@ export function registerTools(
     Effect.gen(function* () {
       const definitions = [
         define({
+          name: "lead_control",
+          description:
+            "Abra-only registration, revision, scoped requests and acceptance of project-lead proposals. Inspect status before changing a registration.",
+          input: LeadControlSchema,
+          output: Schema.Json,
+          run: (a, s) => c.lead().control(s, a),
+        }),
+        define({
+          name: "lead_action",
+          description:
+            "Registered project-lead scoped status, proposals, correlated replies, supervisor-owned answers and retained finding forwarding. No execution or approval authority.",
+          lead: true,
+          input: LeadActionSchema,
+          output: Schema.Json,
+          run: (a, s) => c.lead().action(s, a),
+        }),
+        define({
+          name: "work_message",
+          description:
+            "Send a retained correlated request to an existing current worker. Queue or steer without changing scope, permissions or approvals. Reuse request_id after response loss.",
+          input: MessageInputSchema,
+          output: toolOutputs.work_message,
+          run: (a, s) => c.workMessage(a, s),
+        }),
+        define({
+          name: "worker_reply",
+          description:
+            "Acknowledge or answer a controller request, or submit keyed findings for Abra to route. Findings grant no authority.",
+          worker: true,
+          input: WorkerReplySchema,
+          output: toolOutputs.worker_reply,
+          run: (a, s) => c.workerReply(s, a),
+        }),
+        define({
+          name: "work_messages",
+          description:
+            "Inspect bounded retained requests, replies, findings and native admission observations without mutating work.",
+          diagnostic: true,
+          input: Schema.Struct({
+            issue_id: IssueId,
+            offset: Schema.optional(Count),
+            limit: Schema.optional(
+              Count.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(50)),
+            ),
+          }),
+          output: toolOutputs.work_messages,
+          run: (a) => c.queries.messages(a.issue_id, a.offset, a.limit),
+        }),
+        define({
           name: "config",
           diagnostic: (a) => a.action === "status",
           description:
@@ -60,10 +114,18 @@ export function registerTools(
               ? a.action === "apply"
                 ? configuration
                     .apply()
-                    .pipe(Effect.map((outcomes) => configurationReport(outcomes, a.page)))
+                    .pipe(
+                      Effect.map((outcomes) =>
+                        configurationReport(outcomes, a.page, configuration.dispatch()),
+                      ),
+                    )
                 : configuration
                     .status()
-                    .pipe(Effect.map((outcomes) => configurationReport(outcomes, a.page)))
+                    .pipe(
+                      Effect.map((outcomes) =>
+                        configurationReport(outcomes, a.page, configuration.dispatch()),
+                      ),
+                    )
               : Effect.fail(
                   new CrewError("CONFIG_UNAVAILABLE", "Configuration application is unavailable"),
                 ),
@@ -139,12 +201,21 @@ export function registerTools(
         }),
         define({
           name: "work_report",
-          diagnostic: true,
+          diagnostic: (a) => a.action !== "generate",
           output: toolOutputs.work_report,
           description:
-            "Read the bounded retained report after verifying its identities and content hash.",
-          input: issueInput,
-          run: (a) => c.queries.report(a.issue_id),
+            "Read retained Markdown (default), inspect visual artifacts, or explicitly generate a trusted portable snapshot with action generate and stable request_id. Generation is not diagnostic/read authority.",
+          input: WorkReportInputSchema,
+          run: (a, s) =>
+            a.action === "generate"
+              ? c.visualReport(s, a.issue_id, {
+                  request_id: a.request_id,
+                  title: a.title,
+                  diagrams: a.diagrams,
+                })
+              : a.action === "artifacts"
+                ? c.get(a.issue_id).pipe(Effect.map((e) => e.visual_reports ?? []))
+                : c.queries.report(a.issue_id),
         }),
         define({
           name: "work_scope",
@@ -314,16 +385,25 @@ export function registerTools(
           run: (a, s) => c.createWork(a, s),
         }),
         define({
+          name: "work_create_batch",
+          output: toolOutputs.work_create_batch,
+          description:
+            "Atomically record 1–32 keyed tasks with local/existing dependencies. Reuse request_id and identical keyed definitions after response loss. This creates no execution or approval authority.",
+          input: BatchInputSchema,
+          run: (a, s) => c.createWorkBatch(a, s),
+        }),
+        define({
           name: "work_list",
           diagnostic: true,
           output: toolOutputs.work_list,
           description:
-            "List issues, executions and record diagnostics. include_records exports original plugin records for coordinated backup without changing them.",
+            "List issues, executions, bounded supervision counts and record diagnostics. include_records exports original plugin records for coordinated backup without changing them.",
           input: Schema.Struct({ include_records: Schema.optional(Schema.Boolean) }),
           run: (a) =>
             domainEffect(
               Effect.gen(function* () {
                 return {
+                  supervision: yield* c.queries.supervisionAggregate(),
                   issues: yield* c.queries.issues(),
                   executions: yield* c.queries.executions(),
                   record_diagnostics: yield* c.queries.recordDiagnostics(),
@@ -371,6 +451,7 @@ export function registerTools(
                 const e = yield* c.get(a.issue_id);
                 return {
                   execution: e,
+                  supervision: yield* c.queries.supervision(e),
                   outcome: yield* observeDeliveryOutcome(c.queries, e),
                   issue: yield* c.queries.issue(a.issue_id),
                   history: yield* c.queries.history(a.issue_id),
@@ -445,8 +526,23 @@ export function registerTools(
               "replan",
             ]),
             text: Schema.optional(NonEmpty),
+            request_id: Schema.optional(RequestId),
           }),
-          run: (a) => c.control(a.issue_id, a.action, a.text),
+          run: (a, session, context) =>
+            Effect.gen(function* () {
+              const generation =
+                a.action === "steer" ? (yield* c.queries.get(a.issue_id)).control_generation : 0;
+              return yield* c.control(a.issue_id, a.action, a.text, {
+                sender: session,
+                id:
+                  a.request_id ??
+                  RequestId.make(
+                    createHash("sha256")
+                      .update(JSON.stringify([session, context.messageID, context.id, generation]))
+                      .digest("hex"),
+                  ),
+              });
+            }),
         }),
         define({
           name: "work_approve",
@@ -527,6 +623,25 @@ export function registerTools(
         ) =>
           domainEffect(
             Effect.gen(function* () {
+              const lead = yield* c.lead().principal(context.sessionID);
+              if (lead || context.agent === "project-lead") {
+                if (
+                  !central ||
+                  !access.lead ||
+                  !lead ||
+                  !lead.enabled ||
+                  lead.stop_pending ||
+                  lead.session_id !== context.sessionID ||
+                  context.agent !== "project-lead"
+                )
+                  return yield* new CrewError(
+                    "LEAD_FORBIDDEN",
+                    "Project leads use only their scoped management endpoint",
+                  );
+                return;
+              }
+              if (access.lead)
+                return yield* new CrewError("LEAD_REQUIRED", "Registered lead session required");
               if (access.worker) return;
               if (!central)
                 return yield* new CrewError(

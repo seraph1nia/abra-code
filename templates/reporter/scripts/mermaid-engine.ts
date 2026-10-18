@@ -29,7 +29,34 @@ export async function renderDiagram(source: string) {
     const { svg } = await mermaid.render(`report-mermaid-${++nextId}`, source, host);
     // Mermaid's percentage widths otherwise stretch narrow, tall diagrams.
     // Keep natural text size and let the component scroll wide diagrams locally.
-    host.innerHTML = svg;
+    // Template contents remain inert while inspecting strict compiler output.
+    // Portable SVG cannot load external resources or carry executable nodes.
+    const prepared = document.createElement("template");
+    prepared.innerHTML = svg;
+    if (prepared.content.querySelector("script,iframe,object,embed,video,audio"))
+      throw new Error("Diagram output contains executable or external content");
+    const inlineResource = (value: string) =>
+      value.startsWith("#") || /^data:image\/(?:png|jpeg|gif|webp);base64,/i.test(value);
+    const safeStyle = (value: string) =>
+      !value.includes("\\") &&
+      !/@import\b/i.test(value) &&
+      [...value.matchAll(/url\(\s*["']?([^)'"\s]+)/gi)].every((match) => inlineResource(match[1]!));
+    for (const element of prepared.content.querySelectorAll("*")) {
+      for (const attribute of element.attributes) {
+        if (["href", "src"].includes(attribute.localName) && !inlineResource(attribute.value))
+          throw new Error("Diagram output requires an external resource");
+        if (attribute.localName.startsWith("on"))
+          throw new Error("Diagram output contains an event handler");
+        if (
+          (attribute.localName === "style" || /url\s*\(/i.test(attribute.value)) &&
+          !safeStyle(attribute.value)
+        )
+          throw new Error("Diagram style requires an external resource");
+      }
+      if (element.localName === "style" && !safeStyle(element.textContent ?? ""))
+        throw new Error("Diagram stylesheet requires an external resource");
+    }
+    host.replaceChildren(prepared.content.cloneNode(true));
     const graphic = host.querySelector("svg");
     if (graphic) {
       const { width, height } = graphic.viewBox.baseVal;

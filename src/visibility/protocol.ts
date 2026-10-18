@@ -1,3 +1,4 @@
+import { SupervisionSummarySchema, SupervisionAggregateSchema } from "./supervision.ts";
 import { DeliveryOutcomeSchema } from "../workflow/delivery-outcome.ts";
 import { WorkerInspectionSchema } from "./worker.ts";
 import { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
@@ -46,6 +47,7 @@ const session = Schema.Struct({
   role: RoleSchema,
 });
 const work = Schema.Struct({
+  supervision: Schema.optional(SupervisionSummarySchema),
   outcome: Schema.optional(DeliveryOutcomeSchema),
   generation: Schema.optional(Count),
   delivered_head: Schema.optional(Commit),
@@ -142,6 +144,7 @@ const work = Schema.Struct({
   blocker_details: Schema.optional(Schema.Array(ReadinessBlockerSchema)),
 });
 const snapshot = Schema.Struct({
+  supervision: Schema.optional(SupervisionAggregateSchema),
   record_diagnostics: Schema.optional(Schema.Array(RecordDiagnosticSchema)),
   home: AbsolutePath,
   work: Schema.Array(work),

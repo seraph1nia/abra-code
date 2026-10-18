@@ -206,7 +206,7 @@ test("early SQLite schema upgrades preserve work, ownership and history", async 
   const db = new DatabaseSync(path);
   try {
     db.exec(
-      "ALTER TABLE issues DROP COLUMN scope_json; ALTER TABLE issues DROP COLUMN report_reference_json; ALTER TABLE issues DROP COLUMN quality_profile; PRAGMA user_version = 1",
+      "DROP TABLE batch_items; DROP TABLE work_batches; ALTER TABLE issues DROP COLUMN scope_json; ALTER TABLE issues DROP COLUMN report_reference_json; ALTER TABLE issues DROP COLUMN quality_profile; ALTER TABLE issues DROP COLUMN dispatch_json; PRAGMA user_version = 1",
     );
   } finally {
     db.close();
@@ -223,12 +223,12 @@ test("early SQLite schema upgrades preserve work, ownership and history", async 
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 4);
-    verify.exec("PRAGMA user_version = 5");
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 6);
+    verify.exec("PRAGMA user_version = 7");
   } finally {
     verify.close();
   }
-  await assert.rejects(run(SqliteWorkGraph.open(path)), /Unsupported work database version 5/);
+  await assert.rejects(run(SqliteWorkGraph.open(path)), /Unsupported work database version 7/);
 });
 
 test("workflow/scope/report identities are persisted and cannot rebind a request; legacy full-spec input retries compatibly", async (t) => {
@@ -258,4 +258,269 @@ test("workflow/scope/report identities are persisted and cannot rebind a request
   db.close();
   assert.equal((await run(graph.create(old))).id, legacy.id);
   assert.equal((await run(graph.show(legacy.id))).workflow_policy, "full-openspec");
+});
+
+const batchGoal = (request = "atomic-batch") => ({
+  request_id: Id.RequestId.make(request),
+  tasks: [
+    {
+      client_key: "a",
+      repository_id: Id.RepositoryId.make("api"),
+      title: "Dependent",
+      description: "Implement dependent work",
+      dependencies: [{ type: "local" as const, client_key: "A" }],
+    },
+    {
+      client_key: "A",
+      repository_id: Id.RepositoryId.make("frontend"),
+      title: "Prerequisite",
+      description: "Establish the prerequisite",
+    },
+  ],
+});
+
+test("atomic batches resolve forward references and retain the same receipt across reopen and conflicting single-item intake", async (t) => {
+  const { graph, path, scope } = await database(t);
+  const result = await run(graph.createBatch(batchGoal()));
+  assert.deepEqual(
+    result.tasks.map((t) => t.client_key),
+    ["A", "a"],
+  );
+  assert.deepEqual(result.tasks[1].issue.dependencies, [result.tasks[0].issue.id]);
+  for (const task of result.tasks)
+    assert.equal((await run(graph.history(task.issue.id))).length, 1);
+  const owner = Id.ExecutionId.make("batch-owner");
+  await run(graph.claim(result.tasks[0].issue.id, owner));
+  await assert.rejects(
+    run(
+      graph.create({
+        ...goal(result.tasks[0].issue.request_id),
+        title: "Conflicting batch adoption",
+      }),
+    ),
+    { code: "REQUEST_REBIND" },
+  );
+  await run(Scope.close(scope, Exit.void));
+  await run(
+    Effect.gen(function* () {
+      const reopened = yield* SqliteWorkGraph.open(path);
+      const retry = yield* reopened.createBatch({
+        ...batchGoal(),
+        tasks: batchGoal().tasks.toReversed(),
+      });
+      assert.deepEqual(
+        retry.tasks.map((t) => t.issue.id),
+        result.tasks.map((t) => t.issue.id),
+      );
+      assert.equal(retry.tasks[0].issue.assignee, owner);
+      for (const changed of [
+        { ...batchGoal(), tasks: [batchGoal().tasks[1]] },
+        {
+          ...batchGoal(),
+          tasks: batchGoal().tasks.map((t) => ({ ...t, description: "Changed goal" })),
+        },
+        { ...batchGoal(), tasks: batchGoal().tasks.map((t) => ({ ...t, dependencies: [] })) },
+      ])
+        yield* reopened.createBatch(changed).pipe(
+          Effect.flip,
+          Effect.tap((error) => Effect.sync(() => assert.equal(error.code, "REQUEST_REBIND"))),
+        );
+      assert.equal((yield* reopened.list).length, 2);
+    }),
+  );
+});
+
+test("invalid batch references, cycles and mid-transaction failures leave no receipt, issue or event", async (t) => {
+  const { graph, path } = await database(t);
+  const input = batchGoal();
+  for (const tasks of [
+    [{ ...input.tasks[0], dependencies: [{ type: "local" as const, client_key: "missing" }] }],
+    [
+      {
+        ...input.tasks[0],
+        dependencies: [{ type: "existing" as const, issue_id: Id.IssueId.make("missing") }],
+      },
+    ],
+    [{ ...input.tasks[0], dependencies: [{ type: "local" as const, client_key: "a" }] }],
+    [
+      input.tasks[0],
+      { ...input.tasks[1], dependencies: [{ type: "local" as const, client_key: "a" }] },
+    ],
+  ]) {
+    await assert.rejects(run(graph.createBatch({ ...input, tasks })));
+    assert.equal((await run(graph.list)).length, 0);
+  }
+  const db = new DatabaseSync(path);
+  try {
+    db.exec(
+      "CREATE TRIGGER fail_batch_event BEFORE INSERT ON work_events WHEN (SELECT count(*) FROM work_events) = 1 BEGIN SELECT RAISE(ABORT, 'Injected second batch event failure'); END",
+    );
+    await assert.rejects(run(graph.createBatch(input)), /Injected second batch event failure/);
+    for (const table of ["issues", "dependencies", "work_events", "work_batches", "batch_items"])
+      assert.equal(db.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n, 0);
+    db.exec("DROP TRIGGER fail_batch_event");
+    assert.equal((await run(graph.createBatch(input))).tasks.length, 2);
+    assert.equal(db.prepare("SELECT count(*) AS n FROM work_batches").get()!.n, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test("separate processes commit one batch and return identical local-key mappings", async (t) => {
+  const { graph, path } = await database(t);
+  const runner = new ProcessRunner();
+  const source = `import { Effect } from 'effect'; import { SqliteWorkGraph } from ${JSON.stringify(resolve("src/work/graph.ts"))}; const result=await Effect.runPromise(Effect.scoped(Effect.gen(function*(){const graph=yield* SqliteWorkGraph.open(${JSON.stringify(path)}); return yield* graph.createBatch(${JSON.stringify(batchGoal())});})));console.log(JSON.stringify(result.tasks.map(t=>[t.client_key,t.issue.id])));`;
+  const call = () =>
+    run(
+      runner.run(
+        Id.Executable.make(process.execPath),
+        ["--import", "tsx", "--input-type=module", "-e", source],
+        Id.AbsolutePath.make(resolve(".")),
+      ),
+    );
+  const [first, second] = await Promise.all([call(), call()]);
+  assert.deepEqual(JSON.parse(first), JSON.parse(second));
+  assert.equal((await run(graph.list)).length, 2);
+  for (const issue of await run(graph.list))
+    assert.equal((await run(graph.history(issue.id))).length, 1);
+});
+
+for (const version of [3, 4, 5])
+  test(`schema ${version} batch migration preserves original request identity`, async (t) => {
+    const { graph, path, scope } = await database(t);
+    const issue = await run(graph.create(goal("historical")));
+    await run(Scope.close(scope, Exit.void));
+    const db = new DatabaseSync(path);
+    let original: unknown;
+    try {
+      original = db
+        .prepare("SELECT request_input FROM issues WHERE id = ?")
+        .get(issue.id)!.request_input;
+      db.exec(
+        "DROP TABLE batch_items; DROP TABLE work_batches; ALTER TABLE issues DROP COLUMN dispatch_json;",
+      );
+      if (version === 3) db.exec("ALTER TABLE issues DROP COLUMN quality_profile");
+      db.exec(`PRAGMA user_version = ${version}`);
+    } finally {
+      db.close();
+    }
+    await run(
+      Effect.gen(function* () {
+        const upgraded = yield* SqliteWorkGraph.open(path);
+        assert.equal((yield* upgraded.create(goal("historical"))).id, issue.id);
+        assert.equal((yield* upgraded.createBatch(batchGoal())).tasks.length, 2);
+      }),
+    );
+    const verify = new DatabaseSync(path);
+    try {
+      assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 6);
+      assert.equal(
+        verify.prepare("SELECT request_input FROM issues WHERE id = ?").get(issue.id)!
+          .request_input,
+        original,
+      );
+    } finally {
+      verify.close();
+    }
+  });
+
+test("failed batch receipt migration rolls back preceding column additions and schema version", async (t) => {
+  const { graph, path, scope } = await database(t);
+  await run(graph.create(goal("preserved")));
+  await run(Scope.close(scope, Exit.void));
+  const db = new DatabaseSync(path);
+  try {
+    db.exec(
+      "DROP TABLE batch_items; DROP TABLE work_batches; ALTER TABLE issues DROP COLUMN quality_profile; ALTER TABLE issues DROP COLUMN dispatch_json; CREATE INDEX work_batches ON issues(title); PRAGMA user_version = 3",
+    );
+    await assert.rejects(run(SqliteWorkGraph.open(path)), /work_batches|index/);
+    assert.equal(db.prepare("PRAGMA user_version").get()!.user_version, 3);
+    assert.equal(
+      db
+        .prepare("PRAGMA table_info(issues)")
+        .all()
+        .some((row) => row.name === "quality_profile"),
+      false,
+    );
+    assert.equal(
+      db
+        .prepare("PRAGMA table_info(issues)")
+        .all()
+        .some((row) => row.name === "dispatch_json"),
+      false,
+    );
+    assert.equal(db.prepare("SELECT count(*) AS n FROM issues").get()!.n, 1);
+    db.exec("DROP INDEX work_batches");
+  } finally {
+    db.close();
+  }
+  await run(
+    Effect.gen(function* () {
+      const upgraded = yield* SqliteWorkGraph.open(path);
+      assert.equal((yield* upgraded.createBatch(batchGoal())).tasks.length, 2);
+    }),
+  );
+});
+
+test("intake request identities cannot change between a batch and an ordinary issue", async (t) => {
+  const { graph } = await database(t);
+  await run(graph.create(goal("already-single")));
+  await assert.rejects(run(graph.createBatch(batchGoal("already-single"))), {
+    code: "REQUEST_REBIND",
+  });
+  await run(graph.createBatch(batchGoal("already-batch")));
+  await assert.rejects(run(graph.create(goal("already-batch"))), { code: "REQUEST_REBIND" });
+  assert.equal((await run(graph.list)).length, 3);
+});
+
+test("schema-5 batch receipts keep original mapping while new task dispatch is durable and immutable", async (t) => {
+  const { graph, path, scope } = await database(t);
+  const old = await run(graph.createBatch(batchGoal()));
+  await run(Scope.close(scope, Exit.void));
+  const db = new DatabaseSync(path);
+  const receipt = db.prepare("SELECT request_input FROM work_batches").get()!.request_input;
+  db.exec("ALTER TABLE issues DROP COLUMN dispatch_json; PRAGMA user_version = 5");
+  db.close();
+  await run(
+    Effect.gen(function* () {
+      const current = yield* SqliteWorkGraph.open(path);
+      const retry = yield* current.createBatch(batchGoal());
+      assert.deepEqual(
+        retry.tasks.map((t) => t.issue.id),
+        old.tasks.map((t) => t.issue.id),
+      );
+      const input = {
+        ...goal("model-selection"),
+        dispatch: {
+          apply: {
+            model: { providerID: Id.ProviderId.make("fixture"), id: Id.ModelId.make("selected") },
+          },
+        },
+      };
+      const created = yield* current.create(input);
+      assert.equal((yield* current.show(created.id)).dispatch?.apply?.model?.id, "selected");
+      assert.equal((yield* current.create(input)).id, created.id);
+      yield* Effect.promise(() =>
+        assert.rejects(
+          run(
+            current.create({
+              ...input,
+              dispatch: { apply: { profile: Id.DispatchProfileId.make("different") } },
+            }),
+          ),
+          /different/,
+        ),
+      );
+    }),
+  );
+  const verify = new DatabaseSync(path);
+  try {
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 6);
+    assert.equal(
+      verify.prepare("SELECT request_input FROM work_batches").get()!.request_input,
+      receipt,
+    );
+  } finally {
+    verify.close();
+  }
 });

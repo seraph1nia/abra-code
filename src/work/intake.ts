@@ -1,3 +1,7 @@
+import { validateDispatch } from "../config/dispatch.ts";
+import { type Config } from "../domain.ts";
+import { normalizeBatch, batchItemRequest, type BatchInput } from "./batch.ts";
+import { completeScope } from "./scope.ts";
 import { codingPolicy } from "../config/policy.ts";
 import { RequestId, SessionId } from "../identities.ts";
 
@@ -14,9 +18,10 @@ export class WorkIntake {
     private work: WorkGraph,
     private records: Records,
     private defaultWorkflow: import("../domain.ts").Policy = "full-openspec",
+    private config?: Config,
   ) {}
 
-  create = Effect.fn("WorkIntake.create")(
+  private prepare = Effect.fn("WorkIntake.prepare")(
     function* (this: WorkIntake, input: WorkInput, supervisor: SessionId) {
       const repository = input.repository_id;
       const project = yield* this.records.project(repository);
@@ -40,13 +45,48 @@ export class WorkIntake {
             .digest("hex"),
         );
       }
+      validateDispatch(this.config ?? {}, request.dispatch);
       codingPolicy(
         project,
         request.workflow_policy ?? this.defaultWorkflow,
         request.quality_profile,
       );
-      // Request identity and issue creation commit in the same database transaction.
-      return yield* this.work.create(request);
+      return request;
+    }.bind(this),
+    domainEffect,
+  );
+  create = Effect.fn("WorkIntake.create")(
+    function* (this: WorkIntake, input: WorkInput, supervisor: SessionId) {
+      return yield* this.work.create(yield* this.prepare(input, supervisor));
+    }.bind(this),
+    domainEffect,
+  );
+  createBatch = Effect.fn("WorkIntake.createBatch")(
+    function* (this: WorkIntake, input: BatchInput, supervisor: SessionId) {
+      const batch = normalizeBatch({
+        ...input,
+        tasks: input.tasks.map((task) => ({
+          ...task,
+          workflow_policy: task.workflow_policy ?? this.defaultWorkflow,
+        })),
+      });
+      for (const task of batch.tasks) {
+        const { client_key, dependencies, ...fields } = task;
+        const request = yield* this.prepare(
+          {
+            ...fields,
+            request_id: batchItemRequest(batch.request_id, client_key),
+            dependencies: dependencies.flatMap((d) => (d.type === "existing" ? [d.issue_id] : [])),
+          },
+          supervisor,
+        );
+        if (request.workflow_policy !== "full-openspec" && !completeScope(request.scope))
+          return yield* new CrewError(
+            "SCOPE_REQUIRED",
+            `Batch task ${client_key} requires a complete goal, acceptance and constraints contract`,
+          );
+      }
+      return yield* this.work.createBatch(batch);
     }.bind(this),
     domainEffect,
   );

@@ -51,21 +51,22 @@ After updating an already running service, use native configuration reload again
 
 ## Tool workflow
 
-| Tool                    | Input and result                                                                                       |
-| ----------------------- | ------------------------------------------------------------------------------------------------------ |
-| `abra_project_onboard`  | ID plus remote URL or existing checkout path; inspect or register, including pending setup             |
-| `abra_project_list`     | Registry with identity, checks, policies, setup blockers and saved setup checkpoints                   |
-| `abra_project_setup`    | ID and prepare/deliver/approve/finish; authorized initialization in a native worktree                  |
-| `abra_work_create`      | Repository ID, title, goal description; optional priority/dependencies/request ID; issue and readiness |
-| `abra_work_list`        | Central issues and durable execution summaries                                                         |
-| `abra_work_ready`       | Priority-sorted work with dependency/registration/policy/capacity blockers                             |
-| `abra_work_start`       | `issue_id`; claim/create or recover the existing execution                                             |
-| `abra_work_diagnostics` | Issue ID and optional role; native errors, worker models, bounded recent messages and tool failures    |
-| `abra_work_status`      | `issue_id`; Issue status/history, OpenSpec, Git and session outcomes                                   |
-| `abra_work_control`     | `issue_id`, `action`, optional `text`; steer/pause/interrupt/resume/retry/replan/advance               |
-| `abra_work_approve`     | `issue_id`, `kind: plan` or `merge`; native form or accepted receipt                                   |
-| `abra_work_finish`      | Verify preservation, authorized merge, native cleanup and issue closure                                |
-| `abra_work_reconcile`   | Optional `issue_id`; reconcile one or all incomplete records                                           |
+| Tool                     | Input and result                                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `abra_project_onboard`   | ID plus remote URL or existing checkout path; inspect or register, including pending setup                                |
+| `abra_project_list`      | Registry with identity, checks, policies, setup blockers and saved setup checkpoints                                      |
+| `abra_project_setup`     | ID and prepare/deliver/approve/finish; authorized initialization in a native worktree                                     |
+| `abra_work_create`       | Repository ID, title, goal description; optional priority/dependencies/request ID; issue and readiness                    |
+| `abra_work_create_batch` | Stable batch request ID, 1–32 keyed work definitions and tagged local/existing dependencies; atomic mapping and readiness |
+| `abra_work_list`         | Central issues and durable execution summaries                                                                            |
+| `abra_work_ready`        | Priority-sorted work with dependency/registration/policy/capacity blockers                                                |
+| `abra_work_start`        | `issue_id`; claim/create or recover the existing execution                                                                |
+| `abra_work_diagnostics`  | Issue ID and optional role; native errors, worker models, bounded recent messages and tool failures                       |
+| `abra_work_status`       | `issue_id`; Issue status/history, OpenSpec, Git and session outcomes                                                      |
+| `abra_work_control`      | `issue_id`, `action`, optional `text`/`request_id`; steer/pause/interrupt/resume/retry/replan/advance                     |
+| `abra_work_approve`      | `issue_id`, `kind: plan` or `merge`; native form or accepted receipt                                                      |
+| `abra_work_finish`       | Verify preservation, authorized merge, native cleanup and issue closure                                                   |
+| `abra_work_reconcile`    | Optional `issue_id`; reconcile one or all incomplete records                                                              |
 
 Explore/Apply have `abra_spec` for read-only CLI status/instructions; Review has `abra_review_report`. Management tools are not exposed at worker locations. Errors return `ok:false` with a stable code, message and next action, preserving resources.
 
@@ -82,7 +83,181 @@ For a full coding issue:
 
 Use `replan` while idle before archival if scope needs revision; pause an active writer first. Failed review `retry` returns findings to the same Apply session. A rejected plan `retry` returns to the same Explore session. Automatic scheduling only runs when configured, without repeatedly waking the Supervisor model.
 
+`auto_schedule` remains `false` by default, including upgrades. When enabled,
+the existing scheduler requires a retained Abra session in the central checkout.
+It admits the highest-priority eligible issues first (lower number wins), rotating
+between repositories at equal priority. A small retained rotation cursor records
+the last repository with a retained controller execution intent; it is policy
+state, never an issue claim. A crash before cursor commit can affect one tie-break.
+Every attempt rechecks controller
+readiness and capacity, and a failed attempt does not prevent other eligible work.
+Each tick makes at most as many attempts as there were open issues at its start. The existing single scheduler-leader lock
+owns the cursor across processes.
+
+`abra_work_ready` distinguishes dependency, active-worker, retained-execution,
+role-capacity and missing-supervisor-authority blockers. Uncertain native
+admissions keep their reservation; paused executions require explicit resume.
+Read-only worker inspection includes native activity and an observation time:
+`queued` means pending input without native execution, while unavailable execution
+observation remains `unknown`. These observations do not prove acknowledgement
+or completion.
+
+To steer an existing active worker, Abra can call:
+
+```json
+{
+  "issue_id": "abra-example",
+  "action": "steer",
+  "request_id": "clarify-checks-1",
+  "text": "Use the repository's documented consumer check within the accepted scope."
+}
+```
+
+Reuse `request_id` after an uncertain response. A changed instruction requires a
+new identity; conflicting content under the old identity is refused. If omitted,
+the native tool call's session/message/call identity and generation supply the
+retry key. Programmatic controller callers must provide the key and trusted
+sender explicitly. Steering retains its own native prompt ID and exact payload;
+it preserves the original assignment capture, session, model and role policy.
+It grants no scope revision or checkpoint approval.
+
+`execution.messages` distinguishes pending, uncertain, admitted and superseded
+instructions. Native admission is not worker acknowledgement. If admission is
+uncertain, the controller inspects the original ID in inbox and context; missing
+or unavailable evidence keeps the instruction unresolved and capacity held. It
+does not issue a replacement ID. Pause withdraws all owned queued inputs before
+interrupting and confirming stop; consumed instructions remain historical.
+
 Review, skills and CI provide evidence rather than permission to change approved requirements. Fix clear implementation defects within scope. Correct demonstrably obsolete tests or instructions only when accepted requirements already establish the intended behavior, retaining meaningful checks. Record advisory preferences as suggestions. Unresolved contradictions retain both sources and a durable decision; even an `in_scope` label cannot admit automatic repair when a full-spec report lists conflicts. Failed Review with an open scope decision cannot retry into Apply. Resolve the decision first: unchanged behavior can receive explicit correction, while changed requirements use `replan` and configured plan approval (or `abra_work_scope` for lightweight work). A decision answer does not grant plan or merge authorization. See [Review verification](../.agents/skills/openspec-execution/SKILL.md#review-verification) for assessment and conflict reporting.
+
+## Batch intake
+
+Use one batch when independent scopes or a distinct investigation deliverable
+provide useful parallelism. Abra recommends policies and dependencies; the
+controller validates the definitions and project policy. For example:
+
+```json
+{
+  "request_id": "auth-performance-tests-1",
+  "tasks": [
+    {
+      "client_key": "auth",
+      "repository_id": "api",
+      "title": "Refactor authentication",
+      "description": "Refactor authentication while preserving the accepted behavior",
+      "workflow_policy": "full-openspec"
+    },
+    {
+      "client_key": "performance",
+      "repository_id": "api",
+      "title": "Investigate database performance",
+      "description": "Identify the slow query paths",
+      "workflow_policy": "research-only",
+      "scope": {
+        "goal": "Explain database latency",
+        "acceptance": ["Retain evidence and limitations"],
+        "constraints": ["Read only"]
+      }
+    },
+    {
+      "client_key": "tests",
+      "repository_id": "api",
+      "title": "Fix flaky login tests",
+      "description": "Remove the reproduced login test race",
+      "workflow_policy": "lightweight-fix",
+      "scope": {
+        "goal": "Fix the reproduced race",
+        "acceptance": ["Original flaky-test reproduction passes"],
+        "constraints": ["Preserve authentication behavior"]
+      }
+    }
+  ]
+}
+```
+
+Submit this to `abra_work_create_batch`. The result contains `request_id` and
+`tasks: [{client_key, issue, readiness}]`. A dependency uses
+`{"type":"local","client_key":"auth"}` for another task in this batch, or
+`{"type":"existing","issue_id":"abra-existing"}` for retained work. Local
+references may point forward. Unknown references, cycles, duplicate keys,
+missing short scopes or disallowed policy choices reject the whole batch.
+
+All issues, dependencies, creation events and the retry receipt commit in one
+SQLite transaction. Reuse the same batch ID and normalized keyed definitions
+after response loss or restart; ordering alone does not change identity. Goal,
+policy, membership or dependency changes require a new request ID. Ordinary and
+batch intake cannot rebind each other's request identities. Intake launches no
+worker; existing explicit start or configured automatic scheduling still owns
+admission, dependencies, capacity and human checkpoints.
+
+## Correlated messages
+
+Abra uses `abra_work_message` for a request that needs an explicit response:
+
+```json
+{
+  "issue_id": "abra-example",
+  "role": "apply",
+  "request_id": "verification-question-1",
+  "kind": "question",
+  "delivery": "queue",
+  "response": "answer",
+  "body": "Which documented consumer check applies?"
+}
+```
+
+The role must be the execution's current eligible worker. An optional `session_id`
+must match it. Queue is the default; steer uses the same retained authorization.
+Requests are keyed within their issue execution. Identical retries reuse the
+native prompt ID; changed routing, content, delivery, source or response contract
+under that key is refused. A message cannot start a missing role, resume a pause,
+replace scope or grant approval. Generic messaging remains denied to automated
+diagnostic turns.
+
+The assigned worker uses `abra_worker_reply`:
+
+```json
+{
+  "action": "answer",
+  "request_id": "verification-question-1",
+  "generation": 0,
+  "body": "The repository documents the consumer check in its verification recipe."
+}
+```
+
+Use the actual captured generation. `action:"acknowledge"` needs only identity
+and generation; it does not answer an answer-required request. An identical reply
+retry returns the retained result. Wrong senders, stale generations and conflicting
+answers fail. Native completion alone resolves neither acknowledgement nor answer.
+Required responses block the applicable checkpoint; native quiescence releases
+worker capacity so unrelated tasks can continue.
+
+Workers can instead submit `action:"finding"` with a stable `request_id`,
+generation, body and optional bounded base/path/line or URL evidence. An optional
+`destination:{issue_id,role}` nominates a current worker without prompting it.
+Abra forwards retained evidence using `abra_work_message` with
+`source:{type:"finding",issue_id,request_id}`, `kind:"finding"` and an appropriate
+response requirement. The controller quotes the retained finding as untrusted
+data. It does not grant the source worker management tools or scope authority.
+
+`abra_work_messages` reads `{issue_id,offset?,limit?}` (default 20, maximum 50).
+It returns paged request/finding records, native queued/consumed/unavailable
+observations, outstanding required-response totals and observation time. It makes
+no prompts or workflow mutations. Inspect `record.status` and `record.reply`
+separately from `native` admission evidence. Findings and resolved answers survive
+retirement and generation changes.
+
+Existing worker questions, progress, waits and decisions retain their tools and
+owners. A retained decision answer is delivered as a follow-up referencing that
+one decision; delivery does not create a second question or replace the captured
+assignment. Legacy records without a retained supervisor keep their prior
+assignment-based answer route rather than inventing a sender identity.
+
+Bodies/replies are limited to 8 KiB, evidence to 16 references of at most 2 KiB
+each, rendered wrappers to 32 KiB, and retained communications to 256 per execution.
+Limits fail explicitly without evicting unresolved requests. Previously captured
+worker policies remain authoritative on upgrade; incompatible captures require
+the existing explicit retry/new-turn route, not silent permission changes.
 
 ## Create work from a request
 
@@ -243,3 +418,187 @@ Merge readiness includes the owned local branch, exact remote PR head and read-o
 Unknown files receive mandatory native forms at detection, independently of optional diagnostics and capacity. Generated-directory answers are execution-specific and never change `generated_paths` defaults. Inclusion selects exact file hashes before publication. Preservation means moving files outside the owned worktree and awaiting a fresh scan. Defer leaves the work quiet; reconsider deliberately opens a new form for the current decision. A pending/undelivered question remains visible in status and native detail. Approval collection remains receipt-only; ordinary reconciliation handles merge, authorized disposal, native retirement and graph closure after matching answers. Pause, external custody and unresolved decisions remain authoritative.
 
 Observe `outcome.finishing` for allowance use, synchronization stage, preflight age and current decision routing. These are observations, not authorization. Already merged PRs are inspected before selecting republication; late unpublished edits require follow-on authorization. Uncertain destructive submission, resource replacement or missing preservation stays in recovery. Completion notification retries independently after verified closure. See [recovery](recovery.md#finishing-existing-work) for exact crash-window behavior.
+
+### Operational supervision modes
+
+Omit `supervision_mode` to retain existing settings. Explicit `manual` disables
+new automatic dispatch and optional diagnostic/repair admission, while existing
+observation, exact-action forms and authorized deterministic reconciliation
+continue. `attended-automatic` enables scheduling and meaningful attention turns.
+`unattended` enables the same bounded scheduling/diagnostics and retains
+human-owned questions as pending incidents for later attention instead of waking
+Abra to collect them. Native forms remain available. Both automatic modes use
+existing per-execution budgets; neither grants repair rounds or approval.
+
+An explicit contradictory `auto_schedule` is rejected. Operational settings take
+effect after service restart. `pnpm config:show` displays the resolved mode,
+scheduling and optional-reasoning behavior. Pauses, accepted scope, Review,
+verification and exact plan/merge authorizations retain their existing owners.
+
+`abra_work_list` includes a bounded `supervision` aggregate (at most 128 tasks,
+open tasks first, then priority and ID). Counts cover the returned task summaries;
+`total` and `truncated` disclose the bound. `abra_work_status` and the native work
+RPC expose the same read-only projection. The primary classification uses this
+precedence: completed, recovery, paused, human decision, supervisor decision,
+provider failure, review failure, validation failure, delivery wait, dependency
+wait, suspected stall, pending admission/capacity, running, idle, unknown. Other
+blockers and independent delivery/cleanup/closure evidence remain in detail.
+Each summary includes an observation time and native activity availability.
+Unavailable evidence does not imply idle or successful completion.
+
+### Task model selections and profiles
+
+`abra_config` with `action: status` includes the loaded model defaults, complete
+role overrides and up to 32 configured profiles. The catalog labels native
+inventory as unobserved; availability is verified by the existing OpenCode
+worker-location preflight. Static `pnpm config:show` also lists profiles and
+repository dispatch declarations.
+
+```yaml
+profiles:
+  fast-research:
+    role: research
+    model: { providerID: your-provider, id: your-research-model }
+repositories:
+  - id: api
+    path: /absolute/path/to/api
+    dispatch:
+      research: { profile: fast-research }
+```
+
+A task or batch task can include `dispatch`, for example
+`"dispatch": {"research": {"profile": "fast-research"}}` or
+`"dispatch": {"apply": {"model": {"providerID": "your-provider", "id": "your-model"}}}`.
+Each role selects one model or one profile. Profiles contain only a worker role
+and complete native model selection; they cannot change agents, tools, skills,
+permissions, quality policy or approvals. A complete selection owns its variant:
+omitting it uses that model's default instead of inheriting another model's variant.
+
+Precedence for each role is task model/profile, repository model/profile, role
+override, then default. An explicit repository `dispatch: {}` clears its defaults;
+omission during registration preserves retained settings. Task dispatch must
+contain a selection. Dispatch is part of immutable task/batch request identity.
+
+Every new execution captures all resolved role choices and provenance before
+provisioning. Status, diagnostics and worker inspection expose that captured
+source. Profile edits and restarts affect future executions. Unknown/mismatched
+profiles are refused before intake. Unavailable native models/variants retain a
+concrete blocker, release the unused active slot and never select a fallback.
+Restore the captured native selection and explicitly retry, or create a new task
+with a different selection; retained claims/resources are not silently discarded.
+Process model/profile configuration changes require service restart.
+
+### Optional project leads
+
+Abra can register a persistent, bounded project context with `abra_lead_control`:
+
+```json
+{
+  "action": "register",
+  "id": "backend",
+  "expected_revision": 0,
+  "repositories": ["api"],
+  "model": { "providerID": "example", "id": "strong-model" },
+  "enabled": true
+}
+```
+
+The registration owns a native session intent before creation. It selects the
+static hidden `project-lead` agent and a complete model, with no provider fallback.
+This is a management principal, separate from Explore/Apply/Review/Research.
+It has one endpoint, `abra_lead_action`: scoped issue snapshots, correlated
+replies, bounded batch proposals, supervisor-owned routine answers and forwarding
+of retained findings. File/search/shell/delegation tools and global configuration,
+installation, project-list and work-list tools are omitted. Leads use controller
+snapshots for evidence. Abra remains the conversational entry point.
+
+Use `status` to inspect current revisions, requests and proposals. Send a scoped
+request with `action:message`, `id`, `revision`, `issue_id`, a stable `request_id`
+and `body`. An identical retry keeps its native ID; changing content is refused.
+A native queued/consumed instruction does not constitute an answer. Replies and
+proposals produce idempotent native synthetic details in their parent Abra
+conversation without starting a new diagnostic turn. Abra accepts a retained
+proposal with `action:accept`, `id`, `revision`, `request_id`; existing atomic batch
+intake owns creation, policy validation, dependencies and retries. Acceptance is
+not dispatch, plan approval or merge approval.
+
+Enabled leads observe scoped completed/failed/recovery work and supervisor-owned
+questions through the existing monitor. Each requested lead turn consumes the
+source issue's existing finite diagnostic budget, shared with Abra diagnostics,
+and one existing attention-capacity slot while native admission/execution is
+active or uncertain. Manual posture suppresses new lead turns. Exhausted budgets
+leave source decisions and retained work visible; lead registration grants no
+additional repair or approval budget. Human questions/forms remain Abra-owned.
+
+To disable, repeat `register` with the observed `expected_revision`, unchanged
+repositories/model and `enabled:false`. Revocation persists before native queue
+cancellation and interruption. `stop_pending:true` retains the reservation; retry
+the same declaration until stop is confirmed. Re-enable only after confirmation.
+Changing scope/model requires a disabled, quiescent registration and explicitly
+creates a fresh native context. The old session identity remains revoked. This
+prevents earlier project history leaking into a narrower scope. An ordinary
+service restart or unchanged declaration keeps its original native session.
+There is one lead level and one shared controller/work graph. These permissions
+are same-user application boundaries, not OS isolation.
+
+### Portable visual reports
+
+`abra_work_report` keeps its default read-only Markdown response. Use
+`{"issue_id":"abra-example","action":"artifacts"}` for bounded visual-revision
+summaries. Explicit generation is separate from diagnostic read authority:
+
+```json
+{
+  "issue_id": "abra-example",
+  "action": "generate",
+  "request_id": "architecture-r1",
+  "title": "Architecture and retained evidence"
+}
+```
+
+A Research worker can include `render: {request_id: "architecture-r1"}` in its
+ordinary `abra_research_report` submission. Optional `diagrams` on that report
+are plain Mermaid data with titles and sources, retained in its Markdown input.
+This does not grant template editing, shell, management or delivery tools. Abra
+can render completed retained work without reopening it or creating another
+worker session. A new visual request may supply constrained `diagrams` annotations
+or an empty array to replace earlier diagram presentation; it changes no accepted
+research evidence, scope, check or approval. Request identity binds these inputs.
+
+OpenCode owns the existing file preview. The Reports owner captures read-only
+work/receipt/report inputs, validates them, and builds only the installed trusted
+Vite/Solid renderer. It never imports repository TSX/JavaScript, executes report
+text, or accepts a build command/template path. Generated diagrams forbid HTML,
+links, config directives, escapes and external resources; the strict build-time
+compiler also inspects SVG resources. Unsafe evidence links remain inert text.
+Reported findings and actual controller check receipts are labelled separately.
+Every page states its observation time and is a static snapshot.
+
+Outputs live under `.abracode/reports/generated/<issue-id>/<request-id>/index.html`.
+The retained request captures the snapshot, template/input hashes and source
+receipt. Builds use fresh owned scratch directories, independent source/cache/
+output paths, two shared compiler reservations and a 45-second deadline. Native
+Node config loading avoids shared temporary config bundles; license and Mermaid
+inputs are parameterized. No shared `report.tsx` or `dist/index.html` is edited.
+The existing monitor recovers authorized pending work without model polling.
+Restart retains a compiler reservation until its recorded deadline before retrying
+that same captured request. Failed builds require an explicit retry; changed
+trusted template/data needs a new request. A superseded source is not silently
+recaptured under the previous identity.
+
+Only validated single-file HTML receives a published receipt. Same-filesystem
+hard-link publication is atomic and refuses replacement of an occupied file.
+Recovery checks staged/published bytes against the retained digest before any
+rebuild. Earlier revisions and unrelated files are preserved. Cleanup removes
+only the current scratch directory after checking its identity, and its retained
+staging file after checking its digest. Orphaned scratch from a hard crash is
+preserved for inspection. Published artifacts survive worker/worktree retirement.
+Ready/failure details use stable native synthetic message IDs; they do not start
+supervisor-model turns. Only `status:published` is a ready report.
+
+Return a published path as `[Open report](</absolute/path/index.html>)` for native
+HTML preview or open that same file in an ordinary browser. It needs no server,
+network or storage privileges. Local feedback exports review input only; it never
+approves work or silently submits a prompt. Graphical-client click-through is an
+environment-specific handoff: current verification includes the exact sandbox's
+browser behavior and pinned client source, but no paired native GUI session.

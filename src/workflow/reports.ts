@@ -1,8 +1,10 @@
+import { VisualReports } from "./visual-reports.ts";
 import { LockKey, ContentHash, AbsolutePath, ReportId, SessionId } from "../identities.ts";
 import { synchronizeExecution, type Records } from "../storage/store.ts";
 
 import { Effect } from "effect";
-import { createHash, randomUUID } from "node:crypto";
+import { type Runtime } from "../opencode/runtime.ts";
+import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { CrewError, type Execution } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
@@ -11,16 +13,37 @@ import { mkdir, lstat, open, pathExists, readFile, realpath, rename, rm } from "
 
 import { type Git } from "../git/repository.ts";
 import { type Locks } from "../storage/lock.ts";
-import { ReportInputSchema, type ReportReceiptSchema } from "./report-contracts.ts";
+import {
+  ReportEvidenceSchema,
+  researchMarkdown,
+  ReportInputSchema,
+  type ReportReceiptSchema,
+} from "./report-contracts.ts";
 import { isActiveWorker } from "./worker-assignment.ts";
-const digest = (text: string) => createHash("sha256").update(text).digest("hex");
+const digest = reportHash;
+import { type WorkGraph } from "../work/graph.ts";
+import { reportHash, ViteReportRenderer, type ReportRenderer } from "./report-build.ts";
 export class Reports {
+  private visual: VisualReports;
   constructor(
     private home: AbsolutePath,
     private records: Records,
     private git: Git,
     private locks: Locks,
-  ) {}
+    work: WorkGraph,
+    notify: Runtime["notify"],
+    renderer?: ReportRenderer,
+  ) {
+    this.visual = new VisualReports(
+      home,
+      records,
+      locks,
+      work,
+      notify,
+      renderer ?? new ViteReportRenderer(home, git.runner),
+      (e) => this.read(e),
+    );
+  }
   private path(e: Execution, id: ReportId) {
     return AbsolutePath.make(join(this.home, ".abracode/reports", e.issue_id, `${id}.md`));
   }
@@ -83,7 +106,8 @@ export class Reports {
                       "File evidence must use the retained research base",
                     );
                 }
-              const content = `# Research report: ${e.issue_id}\n\nReport: ${a.report_id}\nExecution: ${e.execution_id}\nWorker: ${session}\nBase: ${e.base_commit}\nScope: ${e.scope.fingerprint}\n\n## Contract\n\n${e.scope.contract.goal}\n\n## Conclusions\n\n${a.conclusions}\n\n## Findings\n\n${a.findings.map((f) => `${f.finding}\n${f.evidence.map((r) => `- ${r.url ?? `${r.base}:${r.path}${r.line ? `:${r.line}` : ""}`}`).join("\n")}`).join("\n\n")}\n\n## Acceptance\n\n${a.acceptance.map((r) => `- [${r.met ? "x" : " "}] ${r.criterion}: ${r.evidence}`).join("\n")}\n\n## Limitations\n\n${a.limitations.length ? a.limitations.map((l) => `- ${l}`).join("\n") : "None reported."}\n`;
+              const evidence = yield* decode(ReportEvidenceSchema, a, "Research publication input");
+              const content = researchMarkdown(e, a.report_id, evidence);
               const bytes = Buffer.byteLength(content);
               if (!(bytes <= 65536))
                 return yield* new CrewError("REPORT_LIMIT", "Report exceeds 64 KiB");
@@ -121,11 +145,19 @@ export class Reports {
                   throw new CrewError("REPORT_IMMUTABLE", "Published report is immutable");
                 return {
                   ...current,
-                  report_intent: { receipt, content },
+                  report_intent: { receipt, content, evidence },
                   report_acceptance_met: a.acceptance.every((r) => r.met),
                 };
               });
-              return yield* this.publish(current);
+              const published = yield* this.publish(current);
+              if (!a.render) return published;
+              const visual = yield* this.visual.attach(
+                session,
+                current.issue_id,
+                a.generation,
+                a.render,
+              );
+              return { ...published, visual };
             }),
           ),
       );
@@ -208,6 +240,9 @@ export class Reports {
     }.bind(this),
     domainEffect,
   );
+
+  generate = (...args: Parameters<VisualReports["generate"]>) => this.visual.generate(...args);
+  recover = () => this.visual.recover();
   private readReceipt = Effect.fn("Reports.readReceipt")(
     function* (this: Reports, e: Execution, receipt: typeof ReportReceiptSchema.Type) {
       if (

@@ -371,3 +371,23 @@ for (const drift of ["reconcile", "pause"] as const)
       assert.equal(saved.report_receipt, undefined);
     }
   });
+
+test("a stale reconciliation snapshot cannot erase a concurrently published research report", async (t) => {
+  const { f, issue } = await setup("research-only");
+  t.onTestFinished(() => run(f.close()));
+  const stale = await run(f.controller.start(issue.id));
+  const receipt = await run(
+    f.controller.researchReport(
+      stale.research_session_id!,
+      report(stale.control_generation, stale.base_commit!),
+    ),
+  );
+  await run(f.records.save(stale));
+  const saved = await run(f.controller.get(issue.id));
+  assert.equal(saved.report_receipt?.hash, receipt.hash);
+  assert.equal(saved.report_intent?.receipt.hash, receipt.hash);
+  assert.equal(saved.report_acceptance_met, true);
+  f.runtime.success(stale.research_session_id!);
+  const [done] = await run(f.controller.reconcile(issue.id));
+  assert.equal(done.current_phase, "completed");
+});

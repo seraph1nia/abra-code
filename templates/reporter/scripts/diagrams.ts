@@ -12,19 +12,21 @@ export async function diagramFiles(root: string) {
   return paths.sort();
 }
 
-export async function createDiagramRenderer() {
+export async function createDiagramRenderer(options: { cacheDir?: string } = {}) {
   // Separate from the report's Vite config: loading the engine must not recurse
   // into the .mmd build plugin or include this tooling in the report bundle.
   const server = await createServer({
     configFile: false,
     root: fileURLToPath(new URL("../", import.meta.url)),
     appType: "custom",
-    cacheDir: fileURLToPath(
-      new URL(
-        `../node_modules/.vite-mermaid/${process.env.NODE_ENV ?? "development"}`,
-        import.meta.url,
+    cacheDir:
+      options.cacheDir ??
+      fileURLToPath(
+        new URL(
+          `../node_modules/.vite-mermaid/${process.env.NODE_ENV ?? "development"}`,
+          import.meta.url,
+        ),
       ),
-    ),
     logLevel: "error",
     optimizeDeps: { noDiscovery: true, include: ["mermaid"] },
     server: { host: "127.0.0.1", port: 0, strictPort: false, open: false },

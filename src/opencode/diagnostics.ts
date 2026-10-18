@@ -39,9 +39,30 @@ export interface MessageSummary {
     error?: WorkerError;
   }>;
 }
+/** Native queue execution can emit adjacent failed/succeeded idle markers.
+ * An empty success marker is not evidence that the failed turn recovered. */
+export function nativeIdle(messages: readonly NativeMessage[]) {
+  let idle: Extract<NativeMessage, { type: "idle" }> | undefined;
+  let executionEvidence = false;
+  for (const message of messages) {
+    if (message.type === "user" || message.type === "assistant") executionEvidence = true;
+    if (message.type !== "idle") continue;
+    if (
+      !idle ||
+      idle.outcome === "succeeded" ||
+      message.outcome !== "succeeded" ||
+      executionEvidence
+    )
+      idle = message;
+    executionEvidence = false;
+  }
+  return idle;
+}
 export function summarizeContext(messages: readonly (typeof SessionMessage.Info.Encoded)[]) {
   const assistant = messages.findLast((m) => m.type === "assistant");
-  const terminal = messages.findLast((m) => m.type === "assistant" || m.type === "idle");
+  const lastAssistant = messages.findLastIndex((m) => m.type === "assistant");
+  const lastIdle = messages.findLastIndex((m) => m.type === "idle");
+  const terminal = lastAssistant > lastIdle ? messages[lastAssistant] : nativeIdle(messages);
   const error =
     terminal && "error" in terminal && terminal.error ? diagnosticError(terminal.error) : undefined;
   const model: WorkerModel | undefined =

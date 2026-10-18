@@ -1,3 +1,8 @@
+import { acceptanceJourney } from "./acceptance.ts";
+import { reportJourney } from "./reports.ts";
+import { leadJourney } from "./leads.ts";
+import { modelDispatchJourney } from "./model-dispatch.ts";
+import { parallelJourney } from "./parallel.ts";
 import { parseDocument } from "yaml";
 import { configuration } from "../../src/config/protocol.ts";
 import { installSource, installationRoot } from "./install.ts";
@@ -61,7 +66,7 @@ async function eventually<T>(action: () => Promise<T | undefined>, timeout = 300
 }
 test(
   "real v2 server loads tools and guards across three repositories, executes full OpenSpec through native worker sessions, approvals, preserved branch, cleanup and durable restart",
-  { timeout: 300000 },
+  { timeout: 420000 },
   async (t) => {
     const root = await installationRoot("abracode-native-");
     const r = new ProcessRunner();
@@ -74,6 +79,37 @@ test(
     let stallFirstExplore = false;
     let missingToolProviderCalls = 0;
     let directWorkerProviderCalls = 0;
+    let holdExplore = false;
+    let exploreHeld = false;
+    let releaseExplore: (() => void) | undefined;
+    let steeringProviderCalls = 0;
+    let cancelledSteeringProviderCalls = 0;
+    let holdModelWorker = false,
+      modelWorkerHeld = false;
+    let releaseModelWorker: (() => void) | undefined;
+    let holdLeadResearch = false,
+      leadResearchHeld = false;
+    let releaseLeadResearch: (() => void) | undefined;
+    let holdApply = false,
+      applyHeld = false;
+    let releaseApply: (() => void) | undefined;
+    let failedCorrelatedRequest = false;
+    const parallelSeen = new Set<string>(),
+      parallelReleased = new Set<string>();
+    const parallelWaiting = new Map<string, Array<() => void>>();
+    const releaseParallel = (key: string) => {
+      parallelReleased.add(key);
+      for (const done of parallelWaiting.get(key) ?? []) done();
+      parallelWaiting.delete(key);
+    };
+    const acceptanceSeen = new Set<string>(),
+      acceptanceReleased = new Set<string>();
+    const acceptanceWaiting = new Map<string, Array<() => void>>();
+    const releaseAcceptance = (key: string) => {
+      acceptanceReleased.add(key);
+      for (const done of acceptanceWaiting.get(key) ?? []) done();
+      acceptanceWaiting.delete(key);
+    };
     const provider = createServer(async (req, res) => {
       if (req.url?.startsWith("/browser/")) {
         res.writeHead(200, { "Content-Type": "text/html" });
@@ -88,7 +124,17 @@ test(
       if (JSON.stringify(input.messages ?? []).includes("worker-context-provider-must-not-run"))
         missingToolProviderCalls++;
       const messages = input.messages ?? [];
+      const hasUserMarker = (marker: string) =>
+        messages.some((m: any) => m.role === "user" && JSON.stringify(m.content).includes(marker));
+      if (hasUserMarker("controller-steering-native-marker")) steeringProviderCalls++;
+      if (hasUserMarker("controller-cancel-native-marker")) cancelledSteeringProviderCalls++;
       const user =
+        messages.findLast(
+          (m: any) =>
+            m.role === "user" &&
+            typeof m.content === "string" &&
+            /You are the AbraCode (explore|apply|review|research) for issue/.test(m.content),
+        )?.content ??
         messages.findLast(
           (m: any) =>
             m.role === "user" && typeof m.content === "string" && m.content.includes("AbraCode"),
@@ -105,6 +151,57 @@ test(
             : user.includes("AbraCode review")
               ? "review"
               : "supervisor";
+      const acceptanceKey = user.includes("final-acceptance-authentication")
+        ? role === "explore"
+          ? "auth-explore"
+          : role === "apply"
+            ? "auth-apply"
+            : undefined
+        : role === "research" && user.includes("final-acceptance-database")
+          ? "db-research"
+          : undefined;
+      if (acceptanceKey && !acceptanceReleased.has(acceptanceKey)) {
+        acceptanceSeen.add(acceptanceKey);
+        await new Promise<void>((done) =>
+          acceptanceWaiting.set(acceptanceKey, [
+            ...(acceptanceWaiting.get(acceptanceKey) ?? []),
+            done,
+          ]),
+        );
+      }
+      const parallelKey =
+        role === "research" ? /parallel-lane-([a-z]+)/.exec(user)?.[1] : undefined;
+      if (parallelKey) {
+        parallelSeen.add(parallelKey);
+        if (!parallelReleased.has(parallelKey))
+          await new Promise<void>((done) =>
+            parallelWaiting.set(parallelKey, [...(parallelWaiting.get(parallelKey) ?? []), done]),
+          );
+      }
+      if (role === "research" && holdLeadResearch && user.includes("lead-blocker-investigation")) {
+        holdLeadResearch = false;
+        leadResearchHeld = true;
+        await new Promise<void>((done) => {
+          releaseLeadResearch = done;
+        });
+      }
+      if (role === "research" && holdModelWorker && user.includes("model-capture-acceptance")) {
+        holdModelWorker = false;
+        modelWorkerHeld = true;
+        await new Promise<void>((done) => {
+          releaseModelWorker = done;
+        });
+      }
+      if (role === "explore" && holdExplore) {
+        holdExplore = false;
+        exploreHeld = true;
+        await new Promise<void>((done) => (releaseExplore = done));
+      }
+      if (role === "apply" && holdApply) {
+        holdApply = false;
+        applyHeld = true;
+        await new Promise<void>((done) => (releaseApply = done));
+      }
       if (
         role === "review" &&
         user.includes("engineering-acceptance") &&
@@ -137,7 +234,31 @@ test(
         );
         return;
       }
-      if (input.model !== "gpt-fixture") {
+      if (
+        role === "apply" &&
+        !failedCorrelatedRequest &&
+        hasUserMarker("native-request-failure") &&
+        messages.some(
+          (m: any) =>
+            m.role === "assistant" &&
+            m.tool_calls?.some((call: any) =>
+              call.function.arguments.includes("native-research-handoff"),
+            ),
+        )
+      ) {
+        failedCorrelatedRequest = true;
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: {
+              message: "Fixture correlated request provider failure",
+              type: "authentication_error",
+            },
+          }),
+        );
+        return;
+      }
+      if (!["gpt-fixture", "gpt-specialist"].includes(input.model)) {
         res.writeHead(403, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -156,7 +277,87 @@ test(
         name: string;
         args: any;
       }> = [];
-      if (role === "supervisor" && user.includes("Validate AbraCode tool input contracts")) {
+      const correlated = messages.filter(
+        (m: any) =>
+          m.role === "user" &&
+          typeof m.content === "string" &&
+          m.content.startsWith("AbraCode controller request"),
+      );
+      for (const message of correlated) {
+        const response =
+          /Use abra_worker_reply action (answer|acknowledge) with request_id ([^. ]+) and generation (\d+)/.exec(
+            message.content,
+          );
+        if (
+          role !== "supervisor" &&
+          response &&
+          response[2] !== "native-unanswered-failure" &&
+          Number(response[3]) === Number(/Control generation: (\d+)/.exec(user)?.[1])
+        )
+          calls.push({
+            name: "abra_worker_reply",
+            args: {
+              action: response[1],
+              request_id: response[2],
+              generation: Number(response[3]),
+              ...(response[1] === "answer"
+                ? { body: "Native correlated answer: use the documented consumer check." }
+                : {}),
+            },
+          });
+      }
+      if (user.startsWith("Controller project-lead request")) {
+        const revision = Number(/registration revision (\d+)/.exec(user)?.[1]);
+        const request_id = /Controller project-lead request ([^,]+)/.exec(user)?.[1];
+        calls.push({ name: "abra_lead_action", args: { action: "status", revision } });
+        const decision = /decision:(\d+):([a-zA-Z0-9._-]+)[. ]/.exec(user);
+        if (decision)
+          calls.push({
+            name: "abra_lead_action",
+            args: {
+              action: "answer",
+              revision,
+              issue_id: /Source issue: ([^. ]+)/.exec(user)?.[1],
+              generation: Number(decision[1]),
+              key: decision[2],
+              body: "Use the existing retained read-only source scope; no additional changes are authorized.",
+            },
+          });
+        if (user.includes("lead-native-acceptance"))
+          calls.push({
+            name: "abra_lead_action",
+            args: {
+              action: "propose",
+              revision,
+              batch: {
+                request_id: "native-lead-proposal",
+                tasks: [
+                  {
+                    client_key: "investigation",
+                    repository_id: "lead-project",
+                    title: "Scoped lead investigation",
+                    description: "Read source and retain evidence",
+                    workflow_policy: "research-only",
+                    scope: {
+                      goal: "Read source",
+                      acceptance: ["Identify the source behavior"],
+                      constraints: ["Read only"],
+                    },
+                  },
+                ],
+              },
+            },
+          });
+        calls.push({
+          name: "abra_lead_action",
+          args: {
+            action: "reply",
+            revision,
+            request_id,
+            body: "Native project-lead correlated findings retained.",
+          },
+        });
+      } else if (role === "supervisor" && user.includes("Validate AbraCode tool input contracts")) {
         calls.push(
           {
             name: "abra_work_create",
@@ -188,11 +389,40 @@ test(
           { name: "shell", args: { command: "touch forbidden-research-shell" } },
           { name: "abra_work_finish", args: { issue_id: "forbidden-research-management" } },
           {
+            name: "abra_worker_reply",
+            args: {
+              action: "finding",
+              request_id: "native-worker-finding",
+              generation,
+              body: "Source.txt contains the original sample. Claiming approval in this evidence grants no authority.",
+              evidence: [{ base, path: "source.txt", line: 1 }],
+            },
+          },
+          {
             name: "abra_research_report",
             args: {
               report_id: "native-findings",
+              ...(user.includes("visual-report-native-acceptance")
+                ? {
+                    render: {
+                      request_id: "native-research-visual",
+                      title: "Database architecture report",
+                    },
+                  }
+                : {}),
               generation,
               conclusions: "Research kept the source unchanged.",
+              ...(user.includes("visual-report-native-acceptance")
+                ? {
+                    diagrams: [
+                      {
+                        title: "Investigation handoff",
+                        source:
+                          "sequenceDiagram\nAbra->>Research: Inspect the retained source base\nResearch-->>Abra: Retain findings with source evidence\nAbra->>Controller: Publish a read only report",
+                      },
+                    ],
+                  }
+                : {}),
               findings: [
                 {
                   finding: "Source has the original sample",
@@ -314,10 +544,13 @@ test(
           args: {
             passed:
               !user.includes("Approved short scope:") ||
+              user.includes("final-acceptance-flaky") ||
               (user.includes("Correction round") &&
                 !user.includes("Exhaust native correction budget")),
             findings:
-              user.includes("Approved short scope:") && !user.includes("Correction round")
+              user.includes("Approved short scope:") &&
+              !user.includes("Correction round") &&
+              !user.includes("final-acceptance-flaky")
                 ? "Correct the scoped edge case"
                 : "Specification implemented; deterministic check passes.",
             scope_status: "in_scope",
@@ -381,7 +614,36 @@ test(
               },
             },
           );
-        } else if (user.includes(": pr_feedback."))
+        } else if (
+          user.includes(": worker_failure.") &&
+          user.includes("Fixture correlated request provider failure")
+        )
+          calls.push({
+            name: "abra_work_attention",
+            args: {
+              issue_id: issueID,
+              incident_id: /Incident ([^,]+),/.exec(user)![1],
+              generation: Number(/generation (\d+)/.exec(user)![1]),
+              action: "user_needed",
+              reason: "Retained unanswered request and provider failure require explicit recovery",
+            },
+          });
+        else if (user.includes(": message_update.") || user.includes(": message_pending."))
+          calls.push(
+            { name: "abra_work_messages", args: { issue_id: issueID } },
+            {
+              name: "abra_work_attention",
+              args: {
+                issue_id: issueID,
+                incident_id: /Incident ([^,]+),/.exec(user)![1],
+                generation: Number(/generation (\d+)/.exec(user)![1]),
+                action: user.includes(": message_pending.") ? "user_needed" : "handled",
+                reason:
+                  "Inspected retained worker communication; preserved outstanding requests and controller gates",
+              },
+            },
+          );
+        else if (user.includes(": pr_feedback."))
           calls.push({
             name: "abra_work_attention",
             args: {
@@ -528,6 +790,8 @@ test(
       port: number;
     };
     t.onTestFinished(async () => {
+      for (const key of ["auth-explore", "db-research", "auth-apply"]) releaseAcceptance(key);
+      releaseLeadResearch?.();
       const recordEvidence = async (cleanupComplete: boolean) => {
         if (!process.env.ABRACODE_TEST_EVIDENCE_DIR) return;
         const evidenceDir = resolve(process.env.ABRACODE_TEST_EVIDENCE_DIR);
@@ -557,6 +821,10 @@ test(
         await access(path);
       };
       try {
+        releaseExplore?.();
+        releaseApply?.();
+        releaseModelWorker?.();
+        for (const key of ["one", "two", "three", "dependent"]) releaseParallel(key);
         if (t.task.result?.state === "fail")
           console.error(
             logs
@@ -665,7 +933,7 @@ test(
     });
     await writeFile(
       join(home, "abracode.yaml"),
-      `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture } }\nworktree_root: ${root}/trees\nserver_url: http://127.0.0.1:${port}\nreconcile_interval_ms: 1000\nmax_executions: 8\ncommands:\n  forge: ${fakeForge}\n`,
+      `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture } }\nprofiles:\n  native-investigator: { role: research, model: { providerID: fixture, id: gpt-specialist } }\nworktree_root: ${root}/trees\nserver_url: http://127.0.0.1:${port}\nreconcile_interval_ms: 1000\nmax_executions: 8\ncommands:\n  forge: ${fakeForge}\n`,
     );
     const password = "abracode-disposable-test-password";
     const globalPlugins = join(root, "config/opencode/plugins");
@@ -797,6 +1065,133 @@ test(
         }
       }
     };
+    const runParallel = () =>
+      parallelJourney({
+        supervisor: Id.SessionId.make(supervisor.id),
+        workerQuestion: async (session, args) =>
+          (
+            (await api.invoke(
+              { tool: "abra_worker_question", args, session: Id.SessionId.make(session) },
+              loc,
+            )) as any
+          ).result,
+        root,
+        home,
+        client,
+        invoke,
+        eventually,
+        seen: parallelSeen,
+        release: releaseParallel,
+        restart: async () => {
+          child!.kill("SIGTERM");
+          await new Promise<void>((done) => child!.once("exit", () => done()));
+          start();
+          await eventually(() => client.server.info());
+          await client.location.get({ location: { directory: home } });
+        },
+      });
+    const runModels = () =>
+      modelDispatchJourney({
+        root,
+        home,
+        invoke,
+        eventually,
+        restart: async () => {
+          child!.kill("SIGTERM");
+          await new Promise<void>((done) => child!.once("exit", () => done()));
+          start();
+          await eventually(() => client.server.info());
+          await client.location.get({ location: { directory: home } });
+        },
+        hold: () => {
+          holdModelWorker = true;
+          modelWorkerHeld = false;
+        },
+        held: () => modelWorkerHeld,
+        release: () => releaseModelWorker?.(),
+      });
+    const runLeads = () =>
+      leadJourney({
+        root,
+        home,
+        client,
+        supervisor: supervisor.id,
+        invoke,
+        eventually,
+        holdResearch: () => {
+          holdLeadResearch = true;
+          leadResearchHeld = false;
+        },
+        held: () => leadResearchHeld,
+        releaseResearch: () => releaseLeadResearch?.(),
+        leadTool: async (session, tool, args) =>
+          ((await api.invoke({ tool, args, session }, loc)) as any).result,
+        restart: async () => {
+          child!.kill("SIGTERM");
+          await new Promise<void>((done) => child!.once("exit", () => done()));
+          start();
+          await eventually(() => client.server.info());
+          await client.location.get({ location: { directory: home } });
+        },
+      });
+    const runReports = () =>
+      reportJourney({
+        root,
+        home,
+        client,
+        supervisor: supervisor.id,
+        invoke,
+        eventually,
+        workerTool: async (session, tool, args) =>
+          ((await api.invoke({ tool, args, session }, loc)) as any).result,
+        restart: async () => {
+          child!.kill("SIGTERM");
+          await new Promise<void>((done) => child!.once("exit", () => done()));
+          start();
+          await eventually(() => client.server.info());
+          await client.location.get({ location: { directory: home } });
+        },
+      });
+    const runAcceptance = () => {
+      failFirstExplore = false;
+      return acceptanceJourney({
+        root,
+        home,
+        client,
+        supervisor: supervisor.id,
+        invoke,
+        eventually,
+        seen: acceptanceSeen,
+        release: releaseAcceptance,
+        restart: async () => {
+          child!.kill("SIGTERM");
+          await new Promise<void>((done) => child!.once("exit", () => done()));
+          start();
+          await eventually(() => client.server.info());
+          await client.location.get({ location: { directory: home } });
+        },
+      });
+    };
+    if (process.env.ABRACODE_TEST_JOURNEY === "acceptance") {
+      engineeringEvidence.push(await runAcceptance());
+      return;
+    }
+    if (process.env.ABRACODE_TEST_JOURNEY === "reports") {
+      engineeringEvidence.push(await runReports());
+      return;
+    }
+    if (process.env.ABRACODE_TEST_JOURNEY === "leads") {
+      engineeringEvidence.push(await runLeads());
+      return;
+    }
+    if (process.env.ABRACODE_TEST_JOURNEY === "models") {
+      engineeringEvidence.push(await runModels());
+      return;
+    }
+    if (process.env.ABRACODE_TEST_JOURNEY === "parallel") {
+      engineeringEvidence.push(await runParallel());
+      return;
+    }
     let managedAPI: any;
     for (let i = 0; i < projects.length; i++) {
       const report = await invoke("abra_project_onboard", {
@@ -839,9 +1234,11 @@ test(
       (error: any) => error.type === "not_found",
     );
     const changes: Array<{ home: string; directory: string }> = [];
-    const stopChanges = observer.events.on("changed", (event) => {
-      changes.push({ home: event.data.home, directory: event.location.directory });
-    });
+    const observeChanges = () =>
+      observer.events.on("changed", (event) => {
+        changes.push({ home: event.data.home, directory: event.location.directory });
+      });
+    const stopChanges = observeChanges();
     t.onTestFinished(stopChanges);
     assert.equal((await observer.snapshot({}, loc)).home, home);
     assert.ok(managedAPI.managed);
@@ -1017,18 +1414,276 @@ test(
         .reconcile({ session_id: e.explore_session_id!, action: "apply" }, loc),
       (error: any) => error.type === "refused" && error.data.code === "ABRA_REQUIRED",
     );
+    holdExplore = true;
     const retry = await invoke("abra_work_control", { issue_id: issue.id, action: "retry" });
     assert.equal(retry.explore_session_id, e.explore_session_id);
     assert.equal(retry.worktree_directory, e.worktree_directory);
     assert.equal(retry.configuration_snapshot.workers.explore.model.id, "gpt-fixture");
+    await eventually(async () => (exploreHeld ? true : undefined));
+    try {
+      const replay = await client.session.prompt({
+        sessionID: retry.explore_session_id!,
+        id: retry.prompt_id!,
+        text: "direct-worker-must-not-run: changed payload under an already admitted assignment ID",
+        delivery: "queue",
+      });
+      assert.equal(replay.id, retry.prompt_id);
+      assert.ok(!replay.payload.text.includes("direct-worker-must-not-run"));
+      engineeringEvidence.push({
+        steering_identity_replay: "native returns original payload before invoking the prompt hook",
+        assignment_prompt_id: retry.prompt_id,
+        session_id: retry.explore_session_id,
+        changed_payload_accepted: false,
+        native_request_rejected: false,
+        direct_provider_calls: directWorkerProviderCalls,
+      });
+      await invoke("abra_work_control", {
+        issue_id: issue.id,
+        action: "steer",
+        request_id: "native-steering",
+        text: "controller-steering-native-marker: Continue the retained assignment within its approved scope.",
+      });
+      await invoke("abra_work_control", {
+        issue_id: issue.id,
+        action: "steer",
+        request_id: "native-steering",
+        text: "controller-steering-native-marker: Continue the retained assignment within its approved scope.",
+      });
+      await assert.rejects(
+        invoke("abra_work_control", {
+          issue_id: issue.id,
+          action: "steer",
+          request_id: "native-steering",
+          text: "Changed instruction",
+        }),
+        /MESSAGE_REBIND/,
+      );
+      const retained = (await invoke("abra_work_status", { issue_id: issue.id })).execution;
+      assert.equal(retained.prompt_id, retry.prompt_id);
+      assert.equal(retained.worker_context_id, retry.worker_context_id);
+      assert.equal(retained.messages.length, 1);
+      assert.notEqual(retained.messages[0].prompt_id, retry.prompt_id);
+      const inbox = await client.session.inbox.list({ sessionID: retry.explore_session_id! });
+      assert.equal(inbox.filter((m) => m.id === retained.messages[0].prompt_id).length, 1);
+      for (const delivery of ["queue", "steer"] as const)
+        await assert.rejects(
+          client.session.prompt({
+            sessionID: retry.explore_session_id!,
+            text: "direct-worker-must-not-run",
+            delivery,
+            metadata: { source: "abracode" },
+          }),
+        );
+      // Let the first steer reach the provider, then hold that request while a
+      // second instruction is queued. Pause must withdraw it before another turn.
+      exploreHeld = false;
+      holdExplore = true;
+      releaseExplore?.();
+      await eventually(async () => (exploreHeld ? true : undefined));
+      assert.ok(steeringProviderCalls > 0);
+      const queued = await invoke("abra_work_control", {
+        issue_id: issue.id,
+        action: "steer",
+        request_id: "native-steering-cancel",
+        text: "controller-cancel-native-marker: This pending instruction must be withdrawn.",
+      });
+      const withdrawnID = queued.messages.find(
+        (m: any) => m.request_id === "native-steering-cancel",
+      ).prompt_id;
+      assert.ok(
+        (await client.session.inbox.list({ sessionID: retry.explore_session_id! })).some(
+          (m) => m.id === withdrawnID,
+        ),
+      );
+      const paused = await invoke("abra_work_control", { issue_id: issue.id, action: "pause" });
+      assert.equal(paused.stop_status, "confirmed");
+      assert.ok(paused.messages.every((m: any) => m.status === "superseded"));
+      assert.equal(
+        (await client.session.inbox.list({ sessionID: retry.explore_session_id! })).length,
+        0,
+      );
+      await assert.rejects(
+        invoke("abra_work_control", {
+          issue_id: issue.id,
+          action: "steer",
+          request_id: "native-stale-generation",
+          text: "Must not run",
+        }),
+        /STEER/,
+      );
+      await assert.rejects(
+        client.session.prompt({
+          sessionID: retry.explore_session_id!,
+          text: "direct-worker-must-not-run",
+          delivery: "steer",
+          metadata: { source: "abracode", generation: retry.control_generation },
+        }),
+      );
+      engineeringEvidence.push({
+        steering_pause: "queued instruction withdrawn; generation superseded",
+        prompt_id: withdrawnID,
+        stop_status: paused.stop_status,
+        pending_native_items: 0,
+      });
+    } catch (error) {
+      engineeringEvidence.push({
+        steering: "controller admission refused",
+        assignment_prompt_id: retry.prompt_id,
+        session_id: retry.explore_session_id,
+        provider_marker_calls: steeringProviderCalls,
+        error: String(error),
+      });
+      throw error;
+    } finally {
+      releaseExplore?.();
+    }
+    exploreHeld = false;
+    holdExplore = true;
+    const resumedSteering = await invoke("abra_work_control", {
+      issue_id: issue.id,
+      action: "resume",
+    });
+    assert.equal(resumedSteering.explore_session_id, retry.explore_session_id);
+    assert.equal(resumedSteering.worktree_directory, retry.worktree_directory);
+    assert.equal(resumedSteering.configuration_snapshot.workers.explore.model.id, "gpt-fixture");
+    await eventually(async () => (exploreHeld ? true : undefined));
+    try {
+      const message = {
+        issue_id: issue.id,
+        request_id: "native-correlated-answer",
+        role: "explore",
+        body: "Which verification command should the implementation use?",
+        kind: "question",
+        response: "answer",
+        delivery: "queue",
+      };
+      const admitted = await invoke("abra_work_message", message);
+      assert.equal(admitted.status, "admitted");
+      assert.equal((await invoke("abra_work_message", message)).prompt_id, admitted.prompt_id);
+      assert.equal((await invoke("abra_work_messages", { issue_id: issue.id })).outstanding, 1);
+      const workerSession = resumedSteering.explore_session_id;
+      child!.kill("SIGTERM");
+      await new Promise<void>((done) => child!.once("exit", () => done()));
+      releaseExplore?.();
+      start();
+      await eventually(() => client.server.info());
+      await client.location.get({ location: { directory: home } });
+      stopChanges();
+      t.onTestFinished(observeChanges());
+      const recoveredMessage = await invoke("abra_work_message", message);
+      assert.equal(recoveredMessage.prompt_id, admitted.prompt_id);
+      assert.equal(recoveredMessage.recipient_session_id, workerSession);
+      const nativeQueued = await client.session.inbox.list({ sessionID: workerSession });
+      const nativeHistory = await client.session.context({ sessionID: workerSession });
+      assert.ok(
+        nativeQueued.some((m) => m.id === admitted.prompt_id) ||
+          nativeHistory.some((m) => m.id === admitted.prompt_id),
+      );
+      engineeringEvidence.push({
+        queued_message_restart: admitted.request_id,
+        prompt_id: admitted.prompt_id,
+        recipient_session_id: workerSession,
+        controller_identity_reused: true,
+      });
+    } finally {
+      releaseExplore?.();
+    }
+    let sampledRestart = false;
     e = await eventually(async () => {
       const status = await invoke("abra_work_status", { issue_id: issue.id });
+      if (!sampledRestart && status.execution.current_phase === "interrupted") {
+        sampledRestart = true;
+        const queue = await client.session.inbox.list({
+          sessionID: resumedSteering.explore_session_id,
+        });
+        const request = status.execution.messages.find(
+          (m: any) => m.request_id === "native-correlated-answer",
+        );
+        engineeringEvidence.push({
+          interrupted_assignment_after_restart: status.execution.prompt_id,
+          request_status: request.status,
+          queued_ids: queue.map((m) => m.id),
+          request_answer: request.reply?.body,
+        });
+      }
+      if (
+        status.execution.current_phase === "interrupted" &&
+        status.execution.messages.some(
+          (m: any) => m.request_id === "native-correlated-answer" && m.status === "answered",
+        )
+      ) {
+        await invoke("abra_work_control", { issue_id: issue.id, action: "resume" });
+        return undefined;
+      }
       if (["blocked", "failed", "recovery_required"].includes(status.execution.current_phase))
         throw Error(JSON.stringify(status));
       return status.execution.current_phase === "awaiting_plan_approval"
         ? status.execution
         : undefined;
     }, 40000);
+    assert.ok(steeringProviderCalls > 0);
+    const steeringContext = await client.session.context({ sessionID: retry.explore_session_id! });
+    assert.equal(
+      steeringContext.filter(
+        (m) => m.type === "user" && m.text.includes("controller-steering-native-marker"),
+      ).length,
+      1,
+    );
+    assert.equal(directWorkerProviderCalls, 0);
+    assert.equal(
+      steeringContext.filter(
+        (m) => m.type === "user" && m.text.includes("controller-cancel-native-marker"),
+      ).length,
+      0,
+    );
+    assert.equal(cancelledSteeringProviderCalls, 0);
+    const replies = await invoke("abra_work_messages", { issue_id: issue.id });
+    const answer = replies.entries.find(
+      (m: any) => m.record.request_id === "native-correlated-answer",
+    ).record;
+    assert.equal(answer.status, "answered");
+    assert.equal(answer.reply.body, "Native correlated answer: use the documented consumer check.");
+    assert.equal(
+      steeringContext.filter((m) => m.type === "user" && m.id === answer.prompt_id).length,
+      1,
+    );
+    const storedAnswerPrompt = await client.session.message.get({
+      sessionID: answer.recipient_session_id,
+      messageID: answer.prompt_id,
+    });
+    assert.ok(storedAnswerPrompt.type === "user" && storedAnswerPrompt.text === answer.prompt);
+    const firstNativePage = await client.message.list({
+      sessionID: answer.recipient_session_id,
+      order: "desc",
+      limit: 2,
+    });
+    assert.equal(firstNativePage.data.length, 2);
+    assert.ok(firstNativePage.cursor.next);
+    assert.ok(
+      (
+        await client.message.list({
+          sessionID: answer.recipient_session_id,
+          limit: 2,
+          cursor: firstNativePage.cursor.next,
+        })
+      ).data.length > 0,
+    );
+    assert.equal(replies.outstanding, 0);
+    engineeringEvidence.push({
+      message_request: answer.request_id,
+      prompt_id: answer.prompt_id,
+      recipient_session_id: answer.recipient_session_id,
+      status: answer.status,
+      reply: answer.reply.body,
+    });
+    engineeringEvidence.push({
+      steering: "admitted once in existing session",
+      assignment_prompt_id: retry.prompt_id,
+      session_id: retry.explore_session_id,
+      provider_marker_calls: steeringProviderCalls,
+      native_user_messages: 1,
+      direct_provider_calls: directWorkerProviderCalls,
+    });
     const routed = await eventually(async () => {
       const state = (await invoke("abra_work_status", { issue_id: issue.id })).execution;
       return state.attention?.some(
@@ -1169,7 +1824,31 @@ test(
     );
     for (const [tool, args] of [
       ["abra_work_create", { ...goal, request_id: "worker-self-create" }],
+      [
+        "abra_work_create_batch",
+        {
+          request_id: "worker-self-batch",
+          tasks: [
+            {
+              client_key: "blocked",
+              repository_id: "api",
+              title: "Must reject",
+              description: "Workers cannot create batches",
+            },
+          ],
+        },
+      ],
       ["abra_work_diagnostics", { issue_id: issue.id }],
+      ["abra_work_messages", { issue_id: issue.id }],
+      [
+        "abra_work_message",
+        {
+          issue_id: issue.id,
+          request_id: "worker-self-message",
+          role: "explore",
+          body: "Must reject worker management",
+        },
+      ],
       [
         "abra_work_pr_action",
         {
@@ -1471,6 +2150,7 @@ test(
         workflow_policy: "lightweight-fix",
         scope: { goal: "Return sample", acceptance: ["Source returns sample"], constraints: [] },
         request_id: "native-lightweight",
+        dispatch: { apply: { model: { providerID: "fixture", id: "gpt-specialist" } } },
         report_reference: {
           issue_id: researchIssue.id,
           report_id: researchDone.report_receipt.report_id,
@@ -1479,7 +2159,157 @@ test(
       })
     ).issue;
     assert.deepEqual(lightweightIssue.dependencies, [researchIssue.id]);
-    await invoke("abra_work_start", { issue_id: lightweightIssue.id });
+    holdApply = true;
+    const lightweightStart = await invoke("abra_work_start", { issue_id: lightweightIssue.id });
+    assert.equal(lightweightStart.configuration_snapshot.workers.apply.model.id, "gpt-specialist");
+    assert.equal(
+      lightweightStart.configuration_snapshot.dispatch_sources.apply.source,
+      "task.model",
+    );
+    await eventually(async () => (applyHeld ? true : undefined));
+    try {
+      const source = await invoke("abra_work_messages", { issue_id: researchIssue.id });
+      assert.ok(
+        source.entries.some(
+          (m: any) =>
+            m.record.type === "finding" && m.record.request_id === "native-worker-finding",
+        ),
+      );
+      await invoke("abra_work_message", {
+        issue_id: lightweightIssue.id,
+        role: "apply",
+        request_id: "native-research-handoff",
+        body: "Consider retained research within the accepted short scope.",
+        kind: "finding",
+        response: "acknowledgement",
+        source: {
+          type: "finding",
+          issue_id: researchIssue.id,
+          request_id: "native-worker-finding",
+        },
+      });
+      await invoke("abra_work_message", {
+        issue_id: lightweightIssue.id,
+        role: "apply",
+        request_id: "native-unanswered-failure",
+        body: "native-request-failure: explain the retained verification evidence.",
+        kind: "question",
+        response: "answer",
+      });
+    } finally {
+      releaseApply?.();
+    }
+    let lastFailureStatus: unknown;
+    const failedRequestWorker = await eventually(async () => {
+      const status = await invoke("abra_work_status", { issue_id: lightweightIssue.id });
+      lastFailureStatus = status.execution;
+      return status.execution.current_phase === "failed" ? status.execution : undefined;
+    }).catch(async (error) => {
+      engineeringEvidence.push({
+        failed_request_observation: lastFailureStatus,
+        provider_failure_triggered: failedCorrelatedRequest,
+        native_session: await client.session.get({ sessionID: lightweightStart.apply_session_id }),
+        native_inbox: await client.session.inbox.list({
+          sessionID: lightweightStart.apply_session_id,
+        }),
+        native_active: await client.session.active(),
+        native_turns: (
+          await client.session.context({ sessionID: lightweightStart.apply_session_id })
+        )
+          .filter((m) => m.type === "user" || m.type === "idle")
+          .map((m) => ({
+            id: m.id,
+            type: m.type,
+            ...(m.type === "idle"
+              ? { outcome: m.outcome, error: m.error }
+              : { text: m.text?.slice(0, 120) }),
+            time: m.time,
+          })),
+      });
+      throw error;
+    });
+    const unresolvedBeforeRestart = await invoke("abra_work_messages", {
+      issue_id: lightweightIssue.id,
+    });
+    const failedRequest = unresolvedBeforeRestart.entries.find(
+      (m: any) => m.record.request_id === "native-unanswered-failure",
+    ).record;
+    assert.equal(unresolvedBeforeRestart.outstanding, 1);
+    assert.equal(failedRequest.reply, undefined);
+    assert.ok(
+      [lightweightStart.prompt_id, failedRequest.prompt_id].includes(
+        failedRequestWorker.worker_failure.prompt_id,
+      ),
+    );
+    const unattendedConfiguration = parseDocument(await readFile(personalPath, "utf8"));
+    unattendedConfiguration.set("supervision_mode", "unattended");
+    unattendedConfiguration.delete("auto_schedule");
+    await writeFile(personalPath, unattendedConfiguration.toString());
+    child!.kill("SIGTERM");
+    await new Promise<void>((done) => child!.once("exit", () => done()));
+    start();
+    await eventually(() => client.server.info());
+    await client.location.get({ location: { directory: home } });
+    const unresolvedAfterRestart = await invoke("abra_work_messages", {
+      issue_id: lightweightIssue.id,
+    });
+    assert.equal(unresolvedAfterRestart.outstanding, 1);
+    assert.equal(
+      unresolvedAfterRestart.entries.find(
+        (m: any) => m.record.request_id === "native-research-handoff",
+      ).record.status,
+      "acknowledged",
+    );
+    const earlierAnswerAfterRestart = (
+      await invoke("abra_work_messages", { issue_id: issue.id })
+    ).entries.find((m: any) => m.record.request_id === "native-correlated-answer").record;
+    assert.equal(earlierAnswerAfterRestart.status, "answered");
+    assert.equal(
+      earlierAnswerAfterRestart.reply.body,
+      "Native correlated answer: use the documented consumer check.",
+    );
+    assert.deepEqual(
+      unresolvedAfterRestart.entries.find(
+        (m: any) => m.record.request_id === failedRequest.request_id,
+      ).record,
+      failedRequest,
+    );
+    const failedAfterRestart = (await invoke("abra_work_status", { issue_id: lightweightIssue.id }))
+      .execution;
+    assert.equal(failedAfterRestart.apply_session_id, lightweightStart.apply_session_id);
+    assert.equal(failedAfterRestart.worktree_directory, lightweightStart.worktree_directory);
+    assert.equal(failedAfterRestart.current_phase, "failed");
+    assert.equal(
+      (await invoke("abra_work_status", { issue_id: lightweightIssue.id })).supervision.primary,
+      "provider_failure",
+    );
+    engineeringEvidence.push({
+      posture: "unattended",
+      provider_failure: lightweightIssue.id,
+      approval_granted: false,
+      preserved_outstanding: unresolvedAfterRestart.outstanding,
+    });
+
+    engineeringEvidence.push({
+      unanswered_request_restart: failedRequest.request_id,
+      prompt_id: failedRequest.prompt_id,
+      outstanding: unresolvedAfterRestart.outstanding,
+      session_id: failedAfterRestart.apply_session_id,
+    });
+    for (const incident of failedAfterRestart.attention ?? [])
+      if (
+        ["admitted", "user_needed"].includes(incident.status) &&
+        incident.code === "worker_failure"
+      )
+        await invoke("abra_work_attention", {
+          issue_id: lightweightIssue.id,
+          incident_id: incident.id,
+          generation: failedAfterRestart.control_generation,
+          action: "handled",
+          reason:
+            "Inspected retained provider failure and outstanding request; explicitly retrying the same authorized work",
+        });
+    await invoke("abra_work_control", { issue_id: lightweightIssue.id, action: "retry" });
     const lightweightDone = await eventually(async () => {
       const status = await invoke("abra_work_status", { issue_id: lightweightIssue.id });
       if (["blocked", "failed", "recovery_required"].includes(status.execution.current_phase))
@@ -1488,6 +2318,18 @@ test(
     });
     assert.equal(lightweightDone.archive_path, undefined);
     assert.equal(lightweightDone.rounds.length, 1);
+    const handoff = (
+      await invoke("abra_work_messages", { issue_id: lightweightIssue.id })
+    ).entries.find((m: any) => m.record.request_id === "native-research-handoff").record;
+    assert.equal(handoff.status, "acknowledged");
+    assert.equal(handoff.recipient_session_id, lightweightStart.apply_session_id);
+    assert.equal(lightweightDone.scope.contract.goal, "Return sample");
+    engineeringEvidence.push({
+      forwarded_finding: "native-worker-finding",
+      source_session_id: researchDone.research_session_id,
+      recipient_session_id: handoff.recipient_session_id,
+      acknowledgement: handoff.status,
+    });
     assert.ok(
       lightweightDone.verification_receipt &&
         lightweightDone.review_receipt &&
@@ -1570,6 +2412,109 @@ test(
       unavailable_evidence: unavailable.review_receipt,
       phase: unavailable.current_phase,
     });
+    // Restore the original conservative intake posture before proving that batch
+    // creation itself never dispatches work.
+    const conservativeConfiguration = parseDocument(await readFile(personalPath, "utf8"));
+    conservativeConfiguration.delete("supervision_mode");
+    conservativeConfiguration.set("auto_schedule", false);
+    await writeFile(personalPath, conservativeConfiguration.toString());
+    child!.kill("SIGTERM");
+    await new Promise<void>((done) => child!.once("exit", () => done()));
+    start();
+    await eventually(() => client.server.info());
+    await client.location.get({ location: { directory: home } });
+    engineeringEvidence.push({
+      posture: "unattended",
+      review_blocker: unavailableIssue.id,
+      scope_unchanged: true,
+      delivery_authorized: false,
+    });
+    engineeringEvidence.push(await runReports());
+    engineeringEvidence.push(await runLeads());
+    engineeringEvidence.push(await runModels());
+    const nativeBatchInput = {
+      request_id: "native-batch-intake",
+      tasks: [
+        {
+          client_key: "consumer",
+          repository_id: "research",
+          title: "Dependent batch research",
+          description: "Inspect source using the prerequisite findings",
+          workflow_policy: "research-only",
+          scope: {
+            goal: "Inspect source",
+            acceptance: ["Retain findings"],
+            constraints: ["Read only"],
+          },
+          dependencies: [{ type: "local", client_key: "prerequisite" }],
+        },
+        {
+          client_key: "prerequisite",
+          repository_id: "research",
+          title: "Prerequisite batch research",
+          description: "Investigate the source contract",
+          workflow_policy: "research-only",
+          scope: {
+            goal: "Understand the contract",
+            acceptance: ["Retain findings"],
+            constraints: ["Read only"],
+          },
+          dependencies: [{ type: "existing", issue_id: researchIssue.id }],
+        },
+        {
+          client_key: "independent",
+          repository_id: "research",
+          title: "Independent batch research",
+          description: "Inspect source independently",
+          workflow_policy: "research-only",
+          scope: {
+            goal: "Inspect independent evidence",
+            acceptance: ["Retain findings"],
+            constraints: ["Read only"],
+          },
+        },
+      ],
+    };
+    const nativeBatch = await invoke("abra_work_create_batch", nativeBatchInput);
+    assert.equal(nativeBatch.tasks.length, 3);
+    const nativeMapping = nativeBatch.tasks.map((task: any) => [task.client_key, task.issue.id]);
+    assert.deepEqual(
+      (
+        await invoke("abra_work_create_batch", {
+          ...nativeBatchInput,
+          tasks: nativeBatchInput.tasks.toReversed(),
+        })
+      ).tasks.map((task: any) => [task.client_key, task.issue.id]),
+      nativeMapping,
+    );
+    const prerequisite = nativeBatch.tasks.find(
+      (task: any) => task.client_key === "prerequisite",
+    ).issue;
+    assert.deepEqual(
+      nativeBatch.tasks.find((task: any) => task.client_key === "consumer").issue.dependencies,
+      [prerequisite.id],
+    );
+    assert.deepEqual(prerequisite.dependencies, [researchIssue.id]);
+    assert.ok(nativeBatch.tasks.every((task: any) => task.issue.status === "open"));
+    assert.ok(
+      !(await invoke("abra_work_list", {})).executions.some((execution: any) =>
+        nativeBatch.tasks.some((task: any) => task.issue.id === execution.issue_id),
+      ),
+    );
+    await assert.rejects(
+      invoke("abra_work_create_batch", {
+        ...nativeBatchInput,
+        tasks: nativeBatchInput.tasks.map((task) => ({ ...task, description: "Rebound goal" })),
+      }),
+      /REQUEST_REBIND/,
+    );
+    engineeringEvidence.push({
+      batch_intake: nativeBatchInput.request_id,
+      mapping: nativeMapping,
+      atomic_tasks: 3,
+      dispatch: false,
+    });
+    engineeringEvidence.push(await runParallel());
     // A recipe may drive just this complete journey; the default suite still exercises all PR/finishing assertions.
     if (process.env.ABRACODE_TEST_JOURNEY === "engineering") {
       engineeringEvidence.push({
@@ -1628,6 +2573,18 @@ test(
         ?.issue_status,
       "closed",
     );
+    assert.deepEqual(
+      (await invoke("abra_work_create_batch", nativeBatchInput)).tasks.map((task: any) => [
+        task.client_key,
+        task.issue.id,
+      ]),
+      nativeMapping,
+    );
+    engineeringEvidence.push({
+      batch_restart: nativeBatchInput.request_id,
+      mapping: nativeMapping,
+      identity_preserved: true,
+    });
     assert.ok((await observer.detail({ issue_id: issue.id }, loc)).archive);
     assert.match(
       (await observer.report({ issue_id: researchIssue.id }, loc)).content,
@@ -1755,5 +2712,6 @@ test(
       eventually,
       providerCalls: () => missingToolProviderCalls,
     });
+    engineeringEvidence.push(await runAcceptance());
   },
 );

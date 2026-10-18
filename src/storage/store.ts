@@ -1,4 +1,10 @@
+import { isDeepStrictEqual } from "node:util";
 import { createHash } from "node:crypto";
+import {
+  MessageIntentsSchema,
+  messageHistoryError,
+  needsDisposition,
+} from "../workflow/message-contracts.ts";
 import { type FeedbackPage } from "../workflow/feedback-contracts.ts";
 import { providerFailure } from "../observability.ts";
 import { ExecutionStateSchema } from "./contracts.ts";
@@ -358,6 +364,11 @@ export class Records {
                 "attention_turns",
                 "resume_after_decision",
                 "finishing",
+                "messages",
+                "report_intent",
+                "report_receipt",
+                "report_acceptance_met",
+                "visual_reports",
               ]) {
                 if (field in prior) Object.assign(record, { [field]: prior[field] });
                 else Reflect.deleteProperty(record, field);
@@ -372,6 +383,21 @@ export class Records {
                 `${key}: Effective execution policy is immutable without an explicit revision`,
               );
           }
+          if (
+            !key.startsWith("project/") &&
+            object(prior) &&
+            object(value) &&
+            prior.configuration_snapshot !== undefined &&
+            (!value.configuration_snapshot ||
+              !isDeepStrictEqual(
+                JSON.parse(JSON.stringify(prior.configuration_snapshot)),
+                JSON.parse(JSON.stringify(value.configuration_snapshot)),
+              ))
+          )
+            return yield* new CrewError(
+              "CONFIG_SNAPSHOT",
+              "Captured execution model selections cannot be rewritten or removed",
+            );
           if (
             !key.startsWith("project/") &&
             object(prior) &&
@@ -438,6 +464,77 @@ export class Records {
                 "FEEDBACK_HISTORY",
                 "Retained feedback history cannot be removed or rewritten",
               );
+          }
+          if (object(prior) && Array.isArray(prior.visual_reports)) {
+            const after = Reflect.get(record, "visual_reports");
+            if (!Array.isArray(after))
+              return yield* new CrewError(
+                "REPORT_HISTORY",
+                "Visual report history cannot be removed",
+              );
+            for (const old of prior.visual_reports) {
+              if (!object(old) || !object(old.request)) continue;
+              const requestID = old.request.request_id;
+              const next = after.find(
+                (n) => object(n) && object(n.request) && n.request.request_id === requestID,
+              );
+              if (
+                !object(next) ||
+                [
+                  "request",
+                  "generation",
+                  "requested_by",
+                  "notify_session",
+                  "source_report",
+                  "snapshot",
+                  "input_hash",
+                  "template_hash",
+                ].some(
+                  (field) =>
+                    !isDeepStrictEqual(
+                      JSON.parse(JSON.stringify(old[field] ?? null)),
+                      JSON.parse(JSON.stringify(next[field] ?? null)),
+                    ),
+                ) ||
+                (old.artifact &&
+                  (!next.artifact ||
+                    !isDeepStrictEqual(
+                      JSON.parse(JSON.stringify(old.artifact)),
+                      JSON.parse(JSON.stringify(next.artifact)),
+                    ))) ||
+                (old.status === "published" && next.status !== "published")
+              )
+                return yield* new CrewError(
+                  "REPORT_HISTORY",
+                  "Captured visual report identity/artifact cannot be rebound or removed",
+                );
+              if (Array.isArray(old.notices))
+                for (const notice of old.notices) {
+                  if (!object(notice)) continue;
+                  const replacement = Array.isArray(next.notices)
+                    ? next.notices.find((n) => object(n) && n.message_id === notice.message_id)
+                    : undefined;
+                  if (
+                    !object(replacement) ||
+                    replacement.text !== notice.text ||
+                    replacement.phase !== notice.phase ||
+                    (notice.delivered && !replacement.delivered)
+                  )
+                    return yield* new CrewError(
+                      "REPORT_HISTORY",
+                      "Retained report result notices cannot be rebound or removed",
+                    );
+                }
+            }
+          }
+          if (object(prior) && Schema.is(MessageIntentsSchema)(prior.messages)) {
+            const next = yield* decode(
+              MessageIntentsSchema,
+              Reflect.get(record, "messages"),
+              "Message history",
+            );
+            const error = messageHistoryError(prior.messages, next);
+            if (error) return yield* new CrewError("MESSAGE_HISTORY", error);
           }
           const decoded = yield* decode(schema, record, key);
           if (!object(decoded))
@@ -540,6 +637,11 @@ export class Records {
   saveControl(e: Execution) {
     return Effect.gen({ self: this }, function* () {
       e.control_generation = e.control_generation + 1;
+      e.messages = e.messages?.map((m) =>
+        m.type !== "finding" && m.generation !== e.control_generation && needsDisposition(m)
+          ? { ...m, status: "superseded" as const }
+          : m,
+      );
       e.attention = e.attention?.map((a) =>
         a.generation !== e.control_generation && !["handled", "superseded"].includes(a.status)
           ? {

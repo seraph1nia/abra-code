@@ -52,6 +52,7 @@ export const mkdir = (path: PathLike, options?: MakeDirectoryOptions) =>
 export const mkdtemp = (prefix: string) =>
   mutation(() => fs.mkdtemp(prefix)).pipe(Effect.map((value) => AbsolutePath.make(value)));
 export const rename = (from: PathLike, to: PathLike) => mutation(() => fs.rename(from, to));
+export const link = (from: PathLike, to: PathLike) => mutation(() => fs.link(from, to));
 export const copyFile = (from: PathLike, to: PathLike) => mutation(() => fs.copyFile(from, to));
 export const rm = (path: PathLike, options?: RmOptions) => mutation(() => fs.rm(path, options));
 export const open = (path: PathLike, flags: string | number) =>

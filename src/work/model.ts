@@ -1,3 +1,4 @@
+import { DispatchSchema, normalizeDispatch } from "../config/dispatch.ts";
 import { IssueId, RepositoryId, RequestId, ExecutionId } from "../identities.ts";
 
 import { ScopeDraftSchema, ReportReferenceSchema } from "./scope.ts";
@@ -9,6 +10,7 @@ import { decodeSync } from "../decode.ts";
 import { QualityProfile } from "../config/policy.ts";
 
 export const IssueSchema = Schema.Struct({
+  dispatch: Schema.optional(DispatchSchema),
   quality_profile: Schema.optional(QualityProfile),
   scope: Schema.optional(ScopeDraftSchema),
   report_reference: Schema.optional(ReportReferenceSchema),
@@ -25,6 +27,7 @@ export const IssueSchema = Schema.Struct({
 });
 export type Issue = typeof IssueSchema.Type;
 export const WorkInputSchema = Schema.Struct({
+  dispatch: Schema.optional(DispatchSchema),
   quality_profile: Schema.optional(QualityProfile),
   workflow_policy: Schema.optional(PolicySchema),
   scope: Schema.optional(ScopeDraftSchema),
@@ -76,6 +79,7 @@ export function normalizeIssue(value: unknown): NewIssue {
       : Schema.decodeSync(ReportReferenceSchema)(input.report_reference);
   return {
     ...(input.quality_profile === undefined ? {} : { quality_profile: input.quality_profile }),
+    ...(input.dispatch === undefined ? {} : { dispatch: normalizeDispatch(input.dispatch) }),
     workflow_policy,
     scope,
     report_reference,

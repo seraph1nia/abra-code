@@ -60,6 +60,16 @@ The existing native test rejects direct queue/steer prompts to a worker and prov
 
 ### 1. Make steering a blocking native correctness milestone
 
+Native audit update, 2026-10-18: real-server steering is confirmed rejected by
+`requireOwnedPrompt`. The installed 2.0.28 `Session.prompt` reconciles an existing
+ID before `SessionPrompt.prepare` and therefore before the plugin prompt hook.
+A real changed-text replay returned the original payload without provider work
+for the changed text. The user explicitly accepted native immutable replay
+success, with strict conflict rejection at controller tools and refusal of new
+unauthorized IDs at the guard. No host patch or version upgrade is required.
+Retained red evidence: `/tmp/abra-steering-replay-20261018/native-engineering.json`
+and its sibling `native.log` (cleanup complete; steering acceptance still fails).
+
 Extend the deterministic loopback provider in `tests/e2e/native.test.ts`/its owned fixture helpers with a held busy worker and observable prompt markers. Call the real controller steering tool, record the actual native error/provider count, and compare queue and steer behavior. Cover valid initial assignment, authorized follow-up, forged metadata, direct queue/steer, wrong session/generation, rebound text/attachments, pause and response loss. Keep these tests in the disposable installation; never restart the user's service or write their remotes.
 
 If native evidence confirms the guard conflict, first fix only retained follow-up prompt authorization and recovery. If it disproves the suspected path, retain the positive/refusal tests and implement the same explicit identity contract only where missing. The wider message protocol cannot begin before the positive native case and refusal cases pass. Do not skip the guard or special-case a `source` label.
@@ -157,7 +167,7 @@ An explicit authorized `work_report` generation action extends the current Repor
 
 Retain `.abracode/reports/generated/<issue-id>/<revision-id>/index.html` with input digest, output digest, execution/generation, source report ID and build status in an optional artifact receipt alongside existing report identity. Keep the Markdown research receipt authoritative for research acceptance; visual output is an attachment. A stable build request determines the revision, and changed inputs require a new revision. Completed retained research can be rendered later through an artifact-only operation that reads immutable workflow evidence without reopening its execution or resurrecting its worker.
 
-Build from an isolated temporary workspace and independent cache/output paths, using immutable installed toolchain/dependency assets. Parameterize the existing Vite/license/diagram paths so copied build inputs do not rely on the current `../..` installation-root assumption. Bound subprocess output/deadlines and global concurrent report builds using a finite local Effect semaphore, separate from worker execution capacity; retain pending intent across restart. Stage the finished artifact on the destination filesystem, validate single-file assets/notices/size and digest, then atomically rename under the existing report lock after ensuring the revision is unoccupied. Never overwrite an existing different artifact. Only then advertise a receipt. Crash after rename is recovered by path/identity/digest reconciliation before rebuilding. Temp cleanup removes only validated owned scratch paths; retained artifacts survive native worktree retirement.
+Build from an isolated temporary workspace and independent cache/output paths, using immutable installed toolchain/dependency assets. Parameterize the existing Vite/license/diagram paths so copied build inputs do not rely on the current `../..` installation-root assumption. Bound subprocess output/deadlines and global concurrent report builds using two existing kernel-lock compiler slots and retained deadline reservations, separate from worker execution capacity; retain pending intent across restart. Stage the finished artifact on the destination filesystem, validate single-file assets/notices/size and digest, then publish with an exclusive same-filesystem hard link under the existing report lock. Unlike a replacing rename, this cannot overwrite an occupied revision between inspection and publication. Never overwrite an existing different artifact. Only then advertise a receipt. Crash after publication is recovered by path/identity/digest reconciliation before rebuilding. Temp cleanup removes only validated owned scratch paths; retained artifacts survive native worktree retirement.
 
 Offline feedback is a local form plus a selectable Markdown/JSON export and optional Blob download. Clipboard/download limitations in native sandbox preview must have the selectable-text fallback. No network, local storage, cookies, service worker, prompt bridge or approval action is required. Preserve all applicable notices and existing explicit loopback preview behavior.
 
@@ -207,3 +217,34 @@ Extend reporter browser tests for manual/data-driven examples, invalid diagrams,
 At each milestone run relevant focused checks, then `pnpm check`, `pnpm test`, `pnpm test:e2e` as required by the repository. At final integration run `pnpm format:check`, `pnpm config:schema`, `pnpm licenses:check`, `pnpm check`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, `pnpm report:validate`, `pnpm report:build`; distinguish a schema-generation command from a check and inspect any generated diff. Use the documented preinstalled browser/supplier-cache requirements, temporary native repositories and local recording forge. Retain actual commands/results and external evidence after fixture cleanup. Never push to user remotes or infer passes from pre-existing documentation.
 
 Final acceptance exercises the requested authentication/research/flaky-test operation: stable intake, bounded parallel sessions, finding/reply correlation, meaningful decisions only, preserved approvals and delivery, a retained portable architecture report, and restart with tasks/sessions/requests/obligations intact. The deterministic provider proves controller/native mechanics and refusal behavior; it does not establish natural-language decomposition quality or real-provider performance.
+
+### Project-lead implementation seam
+
+The concrete management caller uses `abra_lead_control register` with an expected
+registration revision, exact repository IDs and a complete native model. A lead
+uses only `abra_lead_action`: scoped snapshots, bounded batch proposals, correlated
+replies, existing supervisor-owned answers and controller-mediated retained
+findings. Abra accepts a proposal through existing atomic batch intake. Proposals
+do not start sessions or create an alternative work graph.
+
+OpenCode already owns persistent sessions, explicit native IDs, prompt admission,
+queues, cancellation and synthetic detail. The existing controller already owns
+worker requests, SQLite intake, obligations and finite diagnostic/attention
+budgets. Additional retained lead state is limited to the management principal,
+explicit registration revisions, revoked session identities, request correlation
+and proposal receipts. Requests share the bounded request schema and
+persist-before-native admission adapter with worker messaging. This avoids
+extending phase-worker roles or adding a transport, scheduler or management home.
+
+Two safety facts require executable proof: restricted session identity wins over
+a claimed Abra agent label at every tool entry, and configuration changes cannot
+reactivate old context or stale replies. Native file/search/shell/delegation tools
+are omitted entirely from the lead profile; scoped evidence is accessed through
+the controller endpoint. Disable persists revocation before cancellation, retains
+uncertain stop ownership and prevents re-enable until quiescence. Scope/model
+changes require a confirmed disabled state and explicitly rotate the native
+session while retaining its previous ID as revoked. Keeping the same conversation
+after narrowing scope was rejected because its native history may contain formerly
+accessible project evidence. Ordinary restart and same-declaration retries retain
+the original session. These are same-user application permission boundaries,
+not operating-system isolation.

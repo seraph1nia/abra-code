@@ -128,6 +128,20 @@ test("worker admission is bound to current intent, not foreground or queue label
   );
   const prompts = f.runtime.prompts;
   assert.equal(inspection.id, execution.explore_session_id);
+  const native = f.runtime.sessions.get(execution.explore_session_id!)!;
+  for (const [executing, busy, expected] of [
+    [true, true, "running"],
+    [false, true, "queued"],
+    [false, false, "idle"],
+    [undefined, true, "unknown"],
+  ] as const) {
+    native.executing = executing;
+    native.busy = busy;
+    const observed = await run(f.controller.queries.inspectWorker(execution.issue_id, native.id));
+    assert.equal(observed.native_activity, expected);
+    assert.ok(Number.isFinite(Date.parse(observed.observed_at)));
+  }
+
   assert.equal(f.runtime.prompts, prompts);
   await assert.rejects(
     run(

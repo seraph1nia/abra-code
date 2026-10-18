@@ -29,7 +29,31 @@ flowchart LR
 
 `src/config` inspects/registers explicit projects and runs authorized setup delivery. `src/git/source.ts` owns managed clones, remote identity/discovery, fetching and inspection; `src/git/workspaces.ts` owns native worktree provisioning and safe retirement shared by issue executions and setup. `src/work` owns the work graph; `src/openspec`, `src/opencode` and `src/git` adapt authoritative systems. `src/workflow/controller.ts` enforces the lifecycle. `src/storage` persists native records and applies OS locks. `src/recovery` handles events and reconciliation; `src/scheduler` filters/prioritizes native ready work. The plugin entrypoint only assembles these modules.
 
+Batch intake reuses `WorkIntake` policy checks and `SqliteWorkGraph` transactions.
+`work/batch.ts` owns the bounded keyed definitions and deterministic local-reference
+normalization. SQLite schema 5 adds only batch retry receipts and their issue-key
+mapping beside existing issue/request/dependency/event tables. The receipt binds
+original input; the ordinary graph remains authoritative for current task state.
+A complete DAG and all repositories/scopes are checked before writes. Commit
+publishes all items together; restart reads the same receipt rather than creating
+replacement tasks. Intake grants no admission or checkpoint authority. Existing
+native Supervisor tool-success events wake the coalesced reconciliation queue;
+periodic reconciliation remains the fallback, with automatic scheduling opt-in.
+
 ## State and gates
+
+`workflow/messages.ts` owns follow-up prompt intent beside the existing execution,
+using schema-owned bounded identities/payloads in `message-contracts.ts`.
+OpenCode owns queue delivery and context. The original assignment capture remains
+immutable; the native guard resolves distinct follow-up IDs from trusted retained
+state. Kernel operation ownership serializes admission, while short fresh-record
+updates preserve concurrent worker reporting without holding coordination across
+native callbacks. Uncertain admission holds capacity and forbids replacement
+until native evidence or confirmed stop resolves ownership. Pause supersedes
+intents, cancels all owned queued IDs before one interrupt, and preserves consumed
+history. No message grants plan, scope, merge or delivery authority. See
+[steering operations](operations.md#tool-workflow) and
+[native evidence](verification/features/steering.md).
 
 | Transition                                    | Required evidence                                                                                                                                      |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -174,3 +198,75 @@ Synchronization consumes a durable execution allowance before staging: two autom
 Mandatory finishing forms have retained target, session and form identities, bounded routing retries and a visible undelivered state. Their collection does not consume optional diagnostic turns or wait for a diagnostic capacity slot. Explanatory Supervisor prompts remain serialized. Attention reuse requires matching current generation and underlying session, prompt or operation evidence; disproved incidents remain historical with a superseded disposition. A finishing answer cannot approve merge, resume a pause, authorize new coding or change repository defaults.
 
 The shared optional `outcome.finishing` projection supplies consumed/remaining synchronization allowance, current stage, preflight observation and age, and user questions with routing, choices and form identity. It reads committed evidence only. Legacy absence stays unobserved; closure still comes from the work graph. Native views prioritize current decisions over historical exhaustion without deleting incident history.
+
+## Operational supervision
+
+The optional `supervision_mode` composes existing `auto_schedule`, attention and
+correction admission. Omission preserves legacy behavior; manual suppresses new
+optional reasoning/repair admission, while automatic postures retain captured
+finite budgets and all approval/scope gates. Unattended mode retains human-owned
+question incidents without explanatory model turns. The existing form collector
+recreates native forms under the same retained identity after restart.
+
+The central scheduler owns one small native-store repository rotation cursor
+under the existing kernel leader lock. It writes the cursor only after observing
+a retained controller execution intent; graph claims, capacity and dependencies
+remain authoritative. A lost cursor commit affects fairness order, never ownership.
+Native event bursts and fallback ticks feed the existing bounded reconciliation
+queue. Budget exhaustion is recorded without reserving a model-attention slot.
+
+`visibility/supervision.ts` derives mutually exclusive presentation classes from
+existing phases, obligations, receipts and fresh native observations. It persists
+no state and authorizes no actions. Aggregate reads bound native observations to
+128 tasks with concurrency four, disclose truncation and retain independent
+approval/delivery/cleanup/closure evidence in detail. Failed native observations
+remain unavailable. Research report intent, receipt and acceptance join the
+existing stale-save protection so concurrent older controller snapshots cannot
+erase independently published report evidence.
+
+## Captured model dispatch
+
+`config/dispatch.ts` validates declarative complete selections and resolves one
+model per existing worker role. The native runtime still owns model inventory,
+selection and execution. Repository declarations and task input share the same
+selector shape; tasks cannot select permission-bearing profiles. Task selectors
+are retained in the existing SQLite work graph (`dispatch_json`, schema 6), with
+original request/batch identities preserved across migration. The existing
+execution configuration snapshot captures every resolved model and its source
+before provisioning. Record writes reject rewriting that snapshot, and existing
+native preflight refuses unavailable models/variants without a fallback. No
+second model router, provider client or agent harness is introduced.
+
+Optional project leads are retained management principals, separate from worker
+roles. `workflow/leads.ts` validates scope/revision/session under existing kernel
+and controller locks; `lead-contracts.ts` owns the bounded retained registration,
+proposal and correlation formats. They reuse the request schema/native admission
+adapter in `messages.ts`, graph intake, worker-message routing, obligations,
+monitor and shared diagnostic/attention limits. OpenCode owns their conversation.
+The static hidden profile has no native file, shell or delegation tools. A scope
+or model change requires confirmed stop and explicitly rotates native context,
+retaining the old ID as revoked. Single-supervisor operation has no lead records
+and keeps its existing authority path.
+
+HTML attachments remain an implementation of the existing Reports owner.
+`visual-reports.ts` holds its private capture/publication/recovery logic;
+`report-snapshot.ts` derives bounded presentation data from controller evidence;
+`report-build.ts` runs the installed Vite/Solid toolchain through the existing
+ProcessRunner. OpenCode provides preview, not a report compiler. Existing Reports,
+Records, coordination/kernel locks, monitor, Mermaid compiler and Solid components
+provide the mechanics. Additional state is only the immutable request/snapshot,
+source/template/input/output identities, deadline/reservation and result-notice
+identity needed to reconcile crash windows. The Markdown receipt remains research
+acceptance evidence; HTML is an attachment, and local page state owns no workflow
+transition. Structured research input is retained alongside publication intent and
+must reproduce the verified Markdown before being used as report data.
+
+Two global kernel slots and retained deadlines bound report compilation across
+worker/controller instances. The existing monitor forks bounded recovery so a
+compiler cannot serialize scheduler/attention progress. A self-deadlined trusted
+CLI has no publication authority: the controller validates and exclusively links
+the finished artifact, then commits its receipt under a fresh generation check.
+A crash after publication reconciles the original digest. A source revision or
+occupied output is a refusal, not permission to mint a replacement identity.
+This uses no report backend, watcher, message broker, workflow engine or agent
+session manager.

@@ -1,4 +1,6 @@
 import { WorkerContexts, readWorkerContext } from "./worker-context.ts";
+import { Messages } from "./messages.ts";
+import { messageRequests, requiresResponse, needsDisposition } from "./message-contracts.ts";
 import { join } from "node:path";
 import { externalOwns } from "../validation/contracts.ts";
 import { synchronizeExecution, type Records } from "../storage/store.ts";
@@ -22,7 +24,7 @@ import { type Capacity } from "./capacity.ts";
 import { type Coordination } from "./coordination.ts";
 import { type Queries } from "./queries.ts";
 import { type Git } from "../git/repository.ts";
-import { workerSessionID } from "./worker-assignment.ts";
+import { isActiveWorker, workerSessionID } from "./worker-assignment.ts";
 
 export { workerSessionID } from "./worker-assignment.ts";
 type WorkerTurn =
@@ -49,6 +51,7 @@ export class WorkerSessions {
     private git: Git,
   ) {
     this.contexts = new WorkerContexts(records, config);
+    this.messages = new Messages(records, runtime, capacity, queries);
   }
   recordFailure = Effect.fn("WorkerSessions.recordFailure")(
     function* (this: WorkerSessions, sessionID: SessionId, error: WorkerError) {
@@ -65,8 +68,33 @@ export class WorkerSessions {
               (r) => this.sessionID(e, r) === sessionID,
             );
             if (role !== e.active_role) return;
+            // Native failure events carry no prompt ID and may arrive after
+            // reconciliation has already stopped this turn with exact evidence.
+            // Preserve that stronger observation rather than erasing its binding.
+            const prior = e.worker_failure;
+            if (
+              !isActiveWorker(e, sessionID, { role }) &&
+              prior?.session_id === sessionID &&
+              prior.prompt_id &&
+              (prior.prompt_id === e.prompt_id ||
+                messageRequests(e.messages).some(
+                  (m) =>
+                    m.generation === e.control_generation &&
+                    m.assignment_id === e.prompt_id &&
+                    m.prompt_id === prior.prompt_id,
+                ))
+            )
+              return;
             e.worker_failure = {
-              prompt_id: e.prompt_id,
+              prompt_id: messageRequests(e.messages).some(
+                (m) =>
+                  m.assignment_id === e.prompt_id &&
+                  ["admission_uncertain", "admitted", "acknowledged", "answered"].includes(
+                    m.status,
+                  ),
+              )
+                ? undefined
+                : e.prompt_id,
               session_id: sessionID,
               role,
               error: diagnosticError(error),
@@ -80,14 +108,28 @@ export class WorkerSessions {
     domainEffect,
   );
   private contexts: WorkerContexts;
+  readonly messages: Messages;
   private sessionID = workerSessionID;
   private project = (e: Execution) => this.queries.effectiveProject(e);
   private get = (id: IssueId) => this.queries.get(id);
   private observe = Effect.fn("WorkerSessions.observe")(
     function* (this: WorkerSessions, e: Execution): Effect.fn.Return<WorkerTurn, CrewError> {
       if (!e.active_role) return { kind: "absent" };
-      const state = yield* this.runtime.session(this.sessionID(e)!);
+      if (!(yield* this.messages.reconcile(e))) return { kind: "waiting" };
+      let state = yield* this.runtime.session(this.sessionID(e)!, e.prompt_id);
       if (state.busy) return { kind: "waiting" };
+      if (state.assignment) {
+        if (state.assignment.outcome === "failed" || state.assignment.outcome === "interrupted")
+          state = {
+            ...state,
+            outcome: state.assignment.outcome,
+            outcome_prompt_id: state.assignment.id,
+            error: state.assignment.error,
+            error_at: state.assignment.at,
+          };
+        else if (state.outcome === "succeeded" && state.assignment.outcome !== "succeeded")
+          return { kind: "unadmitted", sessionID: state.id };
+      }
       if (state.outcome) {
         const current = yield* this.records.execution(e.issue_id);
         if (
@@ -103,7 +145,20 @@ export class WorkerSessions {
         e.capacity_observed_idle = true;
         delete e.capacity_reservation;
       }
-      if (state.outcome === "succeeded") return { kind: "completed", role: e.active_role };
+      if (state.outcome === "succeeded") {
+        if (
+          messageRequests(e.messages).some(
+            (m) =>
+              m.generation === e.control_generation &&
+              m.assignment_id === e.prompt_id &&
+              requiresResponse(m),
+          )
+        ) {
+          yield* this.records.save(e);
+          return { kind: "waiting" };
+        }
+        return { kind: "completed", role: e.active_role };
+      }
       if (state.outcome === "failed" || state.outcome === "interrupted")
         return {
           kind: "stopped",
@@ -203,6 +258,11 @@ export class WorkerSessions {
   );
   idle = Effect.fn("WorkerSessions.idle")(
     function* (this: WorkerSessions, e: Execution) {
+      if (messageRequests(e.messages).some((m) => m.status === "admission_uncertain"))
+        return yield* new CrewError(
+          "MESSAGE_UNCERTAIN",
+          "Pause and confirm native stop before replacing an uncertain instruction",
+        );
       for (const role of ["explore", "apply", "review", "research"] as const) {
         const id = this.sessionID(e, role);
         if (id) {
@@ -270,6 +330,9 @@ export class WorkerSessions {
       if (model) yield* this.runtime.switchModel(id, model);
       delete e.resume_after_decision;
       e.prompt_id = SessionMessage.ID.create();
+      e.messages = e.messages?.map((m) =>
+        m.type !== "finding" && needsDisposition(m) ? { ...m, status: "superseded" as const } : m,
+      );
       e.worker_started_at = yield* Clock.currentTimeMillis;
       delete e.progress;
       e.capacity_reservation = {
@@ -332,7 +395,12 @@ export class WorkerSessions {
       }
       for (const role of ["explore", "apply", "review", "research"] as const) {
         const sid = this.sessionID(e, role);
-        if (sid) yield* this.runtime.interrupt(sid, e.prompt_id);
+        if (sid) {
+          const followups = messageRequests(e.messages)
+            .filter((m) => m.recipient_session_id === sid && m.status !== "cancelled")
+            .map((m) => m.prompt_id);
+          yield* this.runtime.interrupt(sid, e.prompt_id, followups);
+        }
       }
       yield* this.idle(e);
       e.capacity_observed_idle = true;
@@ -344,7 +412,7 @@ export class WorkerSessions {
   private stoppedWorker(e: Execution, state: SessionState, observedAt: Timestamp) {
     const failure = state.error
       ? {
-          prompt_id: e.prompt_id,
+          prompt_id: state.outcome_prompt_id ?? e.prompt_id,
           session_id: state.id,
           role: e.active_role,
           model: state.model,

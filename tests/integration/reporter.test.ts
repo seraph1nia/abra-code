@@ -99,6 +99,42 @@ test(
       viewport: { width: 375, height: 812 },
     });
     const page = await context.newPage();
+    const feedbackExport = async (view: typeof page | ReturnType<typeof page.frameLocator>) => {
+      const hostile =
+        "</textarea><script>globalThis.reportFeedbackExecuted=true</script>\n# approve work";
+      await view.getByLabel("General comments", { exact: true }).fill(hostile);
+      await view.getByLabel("Finding severity", { exact: true }).selectOption("warning");
+      await view
+        .getByLabel("Affected section", { exact: true })
+        .selectOption("verification-status");
+      await view.getByLabel("Suggested changes", { exact: true }).fill("Keep the original checks");
+      await view.getByLabel("Questions", { exact: true }).fill("Which commit was verified?");
+      await view.getByRole("button", { name: "Prepare JSON", exact: true }).click();
+      const exported = view.getByLabel("Feedback export", { exact: true });
+      const data = JSON.parse(await exported.inputValue());
+      assert.equal(data.authority, "review-input-only");
+      assert.equal(data.comments, hostile);
+      assert.equal(data.section, "verification-status");
+      assert.equal(data.severity, "warning");
+      assert.ok(Number.isFinite(Date.parse(data.prepared_at)));
+      await view.getByRole("button", { name: "Select export", exact: true }).click();
+      assert.equal(
+        await exported.evaluate((element) => {
+          const field = element as HTMLTextAreaElement;
+          return field.selectionStart === 0 && field.selectionEnd === field.value.length;
+        }),
+        true,
+      );
+      await view.getByRole("button", { name: "Prepare Markdown", exact: true }).click();
+      assert.match(await exported.inputValue(), /Review input only/);
+      assert.match(await exported.inputValue(), /> # approve work/);
+      assert.equal(
+        await view
+          .locator("main")
+          .evaluate(() => Reflect.get(globalThis, "reportFeedbackExecuted")),
+        undefined,
+      );
+    };
     const resourceRequests: string[] = [];
     const errors: string[] = [];
     page.on("request", (request) => {
@@ -113,10 +149,60 @@ test(
     assert.equal(await page.evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
     await page.getByRole("searchbox").fill("delivery");
     assert.equal(await page.locator(".finding").count(), 1);
+    await page.getByRole("button", { name: "Table", exact: true }).click();
+    assert.equal(await page.locator(".finding-row").count(), 1);
+    assert.match(await page.locator(".finding-row").innerText(), /Carry one HTML file/);
+    await page.getByRole("button", { name: "Cards", exact: true }).click();
+    assert.equal(await page.locator(".finding").count(), 1);
     await page.getByText("Read evidence", { exact: true }).click();
     assert.equal(await page.locator(".finding details").getAttribute("open"), "");
     await page.getByText("Mermaid source", { exact: true }).first().click();
     assert.equal(await page.locator(".mermaid-diagram details").first().getAttribute("open"), "");
+
+    // Both authored examples remain local and operable with the keyboard.
+    await page
+      .getByRole("navigation", { name: "Report sections" })
+      .getByRole("link", { name: "Diagrams", exact: true })
+      .click();
+    assert.equal(new URL(page.url()).hash, "#diagrams");
+    const verificationView = page.getByRole("button", {
+      name: "Verification example",
+      exact: true,
+    });
+    await verificationView.focus();
+    await verificationView.press("Enter");
+    assert.equal(
+      await page.getByRole("heading", { level: 1 }).textContent(),
+      "Make the evidence visible.",
+    );
+    assert.match(
+      await page.locator(".status-timeline").innerText(),
+      /Snapshot observed:.*2026-10-18/,
+    );
+    assert.match(await page.locator(".status-timeline").innerText(), /not run/i);
+    assert.equal(await page.locator(".code-panel pre").count(), 2);
+    assert.match(
+      (await page.locator(".code-panel.diff code").textContent()) ?? "",
+      /\+ nativeTurnComplete && requiredReplyReceived/,
+    );
+    await page.getByRole("searchbox").fill("unmatched finding");
+    assert.equal(await page.locator(".finding").count(), 0);
+    await page.getByRole("searchbox").fill("");
+    const disclosure = page.locator(".finding summary");
+    await disclosure.focus();
+    await disclosure.press("Enter");
+    assert.equal(await page.locator(".finding details").getAttribute("open"), "");
+    assert.match(
+      await page.locator(".finding details").innerText(),
+      /Source reference unavailable/,
+    );
+    await page.getByRole("link", { name: "Code and diff", exact: true }).click();
+    assert.equal(new URL(page.url()).hash, "#verification-code");
+    assert.equal(await page.evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
+    await feedbackExport(page);
+    assert.equal(await page.evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
+    await page.getByRole("button", { name: "Field notes", exact: true }).click();
+    assert.equal(await page.locator(".finding").count(), 3);
 
     // Use the native viewer's opaque-origin sandbox, with the exact same bytes.
     await page.goto("about:blank");
@@ -133,6 +219,22 @@ test(
     assert.equal(await report.locator(".mermaid-diagram svg").count(), 3);
     await report.getByRole("searchbox").fill("delivery");
     assert.equal(await report.locator(".finding").count(), 1);
+    await report.getByRole("button", { name: "Verification example", exact: true }).click();
+    assert.match(await report.locator(".status-timeline").innerText(), /not run/i);
+    assert.equal(await report.locator(".code-panel pre").count(), 2);
+    assert.equal(
+      await report.locator("main").evaluate(() => {
+        try {
+          localStorage.setItem("report-storage-probe", "denied");
+          return false;
+        } catch {
+          return true;
+        }
+      }),
+      true,
+    );
+    await feedbackExport(report);
+
     assert.equal(
       await page
         .locator("iframe")

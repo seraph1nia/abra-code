@@ -118,7 +118,7 @@ export class ProcessRunner implements Runner {
               ? cause
               : new CrewError(
                   "COMMAND_FAILED",
-                  `${file} ${args[0] ?? ""}: ${cause.reason._tag === "NotFound" ? "ENOENT" : cause.reason._tag}: ${cause.message}`,
+                  `${file} ${args[0] ?? ""}: ${cause.reason._tag === "NotFound" ? "ENOENT" : cause.reason._tag}: ${cause.message}${cause.reason.cause instanceof Error ? `: ${cause.reason.cause.message}` : ""}`,
                 ),
           ),
           Effect.timeoutOrElse({

@@ -51,8 +51,21 @@ import { Records, NativeStore } from "../storage/store.ts";
 import { decode } from "../decode.ts";
 import { WorkerModelSchema } from "../contracts.ts";
 
-import { diagnosticText, summarizeContext, type MessageSummary } from "./diagnostics.ts";
+import {
+  diagnosticText,
+  summarizeContext,
+  nativeIdle,
+  type MessageSummary,
+} from "./diagnostics.ts";
 export interface SessionState {
+  executing?: boolean;
+  outcome_prompt_id?: MessageId;
+  assignment?: {
+    id: MessageId;
+    outcome?: typeof Session.Info.Type.outcome;
+    error?: WorkerError;
+    at?: number;
+  };
   activity?: { identity: ActivityId; at: number; summary: string };
   id: SessionId;
   directory: AbsolutePath;
@@ -78,6 +91,12 @@ export type DispositionAnswer =
   | { status: "pending" | "cancelled" }
   | { status: "answered"; answer: FinishingAnswer };
 export interface Runtime {
+  managementSession(
+    id: SessionId,
+    parent: SessionId,
+    model: WorkerModel,
+    lead: string,
+  ): Effect.Effect<void, CrewError>;
   requestDisposition?(
     session: SessionId,
     form: FormId,
@@ -121,14 +140,23 @@ export interface Runtime {
   supervisorModel(id?: SessionId): Effect.Effect<WorkerModel | undefined, CrewError>;
   switchModel(id: SessionId, model: WorkerModel): Effect.Effect<void, CrewError>;
   switchAgent(id: SessionId, agent: Agent.ID): Effect.Effect<void, CrewError>;
-  session(id: SessionId): Effect.Effect<SessionState, CrewError>;
+  session(id: SessionId, assignment?: MessageId): Effect.Effect<SessionState, CrewError>;
+  promptAdmission(
+    session: SessionId,
+    message: MessageId,
+    text: string,
+  ): Effect.Effect<"queued" | "consumed" | "absent", CrewError>;
   prompt(
     id: SessionId,
     text: string,
     messageID: MessageId,
     steer?: boolean,
   ): Effect.Effect<void, CrewError>;
-  interrupt(id: SessionId, promptID?: MessageId): Effect.Effect<void, CrewError>;
+  interrupt(
+    id: SessionId,
+    promptID?: MessageId,
+    additional?: readonly MessageId[],
+  ): Effect.Effect<void, CrewError>;
   notify(id: SessionId, text: string, message?: MessageId): Effect.Effect<void, CrewError>;
   requestQuestion(
     session: SessionId,
@@ -386,6 +414,78 @@ export class NativeRuntime implements Runtime {
     }.bind(this),
     domainEffect,
   );
+  managementSession = Effect.fn("NativeRuntime.managementSession")(
+    function* (
+      this: NativeRuntime,
+      id: SessionId,
+      parent: SessionId,
+      model: WorkerModel,
+      lead: string,
+    ) {
+      const client = yield* this.client();
+      const location = { directory: this.config.home };
+      const [agents, models] = yield* Effect.all([
+        client.agent.list({ location }),
+        client.model.list({ location }),
+      ]);
+      if (!agents.data.some((a) => a.id === "project-lead"))
+        return yield* new CrewError("LEAD_PROFILE", "Static project-lead agent is unavailable");
+      const selected = models.data.find(
+        (m) => m.providerID === model.providerID && m.id === model.id,
+      );
+      if (!selected || !selected.enabled || !selected.capabilities.tools)
+        return yield* new CrewError(
+          "MODEL_UNAVAILABLE",
+          "Project-lead model is unavailable or lacks tools",
+        );
+      if (
+        model.variant &&
+        model.variant !== "default" &&
+        !selected.variants.some((v) => v.id === model.variant)
+      )
+        return yield* new CrewError(
+          "MODEL_VARIANT_UNAVAILABLE",
+          "Project-lead variant is unavailable",
+        );
+      const existing = yield* client.session
+        .get({ sessionID: id })
+        .pipe(Effect.catchTag("SessionNotFoundError", () => Effect.void));
+      const session =
+        existing ??
+        (yield* client.session.create({
+          id,
+          parentID: parent,
+          title: `Project lead · ${lead}`,
+          agent: Agent.ID.make("project-lead"),
+          model,
+          location,
+          metadata: { abracode_lead: lead },
+          permissions: [
+            { action: "*", resource: "*", effect: "deny" },
+            { action: "abra_lead_action", resource: "*", effect: "allow" },
+          ],
+        }));
+      if (
+        session.location.directory !== this.config.home ||
+        session.agent !== "project-lead" ||
+        session.metadata?.abracode_lead !== lead ||
+        session.parentID !== parent ||
+        session.model?.providerID !== model.providerID ||
+        session.model?.id !== model.id ||
+        (session.model?.variant ?? "default") !== (model.variant ?? "default") ||
+        JSON.stringify(session.permissions?.map((p) => [p.action, p.resource, p.effect])) !==
+          JSON.stringify([
+            ["*", "*", "deny"],
+            ["abra_lead_action", "*", "allow"],
+          ])
+      )
+        return yield* new CrewError(
+          "LEAD_SESSION",
+          "Retained management session identity conflicts",
+        );
+    }.bind(this),
+    domainEffect,
+  );
   createSession = Effect.fn("NativeRuntime.createSession")(
     function* (this: NativeRuntime, e: ManagedExecution, role: Role, id: SessionId) {
       if (!e.worktree_directory) return yield* new CrewError("WORKTREE", "Missing worktree");
@@ -415,7 +515,7 @@ export class NativeRuntime implements Runtime {
     domainEffect,
   );
   session = Effect.fn("NativeRuntime.session")(
-    function* (this: NativeRuntime, id: SessionId) {
+    function* (this: NativeRuntime, id: SessionId, assignment?: MessageId) {
       // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
       const s = yield* this.ctx.session
         .get({ sessionID: id })
@@ -436,14 +536,79 @@ export class NativeRuntime implements Runtime {
         ),
         Effect.mapError(CrewError.from),
       );
+      let history = context;
+      if (
+        assignment &&
+        !active[id] &&
+        pending.length === 0 &&
+        !context.some((m) => m.type === "user" && m.id === assignment)
+      ) {
+        // Native context starts at the latest compaction. Read bounded native
+        // history using only server-issued cursors; never mirror it in records.
+        const descending: SessionMessage.Info[] = [];
+        let cursor: string | undefined;
+        for (let page = 0; page < 20; page++) {
+          const result = yield* client.message.list({
+            sessionID: id,
+            limit: 200,
+            ...(cursor ? { cursor } : { order: "desc" as const }),
+          });
+          descending.push(...result.data);
+          if (
+            result.data.some((m) => m.type === "user" && m.id === assignment) ||
+            !result.cursor.next
+          )
+            break;
+          cursor = result.cursor.next;
+        }
+        history = descending.toReversed();
+        if (!history.some((m) => m.type === "user" && m.id === assignment))
+          diagnostic_error =
+            "Assignment outcome unavailable within the bounded native history observation";
+      }
+      const encoded = yield* Schema.encodeEffect(Schema.Array(SessionMessage.Info))(history);
+      const start = assignment
+        ? encoded.findIndex((m) => m.type === "user" && m.id === assignment)
+        : -1;
+      let end = -1;
+      if (start >= 0)
+        for (let index = start + 1; index < encoded.length; index++) {
+          const message = encoded[index]!;
+          if (message.type === "idle") end = index;
+          else if (
+            end >= 0 &&
+            !["assistant", "agent-switched", "model-switched", "location-switched"].includes(
+              message.type,
+            )
+          )
+            break;
+        }
+      const idle = end < 0 ? undefined : nativeIdle(encoded.slice(start, end + 1));
+      const observedIdle = nativeIdle(encoded);
+      const bound = end < 0 ? undefined : summarizeContext(encoded.slice(0, end + 1));
+      const lastIdle = encoded.findLastIndex((m) => m.type === "idle");
+      const outcomePrompt =
+        lastIdle < 0
+          ? undefined
+          : encoded.slice(0, lastIdle + 1).findLast((m) => m.type === "user");
       return {
         id: s.id,
         agent: s.agent ?? Agent.ID.make("build"),
         directory: s.location.directory,
-        outcome: s.outcome,
+        outcome: s.outcome === "succeeded" ? (observedIdle?.outcome ?? s.outcome) : s.outcome,
         busy: !!active[id] || pending.length > 0,
+        executing: !!active[id],
+        outcome_prompt_id: outcomePrompt ? MessageId.make(outcomePrompt.id) : undefined,
+        assignment: assignment
+          ? {
+              id: assignment,
+              outcome: idle?.type === "idle" ? idle.outcome : undefined,
+              error: bound?.error,
+              at: bound?.error_at,
+            }
+          : undefined,
         metadata: s.metadata,
-        ...summarizeContext(yield* Schema.encodeEffect(Schema.Array(SessionMessage.Info))(context)),
+        ...summarizeContext(encoded),
         available_tools: yield* new NativeStore(this.ctx.storage)
           .get(StorageKey.make(`worker-tools/${id}`))
           .pipe(
@@ -598,6 +763,39 @@ export class NativeRuntime implements Runtime {
     }.bind(this),
     domainEffect,
   );
+  promptAdmission = Effect.fn("NativeRuntime.promptAdmission")(
+    function* (this: NativeRuntime, sessionID: SessionId, id: MessageId, text: string) {
+      const client = yield* this.client();
+      const [inbox, context] = yield* Effect.all([
+        client.session.inbox.list({ sessionID }),
+        client.session.context({ sessionID }),
+      ]);
+      const queued = inbox.find((item) => item.id === id);
+      const consumed =
+        context.find((message) => message.id === id) ??
+        (!queued
+          ? yield* client.session.message
+              .get({ sessionID, messageID: id })
+              .pipe(Effect.catchTag("MessageNotFoundError", () => Effect.void))
+          : undefined);
+      const payload =
+        queued?.type === "user" ? queued.payload : consumed?.type === "user" ? consumed : undefined;
+      if (!queued && !consumed) return "absent" as const;
+      if (
+        !payload ||
+        payload.text !== text ||
+        payload.files?.length ||
+        payload.agents?.length ||
+        payload.skills?.length
+      )
+        return yield* new CrewError(
+          "MESSAGE_REBIND",
+          "Native prompt differs from retained controller intent",
+        );
+      return queued ? ("queued" as const) : ("consumed" as const);
+    }.bind(this),
+    domainEffect,
+  );
   prompt = Effect.fn("NativeRuntime.prompt")(
     function* (
       this: NativeRuntime,
@@ -620,14 +818,20 @@ export class NativeRuntime implements Runtime {
     domainEffect,
   );
   interrupt = Effect.fn("NativeRuntime.interrupt")(
-    function* (this: NativeRuntime, sessionID: SessionId, promptID?: MessageId) {
-      const client = promptID ? yield* this.client() : undefined;
-      if (client && promptID) {
+    function* (
+      this: NativeRuntime,
+      sessionID: SessionId,
+      promptID?: MessageId,
+      additional: readonly MessageId[] = [],
+    ) {
+      const owned = new Set([...(promptID ? [promptID] : []), ...additional]);
+      const client = owned.size ? yield* this.client() : undefined;
+      if (client) {
         const pending = yield* client.session.inbox.list({ sessionID: sessionID });
-        if (pending.some((item) => item.id === promptID))
+        for (const item of pending.filter((item) => owned.has(item.id)))
           yield* client.session.inbox.cancel({
             sessionID: sessionID,
-            inboxID: promptID,
+            inboxID: item.id,
           });
       }
       // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
@@ -636,10 +840,10 @@ export class NativeRuntime implements Runtime {
         .pipe(Effect.mapError(CrewError.from));
       // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
       yield* this.ctx.session.wait({ sessionID: sessionID }).pipe(Effect.mapError(CrewError.from));
-      if (client && promptID) {
+      if (client) {
         if (
-          (yield* client.session.inbox.list({ sessionID: sessionID })).some(
-            (item) => item.id === promptID,
+          (yield* client.session.inbox.list({ sessionID: sessionID })).some((item) =>
+            owned.has(item.id),
           )
         )
           return yield* new CrewError(

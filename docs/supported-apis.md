@@ -15,6 +15,83 @@ Inspected on 2026-10-14. AbraCode installs a local pinned runtime rather than up
 
 ## OpenCode contracts
 
+### Follow-up outcome and restart reconciliation
+
+Rechecked against the pinned 2.0.28 installed declarations and embedded
+`SessionHistory`, `SessionStore.context/messages` and inbox implementations on
+2026-10-18. Native context starts at the latest completed compaction, so it is
+not a complete admission ledger. The client supports
+`session.message.get({sessionID,messageID})` for an exact retained ID and
+`message.list({sessionID,limit,order,cursor})` for bounded historical observations.
+The server rejects `order` together with a cursor: pass `order:"desc"` only on
+the first page, then use the server-issued cursor without `order`. No private
+cursor is constructed. The real-server fixture exercises both calls.
+
+The adapter binds a worker assignment's outcome to its native input, rather
+than attributing a later follow-up's success to it. Native continuation after
+restart can update the outcome without another input. Historical fallback is
+bounded to 20 pages of 200 messages and retains no transcript; missing evidence
+does not establish success.
+
+The disposable provider-failure trace at
+`/tmp/abra-message-recovery-native4-20261018/native-engineering.json` records a
+failed idle marker followed five milliseconds later by a succeeded idle marker,
+without an intervening input or assistant message. Native `Session.Info.outcome`
+then reports succeeded. AbraCode preserves the failed turn in this case: an empty
+success marker does not demonstrate recovery. A subsequent input or actual
+assistant execution followed by success can establish a later successful turn.
+Several inputs before one idle belong to that native turn; a failure cannot be
+causally assigned to one of those texts from the native event alone. Original
+assignment attribution and correlated unanswered requests remain separate.
+
+Queue reconciliation never wakes failed or interrupted native execution; those
+outcomes require the existing explicit recovery policy. A same-ID wake is only
+for an otherwise eligible native queue, not permission to retry a failed turn.
+
+A real queued-request restart passed in 97.11 seconds at
+`/tmp/abra-queued-restart5-20261018` with cleaned disposable resources and retained
+`native-engineering.json`. An idle native session with a verified queued request
+needed a wake: resubmitting that **same** native ID and exact retained payload
+wakes the native queue without another instruction. AbraCode revalidates current
+assignment ownership before this replay. Absent or unavailable admission evidence
+never authorizes a replacement ID. See the [messaging recipe](verification/features/messaging.md)
+for the broader failure/reply acceptance results.
+
+### Prompt admission and replay audit
+
+Inspected on 2026-10-18 against installed 2.0.28 declarations and the executable.
+`@opencode/client/dist/effect/api/api.d.ts` declares prompt ID, text, attachments,
+metadata, queue/steer and resume, returning `SessionInbox.User`.
+`@opencode/plugin/dist/effect/session.d.ts` declares the prompt hook; inbox
+list/cancel/update are client operations absent from plugin SessionDomain.
+
+Installed `@opencode/cli/bin/opencode.exe` SHA-256:
+`20d305d0140bfe04df7264a4ecb014402b74b6ac0a0f6456ee07ef3325fb4a85`.
+Its embedded `Session.prompt`, `SessionPrompt.prepare`, `SessionInbox.make` and
+inbox projection implementations show: reconcile an existing ID first; otherwise
+run the prompt hook, materialize attachments and admit; then wake unless
+`resume:false`. Reconciliation precedes the hook and does not compare newly
+submitted text. A plugin cannot promise rejection of every conflicting native
+replay request. The original native payload remains authoritative.
+
+The real-server [steering audit](verification/features/steering.md) observed the
+pre-fix controller steering refusal and successful duplicate-ID return of the
+original payload with zero provider work for the changed text. The user accepted
+native idempotent replay with controller-level conflict refusal. This does not
+authorize a new instruction. The first positive focused native journey then
+passed in 100.62 seconds with one retained steering instruction despite a retry,
+unchanged assignment/session identity and zero forged-prompt provider calls.
+Evidence: `/tmp/abra-steering-after-20261018/native-engineering.json` and its
+sibling log; cleanup completed. The extended queued-pause/full suite is separate.
+
+Inbox projections delete queued records on delivery/cancellation; cancellation
+cannot undo consumption. Changing an item to steer wakes execution. Source
+inspection does not establish crash-window guarantees: busy queue consumption,
+cancel/consume races, uncertain admission and queued restart require specific
+native acceptance evidence before messaging is enabled.
+
+### Existing native integration contracts
+
 The code type-checks against installed published declarations. Official [v2 plugin documentation](https://dev.opencode.ai/v2/docs/build/plugins/) and [migration documentation](https://dev.opencode.ai/v2/docs/build/plugins/migrate-v1) describe the public API. Additional behaviors were verified against the [2.0.28 source tag](https://github.com/anomalyco/opencode/tree/v2.0.28).
 
 - `ctx.storage.get/set/remove/scan` stores JSON under the plugin ID. Scans paginate with `next`/`after`. The source [storage namespace implementation](https://github.com/anomalyco/opencode/blob/v2.0.28/packages/core/src/plugin/host.ts) uses the plugin ID, not a repository-specific namespace. There is no public transaction or compare-and-swap method. Linux `flock` supplies a small crash-released controller lock and one coordinator leadership lock.
@@ -78,7 +155,7 @@ Plugin record scans now preserve each native storage key and decode each value w
 
 `effect/process/ChildProcess` in 4.0.1 implements the command as a scoped Effect, backed by `ChildProcessSpawner` and `NodeChildProcessSpawner.layer` with Node FileSystem/Path. AbraCode explicitly selects detached process groups, SIGTERM and one-second `forceKillAfter`; it concurrently drains bounded stdout/stderr and waits for exit inside the command scope. This preserves termination-before-return on timeout/interruption in both process-tree tests. Command diagnostics preserve ENOENT compatibility without exposing environments. Thin access/read/realpath operations use Effect FileSystem; Node overloads remain for directory entries and mutations, and only non-cancellable mutations mask interruption until completion.
 
-The native Effect client exposes `session.inbox.list({sessionID})` and `.cancel({sessionID,inboxID})`; plugin `SessionDomain` does not expose inbox methods. Stop confirmation cancels only the persisted owned prompt ID, then uses native `interrupt({resume:false})` and `wait`, and verifies that prompt is no longer queued. The finite queued-prompt admission call completes under interruption protection so ownership is not released while local submission is unresolved. The native end-to-end test exercises pause/resume through these APIs before approval and then restarts the service with the same worktree/session/form identities.
+The native Effect client exposes `session.inbox.list({sessionID})` and `.cancel({sessionID,inboxID})`; plugin `SessionDomain` does not expose inbox methods. Stop confirmation cancels persisted owned assignment and follow-up prompt IDs, uses native `interrupt({resume:false})` and `wait`, and verifies the owned prompts are no longer queued. The finite queued-prompt admission call completes under interruption protection so ownership is not released while local submission is unresolved. The native end-to-end test exercises pause/resume through these APIs before approval and then restarts the service with the same worktree/session/form identities.
 
 Kernel-backed operation locks use an execution-ID hash and nonblocking acquisition outside controller coordination. Short record/claim/reservation commits retain the global lock; native storage still has no CAS/transaction. Independent-process capacity fixtures share atomically published test records and real locks to verify global/repository/role reservation limits. Production keeps native storage as its execution owner.
 
@@ -164,7 +241,7 @@ The public pinned `SessionApi.update({sessionID, permissions})` supports permiss
 
 ## Abra-only conversation and generated bootstrap
 
-The pinned public `ctx.session.hook("prompt", handler)` runs before native prompt admission, including queued prompts. AbraCode checks current or historical managed assignments against the retained message ID, active role, control generation and immutable captured context/payload. It rejects unowned text or added files/agents/skills before provider work. The hook reads retained records without acquiring the execution coordination lock: controller admission already owns it. Existing request/context/tool guards remain independent. `tests/e2e/native.test.ts` counts deterministic provider requests for denied direct foreground and queue prompts; eligible controller turns and uncertain-admission recovery remain exercised.
+The pinned public `ctx.session.hook("prompt", handler)` runs before **new** native prompt admission, including queued prompts; existing-ID reconciliation can return before the hook (see the replay audit above). AbraCode resolves initial assignment and follow-up intents against active role, session, control generation and exact immutable text/delivery. It rejects unowned new IDs and added files/agents/skills before provider work. The hook reads retained records without acquiring the execution lock; native admission runs outside short controller coordination, so hook callbacks do not deadlock. Existing request/context/tool guards remain independent. `tests/e2e/native.test.ts` counts provider-visible denied/owned markers and native instruction identities; a provider may see the same one instruction on multiple subsequent model requests.
 
 Generated `.abracode/config/opencode/opencode.json` uses public `plugins`, `default_agent` and `agent.abra` settings. Its paths point to tracked absolute plugin/prompt assets. The pinned `Service.ensure/discover/stop` contract owns a dedicated service registration; native auth uses that same endpoint. Fresh-install acceptance checks service/session reuse and the auth command's native argument route without writing provider credentials. `model.list` supplies enabled model/variant readiness to doctor; authentication is reported unverified until a request succeeds. Static schema/config validation makes no native calls.
 
@@ -181,3 +258,43 @@ The five `abra-codebase-design`, `abra-domain-modeling`, `abra-diagnosing-bugs`,
 The pinned public Form primitives support a required string action with fixed `options`, `custom:false` and a conservative defer default; conditional `multiselect` fields use `when:[{key:"action",op:"eq",value:...}]`, exact path options and bounded item counts. `session.form.create/get/reply` retain the same native Form.ID. Metadata binds the decision identity and SHA-256 of the exact typed target. The adapter verifies both before accepting an action and decodes only its matching selection field. Free text, an unknown action or an unselected path grants no authority. Cancelled forms defer without disposal; missing pending forms recreate the retained ID after restart. Unit adapter tests cover response loss and target mismatch; the disposable native journey exercises actual replies and restart.
 
 The pinned public `session.synthetic` accepts a caller-supplied message `id`. Completion notices persist that ID first and inspect native inbox/context before resubmission. Matching existing text is accepted as the postcondition; conflicting identity/text is refused. Notice failure leaves graph closure intact. Worktree removal still has no public caller operation ID or definitive in-flight receipt: uncertain submitted removal with a present resource is not automatically replayed.
+
+### Consumed turns interrupted by service restart
+
+The parallel native fixture observed a consumed assignment followed by an empty,
+unfinished assistant message after server termination during a provider request.
+Replaying the same prompt ID woke the native loop but could emit a successful idle
+without another provider request or any reporting tool call. Queue wakeup evidence
+must not be generalized into automatic recovery of every consumed turn. AbraCode
+continues to require the retained report/verification evidence and keeps explicit
+pause/resume recovery authoritative. That recovery preserves session/worktree
+identity, supersedes the old generation and captures a new assignment ID. It is
+not an admission retry after response loss. See the fair-admission recipe for the
+parallel test and the retained interrupted-turn diagnostics.
+
+### Static project-lead sessions
+
+OpenCode 2.0.28 installed `@opencode/schema/dist/config/agent.js` exposes agent
+model/system/mode/hidden/permissions, and the Effect client SessionCreateInput
+accepts explicit ID, parentID, agent, complete model, location, metadata and native
+permission rules. AbraCode generates a static hidden `project-lead` definition in
+its existing host `agent`/`prompt` configuration format; the real native lead
+journey verifies these legacy aliases are still accepted by the pinned loader.
+`installRoleProfiles` updates this existing definition's deny-by-default rules;
+it does not dynamically add an agent through registry transforms. Session creation
+adds the same explicit session-level rules. The actual provider-visible tool set
+contains only the scoped lead endpoint. A known restricted session cannot become
+Abra by changing its agent label.
+
+The same real journey observes native normalization of a model selection with no
+variant into a context selection with variant `default`. Equality uses explicit
+provider/model and normalized variant fields. Native queue/inbox/prompt IDs and
+interrupt/wait semantics are the same verified worker transport; no lead daemon,
+filesystem inbox, additional scheduler or transcript store is introduced.
+
+The two graphical preview files above were fetched and re-inspected at the pinned
+v2.0.28 tag on 2026-10-18. Controller-generated artifacts now use that same native
+file-link handoff; the actual Research/terminal-render/restart journey verifies the
+retained link and artifact without a hosted application. Offline and opaque-Blob
+browser tests execute the exact HTML sandbox flags. The lack of a paired graphical
+session still makes chat click-through/desktop routing source evidence only.

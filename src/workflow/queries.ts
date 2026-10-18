@@ -1,4 +1,13 @@
+import { validateDispatch } from "../config/dispatch.ts";
+import {
+  supervisionSummary,
+  nativeActivity,
+  supervisionClasses,
+  type SupervisionSummary,
+} from "../visibility/supervision.ts";
 import { historicalWorkers } from "./worker-assignment.ts";
+import { messageRequests, requiresResponse, MessagesPageSchema } from "./message-contracts.ts";
+import { timestamp } from "../identities.ts";
 import { loadConfig } from "../config/load.ts";
 import { declarationDigest } from "../config/declarations.ts";
 import { workerProfile } from "../config/snapshot.ts";
@@ -50,6 +59,7 @@ export class Queries {
     return {
       home: this.config.home,
       autoSchedule: this.config.auto_schedule,
+      supervisionMode: this.config.supervision_mode,
       reconcileInterval: this.config.reconcile_interval_ms,
     };
   }
@@ -69,6 +79,37 @@ export class Queries {
   recordDiagnostics = () => this.records.diagnostics();
   recordsExport = () => this.records.export();
   supervisor = () => this.records.supervisor();
+  automaticAuthority = Effect.fn("Queries.automaticAuthority")(
+    function* (
+      this: Queries,
+    ): Effect.fn.Return<{ session_id?: SessionId; blocker?: ReadinessBlocker }, CrewError> {
+      const session = yield* this.records.supervisor();
+      if (!session)
+        return {
+          blocker: {
+            code: "authority",
+            message: "Automatic scheduling requires a retained Abra session",
+          },
+        };
+      const state = yield* this.runtime.session(session).pipe(Effect.result);
+      if (state._tag === "Failure")
+        return {
+          blocker: {
+            code: "authority",
+            message: `Retained Abra is unavailable: ${diagnosticText(state.failure.message)}`,
+          },
+        };
+      if (state.success.directory !== this.config.home || state.success.agent !== "abra")
+        return {
+          blocker: {
+            code: "authority",
+            message: "Retained automatic-scheduling authority is not Abra in the central checkout",
+          },
+        };
+      return { session_id: session };
+    }.bind(this),
+    domainEffect,
+  );
   specStatus = (e: Execution) => this.spec.status(e);
   specApply = (e: Execution) => this.spec.apply(e);
   specInstructions = (e: Execution, artifact: ArtifactId) => this.spec.instructions(e, artifact);
@@ -100,10 +141,72 @@ export class Queries {
           role,
           model: state.model,
           configured_model: workerProfile(execution, role, this.config)?.model,
+          model_source: execution.configuration_snapshot?.dispatch_sources?.[role],
           outcome: state.outcome,
           busy: state.busy,
+          executing: state.executing,
+          native_activity: nativeActivity(state),
+          observed_at: yield* timestamp,
           recent_messages: state.recent_messages,
           note: "Read-only recent native evidence (up to 12 messages); unavailable history is not reconstructed. Talk to Abra to give instructions.",
+        };
+      }),
+    );
+  supervision = (
+    e: Execution | undefined,
+    blockers: readonly ReadinessBlocker[] = [],
+    closed = false,
+  ) =>
+    domainEffect(
+      Effect.gen({ self: this }, function* () {
+        const session = e?.active_role && e[`${e.active_role}_session_id`];
+        const observed = session
+          ? yield* this.runtime.session(session).pipe(Effect.result)
+          : undefined;
+        return supervisionSummary({
+          execution: e,
+          blockers,
+          closed,
+          native: observed?._tag === "Success" ? observed.success : undefined,
+          unavailable: observed?._tag === "Failure",
+          observed_at: yield* timestamp,
+        });
+      }),
+    );
+  supervisionAggregate = (bundle?: ReadBundle) =>
+    domainEffect(
+      Effect.gen({ self: this }, function* () {
+        const observation = bundle ?? (yield* this.observe());
+        const ready = yield* this.ready(observation);
+        const rows = [...observation.issues]
+          .sort(
+            (a, b) =>
+              Number(a.status === "closed") - Number(b.status === "closed") ||
+              a.priority - b.priority ||
+              (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+          )
+          .slice(0, 128);
+        const tasks = yield* Effect.forEach(
+          rows,
+          (issue) =>
+            this.supervision(
+              observation.executions.find((e) => e.issue_id === issue.id),
+              ready.find((r) => r.issue.id === issue.id)?.blocker_details,
+              issue.status === "closed",
+            ).pipe(Effect.map((summary) => ({ issue_id: issue.id, ...summary }))),
+          { concurrency: 4 },
+        );
+        const counts = Object.fromEntries(supervisionClasses.map((kind) => [kind, 0])) as Record<
+          SupervisionSummary["primary"],
+          number
+        >;
+        for (const task of tasks) counts[task.primary] = (counts[task.primary] ?? 0) + 1;
+        return {
+          observed_at: yield* timestamp,
+          counts,
+          tasks,
+          total: observation.issues.length,
+          truncated: rows.length < observation.issues.length,
         };
       }),
     );
@@ -111,6 +214,45 @@ export class Queries {
     e.worker_context_id
       ? readWorkerContext(this.records.store, e.worker_context_id)
       : Effect.fail(new CrewError("PROMPT_INTENT", "No retained worker context"));
+  messages = Effect.fn("Queries.messages")(
+    function* (this: Queries, id: IssueId, offset = 0, limit = 20) {
+      if (
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        !Number.isSafeInteger(limit) ||
+        limit < 1 ||
+        limit > 50
+      )
+        return yield* new CrewError(
+          "MESSAGE_PAGE",
+          "Use a nonnegative offset and limit between 1 and 50",
+        );
+      const e = yield* this.get(id);
+      const messages = e.messages ?? [];
+      const entries = yield* Effect.forEach(
+        messages.slice(offset, offset + limit),
+        (record): Effect.Effect<(typeof MessagesPageSchema.Type)["entries"][number]> =>
+          record.type === "finding"
+            ? Effect.succeed({ record })
+            : this.runtime
+                .promptAdmission(record.recipient_session_id, record.prompt_id, record.prompt)
+                .pipe(
+                  Effect.map((native) => ({ record, native })),
+                  Effect.orElseSucceed(() => ({ record, native: "unavailable" as const })),
+                ),
+      );
+      return {
+        entries,
+        total: messages.length,
+        outstanding: messageRequests(messages).filter(requiresResponse).length,
+        offset,
+        limit,
+        next_offset: offset + limit < messages.length ? offset + limit : undefined,
+        observed_at: yield* timestamp,
+      };
+    }.bind(this),
+    domainEffect,
+  );
   assignment = (sessionID: SessionId) =>
     this.records
       .executions()
@@ -177,6 +319,7 @@ export class Queries {
                 (e.session_intent?.role === r ? e.session_intent.id : undefined);
               if (!sessionID) return undefined;
               const configured_model = workerProfile(e, r, this.config)?.model ?? e.worker_model;
+              const model_source = e.configuration_snapshot?.dispatch_sources?.[r];
               return yield* domainEffect(
                 Effect.gen({ self: this }, function* () {
                   const state = yield* this.runtime.session(sessionID);
@@ -185,7 +328,7 @@ export class Queries {
                       "SESSION_LOCATION",
                       "Managed session moved out of owned worktree",
                     );
-                  return { role: r, configured_model, ...state };
+                  return { role: r, configured_model, model_source, ...state };
                 }),
               ).pipe(
                 Effect.catch((error) =>
@@ -193,6 +336,7 @@ export class Queries {
                     id: sessionID,
                     role: r,
                     configured_model,
+                    model_source,
                     diagnostic_error: diagnosticText(error.message),
                   }),
                 ),
@@ -288,6 +432,9 @@ export class Queries {
             onFailure: (error) => ({ repositories: [], error: error.message }),
           }),
         );
+        const authority = this.config.auto_schedule
+          ? (yield* this.automaticAuthority()).blocker
+          : undefined;
         const all = [...explanation.ready, ...explanation.blocked];
         const readyIDs = new Set(explanation.ready.map((i) => i.id));
         const active = executions.filter((e) => !terminal(e));
@@ -300,6 +447,7 @@ export class Queries {
               blockers.push(message);
               blocker_details.push({ code, message });
             };
+            if (authority) block(authority.code, authority.message);
             if (diagnostics.length)
               block(
                 "execution",
@@ -334,6 +482,10 @@ export class Queries {
             else {
               try {
                 codingPolicy(p, issue.workflow_policy, issue.quality_profile);
+                if (!active.some((e) => e.issue_id === issue.id)) {
+                  validateDispatch(this.config, p.dispatch);
+                  validateDispatch(this.config, issue.dispatch);
+                }
               } catch (error) {
                 block("setup", CrewError.from(error).message);
               }
@@ -343,7 +495,20 @@ export class Queries {
                 block("setup", "Verification commands are missing");
             }
             const own = active.find((e) => e.issue_id === issue.id);
-            if (own) block("execution", "Existing execution must be resumed");
+            if (own)
+              block(
+                "execution",
+                own.current_phase === "interrupted"
+                  ? "Execution is paused; explicit resume is required"
+                  : own.error_or_recovery_reason &&
+                      ["failed", "blocked", "recovery_required"].includes(own.current_phase)
+                    ? `Execution is ${own.current_phase}: ${diagnosticText(own.error_or_recovery_reason)}`
+                    : own.capacity_wait
+                      ? `Execution is waiting for ${own.capacity_wait.role} capacity`
+                      : own.active_role
+                        ? `${own.active_role} execution is already assigned; inspect native activity`
+                        : `Existing execution is ${own.current_phase}${own.error_or_recovery_reason ? `: ${diagnosticText(own.error_or_recovery_reason)}` : "; inspect its retained obligations"}`,
+              );
             if (p && (!own || own.capacity_wait))
               for (const capacity of capacityBlockers(
                 this.config,

@@ -187,3 +187,56 @@ test("diagnostic summaries redact credentials, omit response bodies and tool inp
     "Old errors must not be reported as a new failure after success",
   );
 });
+
+test("adjacent empty native success does not mask failure, while a new execution can recover", () => {
+  const failed = {
+    id: "msg_failed",
+    type: "idle",
+    outcome: "failed",
+    error: { type: "provider.auth", message: "Provider refused" },
+    time: { created: 2 },
+  };
+  const emptySuccess = {
+    id: "msg_empty_success",
+    type: "idle",
+    outcome: "succeeded",
+    time: { created: 3 },
+  };
+  const messages = [
+    { id: "msg_assignment", type: "user", text: "Assignment", time: { created: 1 } },
+    failed,
+    emptySuccess,
+  ];
+  const summarize = (items: unknown) =>
+    summarizeContext(items as Parameters<typeof summarizeContext>[0]);
+  assert.equal(summarize(messages).error?.message, "Provider refused");
+  const assistant = {
+    id: "msg_recovery",
+    type: "assistant",
+    model: { providerID: "fixture", id: "fixture" },
+    content: [{ type: "text", text: "Recovered the authorized turn" }],
+    time: { created: 4 },
+  };
+  assert.equal(
+    summarize([
+      ...messages,
+      assistant,
+      { ...emptySuccess, id: "msg_recovered", time: { created: 5 } },
+    ]).error,
+    undefined,
+  );
+  const newInput = {
+    id: "msg_retry",
+    type: "user",
+    text: "Explicit authorized retry",
+    time: { created: 4 },
+  };
+  assert.equal(
+    summarize([
+      ...messages,
+      newInput,
+      { ...emptySuccess, id: "msg_new_input_success", time: { created: 5 } },
+    ]).error,
+    undefined,
+  );
+});

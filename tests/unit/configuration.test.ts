@@ -143,3 +143,65 @@ test("offline CLI redacts command secrets and doctor reports missing core withou
   await assert.rejects(cli("config.ts", ["--json"]));
   assert.deepEqual(await readdir(root), ["selected.yaml"]);
 });
+
+test("supervision postures compose scheduling without granting execution policy", async () => {
+  for (const [mode, scheduling] of [
+    ["manual", false],
+    ["attended-automatic", true],
+    ["unattended", true],
+  ] as const) {
+    const config = await run(
+      resolveConfig(
+        "/installation",
+        "/installation/abracode.yaml",
+        base + `supervision_mode: ${mode}\n`,
+      ),
+    );
+    assert.equal(config.auto_schedule, scheduling);
+    assert.equal(presentConfig(config).supervision.optional_repairs, mode !== "manual");
+    assert.equal(config.repositories.length, 0);
+    assert.equal(
+      presentConfig(config).supervision.budgets,
+      "Existing per-execution diagnostic/repair budgets; mode grants none",
+    );
+    await assert.rejects(
+      run(
+        resolveConfig(
+          "/installation",
+          "/installation/abracode.yaml",
+          base + `supervision_mode: ${mode}\nauto_schedule: ${!scheduling}\n`,
+        ),
+      ),
+      /conflicts/,
+    );
+    assert.equal(
+      (
+        await run(
+          resolveConfig(
+            "/installation",
+            "/installation/abracode.yaml",
+            base + `supervision_mode: ${mode}\nauto_schedule: ${scheduling}\n`,
+          ),
+        )
+      ).auto_schedule,
+      scheduling,
+    );
+  }
+  assert.equal(
+    (await run(resolveConfig("/installation", "/installation/abracode.yaml", base)))
+      .supervision_mode,
+    undefined,
+  );
+  assert.equal(
+    (
+      await run(
+        resolveConfig(
+          "/installation",
+          "/installation/abracode.yaml",
+          base + "auto_schedule: true\n",
+        ),
+      )
+    ).auto_schedule,
+    true,
+  );
+});

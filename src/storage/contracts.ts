@@ -1,4 +1,6 @@
+import { ProjectDispatchSchema } from "../config/dispatch.ts";
 import { ConfigurationSnapshotSchema } from "../config/snapshot.ts";
+import { MessageIntentsSchema, validMessageGenerations } from "../workflow/message-contracts.ts";
 import { ExternalRecord } from "../validation/contracts.ts";
 import { FeedbackSchema, ProvisionalSchema } from "../workflow/feedback-contracts.ts";
 import {
@@ -30,6 +32,7 @@ import {
   NativeProjectId,
   SessionId,
   MessageId,
+  RequestId,
   OperationId,
   ChangeName,
   PullRequestUrl,
@@ -43,7 +46,11 @@ export { OperationIntentSchema, DeliveryWaitSchema } from "../workflow/operation
 import { RoundSchema, ScopeDispositionSchema } from "../workflow/correction-contracts.ts";
 import { SpecVerificationSchema } from "../workflow/review-contracts.ts";
 import { ScopeRecordSchema } from "../work/scope.ts";
-import { ReportIntentSchema, ReportReceiptSchema } from "../workflow/report-contracts.ts";
+import {
+  VisualBuildsSchema,
+  ReportIntentSchema,
+  ReportReceiptSchema,
+} from "../workflow/report-contracts.ts";
 import { AttentionSchema } from "../workflow/attention-contracts.ts";
 import {
   DecisionSchema,
@@ -87,6 +94,7 @@ export const PolicySnapshotSchema = Schema.Struct({
 });
 const metadata = { schema_version: Schema.Literal(1), revision: Positive };
 export const ProjectRecordSchema = Schema.Struct({
+  dispatch: Schema.optional(ProjectDispatchSchema),
   declaration_digest: Schema.optional(NonEmpty),
   ...AutomationFields,
   ...QualityFields,
@@ -127,6 +135,7 @@ const fields = {
   openspec_update_commit: Schema.optional(Commit),
   scope: Schema.optional(ScopeRecordSchema),
   scope_history: Schema.optional(Schema.Array(ScopeRecordSchema)),
+  visual_reports: Schema.optional(VisualBuildsSchema),
   report_intent: Schema.optional(ReportIntentSchema),
   report_history: Schema.optional(Schema.Array(ReportReceiptSchema)),
   report_receipt: Schema.optional(ReportReceiptSchema),
@@ -165,6 +174,7 @@ const fields = {
   capacity_observed_idle: Schema.optional(Schema.Boolean),
   capacity_wait: Schema.optional(
     Schema.Struct({
+      request_id: Schema.optional(RequestId),
       role: RoleSchema,
       reasons: Schema.mutable(Schema.Array(NonEmpty)),
       consuming: Schema.mutable(Schema.Array(IssueId)),
@@ -208,6 +218,7 @@ const fields = {
   active_role: Schema.optional(RoleSchema),
   session_intent: Schema.optional(Schema.Struct({ role: RoleSchema, id: SessionId })),
   prompt_id: Schema.optional(MessageId),
+  messages: Schema.optional(MessageIntentsSchema),
   supervisor_session_id: Schema.optional(SessionId),
   worker_model: Schema.optional(WorkerModelSchema),
   worker_failure: Schema.optional(
@@ -247,7 +258,7 @@ export const executionRecordFields = fields;
 export const ExecutionStateSchema = Schema.Struct({
   ...fields,
   setup: Schema.optional(Schema.Boolean),
-}).check(Schema.makeFilter(validFinishingGenerations));
+}).check(Schema.makeFilter(validFinishingGenerations), Schema.makeFilter(validMessageGenerations));
 const provisioned = {
   worktree_directory: AbsolutePath,
   base_commit: Commit,
@@ -338,6 +349,8 @@ export const ExecutionRecordSchema = Schema.Union([
   Schema.makeFilter((e) => {
     const finishing = validFinishingGenerations(e);
     if (finishing !== true) return finishing;
+    const messages = validMessageGenerations(e);
+    if (messages !== true) return messages;
     if (e.setup) return "Use the setup record contract";
     if (
       e.plan_approval_required !== e.effective_policy.plan_approval ||
@@ -373,6 +386,8 @@ export const SetupRecordSchema = Schema.Struct({
   Schema.makeFilter((e) => {
     const finishing = validFinishingGenerations(e);
     if (finishing !== true) return finishing;
+    const messages = validMessageGenerations(e);
+    if (messages !== true) return messages;
     if (
       e.plan_approval_required !== e.effective_policy.plan_approval ||
       e.merge_approval_required !== e.effective_policy.merge_approval ||

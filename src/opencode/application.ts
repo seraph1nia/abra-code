@@ -1,3 +1,4 @@
+import { Scheduler } from "../scheduler/scheduler.ts";
 import { ConfigApplication } from "../config/application.ts";
 import { invalidationsLayer } from "../visibility/invalidations.ts";
 import { AbsolutePath } from "../identities.ts";
@@ -48,6 +49,7 @@ export function createWorkflow(
   );
   return {
     controller,
+    scheduler: new Scheduler(controller, records),
     config,
     onboarding,
     configuration: new ConfigApplication(config, records, onboarding),

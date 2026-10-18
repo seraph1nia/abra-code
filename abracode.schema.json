@@ -79,6 +79,33 @@
       "required": ["default"],
       "additionalProperties": false
     },
+    "profiles": {
+      "anyOf": [
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": ["explore", "apply", "review", "research"]
+              },
+              "model": {
+                "$ref": "#/$defs/Model.Ref"
+              }
+            },
+            "required": ["role", "model"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "attention_capacity": {
       "anyOf": [
         {
@@ -170,6 +197,17 @@
         {
           "type": "string",
           "enum": ["full-openspec", "research-only", "lightweight-fix"]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "supervision_mode": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": ["manual", "attended-automatic", "unattended"]
         },
         {
           "type": "null"
@@ -580,6 +618,151 @@
           "items": {
             "type": "object",
             "properties": {
+              "dispatch": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "explore": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "model": {
+                                "anyOf": [
+                                  {
+                                    "$ref": "#/$defs/Model.Ref"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "profile": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "apply": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "model": {
+                                "anyOf": [
+                                  {
+                                    "$ref": "#/$defs/Model.Ref"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "profile": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "review": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "model": {
+                                "anyOf": [
+                                  {
+                                    "$ref": "#/$defs/Model.Ref"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "profile": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "research": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "model": {
+                                "anyOf": [
+                                  {
+                                    "$ref": "#/$defs/Model.Ref"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "profile": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "publication": {
                 "anyOf": [
                   {

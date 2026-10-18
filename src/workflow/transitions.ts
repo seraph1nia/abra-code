@@ -38,7 +38,14 @@ export class ExecutionTransitions {
             const e = yield* this.queries.get(id);
             if (terminal(e))
               return yield* new CrewError("CONTROL_PHASE", "Completed work cannot be paused");
-            if (e.current_phase !== "interrupted") e.resume_phase = e.current_phase;
+            if (
+              e.current_phase !== "interrupted" &&
+              !(
+                e.resume_phase &&
+                ["failed", "blocked", "recovery_required"].includes(e.current_phase)
+              )
+            )
+              e.resume_phase = e.current_phase;
             e.current_phase = "interrupted";
             e.stop_status = "requested";
             return yield* this.records.saveControl(e);

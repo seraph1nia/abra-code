@@ -3,7 +3,7 @@ import { relative } from "node:path";
 import type { Plugin } from "vite-plus";
 import { createDiagramRenderer, diagramFiles } from "./diagrams.ts";
 
-export function mermaidDiagrams(): Plugin {
+export function mermaidDiagrams(options: { cacheDir?: string } = {}): Plugin {
   let root: string;
   let building = false;
   let renderer: ReturnType<typeof createDiagramRenderer> | undefined;
@@ -14,7 +14,7 @@ export function mermaidDiagrams(): Plugin {
     const cached = prepared.get(path);
     if (cached?.source === source) return cached;
     try {
-      renderer ??= createDiagramRenderer();
+      renderer ??= createDiagramRenderer(options);
       const svg = await (await renderer).render(source);
       const diagram = { source, svg };
       prepared.set(path, diagram);

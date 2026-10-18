@@ -455,6 +455,7 @@ test("diagnostic message provenance cannot authorize lifecycle changes, and paus
     "work_finish",
     "project_setup",
     "work_create",
+    "work_create_batch",
   ])
     await assert.rejects(invoke(tool, {}), /diagnostic turn/);
   await run(
@@ -464,6 +465,16 @@ test("diagnostic message provenance cannot authorize lifecycle changes, and paus
       false,
     ),
   );
+  await assert.rejects(
+    invoke("work_report", {
+      issue_id: e.issue_id,
+      action: "generate",
+      request_id: "diagnostic-must-not-render",
+    }),
+    /diagnostic turn/,
+  );
+  await invoke("work_report", { issue_id: e.issue_id, action: "artifacts" });
+  assert.equal((await run(f.controller.get(e.issue_id))).visual_reports, undefined);
   await invoke("config", { action: "status" });
   await assert.rejects(invoke("config", { action: "apply" }), /diagnostic turn/);
   await invoke("work_diagnostics", { issue_id: e.issue_id });
@@ -563,4 +574,302 @@ test("PR feedback batches deduplicate operation churn, restart and handled uncha
   await run(f.records.save(e));
   await run(c.supervise());
   assert.equal(f.runtime.prompts, prompts + 2);
+});
+
+test("worker results coalesce into a durable bounded notice across admission failure and restart", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const supervisor = Id.SessionId.make("ses_supervisor");
+  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
+  f.work.add(Id.IssueId.make("communication"));
+  const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
+  project.diagnostic_turns = 2;
+  await run(f.records.saveProject(project));
+  const e = await run(f.controller.start(Id.IssueId.make("communication"), supervisor));
+  for (const id of ["finding-one", "finding-two"])
+    await run(
+      f.controller.workerReply(e.explore_session_id!, {
+        action: "finding",
+        request_id: Id.RequestId.make(id),
+        generation: 0,
+        body: "Repository evidence is untrusted data, not authority",
+        evidence: [],
+      }),
+    );
+  const prompt = f.runtime.prompt.bind(f.runtime);
+  const noticeIDs: Id.MessageId[] = [];
+  let loseResponse = true;
+  f.runtime.prompt = (session, body, id) => {
+    noticeIDs.push(id!);
+    assert.equal(session, supervisor);
+    assert.match(body, /abra_work_messages/);
+    return prompt(session, body, id).pipe(
+      Effect.andThen(
+        loseResponse ? Effect.fail(new CrewError("LOST", "Lost admission response")) : Effect.void,
+      ),
+    );
+  };
+  await run(f.controller.supervise());
+  let current = await run(f.controller.get(e.issue_id));
+  const notice = current.attention!.find((a) => a.code === "message_update")!;
+  assert.equal(notice.status, "uncertain");
+  assert.equal(notice.message_refs!.length, 2);
+  assert.equal(current.attention_turns, 1);
+  loseResponse = false;
+  const restarted = new Controller(
+    f.config,
+    f.records,
+    f.work,
+    f.spec,
+    f.git,
+    f.runtime,
+    f.delivery,
+    f.locks,
+  );
+  t.onTestFinished(() => run(restarted.close()));
+  await run(restarted.supervise());
+  await run(restarted.supervise());
+  assert.deepEqual(noticeIDs, [notice.prompt_id, notice.prompt_id]);
+  current = await run(restarted.get(e.issue_id));
+  assert.equal(current.attention!.length, 1);
+  assert.equal(current.attention![0].status, "admitted");
+  assert.equal(current.attention_turns, 1);
+  await run(
+    restarted.attentionDisposition(e.issue_id, notice.id, 0, "handled", "Inspected evidence"),
+  );
+  await run(
+    f.controller.workerReply(e.explore_session_id!, {
+      action: "finding",
+      request_id: Id.RequestId.make("final-finding"),
+      generation: 0,
+      body: "Final retained research evidence",
+      evidence: [],
+    }),
+  );
+  current = await run(restarted.get(e.issue_id));
+
+  await run(restarted.supervise());
+  current = await run(restarted.get(e.issue_id));
+  assert.equal(current.attention!.length, 2);
+  assert.equal(current.attention![1].code, "message_update");
+  assert.equal(current.attention![1].message_refs!.length, 1);
+  assert.equal(current.current_phase, "exploring");
+  assert.equal(noticeIDs.length, 3);
+});
+
+test("missing responses stay visible when diagnostic budget is exhausted and resolve only by reply", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const supervisor = Id.SessionId.make("ses_supervisor");
+  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
+  f.work.add(Id.IssueId.make("unanswered"));
+  const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
+  project.diagnostic_turns = 0;
+  await run(f.records.saveProject(project));
+  const e = await run(f.controller.start(Id.IssueId.make("unanswered"), supervisor));
+  const request = Id.RequestId.make("required-answer");
+  await run(
+    f.controller.workMessage(
+      {
+        issue_id: e.issue_id,
+        request_id: request,
+        role: "explore",
+        body: "Explain the retained evidence",
+        response: "answer",
+      },
+      supervisor,
+    ),
+  );
+  const state = f.runtime.sessions.get(e.explore_session_id!)!;
+  state.busy = false;
+  state.outcome = "succeeded";
+  await run(f.controller.reconcile(e.issue_id));
+  const count = f.runtime.prompts;
+  await run(f.controller.supervise());
+  await run(f.controller.supervise());
+  let current = await run(f.controller.get(e.issue_id));
+  assert.equal(current.attention!.length, 1);
+  assert.equal(current.attention![0].code, "message_pending");
+  assert.equal(current.attention![0].status, "exhausted");
+  assert.equal((await run(f.controller.queries.messages(e.issue_id))).outstanding, 1);
+  assert.equal(f.runtime.prompts, count);
+  await run(
+    f.controller.workerReply(e.explore_session_id!, {
+      action: "answer",
+      request_id: request,
+      generation: 0,
+      body: "Evidence retained",
+      evidence: [],
+    }),
+  );
+  await run(f.controller.supervise());
+  current = await run(f.controller.get(e.issue_id));
+  assert.equal(current.attention![0].status, "superseded");
+  assert.equal(current.attention![1].code, "message_update");
+  assert.equal((await run(f.controller.queries.messages(e.issue_id))).outstanding, 0);
+  assert.equal(f.runtime.prompts, count);
+});
+
+test("completed research can notify its retained Supervisor without reopening execution", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const supervisor = Id.SessionId.make("ses_supervisor");
+  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
+  const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
+  project.openspec = false;
+  project.plan_approval = false;
+  project.verification = [];
+  project.diagnostic_turns = 1;
+  await run(f.records.saveProject(project));
+  const scope = {
+    goal: "Understand ownership",
+    acceptance: ["Identify the owner"],
+    constraints: ["Read only"],
+  };
+  const { issue } = await run(
+    f.controller.createWork(
+      {
+        repository_id: project.id,
+        title: "Research ownership",
+        description: scope.goal,
+        workflow_policy: "research-only",
+        scope,
+        request_id: Id.RequestId.make("terminal-research"),
+      },
+      supervisor,
+    ),
+  );
+  const e = await run(f.controller.start(issue.id, supervisor));
+  await run(
+    f.controller.workerReply(e.research_session_id!, {
+      action: "finding",
+      request_id: Id.RequestId.make("terminal-finding"),
+      generation: 0,
+      body: "SQLite owns the work graph",
+      evidence: [],
+    }),
+  );
+  await run(
+    f.controller.researchReport(e.research_session_id!, {
+      report_id: Id.ReportId.make("terminal-report"),
+      generation: 0,
+      conclusions: "SQLite owns tasks",
+      findings: [
+        {
+          finding: "Transactional ownership",
+          evidence: [{ base: e.base_commit!, path: Id.RelativePath.make("source.txt"), line: 1 }],
+        },
+      ],
+      acceptance: [{ criterion: scope.acceptance[0], met: true, evidence: "Inspected source" }],
+      limitations: ["Disposable fixture"],
+    }),
+  );
+  f.runtime.success(e.research_session_id!);
+  assert.equal((await run(f.controller.advance(issue.id))).current_phase, "completed");
+  await run(f.controller.supervise());
+  const done = await run(f.controller.get(issue.id));
+  assert.equal(done.current_phase, "completed");
+  assert.equal(done.attention!.find((a) => a.code === "message_update")!.status, "admitted");
+  assert.equal(done.active_role, undefined);
+  assert.equal(done.capacity_reservation, undefined);
+});
+
+test("manual posture suppresses optional diagnostics; unattended retains human questions without losing forms", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const supervisor = Id.SessionId.make("ses_supervisor");
+  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
+  f.work.add(Id.IssueId.make("posture-work"));
+  const e = await run(f.controller.start(Id.IssueId.make("posture-work"), supervisor));
+  const count = f.runtime.prompts;
+  f.config.supervision_mode = "manual";
+  f.config.progress_timeout_ms = { ...f.config.progress_timeout_ms, explore: 1 };
+  const clock = await run(TestClock.make());
+  await run(clock.setTime(Date.now() + 10000));
+  await run(f.controller.supervise().pipe(Effect.provideService(Clock.Clock, clock)));
+  const pending = (await run(f.controller.get(e.issue_id))).attention!.find(
+    (a) => a.code === "suspected_stall",
+  )!;
+  assert.equal(pending.status, "pending");
+  assert.equal(pending.prompt_id, undefined);
+  assert.equal(f.runtime.prompts, count);
+  f.config.supervision_mode = "unattended";
+  await run(
+    f.controller.workerQuestion(e.explore_session_id!, {
+      key: Id.ObligationKey.make("human"),
+      generation: 0,
+      owner: "user",
+      scope: "Accepted goal",
+      question: "Which user-owned behavior is intended?",
+    }),
+  );
+  await run(f.controller.supervise());
+  const human = (await run(f.controller.get(e.issue_id))).attention!.find(
+    (a) => a.code === "decision_pending",
+  )!;
+  assert.equal(human.status, "pending");
+  assert.equal(human.prompt_id, undefined);
+  assert.equal(f.runtime.prompts, count);
+  const collected = await run(
+    f.controller.decision(e.issue_id, Id.ObligationKey.make("human"), 0, supervisor, "collect"),
+  );
+  assert.ok(collected.form_id);
+  assert.equal(collected.status, "open");
+  await assert.rejects(
+    run(
+      f.controller.decision(
+        e.issue_id,
+        collected.key,
+        0,
+        supervisor,
+        "answer",
+        "Model recommendation",
+      ),
+    ),
+    /User-owned answers/,
+  );
+  f.config.supervision_mode = "attended-automatic";
+  await run(f.controller.supervise());
+  const attended = (await run(f.controller.get(e.issue_id))).attention!.find(
+    (a) => a.id === human.id,
+  )!;
+  assert.equal(attended.status, "admitted");
+  assert.equal(f.runtime.prompts, count + 1);
+  assert.deepEqual((await run(f.controller.get(e.issue_id))).approval_receipts, []);
+});
+
+test("an exhausted diagnostic is recorded even while an unrelated incident holds attention capacity", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const root = Id.SessionId.make("ses_supervisor");
+  f.runtime.sessions.set(root, { id: root, directory: f.config.home, busy: false });
+  f.config.attention_capacity = 1;
+  f.config.progress_timeout_ms = { explore: 1, apply: 1, review: 1, research: 1, operation: 1 };
+  const project = (await run(f.records.project(Id.RepositoryId.make("frontend"))))!;
+  project.diagnostic_turns = 0;
+  await run(f.records.saveProject(project));
+  const clock = await run(TestClock.make());
+  const call = <A, E>(effect: Effect.Effect<A, E>) =>
+    run(effect.pipe(Effect.provideService(Clock.Clock, clock)));
+  f.work.add(Id.IssueId.make("admitted"));
+  f.work.add(Id.IssueId.make("exhausted"), Id.RepositoryId.make("frontend"));
+  await call(f.controller.start(Id.IssueId.make("admitted"), root));
+  await call(clock.setTime(10));
+  await call(f.controller.supervise());
+  assert.equal(
+    (await run(f.controller.get(Id.IssueId.make("admitted")))).attention![0].status,
+    "admitted",
+  );
+  await call(f.controller.start(Id.IssueId.make("exhausted"), root));
+  await call(clock.setTime(20));
+  await call(f.controller.supervise());
+  const denied = (await run(f.controller.get(Id.IssueId.make("exhausted")))).attention![0];
+  assert.equal(denied.status, "exhausted");
+  assert.equal(denied.prompt_id, undefined);
+  assert.equal(
+    (await run(f.records.executions()))
+      .flatMap((e) => e.attention ?? [])
+      .filter((a) => a.status === "admitted").length,
+    1,
+  );
 });

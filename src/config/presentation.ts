@@ -14,6 +14,14 @@ export const presentConfig = (config: Config) => ({
   },
   default_workflow: config.default_workflow,
   auto_schedule: config.auto_schedule,
+  supervision: {
+    mode: config.supervision_mode ?? "legacy",
+    optional_diagnostics: config.supervision_mode !== "manual",
+    optional_repairs: config.supervision_mode !== "manual",
+    notifications:
+      config.supervision_mode === "unattended" ? "retained-human-decisions" : "attended",
+    budgets: "Existing per-execution diagnostic/repair budgets; mode grants none",
+  },
   capacity: { workers: config.max_workers, executions: config.max_executions },
   models: Object.fromEntries(
     modelRoles.map((role) => [
@@ -25,10 +33,12 @@ export const presentConfig = (config: Config) => ({
       },
     ]),
   ),
+  profiles: Object.entries(config.profiles ?? {}).map(([id, profile]) => ({ id, ...profile })),
   repositories: config.repositories.map((repo) => ({
     id: repo.id,
     remote: repo.remote,
     path: repo.path,
+    dispatch: repo.dispatch,
     target_branch: repo.target_branch ?? "remote default",
     verification_commands: repo.verification?.length ?? 0,
     status: "declared; live registration not inspected",

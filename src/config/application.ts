@@ -17,6 +17,7 @@ export class ConfigApplication {
     private records: Records,
     private onboarding: Onboarding,
   ) {}
+  dispatch = () => ({ models: this.config.models, profiles: this.config.profiles });
   status = () =>
     Effect.gen({ self: this }, function* () {
       const fresh = yield* loadConfig(this.config.home);

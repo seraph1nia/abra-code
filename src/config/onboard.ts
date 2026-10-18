@@ -1,3 +1,4 @@
+import { validateDispatch } from "./dispatch.ts";
 import { diagnosticText } from "../opencode/diagnostics.ts";
 import { declarationDigest, saveDeclaration, saveDeclarationOutcome } from "./declarations.ts";
 import { type Config } from "../domain.ts";
@@ -47,6 +48,7 @@ export class Onboarding {
   private inspectOwned = Effect.fn("Onboarding.inspect")(
     function* (this: Onboarding, input: OnboardInput) {
       input = yield* decode(ProjectInputSchema, input, "Repository registration");
+      validateDispatch(this.config ?? {}, input.dispatch);
       identifier(input.id);
       const previous = yield* this.records.project(input.id);
       if (previous && input.remote) {
@@ -163,6 +165,7 @@ export class Onboarding {
         validation: input.validation ?? previous?.validation,
         merge_approval: input.merge_approval ?? previous?.merge_approval ?? true,
         delivery: input.delivery ?? previous?.delivery ?? "github-pr",
+        dispatch: input.dispatch ?? previous?.dispatch,
         diagnostic_turns: input.diagnostic_turns ?? previous?.diagnostic_turns ?? 1,
         repair_rounds: input.repair_rounds ?? previous?.repair_rounds ?? 0,
         generated_paths: input.generated_paths ?? previous?.generated_paths ?? [],

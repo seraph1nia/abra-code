@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { Advancement } from "./advancement.ts";
 /** Public lifecycle commands and read-only queries; implementation adapters remain private. */
 export class Controller {
@@ -20,14 +21,17 @@ export class Controller {
     this.workflow.prFeedback.reviewerSuggestions(...args);
   findings = (...args: Parameters<Advancement["prFeedback"]["findings"]>) =>
     this.workflow.prFeedback.findings(...args);
+  reconcileReports = () => this.workflow.reports.recover();
+  visualReport = (...args: Parameters<Advancement["reports"]["generate"]>) =>
+    this.workflow.reports.generate(...args);
   researchReport = (...args: Parameters<Advancement["reports"]["submit"]>) =>
     this.workflow.reports.submit(...args);
   reviseScope = (...args: Parameters<Advancement["reviseScope"]>) =>
     this.workflow.reviseScope(...args);
   guardAttention = (...args: Parameters<Advancement["attention"]["guard"]>) =>
     this.workflow.attention.guard(...args);
-  supervise = (...args: Parameters<Advancement["attention"]["scan"]>) =>
-    this.workflow.attention.scan(...args);
+  supervise = () => this.workflow.leads.scan().pipe(Effect.andThen(this.workflow.attention.scan()));
+  readonly lead = () => this.workflow.leads;
   observeWorker = (...args: Parameters<Advancement["attention"]["observe"]>) =>
     this.workflow.attention.observe(...args);
   attentionDisposition = (...args: Parameters<Advancement["attention"]["disposition"]>) =>
@@ -40,6 +44,10 @@ export class Controller {
     this.workflow.obligations.progress(...args);
   workerWait = (...args: Parameters<Advancement["obligations"]["wait"]>) =>
     this.workflow.obligations.wait(...args);
+  workMessage = (...args: Parameters<Advancement["workMessage"]>) =>
+    this.workflow.workMessage(...args);
+  workerReply = (...args: Parameters<Advancement["messages"]["reply"]>) =>
+    this.workflow.messages.reply(...args);
   decision = (...args: Parameters<Advancement["obligations"]["resolve"]>) =>
     this.workflow.obligations.resolve(...args);
   get = (...args: Parameters<Advancement["get"]>) => this.queries.get(...args);
@@ -54,6 +62,8 @@ export class Controller {
     this.workflow.recordWorkerTools(...args);
   createWork = (...args: Parameters<Advancement["createWork"]>) =>
     this.workflow.createWork(...args);
+  createWorkBatch = (...args: Parameters<Advancement["createWorkBatch"]>) =>
+    this.workflow.createWorkBatch(...args);
   recordWorkerFailure = (...args: Parameters<Advancement["recordWorkerFailure"]>) =>
     this.workflow.recordWorkerFailure(...args);
   start = (...args: Parameters<Advancement["start"]>) => this.workflow.start(...args);

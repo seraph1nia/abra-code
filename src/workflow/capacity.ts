@@ -1,6 +1,6 @@
 import { externalOwns } from "../validation/contracts.ts";
 import { admissionWait } from "../observability.ts";
-import { ExecutionId } from "../identities.ts";
+import { ExecutionId, type RequestId } from "../identities.ts";
 import { Clock, Effect } from "effect";
 import { domainEffect } from "../effect.ts";
 import {
@@ -82,7 +82,13 @@ export class Capacity {
     private records: Records,
     private coordination: Coordination,
   ) {}
-  reserve(e: ManagedExecution, role: Role, project: Project, newExecution = false) {
+  reserve(
+    e: ManagedExecution,
+    role: Role,
+    project: Project,
+    newExecution = false,
+    request?: RequestId,
+  ) {
     return this.coordination.with(() =>
       domainEffect(
         Effect.gen({ self: this }, function* () {
@@ -102,6 +108,7 @@ export class Capacity {
             yield* admissionWait(role);
             const now = yield* Clock.currentTimeMillis;
             e.capacity_wait = {
+              request_id: request,
               role,
               reasons: blockers.map((b) => b.message),
               consuming: [...new Set(blockers.flatMap((b) => b.consuming ?? []))],

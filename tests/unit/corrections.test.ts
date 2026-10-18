@@ -214,7 +214,7 @@ test("correction decisions merge atomically with newer native observations", asy
       },
     })),
   );
-  await run(new Corrections(f.records, f.git).decision(e, "Correction budget exhausted"));
+  await run(new Corrections(f.records, f.git, f.config).decision(e, "Correction budget exhausted"));
   const saved = await run(f.controller.get(e.issue_id));
   assert.equal(saved.progress?.summary, "newer native progress");
   assert.equal(
@@ -258,4 +258,24 @@ test("a lost corrective prompt response retries one reserved round and native ad
   assert.equal(e.rounds!.length, 1);
   assert.equal(e.prompt_id, message);
   assert.equal(f.runtime.prompts, before + 1);
+});
+
+test("manual posture suppresses new automatic repair without erasing the captured budget", async (t) => {
+  const f = await newFixture();
+  t.onTestFinished(() => run(f.close()));
+  await budget(f, 1);
+  const p = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
+  p.verification = [["node", "-e", "process.exit(1)"]];
+  await run(f.records.saveProject(p));
+  const e = await run(applying(f));
+  assert.equal(e.effective_policy.repair_rounds, 1);
+  f.config.supervision_mode = "manual";
+  f.spec.done = true;
+  f.runtime.success(e.apply_session_id!);
+  await assert.rejects(run(f.controller.advance(e.issue_id)));
+  const stopped = await run(f.controller.get(e.issue_id));
+  assert.equal(stopped.effective_policy.repair_rounds, 1);
+  assert.equal(stopped.rounds, undefined);
+  assert.match(stopped.decisions!.find((d) => d.status === "open")!.question, /budget exhausted/);
+  assert.equal(stopped.apply_session_id, e.apply_session_id);
 });

@@ -10,8 +10,19 @@ models:
   # overrides:
   #   apply: { providerID: your-provider, id: your-implementation-model, variant: high }
   #   review: { providerID: your-provider, id: your-review-model }
+# Optional named model selections, bound to a worker role; no permissions/tools here.
+# profiles:
+#   fast-research:
+#     role: research
+#     model: { providerID: your-provider, id: your-research-model }
+# Repository defaults may select one complete model or profile for each role:
+#     dispatch: { research: { profile: fast-research } }
+# Task dispatch overrides those defaults; existing executions keep captured choices.
 # Defaults: full-openspec, manual scheduling, 2 workers/executions, approvals required.
 # Provider credentials belong in native auth storage or the environment, never here.
+# Optional: manual | attended-automatic | unattended. Omit to preserve legacy flags/budgets.
+# supervision_mode: attended-automatic
+# Posture grants no repair budget or approval; restart after changing it.
 repositories: []
 # Add repositories through Abra, or edit declarations then run pnpm config:apply.
 # repositories:

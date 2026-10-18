@@ -1,3 +1,4 @@
+import { validateDispatch } from "./dispatch.ts";
 import { capabilityRequirements } from "../opencode/role-policy.ts";
 import { Effect, Schema } from "effect";
 import { domainEffect } from "../effect.ts";
@@ -29,6 +30,14 @@ export function resolveConfig(
             new CrewError("CONFIG", `AbraCode configuration: ${error.message.slice(0, 2048)}`),
         ),
       );
+      const mode = input.supervision_mode;
+      const explicitSchedule = typeof raw === "object" && raw !== null && "auto_schedule" in raw;
+      const autoSchedule = mode ? mode !== "manual" : input.auto_schedule;
+      if (mode && explicitSchedule && input.auto_schedule !== autoSchedule)
+        return yield* new CrewError(
+          "CONFIG",
+          "supervision_mode conflicts with explicit auto_schedule",
+        );
       const ids = new Set<string>();
       const remotes = new Set<string>();
       for (const repository of input.repositories ?? []) {
@@ -68,6 +77,7 @@ export function resolveConfig(
         ConfigSchema,
         {
           ...input,
+          auto_schedule: autoSchedule,
           home,
           config_path: path,
           config_digest: configDigest(content),
@@ -96,6 +106,7 @@ export function resolveConfig(
       );
       for (const role of ["explore", "apply", "review", "research"] as const)
         capabilityRequirements(role, config.default_workflow, config.workers[role]);
+      for (const project of config.repositories) validateDispatch(config, project.dispatch);
       return config;
     }),
   );

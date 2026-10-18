@@ -7,7 +7,7 @@ import { decodeJSON } from "../decode.ts";
 import { ToolProgress } from "./progress.ts";
 import { diagnosticText } from "./diagnostics.ts";
 
-export type ToolAccess = { worker: boolean; diagnostic: boolean };
+export type ToolAccess = { worker: boolean; diagnostic: boolean; lead?: boolean };
 
 /** Keep strict decoding at the host boundary, including the pinned host's schema bridge. */
 export function strictInput<S extends Schema.Codec<unknown, unknown>>(schema: S) {
@@ -51,8 +51,13 @@ export function defineTool<I, O>(d: {
   description: string;
   input: Schema.Codec<I, unknown>;
   output: Schema.Codec<O, unknown>;
-  run: (input: NoInfer<I>, session: SessionId) => Effect.Effect<NoInfer<O>, CrewError>;
+  run: (
+    input: NoInfer<I>,
+    session: SessionId,
+    context: Tool.Context,
+  ) => Effect.Effect<NoInfer<O>, CrewError>;
   worker?: boolean;
+  lead?: boolean;
   diagnostic?: boolean | ((input: NoInfer<I>) => boolean);
 }) {
   const output: Schema.Codec<{ readonly ok: true; readonly result?: O }, unknown> = Schema.Struct({
@@ -76,13 +81,14 @@ export function defineTool<I, O>(d: {
           authorize(
             {
               worker: !!d.worker,
+              lead: d.lead,
               diagnostic:
                 typeof d.diagnostic === "function" ? d.diagnostic(input) : d.diagnostic === true,
             },
             context,
           ).pipe(
             Effect.andThen(
-              Effect.suspend(() => d.run(input, context.sessionID)).pipe(
+              Effect.suspend(() => d.run(input, context.sessionID, context)).pipe(
                 Effect.provideService(ToolProgress, context.progress),
               ),
             ),

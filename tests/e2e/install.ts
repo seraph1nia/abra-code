@@ -52,7 +52,14 @@ export async function installSource(home: string) {
       stdout.trim(),
     ],
     { cwd: home, timeout: 120_000, maxBuffer: 2 * 1024 * 1024 },
-  );
+  ).catch((cause: unknown) => {
+    if (cause instanceof Error)
+      throw new Error(
+        `${cause.message}\n${String(Reflect.get(cause, "stdout") ?? "").slice(-8000)}\n${String(Reflect.get(cause, "stderr") ?? "").slice(-8000)}\ncode=${String(Reflect.get(cause, "code"))} signal=${String(Reflect.get(cause, "signal"))}`,
+        { cause },
+      );
+    throw cause;
+  });
 }
 
 /** Exercise the normal interactive entry point through util-linux's disposable PTY. */

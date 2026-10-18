@@ -170,7 +170,9 @@ test("monitor scope interrupts reconciliation and closes the event subscription"
   } as unknown as Context;
   const scope = await run(Scope.make());
   t.onTestFinished(() => run(Scope.close(scope, Exit.void)));
-  await run(monitor(ctx, f.controller).pipe(Effect.provideService(Scope.Scope, scope)));
+  await run(
+    monitor(ctx, f.controller, f.scheduler).pipe(Effect.provideService(Scope.Scope, scope)),
+  );
   await run(Deferred.await(entered).pipe(Effect.timeout("5 seconds")));
   await run(Scope.close(scope, Exit.void));
   assert.equal(reconciliations, 1);
@@ -233,4 +235,62 @@ test("command interruption also stops a package manager's surviving descendants"
       }),
     ),
   );
+});
+
+test("native event bursts coalesce while a dropped stream retains periodic reconciliation", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  f.config.reconcile_interval_ms = 1000;
+  const supervisor = Id.SessionId.make("ses_supervisor");
+  await run(f.controller.recordSupervisor(supervisor));
+  const entered = Deferred.makeUnsafe<void>(),
+    drained = Deferred.makeUnsafe<void>(),
+    released = Deferred.makeUnsafe<void>(),
+    twice = Deferred.makeUnsafe<void>();
+  let calls = 0,
+    subscriptions = 0;
+  const prompts = f.runtime.prompts;
+  f.controller.reconcile = () =>
+    Effect.gen(function* () {
+      calls++;
+      if (calls === 1) {
+        yield* Deferred.succeed(entered, undefined);
+        yield* Deferred.await(released);
+      } else yield* Deferred.succeed(twice, undefined);
+      return [];
+    });
+  const ctx = {
+    event: {
+      subscribe: () =>
+        Stream.suspend(() => {
+          subscriptions++;
+          return Stream.fromIterable(
+            Array.from({ length: 100 }, () => ({
+              type: "session.tool.success",
+              data: { sessionID: supervisor },
+            })),
+          ).pipe(
+            Stream.concat(
+              Stream.fromEffect(Deferred.succeed(drained, undefined)).pipe(Stream.drain),
+            ),
+          );
+        }),
+    },
+  } as unknown as Context;
+  const scope = await run(Scope.make());
+  t.onTestFinished(() => run(Scope.close(scope, Exit.void)));
+  await run(
+    monitor(ctx, f.controller, f.scheduler).pipe(Effect.provideService(Scope.Scope, scope)),
+  );
+  await run(Deferred.await(entered).pipe(Effect.timeout("5 seconds")));
+  await run(Deferred.await(drained).pipe(Effect.timeout("5 seconds")));
+  assert.equal(calls, 1);
+  await run(Deferred.succeed(released, undefined));
+  await run(Deferred.await(twice).pipe(Effect.timeout("5 seconds")));
+  assert.equal(calls, 2);
+  // EOF does not remove fallback ticks or prevent subscription recovery.
+  await run(Effect.sleep(1100));
+  assert.ok(calls >= 3);
+  assert.ok(subscriptions >= 2);
+  assert.equal(f.runtime.prompts, prompts);
 });

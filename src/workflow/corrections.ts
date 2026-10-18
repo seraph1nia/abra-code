@@ -2,7 +2,7 @@ import { externalOwns } from "../validation/contracts.ts";
 import { ObligationKey, RoundId, FindingId, ChangeName } from "../identities.ts";
 import { Clock, Effect } from "effect";
 import { createHash } from "node:crypto";
-import { CrewError, ensure, type Execution } from "../domain.ts";
+import { CrewError, ensure, type Execution, type Config } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { synchronizeExecution, type Records } from "../storage/store.ts";
 import { type Git } from "../git/repository.ts";
@@ -12,6 +12,7 @@ export class Corrections {
   constructor(
     private records: Records,
     private git: Git,
+    private config: Config,
   ) {}
   decision = Effect.fn("Corrections.decision")(
     function* (this: Corrections, e: Execution, reason: string) {
@@ -74,7 +75,8 @@ export class Corrections {
         );
       if (!e.plan_fingerprint)
         return yield* new CrewError("CORRECTION_PLAN", "Approved planning identity is required");
-      const budget = e.effective_policy.repair_rounds;
+      const budget =
+        this.config.supervision_mode === "manual" ? 0 : e.effective_policy.repair_rounds;
       const head = yield* this.git.head(e.worktree_directory!);
       const ids = [...new Set(findings)].sort();
       const duplicate = e.rounds?.some((r) => r.findings.some((id) => ids.includes(id)));

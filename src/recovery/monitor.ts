@@ -1,16 +1,21 @@
 import { type Context } from "@opencode/plugin/effect/plugin";
 import { Effect, Queue, Schedule, Stream } from "effect";
 import { type Controller } from "../workflow/controller.ts";
-import { Scheduler } from "../scheduler/scheduler.ts";
+import { type Scheduler } from "../scheduler/scheduler.ts";
 import { workerFor } from "../opencode/guards.ts";
 
 /** Coalesce event bursts and serialize reconciliation for the plugin's lifetime. */
-export function monitor(ctx: Context, c: Controller) {
+export function monitor(ctx: Context, c: Controller, scheduler: Scheduler) {
   return Effect.gen(function* () {
     const requests = yield* Effect.acquireRelease(Queue.dropping<void>(1), Queue.shutdown);
-    const scheduler = new Scheduler(c);
     const tick = c.reconcile().pipe(
       Effect.andThen(scheduler.tick()),
+      Effect.tap(() =>
+        c.reconcileReports().pipe(
+          Effect.catch((error) => Effect.logError("AbraCode report recovery", error)),
+          Effect.forkScoped,
+        ),
+      ),
       Effect.catch((error) =>
         error.code === "LOCKED" ? Effect.void : Effect.logError("AbraCode reconciliation", error),
       ),
@@ -43,6 +48,11 @@ export function monitor(ctx: Context, c: Controller) {
             event.type === "session.tool.progress"
           ) {
             yield* c.observeWorker(event.data.sessionID).pipe(Effect.ignore);
+            if (
+              event.type === "session.tool.success" &&
+              event.data.sessionID === (yield* c.queries.supervisor())
+            )
+              yield* Queue.offer(requests, undefined);
           } else if (
             event.type === "session.execution.succeeded" ||
             event.type === "session.execution.failed" ||

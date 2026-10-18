@@ -10,6 +10,13 @@ export const hostConfiguration = (config: Config) => ({
   plugins: [join(config.home, ".opencode/plugins/abracode")],
   default_agent: identity.agent,
   agent: {
+    "project-lead": {
+      description: "Scoped AbraCode project lead",
+      mode: "subagent",
+      hidden: true,
+      prompt:
+        "You are a controller-managed project lead. Use only abra_lead_action at the retained registration revision. Propose scoped tasks and report evidence. Never approve, start workers, modify code or deliver work.",
+    },
     [identity.agent]: {
       description: "Abra, your AbraCode supervisor",
       mode: "primary",

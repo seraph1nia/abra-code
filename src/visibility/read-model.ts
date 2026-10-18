@@ -233,12 +233,16 @@ export class Visibility {
               error: diagnostic.message,
             });
         }
+        const aggregate = yield* this.c.supervisionAggregate(observation);
         const observedAt = yield* Clock.currentTimeMillis;
         for (const item of work) {
           const execution = executions.find((e) => e.issue_id === item.issue_id);
           const issue = issues.find((i) => i.id === item.issue_id);
           if (execution)
             Object.assign(item, { outcome: deliveryOutcome(execution, issue?.status, observedAt) });
+          Object.assign(item, {
+            supervision: aggregate.tasks.find((task) => task.issue_id === item.issue_id),
+          });
         }
         work.sort(
           (a, b) =>
@@ -247,6 +251,7 @@ export class Visibility {
             a.issue_id.localeCompare(b.issue_id),
         );
         return {
+          supervision: aggregate,
           home: this.c.settings.home,
           record_diagnostics: diagnostics,
           work,

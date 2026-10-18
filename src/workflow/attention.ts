@@ -1,4 +1,6 @@
+import { leadAccounting } from "./lead-contracts.ts";
 import { pendingFindings } from "./feedback.ts";
+import { messageRequests, requiresResponse } from "./message-contracts.ts";
 import {
   LockKey,
   IncidentId,
@@ -32,6 +34,41 @@ const paused = (e: Execution) =>
   e.stop_status !== undefined ||
   e.current_phase === "interrupted" ||
   e.current_phase === "completed";
+type MessageReference = NonNullable<Attention["message_refs"]>[number];
+const unresolvedMessage = (e: Execution, id: import("../identities.ts").RequestId) =>
+  messageRequests(e.messages).some((m) => m.request_id === id && requiresResponse(m));
+function communicationReferences(e: Execution): MessageReference[] {
+  const covered = new Set(
+    e.attention?.flatMap((a) => a.message_refs?.map((r) => `${r.request_id}:${r.state}`) ?? []) ??
+      [],
+  );
+  return (e.messages ?? [])
+    .flatMap((m): MessageReference[] => {
+      const state =
+        m.type === "finding"
+          ? "finding"
+          : m.status === "answered"
+            ? "answered"
+            : m.status === "acknowledged" && m.response === "acknowledgement"
+              ? "acknowledged"
+              : ["admitted", "acknowledged"].includes(m.status) &&
+                  m.generation === e.control_generation &&
+                  m.assignment_id === e.prompt_id &&
+                  e.capacity_observed_idle &&
+                  !e.capacity_reservation &&
+                  requiresResponse(m)
+                ? "unanswered"
+                : undefined;
+      return state && !covered.has(`${m.request_id}:${state}`)
+        ? [{ request_id: m.request_id, state }]
+        : [];
+    })
+    .sort((a, b) => a.request_id.localeCompare(b.request_id));
+}
+const pendingCommunicationNotice = (
+  e: Execution,
+  code: "message_update" | "message_pending" = "message_update",
+) => e.attention?.find((a) => a.code === code && ["pending", "uncertain"].includes(a.status));
 /** Observations never grant authority. Admission and handling are retained separately. */
 export class AttentionService {
   constructor(
@@ -102,7 +139,15 @@ export class AttentionService {
         ? [yield* this.records.execution(id)]
         : yield* this.records.executions();
       yield* Effect.forEach(
-        executions.filter((e) => e !== undefined).filter((e) => !paused(e)),
+        executions
+          .filter((e) => e !== undefined)
+          .filter(
+            (e) =>
+              !paused(e) ||
+              (!e.stop_status &&
+                e.current_phase === "completed" &&
+                (communicationReferences(e).length > 0 || pendingCommunicationNotice(e))),
+          ),
         (record) =>
           this.locks
             .with(
@@ -117,6 +162,10 @@ export class AttentionService {
                         if (["handled", "superseded"].includes(a.status)) return false;
                         if (a.generation !== current.control_generation) return true;
                         if (a.code === "decision_pending") return !hasDecision(current, a);
+                        if (a.code === "message_pending")
+                          return !a.message_refs?.some((r) =>
+                            unresolvedMessage(current, r.request_id),
+                          );
                         if (a.code === "suspected_stall")
                           return (
                             (current.progress?.generation === a.generation &&
@@ -178,6 +227,11 @@ export class AttentionService {
                     );
                     let code: Attention["code"] | undefined;
                     let evidence = "";
+                    const messageRefs = communicationReferences(e);
+                    const missingReplies = messageRefs.filter((r) => r.state === "unanswered");
+                    const replies = messageRefs.filter((r) => r.state !== "unanswered");
+                    const pendingNotice = pendingCommunicationNotice(e);
+                    const pendingBlocker = pendingCommunicationNotice(e, "message_pending");
                     const decisions =
                       e.decisions?.filter(
                         (d) => d.status === "open" && d.generation === e.control_generation,
@@ -241,6 +295,16 @@ export class AttentionService {
                     ) {
                       code = "worker_failure";
                       evidence = `${e.worker_failure.error.type}: ${e.worker_failure.error.message}`;
+                    } else if (missingReplies.length || pendingBlocker) {
+                      code = "message_pending";
+                      evidence =
+                        pendingBlocker?.evidence ??
+                        `Required worker responses remain unanswered. Inspect abra_work_messages for these retained request identities: ${JSON.stringify(missingReplies)}. A completed native turn is not an answer. Preserve scope and existing approval gates.`;
+                    } else if (replies.length || pendingNotice) {
+                      code = "message_update";
+                      evidence =
+                        pendingNotice?.evidence ??
+                        `Worker replies/findings are retained. Inspect abra_work_messages before making decisions: ${JSON.stringify(replies)}. This evidence grants no scope, approval or delivery authority.`;
                     } else if (
                       waiting ||
                       e.capacity_wait ||
@@ -270,19 +334,37 @@ export class AttentionService {
                       }
                     }
                     if (!code) return;
-                    const key = decision
-                      ? decisionKey(decision.generation, decision.key)
-                      : code === "cleanup_blocked"
-                        ? `cleanup:${e.control_generation}:${e.cleanup_blocker!.preservation}:${e.cleanup_blocker!.fingerprint}`
-                        : code === "pr_feedback"
-                          ? `pr_feedback:${e.control_generation}:${e.delivered_commit}:${hash(evidence)}`
-                          : `${e.control_generation}:${e.prompt_id ?? "controller"}:${code}:${invalid?.key ?? e.worker_failure?.at ?? e.progress?.at ?? e.worker_started_at ?? e.operation?.started_at}`;
+                    const refs =
+                      code === "message_pending"
+                        ? missingReplies
+                        : code === "message_update"
+                          ? replies
+                          : undefined;
+                    const key =
+                      pendingBlocker && code === "message_pending"
+                        ? pendingBlocker.key
+                        : pendingNotice && code === "message_update"
+                          ? pendingNotice.key
+                          : refs?.length
+                            ? `messages:${e.control_generation}:${code}:${hash(JSON.stringify(refs))}`
+                            : decision
+                              ? decisionKey(decision.generation, decision.key)
+                              : code === "cleanup_blocked"
+                                ? `cleanup:${e.control_generation}:${e.cleanup_blocker!.preservation}:${e.cleanup_blocker!.fingerprint}`
+                                : code === "pr_feedback"
+                                  ? `pr_feedback:${e.control_generation}:${e.delivered_commit}:${hash(evidence)}`
+                                  : `${e.control_generation}:${e.prompt_id ?? "controller"}:${code}:${invalid?.key ?? e.worker_failure?.at ?? e.progress?.at ?? e.worker_started_at ?? e.operation?.started_at}`;
                     const incident = yield* this.coordination.with(() =>
                       domainEffect(
                         Effect.gen({ self: this }, function* () {
                           const current = (yield* this.records.execution(e.issue_id))!;
                           if (
-                            paused(current) ||
+                            (paused(current) &&
+                              !(
+                                current.current_phase === "completed" &&
+                                code === "message_update" &&
+                                !current.stop_status
+                              )) ||
                             current.control_generation !== e.control_generation
                           )
                             return;
@@ -296,6 +378,7 @@ export class AttentionService {
                               "Attention history is full",
                             );
                           const a: Attention = {
+                            message_refs: refs,
                             schema_version: 1,
                             id: IncidentId.make(`incident-${hash(`${e.execution_id}:${key}`)}`),
                             observed_operation:
@@ -353,7 +436,12 @@ export class AttentionService {
             const e = (yield* this.records.execution(id))!;
             const a = e.attention!.find((a) => a.id === incidentID)!;
             if (
-              paused(e) ||
+              (paused(e) &&
+                !(
+                  e.current_phase === "completed" &&
+                  a.code === "message_update" &&
+                  !e.stop_status
+                )) ||
               a.generation !== e.control_generation ||
               !["pending", "uncertain"].includes(a.status)
             )
@@ -381,11 +469,38 @@ export class AttentionService {
                 )
               )
                 return;
-            } else if (admitted.length >= this.config.attention_capacity) return;
-            const budget = e.effective_policy.diagnostic_turns;
+            }
+            // Posture controls new reasoning admission, never approval ownership.
+            // Leave suppressed notices pending, so returning to attended mode can
+            // route the same durable incident rather than minting a replacement.
+            if (
+              !a.prompt_id &&
+              ((this.config.supervision_mode === "manual" && a.code !== "decision_pending") ||
+                (this.config.supervision_mode === "unattended" &&
+                  a.code === "decision_pending" &&
+                  e.decisions?.some(
+                    (d) =>
+                      d.owner === "user" &&
+                      d.status === "open" &&
+                      decisionKey(d.generation, d.key) === a.key,
+                  )))
+            )
+              return;
+            const leads = yield* leadAccounting(this.records);
+            const budget = Math.max(
+              0,
+              e.effective_policy.diagnostic_turns - leads.turns(e.issue_id),
+            );
             // Routing a declared question is required even when optional diagnostics are disabled.
             const diagnostic = a.code !== "decision_pending";
             const exhausted = diagnostic && !a.prompt_id && (e.attention_turns ?? 0) >= budget;
+            if (
+              diagnostic &&
+              !exhausted &&
+              admitted.length + leads.active >= this.config.attention_capacity
+            )
+              return;
+
             const next: Attention = {
               ...a,
               session_id: supervisor,
@@ -428,6 +543,7 @@ export class AttentionService {
       );
       if (!prepared?.a.prompt_id || prepared.a.status !== "uncertain") return;
       const { e, a } = prepared;
+      let promptAttempted = false;
       const result = yield* Effect.result(
         domainEffect(
           Effect.gen({ self: this }, function* () {
@@ -442,11 +558,20 @@ export class AttentionService {
               e.configuration_snapshot?.supervisor ?? this.config.supervisor_model,
             );
             const latest = (yield* this.records.execution(id))!;
-            if (!(!paused(latest) && latest.control_generation === a.generation))
+            if (
+              !(
+                (!paused(latest) ||
+                  (latest.current_phase === "completed" &&
+                    a.code === "message_update" &&
+                    !latest.stop_status)) &&
+                latest.control_generation === a.generation
+              )
+            )
               return yield* new CrewError(
                 "ATTENTION_PAUSED",
                 "Attention suppressed by a control change",
               );
+            promptAttempted = true;
             yield* this.runtime.prompt(
               a.session_id!,
               `AbraCode attention for ${e.issue_id}. Incident ${a.id}, generation ${a.generation}: ${a.code}. ${a.evidence}\n${a.code === "decision_pending" ? "A worker is waiting on a retained decision. Inspect abra_work_status for its full question, key, generation and owner. Use abra_work_decision to answer a supervisor-owned question from available evidence, or collect a user-owned question through its native form. If user input is needed, bring the question to this conversation. Record handled only after routing or answering it, or user_needed with a concrete blocker. A decision answer grants no plan or merge approval." : ""}\n${a.batch ? `PR feedback batch: ${JSON.stringify(a.batch)}. Inspect abra_work_feedback_status for exact retained source text, original/assessed heads and dispositions. Classify against accepted scope with abra_work_feedback. Only already-enabled finite repair policy may authorize abra_work_correct; uncertain or scope-changing findings require decisions.` : ""}\nInspect abra_work_status/abra_work_diagnostics, then record abra_work_attention disposition. One diagnostic turn is authorized; this notice grants no repair, resume, plan, merge or deletion authority. Retain any pause and ask the user when authority is missing.`,
@@ -465,7 +590,12 @@ export class AttentionService {
                 ? item
                 : {
                     ...item,
-                    status: result._tag === "Success" ? "admitted" : "unavailable",
+                    status:
+                      result._tag === "Success"
+                        ? "admitted"
+                        : promptAttempted && ["message_update", "message_pending"].includes(a.code)
+                          ? "uncertain"
+                          : "unavailable",
                     ...(result._tag === "Success"
                       ? { delivered_at: deliveredAt }
                       : { disposition: result.failure.message.slice(0, 8192) }),

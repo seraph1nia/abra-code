@@ -98,7 +98,7 @@ export default Plugin.define({
               const outcomes = yield* action === "apply"
                 ? application.configuration.apply()
                 : application.configuration.status();
-              return configurationReport(outcomes, page);
+              return configurationReport(outcomes, page, config);
             }).pipe(
               Effect.mapError((failure) =>
                 failure instanceof CrewError
@@ -189,7 +189,7 @@ export default Plugin.define({
         Effect.forever,
         Effect.forkScoped,
       );
-      if (central) yield* monitor(ctx, c).pipe(provide);
+      if (central) yield* monitor(ctx, c, application.scheduler).pipe(provide);
     }).pipe(Effect.orDie);
   },
 });

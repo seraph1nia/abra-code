@@ -14,6 +14,7 @@ import { resolve, dirname, isAbsolute, sep } from "node:path";
 import { CrewError, type Execution, type Role } from "../domain.ts";
 import { type Controller } from "../workflow/controller.ts";
 import { isActiveWorker, historicalWorkers } from "../workflow/worker-assignment.ts";
+import { messageRequests } from "../workflow/message-contracts.ts";
 export function workerFor(controller: Controller, sessionID: SessionId) {
   return controller.queries.assignment(sessionID);
 }
@@ -38,15 +39,22 @@ export function requireOwnedPrompt(
   message: import("../identities.ts").MessageId,
 ) {
   const role = roleFor(e, session);
+  const intent = messageRequests(e.messages).find((m) => m.prompt_id === message);
   if (
-    e.prompt_id !== message ||
-    e.worker_context_id !== message ||
+    (intent
+      ? intent.generation !== e.control_generation ||
+        intent.assignment_id !== e.prompt_id ||
+        intent.recipient_session_id !== session ||
+        intent.role !== role ||
+        !["admission_uncertain", "admitted", "acknowledged", "answered"].includes(intent.status)
+      : e.prompt_id !== message || e.worker_context_id !== message) ||
     !isActiveWorker(e, session, { role })
   )
     throw new CrewError(
       "WORKER_PROMPT_ONLY",
       "Managed workers accept only controller-owned prompts. Talk to Abra.",
     );
+  return intent;
 }
 const editInput = Schema.Struct({
   patchText: Schema.optional(Schema.String),
@@ -91,15 +99,32 @@ export function installGuards(
       yield* ctx.session.hook("prompt", (event) =>
         domainEffect(
           Effect.gen(function* () {
+            if (
+              yield* controller
+                .lead()
+                .prompt(event.sessionID, event.messageID, event.prompt.text, event.delivery)
+            ) {
+              if (
+                event.prompt.files?.length ||
+                event.prompt.agents?.length ||
+                event.prompt.skills?.length
+              )
+                return yield* new CrewError(
+                  "LEAD_PROMPT",
+                  "Lead prompts cannot attach files, agents or skills",
+                );
+              return;
+            }
             const assignment = yield* workerFor(controller, event.sessionID);
             if (!assignment) return;
-            requireOwnedPrompt(assignment, event.sessionID, event.messageID);
+            const intent = requireOwnedPrompt(assignment, event.sessionID, event.messageID);
             const captured = yield* controller.queries.capturedWorkerPrompt(assignment);
             if (
               captured.generation !== assignment.control_generation ||
               captured.session_id !== event.sessionID ||
-              captured.prompt_id !== event.messageID ||
-              captured.prompt !== event.prompt.text ||
+              captured.prompt_id !== assignment.prompt_id ||
+              (intent?.prompt ?? captured.prompt) !== event.prompt.text ||
+              (intent?.delivery ?? "queue") !== event.delivery ||
               event.prompt.files?.length ||
               event.prompt.agents?.length ||
               event.prompt.skills?.length
@@ -114,6 +139,29 @@ export function installGuards(
       yield* ctx.session.hook("context", (event) =>
         domainEffect(
           Effect.gen(function* () {
+            const lead = yield* controller.lead().principal(event.sessionID);
+            if (lead || event.agent === "project-lead") {
+              if (
+                !lead ||
+                !lead.enabled ||
+                lead.stop_pending ||
+                lead.session_id !== event.sessionID ||
+                event.agent !== "project-lead"
+              )
+                return yield* new CrewError("LEAD_STALE", "Current registered lead required");
+              if (
+                event.model.providerID !== lead.model.providerID ||
+                event.model.id !== lead.model.id ||
+                (event.model.variant ?? "default") !== (lead.model.variant ?? "default")
+              )
+                return yield* new CrewError(
+                  "LEAD_MODEL",
+                  "Lead must use its captured model selection",
+                );
+              for (const name of Object.keys(event.tools))
+                if (name !== "abra_lead_action") delete event.tools[name];
+              return;
+            }
             const e = yield* workerFor(controller, event.sessionID);
             if (e) {
               const role = roleFor(e, event.sessionID);
@@ -174,6 +222,22 @@ export function installGuards(
       yield* ctx.tool.hook("execute.before", (event) =>
         domainEffect(
           Effect.gen(function* () {
+            const lead = yield* controller.lead().principal(event.sessionID);
+            if (lead || event.agent === "project-lead") {
+              if (
+                !lead ||
+                !lead.enabled ||
+                lead.stop_pending ||
+                lead.session_id !== event.sessionID ||
+                event.agent !== "project-lead" ||
+                event.tool !== "abra_lead_action"
+              )
+                return yield* new CrewError(
+                  "LEAD_FORBIDDEN",
+                  "Project lead tool is outside its management scope",
+                );
+              return;
+            }
             const e = yield* workerFor(controller, event.sessionID);
             if (!e) {
               if (event.agent === "abra" && !policyAllows("supervisor", event.tool))
