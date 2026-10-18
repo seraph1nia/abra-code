@@ -4,8 +4,10 @@ import { Show } from "solid-js";
 import { type Context } from "@opencode/plugin/tui/context";
 import { type WorkView } from "./client.ts";
 import { actions, box, each, text, type Buttons } from "./controls.ts";
-import { ordered, section, sections } from "./presentation.ts";
+import { ordered, section, sections, leadNeedsAttention } from "./presentation.ts";
 import { issueRow } from "./work-components.ts";
+import { fleetLabels, fleetStates } from "./fleet.ts";
+import { LeadView } from "./lead-view.ts";
 
 export function WorkHome(ctx: Context, view: WorkView, buttons: Buttons) {
   const all = () => view.state.snapshot?.work ?? [];
@@ -28,7 +30,38 @@ export function WorkHome(ctx: Context, view: WorkView, buttons: Buttons) {
         () =>
           `Work · ${all().filter((w) => w.issue_status !== "closed").length} open · ${view.state.snapshot?.closed_total ?? 0} closed`,
       ),
+      text(ctx, () => {
+        const fleet = view.state.snapshot?.fleet;
+        return fleet
+          ? `FLEET · ${fleet.total} tasks · ${fleet.completed_today} completed today (${fleet.timezone})\n${fleetStates
+              .filter((s) => fleet.counts[s] > 0)
+              .map((s) => `${fleetLabels[s]} ${fleet.counts[s]}`)
+              .join(
+                " · ",
+              )}\nNative activity observed: ${fleet.native_observed}/${fleet.native_total} assigned sessions · snapshot ${view.state.snapshot?.at}`
+          : "Fleet summary unavailable";
+      }),
+      each(
+        () => view.state.snapshot?.fleet?.repositories ?? [],
+        (row) =>
+          text(
+            ctx,
+            () =>
+              `${row.repository_id ?? "Unregistered"} · ${fleetStates
+                .filter((s) => row.counts[s] > 0)
+                .map((s) => `${fleetLabels[s]} ${row.counts[s]}`)
+                .join(" · ")}`,
+            true,
+          ),
+      ),
       actions([
+        buttons.button(
+          () =>
+            `Needs attention · ${(view.state.snapshot?.fleet?.attention.length ?? 0) + (view.state.snapshot?.leads?.filter(leadNeedsAttention).length ?? 0)}`,
+          () => {
+            void view.chooseAttention();
+          },
+        ),
         buttons.button(
           () => view.state.repository || "All repositories",
           () => {
@@ -55,6 +88,7 @@ export function WorkHome(ctx: Context, view: WorkView, buttons: Buttons) {
         },
       }),
       text(ctx, () => `${filtered().length} of ${all().length} loaded tickets`, true),
+      LeadView(ctx, view, buttons),
       each(
         () => sections,
         (group) => {

@@ -1,11 +1,13 @@
 import { type WorkerInspection } from "./worker.ts";
 import { type FeedbackPage } from "../workflow/feedback-contracts.ts";
+import { type MessagesPageSchema } from "../workflow/message-contracts.ts";
 import {
   ViewKey,
   type IssueId,
   type RepositoryId,
   type SessionId,
   type RelativePath,
+  type LeadId,
 } from "../identities.ts";
 import { type Section } from "./presentation.ts";
 
@@ -16,10 +18,11 @@ import {
   type WorkSnapshot,
   type DiffScope,
 } from "./protocol.ts";
-export type Tab = "overview" | "plan" | "diff" | "workers" | "feedback";
+export type Tab = "overview" | "plan" | "diff" | "workers" | "feedback" | "communication";
 export interface ViewLocation {
   selected?: IssueId;
   feedback_page?: number;
+  messages_offset?: number;
   tab: Tab;
   document_path?: RelativePath | "@report";
   diff_file?: RelativePath;
@@ -27,6 +30,7 @@ export interface ViewLocation {
   diff_view: "unified" | "split";
 }
 export interface ViewState extends ViewLocation {
+  lead_id?: LeadId;
   worker_id?: SessionId;
   worker?: WorkerInspection;
   worker_error?: string;
@@ -34,6 +38,9 @@ export interface ViewState extends ViewLocation {
   feedback?: FeedbackPage;
   feedback_loading?: boolean;
   feedback_error?: string;
+  messages?: typeof MessagesPageSchema.Type;
+  messages_loading?: boolean;
+  messages_error?: string;
   snapshot?: WorkSnapshot;
   detail?: WorkDetail;
   detail_error?: string;
@@ -60,6 +67,7 @@ export type UpdateView = (mutation: (state: ViewState) => void) => void;
 export const locationOf = (s: ViewState): ViewLocation => ({
   selected: s.selected,
   feedback_page: s.feedback_page,
+  messages_offset: s.messages_offset,
   tab: s.tab,
   document_path: s.document_path,
   diff_file: s.diff_file,
@@ -69,7 +77,7 @@ export const locationOf = (s: ViewState): ViewLocation => ({
 export const scrollKey = (s: ViewState) =>
   ViewKey.make(
     s.selected
-      ? `${s.selected}/${s.tab}/${s.tab === "plan" ? (s.document_path ?? "proposal") : s.tab === "diff" ? `${s.diff_scope}/${s.diff_file ?? ""}` : s.tab === "feedback" ? (s.feedback_page ?? 0) : ""}`
+      ? `${s.selected}/${s.tab}/${s.tab === "plan" ? (s.document_path ?? "proposal") : s.tab === "diff" ? `${s.diff_scope}/${s.diff_file ?? ""}` : s.tab === "feedback" ? (s.feedback_page ?? 0) : s.tab === "communication" ? (s.messages_offset ?? 0) : ""}`
       : "home",
   );
 
@@ -77,6 +85,7 @@ export const scrollKey = (s: ViewState) =>
 export function restoreLocation(state: ViewState, location: ViewLocation) {
   state.selected = location.selected;
   state.feedback_page = location.feedback_page ?? 0;
+  state.messages_offset = location.messages_offset ?? 0;
   state.tab = location.tab;
   state.document_path = location.document_path;
   state.diff_file = location.diff_file;

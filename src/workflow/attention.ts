@@ -1,6 +1,6 @@
 import { leadAccounting } from "./lead-contracts.ts";
 import { pendingFindings } from "./feedback.ts";
-import { messageRequests, requiresResponse } from "./message-contracts.ts";
+import { messageRequests, requiresResponse, type MessageIntent } from "./message-contracts.ts";
 import {
   LockKey,
   IncidentId,
@@ -16,7 +16,7 @@ import { SessionMessage } from "@opencode/schema/session-message";
 import { CrewError, type Config, type Execution } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { type Records } from "../storage/store.ts";
-import { type Runtime } from "../opencode/runtime.ts";
+import { type Runtime, type SessionState } from "../opencode/runtime.ts";
 import { type Coordination } from "./coordination.ts";
 import { type Locks } from "../storage/lock.ts";
 import { type Attention } from "./attention-contracts.ts";
@@ -36,7 +36,13 @@ const paused = (e: Execution) =>
   e.current_phase === "completed";
 type MessageReference = NonNullable<Attention["message_refs"]>[number];
 const unresolvedMessage = (e: Execution, id: import("../identities.ts").RequestId) =>
-  messageRequests(e.messages).some((m) => m.request_id === id && requiresResponse(m));
+  messageRequests(e.messages).some(
+    (m) =>
+      m.request_id === id &&
+      (requiresResponse(m) ||
+        (!["cancelled", "superseded"].includes(m.status) &&
+          m.response_recovery?.status === "admission_uncertain")),
+  );
 function communicationReferences(e: Execution): MessageReference[] {
   const covered = new Set(
     e.attention?.flatMap((a) => a.message_refs?.map((r) => `${r.request_id}:${r.state}`) ?? []) ??
@@ -51,14 +57,7 @@ function communicationReferences(e: Execution): MessageReference[] {
             ? "answered"
             : m.status === "acknowledged" && m.response === "acknowledgement"
               ? "acknowledged"
-              : ["admitted", "acknowledged"].includes(m.status) &&
-                  m.generation === e.control_generation &&
-                  m.assignment_id === e.prompt_id &&
-                  e.capacity_observed_idle &&
-                  !e.capacity_reservation &&
-                  requiresResponse(m)
-                ? "unanswered"
-                : undefined;
+              : undefined;
       return state && !covered.has(`${m.request_id}:${state}`)
         ? [{ request_id: m.request_id, state }]
         : [];
@@ -78,6 +77,79 @@ export class AttentionService {
     private coordination: Coordination,
     private locks: Locks,
   ) {}
+  /** One original-request incident; detection does not dispatch a model or answer it. */
+  responseIncident = Effect.fn("Attention.responseIncident")(
+    function* (
+      this: AttentionService,
+      e: Execution,
+      request: MessageIntent,
+      reason: string,
+      state?: SessionState,
+    ) {
+      const now = yield* Clock.currentTimeMillis;
+      yield* this.records.update(e.issue_id, (current) => {
+        const m = messageRequests(current.messages).find(
+          (m) => m.request_id === request.request_id,
+        );
+        if (
+          !m ||
+          ["cancelled", "superseded"].includes(m.status) ||
+          (!requiresResponse(m) && m.response_recovery?.status !== "admission_uncertain") ||
+          current.stop_status ||
+          m.generation !== current.control_generation ||
+          m.assignment_id !== current.prompt_id
+        )
+          return;
+        const key = `response:${m.generation}:${m.request_id}`;
+        const evidence = `Worker communication requires inspection. Issue: ${current.issue_id}. Role: ${m.role}. Request: ${m.request_id}. Outstanding: ${requiresResponse(m) ? m.response : "reminder admission observation (business response already committed)"}. Original instruction: ${m.status}. Recovery: ${m.response_recovery?.status ?? "not attempted"} (maximum one). Last verified completion: ${m.response_recovery?.completed_at ?? state?.assignment?.completion?.at ?? "unavailable"}. Reason: ${reason}. Native state: ${state ? JSON.stringify({ executing: state.executing, busy: state.busy, outcome: state.outcome, completion: state.assignment?.completion }) : "unavailable"}. Inspect abra_work_messages using the original request identity; inspect the worker context and explicitly retry/resume if needed. Admission and escalation do not answer this request.`;
+        const existing = current.attention?.find(
+          (a) =>
+            a.generation === m.generation &&
+            a.code === "message_pending" &&
+            a.message_refs?.some((r) => r.request_id === m.request_id),
+        );
+        if (existing) {
+          if (existing.evidence === evidence) return;
+          return {
+            ...current,
+            attention: current.attention!.map((a) =>
+              a.id === existing.id ? { ...a, evidence } : a,
+            ),
+          };
+        }
+        if ((current.attention?.length ?? 0) >= 256)
+          throw new CrewError("ATTENTION_LIMIT", "Attention history is full");
+        return {
+          ...current,
+          attention: [
+            ...(current.attention ?? []),
+            {
+              schema_version: 1 as const,
+              id: IncidentId.make(`incident-${hash(`${current.execution_id}:${key}`)}`),
+              key,
+              generation: m.generation,
+              code: "message_pending" as const,
+              message_refs: [
+                {
+                  request_id: m.request_id,
+                  state: requiresResponse(m)
+                    ? ("unanswered" as const)
+                    : m.status === "answered"
+                      ? ("answered" as const)
+                      : ("acknowledged" as const),
+                },
+              ],
+              evidence,
+              created_at: now,
+              attempts: 0,
+              status: "pending" as const,
+            },
+          ],
+        };
+      });
+    }.bind(this),
+    domainEffect,
+  );
   guard = Effect.fn("Attention.guard")(
     function* (
       this: AttentionService,
@@ -168,6 +240,11 @@ export class AttentionService {
                           );
                         if (a.code === "suspected_stall")
                           return (
+                            // Reaching this controller checkpoint proves that the
+                            // observed worker made progress. Retain exhausted
+                            // history, but do not strand an active diagnostic slot.
+                            (current.current_phase === "awaiting_plan_approval" &&
+                              ["pending", "uncertain", "admitted"].includes(a.status)) ||
                             (current.progress?.generation === a.generation &&
                               (!a.observed_session ||
                                 current.progress.session_id === a.observed_session) &&
@@ -494,6 +571,21 @@ export class AttentionService {
             // Routing a declared question is required even when optional diagnostics are disabled.
             const diagnostic = a.code !== "decision_pending";
             const exhausted = diagnostic && !a.prompt_id && (e.attention_turns ?? 0) >= budget;
+            // Preserve the finite diagnostic budget for outstanding business responses.
+            // Keep routine outcomes pending so they can be reported after recovery.
+            if (
+              !a.prompt_id &&
+              a.code === "message_update" &&
+              !exhausted &&
+              messageRequests(e.messages).some(
+                (m) =>
+                  m.generation === e.control_generation &&
+                  m.assignment_id === e.prompt_id &&
+                  requiresResponse(m) &&
+                  !m.response_recovery,
+              )
+            )
+              return;
             if (
               diagnostic &&
               !exhausted &&

@@ -1,0 +1,32 @@
+$ vp test run --project unit --project integration
+
+ RUN  v5.0.4 /home/bart/projects/personal/opencrew
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: [vitest-pool]: Worker forks emitted error.
+ ❯ EventEmitter.onTaskError node_modules/.pnpm/vitest@5.0.4_@opentelemetry+api@1.9.0_@types+node@24.12.2_@vitest+browser-preview@5.0.4_732cf11a6834683335206ce634569816/node_modules/vitest/dist/chunks/index.B8VfM7Mf.js:5893:21
+ ❯ EventEmitter.emit node:events:514:28
+ ❯ ChildProcess.emitUnexpectedExit node_modules/.pnpm/vitest@5.0.4_@opentelemetry+api@1.9.0_@types+node@24.12.2_@vitest+browser-preview@5.0.4_732cf11a6834683335206ce634569816/node_modules/vitest/dist/chunks/index.B8VfM7Mf.js:5368:22
+ ❯ ChildProcess.emit node:events:514:28
+ ❯ ChildProcess._handle.onexit node:internal/child_process:295:12
+
+Caused by: Error: Worker exited unexpectedly with signal SIGSEGV during started state while running test file /home/bart/projects/personal/opencrew/tests/integration/report-snapshot.test.ts
+ ❯ ChildProcess.emitUnexpectedExit node_modules/.pnpm/vitest@5.0.4_@opentelemetry+api@1.9.0_@types+node@24.12.2_@vitest+browser-preview@5.0.4_732cf11a6834683335206ce634569816/node_modules/vitest/dist/chunks/index.B8VfM7Mf.js:5366:33
+ ❯ ChildProcess.emit node:events:514:28
+ ❯ ChildProcess._handle.onexit node:internal/child_process:295:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  70 passed (71)
+      Tests  440 passed (440)
+     Errors  1 error
+   Start at  09:55:03
+   Duration  242.96s (tests 84%, import 15%)
+
+[ELIFECYCLE] Test failed. See above for more details.

@@ -1,0 +1,62 @@
+{
+  "observed_at": "2026-10-18T12:18:33.137919+00:00",
+  "coverage": "Only recorded disposable roots/native children/report groups, no host-wide descendant claim",
+  "resources": [
+    {
+      "source": "/tmp/abra-p0-owned-full/cycle-2/resources.json",
+      "fixture_root_present": false,
+      "native_pids_present": [],
+      "recorded_report_groups_present": [],
+      "recorded_cleanup": "removed"
+    },
+    {
+      "source": "/tmp/abra-p0-owned-full/cycle-1/resources.json",
+      "fixture_root_present": false,
+      "native_pids_present": [],
+      "recorded_report_groups_present": [],
+      "recorded_cleanup": "removed"
+    },
+    {
+      "source": "/tmp/abra-p0-owned-full/cycle-1/crash-windows/resources.json",
+      "fixture_root_present": false,
+      "native_pids_present": [],
+      "recorded_report_groups_present": [],
+      "recorded_cleanup": "removed"
+    },
+    {
+      "source": "/tmp/abra-p0-owned-full/cycle-1/reply-recovery/resources.json",
+      "fixture_root_present": false,
+      "native_pids_present": [],
+      "recorded_report_groups_present": [],
+      "recorded_cleanup": "removed"
+    },
+    {
+      "source": "/tmp/abra-p0-owned-full/cycle-2/reply-recovery/resources.json",
+      "fixture_root_present": false,
+      "native_pids_present": [],
+      "recorded_report_groups_present": [],
+      "recorded_cleanup": "removed"
+    },
+    {
+      "source": "/tmp/abra-p0-owned-native/resources.json",
+      "fixture_root_present": false,
+      "native_pids_present": [],
+      "recorded_report_groups_present": [],
+      "recorded_cleanup": "removed"
+    },
+    {
+      "source": "/tmp/abra-p0-owned-native/reply-recovery/resources.json",
+      "fixture_root_present": false,
+      "native_pids_present": [],
+      "recorded_report_groups_present": [],
+      "recorded_cleanup": "removed"
+    },
+    {
+      "source": "/tmp/abra-lead-answer-route/resources.json",
+      "fixture_root_present": false,
+      "native_pids_present": [],
+      "recorded_report_groups_present": [],
+      "recorded_cleanup": "removed"
+    }
+  ]
+}

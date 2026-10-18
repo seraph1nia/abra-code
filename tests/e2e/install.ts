@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
@@ -60,6 +60,42 @@ export async function installSource(home: string) {
       );
     throw cause;
   });
+  if (process.env.ABRACODE_TEST_METRICS === "1") {
+    await mkdir(join(home, "tests/operational"), { recursive: true });
+    await cp(resolve("tests/operational/metrics.ts"), join(home, "tests/operational/metrics.ts"));
+    await cp(resolve("tests/operational/faults.ts"), join(home, "tests/operational/faults.ts"));
+    const processPath = join(home, "src/process.ts");
+    const processSource = await readFile(processPath, "utf8");
+    const processAnchor = "let stdoutSize = 0,";
+    if (!processSource.includes(processAnchor))
+      throw Error("Native report process fixture seam changed");
+    await writeFile(
+      processPath,
+      'import { recordReportChild } from "../tests/operational/metrics.ts";\n' +
+        processSource.replace(
+          processAnchor,
+          "recordReportChild(Number(child.pid), file, args);\n            " + processAnchor,
+        ),
+    );
+    const path = join(home, "src/opencode/application.ts");
+    const source = await readFile(path, "utf8");
+    const anchor = "yield* Effect.addFinalizer(() => application.controller.close());";
+    if (!source.includes(anchor)) throw Error("Native metrics fixture seam changed");
+    await writeFile(
+      path,
+      'import { measureApplication } from "../../tests/operational/metrics.ts";\n' +
+        source.replace(anchor, anchor + "\n      measureApplication(application);"),
+    );
+    const plugin = join(home, ".opencode/plugins/abracode/index.ts");
+    const entry = await readFile(plugin, "utf8");
+    const monitor = "monitor(ctx, c, application.scheduler)";
+    if (!entry.includes(monitor)) throw Error("Native event fixture seam changed");
+    await writeFile(
+      plugin,
+      'import { faultEvents } from "../../../tests/operational/faults.ts";\n' +
+        entry.replace(monitor, "monitor(faultEvents(ctx), c, application.scheduler)"),
+    );
+  }
 }
 
 /** Exercise the normal interactive entry point through util-linux's disposable PTY. */

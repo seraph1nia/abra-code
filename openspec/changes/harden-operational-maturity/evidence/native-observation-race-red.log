@@ -1,0 +1,37 @@
+note: You are running `vp test` as a Vite+ built-in command. If you meant to run the test npm script, use `vpr test` instead.
+
+ RUN  v5.0.4 /home/bart/projects/personal/opencrew
+
+ ❯ |unit| tests/unit/native-message-admission.test.ts (8 tests | 1 failed | 7 skipped) 299ms
+   × native context with unfinished input cannot establish idle from an earlier active snapshot 298ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| tests/unit/native-message-admission.test.ts > native context with unfinished input cannot establish idle from an earlier active snapshot
+AssertionError: Expected values to be strictly equal:
+
+false !== true
+
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/unit/native-message-admission.test.ts:44:12
+     42|   for (outcome of [undefined, "succeeded"] as const) {
+     43|     const state = await run(native.session(e.explore_session_id!, requ…
+     44|     assert.equal(state.busy, true);
+       |            ^
+     45|     assert.equal(state.executing, undefined);
+     46|     assert.equal(state.assignment?.outcome, "succeeded");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 skipped (8)
+   Start at  12:29:36
+   Duration  1.04s (import 57%, tests 31%, transform 11%)
+

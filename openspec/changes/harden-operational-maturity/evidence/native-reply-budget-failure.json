@@ -1,0 +1,263 @@
+{
+  "fixture": "tests/e2e/native.test.ts",
+  "result": "fail",
+  "cleanup_complete": true,
+  "errors": [
+    {
+      "name": "Error",
+      "frames": [
+        "    at Object.eventually (/home/bart/projects/personal/opencrew/tests/e2e/native.test.ts:69:9)",
+        "    at replyRecoveryJourney (/home/bart/projects/personal/opencrew/tests/e2e/reply-recovery.ts:66:20)",
+        "    at nativeJourney (/home/bart/projects/personal/opencrew/tests/e2e/native.test.ts:1360:30)",
+        "    at async file:///home/bart/projects/personal/opencrew/node_modules/.pnpm/vitest@5.0.4_@opentelemetry+api@1.9.0_@types+node@24.12.2_@vitest+browser-preview@5.0.4_732cf11a6834683335206ce634569816/node_modules/vitest/dist/chunks/run.Cm2sd7-x.js:2794:20"
+      ]
+    }
+  ],
+  "observed_at": "2026-10-18T10:20:28.709Z",
+  "isolation": "Disposable service/data/config, loopback provider and local bare remotes; no operator service or user remote",
+  "observations": [
+    {
+      "reply_recovery": "failed",
+      "phase": "exploring",
+      "attention_turns": 2,
+      "messages": [
+        {
+          "request_id": "native-recovery-answer",
+          "status": "answered",
+          "prompt_id": "msg_14e858778001myk9ZKengrfbTL",
+          "recovery": {
+            "prompt_id": "msg_14e858cff001rQ5VVctYh2b8Z3",
+            "status": "admitted"
+          }
+        },
+        {
+          "request_id": "native-recovery-escalation",
+          "status": "admitted",
+          "prompt_id": "msg_14e85884c001S8EhaiBWXFItyY"
+        }
+      ],
+      "attention": [
+        {
+          "id": "incident-d7f060dd39e5a2e7ebe8422a5cbab03d7210b23e",
+          "code": "message_pending",
+          "status": "user_needed",
+          "evidence": "Worker communication requires inspection. Issue: abra-d99bd89b-6f2d-4a5c-954d-04de81aa9f7a. Role: explore. Request: native-recovery-escalation. Outstanding: acknowledgement. Original instruction: admitted. Recovery: not attempted (maximum one). Last verified completion: 1792318737436. Reason: Diagnostic budget exhausted; no automatic reminder admitted. Native state: {\"executing\":false,\"busy\":false,\"outcome\":\"succeeded\",\"completion\":{\"id\":\"msg_14e858c1c001ks1WRQ2bczuj78\",\"at\":1792318737436}}. Inspect abra_work_messages using the original request identity; inspect the worker context and explicitly retry/resume if needed. Admission and escalation do not answer this request.",
+          "refs": [
+            {
+              "request_id": "native-recovery-escalation",
+              "state": "unanswered"
+            }
+          ]
+        },
+        {
+          "id": "incident-f8a16aa4f1fa22ed68daa7c92d484457779c4dd2",
+          "code": "message_update",
+          "status": "exhausted",
+          "evidence": "Worker replies/findings are retained. Inspect abra_work_messages before making decisions: [{\"request_id\":\"native-recovery-answer\",\"state\":\"answered\"}]. This evidence grants no scope, approval or delivery authority.",
+          "refs": [
+            {
+              "request_id": "native-recovery-answer",
+              "state": "answered"
+            }
+          ]
+        }
+      ],
+      "native_context": [
+        {
+          "id": "msg_14e858482001PHxHHYrnXFmOMV",
+          "type": "user",
+          "time": {
+            "created": 1792318736114
+          }
+        },
+        {
+          "id": "msg_14e8586f5001JXbqRba275keYs",
+          "type": "assistant",
+          "time": {
+            "created": 1792318736165,
+            "streamed": 1792318736652,
+            "completed": 1792318736692
+          }
+        },
+        {
+          "id": "msg_14e85893f001CodfrZkStJT4v5",
+          "type": "assistant",
+          "time": {
+            "created": 1792318736775,
+            "streamed": 1792318736786,
+            "completed": 1792318736799
+          }
+        },
+        {
+          "id": "msg_14e8589a7001Wz5qAqkXzHB53f",
+          "type": "assistant",
+          "time": {
+            "created": 1792318736875,
+            "streamed": 1792318736886,
+            "completed": 1792318736899
+          }
+        },
+        {
+          "id": "msg_14e858a0a001l9eqSci8veLzWs",
+          "type": "assistant",
+          "time": {
+            "created": 1792318736953,
+            "streamed": 1792318736962,
+            "completed": 1792318736986
+          }
+        },
+        {
+          "id": "msg_14e858a63001BSKEt4u3PzFtok",
+          "type": "assistant",
+          "time": {
+            "created": 1792318737041,
+            "streamed": 1792318737050,
+            "completed": 1792318737071
+          }
+        },
+        {
+          "id": "msg_14e858ab7001sEyvqnNcKozg9s",
+          "type": "assistant",
+          "time": {
+            "created": 1792318737123,
+            "streamed": 1792318737143,
+            "completed": 1792318737166
+          }
+        },
+        {
+          "id": "msg_14e858b16001GJJobLgNWsQshq",
+          "type": "assistant",
+          "time": {
+            "created": 1792318737211,
+            "streamed": 1792318737221,
+            "completed": 1792318737245
+          }
+        },
+        {
+          "id": "msg_14e858b65001lwFN8gu1RfhLkZ",
+          "type": "assistant",
+          "time": {
+            "created": 1792318737281,
+            "streamed": 1792318737291,
+            "completed": 1792318737301
+          }
+        },
+        {
+          "id": "msg_14e858778001myk9ZKengrfbTL",
+          "type": "user",
+          "time": {
+            "created": 1792318737306
+          }
+        },
+        {
+          "id": "msg_14e858b9e001pu5XxTe7tqnMuf",
+          "type": "assistant",
+          "time": {
+            "created": 1792318737337,
+            "streamed": 1792318737348,
+            "completed": 1792318737354
+          }
+        },
+        {
+          "id": "msg_14e85884c001S8EhaiBWXFItyY",
+          "type": "user",
+          "time": {
+            "created": 1792318737360
+          }
+        },
+        {
+          "id": "msg_14e858bd3001Ha11Thvuj8zDeE",
+          "type": "assistant",
+          "time": {
+            "created": 1792318737413,
+            "streamed": 1792318737424,
+            "completed": 1792318737433
+          }
+        },
+        {
+          "id": "msg_14e858c1c001ks1WRQ2bczuj78",
+          "type": "idle",
+          "outcome": "succeeded",
+          "time": {
+            "created": 1792318737436
+          }
+        },
+        {
+          "id": "msg_14e858cff001rQ5VVctYh2b8Z3",
+          "type": "user",
+          "time": {
+            "created": 1792318737787
+          }
+        },
+        {
+          "id": "msg_14e858d7f001snpfrhAcb7wxVg",
+          "type": "assistant",
+          "time": {
+            "created": 1792318737838,
+            "streamed": 1792318737848,
+            "completed": 1792318737904
+          }
+        },
+        {
+          "id": "msg_14e858df8001QRlNa5ycKjpMau",
+          "type": "assistant",
+          "time": {
+            "created": 1792318737995,
+            "streamed": 1792318738004,
+            "completed": 1792318738011
+          }
+        },
+        {
+          "id": "msg_14e858e5d001KLVhNMr2RrSJv7",
+          "type": "idle",
+          "outcome": "succeeded",
+          "time": {
+            "created": 1792318738013
+          }
+        }
+      ]
+    }
+  ],
+  "metrics": {
+    "provider_requests": {
+      "supervisor": 4,
+      "explore": 12
+    },
+    "controller_calls": {
+      "abra_project_onboard": {
+        "count": 1,
+        "total_ms": 147.6825849999732,
+        "max_ms": 147.6825849999732
+      },
+      "abra_work_create": {
+        "count": 1,
+        "total_ms": 36.91026299999794,
+        "max_ms": 36.91026299999794
+      },
+      "abra_work_start": {
+        "count": 1,
+        "total_ms": 2831.8573719999986,
+        "max_ms": 2831.8573719999986
+      },
+      "abra_work_message": {
+        "count": 2,
+        "total_ms": 433.68957200003206,
+        "max_ms": 224.7264960000175
+      },
+      "abra_work_status": {
+        "count": 131,
+        "total_ms": 77918.96581700008,
+        "max_ms": 802.5406099999964
+      }
+    },
+    "retained_state": {
+      "files": 693,
+      "bytes": 9151076,
+      "complete": true,
+      "coverage": "Native data/state and central .abracode only; excludes source, dependency cache and worktree source bytes"
+    },
+    "usage_kind": "Deterministic provider requests and controller RPC calls; neither is billable tokens or a native turn count",
+    "billable_tokens": null,
+    "cost": null
+  }
+}

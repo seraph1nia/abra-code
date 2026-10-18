@@ -1,0 +1,302 @@
+{
+  "kind": "fixture-only Messages.reconcile baseline",
+  "date": "2026-10-18T07:55:46.342Z",
+  "samples_per_case": 5,
+  "warmup": 1,
+  "native_calls": "adapter calls; real API traffic not executed",
+  "lock_scheduler_memory": "not measured; requires controller/native harness",
+  "rows": [
+    {
+      "n": 1,
+      "distribution": "answered",
+      "session": 1,
+      "admission": 1,
+      "median_ms": 0.05,
+      "max_ms": 0.051
+    },
+    {
+      "n": 1,
+      "distribution": "acknowledged",
+      "session": 1,
+      "admission": 1,
+      "median_ms": 0.033,
+      "max_ms": 0.038
+    },
+    {
+      "n": 1,
+      "distribution": "terminal_one_pending",
+      "session": 1,
+      "storage_get": 4,
+      "storage_set": 2,
+      "prompt": 1,
+      "median_ms": 1.401,
+      "max_ms": 1.668
+    },
+    {
+      "n": 1,
+      "distribution": "admission_uncertain",
+      "session": 1,
+      "admission": 1,
+      "storage_get": 2,
+      "storage_set": 1,
+      "median_ms": 0.661,
+      "max_ms": 1.106
+    },
+    {
+      "n": 1,
+      "distribution": "unanswered",
+      "session": 1,
+      "admission": 1,
+      "median_ms": 0.034,
+      "max_ms": 0.048
+    },
+    {
+      "n": 1,
+      "distribution": "mixed_generations",
+      "median_ms": 0.021,
+      "max_ms": 0.027
+    },
+    {
+      "n": 1,
+      "distribution": "superseded",
+      "median_ms": 0.019,
+      "max_ms": 0.022
+    },
+    {
+      "n": 10,
+      "distribution": "answered",
+      "session": 10,
+      "admission": 10,
+      "median_ms": 0.046,
+      "max_ms": 0.052
+    },
+    {
+      "n": 10,
+      "distribution": "acknowledged",
+      "session": 10,
+      "admission": 10,
+      "median_ms": 0.047,
+      "max_ms": 0.061
+    },
+    {
+      "n": 10,
+      "distribution": "terminal_one_pending",
+      "session": 10,
+      "admission": 9,
+      "storage_get": 4,
+      "storage_set": 2,
+      "prompt": 1,
+      "median_ms": 3.242,
+      "max_ms": 3.583
+    },
+    {
+      "n": 10,
+      "distribution": "admission_uncertain",
+      "session": 10,
+      "admission": 10,
+      "storage_get": 6,
+      "storage_set": 3,
+      "median_ms": 4.061,
+      "max_ms": 4.908
+    },
+    {
+      "n": 10,
+      "distribution": "unanswered",
+      "session": 10,
+      "admission": 10,
+      "median_ms": 0.043,
+      "max_ms": 0.045
+    },
+    {
+      "n": 10,
+      "distribution": "mixed_generations",
+      "session": 5,
+      "admission": 5,
+      "median_ms": 0.032,
+      "max_ms": 0.033
+    },
+    {
+      "n": 10,
+      "distribution": "superseded",
+      "median_ms": 0.019,
+      "max_ms": 0.028
+    },
+    {
+      "n": 25,
+      "distribution": "answered",
+      "session": 25,
+      "admission": 25,
+      "median_ms": 0.102,
+      "max_ms": 0.14
+    },
+    {
+      "n": 25,
+      "distribution": "acknowledged",
+      "session": 25,
+      "admission": 25,
+      "median_ms": 0.086,
+      "max_ms": 0.117
+    },
+    {
+      "n": 25,
+      "distribution": "terminal_one_pending",
+      "session": 25,
+      "admission": 24,
+      "storage_get": 4,
+      "storage_set": 2,
+      "prompt": 1,
+      "median_ms": 7.124,
+      "max_ms": 7.177
+    },
+    {
+      "n": 25,
+      "distribution": "admission_uncertain",
+      "session": 25,
+      "admission": 25,
+      "storage_get": 6,
+      "storage_set": 3,
+      "median_ms": 10.025,
+      "max_ms": 11.001
+    },
+    {
+      "n": 25,
+      "distribution": "unanswered",
+      "session": 25,
+      "admission": 25,
+      "median_ms": 0.061,
+      "max_ms": 0.071
+    },
+    {
+      "n": 25,
+      "distribution": "mixed_generations",
+      "session": 12,
+      "admission": 12,
+      "median_ms": 0.039,
+      "max_ms": 0.056
+    },
+    {
+      "n": 25,
+      "distribution": "superseded",
+      "median_ms": 0.017,
+      "max_ms": 0.018
+    },
+    {
+      "n": 100,
+      "distribution": "answered",
+      "session": 100,
+      "admission": 100,
+      "median_ms": 0.152,
+      "max_ms": 0.16
+    },
+    {
+      "n": 100,
+      "distribution": "acknowledged",
+      "session": 100,
+      "admission": 100,
+      "median_ms": 0.195,
+      "max_ms": 0.325
+    },
+    {
+      "n": 100,
+      "distribution": "terminal_one_pending",
+      "session": 100,
+      "admission": 99,
+      "storage_get": 4,
+      "storage_set": 2,
+      "prompt": 1,
+      "median_ms": 23.894,
+      "max_ms": 24.593
+    },
+    {
+      "n": 100,
+      "distribution": "admission_uncertain",
+      "session": 100,
+      "admission": 100,
+      "storage_get": 6,
+      "storage_set": 3,
+      "median_ms": 29.259,
+      "max_ms": 33.686
+    },
+    {
+      "n": 100,
+      "distribution": "unanswered",
+      "session": 100,
+      "admission": 100,
+      "median_ms": 0.164,
+      "max_ms": 0.203
+    },
+    {
+      "n": 100,
+      "distribution": "mixed_generations",
+      "session": 50,
+      "admission": 50,
+      "median_ms": 0.086,
+      "max_ms": 0.104
+    },
+    {
+      "n": 100,
+      "distribution": "superseded",
+      "median_ms": 0.023,
+      "max_ms": 0.026
+    },
+    {
+      "n": 200,
+      "distribution": "answered",
+      "session": 200,
+      "admission": 200,
+      "median_ms": 0.27,
+      "max_ms": 0.293
+    },
+    {
+      "n": 200,
+      "distribution": "acknowledged",
+      "session": 200,
+      "admission": 200,
+      "median_ms": 0.256,
+      "max_ms": 0.275
+    },
+    {
+      "n": 200,
+      "distribution": "terminal_one_pending",
+      "session": 200,
+      "admission": 199,
+      "storage_get": 4,
+      "storage_set": 2,
+      "prompt": 1,
+      "median_ms": 37.81,
+      "max_ms": 40.444
+    },
+    {
+      "n": 200,
+      "distribution": "admission_uncertain",
+      "session": 200,
+      "admission": 200,
+      "storage_get": 6,
+      "storage_set": 3,
+      "median_ms": 58.695,
+      "max_ms": 60.021
+    },
+    {
+      "n": 200,
+      "distribution": "unanswered",
+      "session": 200,
+      "admission": 200,
+      "median_ms": 0.25,
+      "max_ms": 0.336
+    },
+    {
+      "n": 200,
+      "distribution": "mixed_generations",
+      "session": 100,
+      "admission": 100,
+      "median_ms": 0.155,
+      "max_ms": 0.237
+    },
+    {
+      "n": 200,
+      "distribution": "superseded",
+      "median_ms": 0.028,
+      "max_ms": 0.033
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+note: You are running `vp test` as a Vite+ built-in command. If you meant to run the test npm script, use `vpr test` instead.
+
+ RUN  v5.0.4 /home/bart/projects/personal/opencrew
+
+ ❯ |unit| tests/unit/response-recovery.test.ts (16 tests | 1 failed | 15 skipped) 352ms
+   × attention cannot spend the sole diagnostic turn while missing-response recovery is being classified 351ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| tests/unit/response-recovery.test.ts > attention cannot spend the sole diagnostic turn while missing-response recovery is being classified
+AssertionError: Expected values to be strictly equal:
++ actual - expected
+
++ undefined
+- 'admitted'
+
+
+simple
+
+ ❯ tests/unit/response-recovery.test.ts:447:10
+    445|   await run(f.controller.reconcile(e.issue_id));
+    446|   assert.equal(interleaved, true);
+    447|   assert.equal((await read()).response_recovery?.status, "admitted");
+       |          ^
+    448|   assert.equal((await run(f.controller.get(e.issue_id))).attention_tur…
+    449|   assert.equal(f.runtime.prompts, 3);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 15 skipped (16)
+   Start at  10:40:52
+   Duration  1.12s (import 57%, tests 34%, transform 9%)
+

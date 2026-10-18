@@ -1,0 +1,102 @@
+$ vp test run --project e2e
+
+ RUN  v5.0.4 /home/bart/projects/personal/opencrew
+
+stderr | tests/e2e/native.test.ts > real v2 server loads tools and guards across three repositories, executes full OpenSpec through native worker sessions, approvals, preserved branch, cleanup and durable restart
+ClientError3: Transport: terminated
+    at [Symbol.asyncIterator] (file:///home/bart/projects/personal/opencrew/node_modules/.pnpm/@opencode+client@2.0.28_effect@4.0.1_solid-js@1.9.12/node_modules/@opencode/client/dist/chunks/service-probe-ecs5ftka.js:94:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async run (file:///home/bart/projects/personal/opencrew/node_modules/.pnpm/@opencode+client@2.0.28_effect@4.0.1_solid-js@1.9.12/node_modules/@opencode/client/dist/chunks/service-probe-frbwqjmf.js:30:22) {
+  reason: 'Transport',
+  [cause]: TypeError: terminated
+      at Fetch.onAborted (node:internal/deps/undici/undici:13877:53)
+      at Fetch.emit (node:events:514:28)
+      at Fetch.terminate (node:internal/deps/undici/undici:13007:14)
+      at Object.onError (node:internal/deps/undici/undici:14011:38)
+      at Request.onError (node:internal/deps/undici/undici:3121:31)
+      at Object.errorRequest (node:internal/deps/undici/undici:1942:17)
+      at Socket.onHttpSocketClose (node:internal/deps/undici/undici:7860:14)
+      at Socket.emit (node:events:526:24)
+      at TCP.<anonymous> (node:net:362:12) {
+    [cause]: SocketError: other side closed
+        at Socket.onHttpSocketEnd (node:internal/deps/undici/undici:7833:26)
+        at Socket.emit (node:events:526:24)
+        at endReadableNT (node:internal/streams/readable:1764:12)
+        at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+      code: 'UND_ERR_SOCKET',
+      socket: [Object]
+    }
+  }
+}
+
+stderr | tests/e2e/native.test.ts > real v2 server loads tools and guards across three repositories, executes full OpenSpec through native worker sessions, approvals, preserved branch, cleanup and durable restart
+ClientError3: Transport: terminated
+    at [Symbol.asyncIterator] (file:///home/bart/projects/personal/opencrew/node_modules/.pnpm/@opencode+client@2.0.28_effect@4.0.1_solid-js@1.9.12/node_modules/@opencode/client/dist/chunks/service-probe-ecs5ftka.js:94:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async run (file:///home/bart/projects/personal/opencrew/node_modules/.pnpm/@opencode+client@2.0.28_effect@4.0.1_solid-js@1.9.12/node_modules/@opencode/client/dist/chunks/service-probe-frbwqjmf.js:30:22) {
+  reason: 'Transport',
+  [cause]: TypeError: terminated
+      at Fetch.onAborted (node:internal/deps/undici/undici:13877:53)
+      at Fetch.emit (node:events:514:28)
+      at Fetch.terminate (node:internal/deps/undici/undici:13007:14)
+      at Object.onError (node:internal/deps/undici/undici:14011:38)
+      at Request.onError (node:internal/deps/undici/undici:3121:31)
+      at Object.errorRequest (node:internal/deps/undici/undici:1942:17)
+      at Socket.onHttpSocketClose (node:internal/deps/undici/undici:7860:14)
+      at Socket.emit (node:events:526:24)
+      at TCP.<anonymous> (node:net:362:12) {
+    [cause]: SocketError: other side closed
+        at Socket.onHttpSocketEnd (node:internal/deps/undici/undici:7833:26)
+        at Socket.emit (node:events:526:24)
+        at endReadableNT (node:internal/streams/readable:1764:12)
+        at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+      code: 'UND_ERR_SOCKET',
+      socket: [Object]
+    }
+  }
+}
+
+stderr | tests/e2e/native.test.ts > real v2 server loads tools and guards across three repositories, executes full OpenSpec through native worker sessions, approvals, preserved branch, cleanup and durable restart
+timestamp=2026-10-18T09:33:33.571Z level=INFO run=7f49abdf message="watcher subscribe" path=/home/bart/.cache/abracode-tests/abracode-native-4p4JwM/central/src/visibility/errors.ts type=file ignores=0 http.span=397 role=server
+timestamp=2026-10-18T09:33:33.571Z level=INFO run=7f49abdf message="watcher started" path=/home/bart/.cache/abracode-tests/abracode-native-4p4JwM/central/src/visibility/errors.ts type=file backend=node ignores=0 http.span=397 role=server
+timestamp=2026-10-18T09:33:37.744Z level=INFO run=7f49abdf message="watcher subscribe" path=/home/bart/.cache/abracode-tests/abracode-native-4p4JwM/central/src/visibility/errors.ts type=file ignores=0 issue_id=abra-b452d8bf-f75a-4952-a66a-570045c01b6b execution_id=abra-d59450ab-1ef8-4b8c-b020-b42aa1002d42 generation=0 operation_id=op-ada9a152-8039-423d-a72b-3fc2c8f9f9b2
+timestamp=2026-10-18T09:33:39.366Z level=INFO run=7f49abdf message="watcher subscribe" path=/home/bart/.cache/abracode-tests/abracode-native-4p4JwM/central/src/visibility/errors.ts type=file ignores=0 http.span=84 role=server
+timestamp=2026-10-18T09:33:40.153Z level=INFO run=7f49abdf message="watcher subscribe" path=/home/bart/.cache/abracode-tests/abracode-native-4p4JwM/central/src/visibility/errors.ts type=file ignores=0 http.span=78 role=server
+timestamp=2026-10-18T09:33:40.493Z level=DEBUG run=7f49abdf message="Owned operation failed" code=SKILL_UNAVAILABLE
+timestamp=2026-10-18T09:33:41.696Z level=INFO run=7f49abdf message="watcher subscribe" path=/home/bart/.cache/abracode-tests/abracode-native-4p4JwM/central/src/visibility/errors.ts type=file ignores=0 http.span=76 role=server
+timestamp=2026-10-18T09:33:43.353Z level=INFO run=7f49abdf message="watcher subscribe" path=/home/bart/.cache/abracode-tests/abracode-native-4p4JwM/central/src/visibility/errors.ts type=file ignores=0 http.span=78 role=server
+timestamp=2026-10-18T09:33:43.682Z level=DEBUG run=7f49abdf message="Owned operation failed" code=AGENT_UNAVAILABLE
+timestamp=2026-10-18T09:33:45.166Z level=INFO run=7f49abdf message="watcher subscribe" path=/home/bart/.cache/abracode-tests/abracode-native-4p4JwM/central/src/visibility/errors.ts type=file ignores=0 http.span=76 role=server
+timestamp=2026-10-18T09:33:46.183Z level=INFO run=7f49abdf message="watcher subscribe" path=/home/bart/.cache/abracode-tests/abracode-native-4p4JwM/central/src/visibility/errors.ts type=file ignores=0 http.span=76 role=server
+timestamp=2026-10-18T09:33:46.687Z level=ERROR run=7f49abdf message="Failed to drain Session" cause="CrewError: apply at /home/bart/.cache/abracode-tests/abracode-native-4p4JwM/trees/abra-acfddf24-7586-4461-9c23-292aeb6af4d5: missing required tool alternatives abra_worker_wait (role-policy); repair native tool selection without widening role policy\n    at toolBlocker (/home/bart/.cache/abracode-tests/abracode-native-4p4JwM/central/src/workflow/worker-context.ts:365:11)\n    at <anonymous> (/home/bart/.cache/abracode-tests/abracode-native-4p4JwM/central/src/workflow/worker-context.ts:306:13)\n    at SessionModelRequest.prepare (/$bunfs/root/chunk-7zhxvd7w.js:379:3178)\n    at SessionModelRequest.prepare (definition) (/$bunfs/root/chunk-7aqcnmza.js:108:2694)\n    at SessionRunner.runStep (/$bunfs/root/chunk-7zhxvd7w.js:379:2507)\n    at SessionRunner.runStep (definition) (/$bunfs/root/chunk-7zhxvd7w.js:379:2661)\n    at SessionRunner.drain (/$bunfs/root/chunk-fmdp5e9x.js:18:2552)\n    at SessionRunner.drain (definition) (/$bunfs/root/chunk-7zhxvd7w.js:379:351)\n    at ServerProcess.start (/$bunfs/root/chunk-v5cpjtfk.js:2:7540)\n    at ServerProcess.start (definition) (/$bunfs/root/chunk-7zhxvd7w.js:450:25629)" role=server sessionID=ses_eb1a3d218ffesBywiqyjnBSkJi
+timestamp=2026-10-18T09:33:47.618Z level=DEBUG run=7f49abdf message="Owned operation failed" code=NOT_READY
+
+ ❯ |e2e| tests/e2e/native.test.ts (1 test | 1 failed) 341997ms
+   × real v2 server loads tools and guards across three repositories, executes full OpenSpec through native worker sessions, approvals, preserved branch, cleanup and durable restart 341996ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |e2e| tests/e2e/native.test.ts > real v2 server loads tools and guards across three repositories, executes full OpenSpec through native worker sessions, approvals, preserved branch, cleanup and durable restart
+Error: NOT_READY: NOT_READY: ["Global retained execution capacity reached (abra-420b6275-66a8-48c6-924a-a8681e31b9b6, abra-56310599-0121-4330-a346-d8a69a3d6ae7, abra-6fd63b02-45bc-4028-822a-5d3e2c44f7dc, abra-ad56c8f7-65fc-464d-98e9-2723927d4cb4, abra-d4d4ca5c-e097-4f17-8e43-aec95addb64d, abra-dc8c3405-2bcb-4618-a6e0-f7c1ce1d4a54, abra-f3878c88-828c-4c5a-b4a9-c2fd426bdc87, abra-f7550caa-5ee2-4043-a782-d1f6a4106b66)"]
+ ❯ Object.invoke tests/e2e/native.test.ts:1085:17
+    1083|     const invoke = async (tool: string, args: any, observeBusy = false…
+    1084|       const deadline = Date.now() + 5000;
+    1085|       while (true) {
+       |                 ^
+    1086|         try {
+    1087|           const result = (await api.invoke({ tool, args, session: supe…
+ ❯ replyRecoveryJourney tests/e2e/reply-recovery.ts:49:17
+ ❯ tests/e2e/native.test.ts:2764:30
+
+Caused by: NOT_READY: ["Global retained execution capacity reached (abra-420b6275-66a8-48c6-924a-a8681e31b9b6, abra-56310599-0121-4330-a346-d8a69a3d6ae7, abra-6fd63b02-45bc-4028-822a-5d3e2c44f7dc, abra-ad56c8f7-65fc-464d-98e9-2723927d4cb4, abra-d4d4ca5c-e097-4f17-8e43-aec95addb64d, abra-dc8c3405-2bcb-4618-a6e0-f7c1ce1d4a54, abra-f3878c88-828c-4c5a-b4a9-c2fd426bdc87, abra-f7550caa-5ee2-4043-a782-d1f6a4106b66)"]
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { data: { code: 'NOT_READY' } }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 1 passed (2)
+   Start at  11:27:26
+   Duration  382.71s (tests 100%)
+
+[ELIFECYCLE] Command failed with exit code 1.

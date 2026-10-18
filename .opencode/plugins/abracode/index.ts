@@ -4,6 +4,7 @@ import { configuration } from "../../../src/config/protocol.ts";
 import { CrewError } from "../../../src/domain.ts";
 import { installRoleProfiles } from "../../../src/opencode/role-policy.ts";
 import { FeedbackPageSchema } from "../../../src/workflow/feedback-contracts.ts";
+import { MessagesPageSchema } from "../../../src/workflow/message-contracts.ts";
 import { observerRequest } from "../../../src/observability.ts";
 import { Invalidations } from "../../../src/visibility/invalidations.ts";
 import { observerResult } from "../../../src/visibility/errors.ts";
@@ -115,6 +116,15 @@ export default Plugin.define({
           decodeJSON(schema, JSON.stringify(value), "Observer response");
       // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
       const registration = yield* ctx.rpc.register(visibility, {
+        messages: ({ issue_id, offset }, { error }) =>
+          observerResult(
+            observerRequest("messages").pipe(
+              Effect.andThen(
+                c.queries.messages(issue_id, offset).pipe(Effect.flatMap(json(MessagesPageSchema))),
+              ),
+            ),
+            error,
+          ).pipe(provide),
         worker: ({ issue_id, session_id }, { error }) =>
           observerResult(
             c.queries

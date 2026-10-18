@@ -23,6 +23,7 @@ import {
   RepositoryId,
   AbsolutePath,
   SessionId,
+  MessageId,
 } from "../identities.ts";
 
 import { Effect } from "effect";
@@ -39,11 +40,13 @@ import { type Records } from "../storage/store.ts";
 import { type WorkGraph } from "../work/graph.ts";
 import { type OpenSpec } from "../openspec/adapter.ts";
 import { type Git } from "../git/repository.ts";
-import { type Runtime } from "../opencode/runtime.ts";
+import { type Runtime, type PromptAdmission } from "../opencode/runtime.ts";
 import { diagnosticText } from "../opencode/diagnostics.ts";
 import { capacityBlockers } from "./capacity.ts";
 import { TicketDiff } from "../visibility/ticket-diff.ts";
 import { type DiffScope } from "../visibility/protocol.ts";
+import { type LeadSummary } from "../visibility/protocol.ts";
+import { scanLeads } from "./lead-contracts.ts";
 /** Read-only workflow surface. No adapter or storage mutation is exposed to observers. */
 export class Queries {
   constructor(
@@ -75,10 +78,77 @@ export class Queries {
   issues = () => this.work.list;
   issue = (id: IssueId) => this.work.show(id);
   history = (id: IssueId) => this.work.history(id);
+  completions = (...args: Parameters<WorkGraph["completions"]>) => this.work.completions(...args);
   setup = (id: RepositoryId) => this.records.setup(id);
   recordDiagnostics = () => this.records.diagnostics();
   recordsExport = () => this.records.export();
   supervisor = () => this.records.supervisor();
+  leadOverview = (bundle: ReadBundle) =>
+    domainEffect(
+      Effect.gen({ self: this }, function* () {
+        const scan = yield* scanLeads(this.records);
+        const observed_at = yield* timestamp;
+        const leads = yield* Effect.forEach(
+          scan.records,
+          (lead) =>
+            Effect.gen({ self: this }, function* () {
+              const observed = yield* this.runtime.session(lead.session_id).pipe(Effect.result);
+              const native = observed._tag === "Success" ? observed.success : undefined;
+              const available =
+                native?.directory === this.config.home && native.agent === "project-lead";
+              const activity = nativeActivity(native);
+              const state: LeadSummary["state"] = !lead.enabled
+                ? "disabled"
+                : lead.stop_pending
+                  ? "stopping"
+                  : !lead.provisioned
+                    ? "provisioning"
+                    : !available
+                      ? "unavailable"
+                      : activity === "unavailable" || activity === "unobserved"
+                        ? "unknown"
+                        : activity;
+              const latest = lead.requests
+                .flatMap((r) => (r.request.reply ? [r.request.reply] : []))
+                .sort((a, b) => b.at.localeCompare(a.at))[0];
+              return {
+                id: lead.id,
+                revision: lead.revision,
+                repositories: lead.repositories,
+                enabled: lead.enabled,
+                session_id: lead.session_id,
+                session_available: available ?? false,
+                parent_session_id: lead.parent_session_id,
+                state,
+                observed_at,
+                request_count: lead.requests.length,
+                outstanding_count: lead.requests.filter((r) => requiresResponse(r.request)).length,
+                requests: lead.requests
+                  .filter((r) => requiresResponse(r.request))
+                  .slice(0, 20)
+                  .map((r) => ({
+                    issue_id: r.issue_id,
+                    request_id: r.request.request_id,
+                    status: r.request.status,
+                    question: diagnosticText(r.request.body ?? "Controller request", 1500),
+                    reply: r.request.reply ? diagnosticText(r.request.reply.body, 1500) : undefined,
+                  })),
+                pending_proposals: lead.proposals
+                  .filter((p) => !p.accepted)
+                  .map((p) => p.request_id),
+                assigned_work: bundle.issues
+                  .filter(
+                    (i) => lead.repositories.includes(i.repository_id) && i.status !== "closed",
+                  )
+                  .map((i) => i.id),
+                latest_outcome: latest ? diagnosticText(latest.body, 1500) : undefined,
+              };
+            }),
+          { concurrency: 4 },
+        );
+        return { leads, diagnostics: scan.errors.map((e) => diagnosticText(e.message)) };
+      }),
+    );
   automaticAuthority = Effect.fn("Queries.automaticAuthority")(
     function* (
       this: Queries,
@@ -178,10 +248,14 @@ export class Queries {
       Effect.gen({ self: this }, function* () {
         const observation = bundle ?? (yield* this.observe());
         const ready = yield* this.ready(observation);
+        const active = new Set(
+          observation.executions.filter((e) => e.active_role).map((e) => e.issue_id),
+        );
         const rows = [...observation.issues]
           .sort(
             (a, b) =>
               Number(a.status === "closed") - Number(b.status === "closed") ||
+              Number(!active.has(a.id)) - Number(!active.has(b.id)) ||
               a.priority - b.priority ||
               (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
           )
@@ -229,17 +303,74 @@ export class Queries {
         );
       const e = yield* this.get(id);
       const messages = e.messages ?? [];
-      const entries = yield* Effect.forEach(
-        messages.slice(offset, offset + limit),
-        (record): Effect.Effect<(typeof MessagesPageSchema.Type)["entries"][number]> =>
-          record.type === "finding"
-            ? Effect.succeed({ record })
-            : this.runtime
-                .promptAdmission(record.recipient_session_id, record.prompt_id, record.prompt)
-                .pipe(
-                  Effect.map((native) => ({ record, native })),
-                  Effect.orElseSucceed(() => ({ record, native: "unavailable" as const })),
-                ),
+      const page = messages.slice(offset, offset + limit);
+      const requests = messageRequests(page);
+      const observations = new Map(
+        yield* Effect.forEach(
+          [...new Set(requests.map((m) => m.recipient_session_id))],
+          (session) =>
+            Effect.gen({ self: this }, function* () {
+              const state = yield* this.runtime.session(session).pipe(Effect.result);
+              const admissions = yield* this.runtime
+                .promptAdmissions(
+                  session,
+                  requests
+                    .filter((m) => m.recipient_session_id === session)
+                    .flatMap((m) => [
+                      { prompt_id: m.prompt_id, prompt: m.prompt },
+                      ...(m.response_recovery
+                        ? [
+                            {
+                              prompt_id: m.response_recovery.prompt_id,
+                              prompt: m.response_recovery.prompt,
+                            },
+                          ]
+                        : []),
+                    ]),
+                )
+                .pipe(Effect.orElseSucceed(() => new Map<MessageId, PromptAdmission>()));
+              return [
+                session,
+                { state: state._tag === "Success" ? state.success : undefined, admissions },
+              ] as const;
+            }),
+          { concurrency: 4 },
+        ),
+      );
+      const entries: Array<(typeof MessagesPageSchema.Type)["entries"][number]> = page.map(
+        (record) => {
+          if (record.type === "finding") return { record };
+          const observation = observations.get(record.recipient_session_id)!;
+          const activity = nativeActivity(observation.state, !observation.state);
+          const decisionKey = record.source?.type === "decision" ? record.source.key : undefined;
+          const escalation = e.attention?.findLast(
+            (a) =>
+              a.code === "message_pending" &&
+              a.message_refs?.some((ref) => ref.request_id === record.request_id),
+          );
+          return {
+            record,
+            native: observation.admissions.get(record.prompt_id) ?? "unavailable",
+            recovery_native: record.response_recovery
+              ? (observation.admissions.get(record.response_recovery.prompt_id) ?? "unavailable")
+              : undefined,
+            native_state: activity === "unobserved" ? "unknown" : activity,
+            native_outcome: observation.state?.outcome,
+            escalation: escalation
+              ? {
+                  id: escalation.id,
+                  status: escalation.status,
+                  evidence: escalation.evidence,
+                  disposition: escalation.disposition,
+                }
+              : undefined,
+            decision: decisionKey
+              ? e.decisions?.find(
+                  (d) => d.key === decisionKey && d.generation === record.generation,
+                )
+              : undefined,
+          };
+        },
       );
       return {
         entries,

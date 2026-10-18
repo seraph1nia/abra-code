@@ -1,0 +1,134 @@
+{
+  "fixture": "tests/e2e/native.test.ts",
+  "result": "pass",
+  "cleanup_complete": true,
+  "observed_at": "2026-10-18T10:51:40.225Z",
+  "isolation": "Disposable service/data/config, loopback provider and local bare remotes; no operator service or user remote",
+  "observations": [
+    {
+      "communication_crash_point": {
+        "point": "before-admission",
+        "issue_id": "abra-3f99f3f7-d8be-4667-9891-1e04721d21a4",
+        "prompt_id": "msg_14ea316e7001g64WUVvPX90I98",
+        "original_inputs": 0,
+        "transport_response_lost": true,
+        "no_replacement_identity": true,
+        "stop_confirmed": true
+      }
+    },
+    {
+      "communication_crash_point": {
+        "point": "after-admission",
+        "issue_id": "abra-53133e14-4e3f-4c08-921a-6546ddd5c379",
+        "prompt_id": "msg_14ea332f2001qmezMaACFV640X",
+        "original_inputs": 1,
+        "transport_response_lost": true,
+        "no_replacement_identity": true,
+        "stop_confirmed": true
+      }
+    },
+    {
+      "communication_crash_windows": "pass",
+      "workers": [
+        {
+          "point": "before-admission",
+          "issue_id": "abra-3f99f3f7-d8be-4667-9891-1e04721d21a4",
+          "prompt_id": "msg_14ea316e7001g64WUVvPX90I98",
+          "original_inputs": 0,
+          "transport_response_lost": true,
+          "no_replacement_identity": true,
+          "stop_confirmed": true
+        },
+        {
+          "point": "after-admission",
+          "issue_id": "abra-53133e14-4e3f-4c08-921a-6546ddd5c379",
+          "prompt_id": "msg_14ea332f2001qmezMaACFV640X",
+          "original_inputs": 1,
+          "transport_response_lost": true,
+          "no_replacement_identity": true,
+          "stop_confirmed": true
+        }
+      ],
+      "lead_notice": {
+        "request_id": "operational-lead-notice",
+        "notice_id": "msg_14ea34d5f001BiHEY4kMItkWO3",
+        "native_notices": 1,
+        "accepted_reply_preserved": true
+      },
+      "event_faults": {
+        "issue_id": "abra-d8583c9e-5f12-4f73-83fe-19038aada4cc",
+        "dropped": 5,
+        "duplicated": 17,
+        "reordered": 13,
+        "verified_completion": true,
+        "report_retained": true
+      },
+      "report_publication": {
+        "request_id": "operational-report-publication",
+        "hash": "ca5523a667bcc9e5f1ec4ded4395147f3f31c099d7c86a36e18ce8c3fff32670",
+        "render_attempts": 1,
+        "response_lost": true,
+        "identical_artifact_after_restart": true
+      },
+      "limitation": "Four specific commit windows plus completion-event loss; delivery/cleanup uses its separately mapped full journey"
+    }
+  ],
+  "metrics": {
+    "provider_requests": {
+      "supervisor": 10,
+      "explore": 10,
+      "research": 7
+    },
+    "controller_calls": {
+      "abra_project_onboard": {
+        "count": 2,
+        "total_ms": 302.65718800000286,
+        "max_ms": 168.01647200000116
+      },
+      "abra_work_create": {
+        "count": 4,
+        "total_ms": 131.07275899999513,
+        "max_ms": 39.93383299999914
+      },
+      "abra_work_start": {
+        "count": 3,
+        "total_ms": 6888.760594000003,
+        "max_ms": 2863.032744
+      },
+      "abra_work_status": {
+        "count": 24,
+        "total_ms": 8828.338343999978,
+        "max_ms": 1548.1408889999984
+      },
+      "abra_work_message": {
+        "count": 3,
+        "total_ms": 1697.4885999999988,
+        "max_ms": 795.690337
+      },
+      "abra_work_control": {
+        "count": 2,
+        "total_ms": 186.19044399999984,
+        "max_ms": 103.44927999999709
+      },
+      "abra_lead_control": {
+        "count": 5,
+        "total_ms": 1443.3399089999984,
+        "max_ms": 893.256179
+      },
+      "abra_work_report": {
+        "count": 5,
+        "total_ms": 5090.806429000004,
+        "max_ms": 3924.8917719999954
+      }
+    },
+    "retained_state": {
+      "files": 1213,
+      "bytes": 32795416,
+      "complete": true,
+      "coverage": "Native data/state and central .abracode only; excludes source, dependency cache and worktree source bytes"
+    },
+    "usage_kind": "Deterministic provider requests and controller RPC calls; neither is billable tokens or a native turn count",
+    "billable_tokens": null,
+    "cost": null
+  }
+}

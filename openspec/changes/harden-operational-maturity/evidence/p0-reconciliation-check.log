@@ -1,0 +1,19 @@
+$ vp check && pnpm typecheck && pnpm lint:effect && pnpm check:lsp && pnpm report:check
+pass: All 508 files are correctly formatted (284ms, 12 threads)
+pass: Found no warnings or lint errors in 279 files (3.3s, 12 threads)
+$ tsc --noEmit
+$ vp lint --type-aware --deny-warnings
+$ effect-tsgo diagnostics --project tsconfig.json --format json --strict --lspconfig '{"diagnostics":true,"diagnosticSeverity":{"unstableApiUsage":"off"}}'
+{
+  "diagnostics": [],
+  "summary": {
+    "filesChecked": 262,
+    "filesWithoutPlugin": 0,
+    "totalFiles": 262,
+    "errors": 0,
+    "warnings": 0,
+    "messages": 0
+  }
+}
+$ pnpm --filter @abracode/report-template check
+$ tsc --noEmit

@@ -129,6 +129,7 @@ export class Advancement {
       this.coordination,
       this.queries,
       git,
+      this.attention,
     );
     this.messages = this.sessions.messages;
     this.leads = new Leads(

@@ -30,6 +30,39 @@ async function database(t: { onTestFinished: (cleanup: () => Promise<void>) => v
   return { root, path, graph, scope };
 }
 
+test("completion aggregate uses closure events with inclusive/exclusive day boundaries", async (t) => {
+  const { graph, path } = await database(t);
+  const start = Id.Timestamp.make("2026-10-17T22:00:00.000Z");
+  const end = Id.Timestamp.make("2026-10-18T22:00:00.000Z");
+  const db = new DatabaseSync(path);
+  try {
+    const expected: Id.IssueId[] = [];
+    for (const [request, at] of [
+      ["before", "2026-10-17T21:59:59.999Z"],
+      ["start", start],
+      ["last", "2026-10-18T21:59:59.999Z"],
+      ["next", end],
+    ] as const) {
+      const issue = await run(graph.create(goal(request)));
+      const actor = Id.ExecutionId.make(`actor-${request}`);
+      await run(graph.claim(issue.id, actor));
+      await run(graph.close(issue.id, actor));
+      db.prepare("UPDATE work_events SET at = ? WHERE issue_id = ? AND kind = 'closed'").run(
+        at,
+        issue.id,
+      );
+      if (["start", "last"].includes(request)) expected.push(issue.id);
+    }
+    assert.deepEqual(
+      (await run(graph.completions(start, end))).map((row) => row.issue_id).sort(),
+      expected.sort(),
+    );
+    assert.equal((await run(graph.list)).filter((i) => i.status === "closed").length, 4);
+  } finally {
+    db.close();
+  }
+});
+
 test("durable dependency chain, ownership guards, idempotent transitions and history", async (t) => {
   const { graph } = await database(t);
   const a = await run(graph.create(goal("api")));

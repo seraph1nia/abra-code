@@ -15,6 +15,7 @@ import { type Records } from "../storage/store.ts";
 import { decode } from "../decode.ts";
 import { BatchInputSchema, BatchResultSchema } from "../work/batch.ts";
 import { MessageBody, RequestSchema } from "./message-contracts.ts";
+import { CrewError } from "../domain.ts";
 
 const repositories = Schema.Array(RepositoryId).check(
   Schema.isMinLength(1),
@@ -56,7 +57,13 @@ export const LeadRecordSchema = Schema.Struct({
     (r) =>
       (new Set([r.session_id, ...r.retired_sessions]).size === r.retired_sessions.length + 1 &&
         new Set(r.requests.map((m) => m.request.request_id)).size === r.requests.length &&
-        new Set(r.requests.map((m) => m.request.prompt_id)).size === r.requests.length &&
+        new Set(
+          r.requests.flatMap((m) =>
+            m.request.response_recovery
+              ? [m.request.prompt_id, m.request.response_recovery.prompt_id]
+              : [m.request.prompt_id],
+          ),
+        ).size === r.requests.reduce((n, m) => n + (m.request.response_recovery ? 2 : 1), 0) &&
         r.revision >= 1 &&
         ![r.session_id, ...r.retired_sessions].includes(r.parent_session_id) &&
         r.requests.every(
@@ -130,25 +137,60 @@ export const LeadActionSchema = Schema.Union([
 export type LeadAction = typeof LeadActionSchema.Type;
 export const leadKey = (id: LeadId) => StorageKey.make(`lead/${id}`);
 /** Malformed registrations fail closed: never turn a known restricted session into Abra. */
-export const readLeads = (records: Records) =>
+export const scanLeads = (records: Records) =>
   Effect.gen(function* () {
     const result: LeadRecord[] = [];
+    const errors: CrewError[] = [];
     for (const row of yield* records.store.entries(StoragePrefix.make("lead/"))) {
-      const record = yield* decode(LeadRecordSchema, row.value, row.key);
-      if (row.key !== leadKey(record.id))
-        return yield* decode(Schema.Never, row.value, "Conflicting lead key");
+      const decoded = yield* decode(LeadRecordSchema, row.value, row.key).pipe(Effect.result);
+      if (decoded._tag === "Failure") {
+        errors.push(decoded.failure);
+        continue;
+      }
+      const record = decoded.success;
+      if (row.key !== leadKey(record.id)) {
+        errors.push(new CrewError("INVALID_DATA", "Conflicting lead key"));
+        continue;
+      }
       result.push(record);
     }
     const ids = result.flatMap((r) => [r.session_id, ...r.retired_sessions]);
-    if (new Set(ids).size !== ids.length)
-      return yield* decode(Schema.Never, ids, "Conflicting lead session ownership");
-    return result;
+    const seen = new Set<SessionId>();
+    const conflicts = new Set<SessionId>();
+    for (const id of ids) {
+      if (seen.has(id)) conflicts.add(id);
+      seen.add(id);
+    }
+    if (conflicts.size)
+      errors.push(new CrewError("INVALID_DATA", "Conflicting lead session ownership"));
+    return {
+      records: result.filter(
+        (r) => ![r.session_id, ...r.retired_sessions].some((id) => conflicts.has(id)),
+      ),
+      errors,
+    };
   });
+/** Authority readers reject the entire scan on any malformed/conflicting record. */
+export const readLeads = (records: Records) =>
+  scanLeads(records).pipe(
+    Effect.flatMap((scan) =>
+      scan.errors.length ? Effect.fail(scan.errors[0]!) : Effect.succeed(scan.records),
+    ),
+  );
 export const leadAccounting = (records: Records) =>
   readLeads(records).pipe(
     Effect.map((leads) => ({
       active: leads.filter((l) => l.active || l.stop_pending).length,
       turns: (issue: IssueId) =>
-        leads.reduce((n, l) => n + l.requests.filter((r) => r.issue_id === issue).length, 0),
+        leads.reduce(
+          (n, l) =>
+            n +
+            l.requests.reduce(
+              (used, r) =>
+                used + (r.issue_id === issue ? 1 + (r.request.response_recovery ? 1 : 0) : 0),
+              0,
+            ),
+          0,
+        ),
     })),
   );

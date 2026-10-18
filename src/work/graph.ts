@@ -54,6 +54,10 @@ export interface WorkGraph {
   resume(id: IssueId, execution: ExecutionId): Effect.Effect<void, CrewError>;
   close(id: IssueId, execution: ExecutionId): Effect.Effect<void, CrewError>;
   history(id: IssueId): Effect.Effect<WorkEvent[], CrewError>;
+  completions(
+    start: Timestamp,
+    end: Timestamp,
+  ): Effect.Effect<Array<{ issue_id: IssueId; at: Timestamp }>, CrewError>;
 }
 
 const sqlEffect = <A>(action: (at: Timestamp) => A) =>
@@ -119,6 +123,7 @@ export class SqliteWorkGraph implements WorkGraph {
             at TEXT NOT NULL
           );
           CREATE INDEX IF NOT EXISTS work_events_issue ON work_events(issue_id, sequence);
+          CREATE INDEX IF NOT EXISTS work_events_completion ON work_events(kind, at, issue_id);
         `);
           const columns = db.prepare("PRAGMA table_info(issues)").all();
           if (!columns.some((c) => c.name === "scope_json"))
@@ -488,5 +493,22 @@ export class SqliteWorkGraph implements WorkGraph {
         .all(id)
         .map((row) => Schema.decodeUnknownSync(WorkEventSchema)(row));
     });
+  }
+
+  /** Read-only aggregate over authoritative closures, independent of ticket pages. */
+  completions(start: Timestamp, end: Timestamp) {
+    return sqlEffect(() =>
+      this.db
+        .prepare(`
+      SELECT e.issue_id, MAX(e.at) AS at FROM work_events e
+      JOIN issues i ON i.id = e.issue_id AND i.status = 'closed'
+      WHERE e.kind = 'closed' AND e.at >= ? AND e.at < ?
+      GROUP BY e.issue_id
+    `)
+        .all(start, end)
+        .map((row) =>
+          Schema.decodeUnknownSync(Schema.Struct({ issue_id: IssueId, at: Timestamp }))(row),
+        ),
+    );
   }
 }

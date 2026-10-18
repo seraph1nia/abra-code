@@ -1,0 +1,10 @@
+note: You are running `vp test` as a Vite+ built-in command. If you meant to run the test npm script, use `vpr test` instead.
+
+ RUN  v5.0.4 /home/bart/projects/personal/opencrew
+
+
+ Test Files  2 passed (2)
+      Tests  7 passed (7)
+   Start at  10:17:57
+   Duration  2.97s (tests 52%, import 43%, transform 5%)
+

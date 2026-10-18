@@ -294,3 +294,78 @@ test("native event bursts coalesce while a dropped stream retains periodic recon
   assert.ok(subscriptions >= 2);
   assert.equal(f.runtime.prompts, prompts);
 });
+
+test("duplicate and reordered worker events preserve prompt-bound failure and required replies", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const issue = Id.IssueId.make("event-order"),
+    supervisor = Id.SessionId.make("ses_supervisor");
+  f.work.add(issue);
+  const e = await run(f.controller.start(issue, supervisor));
+  const request = await run(
+    f.controller.workMessage(
+      {
+        issue_id: issue,
+        request_id: Id.RequestId.make("event-answer"),
+        role: "explore",
+        body: "Which check applies?",
+        response: "answer",
+      },
+      supervisor,
+    ),
+  );
+  Object.assign(f.runtime.sessions.get(e.explore_session_id!)!, {
+    busy: false,
+    executing: false,
+    outcome: "failed",
+    outcome_prompt_id: request.prompt_id,
+    error: { type: "Provider", message: "Observed failure bound to retained input" },
+    error_at: 1,
+  });
+  await run(f.controller.reconcile(issue));
+  const failure = (await run(f.controller.get(issue))).worker_failure;
+  assert.equal(failure?.prompt_id, request.prompt_id);
+  const prompts = f.runtime.prompts;
+  const drained = Deferred.makeUnsafe<void>(),
+    reconciled = Deferred.makeUnsafe<void>();
+  const reconcile = f.controller.reconcile.bind(f.controller);
+  f.controller.reconcile = (...args) =>
+    reconcile(...args).pipe(Effect.tap(() => Deferred.succeed(reconciled, undefined)));
+  const ctx = {
+    event: {
+      subscribe: () =>
+        Stream.fromIterable(
+          [
+            "session.execution.succeeded",
+            "session.tool.progress",
+            "session.idle",
+            "session.execution.failed",
+            "session.execution.succeeded",
+            "session.idle",
+          ].map((type) => ({
+            type,
+            data: {
+              sessionID: e.explore_session_id,
+              error: { type: "Provider", message: "Late event without prompt identity" },
+            },
+          })),
+        ).pipe(
+          Stream.concat(Stream.fromEffect(Deferred.succeed(drained, undefined)).pipe(Stream.drain)),
+          Stream.concat(Stream.never),
+        ),
+    },
+  } as unknown as Context;
+  const scope = await run(Scope.make());
+  t.onTestFinished(() => run(Scope.close(scope, Exit.void)));
+  await run(
+    monitor(ctx, f.controller, f.scheduler).pipe(Effect.provideService(Scope.Scope, scope)),
+  );
+  await run(Deferred.await(drained).pipe(Effect.timeout("5 seconds")));
+  await run(Deferred.await(reconciled).pipe(Effect.timeout("5 seconds")));
+  await run(Scope.close(scope, Exit.void));
+  const saved = await run(f.controller.get(issue));
+  assert.equal(saved.current_phase, "failed");
+  assert.deepEqual(saved.worker_failure, failure);
+  assert.equal((await run(f.controller.queries.messages(issue))).outstanding, 1);
+  assert.equal(f.runtime.prompts, prompts);
+});

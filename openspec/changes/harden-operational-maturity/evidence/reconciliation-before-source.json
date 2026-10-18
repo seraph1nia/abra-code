@@ -1,0 +1,8 @@
+{
+  "head": "d38274bb72697a92cd0fdd52bab4cd065a3688dd",
+  "sha256": {
+    "src/workflow/messages.ts": "f45e5c9d03d00f1079b9c0d1d5c46a9e53d4c5273e4da50ac411175b9ebad927",
+    "src/opencode/runtime.ts": "f7d5b386b2fad5b2f0842c98f2947e5e539b06113930254918deca17acb7902b",
+    "tests/benchmarks/reconciliation.ts": "ef7437bdb705859aca3290cf753e51cb5d202d04da2e330fedfa4065dd510d14"
+  }
+}

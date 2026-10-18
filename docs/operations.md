@@ -37,7 +37,35 @@ A location reload can unload the plugin's monitor; it does not delete sessions o
 
 The native TUI loads the plugin's `./tui` entrypoint on `pnpm attach`. Its sidebar retains the current worker's ticket, prioritizes items needing attention and shows up to three tickets within a terminal-height budget. **Work home** opens the grouped list. Its sections are **Needs you**, **Working**, **Blocked**, **Queued**, **Done**, and an **Other** fallback for unknown states. Approvals/recovery need attention; dependency/setup/policy blockers are separate from temporary capacity waits. Done requires a closed work-graph issue without a conflicting execution, and loads in pages of 50. Search and repository filters apply to loaded tickets.
 
-Ticket tabs are **Overview / Plan / Diff / Workers**. Overview labels ticket status, workflow phase and worker activity separately. Plan shows schema artifact status, implementation progress and a selectable Markdown document from the owned change. Document reads are limited to 64 KiB and the first 100 Markdown paths within eight directory levels; escaping symlinks are rejected. Archived tickets retain their archive path without reading a retired worktree.
+Work home includes an all-ticket fleet summary, per-repository states and a
+**Needs attention** selector for decisions, recovery, unanswered requests and lead
+proposals. These totals are independent of search, repository filters and the
+50-ticket closed page. Ready, capacity waiting, native queued, dependency waiting,
+human/supervisor waiting and unknown native state remain distinct. Native
+observation coverage is explicit: the bounded supervision scan prioritizes open
+tasks with assigned workers. Completed today counts authoritative work-graph
+closure events between host-local midnights; the displayed timezone and day
+boundary include daylight-saving changes. A conflicting live execution is not
+counted as completed.
+
+Project leads expand in Work home to show scope, enabled/stopped/available state,
+current session, unanswered requests, pending proposals, latest retained outcome
+and links to scoped work. Malformed registrations produce separate diagnostics;
+other valid leads remain inspectable. Authority readers still reject malformed
+or conflicting registrations. The only conversation link returns to parent Abra.
+
+Ticket tabs are **Overview / Plan / Diff / Workers / Feedback / Communication**. Overview labels ticket status, workflow phase and worker activity separately. Plan shows schema artifact status, implementation progress and a selectable Markdown document from the owned change. Document reads are limited to 64 KiB and the first 100 Markdown paths within eight directory levels; escaping symlinks are rejected. Archived tickets retain their archive path without reading a retired worktree.
+
+Communication loads lazily in pages of 20 from the existing retained history.
+Sender, recipient, kind, time and business response status stay visible; expand
+for the original request identity, body, reply and evidence references. Native
+lookup, explicit acknowledgement and correlated answer are separate observations.
+The view shows the original response requirement, zero/one recovery reservation,
+reminder transport, observed native activity/outcome and the original escalation.
+Admission alone never resolves a response. A linked worker question is the existing
+Decision, with its owner and next action; reading it does not answer it. Inspect
+worker opens read-only evidence, and questions/authorized retries return to Abra.
+No worker or lead composer is added.
 
 Diff defaults to **All ticket changes**, comparing the recorded base commit with the ticket's current worktree, including committed, staged, unstaged and untracked content. **Uncommitted only** compares HEAD with current files. A file selector loads one patch at a time. Unified view is used in narrow panels; split view is available at 100 columns, with the host panel's full-screen control providing more space. Binary and oversized files show explicit messages. Patches are limited to 64 KiB, file lists to 500, and command output to the existing runner's 8 MiB limit; unavailable counts are labeled. Renames appear as additions/deletions. Retired tickets compare retained base/delivery Git objects in their registered repository; if those objects are missing, the diff is unavailable. Reads never fetch, stage, revert or merge.
 
@@ -231,6 +259,24 @@ retry returns the retained result. Wrong senders, stale generations and conflict
 answers fail. Native completion alone resolves neither acknowledgement nor answer.
 Required responses block the applicable checkpoint; native quiescence releases
 worker capacity so unrelated tasks can continue.
+
+When native history proves the exact request was consumed and its relevant turn
+completed successfully without the required response, the controller can reserve
+one response-only reminder. It uses the original request ID, captured diagnostic
+budget and ordinary worker capacity. Manual posture and zero remaining diagnostic
+budget admit no reminder. Queued, busy, failed, interrupted or ambiguous native
+state does not authorize a speculative reminder. Capacity waits retain the request
+and its budget until a slot is available.
+
+`record.response_recovery` exposes the sole reserved attempt, its exact native
+identity, original completion evidence and pending/uncertain/admitted/suppressed
+transport disposition. A correlated reply still resolves the original request.
+An unanswered reminder produces one actionable `message_pending` incident. Native
+admission alone never resolves it. A lost receipt preserves the same reminder ID;
+repeated reconciliation cannot allocate another automatic attempt. A response
+accepted at the native guard suppresses the unused reminder without refunding its
+reservation. An admitted reminder with unavailable transport evidence remains
+inspectable even if the business answer has arrived.
 
 Workers can instead submit `action:"finding"` with a stable `request_id`,
 generation, body and optional bounded base/path/line or URL evidence. An optional
@@ -436,7 +482,7 @@ scheduling and optional-reasoning behavior. Pauses, accepted scope, Review,
 verification and exact plan/merge authorizations retain their existing owners.
 
 `abra_work_list` includes a bounded `supervision` aggregate (at most 128 tasks,
-open tasks first, then priority and ID). Counts cover the returned task summaries;
+open tasks first, assigned workers first within that group, then priority and ID). Counts cover the returned task summaries;
 `total` and `truncated` disclose the bound. `abra_work_status` and the native work
 RPC expose the same read-only projection. The primary classification uses this
 precedence: completed, recovery, paused, human decision, supervisor decision,
@@ -529,6 +575,16 @@ and one existing attention-capacity slot while native admission/execution is
 active or uncertain. Manual posture suppresses new lead turns. Exhausted budgets
 leave source decisions and retained work visible; lead registration grants no
 additional repair or approval budget. Human questions/forms remain Abra-owned.
+
+A verified omitted lead reply follows the same one-reminder rule. Its original
+request and its reminder each consume one source-issue diagnostic turn. Recovery
+uses the existing management-capacity slot and current enabled registration;
+disable, scope/model revision and stop cannot be bypassed. Requests can exist
+before an execution, so a lead's `request.response_escalation` retains its bounded
+problem description and idempotent parent synthetic-notice receipt on the original
+request. Inspect it through `abra_lead_control status`. The notice starts no model
+turn and does not supply a reply. A subsequent accepted answer retains separate
+reply evidence and its own existing parent-notice identity.
 
 To disable, repeat `register` with the observed `expected_revision`, unchanged
 repositories/model and `enabled:false`. Revocation persists before native queue

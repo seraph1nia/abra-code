@@ -18,6 +18,7 @@ export async function acceptanceJourney(o: {
   restart: () => Promise<void>;
   seen: Set<string>;
   release: (key: string) => void;
+  quietSample: () => Promise<unknown>;
 }) {
   const initial = await readFile(join(o.home, "abracode.yaml"), "utf8");
   const authPath = await run(repo(o.root, "acceptance-auth-base")),
@@ -178,6 +179,7 @@ export async function acceptanceJourney(o: {
       independent.flaky.execution.apply_session_id,
       independent.flaky.execution.review_session_id,
     );
+    const idleObservation = await o.quietSample();
     await o.invoke("abra_work_approve", { issue_id: ids.authentication, kind: "plan" });
     const form = (await status("authentication")).execution.approval_receipts.find(
       (r: any) => r.kind === "plan" && r.fingerprint === plan.plan_fingerprint,
@@ -300,6 +302,7 @@ export async function acceptanceJourney(o: {
       visual_report: report,
       portable_artifact,
       independent_review: true,
+      idle_observation: idleObservation,
       verified_branch_delivery: true,
       restart: true,
       judgment_limit:

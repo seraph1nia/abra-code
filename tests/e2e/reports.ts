@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { repo } from "../fixtures.ts";
 import { run } from "../effects.ts";
+import { diagnosticText } from "../../src/opencode/diagnostics.ts";
 
 export async function reportJourney(o: {
   root: string;
@@ -14,6 +15,8 @@ export async function reportJourney(o: {
   workerTool: (session: string, tool: string, args: unknown) => Promise<any>;
   eventually: <T>(action: () => Promise<T | undefined>, timeout?: number) => Promise<T>;
   restart: () => Promise<void>;
+  observe: (value: unknown) => void;
+  compilerRunning?: () => Promise<boolean>;
 }) {
   const path = await run(repo(o.root, "visual-report-base"));
   await o.invoke("abra_project_onboard", {
@@ -105,13 +108,56 @@ export async function reportJourney(o: {
     );
     return b?.status === "building" ? b : undefined;
   });
+  if (o.compilerRunning) {
+    let last: { status?: string; error?: string; artifact_retained: boolean } | undefined;
+    try {
+      await o.eventually(async () => {
+        const build = (await artifacts()).find(
+          (b: any) => b.request.request_id === captured.request.request_id,
+        );
+        last = {
+          status: build?.status,
+          error: build?.error ? diagnosticText(build.error, 2048) : undefined,
+          artifact_retained: !!build?.artifact,
+        };
+        if (build?.status === "failed")
+          throw Object.assign(Error("REPORT_FAILED_BEFORE_RESTART"), { terminal: true });
+        if (build?.status === "published")
+          throw Object.assign(Error("REPORT_COMPILER_WINDOW_MISSED"), { terminal: true });
+        return (await o.compilerRunning!()) ? true : undefined;
+      }, 15000);
+    } catch (error) {
+      o.observe({
+        report_compiler_probe_failed: { request_id: captured.request.request_id, ...last },
+      });
+      throw error;
+    }
+    o.observe({
+      report_compiler_running_before_restart: {
+        request_id: captured.request.request_id,
+        verified_owned_child: true,
+      },
+    });
+  }
   await o.restart();
   await inFlight;
   const recovered = await o.eventually(async () => {
     const b = (await artifacts()).find(
       (b: any) => b.request.request_id === "native-restarted-visual",
     );
-    if (b?.status === "failed") throw Object.assign(Error(JSON.stringify(b)), { terminal: true });
+    if (b?.status === "failed") {
+      o.observe({
+        report_restart_failed: {
+          request_id: b.request.request_id,
+          status: b.status,
+          error: b.error ? diagnosticText(b.error, 2048) : undefined,
+          input_hash: b.input_hash,
+          template_hash: b.template_hash,
+          artifact_retained: !!b.artifact,
+        },
+      });
+      throw Object.assign(Error("REPORT_RESTART_FAILED"), { terminal: true });
+    }
     return b?.status === "published" ? b : undefined;
   }, 90000);
   assert.equal(recovered.input_hash, captured.input_hash);

@@ -1,5 +1,6 @@
 import { deliveryOutcomeLines } from "../workflow/delivery-outcome.ts";
 import { FeedbackView } from "./feedback-view.ts";
+import { CommunicationView } from "./communication-view.ts";
 import { Show } from "solid-js";
 import { type Context, type PanelInput } from "@opencode/plugin/tui/context";
 import { phaseLabel, type WorkView } from "./client.ts";
@@ -300,6 +301,7 @@ export function TicketView(
             ["diff", "Diff"],
             ["workers", "Workers"],
             ["feedback", "Feedback"],
+            ["communication", "Communication"],
           ] as const
         ).map(([id, label]) =>
           buttons.button(
@@ -320,7 +322,9 @@ export function TicketView(
                 ? DiffView(ctx, view, buttons, wide, panel)
                 : tab === "feedback"
                   ? FeedbackView(ctx, view, buttons)
-                  : workerLinks(ctx, view, work, buttons),
+                  : tab === "communication"
+                    ? CommunicationView(ctx, view, buttons)
+                    : workerLinks(ctx, view, work, buttons),
       ),
       text(
         ctx,

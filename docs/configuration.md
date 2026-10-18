@@ -99,6 +99,35 @@ The controller captures resolved worker selections, capability prerequisites, re
 
 Use `pnpm service:start` then `pnpm auth` for native provider authentication. GitHub credentials remain in `gh auth`/its supported environment. Both are separate from configuration and do not belong in YAML. Native service auth stays in the private service registration; never copy it into a managed repository.
 
+## Operational choices
+
+For a minimal first run, the model default and one registered project are enough.
+Profiles, leads, browser prerequisites and visual-report setup are optional. The
+[first-use sequence](../README.md#talk-to-abra) and
+[operational controls](operations.md#operational-supervision-modes) explain when
+to select each option.
+
+| Choice               | Default / precedence                                                                              | Applies to                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Worker model         | Task model/profile, project model/profile, role override, then `models.default`                   | Captured at new execution admission; no silent fallback                                      |
+| Dispatch profile     | Named role/model catalog entry; selected explicitly by task/project `dispatch`                    | Model selection only; no tool or approval authority                                          |
+| Supervision posture  | Omitted preserves legacy settings; explicit `manual`, `attended-automatic` or `unattended`        | Process setting after restart                                                                |
+| Automatic scheduling | False without a posture; explicit automatic postures enable it and manual disables it             | Central scheduler readiness and capacity rules                                               |
+| Diagnostics / repair | Project `diagnostic_turns: 1`, `repair_rounds: 0`, captured by executions                         | Shared finite management/response-recovery budgets; manual suppresses new optional reasoning |
+| Project leads        | No registrations by default; register through `abra_lead_control`, not invented YAML              | Scoped context, proposals and eligible routine answers                                       |
+| Human gates          | Plan and merge required by default; explicit project/profile policy determines standing authority | Native exact-input forms remain authoritative                                                |
+
+`legacy` is a status label, not an accepted `supervision_mode` value. A posture
+conflicting with explicit `auto_schedule` is rejected. Repository declaration
+changes use `pnpm config:apply`; process/model/posture changes require service
+restart. Existing executions retain captured models and effective policies.
+See [task dispatch examples](operations.md#task-model-selections-and-profiles)
+and [approval policy](#quality-profiles-and-independent-automation).
+
+Missing-response recovery reuses diagnostic policy and allows at most one
+response-only reminder per original request. There are no separate
+`communication.missing_reply_recovery` or retry-count YAML keys.
+
 ## Verification commands and deadlines
 
 Existing argument arrays remain valid. Execution snapshots normalize them to a structured command with a 15-minute verification deadline. Individual checks can specify `argv`, `deadline_ms`, `env` and `max_output_bytes`:

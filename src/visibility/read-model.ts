@@ -1,7 +1,7 @@
 import { historicalWorkers } from "../workflow/worker-assignment.ts";
 import { deliveryOutcome } from "../workflow/delivery-outcome.ts";
 import { actionable } from "../workflow/feedback-contracts.ts";
-import { RelativePath, IssueId, timestamp } from "../identities.ts";
+import { RelativePath, IssueId, Timestamp, timestamp } from "../identities.ts";
 
 import { Clock, Effect, Schema } from "effect";
 import { domainEffect } from "../effect.ts";
@@ -12,6 +12,9 @@ import { type Queries, type ReadBundle } from "../workflow/queries.ts";
 import { type Controller } from "../workflow/controller.ts";
 import { changeDocument, changeDocuments } from "./documents.ts";
 import { type DiffScope, type WorkDetail, type WorkItem, type WorkSnapshot } from "./protocol.ts";
+import { fleetCounts, fleetState, fleetLabels, localDay, fleetRepositories } from "./fleet.ts";
+import { supervisionSummary } from "./supervision.ts";
+import { messageRequests, requiresResponse } from "../workflow/message-contracts.ts";
 function sessions(e?: Execution): WorkItem["sessions"] {
   const current = (["explore", "apply", "review", "research"] as const).flatMap((role) => {
     const id = e?.[`${role}_session_id`];
@@ -234,6 +237,7 @@ export class Visibility {
             });
         }
         const aggregate = yield* this.c.supervisionAggregate(observation);
+        const leads = yield* this.c.leadOverview(observation);
         const observedAt = yield* Clock.currentTimeMillis;
         for (const item of work) {
           const execution = executions.find((e) => e.issue_id === item.issue_id);
@@ -241,9 +245,74 @@ export class Visibility {
           if (execution)
             Object.assign(item, { outcome: deliveryOutcome(execution, issue?.status, observedAt) });
           Object.assign(item, {
-            supervision: aggregate.tasks.find((task) => task.issue_id === item.issue_id),
+            communication: {
+              total: execution?.messages?.length ?? 0,
+              outstanding: messageRequests(execution?.messages).filter(requiresResponse).length,
+            },
+            supervision:
+              aggregate.tasks.find((task) => task.issue_id === item.issue_id) ??
+              supervisionSummary({
+                execution,
+                blockers: item.blocker_details ?? [],
+                closed: issue?.status === "closed",
+                observed_at: Timestamp.make(new Date(observedAt).toISOString()),
+              }),
           });
         }
+        const day = localDay(observedAt);
+        const completedToday = (yield* this.c.completions(day.day_start, day.day_end)).filter(
+          (row) => !conflictIDs.has(row.issue_id),
+        ).length;
+        // History pagination controls rows, never fleet totals. Closed rows outside
+        // the page need no session, OpenSpec or per-ticket history inspection.
+        const loaded = new Set(work.map((w) => w.issue_id));
+        const fleetWork: WorkItem[] = [
+          ...work,
+          ...closed
+            .filter((i) => !loaded.has(i.id))
+            .map((i) => ({
+              issue_id: i.id,
+              title: i.title,
+              repository_id: i.repository_id,
+              priority: i.priority,
+              issue_status: i.status,
+              sessions: [],
+              eligible: false,
+              blockers: [],
+            })),
+        ];
+        const nativeTasks = executions.filter(
+          (e) =>
+            e.active_role && e[`${e.active_role}_session_id`] && e.current_phase !== "completed",
+        );
+        const fleet = {
+          ...day,
+          counts: fleetCounts(fleetWork),
+          total: fleetWork.length,
+          native_total: nativeTasks.length,
+          native_observed: nativeTasks.filter((e) =>
+            aggregate.tasks.some(
+              (t) =>
+                t.issue_id === e.issue_id &&
+                !["unobserved", "unavailable", "unknown"].includes(t.native_activity),
+            ),
+          ).length,
+          completed_today: completedToday,
+          repositories: fleetRepositories(fleetWork),
+          attention: work
+            .filter(
+              (w) =>
+                ["human_wait", "supervisor_wait", "recovery_required"].includes(fleetState(w)) ||
+                w.communication?.outstanding,
+            )
+            .map((w) => ({
+              issue_id: w.issue_id,
+              title: w.title,
+              reason: w.communication?.outstanding
+                ? `${w.communication.outstanding} unanswered request(s) · ${fleetLabels[fleetState(w)]}`
+                : fleetLabels[fleetState(w)],
+            })),
+        };
         work.sort(
           (a, b) =>
             Number(!a.phase) - Number(!b.phase) ||
@@ -251,6 +320,9 @@ export class Visibility {
             a.issue_id.localeCompare(b.issue_id),
         );
         return {
+          fleet,
+          leads: leads.leads,
+          lead_diagnostics: leads.diagnostics,
           supervision: aggregate,
           home: this.c.settings.home,
           record_diagnostics: diagnostics,

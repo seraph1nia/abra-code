@@ -68,7 +68,15 @@ Apply manual repository edits with `pnpm config:apply` while the service is runn
 
 Ask Abra to add a repository URL or supported existing checkout. Abra saves the declaration in the same YAML and inspects/registers it. You do not need to clone managed remote repositories yourself. A saved declaration can still need registration, OpenSpec setup or verification commands; the tools expose those blockers. No project checks or initialization run just because an entry exists in YAML.
 
-Then ask for a goal, for example: “Start a full OpenSpec flow to refactor the API.” Abra records the work, explains readiness and starts the appropriate worker when requested. Full OpenSpec work follows Explore, plan approval, Apply, verification, independent Review, OpenSpec archive and controller-owned delivery. Required CI/review and a bound human merge form precede merge and safe retirement. Worker completion messages do not replace those gates.
+Then ask for a goal. Abra can record several related tasks together, preserve their dependencies and schedule independent work within global and repository capacity. For example:
+
+> Investigate intermittent API tests, improve error handling, and research authentication regressions. Keep the investigations independent and forward relevant findings to the implementation worker.
+
+> With attended automatic supervision configured, keep working within the accepted scopes and bring me decisions that require my authority.
+
+> Register a backend project lead for the API repository. Ask it to inspect the queued work and propose routine follow-ups.
+
+Full OpenSpec work follows Explore, plan approval, Apply, verification, independent Review, OpenSpec archive and controller-owned delivery. Required CI/review and a bound human merge form precede merge and safe retirement. Worker completion messages do not replace those gates.
 
 | Role                 | Responsibility                                                        | Boundary                                                |
 | -------------------- | --------------------------------------------------------------------- | ------------------------------------------------------- |
@@ -83,13 +91,54 @@ Workers operate behind Abra. Inspect their activity, model, recent evidence and 
 
 Full OpenSpec is the shipped default. Explicit `research-only` retains findings without implementation; explicit `lightweight-fix` uses a short accepted scope with verification and independent Review. Automatic scheduling and automatic repair are disabled by default. See [work policies](docs/architecture.md), [configuration](docs/configuration.md) and the shipped [operational skills](.agents/skills/orchestration/SKILL.md).
 
+Set `supervision_mode` in the personal YAML to `manual`, `attended-automatic` or
+`unattended`, then restart the dedicated service while workers are idle. Abra can
+explain the resolved posture and its current blockers.
+Explicit automatic modes enable scheduling within the existing admission rules;
+manual mode disables new automatic dispatch. When no posture is selected, the
+legacy `auto_schedule` setting applies (default false). Contradictory settings are
+rejected. Unattended operation continues authorized work while
+retaining human-owned questions and approvals. Project leads keep scoped native
+context across tasks; registration alone authorizes proposals and eligible routine
+answers. Work creation still requires Abra's acceptance. See
+[postures and scheduling](docs/operations.md#operational-supervision-modes) and
+[project leads](docs/operations.md#optional-project-leads).
+
+Agents exchange controller-correlated requests, explicit acknowledgements,
+answers and findings through native OpenCode queues. Native admission and worker
+acknowledgement are separate. A verified missing required response permits one
+response-only reminder within the existing diagnostic budget, followed by a
+durable escalation. Ambiguous native state preserves the obligation. Inspect the
+original identity through Abra; see [messaging](docs/verification/features/messaging.md).
+
+For different task needs, ask Abra to select a dispatch profile or explicit
+per-task models before admission. Active workers retain their captured selections;
+changing defaults does not silently change running work. See
+[model configuration](docs/configuration.md#model-selection-and-authentication).
+
+For first use, register one project and ask Abra to check readiness, configure a
+posture if automatic operation is wanted, then give it a small multi-task goal. Open Work home to inspect progress,
+answer retained questions through Abra's forms, read reports and authorize delivery
+when requested. Browser use, project leads and visual reporting are optional.
+
 ## Work views and optional browser use
 
-Use `/abra` for Work home, `/abra-find` for a ticket, `/abra-session` to inspect a worker, `/abra-spec` for Plan, and `/abra-refresh` to refresh. Overview/Plan/Diff/Workers/Feedback remain read-only. Native queued/running status, keyboard navigation and disconnected snapshots remain visible; conversation actions return to Abra.
+Use `/abra` for Work home, `/abra-find` for a ticket, `/abra-session` to inspect a worker, `/abra-spec` for Plan, and `/abra-refresh` to refresh. Work home shows fleet counts, attention and scoped project leads. Overview/Plan/Diff/Workers/Feedback/Communication remain read-only. Native queued/running status, keyboard navigation and disconnected snapshots remain visible; conversation actions return to Abra.
 
 For browser assignments, explicitly run `pnpm browser:install` as the service user, or select a compatible existing Chrome/Chromium through `AGENT_BROWSER_EXECUTABLE_PATH`. Install required Linux system libraries separately. Routine diagnostics do not provision or launch a browser, and non-browser work does not require Chrome. See [browser setup](docs/operations.md#browser-cli).
 
 The [reporter template](templates/reporter/README.md) builds offline HTML reports and validates Mermaid during authoring. Its browser/build prerequisites are separate from ordinary use. OpenCode graphical clients may preview a linked local HTML file; AbraCode does not replace their host branding or require publishing reports.
+
+If work stops progressing, ask Abra to inspect the original issue and retained
+request before retrying. Use the runbooks for
+[missing replies and uncertain admission](docs/recovery.md#worker-communication-recovery),
+[interrupted workers](docs/recovery.md#owned-operations-and-stop-confirmation),
+[unavailable leads](docs/operations.md#optional-project-leads),
+[scheduler admission](docs/operations.md#batch-intake),
+[model availability](docs/configuration.md#model-selection-and-authentication),
+[pending approvals](docs/operations.md#reading-approval-and-finish-outcomes),
+[report builds](docs/operations.md#portable-visual-reports) and
+[blocked worktree retirement](docs/recovery.md#interrupted-retirement).
 
 ## Updates and fresh-install boundary
 

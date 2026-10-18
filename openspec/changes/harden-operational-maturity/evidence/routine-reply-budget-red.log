@@ -1,0 +1,35 @@
+note: You are running `vp test` as a Vite+ built-in command. If you meant to run the test npm script, use `vpr test` instead.
+
+ RUN  v5.0.4 /home/bart/projects/personal/opencrew
+
+ ❯ |unit| tests/unit/response-recovery.test.ts (17 tests | 1 failed | 16 skipped) 384ms
+   × a routine reply notice cannot consume the diagnostic reserved for another outstanding response 383ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| tests/unit/response-recovery.test.ts > a routine reply notice cannot consume the diagnostic reserved for another outstanding response
+AssertionError: Expected values to be strictly equal:
++ actual - expected
+
++ undefined
+- 'admitted'
+
+
+simple
+
+ ❯ tests/unit/response-recovery.test.ts:490:10
+    488|   await run(f.controller.reconcile(e.issue_id));
+    489|   const current = await run(f.controller.get(e.issue_id));
+    490|   assert.equal(
+       |          ^
+    491|     messageRequests(current.messages).find((m) => m.request_id === sec…
+    492|       ?.status,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 16 skipped (17)
+   Start at  11:11:27
+   Duration  1.26s (import 57%, tests 33%, transform 10%)
+

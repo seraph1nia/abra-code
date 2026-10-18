@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { repo } from "../fixtures.ts";
 import { run } from "../effects.ts";
+import { type WorkSnapshot } from "../../src/visibility/protocol.ts";
 
 export async function leadJourney(o: {
   root: string;
@@ -14,6 +15,8 @@ export async function leadJourney(o: {
   holdResearch: () => void;
   held: () => boolean;
   releaseResearch: () => void;
+  observe: (value: unknown) => void;
+  snapshot: () => Promise<WorkSnapshot>;
 }) {
   const path = await run(repo(o.root, "lead-base"));
   await o.invoke("abra_project_onboard", {
@@ -76,6 +79,11 @@ export async function leadJourney(o: {
   const lead = await o.invoke("abra_lead_control", definition);
   assert.equal(lead.provisioned, true);
   assert.equal(lead.revision, 1);
+  const visible = (await o.snapshot()).leads!.find((l) => l.id === lead.id)!;
+  assert.equal(visible.enabled, true);
+  assert.equal(visible.session_available, true);
+  assert.deepEqual(visible.repositories, ["lead-project"]);
+  assert.deepEqual(visible.assigned_work, [issue.id]);
   assert.equal((await o.invoke("abra_lead_control", definition)).session_id, lead.session_id);
   const actual = await o.client.session.get({ sessionID: lead.session_id });
   assert.equal(actual.agent, "project-lead");
@@ -140,7 +148,32 @@ export async function leadJourney(o: {
     request_id: "native-lead-request",
     body: "lead-native-acceptance: inspect this project and propose a read-only investigation",
   };
-  await o.invoke("abra_lead_control", request);
+  try {
+    await o.invoke("abra_lead_control", request);
+  } catch (error) {
+    // Keep only controller identities/dispositions, never prompts or provider bodies.
+    const fleet = await o.invoke("abra_work_list", {});
+    o.observe({
+      lead_admission_failed: request.request_id,
+      occupied_incidents: fleet.executions.flatMap((e: any) =>
+        (e.attention ?? [])
+          .filter((a: any) => ["uncertain", "admitted"].includes(a.status))
+          .map((a: any) => ({
+            issue_id: e.issue_id,
+            phase: e.current_phase,
+            current_generation: e.control_generation,
+            id: a.id,
+            generation: a.generation,
+            code: a.code,
+            status: a.status,
+            created_at: a.created_at,
+            prompt_id: a.prompt_id,
+            session_id: a.session_id,
+          })),
+      ),
+    });
+    throw error;
+  }
   const status = () =>
     o.invoke("abra_lead_control", { action: "status", id: lead.id }).then((rows: any[]) => rows[0]);
   const answered = await o.eventually(async () => {
@@ -272,6 +305,10 @@ export async function leadJourney(o: {
     enabled: false,
     model: { providerID: "fixture", id: "gpt-fixture" },
   });
+  const disabledProjection = (await o.snapshot()).leads!.find((l) => l.id === lead.id)!;
+  assert.equal(disabledProjection.state, "disabled");
+  assert.equal(disabledProjection.enabled, false);
+  assert.ok(disabledProjection.latest_outcome);
   return {
     feature: "persistent-project-leads",
     result: "pass",

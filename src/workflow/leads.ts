@@ -2,12 +2,19 @@ import { Effect, Schema } from "effect";
 import { Session, SessionMessage } from "@opencode/client/effect";
 import { createHash } from "node:crypto";
 import { CrewError, ensure, type Config } from "../domain.ts";
-import { LockKey, RequestId, SessionId, type IssueId, timestamp } from "../identities.ts";
+import {
+  LockKey,
+  RequestId,
+  SessionId,
+  Timestamp,
+  type IssueId,
+  timestamp,
+} from "../identities.ts";
 import { decode, decodeJSON } from "../decode.ts";
 import { domainEffect } from "../effect.ts";
 import { type Records } from "../storage/store.ts";
 import { type Locks } from "../storage/lock.ts";
-import { type Runtime } from "../opencode/runtime.ts";
+import { type Runtime, type SessionState } from "../opencode/runtime.ts";
 import { type WorkGraph } from "../work/graph.ts";
 import {
   BatchResultSchema,
@@ -16,8 +23,13 @@ import {
   type BatchResult,
 } from "../work/batch.ts";
 import { type Obligations } from "./obligations.ts";
-import { type MessageSendSchema } from "./message-contracts.ts";
-import { admitNativeRequest } from "./messages.ts";
+import {
+  requestHistoryError,
+  requestPromptIDs,
+  requiresResponse,
+  type MessageSendSchema,
+} from "./message-contracts.ts";
+import { admitNativeRequest, responseState } from "./messages.ts";
 import {
   LeadActionSchema,
   LeadControlSchema,
@@ -54,8 +66,24 @@ export class Leads {
     ) => Effect.Effect<unknown, CrewError>,
   ) {}
   private save(record: LeadRecord) {
-    return decode(LeadRecordSchema, record, "Lead registration").pipe(
-      Effect.flatMap((r) => this.records.store.set(leadKey(r.id), r)),
+    return domainEffect(
+      Effect.gen({ self: this }, function* () {
+        const r = yield* decode(LeadRecordSchema, record, "Lead registration");
+        const prior = yield* this.records.store.get(leadKey(r.id));
+        if (prior !== undefined) {
+          const old = yield* decode(LeadRecordSchema, prior, "Retained lead registration");
+          const requests = new Map(
+            r.requests.map((item) => [item.request.request_id, item.request]),
+          );
+          for (const item of old.requests) {
+            const current = requests.get(item.request.request_id);
+            ensure(current, "MESSAGE_HISTORY", "Retained lead request cannot be removed");
+            const error = requestHistoryError(item.request, current);
+            ensure(!error, "MESSAGE_HISTORY", error ?? "Invalid lead request history");
+          }
+        }
+        yield* this.records.store.set(leadKey(r.id), r);
+      }),
     );
   }
   principal = (session: SessionId) =>
@@ -520,6 +548,253 @@ export class Leads {
       }),
     );
 
+  private escalate = (lead: LeadRecord, id: RequestId, reason: string, state?: SessionState) =>
+    this.records.coordinateCommit(() =>
+      domainEffect(
+        Effect.gen({ self: this }, function* () {
+          const current = yield* this.current(lead.session_id, lead.revision);
+          const item = current.requests.find((r) => r.request.request_id === id)!;
+          const m = item.request;
+          if (
+            m.response_escalation ||
+            (!requiresResponse(m) && m.response_recovery?.status !== "admission_uncertain")
+          )
+            return current;
+          const escalation = {
+            body: `Project lead ${current.id} communication requires inspection. Issue: ${item.issue_id}. Request: ${m.request_id}. Registration revision: ${m.generation}. Original admission: ${m.status}. Outstanding: ${requiresResponse(m) ? m.response : "reminder admission observation; response already committed"}. Recovery: ${m.response_recovery?.status ?? "not attempted"}, maximum one. Reason: ${reason}. Native state: ${state ? JSON.stringify({ busy: state.busy, executing: state.executing, outcome: state.outcome, completion: state.assignment?.completion }) : "unavailable"}. Inspect abra_lead_control status and the native lead session; explicitly stop/revise or issue authorized follow-up if needed. This notice grants no task, scope, approval or delivery authority.`,
+            notice_id: SessionMessage.ID.create(),
+            created_at: yield* timestamp,
+          };
+          const next = {
+            ...current,
+            requests: current.requests.map((r) =>
+              r === item ? { ...r, request: { ...m, response_escalation: escalation } } : r,
+            ),
+          };
+          yield* this.save(next);
+          return next;
+        }),
+      ),
+    );
+
+  /** Per-lead operation ownership; only record/budget reservations take coordination. */
+  private recoverResponse = (lead: LeadRecord, id: RequestId) =>
+    domainEffect(
+      Effect.gen({ self: this }, function* () {
+        let l = yield* this.current(lead.session_id, lead.revision);
+        let item = l.requests.find((r) => r.request.request_id === id)!;
+        let m = item.request;
+        if (!requiresResponse(m) && !m.response_recovery) return l;
+        let recovery = m.response_recovery;
+        if (recovery?.status === "suppressed")
+          return requiresResponse(m)
+            ? yield* this.escalate(
+                l,
+                id,
+                "Reserved reminder suppressed before admission; explicit recovery required",
+              )
+            : l;
+        const input = recovery
+          ? { ...m, prompt_id: recovery.prompt_id, prompt: recovery.prompt }
+          : m;
+        let state = yield* this.runtime.session(l.session_id, input.prompt_id);
+        ensure(
+          state.directory === this.config.home && state.agent === "project-lead",
+          "LEAD_SESSION",
+          "Management recipient moved or changed agent",
+        );
+        const admission = yield* this.runtime.promptAdmission(
+          l.session_id,
+          input.prompt_id,
+          input.prompt,
+        );
+        if (!recovery) {
+          if (state.completion_pending) return l;
+          const observed = responseState(m, state, admission);
+          if (["queued", "executing", "resolved", "superseded"].includes(observed)) return l;
+          if (observed !== "missing") return yield* this.escalate(l, id, observed, state);
+          const prepared = yield* this.records.coordinateCommit(() =>
+            domainEffect(
+              Effect.gen({ self: this }, function* () {
+                const current = yield* this.current(l.session_id, l.revision);
+                const original = current.requests.find((r) => r.request.request_id === id)!;
+                if (!requiresResponse(original.request) || original.request.response_recovery)
+                  return { lead: current };
+                const task = yield* this.scoped(current, original.issue_id);
+                const project = yield* this.records.project(task.repository_id);
+                const e = yield* this.records.execution(original.issue_id);
+                const account = yield* leadAccounting(this.records);
+                const budget = e?.effective_policy.diagnostic_turns ?? project!.diagnostic_turns;
+                if (this.config.supervision_mode === "manual")
+                  return { lead: current, reason: "Manual posture requires explicit recovery" };
+                if (account.turns(original.issue_id) + (e?.attention_turns ?? 0) >= budget)
+                  return {
+                    lead: current,
+                    reason: "Diagnostic budget exhausted; no reminder admitted",
+                  };
+                const rootActive = (yield* this.records.executions())
+                  .flatMap((e) => e.attention ?? [])
+                  .filter((a) => ["uncertain", "admitted"].includes(a.status)).length;
+                if (
+                  account.active - (current.active ? 1 : 0) + rootActive >=
+                  this.config.attention_capacity
+                )
+                  return {
+                    lead: current,
+                    reason: "Management capacity unavailable; no reminder admitted",
+                  };
+                const completion = state.assignment!.completion!;
+                const attempt = {
+                  prompt_id: SessionMessage.ID.create(),
+                  prompt: `AbraCode response-only reminder for original project-lead request ${id}, registration revision ${l.revision}. Its admitted native turn completed without the required answer. Do not repeat its substantive task, create work or broaden scope. Use abra_lead_action action reply, revision ${l.revision}, ORIGINAL request_id ${id}. No approval or delivery authority is granted.`,
+                  created_at: yield* timestamp,
+                  completion_id: completion.id,
+                  completed_at: Timestamp.make(new Date(completion.at).toISOString()),
+                  status: "pending" as const,
+                };
+                const next = {
+                  ...current,
+                  active: true,
+                  requests: current.requests.map((r) =>
+                    r === original
+                      ? { ...r, request: { ...r.request, response_recovery: attempt } }
+                      : r,
+                  ),
+                };
+                yield* this.save(next);
+                return { lead: next };
+              }),
+            ),
+          );
+          l = prepared.lead;
+          if (prepared.reason) return yield* this.escalate(l, id, prepared.reason, state);
+          item = l.requests.find((r) => r.request.request_id === id)!;
+          m = item.request;
+          recovery = m.response_recovery;
+          if (!recovery) return l;
+        }
+        const submitted = recovery.status === "pending";
+        if (submitted) {
+          state = yield* this.runtime.session(l.session_id);
+          ensure(
+            state.directory === this.config.home && state.agent === "project-lead",
+            "LEAD_SESSION",
+            "Management recipient moved before reminder admission",
+          );
+          if (state.busy || state.executing !== false || state.completion_pending) return l;
+          l = yield* this.records.coordinateCommit(() =>
+            domainEffect(
+              Effect.gen({ self: this }, function* () {
+                const current = yield* this.current(l.session_id, l.revision);
+                const request = current.requests.find((r) => r.request.request_id === id)!;
+                const suppress =
+                  !requiresResponse(request.request) ||
+                  this.config.supervision_mode === "manual" ||
+                  ["failed", "interrupted"].includes(state.outcome ?? "");
+                const next = {
+                  ...current,
+                  requests: current.requests.map((r) =>
+                    r === request
+                      ? {
+                          ...r,
+                          request: {
+                            ...r.request,
+                            response_recovery: {
+                              ...r.request.response_recovery!,
+                              status: suppress
+                                ? ("suppressed" as const)
+                                : ("admission_uncertain" as const),
+                            },
+                          },
+                        }
+                      : r,
+                  ),
+                };
+                yield* this.save(next);
+                return next;
+              }),
+            ),
+          );
+          if (
+            l.requests.find((r) => r.request.request_id === id)!.request.response_recovery!
+              .status === "suppressed"
+          )
+            return yield* this.escalate(
+              l,
+              id,
+              "Reminder suppressed before native admission",
+              state,
+            );
+          yield* this.runtime.prompt(l.session_id, recovery.prompt, recovery.prompt_id);
+        } else if (admission === "absent") {
+          return yield* this.escalate(
+            l,
+            id,
+            "Recovery admission uncertain; preserve the original native identity",
+            state,
+          );
+        }
+        if (recovery.status !== "admitted")
+          l = yield* this.records.coordinateCommit(() =>
+            domainEffect(
+              Effect.gen({ self: this }, function* () {
+                const current = yield* this.current(l.session_id, l.revision);
+                const next = {
+                  ...current,
+                  requests: current.requests.map((r) =>
+                    r.request.request_id === id
+                      ? {
+                          ...r,
+                          request: {
+                            ...r.request,
+                            response_recovery: {
+                              ...r.request.response_recovery!,
+                              status: "admitted" as const,
+                            },
+                          },
+                        }
+                      : r,
+                  ),
+                };
+                yield* this.save(next);
+                return next;
+              }),
+            ),
+          );
+        if (submitted) return l;
+        if (admission === "queued" && ["failed", "interrupted"].includes(state.outcome ?? ""))
+          return yield* this.escalate(l, id, "Lead stopped with the reminder still queued", state);
+        if (
+          admission === "queued" &&
+          state.executing === false &&
+          !["failed", "interrupted"].includes(state.outcome ?? "")
+        ) {
+          yield* this.current(l.session_id, l.revision);
+          yield* this.runtime.prompt(l.session_id, recovery.prompt, recovery.prompt_id);
+        }
+        const observed = responseState({ ...m, prompt_id: recovery.prompt_id }, state, admission);
+        if (state.completion_pending) return l;
+        if (!["queued", "executing", "resolved", "superseded"].includes(observed))
+          l = yield* this.escalate(
+            l,
+            id,
+            observed === "missing"
+              ? "Recovery completed without the required answer; automatic attempt exhausted"
+              : observed,
+            state,
+          );
+        return l;
+      }),
+    ).pipe(
+      Effect.catch((error) =>
+        this.escalate(
+          lead,
+          id,
+          `Native recovery unavailable (${error.code}); inspect before explicit recovery`,
+        ),
+      ),
+    );
+
   private reconcileOne = (lead: LeadRecord) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
@@ -528,7 +803,7 @@ export class Leads {
           if (l.stop_pending) {
             const owned = l.requests
               .filter((r) => r.request.recipient_session_id === l.session_id)
-              .map((r) => r.request.prompt_id);
+              .flatMap((r) => requestPromptIDs(r.request));
             yield* this.runtime.interrupt(l.session_id, owned[0], owned.slice(1));
             const state = yield* this.runtime.session(l.session_id);
             ensure(!state.busy, "LEAD_STOP", "Management session stop remains uncertain");
@@ -543,11 +818,19 @@ export class Leads {
           l = { ...l, provisioned: true };
           yield* this.records.coordinateCommit(() => this.save(l));
         }
+        const recipient = yield* this.runtime.session(l.session_id);
+        ensure(
+          recipient.directory === this.config.home && recipient.agent === "project-lead",
+          "LEAD_SESSION",
+          "Management session moved or changed agent before admission",
+        );
         for (const item of l.requests) {
           const m = item.request;
           if (
             m.generation !== l.revision ||
-            ["answered", "cancelled", "superseded"].includes(m.status)
+            ["cancelled", "superseded"].includes(m.status) ||
+            (m.status === "answered" &&
+              (!m.response_recovery || m.response_recovery.status === "suppressed"))
           )
             continue;
           const confirmed = yield* admitNativeRequest(this.runtime, m, (status) =>
@@ -583,31 +866,75 @@ export class Leads {
             (yield* this.runtime.promptAdmission(l.session_id, m.prompt_id, m.prompt)) === "queued"
           )
             yield* this.runtime.prompt(l.session_id, m.prompt, m.prompt_id);
+          l = yield* this.recoverResponse(l, m.request_id);
         }
         const state = yield* this.runtime.session(l.session_id);
         if (
           !state.busy &&
+          !state.completion_pending &&
           !l.requests.some(
             (r) =>
               r.request.generation === l.revision &&
-              ["pending", "admission_uncertain"].includes(r.request.status),
+              (["pending", "admission_uncertain"].includes(r.request.status) ||
+                ["pending", "admission_uncertain"].includes(
+                  r.request.response_recovery?.status ?? "",
+                )),
           )
         ) {
           yield* this.records.coordinateCommit(() =>
             domainEffect(
               Effect.gen({ self: this }, function* () {
                 const current = yield* this.current(l.session_id, l.revision);
-                yield* this.save({ ...current, active: false });
+                if (current.active) yield* this.save({ ...current, active: false });
               }),
             ),
           );
         }
       }),
+    ).pipe(
+      Effect.tapError((error) =>
+        Effect.forEach(
+          lead.requests.filter(
+            (item) =>
+              !item.request.response_escalation &&
+              (requiresResponse(item.request) ||
+                item.request.response_recovery?.status === "admission_uncertain"),
+          ),
+          (item) =>
+            this.escalate(
+              lead,
+              item.request.request_id,
+              `Lead admission/state unavailable (${error.code}); inspect retained identity before explicit recovery`,
+            ).pipe(Effect.ignore),
+        ),
+      ),
     );
   private notices = (lead: LeadRecord) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
         let l = lead;
+        for (const item of l.requests.filter(
+          (r) =>
+            r.request.response_escalation &&
+            !r.request.response_escalation.notified &&
+            (requiresResponse(r.request) ||
+              r.request.response_recovery?.status === "admission_uncertain"),
+        )) {
+          const incident = item.request.response_escalation!;
+          yield* this.runtime.notify(l.parent_session_id, incident.body, incident.notice_id);
+          l = {
+            ...l,
+            requests: l.requests.map((r) =>
+              r === item
+                ? {
+                    ...r,
+                    request: { ...r.request, response_escalation: { ...incident, notified: true } },
+                  }
+                : r,
+            ),
+          };
+          yield* this.records.coordinateCommit(() => this.save(l));
+        }
         for (const item of l.requests.filter(
           (r) => r.request.status === "answered" && r.request.reply && !r.notified,
         )) {
@@ -655,7 +982,7 @@ export class Leads {
             () =>
               Effect.gen({ self: this }, function* () {
                 const fresh = (yield* readLeads(this.records)).find((r) => r.id === l.id)!;
-                yield* this.reconcileOne(fresh);
+                yield* this.reconcileOne(fresh).pipe(Effect.ignore);
                 const current = (yield* readLeads(this.records)).find((r) => r.id === l.id)!;
                 yield* this.notices(current);
               }),
@@ -708,19 +1035,61 @@ export class Leads {
       Effect.gen({ self: this }, function* () {
         const l = yield* this.principal(session);
         if (!l) return false;
-        const m = l.requests.find((r) => r.request.prompt_id === id)?.request;
+        const m = l.requests.find(
+          (r) => r.request.prompt_id === id || r.request.response_recovery?.prompt_id === id,
+        )?.request;
+        const recovery = m?.response_recovery?.prompt_id === id ? m.response_recovery : undefined;
         ensure(
           l.enabled &&
             !l.stop_pending &&
             l.session_id === session &&
             m &&
             m.generation === l.revision &&
-            m.prompt === text &&
-            m.delivery === delivery &&
+            (recovery?.prompt ?? m.prompt) === text &&
+            (recovery ? "queue" : m.delivery) === delivery &&
+            (!recovery || ["admission_uncertain", "admitted"].includes(recovery.status)) &&
             ["admission_uncertain", "admitted", "acknowledged", "answered"].includes(m.status),
           "LEAD_PROMPT",
           "Project leads accept only retained controller requests",
         );
+        if (recovery?.status === "admission_uncertain" && !requiresResponse(m)) {
+          yield* this.records.coordinateCommit(() =>
+            domainEffect(
+              Effect.gen({ self: this }, function* () {
+                const current = yield* this.current(session, l.revision);
+                const request = current.requests.find(
+                  (r) => r.request.request_id === m.request_id,
+                )!;
+                if (
+                  requiresResponse(request.request) ||
+                  request.request.response_recovery?.status !== "admission_uncertain"
+                )
+                  return;
+                yield* this.save({
+                  ...current,
+                  requests: current.requests.map((r) =>
+                    r === request
+                      ? {
+                          ...r,
+                          request: {
+                            ...r.request,
+                            response_recovery: {
+                              ...r.request.response_recovery!,
+                              status: "suppressed",
+                            },
+                          },
+                        }
+                      : r,
+                  ),
+                });
+              }),
+            ),
+          );
+          return yield* new CrewError(
+            "LEAD_PROMPT",
+            "Original lead answer already committed; unused reminder suppressed",
+          );
+        }
         return true;
       }),
     );

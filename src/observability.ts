@@ -7,7 +7,7 @@ export const reconcileDuration = Metric.histogram("abracode.reconcile.duration_m
   boundaries: [10, 50, 100, 500, 1000, 5000, 30000, 120000],
 });
 export const observerRequest = (
-  method: "snapshot" | "detail" | "diff" | "document" | "report" | "feedback",
+  method: "snapshot" | "detail" | "diff" | "document" | "report" | "feedback" | "messages",
 ) => Metric.update(observerRequests.pipe(Metric.withAttributes({ method })), 1);
 export const admissionWait = (role: Role) =>
   Metric.update(admissionWaits.pipe(Metric.withAttributes({ role })), 1);

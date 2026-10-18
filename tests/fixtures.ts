@@ -271,6 +271,9 @@ export class FakeWorkGraph implements WorkGraph {
   history(_id: string) {
     return domainEffect(Effect.sync(() => []));
   }
+  completions(_start: Id.Timestamp, _end: Id.Timestamp) {
+    return Effect.succeed<Array<{ issue_id: Id.IssueId; at: Id.Timestamp }>>([]);
+  }
   add(id: Id.IssueId, repo = Id.RepositoryId.make("api"), deps: Id.IssueId[] = []) {
     this.issues.set(id, {
       id,
@@ -453,6 +456,16 @@ export class FakeRuntime implements Runtime {
     return Effect.succeed(
       this.admissions.has(message) ? ("consumed" as const) : ("absent" as const),
     );
+  }
+  promptAdmissions(
+    session: Id.SessionId,
+    requests: readonly import("../src/opencode/runtime.ts").PromptIdentity[],
+  ) {
+    return Effect.forEach(requests, (request) =>
+      this.promptAdmission(session, request.prompt_id, request.prompt).pipe(
+        Effect.map((status) => [request.prompt_id, status] as const),
+      ),
+    ).pipe(Effect.map((entries) => new Map(entries)));
   }
   creates: number = 0;
   constructor(private git: Git) {}

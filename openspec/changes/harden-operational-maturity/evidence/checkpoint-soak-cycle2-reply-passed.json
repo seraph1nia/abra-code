@@ -1,0 +1,108 @@
+{
+  "fixture": "tests/e2e/native.test.ts",
+  "result": "pass",
+  "cleanup_complete": true,
+  "observed_at": "2026-10-18T12:12:43.299Z",
+  "isolation": "Disposable service/data/config, loopback provider and local bare remotes; no operator service or user remote",
+  "observations": [
+    {
+      "reply_recovery": "pass",
+      "issue_id": "abra-df28f39a-1ff0-4084-95e5-20ab47c60a0b",
+      "identities": [
+        {
+          "request_id": "native-recovery-answer",
+          "prompt_id": "msg_14eed8bf70012wnPjJZ8V22Up5",
+          "reminder": "msg_14eed918b001bkWf24dPJAPHjg"
+        },
+        {
+          "request_id": "native-recovery-escalation",
+          "prompt_id": "msg_14eed8cdb001Sl3rOPYcv9sWSn",
+          "reminder": "msg_14eed93ab001mcke6suzK6hcqg"
+        }
+      ],
+      "native_instruction_counts": [
+        {
+          "request_id": "native-recovery-answer",
+          "original": 1,
+          "reminder": 1
+        },
+        {
+          "request_id": "native-recovery-escalation",
+          "original": 1,
+          "reminder": 1
+        }
+      ],
+      "attempts": 3,
+      "answered": 2,
+      "escalated": 1,
+      "escalation_id": "incident-60a47785c5dd72fa85136e30da98e6d129123355",
+      "restart_preserved": true,
+      "stop_confirmed": true,
+      "lead_recovery": {
+        "request_id": "native-lead-recovery-answer",
+        "prompt_id": "msg_14eeda420001rf4K62ul5nN4qi",
+        "reminder": "msg_14eeda6c8001efComlZyO0SzMb",
+        "native_instruction_counts": {
+          "original": 1,
+          "reminder": 1
+        },
+        "notice_id": "msg_14eedad89001dRzxN1sznxRjbu",
+        "source_execution_absent": true,
+        "disabled_after_reply": true
+      },
+      "limitation": "Deterministic loopback provider; task deliberately paused after communication assertions; fixture teardown owns retained resources."
+    }
+  ],
+  "metrics": {
+    "provider_requests": {
+      "supervisor": 6,
+      "explore": 13
+    },
+    "controller_calls": {
+      "abra_project_onboard": {
+        "count": 1,
+        "total_ms": 175.86757699999725,
+        "max_ms": 175.86757699999725
+      },
+      "abra_work_create": {
+        "count": 2,
+        "total_ms": 71.18529199998011,
+        "max_ms": 37.171172000002116
+      },
+      "abra_work_start": {
+        "count": 1,
+        "total_ms": 2944.4416039999924,
+        "max_ms": 2944.4416039999924
+      },
+      "abra_work_message": {
+        "count": 2,
+        "total_ms": 436.0061680000217,
+        "max_ms": 227.274957000016
+      },
+      "abra_work_status": {
+        "count": 7,
+        "total_ms": 4611.003624999954,
+        "max_ms": 1554.1442220000026
+      },
+      "abra_work_control": {
+        "count": 1,
+        "total_ms": 78.42703799999435,
+        "max_ms": 78.42703799999435
+      },
+      "abra_lead_control": {
+        "count": 14,
+        "total_ms": 1605.83887399995,
+        "max_ms": 977.8001369999838
+      }
+    },
+    "retained_state": {
+      "files": 697,
+      "bytes": 9357540,
+      "complete": true,
+      "coverage": "Native data/state and central .abracode only; excludes source, dependency cache and worktree source bytes"
+    },
+    "usage_kind": "Deterministic provider requests and controller RPC calls; neither is billable tokens or a native turn count",
+    "billable_tokens": null,
+    "cost": null
+  }
+}

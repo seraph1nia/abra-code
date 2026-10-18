@@ -1,5 +1,24 @@
 import { type Phase } from "../domain.ts";
-import { type WorkItem } from "./protocol.ts";
+import { type WorkItem, type LeadSummary } from "./protocol.ts";
+export const leadNeedsAttention = (lead: LeadSummary) =>
+  lead.outstanding_count > 0 ||
+  lead.pending_proposals.length > 0 ||
+  (lead.enabled && ["unavailable", "stopping"].includes(lead.state));
+import { type Communication, requiresResponse } from "../workflow/message-contracts.ts";
+export function communicationLabel(record: Communication) {
+  if (record.type === "finding") return "Finding retained";
+  if (record.status === "pending") return "Pending controller admission";
+  if (record.status === "admission_uncertain") return "Admission uncertain";
+  if (["cancelled", "superseded"].includes(record.status))
+    return `${record.status}${record.reply ? " · historical answer retained" : ""}`;
+  const status =
+    record.status === "admitted"
+      ? "Native admitted"
+      : record.status === "answered"
+        ? "Answered"
+        : "Acknowledged";
+  return requiresResponse(record) ? `${status} · awaiting ${record.response}` : status;
+}
 export const sections = [
   { id: "attention", label: "Needs you" },
   { id: "working", label: "Working" },
@@ -111,6 +130,8 @@ export function stateLabel(work: WorkItem) {
     return `Waiting · ${work.delivery_wait.owner}: ${work.delivery_wait.reason}`;
   if (work.command_wait) return `Checking · ${work.command_wait.command}`;
   if (work.capacity_wait) return `Waiting for ${work.capacity_wait.role} capacity`;
+  if (work.supervision?.native_activity === "queued")
+    return `Native queued · ${work.active_role ?? "worker"}`;
   if (work.phase === "awaiting_plan_approval") return "Approve plan";
   if (
     work.phase === "awaiting_merge" &&

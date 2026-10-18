@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-18T10:08:13Z",
+  "result": "pass",
+  "cases": [
+    {
+      "args": ["--dry-run", "--cycles", "0"],
+      "exit": 1,
+      "expected": "refused before native launch"
+    },
+    {
+      "args": ["--dry-run", "--cycles", "101"],
+      "exit": 1,
+      "expected": "refused before native launch"
+    },
+    {
+      "args": ["--dry-run", "--concurrency", "5"],
+      "exit": 1,
+      "expected": "refused before native launch"
+    },
+    {
+      "args": ["--dry-run", "--seed", "-1"],
+      "exit": 1,
+      "expected": "refused before native launch"
+    },
+    {
+      "args": ["--dry-run", "--profile", "unrecognized"],
+      "exit": 1,
+      "expected": "refused before native launch"
+    },
+    {
+      "args": ["--dry-run", "--deadline-seconds", "1"],
+      "exit": 1,
+      "expected": "refused before native launch"
+    },
+    {
+      "args": ["--dry-run", "--profile", "mixed", "--cycles", "5", "--seed", "42"],
+      "repeat_schedule_equal": true,
+      "schedule": [
+        {
+          "cycle": 1,
+          "profile": "full"
+        },
+        {
+          "cycle": 2,
+          "profile": "acceptance"
+        },
+        {
+          "cycle": 3,
+          "profile": "reports"
+        },
+        {
+          "cycle": 4,
+          "profile": "parallel"
+        },
+        {
+          "cycle": 5,
+          "profile": "full"
+        }
+      ]
+    },
+    {
+      "case": "existing evidence directory",
+      "exit": 1,
+      "original_contents_unchanged": true
+    }
+  ],
+  "native_services_launched": 0
+}

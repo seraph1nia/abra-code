@@ -13,11 +13,13 @@ export function resources(ctx: Context, state: ViewState, update: UpdateView, sc
   const launchTask = (key: string, effect: Effect.Effect<void>) =>
     Effect.runSync(FiberMap.run(tasks, key, effect));
   let feedbackVersion = 0;
+  let messagesVersion = 0;
   let diffVersion = 0;
   let documentVersion = 0;
   const launch = (effect: Effect.Effect<void>) => Effect.runSync(Effect.forkIn(effect, scope));
   const clear = () => {
     feedbackVersion++;
+    messagesVersion++;
     diffVersion++;
     documentVersion++;
     launch(FiberMap.clear(tasks));
@@ -25,6 +27,9 @@ export function resources(ctx: Context, state: ViewState, update: UpdateView, sc
       delete s.feedback;
       delete s.feedback_error;
       s.feedback_loading = false;
+      delete s.messages;
+      delete s.messages_error;
+      s.messages_loading = false;
       delete s.diff;
       delete s.diff_error;
       delete s.document;
@@ -34,6 +39,43 @@ export function resources(ctx: Context, state: ViewState, update: UpdateView, sc
   };
   return {
     clear,
+    messages: () => {
+      const issue = state.selected,
+        offset = state.messages_offset ?? 0;
+      if (!issue) return;
+      const version = ++messagesVersion;
+      update((s) => {
+        s.messages_loading = true;
+        delete s.messages_error;
+      });
+      launchTask(
+        "messages",
+        Effect.tryPromise({
+          try: (signal) => api.messages({ issue_id: issue, offset }, { location, signal }),
+          catch: CrewError.from,
+        }).pipe(
+          Effect.tap((value) =>
+            Effect.sync(() => {
+              if (version !== messagesVersion || state.selected !== issue) return;
+              update((s) => {
+                s.messages = value;
+                s.messages_loading = false;
+              });
+            }),
+          ),
+          Effect.catch((error) =>
+            Effect.sync(() => {
+              if (version !== messagesVersion || state.selected !== issue) return;
+              update((s) => {
+                s.messages_error = error.message;
+                s.messages_loading = false;
+              });
+            }),
+          ),
+          Effect.asVoid,
+        ),
+      );
+    },
     feedback: () => {
       const issue = state.selected,
         page = state.feedback_page ?? 0;

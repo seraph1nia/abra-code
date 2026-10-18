@@ -1,7 +1,7 @@
 import { SessionMessage } from "@opencode/schema/session-message";
 import { resourceFailure } from "./resource-errors.ts";
-import { ViewKey, SessionId, RepositoryId, IssueId } from "../identities.ts";
-import { type Section, section, stateLabel } from "./presentation.ts";
+import { ViewKey, SessionId, RepositoryId, IssueId, LeadId } from "../identities.ts";
+import { type Section, section, stateLabel, leadNeedsAttention } from "./presentation.ts";
 
 import { type Phase, CrewError } from "../domain.ts";
 
@@ -115,6 +115,7 @@ export function createWorkView(ctx: Context) {
       s.selected = issueID;
     });
     if (state.tab === "feedback") resource.feedback();
+    if (state.tab === "communication") resource.messages();
     if (state.tab === "diff") resource.diff();
     if (state.tab === "plan" && state.document_path) resource.document();
     launchTask("detail", loadDetail(issueID));
@@ -245,6 +246,7 @@ export function createWorkView(ctx: Context) {
     ) {
       yield* loadDetail(state.selected);
       if (state.tab === "feedback") resource.feedback();
+      if (state.tab === "communication") resource.messages();
       if (state.tab === "workers" && state.worker_id) yield* inspectWorker(state.worker_id, true);
     }
   }).pipe(
@@ -318,6 +320,14 @@ export function createWorkView(ctx: Context) {
   return {
     state,
     reloadFeedback: resource.feedback,
+    reloadMessages: resource.messages,
+    messagesPage: (offset: number) => {
+      update((s) => {
+        s.history.push(locationOf(s));
+        s.messages_offset = Math.max(0, offset);
+      });
+      resource.messages();
+    },
     feedbackPage: (page: number) => {
       update((s) => {
         s.history.push(locationOf(s));
@@ -359,6 +369,10 @@ export function createWorkView(ctx: Context) {
     },
     sessionStatus,
     select,
+    selectLead: (id?: LeadId) =>
+      update((s) => {
+        s.lead_id = id;
+      }),
     show,
     overview: () => {
       remember();
@@ -403,6 +417,7 @@ export function createWorkView(ctx: Context) {
         s.tab = tab === "issue" ? "overview" : tab === "spec" ? "plan" : tab;
       });
       if (state.tab === "feedback" && !state.feedback) resource.feedback();
+      if (state.tab === "communication" && !state.messages) resource.messages();
       if (state.tab === "diff" && !state.diff) resource.diff();
       if (state.tab === "plan" && state.document_path && !state.document) resource.document();
     },
@@ -529,6 +544,39 @@ export function createWorkView(ctx: Context) {
       ctx.ui.panel.close();
       ctx.ui.router.navigate({ type: "home" });
     },
+    chooseAttention: () =>
+      run(
+        Effect.gen(function* () {
+          yield* Effect.suspend(refresh);
+          const selected = yield* request(() =>
+            ctx.ui.dialog.select({
+              title: "AbraCode attention",
+              options: [
+                ...(state.snapshot?.fleet?.attention ?? []).map((item) => ({
+                  title: `${item.issue_id} · ${item.title}`,
+                  value: `issue:${item.issue_id}`,
+                  description: item.reason,
+                })),
+                ...(state.snapshot?.leads ?? []).filter(leadNeedsAttention).map((lead) => ({
+                  title: `Lead ${lead.id}`,
+                  value: `lead:${lead.id}`,
+                  description: `${lead.state} · ${lead.outstanding_count} unanswered · ${lead.pending_proposals.length} proposals`,
+                })),
+              ],
+            }),
+          );
+          if (selected && !disposed) {
+            if (selected.startsWith("issue:")) show(IssueId.make(selected.slice(6)));
+            else if (selected.startsWith("lead:")) {
+              update((s) => {
+                s.lead_id = LeadId.make(selected.slice(5));
+                delete s.selected;
+              });
+              show();
+            }
+          }
+        }),
+      ),
     chooseIssue: () =>
       run(
         Effect.gen(function* () {

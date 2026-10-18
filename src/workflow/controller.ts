@@ -48,6 +48,9 @@ export class Controller {
     this.workflow.workMessage(...args);
   workerReply = (...args: Parameters<Advancement["messages"]["reply"]>) =>
     this.workflow.messages.reply(...args);
+  refuseResolvedReminder = (
+    ...args: Parameters<Advancement["messages"]["refuseResolvedReminder"]>
+  ) => this.workflow.messages.refuseResolvedReminder(...args);
   decision = (...args: Parameters<Advancement["obligations"]["resolve"]>) =>
     this.workflow.obligations.resolve(...args);
   get = (...args: Parameters<Advancement["get"]>) => this.queries.get(...args);

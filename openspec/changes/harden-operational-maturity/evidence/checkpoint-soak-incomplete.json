@@ -1,0 +1,456 @@
+{
+  "schema_version": 1,
+  "kind": "isolated-native-soak",
+  "seed": 1,
+  "cycles": 2,
+  "concurrency": 1,
+  "deadline_seconds": 1800,
+  "idle_seconds": 10,
+  "fault_schedule": [
+    {
+      "cycle": 1,
+      "profile": "full"
+    },
+    {
+      "cycle": 2,
+      "profile": "full"
+    }
+  ],
+  "runtime": {
+    "node": "v24.21.0",
+    "opencode": "2.0.28",
+    "provider": "deterministic loopback only"
+  },
+  "coverage": {
+    "full": "Existing complete native journey: provider failure/retry, queued/reply/notification restart, parallel scheduling, decisions, findings, Review, reports, delivery and cleanup",
+    "communication": "Deliberately omitted worker/lead replies, one reminder, one escalation, idle restart and explicit stop",
+    "parallel": "Capacity/dependency waits, fair admission, user decision across restart and pause/resume",
+    "reports": "Existing portable report publication and artifact assertions",
+    "acceptance": "Three-task parallel maintenance, findings, human plan approval, restart, report, Review and verified branch delivery",
+    "crash-windows": "Service loss before/after original native admission and after lead-parent notice commit; no replacement identities"
+  },
+  "real_provider": "not run; separate authorization and credentials required",
+  "revision": "d38274bb72697a92cd0fdd52bab4cd065a3688dd",
+  "observed_at": "2026-10-18T12:08:38.548Z",
+  "duration_ms": 510687,
+  "result": "fail",
+  "runs": [
+    {
+      "cycle": 1,
+      "profile": "full",
+      "result": "pass",
+      "exit_code": 0,
+      "timed_out": false,
+      "duration_ms": 510677,
+      "child_pid": 202633,
+      "cleanup_complete": true,
+      "required_scenario_receipts": true,
+      "resource_postconditions": {
+        "fixture_root_present": false,
+        "alive_native_children": [],
+        "report_process_tracking_complete": true,
+        "recorded_report_groups": 6,
+        "alive_report_groups": []
+      },
+      "metrics": {
+        "verified_task_completions": 7,
+        "completion_coverage": "Only final-product-acceptance and parallel task sets; other native tasks excluded",
+        "recovery_attempts": 3,
+        "answered_recovery_requests": 2,
+        "escalated_response_obligations": 1,
+        "duplicate_admissions": 0,
+        "billable_tokens": null,
+        "cost": null,
+        "recovery_coverage": "Only the three deliberately omitted worker/lead requests",
+        "unanswered_before_explicit_stop": 1,
+        "native_measurements": [
+          {
+            "provider_requests": {
+              "supervisor": 105,
+              "explore": 81,
+              "apply": 86,
+              "review": 59,
+              "research": 103
+            },
+            "controller_calls": {
+              "abra_project_onboard": {
+                "count": 18,
+                "total_ms": 6294.864157999989,
+                "max_ms": 1855.030884000007
+              },
+              "abra_project_list": {
+                "count": 3,
+                "total_ms": 34.42312999999376,
+                "max_ms": 17.570510999998078
+              },
+              "abra_work_list": {
+                "count": 101,
+                "total_ms": 10844.53015500027,
+                "max_ms": 1468.7287810000125
+              },
+              "abra_project_setup": {
+                "count": 3,
+                "total_ms": 2186.9261630000037,
+                "max_ms": 1784.1430590000018
+              },
+              "abra_work_create": {
+                "count": 20,
+                "total_ms": 1554.2175090000674,
+                "max_ms": 124.88200199999847
+              },
+              "abra_work_ready": {
+                "count": 25,
+                "total_ms": 2565.942749000158,
+                "max_ms": 999.8639490000205
+              },
+              "abra_work_start": {
+                "count": 17,
+                "total_ms": 39764.59244599998,
+                "max_ms": 4663.305202999996
+              },
+              "abra_work_status": {
+                "count": 801,
+                "total_ms": 159899.67303399983,
+                "max_ms": 4980.815753000003
+              },
+              "abra_work_diagnostics": {
+                "count": 9,
+                "total_ms": 340.951004000035,
+                "max_ms": 84.35251699999208
+              },
+              "abra_work_attention": {
+                "count": 1,
+                "total_ms": 29.142840000000433,
+                "max_ms": 29.142840000000433
+              },
+              "abra_work_control": {
+                "count": 18,
+                "total_ms": 9428.635086999984,
+                "max_ms": 1378.6660170000396
+              },
+              "abra_work_message": {
+                "count": 7,
+                "total_ms": 3033.3226299999915,
+                "max_ms": 1434.2298640000008
+              },
+              "abra_work_messages": {
+                "count": 9,
+                "total_ms": 1638.688480999972,
+                "max_ms": 1142.5723870000074
+              },
+              "abra_work_approve": {
+                "count": 14,
+                "total_ms": 6512.011939000076,
+                "max_ms": 944.8269159999909
+              },
+              "abra_work_report": {
+                "count": 422,
+                "total_ms": 16706.645848999964,
+                "max_ms": 4693.084430999996
+              },
+              "abra_lead_control": {
+                "count": 29,
+                "total_ms": 4777.359269000008,
+                "max_ms": 1293.5514030000195
+              },
+              "abra_config": {
+                "count": 1,
+                "total_ms": 22.49373600000399,
+                "max_ms": 22.49373600000399
+              },
+              "abra_work_create_batch": {
+                "count": 8,
+                "total_ms": 1179.6839520000794,
+                "max_ms": 423.492396000016
+              },
+              "abra_work_decision": {
+                "count": 5,
+                "total_ms": 515.2965239998884,
+                "max_ms": 171.49398299999302
+              },
+              "abra_work_pr_action": {
+                "count": 6,
+                "total_ms": 6701.3581630000845,
+                "max_ms": 1920.6695020000334
+              },
+              "abra_work_findings": {
+                "count": 2,
+                "total_ms": 784.5330980000435,
+                "max_ms": 434.41605300002266
+              },
+              "abra_work_feedback": {
+                "count": 2,
+                "total_ms": 1270.855624000018,
+                "max_ms": 703.2838489999995
+              },
+              "abra_work_correct": {
+                "count": 1,
+                "total_ms": 3609.8047030000016,
+                "max_ms": 3609.8047030000016
+              },
+              "abra_work_finish": {
+                "count": 1,
+                "total_ms": 5249.9619999999995,
+                "max_ms": 5249.9619999999995
+              }
+            },
+            "retained_state": {
+              "files": 2207,
+              "bytes": 68223114,
+              "complete": true,
+              "coverage": "Native data/state and central .abracode only; excludes source, dependency cache and worktree source bytes"
+            },
+            "usage_kind": "Deterministic provider requests and controller RPC calls; neither is billable tokens or a native turn count",
+            "billable_tokens": null,
+            "cost": null
+          },
+          {
+            "provider_requests": {
+              "supervisor": 6,
+              "explore": 13
+            },
+            "controller_calls": {
+              "abra_project_onboard": {
+                "count": 1,
+                "total_ms": 147.2894119999837,
+                "max_ms": 147.2894119999837
+              },
+              "abra_work_create": {
+                "count": 2,
+                "total_ms": 69.77765900001395,
+                "max_ms": 39.37324899999658
+              },
+              "abra_work_start": {
+                "count": 1,
+                "total_ms": 2837.457463000028,
+                "max_ms": 2837.457463000028
+              },
+              "abra_work_message": {
+                "count": 2,
+                "total_ms": 427.5853079999797,
+                "max_ms": 216.68918699998176
+              },
+              "abra_work_status": {
+                "count": 7,
+                "total_ms": 4528.155680999858,
+                "max_ms": 1471.5107549999957
+              },
+              "abra_work_control": {
+                "count": 1,
+                "total_ms": 80.46560200001113,
+                "max_ms": 80.46560200001113
+              },
+              "abra_lead_control": {
+                "count": 14,
+                "total_ms": 1515.865260999999,
+                "max_ms": 928.4779740000376
+              }
+            },
+            "retained_state": {
+              "files": 697,
+              "bytes": 9358621,
+              "complete": true,
+              "coverage": "Native data/state and central .abracode only; excludes source, dependency cache and worktree source bytes"
+            },
+            "usage_kind": "Deterministic provider requests and controller RPC calls; neither is billable tokens or a native turn count",
+            "billable_tokens": null,
+            "cost": null
+          },
+          {
+            "provider_requests": {
+              "supervisor": 10,
+              "explore": 10,
+              "research": 7
+            },
+            "controller_calls": {
+              "abra_project_onboard": {
+                "count": 2,
+                "total_ms": 293.9163369999733,
+                "max_ms": 149.55459299997892
+              },
+              "abra_work_create": {
+                "count": 4,
+                "total_ms": 139.83466599998064,
+                "max_ms": 44.630678999994416
+              },
+              "abra_work_start": {
+                "count": 3,
+                "total_ms": 6871.659924000036,
+                "max_ms": 2858.0545210000128
+              },
+              "abra_work_status": {
+                "count": 24,
+                "total_ms": 8873.003213000076,
+                "max_ms": 1542.341305000009
+              },
+              "abra_work_message": {
+                "count": 3,
+                "total_ms": 1694.7573949999642,
+                "max_ms": 813.8819350000122
+              },
+              "abra_work_control": {
+                "count": 2,
+                "total_ms": 200.25792100001127,
+                "max_ms": 103.66184700001031
+              },
+              "abra_lead_control": {
+                "count": 5,
+                "total_ms": 1365.7825789999915,
+                "max_ms": 890.0538919999963
+              },
+              "abra_work_report": {
+                "count": 5,
+                "total_ms": 5072.894553999999,
+                "max_ms": 3820.691622000013
+              }
+            },
+            "retained_state": {
+              "files": 1216,
+              "bytes": 32824444,
+              "complete": true,
+              "coverage": "Native data/state and central .abracode only; excludes source, dependency cache and worktree source bytes"
+            },
+            "usage_kind": "Deterministic provider requests and controller RPC calls; neither is billable tokens or a native turn count",
+            "billable_tokens": null,
+            "cost": null
+          }
+        ],
+        "idle_observation": {
+          "status": "observed",
+          "sample_ms": 9999.851695999969,
+          "cpu_ms": 2980,
+          "cpu_percent": 29.800441952474426,
+          "rss_before_kib": 674116,
+          "rss_after_kib": 594520,
+          "coverage": "Native service process only; excludes tool/flock/browser child CPU",
+          "provider_requests_added": 0,
+          "settling_ms": 2270.9796199999982,
+          "provider_requests_during_settling": 0
+        },
+        "measurements": {
+          "processes": 24,
+          "segments": 89,
+          "complete": true,
+          "observations": {
+            "controller_storage_entries": {
+              "count": 12498,
+              "total_ms": 6252.467380000088,
+              "max_ms": 39.41339700000026
+            },
+            "execution_reconciliation": {
+              "count": 342,
+              "total_ms": 303451.744277,
+              "max_ms": 7683.529970000003
+            },
+            "scheduler_tick": {
+              "count": 328,
+              "total_ms": 20485.43510400003,
+              "max_ms": 5394.707767
+            },
+            "controller_storage_set": {
+              "count": 6523,
+              "total_ms": 7396.128130000087,
+              "max_ms": 4924.208421000001
+            },
+            "controller_storage_get": {
+              "count": 20746,
+              "total_ms": 4272.398679999885,
+              "max_ms": 59.49249899999995
+            },
+            "controller_lock_wait": {
+              "count": 10883,
+              "total_ms": 756012.1901109997,
+              "max_ms": 5005.867001999999
+            },
+            "controller_lock_held": {
+              "count": 10882,
+              "total_ms": 15544.93882300008,
+              "max_ms": 4925.257495999998
+            },
+            "plugin_session_get": {
+              "count": 4367,
+              "total_ms": 1181.6820840000864,
+              "max_ms": 29.379578000000038
+            },
+            "native_prompt_submission": {
+              "count": 90,
+              "total_ms": 2629.9652590000087,
+              "max_ms": 891.5479800000003
+            },
+            "api_active": {
+              "count": 4315,
+              "total_ms": 12971.91449399995,
+              "max_ms": 311.99494400000003
+            },
+            "api_inbox": {
+              "count": 4435,
+              "total_ms": 12490.978313999944,
+              "max_ms": 307.5100560000001
+            },
+            "plugin_context": {
+              "count": 5912,
+              "total_ms": 8860.684151999933,
+              "max_ms": 212.03875299999982
+            },
+            "session_observation": {
+              "count": 4315,
+              "total_ms": 34180.507004000065,
+              "max_ms": 387.0622780000001
+            },
+            "message_reconciliation": {
+              "count": 173,
+              "total_ms": 4270.993357999998,
+              "max_ms": 931.6096090000001
+            },
+            "native_notice_submission": {
+              "count": 46,
+              "total_ms": 1305.0846579999952,
+              "max_ms": 418.2450080000008
+            },
+            "api_context": {
+              "count": 98,
+              "total_ms": 890.4774520000091,
+              "max_ms": 292.5909359999987
+            },
+            "batch_admission_observation": {
+              "count": 68,
+              "total_ms": 663.0723620000191,
+              "max_ms": 281.5151100000003
+            },
+            "api_exact_message": {
+              "count": 6,
+              "total_ms": 12.77860700000133,
+              "max_ms": 4.374197000001004
+            },
+            "single_admission_observation": {
+              "count": 27,
+              "total_ms": 110.33294900000124,
+              "max_ms": 9.685997000000043
+            },
+            "report_build": {
+              "count": 5,
+              "total_ms": 26113.072727,
+              "max_ms": 12980.029917999998
+            }
+          }
+        },
+        "unmeasured": [
+          "human_interventions",
+          "native_model_turns",
+          "scheduler_wait_ms",
+          "decision_delay_ms",
+          "completion_notification_ms",
+          "idle_cpu",
+          "retained_state_bytes"
+        ],
+        "residual_resources": "Disposable root and owned server/provider removed by fixture"
+      }
+    }
+  ],
+  "limitations": [
+    "Fixture postconditions, not autonomous model judgment",
+    "No trustworthy billable-token/cost usage",
+    "Task/intervention metrics cover only explicitly instrumented subscenarios",
+    "No report-publication crash-window or long idle resource guarantee is inferred from a clean teardown"
+  ]
+}

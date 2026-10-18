@@ -42,7 +42,7 @@ export const SupervisionAggregateSchema = Schema.Struct({
   truncated: Schema.Boolean,
 });
 export const nativeActivity = (
-  native?: Pick<SessionState, "executing" | "busy">,
+  native?: Pick<SessionState, "executing" | "busy" | "completion_pending">,
   unavailable = false,
 ): SupervisionSummary["native_activity"] =>
   unavailable
@@ -53,7 +53,7 @@ export const nativeActivity = (
         ? "running"
         : native.executing === false && native.busy
           ? "queued"
-          : !native.busy
+          : !native.busy && !native.completion_pending
             ? "idle"
             : "unknown";
 /** A read projection, never persisted or used to authorize lifecycle transitions.

@@ -27,6 +27,7 @@ import {
 import { type OpenCodeEvent } from "@opencode/client";
 import { type WorkDetail, type WorkSnapshot } from "../../src/visibility/protocol.ts";
 import plugin from "../../.opencode/plugins/abracode/tui.ts";
+import { fleetCounts } from "../../src/visibility/fleet.ts";
 
 let snapshot: WorkSnapshot = {
   home: Id.AbsolutePath.make("/fixture"),
@@ -150,6 +151,7 @@ let stopped = false;
 let failed = false;
 let reportReads = 0;
 let feedbackReads = 0;
+let messageReads = 0;
 let externalFeedback = false;
 let panelName = "";
 const synced: string[] = [];
@@ -254,6 +256,59 @@ const ctx = {
       feedback: async (): Promise<FeedbackPage> => {
         feedbackReads++;
         return feedbackFixture(externalFeedback);
+      },
+      messages: async ({ offset = 0 }: { offset?: number }) => {
+        messageReads++;
+        return {
+          total: 21,
+          offset,
+          limit: 20,
+          next_offset: offset === 0 ? 20 : undefined,
+          outstanding: 1,
+          observed_at: "2026-10-18T12:00:00.000Z",
+          entries: [
+            {
+              native: "consumed",
+              recovery_native: "consumed",
+              native_state: "idle",
+              record: {
+                schema_version: 1,
+                request_id: `question-${offset}`,
+                prompt_id: `msg_question_${offset}`,
+                assignment_id: "msg_assignment",
+                generation: 0,
+                sender_session_id: "ses_supervisor",
+                recipient_session_id: "ses_explore-session",
+                role: "explore",
+                kind: "question",
+                body: "Explain the retained authentication evidence",
+                prompt: "private controller prompt",
+                response: "answer",
+                delivery: "queue",
+                status: offset === 0 ? "acknowledged" : "answered",
+                created_at: "2026-10-18T10:00:00.000Z",
+                acknowledged_at: "2026-10-18T10:01:00.000Z",
+                ...(offset
+                  ? {
+                      reply: {
+                        body: "Verified retained findings",
+                        evidence: [],
+                        at: "2026-10-18T11:00:00.000Z",
+                      },
+                    }
+                  : {}),
+                response_recovery: {
+                  prompt_id: "msg_recovery",
+                  prompt: "private reminder",
+                  status: "admitted",
+                  created_at: "2026-10-18T10:02:00.000Z",
+                  completion_id: "msg_idle",
+                  completed_at: "2026-10-18T10:01:00.000Z",
+                },
+              },
+            },
+          ],
+        };
       },
       report: async () => {
         reportReads++;
@@ -376,14 +431,16 @@ const ctx = {
       },
     },
     dialog: {
-      select: async (input: { title: string }) =>
+      select: async (input: { title: string; options?: Array<{ value: string }> }) =>
         input.title === "Changed files"
           ? "new.ts"
           : input.title === "Planning documents"
             ? "design.md"
-            : input.title === "Filter by repository"
-              ? "api"
-              : "abra-1",
+            : input.title === "AbraCode attention"
+              ? input.options![0]!.value
+              : input.title === "Filter by repository"
+                ? "api"
+                : "abra-1",
     },
     toast: { show: () => {} },
   },
@@ -1041,6 +1098,87 @@ try {
   await screen.renderOnce();
   await click("Home");
   await screen.waitForFrame((frame) => frame.includes("Registry health checks"));
+  assert.equal(messageReads, 0, "Communication stays lazy outside its tab");
+  snapshot = {
+    ...snapshot,
+    fleet: {
+      counts: fleetCounts(snapshot.work),
+      total: snapshot.work.length,
+      native_observed: 1,
+      native_total: 2,
+      completed_today: 1,
+      day_start: Id.Timestamp.make("2026-10-17T22:00:00.000Z"),
+      day_end: Id.Timestamp.make("2026-10-18T22:00:00.000Z"),
+      timezone: "Europe/Amsterdam",
+      repositories: [
+        {
+          repository_id: Id.RepositoryId.make("api"),
+          counts: fleetCounts(snapshot.work.filter((w) => w.repository_id === "api")),
+        },
+      ],
+      attention: [
+        {
+          issue_id: Id.IssueId.make("abra-1"),
+          title: "Add API authentication",
+          reason: "Awaiting human",
+        },
+      ],
+    },
+    leads: [
+      {
+        id: Id.LeadId.make("backend"),
+        revision: 1,
+        repositories: [Id.RepositoryId.make("api")],
+        enabled: true,
+        session_available: true,
+        session_id: Id.SessionId.make("ses_backend-lead"),
+        parent_session_id: Id.SessionId.make("ses_supervisor"),
+        state: "idle",
+        request_count: 0,
+        outstanding_count: 0,
+        requests: [],
+        pending_proposals: [],
+        assigned_work: [Id.IssueId.make("abra-1")],
+        latest_outcome: "Investigation finished",
+        observed_at: Id.Timestamp.make("2026-10-18T12:00:00.000Z"),
+      },
+    ],
+  };
+  await run("abracode.refresh");
+  await screen.waitForFrame(
+    (frame) =>
+      frame.includes("FLEET") && frame.includes("1 completed today") && frame.includes("backend"),
+  );
+  await saveFrame("fleet-home");
+  await click("backend");
+  await screen.waitForFrame(
+    (frame) => frame.includes("Investigation finished") && frame.includes("session available"),
+  );
+  assert.doesNotMatch(screen.captureCharFrame(), /Chat with lead|Compose|Send to lead/);
+  await click("Needs attention");
+  await screen.waitForFrame((frame) => frame.includes("Communication"));
+  await click("Communication");
+  await screen.waitForFrame(
+    (frame) =>
+      frame.includes("awaiting answer") &&
+      frame.includes("1 of 1") &&
+      frame.includes("Native state: idle"),
+  );
+  assert.ok(messageReads > 0);
+  assert.doesNotMatch(
+    screen.captureCharFrame(),
+    /Explain the retained|private controller prompt|private reminder/,
+  );
+  await click("ses_supervisor → explore");
+  await screen.waitForFrame((frame) =>
+    frame.includes("Explain the retained authentication evidence"),
+  );
+  assert.doesNotMatch(screen.captureCharFrame(), /private controller prompt|private reminder/);
+  await saveFrame("communication-recovery");
+  await click("Later messages");
+  await screen.waitForFrame((frame) => frame.includes("Answered"));
+  await click("Home");
+  await screen.waitForFrame((frame) => frame.includes("Find ticket"));
   await click("Search titles");
   await screen.mockInput.typeText("health");
   await screen.waitForFrame(

@@ -1,0 +1,499 @@
+diff --git a/src/opencode/runtime.ts b/src/opencode/runtime.ts
+index 4eb1ea2..10ec578 100644
+--- a/src/opencode/runtime.ts
++++ b/src/opencode/runtime.ts
+@@ -63,6 +63,7 @@ export interface SessionState {
+   assignment?: {
+     id: MessageId;
+     outcome?: typeof Session.Info.Type.outcome;
++    completion?: { id: MessageId; at: number };
+     error?: WorkerError;
+     at?: number;
+   };
+@@ -603,6 +604,7 @@ export class NativeRuntime implements Runtime {
+           ? {
+               id: assignment,
+               outcome: idle?.type === "idle" ? idle.outcome : undefined,
++              completion: idle ? { id: MessageId.make(idle.id), at: idle.time.created } : undefined,
+               error: bound?.error,
+               at: bound?.error_at,
+             }
+diff --git a/src/workflow/messages.ts b/src/workflow/messages.ts
+index 7cbb7c2..8bebedb 100644
+--- a/src/workflow/messages.ts
++++ b/src/workflow/messages.ts
+@@ -1,11 +1,11 @@
+ import { Effect } from "effect";
+ import { createHash } from "node:crypto";
+ import { ensure, type Execution } from "../domain.ts";
+-import { RequestId, SessionId, timestamp } from "../identities.ts";
++import { RequestId, SessionId, Timestamp, timestamp } from "../identities.ts";
+ import { SessionMessage } from "@opencode/schema/session-message";
+ import { domainEffect } from "../effect.ts";
+ import { decode } from "../decode.ts";
+-import { type Runtime } from "../opencode/runtime.ts";
++import { type Runtime, type SessionState } from "../opencode/runtime.ts";
+ import { synchronizeExecution, type Records } from "../storage/store.ts";
+ import { type Capacity } from "./capacity.ts";
+ import { type Queries } from "./queries.ts";
+@@ -15,11 +15,41 @@ import {
+   MessageSendSchema,
+   WorkerReplySchema,
+   messageRequests,
++  requiresResponse,
++  requestPromptIDs,
+   type MessageIntent,
+   type RequestSchema,
+   type Communication,
+ } from "./message-contracts.ts";
+ import { externalOwns } from "../validation/contracts.ts";
++import { type AttentionService } from "./attention.ts";
++import { leadAccounting } from "./lead-contracts.ts";
++
++/** Classification is observation only; a missing response grants no admission authority. */
++export function responseState(
++  request: typeof RequestSchema.Type,
++  state?: SessionState,
++  admission?: "queued" | "consumed" | "absent",
++) {
++  if (["cancelled", "superseded"].includes(request.status)) return "superseded";
++  if (!requiresResponse(request)) return "resolved";
++  if (!state || admission === undefined) return "unavailable";
++  if (admission === "queued") return "queued";
++  if (state.busy || state.executing) return "executing";
++  if (state.outcome === "failed" || state.assignment?.outcome === "failed") return "failed";
++  if (state.outcome === "interrupted" || state.assignment?.outcome === "interrupted")
++    return "interrupted";
++  if (admission === "absent") return "uncertain";
++  if (
++    state.executing === false &&
++    state.outcome === "succeeded" &&
++    state.assignment?.id === request.prompt_id &&
++    state.assignment.outcome === "succeeded" &&
++    state.assignment.completion
++  )
++    return "missing";
++  return "unavailable";
++}
+ 
+ /** Called with execution operation ownership; only short commits take coordination. */
+ export class Messages {
+@@ -28,6 +58,7 @@ export class Messages {
+     private runtime: Runtime,
+     private capacity: Capacity,
+     private queries: Queries,
++    private attention: AttentionService,
+   ) {}
+   private eligible(e: Execution, m?: MessageIntent) {
+     const session = workerSessionID(e);
+@@ -202,6 +233,321 @@ export class Messages {
+       })
+       .pipe(Effect.tap((saved) => Effect.sync(() => synchronizeExecution(e, saved))));
+   }
++  /** Only the native new-prompt guard calls this, before rejecting an unused reminder.
++   * A lost native receipt never calls it: absence cannot establish non-admission. */
++  refuseResolvedReminder = Effect.fn("Messages.refuseResolvedReminder")(
++    function* (
++      this: Messages,
++      e: Execution,
++      session: SessionId,
++      message: import("../identities.ts").MessageId,
++      text: string,
++      delivery: string,
++    ) {
++      let refused = false;
++      yield* this.records.update(e.issue_id, (current) => {
++        if (
++          !isActiveWorker(current, session) ||
++          current.prompt_id !== e.prompt_id ||
++          current.control_generation !== e.control_generation ||
++          delivery !== "queue"
++        )
++          return;
++        const m = messageRequests(current.messages).find(
++          (m) => m.response_recovery?.prompt_id === message,
++        );
++        if (
++          !m ||
++          m.recipient_session_id !== session ||
++          m.generation !== current.control_generation ||
++          m.assignment_id !== current.prompt_id ||
++          m.role !== current.active_role ||
++          m.response_recovery?.status !== "admission_uncertain" ||
++          m.response_recovery.prompt !== text ||
++          !["answered", "acknowledged"].includes(m.status) ||
++          requiresResponse(m)
++        )
++          return;
++        refused = true;
++        return {
++          ...current,
++          messages: current.messages!.map((entry) =>
++            entry === m
++              ? {
++                  ...m,
++                  response_recovery: { ...m.response_recovery!, status: "suppressed" as const },
++                }
++              : entry,
++          ),
++        };
++      });
++      return refused;
++    }.bind(this),
++    domainEffect,
++  );
++  private recoveryStatus = Effect.fn("Messages.recoveryStatus")(
++    function* (
++      this: Messages,
++      e: Execution,
++      m: MessageIntent,
++      status: "pending" | "admission_uncertain" | "admitted" | "suppressed",
++    ) {
++      let allowed = false;
++      const saved = yield* this.records.update(e.issue_id, (current) => {
++        this.eligible(current, m);
++        return {
++          ...current,
++          messages: current.messages?.map((entry) => {
++            if (entry.type === "finding" || entry.request_id !== m.request_id) return entry;
++            const recovery = entry.response_recovery;
++            ensure(
++              recovery && recovery.prompt_id === m.response_recovery?.prompt_id,
++              "MESSAGE_REBIND",
++              "Recovery identity changed",
++            );
++            const suppressed =
++              recovery.status === "pending" &&
++              (!requiresResponse(entry) || this.queries.settings.supervisionMode === "manual");
++            allowed = !suppressed && status !== "suppressed";
++            return {
++              ...entry,
++              response_recovery: {
++                ...recovery,
++                status: suppressed ? ("suppressed" as const) : status,
++              },
++            };
++          }),
++        };
++      });
++      synchronizeExecution(e, saved);
++      return allowed;
++    }.bind(this),
++    domainEffect,
++  );
++  private recoveryTransport = Effect.fn("Messages.recoveryTransport")(
++    function* (this: Messages, e: Execution, m: MessageIntent) {
++      const r = m.response_recovery;
++      if (!r || r.status === "suppressed") return true;
++      const session = this.eligible(e, m);
++      if (r.status === "pending") {
++        if (!(yield* this.recoveryStatus(e, m, "pending"))) return true;
++        yield* this.runtime.preflight(e, m.role);
++        const state = yield* this.runtime
++          .session(session, e.prompt_id)
++          .pipe(
++            Effect.catch((error) =>
++              requiresResponse(m)
++                ? this.attention
++                    .responseIncident(
++                      e,
++                      m,
++                      `Native state unavailable (${error.code}); no recovery admission authorized`,
++                    )
++                    .pipe(Effect.as(undefined))
++                : Effect.fail(error),
++            ),
++          );
++        if (!state) return false;
++        ensure(
++          state.directory === e.worktree_directory,
++          "SESSION_LOCATION",
++          "Recovery recipient moved outside its owned worktree",
++        );
++        if (state.busy || state.executing !== false) return false;
++        if (["failed", "interrupted"].includes(state.outcome ?? "")) {
++          yield* this.recoveryStatus(e, m, "suppressed");
++          yield* this.attention.responseIncident(
++            e,
++            m,
++            "Worker stopped before reminder admission",
++            state,
++          );
++          return true;
++        }
++        if (!(yield* this.recoveryStatus(e, m, "admission_uncertain"))) return true;
++        yield* this.runtime.prompt(session, r.prompt, r.prompt_id);
++        yield* this.recoveryStatus(e, m, "admitted");
++        return false;
++      }
++      const observed = yield* this.runtime.promptAdmission(session, r.prompt_id, r.prompt);
++      if (observed === "absent") {
++        yield* this.attention.responseIncident(
++          e,
++          m,
++          "Recovery admission uncertain; absence does not authorize resubmission",
++        );
++        return false;
++      }
++      if (r.status === "admission_uncertain") yield* this.recoveryStatus(e, m, "admitted");
++      if (observed === "queued") {
++        const state = yield* this.runtime.session(session, r.prompt_id);
++        ensure(
++          state.directory === e.worktree_directory,
++          "SESSION_LOCATION",
++          "Queued recovery recipient moved outside its owned worktree",
++        );
++        if (["failed", "interrupted"].includes(state.outcome ?? "")) {
++          yield* this.attention.responseIncident(
++            e,
++            m,
++            "Worker stopped with the reminder still queued",
++            state,
++          );
++          return false;
++        }
++        if (state.executing === false && !["failed", "interrupted"].includes(state.outcome ?? "")) {
++          const current = yield* this.records.execution(e.issue_id);
++          ensure(current, "MESSAGE_STALE", "Execution disappeared during recovery reconciliation");
++          this.eligible(current, m);
++          synchronizeExecution(e, current);
++          yield* this.runtime.prompt(session, r.prompt, r.prompt_id);
++        }
++        return false;
++      }
++      return true;
++    }.bind(this),
++    domainEffect,
++  );
++  /** Called only with execution operation ownership; all native work stays outside coordination. */
++  recover = Effect.fn("Messages.recover")(
++    function* (this: Messages, e: Execution) {
++      for (const m of messageRequests(e.messages)) {
++        if (
++          !requiresResponse(m) ||
++          m.generation !== e.control_generation ||
++          m.assignment_id !== e.prompt_id
++        )
++          continue;
++        yield* Effect.gen({ self: this }, function* () {
++          const session = this.eligible(e, m);
++          const input =
++            m.response_recovery?.status !== "suppressed" && m.response_recovery
++              ? {
++                  ...m,
++                  prompt_id: m.response_recovery.prompt_id,
++                  prompt: m.response_recovery.prompt,
++                }
++              : m;
++          const state = yield* this.runtime.session(session, input.prompt_id);
++          ensure(
++            state.directory === e.worktree_directory,
++            "SESSION_LOCATION",
++            "Recovery recipient moved outside its owned worktree",
++          );
++          const admission = yield* this.runtime.promptAdmission(
++            session,
++            input.prompt_id,
++            input.prompt,
++          );
++          const observed = responseState(input, state, admission);
++          if (["queued", "executing", "resolved", "superseded"].includes(observed)) return;
++          if (observed !== "missing" || m.response_recovery) {
++            yield* this.attention.responseIncident(
++              e,
++              m,
++              observed === "missing"
++                ? m.response_recovery?.status === "suppressed"
++                  ? "Reserved reminder suppressed before admission; inspect before explicit retry"
++                  : "Recovery completed without the required response; automatic attempt exhausted"
++                : observed,
++              state,
++            );
++            return;
++          }
++          if (this.queries.settings.supervisionMode === "manual") {
++            yield* this.attention.responseIncident(
++              e,
++              m,
++              "Manual posture requires explicit recovery",
++              state,
++            );
++            return;
++          }
++          const prepared = yield* this.records.coordinateCommit(() =>
++            domainEffect(
++              Effect.gen({ self: this }, function* () {
++                const current = yield* this.records.execution(e.issue_id);
++                ensure(
++                  current,
++                  "MESSAGE_STALE",
++                  "Execution disappeared before recovery reservation",
++                );
++                this.eligible(current, m);
++                const request = messageRequests(current.messages).find(
++                  (entry) => entry.request_id === m.request_id,
++                )!;
++                synchronizeExecution(e, current);
++                if (!requiresResponse(request) || request.response_recovery)
++                  return "resolved" as const;
++                const leads = yield* leadAccounting(this.records);
++                if (
++                  (current.attention_turns ?? 0) + leads.turns(e.issue_id) >=
++                  current.effective_policy.diagnostic_turns
++                )
++                  return "budget" as const;
++                if (
++                  !(yield* this.capacity.reserve(
++                    e,
++                    m.role,
++                    yield* this.queries.effectiveProject(e),
++                    false,
++                    m.request_id,
++                  ))
++                )
++                  return "capacity" as const;
++                const completion = state.assignment!.completion!;
++                const recovery = {
++                  prompt_id: SessionMessage.ID.create(),
++                  prompt: `AbraCode response-only reminder for original request ${m.request_id}, generation ${m.generation}. The admitted request's native turn completed, but its required ${m.response} is missing. Do not repeat the substantive task or broaden scope. This grants no approval. Use abra_worker_reply action ${m.response === "answer" ? "answer" : "acknowledge"} with the ORIGINAL request_id ${m.request_id} and generation ${m.generation}.`,
++                  created_at: yield* timestamp,
++                  completion_id: completion.id,
++                  completed_at: Timestamp.make(new Date(completion.at).toISOString()),
++                  status: "pending" as const,
++                };
++                synchronizeExecution(
++                  e,
++                  yield* this.records.update(e.issue_id, (fresh) => ({
++                    ...fresh,
++                    attention_turns: (fresh.attention_turns ?? 0) + 1,
++                    messages: fresh.messages?.map((entry) =>
++                      entry.request_id === m.request_id && entry.type !== "finding"
++                        ? { ...entry, response_recovery: recovery }
++                        : entry,
++                    ),
++                  })),
++                );
++                return "prepared" as const;
++              }),
++            ),
++          );
++          if (prepared === "prepared") {
++            const retained = messageRequests(e.messages).find(
++              (entry) => entry.request_id === m.request_id,
++            )!;
++            yield* this.recoveryTransport(e, retained);
++          } else if (prepared === "budget") {
++            yield* this.attention.responseIncident(
++              e,
++              m,
++              "Diagnostic budget exhausted; no automatic reminder admitted",
++              state,
++            );
++          }
++        }).pipe(
++          Effect.catch((error) =>
++            this.attention.responseIncident(
++              e,
++              m,
++              `Native recovery unavailable (${error.code}); inspect before explicit retry`,
++            ),
++          ),
++        );
++        // A reserved reminder owns capacity and may now be queued or executing.
++        if (e.capacity_reservation) break;
++      }
++    }.bind(this),
++    domainEffect,
++  );
+   /** False keeps capacity/checkpoints held; absence after submission is not non-admission. */
+   reconcile = Effect.fn("Messages.reconcile")(
+     function* (this: Messages, e: Execution) {
+@@ -213,15 +559,68 @@ export class Messages {
+         )
+           continue;
+         const session = this.eligible(e, m);
+-        const state = yield* this.runtime.session(session, e.prompt_id);
++        if (
++          !(yield* this.recoveryTransport(e, m).pipe(
++            Effect.catch((error) =>
++              this.attention
++                .responseIncident(
++                  e,
++                  m,
++                  `Recovery admission unavailable (${error.code}); preserve the exact identity`,
++                )
++                .pipe(Effect.as(false)),
++            ),
++          ))
++        )
++          return false;
++        const state = yield* this.runtime
++          .session(session, e.prompt_id)
++          .pipe(
++            Effect.catch((error) =>
++              requiresResponse(m)
++                ? this.attention
++                    .responseIncident(
++                      e,
++                      m,
++                      `Native state unavailable (${error.code}); no recovery admission authorized`,
++                    )
++                    .pipe(Effect.as(undefined))
++                : Effect.fail(error),
++            ),
++          );
++        if (!state) return false;
+         ensure(
+           state.directory === e.worktree_directory,
+           "SESSION_LOCATION",
+           "Message recipient moved outside its owned worktree",
+         );
+         if (m.status !== "pending") {
+-          const observed = yield* this.runtime.promptAdmission(session, m.prompt_id, m.prompt);
+-          if (observed === "absent") return false;
++          const observed = yield* this.runtime
++            .promptAdmission(session, m.prompt_id, m.prompt)
++            .pipe(
++              Effect.catch((error) =>
++                requiresResponse(m)
++                  ? this.attention
++                      .responseIncident(
++                        e,
++                        m,
++                        `Native admission unavailable (${error.code}); preserve original identity`,
++                        state,
++                      )
++                      .pipe(Effect.as(undefined))
++                  : Effect.fail(error),
++              ),
++            );
++          if (!observed || observed === "absent") {
++            if (requiresResponse(m))
++              yield* this.attention.responseIncident(
++                e,
++                m,
++                "Original request admission uncertain; absence cannot authorize another instruction",
++                state,
++              );
++            return false;
++          }
+           if (m.status === "admission_uncertain") yield* this.status(e, m, "admitted");
+           const stopped =
+             ["failed", "interrupted"].includes(state.assignment?.outcome ?? "") ||
+@@ -232,8 +631,15 @@ export class Messages {
+                   (request) =>
+                     request.generation === e.control_generation &&
+                     request.assignment_id === e.prompt_id &&
+-                    request.prompt_id === state.outcome_prompt_id,
++                    requestPromptIDs(request).includes(state.outcome_prompt_id!),
+                 )));
++          if (stopped && requiresResponse(m))
++            yield* this.attention.responseIncident(
++              e,
++              m,
++              "Worker failed or was interrupted; use explicit recovery rather than a queue wake",
++              state,
++            );
+           if (observed === "queued" && state.executing === false && !stopped) {
+             const current = yield* this.records.execution(e.issue_id);
+             ensure(current, "MESSAGE_STALE", "Execution disappeared during queue reconciliation");

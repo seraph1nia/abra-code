@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "vite-plus/test";
+import { test, type TestContext } from "vite-plus/test";
 import { Effect, Schema } from "effect";
 import { Agent } from "@opencode/schema/agent";
 import { Tool } from "@opencode/schema/tool";
@@ -8,11 +8,13 @@ import { type ToolEditor } from "@opencode/plugin/effect/tool";
 import * as Id from "../../src/identities.ts";
 import { CrewError } from "../../src/domain.ts";
 import { Controller } from "../../src/workflow/controller.ts";
-import { LeadRecordSchema, readLeads } from "../../src/workflow/lead-contracts.ts";
+import { LeadRecordSchema, readLeads, leadAccounting } from "../../src/workflow/lead-contracts.ts";
+import { type Runtime } from "../../src/opencode/runtime.ts";
 import { installGuards } from "../../src/opencode/guards.ts";
 import { registerTools } from "../../src/opencode/tools.ts";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
+import { Visibility } from "../../src/visibility/read-model.ts";
 const parent = Id.SessionId.make("ses_lead-parent");
 const leadID = Id.LeadId.make("frontend-lead");
 const repo = Id.RepositoryId.make("frontend");
@@ -39,6 +41,225 @@ async function prepare() {
   await run(f.controller.lead().control(parent, declaration));
   return { f, lead: (await run(readLeads(f.records)))[0]! };
 }
+
+test("lead observer isolates malformed registrations while authority remains deny-first", async (t) => {
+  const { f, lead } = await prepare();
+  t.onTestFinished(() => run(f.close()));
+  const before = {
+    prompts: f.runtime.prompts,
+    creates: f.runtime.creates,
+    forms: f.runtime.forms.size,
+  };
+  const view = new Visibility(f.controller);
+  const initial = await run(view.snapshot());
+  assert.equal(initial.leads![0]!.id, lead.id);
+  assert.equal(initial.leads![0]!.session_available, true);
+  assert.equal(initial.leads![0]!.enabled, true);
+  assert.deepEqual(initial.leads![0]!.assigned_work, [issue]);
+  await run(f.records.store.set(Id.StorageKey.make("lead/broken"), { malformed: true }));
+  const isolated = await run(view.snapshot());
+  assert.equal(isolated.leads!.length, 1);
+  assert.equal(isolated.lead_diagnostics!.length, 1);
+  await assert.rejects(run(readLeads(f.records)), { code: "INVALID_DATA" });
+  assert.deepEqual(
+    { prompts: f.runtime.prompts, creates: f.runtime.creates, forms: f.runtime.forms.size },
+    before,
+  );
+});
+
+async function recoverableLead(t: TestContext, budget = 2) {
+  const { f, lead } = await prepare();
+  t.onTestFinished(() => run(f.close()));
+  const project = (await run(f.records.project(repo)))!;
+  await run(f.records.saveProject({ ...project, diagnostic_turns: budget }));
+  const request = Id.RequestId.make("lead-required-response");
+  await run(
+    f.controller.lead().control(parent, {
+      action: "message",
+      id: leadID,
+      revision: lead.revision,
+      issue_id: issue,
+      request_id: request,
+      body: "Inspect the scoped evidence and reply",
+    }),
+  );
+  const session: Runtime["session"] = f.runtime.session.bind(f.runtime);
+  const completions = new Map<Id.MessageId, { id: Id.MessageId; at: number }>();
+  f.runtime.session = (id: Id.SessionId, bound?: Id.MessageId) =>
+    session(id).pipe(
+      Effect.map((state) => {
+        if (!bound || !state.outcome || !f.runtime.admissions.has(bound)) return state;
+        if (!completions.has(bound))
+          completions.set(bound, { id: Id.MessageId.make(`msg_idle_${bound}`), at: Date.now() });
+        return {
+          ...state,
+          assignment: { id: bound, outcome: state.outcome, completion: completions.get(bound) },
+        };
+      }),
+    );
+  const idle = () =>
+    Object.assign(f.runtime.sessions.get(lead.session_id)!, {
+      busy: false,
+      executing: false,
+      outcome: "succeeded",
+    });
+  idle();
+  const read = async () =>
+    (await run(readLeads(f.records)))[0]!.requests.find((r) => r.request.request_id === request)!
+      .request;
+  return { f, lead, request, read, idle };
+}
+
+test("lead missing replies consume one management diagnostic attempt and retain one escalation without creating an execution", async (t) => {
+  const { f, lead, read, idle } = await recoverableLead(t);
+  assert.equal(await run(f.records.execution(issue)), undefined);
+  const prompts = f.runtime.prompts;
+  await run(f.controller.lead().scan());
+  const recovery = (await read()).response_recovery!;
+  assert.equal(recovery.status, "admitted");
+  assert.match(recovery.prompt, /ORIGINAL request_id lead-required-response/);
+  assert.equal((await read()).response_escalation, undefined);
+  assert.equal(f.runtime.prompts, prompts + 1);
+  assert.equal((await run(leadAccounting(f.records))).turns(issue), 2);
+  assert.equal(
+    await run(
+      f.controller.lead().prompt(lead.session_id, recovery.prompt_id, recovery.prompt, "queue"),
+    ),
+    true,
+  );
+  await assert.rejects(
+    run(f.controller.lead().prompt(lead.session_id, recovery.prompt_id, "Changed", "queue")),
+    { code: "LEAD_PROMPT" },
+  );
+  await assert.rejects(
+    run(f.controller.lead().prompt(lead.session_id, recovery.prompt_id, recovery.prompt, "steer")),
+    { code: "LEAD_PROMPT" },
+  );
+  idle();
+  for (let tick = 0; tick < 3; tick++) await run(f.controller.lead().scan());
+  const incident = (await read()).response_escalation!;
+  assert.match(incident.body, /automatic attempt exhausted/);
+  assert.equal(incident.notified, true);
+  assert.equal((await read()).response_recovery?.prompt_id, recovery.prompt_id);
+  assert.equal(f.runtime.prompts, prompts + 1);
+  assert.equal(await run(f.records.execution(issue)), undefined);
+});
+
+test("lead recovery replies resolve the original identity and accepted evidence survives disable", async (t) => {
+  const { f, lead, request, read, idle } = await recoverableLead(t);
+  await run(f.controller.lead().scan());
+  const prompts = f.runtime.prompts;
+  await run(
+    f.controller.lead().action(lead.session_id, {
+      action: "reply",
+      revision: lead.revision,
+      request_id: request,
+      body: "Scoped evidence retained",
+    }),
+  );
+  idle();
+  await run(f.controller.lead().scan());
+  assert.equal((await read()).status, "answered");
+  assert.equal((await read()).response_escalation, undefined);
+  assert.equal(f.runtime.prompts, prompts);
+  const owned: Id.MessageId[] = [];
+  const interrupt = f.runtime.interrupt.bind(f.runtime);
+  f.runtime.interrupt = (session, prompt, additional) => {
+    owned.push(...(prompt ? [prompt] : []), ...(additional ?? []));
+    return interrupt(session, prompt, additional);
+  };
+  await run(
+    f.controller
+      .lead()
+      .control(parent, { ...declaration, expected_revision: lead.revision, enabled: false }),
+  );
+  assert.ok(owned.includes((await read()).response_recovery!.prompt_id));
+  assert.equal((await read()).reply?.body, "Scoped evidence retained");
+  await run(f.controller.lead().scan());
+  assert.equal(f.runtime.prompts, prompts);
+});
+
+for (const admitted of [false, true]) {
+  test(`lead reminder receipt loss with native admission ${admitted} preserves identity and lifetime budget across restart`, async (t) => {
+    const { f, read } = await recoverableLead(t);
+    const prompt = f.runtime.prompt.bind(f.runtime);
+    f.runtime.prompt = (...args) =>
+      (admitted ? prompt(...args) : Effect.void).pipe(
+        Effect.andThen(Effect.fail(new CrewError("RESPONSE_LOST", "Lost lead reminder receipt"))),
+      );
+    await run(f.controller.lead().scan());
+    const recovery = (await read()).response_recovery!;
+    assert.equal(recovery.status, "admission_uncertain");
+    const prompts = f.runtime.prompts;
+    f.runtime.prompt = prompt;
+    const restarted = new Controller(
+      f.config,
+      f.records,
+      f.work,
+      f.spec,
+      f.git,
+      f.runtime,
+      f.delivery,
+      f.locks,
+    );
+    t.onTestFinished(() => run(restarted.close()));
+    for (let tick = 0; tick < 3; tick++) await run(restarted.lead().scan());
+    assert.equal((await read()).response_recovery?.prompt_id, recovery.prompt_id);
+    assert.equal(
+      (await read()).response_recovery?.status,
+      admitted ? "admitted" : "admission_uncertain",
+    );
+    assert.equal((await run(leadAccounting(f.records))).turns(issue), 2);
+    assert.equal(f.runtime.prompts, prompts);
+  });
+}
+
+test("manual posture, exhausted lead budgets, queued requests and busy sessions cannot produce reminders", async (t) => {
+  for (const condition of ["manual", "budget", "queued", "busy"] as const) {
+    const { f, read, lead } = await recoverableLead(t, condition === "budget" ? 1 : 2);
+    if (condition === "manual") f.config.supervision_mode = "manual";
+    if (condition === "queued") f.runtime.promptAdmission = () => Effect.succeed("queued" as const);
+    if (condition === "busy")
+      Object.assign(f.runtime.sessions.get(lead.session_id)!, { busy: true, executing: true });
+    const prompts = f.runtime.prompts;
+    for (let tick = 0; tick < 3; tick++) await run(f.controller.lead().scan());
+    assert.equal((await read()).response_recovery, undefined);
+    assert.equal(f.runtime.prompts, prompts);
+    assert.equal((await run(leadAccounting(f.records))).turns(issue), 1);
+    if (condition === "manual" || condition === "budget")
+      assert.ok((await read()).response_escalation?.notice_id);
+  }
+});
+
+test("lead escalation notification loss retries one retained synthetic notice and cannot wake a model", async (t) => {
+  const { f, read, idle } = await recoverableLead(t);
+  await run(f.controller.lead().scan());
+  idle();
+  const notices = new Map<Id.MessageId, string>();
+  let calls = 0;
+  f.runtime.notify = (_session, text, id) =>
+    Effect.sync(() => {
+      assert.ok(id);
+      if (notices.has(id)) assert.equal(notices.get(id), text);
+      notices.set(id, text);
+      calls++;
+    });
+  const set = f.records.store.set.bind(f.records.store);
+  let lose = true;
+  f.records.store.set = (key, value) =>
+    key === `lead/${leadID}` && lose && JSON.stringify(value).includes('"notified":true')
+      ? ((lose = false), Effect.fail(new CrewError("STORAGE", "Lost escalation receipt")))
+      : set(key, value);
+  const prompts = f.runtime.prompts;
+  await run(f.controller.lead().scan());
+  assert.equal((await read()).response_escalation?.notified, undefined);
+  await run(f.controller.lead().scan());
+  await run(f.controller.lead().scan());
+  assert.equal((await read()).response_escalation?.notified, true);
+  assert.equal(notices.size, 1);
+  assert.equal(calls, 2);
+  assert.equal(f.runtime.prompts, prompts);
+});
 
 test("lead registration persists session intent before creation and retries the same identity after response loss", async (t) => {
   const f = await run(fixture);
@@ -100,6 +321,29 @@ test("lead registration persists session intent before creation and retries the 
     ),
     /revision/,
   );
+});
+
+test("a moved lead session is refused before native request admission", async (t) => {
+  const { f, lead } = await prepare();
+  t.onTestFinished(() => run(f.close()));
+  f.runtime.sessions.get(lead.session_id)!.directory = Id.AbsolutePath.make("/foreign-location");
+  const prompts = f.runtime.prompts;
+  await assert.rejects(
+    run(
+      f.controller.lead().control(parent, {
+        action: "message",
+        id: leadID,
+        revision: lead.revision,
+        issue_id: issue,
+        request_id: Id.RequestId.make("moved-lead-request"),
+        body: "Inspect only the registered scope",
+      }),
+    ),
+    { code: "LEAD_SESSION" },
+  );
+  assert.equal(f.runtime.prompts, prompts);
+  const retained = (await run(readLeads(f.records)))[0]!.requests[0]!.request;
+  assert.equal(retained.status, "pending");
 });
 
 test("scoped lead proposals never create or start work until Abra accepts once; cross-project reads/dependencies are refused", async (t) => {

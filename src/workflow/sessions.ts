@@ -1,6 +1,11 @@
 import { WorkerContexts, readWorkerContext } from "./worker-context.ts";
 import { Messages } from "./messages.ts";
-import { messageRequests, requiresResponse, needsDisposition } from "./message-contracts.ts";
+import {
+  messageRequests,
+  requiresResponse,
+  needsDisposition,
+  requestPromptIDs,
+} from "./message-contracts.ts";
 import { join } from "node:path";
 import { externalOwns } from "../validation/contracts.ts";
 import { synchronizeExecution, type Records } from "../storage/store.ts";
@@ -25,6 +30,7 @@ import { type Coordination } from "./coordination.ts";
 import { type Queries } from "./queries.ts";
 import { type Git } from "../git/repository.ts";
 import { isActiveWorker, workerSessionID } from "./worker-assignment.ts";
+import { type AttentionService } from "./attention.ts";
 
 export { workerSessionID } from "./worker-assignment.ts";
 type WorkerTurn =
@@ -49,9 +55,10 @@ export class WorkerSessions {
     private coordination: Coordination,
     private queries: Queries,
     private git: Git,
+    attention: AttentionService,
   ) {
     this.contexts = new WorkerContexts(records, config);
-    this.messages = new Messages(records, runtime, capacity, queries);
+    this.messages = new Messages(records, runtime, capacity, queries, attention);
   }
   recordFailure = Effect.fn("WorkerSessions.recordFailure")(
     function* (this: WorkerSessions, sessionID: SessionId, error: WorkerError) {
@@ -81,7 +88,7 @@ export class WorkerSessions {
                   (m) =>
                     m.generation === e.control_generation &&
                     m.assignment_id === e.prompt_id &&
-                    m.prompt_id === prior.prompt_id,
+                    requestPromptIDs(m).includes(prior.prompt_id!),
                 ))
             )
               return;
@@ -117,7 +124,7 @@ export class WorkerSessions {
       if (!e.active_role) return { kind: "absent" };
       if (!(yield* this.messages.reconcile(e))) return { kind: "waiting" };
       let state = yield* this.runtime.session(this.sessionID(e)!, e.prompt_id);
-      if (state.busy) return { kind: "waiting" };
+      if (state.busy || state.completion_pending) return { kind: "waiting" };
       if (state.assignment) {
         if (state.assignment.outcome === "failed" || state.assignment.outcome === "interrupted")
           state = {
@@ -155,16 +162,19 @@ export class WorkerSessions {
           )
         ) {
           yield* this.records.save(e);
+          yield* this.messages.recover(e);
           return { kind: "waiting" };
         }
         return { kind: "completed", role: e.active_role };
       }
-      if (state.outcome === "failed" || state.outcome === "interrupted")
+      if (state.outcome === "failed" || state.outcome === "interrupted") {
+        yield* this.messages.recover(e);
         return {
           kind: "stopped",
           phase: state.outcome,
           ...this.stoppedWorker(e, state, yield* timestamp),
         };
+      }
       return { kind: "unadmitted", sessionID: state.id, outcome: state.outcome };
     }.bind(this),
     domainEffect,
@@ -398,7 +408,7 @@ export class WorkerSessions {
         if (sid) {
           const followups = messageRequests(e.messages)
             .filter((m) => m.recipient_session_id === sid && m.status !== "cancelled")
-            .map((m) => m.prompt_id);
+            .flatMap(requestPromptIDs);
           yield* this.runtime.interrupt(sid, e.prompt_id, followups);
         }
       }

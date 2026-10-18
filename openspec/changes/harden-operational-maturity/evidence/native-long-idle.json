@@ -1,0 +1,132 @@
+{
+  "fixture": "tests/e2e/native.test.ts",
+  "result": "pass",
+  "cleanup_complete": true,
+  "observed_at": "2026-10-18T10:22:37.690Z",
+  "isolation": "Disposable service/data/config, loopback provider and local bare remotes; no operator service or user remote",
+  "observations": [
+    {
+      "feature": "final-product-acceptance",
+      "result": "pass",
+      "tasks": {
+        "authentication": "abra-8eee7546-62bc-41d8-b6c1-6d3dac3afa87",
+        "database": "abra-58fd99ed-77f9-45b0-9321-c76032dd2a43",
+        "flaky": "abra-d2a4d6d5-3daf-42d4-b71c-a357f191529f"
+      },
+      "capacity": 2,
+      "initial_sessions": [
+        {
+          "session": "ses_eb1796ec0ffeVuXXD0kRpft14G",
+          "worktree": "/home/bart/.cache/abracode-tests/abracode-native-BxaikK/trees/abra-b85c9cf4-3861-4c0d-bcf5-9c87bf7eb791",
+          "execution_id": "abra-b85c9cf4-3861-4c0d-bcf5-9c87bf7eb791"
+        },
+        {
+          "session": "ses_eb17967e3ffeKCOjPy49bfInuV",
+          "worktree": "/home/bart/.cache/abracode-tests/abracode-native-BxaikK/trees/abra-c15bb5e7-a187-4e7f-b804-4241a1493adc",
+          "execution_id": "abra-c15bb5e7-a187-4e7f-b804-4241a1493adc"
+        }
+      ],
+      "human_plan_form": "frm_14e889bb7001pMz4Jda4zU3Tef",
+      "approved_plan": "54c5d5f966b0308ed134725427eed6cba3b86e5492738e296c6d6e259c88fd1e",
+      "correlated_handoff": {
+        "request_id": "final-database-handoff",
+        "prompt_id": "msg_14e88b514001t8H2wqQrqVIxlV",
+        "status": "acknowledged"
+      },
+      "visual_report": {
+        "schema_version": 1,
+        "request_id": "native-research-visual",
+        "issue_id": "abra-58fd99ed-77f9-45b0-9321-c76032dd2a43",
+        "execution_id": "abra-c15bb5e7-a187-4e7f-b804-4241a1493adc",
+        "generation": 0,
+        "input_hash": "c84493642e242aad95da89f0238104775758f2de8cf0381cba9f0acc0fa206c3",
+        "template_hash": "20f9b3920f3828616130fa27861dfbd66747126db2318d6e879809ac788797aa",
+        "hash": "7e26eaad8f8e1ed88f45b15136e77846239b2153959b3e34ae59920208505b8b",
+        "bytes": 99879,
+        "path": "/home/bart/.cache/abracode-tests/abracode-native-BxaikK/central/.abracode/reports/generated/abra-58fd99ed-77f9-45b0-9321-c76032dd2a43/native-research-visual/index.html",
+        "observed_at": "2026-10-18T10:20:08.102Z",
+        "source_report": {
+          "report_id": "native-findings",
+          "hash": "38178db2489a81313eac73c6bda6b10d720f1db47cdca37dd541e26045c2de82"
+        }
+      },
+      "portable_artifact": "/tmp/abra-operational-long-idle/cycle-1/acceptance-architecture-7e26eaad8f8e1ed88f45b15136e77846239b2153959b3e34ae59920208505b8b.html",
+      "independent_review": true,
+      "idle_observation": {
+        "status": "observed",
+        "sample_ms": 120002.23231200001,
+        "cpu_ms": 9180,
+        "cpu_percent": 7.649857692757284,
+        "rss_before_kib": 608824,
+        "rss_after_kib": 508580,
+        "coverage": "Native service process only; excludes tool/flock/browser child CPU",
+        "provider_requests_added": 0,
+        "settling_ms": 2288.1629910000047,
+        "provider_requests_during_settling": 0
+      },
+      "verified_branch_delivery": true,
+      "restart": true,
+      "judgment_limit": "Disposable sample consumer behavior proves orchestration mechanics; no real authentication refactor or database performance claim."
+    }
+  ],
+  "metrics": {
+    "provider_requests": {
+      "supervisor": 8,
+      "explore": 8,
+      "research": 7,
+      "apply": 11,
+      "review": 4
+    },
+    "controller_calls": {
+      "abra_project_onboard": {
+        "count": 2,
+        "total_ms": 290.0375179999992,
+        "max_ms": 147.33267999999953
+      },
+      "abra_work_create_batch": {
+        "count": 2,
+        "total_ms": 71.4495140000181,
+        "max_ms": 37.156776000018
+      },
+      "abra_work_ready": {
+        "count": 11,
+        "total_ms": 1067.3919400000032,
+        "max_ms": 928.612486
+      },
+      "abra_work_status": {
+        "count": 116,
+        "total_ms": 21796.480259000004,
+        "max_ms": 1487.7112250000064
+      },
+      "abra_work_approve": {
+        "count": 2,
+        "total_ms": 209.1188339999935,
+        "max_ms": 122.50416700000642
+      },
+      "abra_work_message": {
+        "count": 2,
+        "total_ms": 277.3844350000145,
+        "max_ms": 194.29573600000003
+      },
+      "abra_work_messages": {
+        "count": 2,
+        "total_ms": 25.662733000004664,
+        "max_ms": 16.218355999997584
+      },
+      "abra_work_list": {
+        "count": 1,
+        "total_ms": 13.383228999999119,
+        "max_ms": 13.383228999999119
+      }
+    },
+    "retained_state": {
+      "files": 1217,
+      "bytes": 32892003,
+      "complete": true,
+      "coverage": "Native data/state and central .abracode only; excludes source, dependency cache and worktree source bytes"
+    },
+    "usage_kind": "Deterministic provider requests and controller RPC calls; neither is billable tokens or a native turn count",
+    "billable_tokens": null,
+    "cost": null
+  }
+}

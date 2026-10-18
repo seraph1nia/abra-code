@@ -15,6 +15,18 @@ Inspected on 2026-10-14. AbraCode installs a local pinned runtime rather than up
 
 ## OpenCode contracts
 
+### Scoped communication observation
+
+The adapter's `promptAdmissions` batches existing public inbox/context reads for
+retained identities and uses exact-message lookup only outside that context.
+It verifies exact text and absence of attachments for every observed identity.
+The single-request method uses the same implementation. A native session
+observation includes the current inbox IDs so answered history can skip transport
+reads while a queued resolved input still receives same-ID reconciliation.
+These projections are transient, never persisted as authority. Message
+reconciliation invalidates its local observations after prompt/wake/recovery;
+the worker's independent execution observation still governs capacity and gates.
+
 ### Follow-up outcome and restart reconciliation
 
 Rechecked against the pinned 2.0.28 installed declarations and embedded
@@ -32,6 +44,29 @@ than attributing a later follow-up's success to it. Native continuation after
 restart can update the outcome without another input. Historical fallback is
 bounded to 20 pages of 200 messages and retains no transcript; missing evidence
 does not establish success.
+
+The same bounded observation can bind an exact controller request input to its
+subsequent native idle marker, exposing only that marker's ID and creation time
+as `assignment.completion`. Missing-response classification requires consumed
+input, this bound successful completion, no active execution or pending inbox,
+and a successful current native outcome. A session-level success alone is
+insufficient. `response-recovery.test.ts` exercises the adapter with idle-before-
+input, missing history, duplicate idle markers and failed/empty-success ordering.
+
+These APIs are separate reads, not an atomic native snapshot. Context can already
+contain a newly consumed input when the earlier active/inbox reads were empty,
+or contain its completion when the earlier session outcome was still absent.
+The adapter exposes transient `completion_pending` when input/assistant context
+after the last idle is not covered by the server-owned `Session.Info.time.idle`.
+This preserves capacity and the response obligation without spending diagnostics
+or admitting a new reminder. It does not fabricate an active native execution:
+explicit stop and an authorized same-ID queued wake still use actual native
+activity. A strictly later native idle timestamp also proves a stopped turn when
+no idle context message was retained. A newer contextual idle can supersede an
+older session snapshot; an adjacent empty success does not erase a failed turn.
+The native-adapter race regression and disposable crash-window journey exercise
+both observations and stop/restart behavior. This projection is neither stored
+nor an authorization source.
 
 The disposable provider-failure trace at
 `/tmp/abra-message-recovery-native4-20261018/native-engineering.json` records a

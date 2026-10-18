@@ -1,7 +1,9 @@
 import { SupervisionSummarySchema, SupervisionAggregateSchema } from "./supervision.ts";
+import { FleetSchema } from "./fleet.ts";
 import { DeliveryOutcomeSchema } from "../workflow/delivery-outcome.ts";
 import { WorkerInspectionSchema } from "./worker.ts";
 import { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
+import { MessagesPageSchema } from "../workflow/message-contracts.ts";
 import { AutomationFields, QualityReceipt } from "../config/policy.ts";
 import { ProgressSchema as TaskProgressSchema, SpecArtifactSchema } from "../openspec/contracts.ts";
 import {
@@ -16,6 +18,8 @@ import {
   RoundId,
   Timestamp,
   Fingerprint,
+  LeadId,
+  RequestId,
 } from "../identities.ts";
 import {
   ReadinessBlockerSchema,
@@ -46,7 +50,43 @@ const session = Schema.Struct({
   id: SessionId,
   role: RoleSchema,
 });
+export const LeadSummarySchema = Schema.Struct({
+  id: LeadId,
+  revision: Count,
+  repositories: Schema.Array(RepositoryId),
+  enabled: Schema.Boolean,
+  session_available: Schema.Boolean,
+  session_id: SessionId,
+  parent_session_id: SessionId,
+  state: Schema.Literals([
+    "disabled",
+    "stopping",
+    "unavailable",
+    "provisioning",
+    "running",
+    "queued",
+    "idle",
+    "unknown",
+  ]),
+  request_count: Count,
+  outstanding_count: Count,
+  requests: Schema.Array(
+    Schema.Struct({
+      issue_id: IssueId,
+      request_id: RequestId,
+      status: Schema.String,
+      question: Schema.String,
+      reply: Schema.optional(Schema.String),
+    }),
+  ),
+  pending_proposals: Schema.Array(RequestId),
+  assigned_work: Schema.Array(IssueId),
+  latest_outcome: Schema.optional(Schema.String),
+  observed_at: Timestamp,
+});
+export type LeadSummary = typeof LeadSummarySchema.Type;
 const work = Schema.Struct({
+  communication: Schema.optional(Schema.Struct({ total: Count, outstanding: Count })),
   supervision: Schema.optional(SupervisionSummarySchema),
   outcome: Schema.optional(DeliveryOutcomeSchema),
   generation: Schema.optional(Count),
@@ -144,6 +184,9 @@ const work = Schema.Struct({
   blocker_details: Schema.optional(Schema.Array(ReadinessBlockerSchema)),
 });
 const snapshot = Schema.Struct({
+  fleet: Schema.optional(FleetSchema),
+  leads: Schema.optional(Schema.Array(LeadSummarySchema)),
+  lead_diagnostics: Schema.optional(strings),
   supervision: Schema.optional(SupervisionAggregateSchema),
   record_diagnostics: Schema.optional(Schema.Array(RecordDiagnosticSchema)),
   home: AbsolutePath,
@@ -206,6 +249,13 @@ export const observerErrors = {
 export const visibility = Rpc.define({
   id: "abracode-visibility",
   methods: {
+    messages: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(
+        Schema.Struct({ issue_id: IssueId, offset: Schema.optional(Count) }),
+      ),
+      output: Schema.toStandardSchemaV1(MessagesPageSchema),
+    },
     worker: {
       errors: observerErrors,
       input: Schema.toStandardSchemaV1(Schema.Struct({ issue_id: IssueId, session_id: SessionId })),

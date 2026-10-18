@@ -1,0 +1,6 @@
+{
+  "source": "/tmp/abra-operational-proposal-native/native-engineering.json",
+  "result": "pass",
+  "cleanup_complete": true,
+  "note": "Bounded receipt extracted after the runner exited. Full observations/artifacts remain in the named external evidence directory."
+}

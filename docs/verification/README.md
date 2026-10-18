@@ -2,6 +2,10 @@
 
 Use the existing disposable source-installation and native-server harness. It drives the controller through native sessions and tools with a deterministic loopback model provider and a local recording forge. This proves integration and permission behavior, not autonomous model judgment or a live GitHub delivery.
 
+For bounded repeated cycles, explicit fault profiles, native timing/resource
+measurements and a separate authorized real-provider procedure, use
+[operational verification](operational.md). Repeated soak cycles are opt-in.
+
 ## Prepare and check health
 
 Use Node 24.11+ and the frozen pnpm toolchain. From the checkout:

@@ -1,0 +1,37 @@
+note: You are running `vp test` as a Vite+ built-in command. If you meant to run the test npm script, use `vpr test` instead.
+
+ RUN  v5.0.4 /home/bart/projects/personal/opencrew
+
+ ❯ |unit| tests/unit/leads.test.ts (8 tests | 1 failed | 7 skipped) 217ms
+   × a moved lead session is refused before native request admission 216ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| tests/unit/leads.test.ts > a moved lead session is refused before native request admission
+AssertionError: Expected values to be strictly equal:
+
+1 !== 0
+
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/unit/leads.test.ts:114:10
+    112|     request_id: Id.RequestId.make("moved-lead-request"), body: "Inspec…
+    113|   })), { code: "LEAD_SESSION" });
+    114|   assert.equal(f.runtime.prompts, prompts);
+       |          ^
+    115|   const retained = (await run(readLeads(f.records)))[0]!.requests[0]!.…
+    116|   assert.equal(retained.status, "pending");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 skipped (8)
+   Start at  10:43:16
+   Duration  981ms (import 64%, tests 24%, transform 12%)
+

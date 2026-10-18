@@ -14,7 +14,7 @@ import { resolve, dirname, isAbsolute, sep } from "node:path";
 import { CrewError, type Execution, type Role } from "../domain.ts";
 import { type Controller } from "../workflow/controller.ts";
 import { isActiveWorker, historicalWorkers } from "../workflow/worker-assignment.ts";
-import { messageRequests } from "../workflow/message-contracts.ts";
+import { messageRequests, requiresResponse } from "../workflow/message-contracts.ts";
 export function workerFor(controller: Controller, sessionID: SessionId) {
   return controller.queries.assignment(sessionID);
 }
@@ -39,13 +39,29 @@ export function requireOwnedPrompt(
   message: import("../identities.ts").MessageId,
 ) {
   const role = roleFor(e, session);
-  const intent = messageRequests(e.messages).find((m) => m.prompt_id === message);
+  const retained = messageRequests(e.messages).find(
+    (m) => m.prompt_id === message || m.response_recovery?.prompt_id === message,
+  );
+  const recovery =
+    retained?.response_recovery?.prompt_id === message ? retained.response_recovery : undefined;
+  const intent =
+    retained && recovery
+      ? {
+          ...retained,
+          prompt_id: recovery.prompt_id,
+          prompt: recovery.prompt,
+          delivery: "queue" as const,
+        }
+      : retained;
   if (
     (intent
       ? intent.generation !== e.control_generation ||
         intent.assignment_id !== e.prompt_id ||
         intent.recipient_session_id !== session ||
         intent.role !== role ||
+        (recovery &&
+          (!["admission_uncertain", "admitted"].includes(recovery.status) ||
+            (recovery.status === "admission_uncertain" && !requiresResponse(intent)))) ||
         !["admission_uncertain", "admitted", "acknowledged", "answered"].includes(intent.status)
       : e.prompt_id !== message || e.worker_context_id !== message) ||
     !isActiveWorker(e, session, { role })
@@ -113,10 +129,43 @@ export function installGuards(
                   "LEAD_PROMPT",
                   "Lead prompts cannot attach files, agents or skills",
                 );
+              // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native errors are normalized before entering controller code.
+              const native = yield* ctx.session
+                .get({ sessionID: event.sessionID })
+                .pipe(Effect.mapError(CrewError.from));
+              if (
+                native.location.directory !== controller.queries.settings.home ||
+                native.agent !== "project-lead"
+              )
+                return yield* new CrewError(
+                  "LEAD_SESSION",
+                  "Managed lead moved or changed agent. Talk to Abra.",
+                );
               return;
             }
             const assignment = yield* workerFor(controller, event.sessionID);
             if (!assignment) return;
+            if (
+              messageRequests(assignment.messages).some(
+                (m) =>
+                  m.response_recovery?.prompt_id === event.messageID &&
+                  m.response_recovery.status === "admission_uncertain",
+              ) &&
+              !event.prompt.files?.length &&
+              !event.prompt.agents?.length &&
+              !event.prompt.skills?.length &&
+              (yield* controller.refuseResolvedReminder(
+                assignment,
+                event.sessionID,
+                event.messageID,
+                event.prompt.text,
+                event.delivery,
+              ))
+            )
+              return yield* new CrewError(
+                "WORKER_PROMPT_ONLY",
+                "The original response is already committed; unused reminder suppressed. Talk to Abra.",
+              );
             const intent = requireOwnedPrompt(assignment, event.sessionID, event.messageID);
             const captured = yield* controller.queries.capturedWorkerPrompt(assignment);
             if (
@@ -132,6 +181,15 @@ export function installGuards(
               return yield* new CrewError(
                 "WORKER_PROMPT_ONLY",
                 "Managed workers accept only their retained controller assignment. Talk to Abra.",
+              );
+            // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native errors are normalized before entering controller code.
+            const native = yield* ctx.session
+              .get({ sessionID: event.sessionID })
+              .pipe(Effect.mapError(CrewError.from));
+            if (native.location.directory !== assignment.worktree_directory)
+              return yield* new CrewError(
+                "SESSION_LOCATION",
+                "Managed worker moved outside its assigned worktree. Talk to Abra.",
               );
           }),
         ).pipe(Effect.orDie, provide),

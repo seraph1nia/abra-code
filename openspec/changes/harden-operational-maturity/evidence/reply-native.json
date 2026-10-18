@@ -1,0 +1,56 @@
+{
+  "fixture": "tests/e2e/native.test.ts",
+  "result": "pass",
+  "cleanup_complete": true,
+  "observed_at": "2026-10-18T09:22:14.882Z",
+  "isolation": "Disposable service/data/config, loopback provider and local bare remotes; no operator service or user remote",
+  "observations": [
+    {
+      "reply_recovery": "pass",
+      "issue_id": "abra-a3e04735-8976-4314-a986-a73bdef9fa58",
+      "identities": [
+        {
+          "request_id": "native-recovery-answer",
+          "prompt_id": "msg_14e517f2b001ZeMKvo41Iy8NQl",
+          "reminder": "msg_14e51849a0019izdimmcO5rYbQ"
+        },
+        {
+          "request_id": "native-recovery-escalation",
+          "prompt_id": "msg_14e517ff5001fEm4Cydn7kHmqT",
+          "reminder": "msg_14e5186d10013bf1YFQnGvJ6B3"
+        }
+      ],
+      "native_instruction_counts": [
+        {
+          "request_id": "native-recovery-answer",
+          "original": 1,
+          "reminder": 1
+        },
+        {
+          "request_id": "native-recovery-escalation",
+          "original": 1,
+          "reminder": 1
+        }
+      ],
+      "attempts": 3,
+      "answered": 2,
+      "escalated": 1,
+      "escalation_id": "incident-2472cb6949ad11c2856baf41c313bc96b3518633",
+      "restart_preserved": true,
+      "stop_confirmed": true,
+      "lead_recovery": {
+        "request_id": "native-lead-recovery-answer",
+        "prompt_id": "msg_14e5194230012sMZs7NDyhvBR2",
+        "reminder": "msg_14e519548001s4dpaRd3oHvxv3",
+        "native_instruction_counts": {
+          "original": 1,
+          "reminder": 1
+        },
+        "notice_id": "msg_14e519b67001JGSOy7LICip4pV",
+        "source_execution_absent": true,
+        "disabled_after_reply": true
+      },
+      "limitation": "Deterministic loopback provider; task deliberately paused after communication assertions; fixture teardown owns retained resources."
+    }
+  ]
+}

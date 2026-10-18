@@ -1,0 +1,728 @@
+{
+  "fixture": "tests/e2e/native.test.ts",
+  "result": "fail",
+  "cleanup_complete": true,
+  "errors": [
+    {
+      "name": "Error",
+      "frames": [
+        "    at Object.eventually (/home/bart/projects/personal/opencrew/tests/e2e/native.test.ts:70:9)",
+        "    at leadJourney (/home/bart/projects/personal/opencrew/tests/e2e/leads.ts:239:3)",
+        "    at /home/bart/projects/personal/opencrew/tests/e2e/native.test.ts:2666:30",
+        "    at async file:///home/bart/projects/personal/opencrew/node_modules/.pnpm/vitest@5.0.4_@opentelemetry+api@1.9.0_@types+node@24.12.2_@vitest+browser-preview@5.0.4_732cf11a6834683335206ce634569816/node_modules/vitest/dist/chunks/run.Cm2sd7-x.js:2794:20"
+      ]
+    }
+  ],
+  "observed_at": "2026-10-18T12:12:19.473Z",
+  "isolation": "Disposable service/data/config, loopback provider and local bare remotes; no operator service or user remote",
+  "observations": [
+    {
+      "steering_identity_replay": "native returns original payload before invoking the prompt hook",
+      "assignment_prompt_id": "msg_14eea4e97001QZM5G5fWtHLZKg",
+      "session_id": "ses_eb115c026ffeUIfdIN34WQHopp",
+      "changed_payload_accepted": false,
+      "native_request_rejected": false,
+      "direct_provider_calls": 0
+    },
+    {
+      "steering_pause": "queued instruction withdrawn; generation superseded",
+      "prompt_id": "msg_14eea55ea001RLbnmptgfkja54",
+      "stop_status": "confirmed",
+      "pending_native_items": 0
+    },
+    {
+      "queued_message_restart": "native-correlated-answer",
+      "prompt_id": "msg_14eea5aeb001Ymab6vafGPRUKi",
+      "recipient_session_id": "ses_eb115c026ffeUIfdIN34WQHopp",
+      "controller_identity_reused": true
+    },
+    {
+      "message_request": "native-correlated-answer",
+      "prompt_id": "msg_14eea5aeb001Ymab6vafGPRUKi",
+      "recipient_session_id": "ses_eb115c026ffeUIfdIN34WQHopp",
+      "status": "answered",
+      "reply": "Native correlated answer: use the documented consumer check."
+    },
+    {
+      "steering": "admitted once in existing session",
+      "assignment_prompt_id": "msg_14eea4e97001QZM5G5fWtHLZKg",
+      "session_id": "ses_eb115c026ffeUIfdIN34WQHopp",
+      "provider_marker_calls": 30,
+      "native_user_messages": 1,
+      "direct_provider_calls": 0
+    },
+    {
+      "role": "explore",
+      "session_id": "ses_eb115c026ffeUIfdIN34WQHopp",
+      "skills": ["abra-codebase-design", "abra-domain-modeling", "abra-verification"],
+      "calls": [
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "abra_work_finish",
+          "status": "error"
+        },
+        {
+          "name": "task",
+          "status": "error"
+        },
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "error"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "error"
+        },
+        {
+          "name": "shell",
+          "status": "error"
+        },
+        {
+          "name": "abra_worker_reply",
+          "status": "completed"
+        },
+        {
+          "name": "abra_worker_question",
+          "status": "completed"
+        },
+        {
+          "name": "abra_worker_progress",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        },
+        {
+          "name": "patch",
+          "status": "error"
+        },
+        {
+          "name": "patch",
+          "status": "completed"
+        },
+        {
+          "name": "patch",
+          "status": "completed"
+        },
+        {
+          "name": "patch",
+          "status": "completed"
+        },
+        {
+          "name": "patch",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "historical_prompt": "msg_retained_pre_suite_fixture",
+      "retained": {
+        "agent": "build",
+        "model": {
+          "id": "gpt-fixture",
+          "providerID": "fixture",
+          "variant": "default"
+        },
+        "tools": [
+          {
+            "any_of": ["read"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["glob"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["grep"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["skill"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["abra_worker_question"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["abra_worker_progress"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["abra_worker_wait"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["abra_worker_reply"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["abra_spec"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["edit", "write", "patch"],
+            "source": "role-policy"
+          }
+        ],
+        "skills": [
+          {
+            "id": "abra-openspec-execution",
+            "path": "/home/bart/.cache/abracode-tests/abracode-native-E3ox1y/central/.agents/skills/openspec-execution/SKILL.md",
+            "digest": "b53affa2c89a8fc78d3f101f0d47df1019749e14892e96ac042f30ec7d840575",
+            "source": "role-policy",
+            "loading": "unobserved"
+          }
+        ]
+      },
+      "fresh_skill_ids": [
+        "abra-openspec-execution",
+        "abra-codebase-design",
+        "abra-domain-modeling",
+        "abra-verification"
+      ],
+      "capture_unchanged": true,
+      "native_restart": true
+    },
+    {
+      "review_tree": "/home/bart/.cache/abracode-tests/abracode-native-E3ox1y/trees/abra-0fabdace-e9eb-4229-bf01-33f0d783f8e1",
+      "status": "M AGENTS.md\nA  openspec/changes/abra-abra-58e75a44-1a60-4bda-98cb-8d540224cf93/.openspec.yaml\nA  openspec/changes/abra-abra-58e75a44-1a60-4bda-98cb-8d540224cf93/design.md\nA  openspec/changes/abra-abra-58e75a44-1a60-4bda-98cb-8d540224cf93/proposal.md\nA  openspec/changes/abra-abra-58e75a44-1a60-4bda-98cb-8d540224cf93/specs/sample/spec.md\nAM openspec/changes/abra-abra-58e75a44-1a60-4bda-98cb-8d540224cf93/tasks.md\n M source.txt\n?? sample-proof.mjs"
+    },
+    {
+      "role": "apply",
+      "session_id": "ses_eb11558c4ffenpk966rKU55nuu",
+      "skills": [
+        "abra-codebase-design",
+        "abra-domain-modeling",
+        "abra-diagnosing-bugs",
+        "abra-verification",
+        "abra-blast-radius"
+      ],
+      "calls": [
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        },
+        {
+          "name": "patch",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "abra_worker_progress",
+          "status": "completed"
+        },
+        {
+          "name": "abra_work_finish",
+          "status": "error"
+        },
+        {
+          "name": "task",
+          "status": "error"
+        },
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "error"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "abra_worker_progress",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        },
+        {
+          "name": "patch",
+          "status": "completed"
+        },
+        {
+          "name": "patch",
+          "status": "completed"
+        },
+        {
+          "name": "patch",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "role": "review",
+      "session_id": "ses_eb11530d8ffel7AT9D9ybCj4l6",
+      "skills": ["abra-codebase-design", "abra-verification", "abra-blast-radius"],
+      "calls": [
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "error"
+        },
+        {
+          "name": "abra_work_finish",
+          "status": "error"
+        },
+        {
+          "name": "task",
+          "status": "error"
+        },
+        {
+          "name": "skill",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "completed"
+        },
+        {
+          "name": "read",
+          "status": "error"
+        },
+        {
+          "name": "shell",
+          "status": "completed"
+        },
+        {
+          "name": "shell",
+          "status": "error"
+        },
+        {
+          "name": "shell",
+          "status": "error"
+        },
+        {
+          "name": "abra_review_report",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "verification": {
+        "fingerprint": "8faf36ad5f7674f0697c0a01e82be94eb2cb5a9d8bad55108afb007ff892414b",
+        "commands": [
+          {
+            "argv": [
+              "/home/bart/.local/share/mise/installs/node/24.21.0/bin/node",
+              "-e",
+              "const fs=require(\"fs\");if(fs.readFileSync(\"source.txt\",\"utf8\")!==\"sample\\n\")process.exit(1)"
+            ],
+            "deadline_ms": 900000
+          },
+          {
+            "argv": [
+              "/home/bart/.local/share/mise/installs/node/24.21.0/bin/node",
+              "sample-proof.mjs"
+            ],
+            "deadline_ms": 900000
+          }
+        ],
+        "at": "2026-10-18T12:09:33.642Z"
+      },
+      "review": {
+        "fingerprint": "8faf36ad5f7674f0697c0a01e82be94eb2cb5a9d8bad55108afb007ff892414b",
+        "passed": true,
+        "findings": "Specification implemented; deterministic check passes.",
+        "scope_status": "in_scope",
+        "spec_verification": {
+          "completeness": {
+            "status": "passed",
+            "evidence": "proposal.md and specs/sample/spec.md map to tasks.md and source.txt."
+          },
+          "correctness": {
+            "status": "passed",
+            "evidence": "source.txt behavior agrees with the configured deterministic check."
+          },
+          "coherence": {
+            "status": "passed",
+            "evidence": "source.txt follows design.md and the approved sample behavior."
+          },
+          "conflicts": []
+        },
+        "session_id": "ses_eb11530d8ffel7AT9D9ybCj4l6"
+      },
+      "outcome": "completed"
+    },
+    {
+      "posture": "unattended",
+      "provider_failure": "abra-9842b31b-000b-4c8b-ad38-d3535f3301dc",
+      "approval_granted": false,
+      "preserved_outstanding": 1
+    },
+    {
+      "unanswered_request_restart": "native-unanswered-failure",
+      "prompt_id": "msg_14eeb141d001CNw2rbtvrEF03h",
+      "outstanding": 1,
+      "session_id": "ses_eb114eda9ffeh9UM7LzTiE7Pkp"
+    },
+    {
+      "forwarded_finding": "native-worker-finding",
+      "source_session_id": "ses_eb1150223ffengQd2feHyRzOgQ",
+      "recipient_session_id": "ses_eb114eda9ffeh9UM7LzTiE7Pkp",
+      "acknowledgement": "acknowledged"
+    },
+    {
+      "unavailable_evidence": {
+        "fingerprint": "0329084aeb4d50712519fb8720852ee8f6c13495a7ac50bf8dca69695e3cf02e",
+        "passed": false,
+        "findings": "Required behavior proof unavailable; loaded guidance does not verify it. Keep accepted planning unchanged.",
+        "scope_status": "uncertain",
+        "spec_verification": {
+          "completeness": {
+            "status": "passed",
+            "evidence": "proposal.md and specs/sample/spec.md map to tasks.md and source.txt."
+          },
+          "correctness": {
+            "status": "not_verified",
+            "evidence": "unavailable-proof.json is absent and the configured source check cannot establish the additional claimed runtime observation."
+          },
+          "coherence": {
+            "status": "passed",
+            "evidence": "source.txt follows design.md and the approved sample behavior."
+          },
+          "conflicts": []
+        },
+        "session_id": "ses_eb1145856ffeboExv9qyTNBG6o"
+      },
+      "phase": "blocked"
+    },
+    {
+      "posture": "unattended",
+      "review_blocker": "abra-91655106-4cbf-4ab8-9d8f-8d33c793acc5",
+      "scope_unchanged": true,
+      "delivery_authorized": false
+    },
+    {
+      "report_compiler_running_before_restart": {
+        "request_id": "native-restarted-visual",
+        "verified_owned_child": true
+      }
+    },
+    {
+      "feature": "controller-owned-visual-reports",
+      "result": "pass",
+      "issue_id": "abra-2e079efc-2fa3-44ae-825d-e1dcc11c9ad5",
+      "worker_session": "ses_eb11434b2ffexfatOQChUJUGfg",
+      "portable_artifact": "/tmp/abra-p0-owned-full/cycle-2/research-architecture-a484487388d1060c3b413e2e775916e435a41b62131a76c48304adaa8469894b.html",
+      "worker_render": {
+        "schema_version": 1,
+        "request_id": "native-research-visual",
+        "issue_id": "abra-2e079efc-2fa3-44ae-825d-e1dcc11c9ad5",
+        "execution_id": "abra-68f09e25-66a3-47cf-a554-578363dc0f9f",
+        "generation": 0,
+        "input_hash": "303df49b2fc7a66d1fa7111130e2fa5d61fa9d852988eee87d2c6629f78480d6",
+        "template_hash": "20f9b3920f3828616130fa27861dfbd66747126db2318d6e879809ac788797aa",
+        "hash": "a484487388d1060c3b413e2e775916e435a41b62131a76c48304adaa8469894b",
+        "bytes": 99842,
+        "path": "/home/bart/.cache/abracode-tests/abracode-native-E3ox1y/central/.abracode/reports/generated/abra-2e079efc-2fa3-44ae-825d-e1dcc11c9ad5/native-research-visual/index.html",
+        "observed_at": "2026-10-18T12:10:39.698Z",
+        "source_report": {
+          "report_id": "native-findings",
+          "hash": "06c53536cec820a931613ea6850402b0ddfbd131aaff65c1f31454e4b38223c1"
+        }
+      },
+      "terminal_render": {
+        "schema_version": 1,
+        "request_id": "native-terminal-visual",
+        "issue_id": "abra-2e079efc-2fa3-44ae-825d-e1dcc11c9ad5",
+        "execution_id": "abra-68f09e25-66a3-47cf-a554-578363dc0f9f",
+        "generation": 0,
+        "input_hash": "1a66755c70b1f7c6bb3b9f864dac867aac79403974268363b8940c339ba14409",
+        "template_hash": "20f9b3920f3828616130fa27861dfbd66747126db2318d6e879809ac788797aa",
+        "hash": "4b8f462bb51fa0de7e0d5b40af5210231e9f88f65a402ad16c77147270ac8520",
+        "bytes": 99974,
+        "path": "/home/bart/.cache/abracode-tests/abracode-native-E3ox1y/central/.abracode/reports/generated/abra-2e079efc-2fa3-44ae-825d-e1dcc11c9ad5/native-terminal-visual/index.html",
+        "observed_at": "2026-10-18T12:10:45.053Z",
+        "source_report": {
+          "report_id": "native-findings",
+          "hash": "06c53536cec820a931613ea6850402b0ddfbd131aaff65c1f31454e4b38223c1"
+        }
+      },
+      "recovered": {
+        "schema_version": 1,
+        "request_id": "native-restarted-visual",
+        "issue_id": "abra-2e079efc-2fa3-44ae-825d-e1dcc11c9ad5",
+        "execution_id": "abra-68f09e25-66a3-47cf-a554-578363dc0f9f",
+        "generation": 0,
+        "input_hash": "089ea8363f8db87d87eef2804701bd246b78adc968d0e37f6055a69ecfaf8123",
+        "template_hash": "20f9b3920f3828616130fa27861dfbd66747126db2318d6e879809ac788797aa",
+        "hash": "24b365db8df425ebc0ccf47cfe93b0aa1cddc02b869401128c5b986f70ff3e04",
+        "bytes": 99981,
+        "path": "/home/bart/.cache/abracode-tests/abracode-native-E3ox1y/central/.abracode/reports/generated/abra-2e079efc-2fa3-44ae-825d-e1dcc11c9ad5/native-restarted-visual/index.html",
+        "observed_at": "2026-10-18T12:10:48.303Z",
+        "source_report": {
+          "report_id": "native-findings",
+          "hash": "06c53536cec820a931613ea6850402b0ddfbd131aaff65c1f31454e4b38223c1"
+        }
+      },
+      "lost_response": true,
+      "retired_worktree": true,
+      "native_file_link_source": "OpenCode v2.0.28 graphical file renderer/artifact viewer",
+      "native_gui_clickthrough": "not_run: no paired graphical client",
+      "permissions_unchanged": true
+    }
+  ],
+  "metrics": {
+    "provider_requests": {
+      "supervisor": 61,
+      "explore": 48,
+      "apply": 65,
+      "review": 49,
+      "research": 37
+    },
+    "controller_calls": {
+      "abra_project_onboard": {
+        "count": 9,
+        "total_ms": 3776.455125000004,
+        "max_ms": 1623.1192979999905
+      },
+      "abra_project_list": {
+        "count": 2,
+        "total_ms": 13.015192000000752,
+        "max_ms": 7.110004000000117
+      },
+      "abra_work_list": {
+        "count": 4,
+        "total_ms": 53.42654499999844,
+        "max_ms": 25.825471999996807
+      },
+      "abra_project_setup": {
+        "count": 3,
+        "total_ms": 2131.765274999998,
+        "max_ms": 1741.9083300000002
+      },
+      "abra_work_create": {
+        "count": 11,
+        "total_ms": 850.5835869999846,
+        "max_ms": 275.09775400000217
+      },
+      "abra_work_ready": {
+        "count": 2,
+        "total_ms": 20.449819999999818,
+        "max_ms": 12.188380999999936
+      },
+      "abra_work_start": {
+        "count": 8,
+        "total_ms": 17269.624848000014,
+        "max_ms": 4113.802922000003
+      },
+      "abra_work_status": {
+        "count": 538,
+        "total_ms": 59627.70193299973,
+        "max_ms": 1556.7918539999955
+      },
+      "abra_work_diagnostics": {
+        "count": 3,
+        "total_ms": 36.63857400000052,
+        "max_ms": 16.192324000003282
+      },
+      "abra_work_attention": {
+        "count": 1,
+        "total_ms": 29.65577100000155,
+        "max_ms": 29.65577100000155
+      },
+      "abra_work_control": {
+        "count": 11,
+        "total_ms": 3851.8059690000046,
+        "max_ms": 1045.944245000006
+      },
+      "abra_work_message": {
+        "count": 5,
+        "total_ms": 1988.2897379999995,
+        "max_ms": 1257.6500210000013
+      },
+      "abra_work_messages": {
+        "count": 7,
+        "total_ms": 1339.7509939999727,
+        "max_ms": 945.015791999991
+      },
+      "abra_work_approve": {
+        "count": 3,
+        "total_ms": 457.2452989999874,
+        "max_ms": 213.03722499999276
+      },
+      "abra_work_report": {
+        "count": 422,
+        "total_ms": 12409.63052300067,
+        "max_ms": 3219.320836999992
+      },
+      "abra_lead_control": {
+        "count": 12,
+        "total_ms": 2838.503284999926,
+        "max_ms": 1058.4304760000086
+      }
+    },
+    "retained_state": {
+      "files": 1807,
+      "bytes": 63234787,
+      "complete": true,
+      "coverage": "Native data/state and central .abracode only; excludes source, dependency cache and worktree source bytes"
+    },
+    "usage_kind": "Deterministic provider requests and controller RPC calls; neither is billable tokens or a native turn count",
+    "billable_tokens": null,
+    "cost": null
+  }
+}

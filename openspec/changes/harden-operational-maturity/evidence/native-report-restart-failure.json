@@ -1,0 +1,1326 @@
+{
+  "fixture": "tests/e2e/native.test.ts",
+  "result": "fail",
+  "cleanup_complete": true,
+  "errors": [
+    {
+      "name": "Error",
+      "frames": [
+        "    at /home/bart/projects/personal/opencrew/tests/e2e/reports.ts:114:53",
+        "    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
+        "    at Object.eventually (/home/bart/projects/personal/opencrew/tests/e2e/native.test.ts:61:22)",
+        "    at reportJourney (/home/bart/projects/personal/opencrew/tests/e2e/reports.ts:110:21)",
+        "    at nativeJourney (/home/bart/projects/personal/opencrew/tests/e2e/native.test.ts:2597:28)",
+        "    at async file:///home/bart/projects/personal/opencrew/node_modules/.pnpm/vitest@5.0.4_@opentelemetry+api@1.9.0_@types+node@24.12.2_@vitest+browser-preview@5.0.4_732cf11a6834683335206ce634569816/node_modules/vitest/dist/chunks/run.Cm2sd7-x.js:2794:20"
+      ]
+    }
+  ],
+  "observed_at": "2026-10-18T10:18:43.601Z",
+  "isolation": "Disposable service/data/config, loopback provider and local bare remotes; no operator service or user remote",
+  "observations": [
+    {
+      "steering_identity_replay": "native returns original payload before invoking the prompt hook",
+      "assignment_prompt_id": "msg_14e8306aa00119TNDn1cjN5Nr0",
+      "session_id": "ses_eb17d07e6ffe8aWYk0Am224x2v",
+      "changed_payload_accepted": false,
+      "native_request_rejected": false,
+      "direct_provider_calls": 0
+    },
+    {
+      "steering_pause": "queued instruction withdrawn; generation superseded",
+      "prompt_id": "msg_14e830e10001geuvaFtI4Q6PSO",
+      "stop_status": "confirmed",
+      "pending_native_items": 0
+    },
+    {
+      "queued_message_restart": "native-correlated-answer",
+      "prompt_id": "msg_14e8313050010AioE1GsecHrDK",
+      "recipient_session_id": "ses_eb17d07e6ffe8aWYk0Am224x2v",
+      "controller_identity_reused": true
+    },
+    {
+      "message_request": "native-correlated-answer",
+      "prompt_id": "msg_14e8313050010AioE1GsecHrDK",
+      "recipient_session_id": "ses_eb17d07e6ffe8aWYk0Am224x2v",
+      "status": "answered",
+      "reply": "Native correlated answer: use the documented consumer check."
+    },
+    {
+      "steering": "admitted once in existing session",
+      "assignment_prompt_id": "msg_14e8306aa00119TNDn1cjN5Nr0",
+      "session_id": "ses_eb17d07e6ffe8aWYk0Am224x2v",
+      "provider_marker_calls": 30,
+      "native_user_messages": 1,
+      "direct_provider_calls": 0
+    },
+    {
+      "role": "explore",
+      "session_id": "ses_eb17d07e6ffe8aWYk0Am224x2v",
+      "skills": ["abra-codebase-design", "abra-domain-modeling", "abra-verification"],
+      "calls": [
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-codebase-design"
+          },
+          "metadata": {
+            "name": "abra-codebase-design",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/codebase-design",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-codebase-design\">\n# Skill: abra-codebase-design\n\n# Design at the caller interface\n\nUse for an actual interface or ownership decision; a trivial edit does not need a design exercise. Read the assigned contract, relevant callers, repository terminology and existing decisions first.\n\nA module has an interface (all facts callers must know, including ordering, errors, configuration and invariants) and an implementation. A deep module offers useful behavior through a small interface. A seam is where behavior can be substituted; an adapter satisfies the interface at that seam. Depth means caller leverage, not implementation line count.\n\n1. Write a concrete caller example and the observable result it needs. Include failure behavior and who owns state, retries and cleanup.\n2. Compare the current interface with the smallest useful alternative. Which knowledge moves out of callers? If deleting a wrapper removes complexity instead of redistributing it, reconsider the wrapper.\n3. Locate the interface that reaches the real behavior in tests. Accept dependencies at an existing seam where useful; do not add hypothetical adapters or mock away the behavior being proved.\n4. "
+        },
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-domain-modeling"
+          },
+          "metadata": {
+            "name": "abra-domain-modeling",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/domain-modeling",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-domain-modeling\">\n# Skill: abra-domain-modeling\n\n# Clarify the domain within the assigned scope\n\nUse when terminology or relationships affect behavior. Read repository instructions, any glossary map, applicable glossary and architectural decisions, then compare their definitions with code and the accepted contract. Follow existing locations; a missing glossary does not authorize creating one.\n\n- Identify overloaded words and propose one precise term for each concept. Distinguish, for example, a request from its attempts or an execution from its native sessions.\n- Probe relationships with concrete cases: Can two attempts coexist? What survives a restart? Which owner may change the state? Check the answers against actual code and accepted requirements.\n- For a definition, record the term, plain definition, relationships and a distinguishing example. Keep implementation details in design documentation rather than the glossary.\n- Record an architectural decision only when a meaningful trade-off is hard to reverse and would surprise a future reader. Use the repository's format: context, alternatives, decision and consequences.\n\nExplore writes proposed definitio"
+        },
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-verification"
+          },
+          "metadata": {
+            "name": "abra-verification",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/verification",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-verification\">\n# Skill: abra-verification\n\n# Verify the actual behavior\n\nUse for relevant behavior changed by the assigned contract. Discover repository instructions, testing documentation and applicable local recipes/skills first. Use existing documented checks when no recipe exists. Absence of a recipe does not authorize setup, installation, new control files or a new approval workflow. Report a concrete missing runtime prerequisite if existing checks cannot exercise the applicable behavior.\n\nA useful recipe contains:\n\n- Preparation/launch: exact existing command, fixture/data requirements, isolated ports/state and how readiness reaches a usable instance.\n- Health: a read-only observation confirming the intended instance/build, required data and access before driving it.\n- Action and expected state: the real CLI/API/UI interaction and the observable result or side effect that would falsify success.\n- Evidence: exact invocation, expected versus observed outcome, exit/status, meaningful state and retained artifact path, with limits and secrets removed.\n- Cleanup: stop only processes/browsers and temporary state this run created. Preserve named evidence out"
+        },
+        {
+          "name": "abra_work_finish",
+          "status": "error",
+          "input": {
+            "issue_id": "forbidden-engineering-management"
+          }
+        },
+        {
+          "name": "task",
+          "status": "error",
+          "input": {
+            "description": "forbidden engineering delegation",
+            "prompt": "Edit another worktree",
+            "subagent_type": "general"
+          }
+        },
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-browser"
+          },
+          "metadata": {
+            "name": "abra-browser",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/browser",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-browser\">\n# Skill: abra-browser\n\nThe Supervisor delegates browser work to a worker. Explore, Apply, Review and Research use the centrally installed `agent-browser` through the native shell tool; no global or managed-repository installation is needed.\n\nBefore browsing, load the installed version's workflow instructions:\n\n```sh\nagent-browser --session <assigned-name> skills get core\n```\n\nUse the concrete **Browser session** and **Screenshot directory** from your captured assignment. These AbraCode conventions take precedence over upstream quickstart/setup/session examples: pass `--session <assigned-name>` on every invocation, keep fresh isolated state, and close only that named browser. Continuing the same native session keeps its name. Do not use a shared default session, `close --all`, personal profile auto-attachment or restored state unless the user explicitly authorizes a state source. Do not run upstream installation, upgrade or plugin-install commands as part of browsing.\n\nFollow the snapshot/reference workflow, refreshing the snapshot after page changes:\n\n```sh\nagent-browser --session <assigned-name> open <authorized-url>\nagent-browser --session <ass"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17d07e6ffe8aWYk0Am224x2v --version"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "agent-browser 0.39.1\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17d07e6ffe8aWYk0Am224x2v skills get core"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "---\nname: core\ndescription: Core agent-browser usage guide. Read this before running any agent-browser commands. Covers the snapshot-and-ref workflow, navigating pages, interacting with elements (click, fill, type, select), extracting text and data, taking screenshots, managing tabs, handling forms and auth, waiting for content, running multiple browser sessions in parallel, and troubleshooting common failures. Use when the user asks to interact with a website, fill a form, click something, extract data, take a screenshot, log into a site, test a web app, or automate any browser task.\nallowed-tools: Bash(agent-browser:*), Bash(npx agent-browser:*)\n---\n\n# agent-browser core\n\nFast browser automation CLI for AI agents. Chrome/Chromium via CDP, no Playwright or Puppeteer dependency. Accessibility-tree snapshots with compact `@eN` refs let agents interact with pages in ~200-400 tokens instead of parsing raw HTML.\n\nMost normal web tasks (navigate, read, click, fill, extract, screenshot) are covered here. Load a specialized skill when the task falls outside browser web pages — see [When to load another skill](#when-to-load-another-skill).\n\n## The core loop\n\nOpen the page and check the res"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17d07e6ffe8aWYk0Am224x2v open http://127.0.0.1:42045/browser/explore"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "[agent-browser] launched browser\n✓ Browser fixture\n  http://127.0.0.1:42045/browser/explore\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17d07e6ffe8aWYk0Am224x2v snapshot -i"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "- button \"Increment\" [ref=e1]\n- link \"Other page\" [ref=e2]\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17d07e6ffe8aWYk0Am224x2v click @e1"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "✓ Done\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17d07e6ffe8aWYk0Am224x2v get text '#count'"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "1\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17d07e6ffe8aWYk0Am224x2v screenshot --screenshot-dir '/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.abracode/browser/ses_eb17d07e6ffe8aWYk0Am224x2v'"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "✓ Screenshot saved to /home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.abracode/browser/ses_eb17d07e6ffe8aWYk0Am224x2v/screenshot-1792318579262.png\n"
+        },
+        {
+          "name": "read",
+          "status": "completed",
+          "input": {
+            "path": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.abracode/browser/ses_eb17d07e6ffe8aWYk0Am224x2v/screenshot-1792318579262.png"
+          },
+          "metadata": {
+            "truncated": false
+          },
+          "output": "Image read successfully"
+        },
+        {
+          "name": "read",
+          "status": "error",
+          "input": {
+            "path": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.abracode/browser/other-session/sentinel.txt"
+          }
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17d07e6ffe8aWYk0Am224x2v close"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "✓ Browser closed\n"
+        },
+        {
+          "name": "shell",
+          "status": "error",
+          "input": {
+            "command": "touch forbidden-browser-shell"
+          }
+        },
+        {
+          "name": "shell",
+          "status": "error",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17d07e6ffe8aWYk0Am224x2v --version && touch forbidden-browser-chain"
+          }
+        },
+        {
+          "name": "abra_worker_reply",
+          "status": "completed",
+          "input": {
+            "action": "answer",
+            "request_id": "native-correlated-answer",
+            "generation": 1,
+            "body": "Native correlated answer: use the documented consumer check."
+          },
+          "metadata": {
+            "abracode": true,
+            "truncated": false
+          },
+          "output": "{\"ok\":true,\"result\":{\"type\":\"request\",\"schema_version\":1,\"request_id\":\"native-correlated-answer\",\"prompt_id\":\"msg_14e8313050010AioE1GsecHrDK\",\"generation\":1,\"sender_session_id\":\"ses_eb17d1fc1ffekXYCY14OApUNf3\",\"recipient_session_id\":\"ses_eb17d07e6ffe8aWYk0Am224x2v\",\"prompt\":\"AbraCode controller request native-correlated-answer, generation 1. Kind: question.\\nFollow the existing accepted scope and role permissions; this message grants no checkpoint approval.\\n\\nWhich verification command should the implementation use?\\n\\nUse abra_worker_reply action answer with request_id native-correlated-answer and generation 1. Native delivery alone does not resolve this request.\",\"body\":\"Which verification command should the implementation use?\",\"kind\":\"question\",\"response\":\"answer\",\"delivery\":\"queue\",\"status\":\"answered\",\"created_at\":\"2026-10-18T10:16:15.365Z\",\"acknowledged_at\":\"2026-10-18T10:16:19.830Z\",\"reply\":{\"body\":\"Native correlated answer: use the documented consumer check.\",\"evidence\":[],\"at\":\"2026-10-18T10:16:19.830Z\"},\"assignment_id\":\"msg_14e830ffa001RVypBeUB5XweSX\",\"role\":\"explore\"}}"
+        },
+        {
+          "name": "abra_worker_question",
+          "status": "completed",
+          "input": {
+            "key": "native-inventory",
+            "generation": 1,
+            "scope": "Planning evidence",
+            "owner": "supervisor",
+            "question": "Provide retained controller inventory evidence"
+          },
+          "metadata": {
+            "abracode": true,
+            "truncated": false
+          },
+          "output": "{\"ok\":true,\"result\":{\"schema_version\":1,\"key\":\"native-inventory\",\"generation\":1,\"scope\":\"Planning evidence\",\"question\":\"Provide retained controller inventory evidence\",\"owner\":\"supervisor\",\"session_id\":\"ses_eb17d07e6ffe8aWYk0Am224x2v\",\"opened_at\":1792318579958,\"status\":\"open\"}}"
+        },
+        {
+          "name": "abra_worker_progress",
+          "status": "completed",
+          "input": {
+            "generation": 1,
+            "summary": "Inspecting the owned planning request"
+          },
+          "metadata": {
+            "abracode": true,
+            "truncated": false
+          },
+          "output": "{\"ok\":true,\"result\":{\"schema_version\":1,\"generation\":1,\"session_id\":\"ses_eb17d07e6ffe8aWYk0Am224x2v\",\"at\":1792318580080,\"summary\":\"Inspecting the owned planning request\",\"source\":\"worker\"}}"
+        },
+        {
+          "name": "read",
+          "status": "completed",
+          "input": {
+            "path": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/frontend/source.txt"
+          },
+          "metadata": {
+            "truncated": false
+          },
+          "output": "Read file /home/bart/.cache/abracode-tests/abracode-native-18fVuh/frontend/source.txt, lines 1-1\n1: original"
+        },
+        {
+          "name": "patch",
+          "status": "error",
+          "input": {
+            "patchText": "*** Begin Patch\n*** Add File: source.txt\n+ILLEGAL PLANNING SOURCE EDIT\n*** End Patch"
+          }
+        },
+        {
+          "name": "patch",
+          "status": "completed",
+          "input": {
+            "patchText": "*** Begin Patch\n*** Add File: openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/proposal.md\n+## Why\n+Need a sample.\n+## What Changes\n+Add sample.\n+## Capabilities\n+### New Capabilities\n+- `sample`: Sample capability.\n+### Modified Capabilities\n+## Impact\n+Sample code.\n*** End Patch"
+          },
+          "metadata": {
+            "files": [
+              {
+                "file": "openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/proposal.md",
+                "patch": "Index: /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/proposal.md\n===================================================================\n--- /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/proposal.md\n+++ /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/proposal.md\n@@ -0,0 +1,10 @@\n+## Why\n+Need a sample.\n+## What Changes\n+Add sample.\n+## Capabilities\n+### New Capabilities\n+- `sample`: Sample capability.\n+### Modified Capabilities\n+## Impact\n+Sample code.\n",
+                "status": "added",
+                "additions": 10,
+                "deletions": 0
+              }
+            ],
+            "truncated": false
+          },
+          "output": "Success. Updated the following files:\nA openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/proposal.md"
+        },
+        {
+          "name": "patch",
+          "status": "completed",
+          "input": {
+            "patchText": "*** Begin Patch\n*** Add File: openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/design.md\n+## Design\n+Return a sample.\n*** End Patch"
+          },
+          "metadata": {
+            "files": [
+              {
+                "file": "openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/design.md",
+                "patch": "Index: /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/design.md\n===================================================================\n--- /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/design.md\n+++ /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/design.md\n@@ -0,0 +1,2 @@\n+## Design\n+Return a sample.\n",
+                "status": "added",
+                "additions": 2,
+                "deletions": 0
+              }
+            ],
+            "truncated": false
+          },
+          "output": "Success. Updated the following files:\nA openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/design.md"
+        },
+        {
+          "name": "patch",
+          "status": "completed",
+          "input": {
+            "patchText": "*** Begin Patch\n*** Add File: openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/specs/sample/spec.md\n+## Purpose\n+Provide stable sample behavior that consumers can request through the sample capability.\n+\n+## ADDED Requirements\n+### Requirement: Sample behavior\n+The system SHALL return a sample.\n+#### Scenario: Request sample\n+- **WHEN** a sample is requested\n+- **THEN** a sample is returned\n*** End Patch"
+          },
+          "metadata": {
+            "files": [
+              {
+                "file": "openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/specs/sample/spec.md",
+                "patch": "Index: /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/specs/sample/spec.md\n===================================================================\n--- /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/specs/sample/spec.md\n+++ /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/specs/sample/spec.md\n@@ -0,0 +1,9 @@\n+## Purpose\n+Provide stable sample behavior that consumers can request through the sample capability.\n+\n+## ADDED Requirements\n+### Requirement: Sample behavior\n+The system SHALL return a sample.\n+#### Scenario: Request sample\n+- **WHEN** a sample is requested\n+- **THEN** a sample is returned\n",
+                "status": "added",
+                "additions": 9,
+                "deletions": 0
+              }
+            ],
+            "truncated": false
+          },
+          "output": "Success. Updated the following files:\nA openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/specs/sample/spec.md"
+        },
+        {
+          "name": "patch",
+          "status": "completed",
+          "input": {
+            "patchText": "*** Begin Patch\n*** Add File: openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/tasks.md\n+## Implementation\n+- [ ] 1.1 Implement sample\n*** End Patch"
+          },
+          "metadata": {
+            "files": [
+              {
+                "file": "openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/tasks.md",
+                "patch": "Index: /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/tasks.md\n===================================================================\n--- /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/tasks.md\n+++ /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/tasks.md\n@@ -0,0 +1,2 @@\n+## Implementation\n+- [ ] 1.1 Implement sample\n",
+                "status": "added",
+                "additions": 2,
+                "deletions": 0
+              }
+            ],
+            "truncated": false
+          },
+          "output": "Success. Updated the following files:\nA openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/tasks.md"
+        }
+      ]
+    },
+    {
+      "historical_prompt": "msg_retained_pre_suite_fixture",
+      "retained": {
+        "agent": "build",
+        "model": {
+          "id": "gpt-fixture",
+          "providerID": "fixture",
+          "variant": "default"
+        },
+        "tools": [
+          {
+            "any_of": ["read"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["glob"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["grep"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["skill"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["abra_worker_question"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["abra_worker_progress"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["abra_worker_wait"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["abra_worker_reply"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["abra_spec"],
+            "source": "role-policy"
+          },
+          {
+            "any_of": ["edit", "write", "patch"],
+            "source": "role-policy"
+          }
+        ],
+        "skills": [
+          {
+            "id": "abra-openspec-execution",
+            "path": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/openspec-execution/SKILL.md",
+            "digest": "b53affa2c89a8fc78d3f101f0d47df1019749e14892e96ac042f30ec7d840575",
+            "source": "role-policy",
+            "loading": "unobserved"
+          }
+        ]
+      },
+      "fresh_skill_ids": [
+        "abra-openspec-execution",
+        "abra-codebase-design",
+        "abra-domain-modeling",
+        "abra-verification"
+      ],
+      "capture_unchanged": true,
+      "native_restart": true
+    },
+    {
+      "review_tree": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff",
+      "status": "M AGENTS.md\nA  openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/.openspec.yaml\nA  openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/design.md\nA  openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/proposal.md\nA  openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/specs/sample/spec.md\nAM openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/tasks.md\n M source.txt\n?? sample-proof.mjs"
+    },
+    {
+      "role": "apply",
+      "session_id": "ses_eb17ca212ffeflm0wQ5I2lTWBD",
+      "skills": [
+        "abra-codebase-design",
+        "abra-domain-modeling",
+        "abra-diagnosing-bugs",
+        "abra-verification",
+        "abra-blast-radius"
+      ],
+      "calls": [
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-codebase-design"
+          },
+          "metadata": {
+            "name": "abra-codebase-design",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/codebase-design",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-codebase-design\">\n# Skill: abra-codebase-design\n\n# Design at the caller interface\n\nUse for an actual interface or ownership decision; a trivial edit does not need a design exercise. Read the assigned contract, relevant callers, repository terminology and existing decisions first.\n\nA module has an interface (all facts callers must know, including ordering, errors, configuration and invariants) and an implementation. A deep module offers useful behavior through a small interface. A seam is where behavior can be substituted; an adapter satisfies the interface at that seam. Depth means caller leverage, not implementation line count.\n\n1. Write a concrete caller example and the observable result it needs. Include failure behavior and who owns state, retries and cleanup.\n2. Compare the current interface with the smallest useful alternative. Which knowledge moves out of callers? If deleting a wrapper removes complexity instead of redistributing it, reconsider the wrapper.\n3. Locate the interface that reaches the real behavior in tests. Accept dependencies at an existing seam where useful; do not add hypothetical adapters or mock away the behavior being proved.\n4. "
+        },
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-domain-modeling"
+          },
+          "metadata": {
+            "name": "abra-domain-modeling",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/domain-modeling",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-domain-modeling\">\n# Skill: abra-domain-modeling\n\n# Clarify the domain within the assigned scope\n\nUse when terminology or relationships affect behavior. Read repository instructions, any glossary map, applicable glossary and architectural decisions, then compare their definitions with code and the accepted contract. Follow existing locations; a missing glossary does not authorize creating one.\n\n- Identify overloaded words and propose one precise term for each concept. Distinguish, for example, a request from its attempts or an execution from its native sessions.\n- Probe relationships with concrete cases: Can two attempts coexist? What survives a restart? Which owner may change the state? Check the answers against actual code and accepted requirements.\n- For a definition, record the term, plain definition, relationships and a distinguishing example. Keep implementation details in design documentation rather than the glossary.\n- Record an architectural decision only when a meaningful trade-off is hard to reverse and would surprise a future reader. Use the repository's format: context, alternatives, decision and consequences.\n\nExplore writes proposed definitio"
+        },
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-diagnosing-bugs"
+          },
+          "metadata": {
+            "name": "abra-diagnosing-bugs",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/diagnosing-bugs",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-diagnosing-bugs\">\n# Skill: abra-diagnosing-bugs\n\n# Diagnose with an observable feedback loop\n\nApply uses this for a difficult bug or performance regression within accepted scope. Read the reported symptom, contract and relevant repository vocabulary. Choose a bounded attempt/time budget appropriate to the task; existing controller correction limits still apply. Do not run an investigation indefinitely or reset its budget.\n\n1. Establish one runnable reproduction that reaches the actual failing behavior and asserts the reported symptom. Prefer a repository test; otherwise use its CLI, isolated HTTP/browser instance, or a small scoped harness. Record the exact invocation, fixture/input, expected result and observed failure. Redact secrets and keep credentials out of captured output.\n2. Narrow the case one variable at a time while keeping the same failure. Pin time, randomness or inputs where appropriate. For intermittent failures record attempts, seed/load and failure rate; inability to reproduce is not a successful diagnosis.\n3. State falsifiable hypotheses and predictions. For example: if retained requirements are being expanded on restart, a captured pre-u"
+        },
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-verification"
+          },
+          "metadata": {
+            "name": "abra-verification",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/verification",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-verification\">\n# Skill: abra-verification\n\n# Verify the actual behavior\n\nUse for relevant behavior changed by the assigned contract. Discover repository instructions, testing documentation and applicable local recipes/skills first. Use existing documented checks when no recipe exists. Absence of a recipe does not authorize setup, installation, new control files or a new approval workflow. Report a concrete missing runtime prerequisite if existing checks cannot exercise the applicable behavior.\n\nA useful recipe contains:\n\n- Preparation/launch: exact existing command, fixture/data requirements, isolated ports/state and how readiness reaches a usable instance.\n- Health: a read-only observation confirming the intended instance/build, required data and access before driving it.\n- Action and expected state: the real CLI/API/UI interaction and the observable result or side effect that would falsify success.\n- Evidence: exact invocation, expected versus observed outcome, exit/status, meaningful state and retained artifact path, with limits and secrets removed.\n- Cleanup: stop only processes/browsers and temporary state this run created. Preserve named evidence out"
+        },
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-blast-radius"
+          },
+          "metadata": {
+            "name": "abra-blast-radius",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/blast-radius",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-blast-radius\">\n# Skill: abra-blast-radius\n\n# Prove the safety assumption beyond the diff\n\nUse when safety depends on a concrete fact outside the edited lines: old persisted input decoding, a wire contract, retry convergence, teardown order or a downstream consumer. Scale the work to the risk; a trivial edit does not require a catalog of hypothetical failures.\n\n1. Read the actual changed behavior and relevant consumers, pinned dependency source and accepted contract. Include current uncommitted and untracked content, not only a committed diff ending at HEAD.\n2. State the one or two facts safety depends on. Example: an old saved record still decodes through the actual application decoder after adding an optional field.\n3. Follow that fact through the persisted format, external caller or real runtime order. A type declaration or search without matches is source evidence, not runtime proof.\n4. Apply writes/runs a small rerunnable test, script or application interaction within accepted scope using the actual decoder/path. Record the input, invocation, expected and observed result. Prefer proof exercised by configured checks so independent Review can inspect a m"
+        },
+        {
+          "name": "read",
+          "status": "completed",
+          "input": {
+            "path": "README.md"
+          },
+          "metadata": {
+            "truncated": false
+          },
+          "output": "Read file README.md, lines 1-9\n1: # Fixture verification\n2: \n3: The existing source-content check is:\n4: \n5: ```sh\n6: node -e 'if(require(\"fs\").readFileSync(\"source.txt\",\"utf8\")!==\"sample\\n\")process.exit(1)'\n7: ```\n8: \n9: No runtime audit service or verification recipe is supplied."
+        },
+        {
+          "name": "patch",
+          "status": "completed",
+          "input": {
+            "patchText": "*** Begin Patch\n*** Add File: sample-proof.mjs\n+import assert from 'node:assert/strict';\n+import {readFileSync} from 'node:fs';\n+assert.equal(readFileSync('source.txt','utf8'), 'sample\\n');\n+console.log('sample consumer observed sample');\n*** End Patch"
+          },
+          "metadata": {
+            "files": [
+              {
+                "file": "sample-proof.mjs",
+                "patch": "Index: /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/sample-proof.mjs\n===================================================================\n--- /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/sample-proof.mjs\n+++ /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/sample-proof.mjs\n@@ -0,0 +1,4 @@\n+import assert from 'node:assert/strict';\n+import {readFileSync} from 'node:fs';\n+assert.equal(readFileSync('source.txt','utf8'), 'sample\\n');\n+console.log('sample consumer observed sample');\n",
+                "status": "added",
+                "additions": 4,
+                "deletions": 0
+              }
+            ],
+            "truncated": false
+          },
+          "output": "Success. Updated the following files:\nA sample-proof.mjs"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "node sample-proof.mjs"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 1
+          },
+          "output": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'original\\n'\n- 'sample\\n'\n\n    at file:///home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/sample-proof.mjs:3:8\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: 'original\\n',\n  expected: 'sample\\n',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v24.21.0\n\nExited with code 1"
+        },
+        {
+          "name": "abra_worker_progress",
+          "status": "completed",
+          "input": {
+            "generation": 2,
+            "summary": "Diagnosis: consumer reproduction expects sample but reads original. Hypothesis: source content is the cause; rerun the same consumer after the scoped edit. No verification recipe exists here; using the existing documented node check."
+          },
+          "metadata": {
+            "abracode": true,
+            "truncated": false
+          },
+          "output": "{\"ok\":true,\"result\":{\"schema_version\":1,\"generation\":2,\"session_id\":\"ses_eb17ca212ffeflm0wQ5I2lTWBD\",\"at\":1792318596201,\"summary\":\"Diagnosis: consumer reproduction expects sample but reads original. Hypothesis: source content is the cause; rerun the same consumer after the scoped edit. No verification recipe exists here; using the existing documented node check.\",\"source\":\"worker\"}}"
+        },
+        {
+          "name": "abra_work_finish",
+          "status": "error",
+          "input": {
+            "issue_id": "forbidden-engineering-management"
+          }
+        },
+        {
+          "name": "task",
+          "status": "error",
+          "input": {
+            "description": "forbidden engineering delegation",
+            "prompt": "Edit another worktree",
+            "subagent_type": "general"
+          }
+        },
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-browser"
+          },
+          "metadata": {
+            "name": "abra-browser",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/browser",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-browser\">\n# Skill: abra-browser\n\nThe Supervisor delegates browser work to a worker. Explore, Apply, Review and Research use the centrally installed `agent-browser` through the native shell tool; no global or managed-repository installation is needed.\n\nBefore browsing, load the installed version's workflow instructions:\n\n```sh\nagent-browser --session <assigned-name> skills get core\n```\n\nUse the concrete **Browser session** and **Screenshot directory** from your captured assignment. These AbraCode conventions take precedence over upstream quickstart/setup/session examples: pass `--session <assigned-name>` on every invocation, keep fresh isolated state, and close only that named browser. Continuing the same native session keeps its name. Do not use a shared default session, `close --all`, personal profile auto-attachment or restored state unless the user explicitly authorizes a state source. Do not run upstream installation, upgrade or plugin-install commands as part of browsing.\n\nFollow the snapshot/reference workflow, refreshing the snapshot after page changes:\n\n```sh\nagent-browser --session <assigned-name> open <authorized-url>\nagent-browser --session <ass"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17ca212ffeflm0wQ5I2lTWBD --version"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "agent-browser 0.39.1\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17ca212ffeflm0wQ5I2lTWBD skills get core"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "---\nname: core\ndescription: Core agent-browser usage guide. Read this before running any agent-browser commands. Covers the snapshot-and-ref workflow, navigating pages, interacting with elements (click, fill, type, select), extracting text and data, taking screenshots, managing tabs, handling forms and auth, waiting for content, running multiple browser sessions in parallel, and troubleshooting common failures. Use when the user asks to interact with a website, fill a form, click something, extract data, take a screenshot, log into a site, test a web app, or automate any browser task.\nallowed-tools: Bash(agent-browser:*), Bash(npx agent-browser:*)\n---\n\n# agent-browser core\n\nFast browser automation CLI for AI agents. Chrome/Chromium via CDP, no Playwright or Puppeteer dependency. Accessibility-tree snapshots with compact `@eN` refs let agents interact with pages in ~200-400 tokens instead of parsing raw HTML.\n\nMost normal web tasks (navigate, read, click, fill, extract, screenshot) are covered here. Load a specialized skill when the task falls outside browser web pages — see [When to load another skill](#when-to-load-another-skill).\n\n## The core loop\n\nOpen the page and check the res"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17ca212ffeflm0wQ5I2lTWBD open http://127.0.0.1:42045/browser/apply"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "[agent-browser] launched browser\n✓ Browser fixture\n  http://127.0.0.1:42045/browser/apply\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17ca212ffeflm0wQ5I2lTWBD snapshot -i"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "- button \"Increment\" [ref=e1]\n- link \"Other page\" [ref=e2]\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17ca212ffeflm0wQ5I2lTWBD click @e1"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "✓ Done\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17ca212ffeflm0wQ5I2lTWBD get text '#count'"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "1\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17ca212ffeflm0wQ5I2lTWBD screenshot --screenshot-dir '/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.abracode/browser/ses_eb17ca212ffeflm0wQ5I2lTWBD'"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "✓ Screenshot saved to /home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.abracode/browser/ses_eb17ca212ffeflm0wQ5I2lTWBD/screenshot-1792318597611.png\n"
+        },
+        {
+          "name": "read",
+          "status": "completed",
+          "input": {
+            "path": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.abracode/browser/ses_eb17ca212ffeflm0wQ5I2lTWBD/screenshot-1792318597611.png"
+          },
+          "metadata": {
+            "truncated": false
+          },
+          "output": "Image read successfully"
+        },
+        {
+          "name": "read",
+          "status": "error",
+          "input": {
+            "path": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.abracode/browser/other-session/sentinel.txt"
+          }
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17ca212ffeflm0wQ5I2lTWBD close"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "✓ Browser closed\n"
+        },
+        {
+          "name": "abra_worker_progress",
+          "status": "completed",
+          "input": {
+            "generation": 2,
+            "summary": "Inspecting the owned planning request"
+          },
+          "metadata": {
+            "abracode": true,
+            "truncated": false
+          },
+          "output": "{\"ok\":true,\"result\":{\"schema_version\":1,\"generation\":2,\"session_id\":\"ses_eb17ca212ffeflm0wQ5I2lTWBD\",\"at\":1792318598129,\"summary\":\"Inspecting the owned planning request\",\"source\":\"worker\"}}"
+        },
+        {
+          "name": "read",
+          "status": "completed",
+          "input": {
+            "path": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/frontend/source.txt"
+          },
+          "metadata": {
+            "truncated": false
+          },
+          "output": "Read file /home/bart/.cache/abracode-tests/abracode-native-18fVuh/frontend/source.txt, lines 1-1\n1: original"
+        },
+        {
+          "name": "patch",
+          "status": "completed",
+          "input": {
+            "patchText": "*** Begin Patch\n*** Add File: source.txt\n+sample\n*** End Patch"
+          },
+          "metadata": {
+            "files": [
+              {
+                "file": "source.txt",
+                "patch": "Index: /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/source.txt\n===================================================================\n--- /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/source.txt\n+++ /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/source.txt\n@@ -0,0 +1,1 @@\n+sample\n",
+                "status": "added",
+                "additions": 1,
+                "deletions": 0
+              }
+            ],
+            "truncated": false
+          },
+          "output": "Success. Updated the following files:\nA source.txt"
+        },
+        {
+          "name": "patch",
+          "status": "completed",
+          "input": {
+            "patchText": "*** Begin Patch\n*** Update File: openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/tasks.md\n@@\n-- [ ] 1.1 Implement sample\n+- [x] 1.1 Implement sample\n*** End Patch"
+          },
+          "metadata": {
+            "files": [
+              {
+                "file": "openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/tasks.md",
+                "patch": "Index: /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/tasks.md\n===================================================================\n--- /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/tasks.md\n+++ /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/tasks.md\n@@ -1,2 +1,2 @@\n ## Implementation\n-- [ ] 1.1 Implement sample\n+- [x] 1.1 Implement sample\n",
+                "status": "modified",
+                "additions": 1,
+                "deletions": 1
+              }
+            ],
+            "truncated": false
+          },
+          "output": "Success. Updated the following files:\nM openspec/changes/abra-abra-e38e9631-382d-46f1-baab-40b66aa73d5f/tasks.md"
+        },
+        {
+          "name": "patch",
+          "status": "completed",
+          "input": {
+            "patchText": "*** Begin Patch\n*** Add File: AGENTS.md\n+Repository navigation: source.txt implements the sample.\n*** End Patch"
+          },
+          "metadata": {
+            "files": [
+              {
+                "file": "AGENTS.md",
+                "patch": "Index: /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/AGENTS.md\n===================================================================\n--- /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/AGENTS.md\n+++ /home/bart/.cache/abracode-tests/abracode-native-18fVuh/trees/abra-f373002e-0cea-4df3-9f99-66c3c8ea04ff/AGENTS.md\n@@ -0,0 +1,1 @@\n+Repository navigation: source.txt implements the sample.\n",
+                "status": "added",
+                "additions": 1,
+                "deletions": 0
+              }
+            ],
+            "truncated": false
+          },
+          "output": "Success. Updated the following files:\nA AGENTS.md"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "node sample-proof.mjs # original-scenario recheck"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "sample consumer observed sample\n"
+        }
+      ]
+    },
+    {
+      "role": "review",
+      "session_id": "ses_eb17c7d9dffeMI0wn2NHZ11DZX",
+      "skills": ["abra-codebase-design", "abra-verification", "abra-blast-radius"],
+      "calls": [
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-codebase-design"
+          },
+          "metadata": {
+            "name": "abra-codebase-design",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/codebase-design",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-codebase-design\">\n# Skill: abra-codebase-design\n\n# Design at the caller interface\n\nUse for an actual interface or ownership decision; a trivial edit does not need a design exercise. Read the assigned contract, relevant callers, repository terminology and existing decisions first.\n\nA module has an interface (all facts callers must know, including ordering, errors, configuration and invariants) and an implementation. A deep module offers useful behavior through a small interface. A seam is where behavior can be substituted; an adapter satisfies the interface at that seam. Depth means caller leverage, not implementation line count.\n\n1. Write a concrete caller example and the observable result it needs. Include failure behavior and who owns state, retries and cleanup.\n2. Compare the current interface with the smallest useful alternative. Which knowledge moves out of callers? If deleting a wrapper removes complexity instead of redistributing it, reconsider the wrapper.\n3. Locate the interface that reaches the real behavior in tests. Accept dependencies at an existing seam where useful; do not add hypothetical adapters or mock away the behavior being proved.\n4. "
+        },
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-verification"
+          },
+          "metadata": {
+            "name": "abra-verification",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/verification",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-verification\">\n# Skill: abra-verification\n\n# Verify the actual behavior\n\nUse for relevant behavior changed by the assigned contract. Discover repository instructions, testing documentation and applicable local recipes/skills first. Use existing documented checks when no recipe exists. Absence of a recipe does not authorize setup, installation, new control files or a new approval workflow. Report a concrete missing runtime prerequisite if existing checks cannot exercise the applicable behavior.\n\nA useful recipe contains:\n\n- Preparation/launch: exact existing command, fixture/data requirements, isolated ports/state and how readiness reaches a usable instance.\n- Health: a read-only observation confirming the intended instance/build, required data and access before driving it.\n- Action and expected state: the real CLI/API/UI interaction and the observable result or side effect that would falsify success.\n- Evidence: exact invocation, expected versus observed outcome, exit/status, meaningful state and retained artifact path, with limits and secrets removed.\n- Cleanup: stop only processes/browsers and temporary state this run created. Preserve named evidence out"
+        },
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-blast-radius"
+          },
+          "metadata": {
+            "name": "abra-blast-radius",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/blast-radius",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-blast-radius\">\n# Skill: abra-blast-radius\n\n# Prove the safety assumption beyond the diff\n\nUse when safety depends on a concrete fact outside the edited lines: old persisted input decoding, a wire contract, retry convergence, teardown order or a downstream consumer. Scale the work to the risk; a trivial edit does not require a catalog of hypothetical failures.\n\n1. Read the actual changed behavior and relevant consumers, pinned dependency source and accepted contract. Include current uncommitted and untracked content, not only a committed diff ending at HEAD.\n2. State the one or two facts safety depends on. Example: an old saved record still decodes through the actual application decoder after adding an optional field.\n3. Follow that fact through the persisted format, external caller or real runtime order. A type declaration or search without matches is source evidence, not runtime proof.\n4. Apply writes/runs a small rerunnable test, script or application interaction within accepted scope using the actual decoder/path. Record the input, invocation, expected and observed result. Prefer proof exercised by configured checks so independent Review can inspect a m"
+        },
+        {
+          "name": "read",
+          "status": "completed",
+          "input": {
+            "path": "source.txt"
+          },
+          "metadata": {
+            "truncated": false
+          },
+          "output": "Read file source.txt, lines 1-1\n1: sample"
+        },
+        {
+          "name": "read",
+          "status": "completed",
+          "input": {
+            "path": "sample-proof.mjs"
+          },
+          "metadata": {
+            "truncated": false
+          },
+          "output": "Read file sample-proof.mjs, lines 1-4\n1: import assert from 'node:assert/strict';\n2: import {readFileSync} from 'node:fs';\n3: assert.equal(readFileSync('source.txt','utf8'), 'sample\\n');\n4: console.log('sample consumer observed sample');"
+        },
+        {
+          "name": "shell",
+          "status": "error",
+          "input": {
+            "command": "touch forbidden-engineering-review"
+          }
+        },
+        {
+          "name": "abra_work_finish",
+          "status": "error",
+          "input": {
+            "issue_id": "forbidden-engineering-management"
+          }
+        },
+        {
+          "name": "task",
+          "status": "error",
+          "input": {
+            "description": "forbidden engineering delegation",
+            "prompt": "Edit another worktree",
+            "subagent_type": "general"
+          }
+        },
+        {
+          "name": "skill",
+          "status": "completed",
+          "input": {
+            "id": "abra-browser"
+          },
+          "metadata": {
+            "name": "abra-browser",
+            "directory": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.agents/skills/browser",
+            "truncated": false
+          },
+          "output": "<skill_content name=\"abra-browser\">\n# Skill: abra-browser\n\nThe Supervisor delegates browser work to a worker. Explore, Apply, Review and Research use the centrally installed `agent-browser` through the native shell tool; no global or managed-repository installation is needed.\n\nBefore browsing, load the installed version's workflow instructions:\n\n```sh\nagent-browser --session <assigned-name> skills get core\n```\n\nUse the concrete **Browser session** and **Screenshot directory** from your captured assignment. These AbraCode conventions take precedence over upstream quickstart/setup/session examples: pass `--session <assigned-name>` on every invocation, keep fresh isolated state, and close only that named browser. Continuing the same native session keeps its name. Do not use a shared default session, `close --all`, personal profile auto-attachment or restored state unless the user explicitly authorizes a state source. Do not run upstream installation, upgrade or plugin-install commands as part of browsing.\n\nFollow the snapshot/reference workflow, refreshing the snapshot after page changes:\n\n```sh\nagent-browser --session <assigned-name> open <authorized-url>\nagent-browser --session <ass"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17c7d9dffeMI0wn2NHZ11DZX --version"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "agent-browser 0.39.1\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17c7d9dffeMI0wn2NHZ11DZX skills get core"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "---\nname: core\ndescription: Core agent-browser usage guide. Read this before running any agent-browser commands. Covers the snapshot-and-ref workflow, navigating pages, interacting with elements (click, fill, type, select), extracting text and data, taking screenshots, managing tabs, handling forms and auth, waiting for content, running multiple browser sessions in parallel, and troubleshooting common failures. Use when the user asks to interact with a website, fill a form, click something, extract data, take a screenshot, log into a site, test a web app, or automate any browser task.\nallowed-tools: Bash(agent-browser:*), Bash(npx agent-browser:*)\n---\n\n# agent-browser core\n\nFast browser automation CLI for AI agents. Chrome/Chromium via CDP, no Playwright or Puppeteer dependency. Accessibility-tree snapshots with compact `@eN` refs let agents interact with pages in ~200-400 tokens instead of parsing raw HTML.\n\nMost normal web tasks (navigate, read, click, fill, extract, screenshot) are covered here. Load a specialized skill when the task falls outside browser web pages — see [When to load another skill](#when-to-load-another-skill).\n\n## The core loop\n\nOpen the page and check the res"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17c7d9dffeMI0wn2NHZ11DZX open http://127.0.0.1:42045/browser/review"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "[agent-browser] launched browser\n✓ Browser fixture\n  http://127.0.0.1:42045/browser/review\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17c7d9dffeMI0wn2NHZ11DZX snapshot -i"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "- button \"Increment\" [ref=e1]\n- link \"Other page\" [ref=e2]\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17c7d9dffeMI0wn2NHZ11DZX click @e1"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "✓ Done\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17c7d9dffeMI0wn2NHZ11DZX get text '#count'"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "1\n"
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17c7d9dffeMI0wn2NHZ11DZX screenshot --screenshot-dir '/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.abracode/browser/ses_eb17c7d9dffeMI0wn2NHZ11DZX'"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "✓ Screenshot saved to /home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.abracode/browser/ses_eb17c7d9dffeMI0wn2NHZ11DZX/screenshot-1792318606477.png\n"
+        },
+        {
+          "name": "read",
+          "status": "completed",
+          "input": {
+            "path": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.abracode/browser/ses_eb17c7d9dffeMI0wn2NHZ11DZX/screenshot-1792318606477.png"
+          },
+          "metadata": {
+            "truncated": false
+          },
+          "output": "Image read successfully"
+        },
+        {
+          "name": "read",
+          "status": "error",
+          "input": {
+            "path": "/home/bart/.cache/abracode-tests/abracode-native-18fVuh/central/.abracode/browser/other-session/sentinel.txt"
+          }
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17c7d9dffeMI0wn2NHZ11DZX close"
+          },
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          },
+          "output": "✓ Browser closed\n"
+        },
+        {
+          "name": "shell",
+          "status": "error",
+          "input": {
+            "command": "touch forbidden-browser-shell"
+          }
+        },
+        {
+          "name": "shell",
+          "status": "error",
+          "input": {
+            "command": "agent-browser --session abracode-ses_eb17c7d9dffeMI0wn2NHZ11DZX --version && touch forbidden-browser-chain"
+          }
+        },
+        {
+          "name": "abra_review_report",
+          "status": "completed",
+          "input": {
+            "passed": true,
+            "findings": "Specification implemented; deterministic check passes.",
+            "scope_status": "in_scope",
+            "spec_verification": {
+              "completeness": {
+                "status": "passed",
+                "evidence": "proposal.md and specs/sample/spec.md map to tasks.md and source.txt."
+              },
+              "correctness": {
+                "status": "passed",
+                "evidence": "source.txt behavior agrees with the configured deterministic check."
+              },
+              "coherence": {
+                "status": "passed",
+                "evidence": "source.txt follows design.md and the approved sample behavior."
+              },
+              "conflicts": []
+            }
+          },
+          "metadata": {
+            "abracode": true,
+            "truncated": false
+          },
+          "output": "{\"ok\":true,\"result\":{\"finishing\":{\"schema_version\":1,\"attribution\":{\"schema_version\":1,\"generation\":2,\"fingerprint\":\"2d430724f12332203fe5f8346c1b32bf00bdedabd227d65f09de86ed84e28716\",\"head\":\"2352c390362e6c703cd26c12793b82c3ad081cb7\",\"session_id\":\"ses_eb17ca212ffeflm0wQ5I2lTWBD\",\"prompt_id\":\"msg_14e835e2c0010Bm8IV5QovyZfK\",\"at\":\"2026-10-18T10:16:38.850Z\"}},\"configuration_snapshot\":{\"digest\":\"501858bc245aced7ccef24edd615268e34a47b6e46e44ee6fc8ee051b40a401b\",\"supervisor\":{\"id\":\"gpt-fixture\",\"providerID\":\"fixture\"},\"workers\":{\"research\":{\"model\":{\"id\":\"gpt-fixture\",\"providerID\":\"fixture\"}},\"explore\":{\"model\":{\"id\":\"gpt-fixture\",\"providerID\":\"fixture\"}},\"apply\":{\"model\":{\"id\":\"gpt-fixture\",\"providerID\":\"fixture\"}},\"review\":{\"model\":{\"id\":\"gpt-fixture\",\"providerID\":\"fixture\"}}},\"dispatch_sources\":{\"explore\":{\"source\":\"default\"},\"apply\":{\"source\":\"default\"},\"review\":{\"source\":\"default\"},\"research\":{\"source\":\"default\"}}},\"worker_context_id\":\"msg_14e83828b001Vcl0USZOPn1XLY\",\"openspec_update_commit\":\"2352c390362e6c703cd26c12793b82c3ad081cb7\",\"attention\":[{\"schema_version\":1,\"id\":\"incident-408df6a341d1ade093bb33c264083665d67aef8c\",\"generation\":0,\"key\":\"0:msg_14e82f839001zO0lOxLoj0RpYH:worker_"
+        }
+      ]
+    },
+    {
+      "verification": {
+        "fingerprint": "2d430724f12332203fe5f8346c1b32bf00bdedabd227d65f09de86ed84e28716",
+        "commands": [
+          {
+            "argv": [
+              "/home/bart/.local/share/mise/installs/node/24.21.0/bin/node",
+              "-e",
+              "const fs=require(\"fs\");if(fs.readFileSync(\"source.txt\",\"utf8\")!==\"sample\\n\")process.exit(1)"
+            ],
+            "deadline_ms": 900000
+          },
+          {
+            "argv": [
+              "/home/bart/.local/share/mise/installs/node/24.21.0/bin/node",
+              "sample-proof.mjs"
+            ],
+            "deadline_ms": 900000
+          }
+        ],
+        "at": "2026-10-18T10:16:43.793Z"
+      },
+      "review": {
+        "fingerprint": "2d430724f12332203fe5f8346c1b32bf00bdedabd227d65f09de86ed84e28716",
+        "passed": true,
+        "findings": "Specification implemented; deterministic check passes.",
+        "scope_status": "in_scope",
+        "spec_verification": {
+          "completeness": {
+            "status": "passed",
+            "evidence": "proposal.md and specs/sample/spec.md map to tasks.md and source.txt."
+          },
+          "correctness": {
+            "status": "passed",
+            "evidence": "source.txt behavior agrees with the configured deterministic check."
+          },
+          "coherence": {
+            "status": "passed",
+            "evidence": "source.txt follows design.md and the approved sample behavior."
+          },
+          "conflicts": []
+        },
+        "session_id": "ses_eb17c7d9dffeMI0wn2NHZ11DZX"
+      },
+      "outcome": "completed"
+    },
+    {
+      "posture": "unattended",
+      "provider_failure": "abra-a96be245-1877-432e-932c-ac70c446cfed",
+      "approval_granted": false,
+      "preserved_outstanding": 1
+    },
+    {
+      "unanswered_request_restart": "native-unanswered-failure",
+      "prompt_id": "msg_14e83c275001GGh7gFMCJrvc2c",
+      "outstanding": 1,
+      "session_id": "ses_eb17c3f5fffe1p0Yr5yCHgx1xC"
+    },
+    {
+      "forwarded_finding": "native-worker-finding",
+      "source_session_id": "ses_eb17c53cdffee9enblqPZemEIy",
+      "recipient_session_id": "ses_eb17c3f5fffe1p0Yr5yCHgx1xC",
+      "acknowledgement": "acknowledged"
+    },
+    {
+      "unavailable_evidence": {
+        "fingerprint": "927edfa763b3f5656bc142d2d62820e54ff12a9b2f7f86fe0ce8edbf417ca6da",
+        "passed": false,
+        "findings": "Required behavior proof unavailable; loaded guidance does not verify it. Keep accepted planning unchanged.",
+        "scope_status": "uncertain",
+        "spec_verification": {
+          "completeness": {
+            "status": "passed",
+            "evidence": "proposal.md and specs/sample/spec.md map to tasks.md and source.txt."
+          },
+          "correctness": {
+            "status": "not_verified",
+            "evidence": "unavailable-proof.json is absent and the configured source check cannot establish the additional claimed runtime observation."
+          },
+          "coherence": {
+            "status": "passed",
+            "evidence": "source.txt follows design.md and the approved sample behavior."
+          },
+          "conflicts": []
+        },
+        "session_id": "ses_eb17bac0bffeIdZckpUCy78ZKH"
+      },
+      "phase": "blocked"
+    },
+    {
+      "posture": "unattended",
+      "review_blocker": "abra-dd609e5a-0ca0-434d-b88c-9b9b3da14fb5",
+      "scope_unchanged": true,
+      "delivery_authorized": false
+    }
+  ],
+  "metrics": {
+    "provider_requests": {
+      "supervisor": 47,
+      "explore": 48,
+      "apply": 65,
+      "review": 49,
+      "research": 29
+    },
+    "controller_calls": {
+      "abra_project_onboard": {
+        "count": 7,
+        "total_ms": 2675.444833999989,
+        "max_ms": 1737.2626339999988
+      },
+      "abra_project_list": {
+        "count": 2,
+        "total_ms": 10.00150499999836,
+        "max_ms": 5.1623599999984435
+      },
+      "abra_work_list": {
+        "count": 3,
+        "total_ms": 21.90751299999829,
+        "max_ms": 8.205239999999321
+      },
+      "abra_project_setup": {
+        "count": 3,
+        "total_ms": 2036.1921700000003,
+        "max_ms": 1643.59073
+      },
+      "abra_work_create": {
+        "count": 9,
+        "total_ms": 681.4807729999975,
+        "max_ms": 339.9383799999923
+      },
+      "abra_work_ready": {
+        "count": 2,
+        "total_ms": 17.74823699999979,
+        "max_ms": 11.45512299999973
+      },
+      "abra_work_start": {
+        "count": 6,
+        "total_ms": 12285.468124000014,
+        "max_ms": 3296.9105680000066
+      },
+      "abra_work_status": {
+        "count": 272,
+        "total_ms": 51198.053030999996,
+        "max_ms": 1448.9154960000014
+      },
+      "abra_work_diagnostics": {
+        "count": 3,
+        "total_ms": 68.55867700000817,
+        "max_ms": 40.08977700000105
+      },
+      "abra_work_attention": {
+        "count": 2,
+        "total_ms": 82.27309199999945,
+        "max_ms": 55.72777599999972
+      },
+      "abra_work_control": {
+        "count": 11,
+        "total_ms": 3600.678347000001,
+        "max_ms": 859.2368199999983
+      },
+      "abra_work_message": {
+        "count": 5,
+        "total_ms": 1882.8644489999933,
+        "max_ms": 1188.9160969999975
+      },
+      "abra_work_messages": {
+        "count": 7,
+        "total_ms": 1363.4344479999854,
+        "max_ms": 905.1870110000018
+      },
+      "abra_work_approve": {
+        "count": 3,
+        "total_ms": 332.29982099999324,
+        "max_ms": 122.47634999999718
+      },
+      "abra_work_report": {
+        "count": 422,
+        "total_ms": 8828.68581200001,
+        "max_ms": 2795.738626999999
+      }
+    },
+    "retained_state": {
+      "files": 1750,
+      "bytes": 62259565,
+      "complete": true,
+      "coverage": "Native data/state and central .abracode only; excludes source, dependency cache and worktree source bytes"
+    },
+    "usage_kind": "Deterministic provider requests and controller RPC calls; neither is billable tokens or a native turn count",
+    "billable_tokens": null,
+    "cost": null
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "fixture": "tests/e2e/native.test.ts",
+  "result": "fail",
+  "cleanup_complete": true,
+  "errors": [
+    "EXECUTION_MISSING: EXECUTION_MISSING: No execution for abra-a0b6e80a-1b34-4e44-96f2-a2c197dcecdf"
+  ],
+  "observed_at": "2026-10-18T09:21:35.292Z",
+  "isolation": "Disposable service/data/config, loopback provider and local bare remotes; no operator service or user remote",
+  "observations": []
+}

@@ -1,0 +1,111 @@
+{
+  "scope": "src, native plugin, scripts and shipped reporter TypeScript/JavaScript/CSS; excludes tests, docs, generated builds and dependencies; includes comments/blank lines",
+  "before_revision": "d38274bb72697a92cd0fdd52bab4cd065a3688dd",
+  "after_observed_at": "2026-10-18T11:41:26.597085+00:00",
+  "before_files": 181,
+  "after_files": 184,
+  "before_loc": 31500,
+  "after_loc": 33517,
+  "delta_loc": 2017,
+  "files": {
+    ".opencode/plugins/abracode/index.ts": {
+      "before": 195,
+      "after": 205
+    },
+    "src/opencode/guards.ts": {
+      "before": 303,
+      "after": 361
+    },
+    "src/opencode/runtime.ts": {
+      "before": 1066,
+      "after": 1118
+    },
+    "src/visibility/client.ts": {
+      "before": 576,
+      "after": 624
+    },
+    "src/visibility/communication-view.ts": {
+      "before": 0,
+      "after": 151
+    },
+    "src/visibility/detail-view.ts": {
+      "before": 333,
+      "after": 337
+    },
+    "src/visibility/fleet.ts": {
+      "before": 0,
+      "after": 143
+    },
+    "src/visibility/home.ts": {
+      "before": 133,
+      "after": 167
+    },
+    "src/visibility/lead-view.ts": {
+      "before": 0,
+      "after": 101
+    },
+    "src/visibility/presentation.ts": {
+      "before": 141,
+      "after": 162
+    },
+    "src/visibility/protocol.ts": {
+      "before": 261,
+      "after": 311
+    },
+    "src/visibility/read-model.ts": {
+      "before": 376,
+      "after": 448
+    },
+    "src/visibility/resources.ts": {
+      "before": 157,
+      "after": 199
+    },
+    "src/visibility/view-state.ts": {
+      "before": 85,
+      "after": 94
+    },
+    "src/work/graph.ts": {
+      "before": 492,
+      "after": 514
+    },
+    "src/workflow/advancement.ts": {
+      "before": 1241,
+      "after": 1242
+    },
+    "src/workflow/attention.ts": {
+      "before": 653,
+      "after": 745
+    },
+    "src/workflow/controller.ts": {
+      "before": 77,
+      "after": 80
+    },
+    "src/workflow/lead-contracts.ts": {
+      "before": 154,
+      "after": 196
+    },
+    "src/workflow/leads.ts": {
+      "before": 727,
+      "after": 1096
+    },
+    "src/workflow/message-contracts.ts": {
+      "before": 216,
+      "after": 330
+    },
+    "src/workflow/messages.ts": {
+      "before": 457,
+      "after": 895
+    },
+    "src/workflow/queries.ts": {
+      "before": 546,
+      "after": 677
+    },
+    "src/workflow/sessions.ts": {
+      "before": 443,
+      "after": 453
+    }
+  },
+  "persistent_state": "2 optional shared RequestSchema containers with 10 nested fields; one index over existing closure events; no new database/table/store",
+  "production_background_processes_added": 0,
+  "external_dependencies_added": 0
+}

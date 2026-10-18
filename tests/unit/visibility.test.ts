@@ -204,6 +204,7 @@ test("bounded supervision projection preserves record history and exposes read-o
     "diff",
     "document",
     "feedback",
+    "messages",
     "report",
     "snapshot",
     "worker",

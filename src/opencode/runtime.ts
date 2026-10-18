@@ -36,7 +36,7 @@ import {
   type WorkerModel,
   type WorkerError,
 } from "../domain.ts";
-import { Effect, Schema } from "effect";
+import { DateTime, Effect, Schema } from "effect";
 import { Session, SessionMessage, Agent, Model } from "@opencode/client/effect";
 import { Service } from "@opencode/client/effect/service";
 import { type Context } from "@opencode/plugin/effect/plugin";
@@ -59,10 +59,15 @@ import {
 } from "./diagnostics.ts";
 export interface SessionState {
   executing?: boolean;
+  /** Context has a consumed input without a later native completion observation. */
+  completion_pending?: boolean;
+  /** One native inbox observation, never persisted as controller authority. */
+  queued_prompt_ids?: readonly MessageId[];
   outcome_prompt_id?: MessageId;
   assignment?: {
     id: MessageId;
     outcome?: typeof Session.Info.Type.outcome;
+    completion?: { id: MessageId; at: number };
     error?: WorkerError;
     at?: number;
   };
@@ -90,6 +95,8 @@ export type QuestionAnswer =
 export type DispositionAnswer =
   | { status: "pending" | "cancelled" }
   | { status: "answered"; answer: FinishingAnswer };
+export type PromptAdmission = "queued" | "consumed" | "absent";
+export type PromptIdentity = { prompt_id: MessageId; prompt: string };
 export interface Runtime {
   managementSession(
     id: SessionId,
@@ -141,6 +148,10 @@ export interface Runtime {
   switchModel(id: SessionId, model: WorkerModel): Effect.Effect<void, CrewError>;
   switchAgent(id: SessionId, agent: Agent.ID): Effect.Effect<void, CrewError>;
   session(id: SessionId, assignment?: MessageId): Effect.Effect<SessionState, CrewError>;
+  promptAdmissions(
+    session: SessionId,
+    requests: readonly PromptIdentity[],
+  ): Effect.Effect<ReadonlyMap<MessageId, PromptAdmission>, CrewError>;
   promptAdmission(
     session: SessionId,
     message: MessageId,
@@ -587,6 +598,19 @@ export class NativeRuntime implements Runtime {
       const observedIdle = nativeIdle(encoded);
       const bound = end < 0 ? undefined : summarizeContext(encoded.slice(0, end + 1));
       const lastIdle = encoded.findLastIndex((m) => m.type === "idle");
+      // Session, active, inbox and context are separate native reads. A queued
+      // input can be consumed between them. Later unfinished context must not
+      // turn an earlier empty active/inbox snapshot into verified idleness.
+      // Native interruption can finish a consumed input without appending an
+      // idle context message. Its server-owned idle timestamp is still evidence
+      // of completion, provided it is strictly later than the trailing input.
+      const terminalAt = s.time?.idle ? DateTime.toEpochMillis(s.time.idle) : -Infinity;
+      const unfinished = encoded
+        .slice(lastIdle + 1)
+        .some((m) => (m.type === "user" || m.type === "assistant") && m.time.created >= terminalAt);
+      if (unfinished && !active[id] && pending.length === 0)
+        diagnostic_error ??=
+          "Native context contains input without a later verified completion; execution outcome is unconfirmed";
       const outcomePrompt =
         lastIdle < 0
           ? undefined
@@ -595,14 +619,22 @@ export class NativeRuntime implements Runtime {
         id: s.id,
         agent: s.agent ?? Agent.ID.make("build"),
         directory: s.location.directory,
-        outcome: s.outcome === "succeeded" ? (observedIdle?.outcome ?? s.outcome) : s.outcome,
+        outcome:
+          s.outcome === "succeeded" ||
+          s.outcome === undefined ||
+          (observedIdle && s.time?.idle && observedIdle.time.created > terminalAt)
+            ? (observedIdle?.outcome ?? s.outcome)
+            : s.outcome,
         busy: !!active[id] || pending.length > 0,
         executing: !!active[id],
+        completion_pending: unfinished,
+        queued_prompt_ids: pending.map((item) => MessageId.make(item.id)),
         outcome_prompt_id: outcomePrompt ? MessageId.make(outcomePrompt.id) : undefined,
         assignment: assignment
           ? {
               id: assignment,
               outcome: idle?.type === "idle" ? idle.outcome : undefined,
+              completion: idle ? { id: MessageId.make(idle.id), at: idle.time.created } : undefined,
               error: bound?.error,
               at: bound?.error_at,
             }
@@ -765,34 +797,54 @@ export class NativeRuntime implements Runtime {
   );
   promptAdmission = Effect.fn("NativeRuntime.promptAdmission")(
     function* (this: NativeRuntime, sessionID: SessionId, id: MessageId, text: string) {
+      return (yield* this.promptAdmissions(sessionID, [{ prompt_id: id, prompt: text }])).get(id)!;
+    }.bind(this),
+    domainEffect,
+  );
+  promptAdmissions = Effect.fn("NativeRuntime.promptAdmissions")(
+    function* (this: NativeRuntime, sessionID: SessionId, requests: readonly PromptIdentity[]) {
+      const observations = new Map<MessageId, PromptAdmission>();
+      if (!requests.length) return observations;
       const client = yield* this.client();
       const [inbox, context] = yield* Effect.all([
         client.session.inbox.list({ sessionID }),
         client.session.context({ sessionID }),
       ]);
-      const queued = inbox.find((item) => item.id === id);
-      const consumed =
-        context.find((message) => message.id === id) ??
-        (!queued
-          ? yield* client.session.message
-              .get({ sessionID, messageID: id })
-              .pipe(Effect.catchTag("MessageNotFoundError", () => Effect.void))
-          : undefined);
-      const payload =
-        queued?.type === "user" ? queued.payload : consumed?.type === "user" ? consumed : undefined;
-      if (!queued && !consumed) return "absent" as const;
-      if (
-        !payload ||
-        payload.text !== text ||
-        payload.files?.length ||
-        payload.agents?.length ||
-        payload.skills?.length
-      )
-        return yield* new CrewError(
-          "MESSAGE_REBIND",
-          "Native prompt differs from retained controller intent",
-        );
-      return queued ? ("queued" as const) : ("consumed" as const);
+      const queuedByID = new Map(inbox.map((item) => [item.id, item]));
+      const consumedByID = new Map(context.map((item) => [item.id, item]));
+      for (const { prompt_id: id, prompt: text } of requests) {
+        const queued = queuedByID.get(id);
+        const consumed =
+          consumedByID.get(id) ??
+          (!queued
+            ? yield* client.session.message
+                .get({ sessionID, messageID: id })
+                .pipe(Effect.catchTag("MessageNotFoundError", () => Effect.void))
+            : undefined);
+        const payload =
+          queued?.type === "user"
+            ? queued.payload
+            : consumed?.type === "user"
+              ? consumed
+              : undefined;
+        if (!queued && !consumed) {
+          observations.set(id, "absent");
+          continue;
+        }
+        if (
+          !payload ||
+          payload.text !== text ||
+          payload.files?.length ||
+          payload.agents?.length ||
+          payload.skills?.length
+        )
+          return yield* new CrewError(
+            "MESSAGE_REBIND",
+            "Native prompt differs from retained controller intent",
+          );
+        observations.set(id, queued ? "queued" : "consumed");
+      }
+      return observations;
     }.bind(this),
     domainEffect,
   );

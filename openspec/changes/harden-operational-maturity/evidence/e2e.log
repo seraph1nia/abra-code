@@ -1,0 +1,10 @@
+$ vp test run --project e2e
+
+ RUN  v5.0.4 /home/bart/projects/personal/opencrew
+
+
+ Test Files  2 passed (2)
+      Tests  2 passed (2)
+   Start at  09:59:22
+   Duration  413.18s (tests 100%)
+

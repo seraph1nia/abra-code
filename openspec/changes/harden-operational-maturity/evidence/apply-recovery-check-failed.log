@@ -1,0 +1,23 @@
+$ vp check && pnpm typecheck && pnpm lint:effect && pnpm check:lsp && pnpm report:check
+pass: All 502 files are correctly formatted (254ms, 12 threads)
+pass: Found no warnings or lint errors in 277 files (2.5s, 12 threads)
+$ tsc --noEmit
+$ vp lint --type-aware --deny-warnings
+file:///home/bart/.local/share/mise/installs/pnpm/11.28.5/dist/pnpm.mjs:132988
+  "../../../../../setup-pnpm/store/v11/links/@/is-stream/4.0.1/7b8ad7df4fa9bb1fdc63fbf0f97b595d95c1e6d5b7fad348ce34b901ddb9f824/node_modules/is-stream/index.js"() {
+                                                                                                                                                        ^^^^
+
+SyntaxError: Unexpected identifier 'ndex'
+    at __init (file:///home/bart/.local/share/mise/installs/pnpm/11.28.5/dist/pnpm.mjs:17:58)
+    at ../../../../../setup-pnpm/store/v11/links/@/get-stream/9.0.1/69ae1c618bfef4a14fcafaa4d22c6c0c519e6f1c741c2958f90c677994d53fcf/node_modules/get-stream/source/stream.js (file:///home/bart/.local/share/mise/installs/pnpm/11.28.5/dist/pnpm.mjs:133103:5)
+    at __init (file:///home/bart/.local/share/mise/installs/pnpm/11.28.5/dist/pnpm.mjs:17:58)
+    at ../../../../../setup-pnpm/store/v11/links/@/get-stream/9.0.1/69ae1c618bfef4a14fcafaa4d22c6c0c519e6f1c741c2958f90c677994d53fcf/node_modules/get-stream/source/index.js (file:///home/bart/.local/share/mise/installs/pnpm/11.28.5/dist/pnpm.mjs:133414:5)
+    at __init (file:///home/bart/.local/share/mise/installs/pnpm/11.28.5/dist/pnpm.mjs:17:58)
+    at ../../../../../setup-pnpm/store/v11/links/@/execa/9.6.1/5bd2df226f1f4a6c1f1426ecf183fe7b685cdebc6bd5f406db6081925ecd0408/node_modules/execa/lib/io/max-buffer.js (file:///home/bart/.local/share/mise/installs/pnpm/11.28.5/dist/pnpm.mjs:133424:5)
+    at __init (file:///home/bart/.local/share/mise/installs/pnpm/11.28.5/dist/pnpm.mjs:17:58)
+    at ../../../../../setup-pnpm/store/v11/links/@/execa/9.6.1/5bd2df226f1f4a6c1f1426ecf183fe7b685cdebc6bd5f406db6081925ecd0408/node_modules/execa/lib/return/message.js (file:///home/bart/.local/share/mise/installs/pnpm/11.28.5/dist/pnpm.mjs:133496:5)
+    at __init (file:///home/bart/.local/share/mise/installs/pnpm/11.28.5/dist/pnpm.mjs:17:58)
+    at ../../../../../setup-pnpm/store/v11/links/@/execa/9.6.1/5bd2df226f1f4a6c1f1426ecf183fe7b685cdebc6bd5f406db6081925ecd0408/node_modules/execa/lib/return/result.js (file:///home/bart/.local/share/mise/installs/pnpm/11.28.5/dist/pnpm.mjs:133625:5)
+
+Node.js v26.0.0
+[ELIFECYCLE] Command failed with exit code 1.

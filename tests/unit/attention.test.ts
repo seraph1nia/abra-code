@@ -14,6 +14,35 @@ import { Agent } from "@opencode/schema/agent";
 import { registerTools } from "../../src/opencode/tools.ts";
 import { ConfigApplication } from "../../src/config/application.ts";
 
+test("a confirmed planning checkpoint releases an admitted old stall without consuming another turn", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const supervisor = Id.SessionId.make("ses_supervisor");
+  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
+  f.work.add(Id.IssueId.make("checkpoint-stall"));
+  const e = await run(f.controller.start(Id.IssueId.make("checkpoint-stall"), supervisor));
+  const clock = await run(TestClock.make());
+  await run(clock.setTime(Date.now() + f.config.progress_timeout_ms.explore + 10000));
+  await run(f.controller.supervise().pipe(Effect.provideService(Clock.Clock, clock)));
+  const before = await run(f.controller.get(e.issue_id));
+  const incident = before.attention!.find((a) => a.code === "suspected_stall")!;
+  assert.equal(incident.status, "admitted");
+  f.spec.planned = true;
+  f.runtime.success(e.explore_session_id!);
+  assert.equal(
+    (await run(f.controller.advance(e.issue_id))).current_phase,
+    "awaiting_plan_approval",
+  );
+  const prompts = f.runtime.prompts;
+  await run(f.controller.supervise());
+  const after = await run(f.controller.get(e.issue_id));
+  assert.equal(after.attention!.find((a) => a.id === incident.id)!.status, "superseded");
+  assert.equal(after.attention_turns, before.attention_turns);
+  assert.equal(f.runtime.prompts, prompts);
+  assert.equal(after.current_phase, "awaiting_plan_approval");
+  assert.equal(after.approval_receipts.length, 0);
+});
+
 test("worker questions wake the retained Supervisor without a stall or diagnostic budget, once per decision across restart", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));

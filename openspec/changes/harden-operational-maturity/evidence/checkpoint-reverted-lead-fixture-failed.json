@@ -1,0 +1,66 @@
+{
+  "fixture": "tests/e2e/native.test.ts",
+  "result": "fail",
+  "cleanup_complete": true,
+  "errors": [
+    {
+      "name": "Error",
+      "frames": [
+        "    at Object.eventually (/home/bart/projects/personal/opencrew/tests/e2e/native.test.ts:70:9)",
+        "    at leadJourney (/home/bart/projects/personal/opencrew/tests/e2e/leads.ts:239:3)",
+        "    at /home/bart/projects/personal/opencrew/tests/e2e/native.test.ts:1409:32",
+        "    at async file:///home/bart/projects/personal/opencrew/node_modules/.pnpm/vitest@5.0.4_@opentelemetry+api@1.9.0_@types+node@24.12.2_@vitest+browser-preview@5.0.4_732cf11a6834683335206ce634569816/node_modules/vitest/dist/chunks/run.Cm2sd7-x.js:2794:20"
+      ]
+    }
+  ],
+  "observed_at": "2026-10-18T12:09:31.753Z",
+  "isolation": "Disposable service/data/config, loopback provider and local bare remotes; no operator service or user remote",
+  "observations": [],
+  "metrics": {
+    "provider_requests": {
+      "supervisor": 14,
+      "research": 8
+    },
+    "controller_calls": {
+      "abra_project_onboard": {
+        "count": 2,
+        "total_ms": 296.20102899999983,
+        "max_ms": 161.4067500000001
+      },
+      "abra_work_create": {
+        "count": 2,
+        "total_ms": 61.051235999999335,
+        "max_ms": 31.255443000000014
+      },
+      "abra_lead_control": {
+        "count": 11,
+        "total_ms": 2496.6183209999963,
+        "max_ms": 977.4839409999986
+      },
+      "abra_work_start": {
+        "count": 2,
+        "total_ms": 2840.657261999999,
+        "max_ms": 1554.990013999999
+      },
+      "abra_work_status": {
+        "count": 268,
+        "total_ms": 4469.8975250000385,
+        "max_ms": 271.56328399999984
+      },
+      "abra_work_list": {
+        "count": 1,
+        "total_ms": 13.030821999998807,
+        "max_ms": 13.030821999998807
+      }
+    },
+    "retained_state": {
+      "files": 692,
+      "bytes": 9421785,
+      "complete": true,
+      "coverage": "Native data/state and central .abracode only; excludes source, dependency cache and worktree source bytes"
+    },
+    "usage_kind": "Deterministic provider requests and controller RPC calls; neither is billable tokens or a native turn count",
+    "billable_tokens": null,
+    "cost": null
+  }
+}

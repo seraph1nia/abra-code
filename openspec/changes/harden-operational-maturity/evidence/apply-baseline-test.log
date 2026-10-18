@@ -1,0 +1,10 @@
+$ vp test run --project unit --project integration
+
+ RUN  v5.0.4 /home/bart/projects/personal/opencrew
+
+
+ Test Files  71 passed (71)
+      Tests  445 passed (445)
+   Start at  10:09:59
+   Duration  247.57s (tests 84%, import 15%)
+

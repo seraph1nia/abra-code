@@ -1,0 +1,219 @@
+{
+  "cycle": 1,
+  "profile": "acceptance",
+  "result": "pass",
+  "exit_code": 0,
+  "timed_out": false,
+  "duration_ms": 168067,
+  "child_pid": 3314216,
+  "cleanup_complete": true,
+  "required_scenario_receipts": true,
+  "resource_postconditions": {
+    "fixture_root_present": false,
+    "alive_native_children": []
+  },
+  "metrics": {
+    "verified_task_completions": 3,
+    "completion_coverage": "Only final-product-acceptance and parallel task sets; other native tasks excluded",
+    "recovery_attempts": null,
+    "answered_recovery_requests": null,
+    "escalated_response_obligations": null,
+    "duplicate_admissions": null,
+    "billable_tokens": null,
+    "cost": null,
+    "recovery_coverage": "Only the three deliberately omitted worker/lead requests",
+    "unanswered_before_explicit_stop": null,
+    "native_measurements": [
+      {
+        "provider_requests": {
+          "supervisor": 8,
+          "explore": 8,
+          "research": 7,
+          "apply": 11,
+          "review": 4
+        },
+        "controller_calls": {
+          "abra_project_onboard": {
+            "count": 2,
+            "total_ms": 290.0375179999992,
+            "max_ms": 147.33267999999953
+          },
+          "abra_work_create_batch": {
+            "count": 2,
+            "total_ms": 71.4495140000181,
+            "max_ms": 37.156776000018
+          },
+          "abra_work_ready": {
+            "count": 11,
+            "total_ms": 1067.3919400000032,
+            "max_ms": 928.612486
+          },
+          "abra_work_status": {
+            "count": 116,
+            "total_ms": 21796.480259000004,
+            "max_ms": 1487.7112250000064
+          },
+          "abra_work_approve": {
+            "count": 2,
+            "total_ms": 209.1188339999935,
+            "max_ms": 122.50416700000642
+          },
+          "abra_work_message": {
+            "count": 2,
+            "total_ms": 277.3844350000145,
+            "max_ms": 194.29573600000003
+          },
+          "abra_work_messages": {
+            "count": 2,
+            "total_ms": 25.662733000004664,
+            "max_ms": 16.218355999997584
+          },
+          "abra_work_list": {
+            "count": 1,
+            "total_ms": 13.383228999999119,
+            "max_ms": 13.383228999999119
+          }
+        },
+        "retained_state": {
+          "files": 1217,
+          "bytes": 32892003,
+          "complete": true,
+          "coverage": "Native data/state and central .abracode only; excludes source, dependency cache and worktree source bytes"
+        },
+        "usage_kind": "Deterministic provider requests and controller RPC calls; neither is billable tokens or a native turn count",
+        "billable_tokens": null,
+        "cost": null
+      }
+    ],
+    "idle_observation": {
+      "status": "observed",
+      "sample_ms": 120002.23231200001,
+      "cpu_ms": 9180,
+      "cpu_percent": 7.649857692757284,
+      "rss_before_kib": 608824,
+      "rss_after_kib": 508580,
+      "coverage": "Native service process only; excludes tool/flock/browser child CPU",
+      "provider_requests_added": 0,
+      "settling_ms": 2288.1629910000047,
+      "provider_requests_during_settling": 0
+    },
+    "measurements": {
+      "processes": 3,
+      "segments": 10,
+      "complete": true,
+      "observations": {
+        "controller_storage_entries": {
+          "count": 2116,
+          "total_ms": 799.5599669999964,
+          "max_ms": 10.165895999998611
+        },
+        "execution_reconciliation": {
+          "count": 137,
+          "total_ms": 34875.62894899995,
+          "max_ms": 5906.964361000001
+        },
+        "scheduler_tick": {
+          "count": 136,
+          "total_ms": 7352.347120999981,
+          "max_ms": 4158.892175
+        },
+        "controller_storage_set": {
+          "count": 682,
+          "total_ms": 168.95456000007448,
+          "max_ms": 5.539713999998639
+        },
+        "controller_storage_get": {
+          "count": 2818,
+          "total_ms": 413.3311380000158,
+          "max_ms": 14.451363000000129
+        },
+        "controller_lock_wait": {
+          "count": 1289,
+          "total_ms": 44743.908474,
+          "max_ms": 329.63562699999966
+        },
+        "controller_lock_held": {
+          "count": 1289,
+          "total_ms": 881.5512389997067,
+          "max_ms": 11.17218899999989
+        },
+        "plugin_session_get": {
+          "count": 844,
+          "total_ms": 178.96337600015113,
+          "max_ms": 15.895662999999331
+        },
+        "api_active": {
+          "count": 838,
+          "total_ms": 1497.265772000094,
+          "max_ms": 249.1040009999997
+        },
+        "api_inbox": {
+          "count": 845,
+          "total_ms": 859.4505880002091,
+          "max_ms": 33.419137000000774
+        },
+        "plugin_context": {
+          "count": 838,
+          "total_ms": 539.7402450001234,
+          "max_ms": 9.281224000000293
+        },
+        "session_observation": {
+          "count": 838,
+          "total_ms": 3571.308178999853,
+          "max_ms": 253.25435499999912
+        },
+        "native_prompt_submission": {
+          "count": 7,
+          "total_ms": 32.09245999999894,
+          "max_ms": 7.078454999999849
+        },
+        "message_reconciliation": {
+          "count": 21,
+          "total_ms": 87.99800499999583,
+          "max_ms": 74.04503899999963
+        },
+        "native_notice_submission": {
+          "count": 6,
+          "total_ms": 22.34408799999801,
+          "max_ms": 5.161488999998255
+        },
+        "api_context": {
+          "count": 7,
+          "total_ms": 18.738792000001013,
+          "max_ms": 8.987890000000334
+        },
+        "report_build": {
+          "count": 1,
+          "total_ms": 3100.524543999999,
+          "max_ms": 3100.524543999999
+        },
+        "batch_admission_observation": {
+          "count": 3,
+          "total_ms": 15.504586999999447,
+          "max_ms": 9.988162999998167
+        },
+        "single_admission_observation": {
+          "count": 2,
+          "total_ms": 12.72960900000271,
+          "max_ms": 10.011303000002954
+        }
+      }
+    },
+    "unmeasured": [
+      "human_interventions",
+      "native_model_turns",
+      "scheduler_wait_ms",
+      "decision_delay_ms",
+      "completion_notification_ms",
+      "idle_cpu",
+      "retained_state_bytes"
+    ],
+    "residual_resources": "Disposable root and owned server/provider removed by fixture"
+  },
+  "summaries": [
+    "Test Files  1 passed (1)",
+    "Tests  1 passed (1)",
+    "Start at  12:19:49",
+    "Duration  167.76s (tests 100%)"
+  ]
+}

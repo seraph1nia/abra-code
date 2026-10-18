@@ -186,11 +186,37 @@ current context; exact native message reads and bounded native history provide
 the fallback evidence. A later message's success cannot mask an earlier failed
 assignment.
 
-Replies, required-response blockers and findings coalesce into retained
-Attention incidents. Optional diagnostic budgets and capacity still apply;
+Replies and findings coalesce into retained Attention notices. Messages owns
+required-response classification and creates an original-request incident when
+recovery is exhausted or cannot safely proceed. This prevents the notice from
+spending the available diagnostic turn before a verified reminder can use it.
+Optional diagnostic budgets and capacity still apply;
 exhaustion leaves the message and mandatory worker questions visible. A lost
 communication-notice admission response keeps its prompt ID for bounded retry.
 Native notice admission is separate from a handled disposition.
+
+For a missing acknowledgement or answer, inspect the original `request_id`,
+`response`, `status`, `reply` and `response_recovery`. One reserved response-only
+reminder is allowed only after exact consumed-input and successful-turn evidence,
+within captured diagnostics, current authority and capacity. Manual mode, queued
+or busy work, failed/interrupted turns and unavailable evidence cannot authorize
+that turn. A reservation survives restart even when its admission receipt is
+lost. Inspect uncertainty rather than minting another prompt ID.
+
+If the reminder completes without a response, the retained incident names the
+required acknowledgement/answer, original request, admission, native observation
+and clearing action. Bring the question to Abra for inspection or explicit
+retry/resume. Handling a notice does not answer the request or approve a
+checkpoint. Confirmed pause/stop and an authorized generation transition can
+explicitly supersede it. A still-authorized late reply resolves the original
+obligation; an accepted historical reply stays valid after a later transition.
+
+Lead requests use the same finite attempt slot. Inspect `abra_lead_control status`
+for their response and `response_escalation` receipt, including source issues with
+no execution yet. A failed or unavailable lead gets no speculative turn. Abra can
+inspect and explicitly disable/revise the registration or issue an authorized
+follow-up within the remaining policy budget. Parent synthetic-notice loss does
+not repeat the lead's task, refund its diagnostic use or grant new authority.
 
 Pause cancels owned queued assignment/follow-up IDs before one interrupt. A
 consumed message's effects remain history. Resolved replies keep their answer or

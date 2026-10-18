@@ -1,6 +1,7 @@
 import { acceptanceJourney } from "./acceptance.ts";
 import { reportJourney } from "./reports.ts";
 import { leadJourney } from "./leads.ts";
+import { safeEvidence } from "../operational/evidence.ts";
 import { modelDispatchJourney } from "./model-dispatch.ts";
 import { parallelJourney } from "./parallel.ts";
 import { parseDocument } from "yaml";
@@ -18,6 +19,7 @@ import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { mkdir, writeFile, rm, rename, symlink, readFile, access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { OpenCode } from "@opencode/client";
@@ -27,6 +29,9 @@ import { Git } from "../../src/git/repository.ts";
 import { repo } from "../fixtures.ts";
 import { type Execution, type Issue } from "../../src/domain.ts";
 import { visibility } from "../../src/visibility/protocol.ts";
+import { replyRecoveryJourney } from "./reply-recovery.ts";
+import { idleResources, retainedBytes, compilerRunning } from "../operational/resources.ts";
+import { communicationCrashJourney } from "./crash-windows.ts";
 const value = { type: "object" as const, additionalProperties: true };
 const probe = Rpc.define({
   id: "abracode-test",
@@ -64,16 +69,47 @@ async function eventually<T>(action: () => Promise<T | undefined>, timeout = 300
   }
   throw Error(`Timed out: ${(last as Error)?.message ?? "condition not met"}`);
 }
-test(
-  "real v2 server loads tools and guards across three repositories, executes full OpenSpec through native worker sessions, approvals, preserved branch, cleanup and durable restart",
-  { timeout: 420000 },
-  async (t) => {
+function nativeTest(
+  name: string,
+  options?: { journey?: string; evidenceDirectory?: string; timeout?: number },
+) {
+  test(name, { timeout: options?.timeout ?? 600000 }, async (t) => {
+    const journey = options?.journey ?? process.env.ABRACODE_TEST_JOURNEY;
+    const evidenceDirectory = options?.evidenceDirectory ?? process.env.ABRACODE_TEST_EVIDENCE_DIR;
+    if (journey === "crash-windows")
+      assert.ok(
+        evidenceDirectory && process.env.ABRACODE_TEST_METRICS === "1",
+        "Crash windows require the opt-in instrumented fixture",
+      );
     const root = await installationRoot("abracode-native-");
+    const resources = {
+      schema_version: 1,
+      fixture_root: root,
+      runner_pid: process.pid,
+      native_children: [] as number[],
+      cleanup: "pending",
+    };
+    const recordResources = () => {
+      if (evidenceDirectory)
+        writeFileSync(
+          join(resolve(evidenceDirectory), "resources.json"),
+          JSON.stringify(resources, null, 2) + "\n",
+        );
+    };
+    if (evidenceDirectory) {
+      const path = resolve(evidenceDirectory);
+      assert.ok(path !== root && !path.startsWith(root + "/"));
+      await mkdir(path, { recursive: true });
+      recordResources();
+    }
     const r = new ProcessRunner();
     const git = new Git(r);
     let child: ChildProcess | undefined;
     let logs = "";
     const engineeringEvidence: unknown[] = [];
+    const providerRequests: Record<string, number> = {};
+    const controllerCalls: Record<string, { count: number; total_ms: number; max_ms: number }> = {};
+    let retainedState: Awaited<ReturnType<typeof retainedBytes>> | undefined;
     const reviewedTrees = new Set<string>();
     let failFirstExplore = true;
     let stallFirstExplore = false;
@@ -151,6 +187,7 @@ test(
             : user.includes("AbraCode review")
               ? "review"
               : "supervisor";
+      providerRequests[role] = (providerRequests[role] ?? 0) + 1;
       const acceptanceKey = user.includes("final-acceptance-authentication")
         ? role === "explore"
           ? "auth-explore"
@@ -292,6 +329,11 @@ test(
           role !== "supervisor" &&
           response &&
           response[2] !== "native-unanswered-failure" &&
+          response[2] !== "native-recovery-escalation" &&
+          (response[2] !== "native-recovery-answer" ||
+            hasUserMarker(
+              "AbraCode response-only reminder for original request native-recovery-answer",
+            )) &&
           Number(response[3]) === Number(/Control generation: (\d+)/.exec(user)?.[1])
         )
           calls.push({
@@ -348,13 +390,28 @@ test(
               },
             },
           });
+        if (request_id !== "native-lead-recovery-answer")
+          calls.push({
+            name: "abra_lead_action",
+            args: {
+              action: "reply",
+              revision,
+              request_id,
+              body: "Native project-lead correlated findings retained.",
+            },
+          });
+      } else if (
+        user.startsWith(
+          "AbraCode response-only reminder for original project-lead request native-lead-recovery-answer",
+        )
+      ) {
         calls.push({
           name: "abra_lead_action",
           args: {
             action: "reply",
-            revision,
-            request_id,
-            body: "Native project-lead correlated findings retained.",
+            revision: Number(/registration revision (\d+)/.exec(user)?.[1]),
+            request_id: "native-lead-recovery-answer",
+            body: "Native project-lead recovery answer retained.",
           },
         });
       } else if (role === "supervisor" && user.includes("Validate AbraCode tool input contracts")) {
@@ -793,8 +850,8 @@ test(
       for (const key of ["auth-explore", "db-research", "auth-apply"]) releaseAcceptance(key);
       releaseLeadResearch?.();
       const recordEvidence = async (cleanupComplete: boolean) => {
-        if (!process.env.ABRACODE_TEST_EVIDENCE_DIR) return;
-        const evidenceDir = resolve(process.env.ABRACODE_TEST_EVIDENCE_DIR);
+        if (!evidenceDirectory) return;
+        const evidenceDir = resolve(evidenceDirectory);
         assert.ok(
           evidenceDir !== root && !evidenceDir.startsWith(root + "/"),
           "Evidence must survive fixture teardown",
@@ -808,11 +865,29 @@ test(
               fixture: "tests/e2e/native.test.ts",
               result: cleanupComplete ? t.task.result?.state : "fail",
               cleanup_complete: cleanupComplete,
-              errors: t.task.result?.errors?.map((error) => error.message),
+              // Assertion messages can embed whole executions and prompts.
+              // Keep error identity and source frames in default telemetry.
+              errors: t.task.result?.errors?.map((error) => ({
+                name: error.name,
+                code: /^([A-Z][A-Z0-9_]{2,40}):/.exec(error.message)?.[1],
+                frames: error.stack
+                  ?.split("\n")
+                  .filter((line) => /^\s+at /.test(line))
+                  .slice(0, 8),
+              })),
               observed_at: new Date().toISOString(),
               isolation:
                 "Disposable service/data/config, loopback provider and local bare remotes; no operator service or user remote",
-              observations: engineeringEvidence,
+              observations: safeEvidence(engineeringEvidence),
+              metrics: {
+                provider_requests: providerRequests,
+                controller_calls: controllerCalls,
+                retained_state: retainedState,
+                usage_kind:
+                  "Deterministic provider requests and controller RPC calls; neither is billable tokens or a native turn count",
+                billable_tokens: null,
+                cost: null,
+              },
             },
             null,
             2,
@@ -844,9 +919,18 @@ test(
             owned.kill("SIGTERM");
           });
         await new Promise<void>((done) => provider.close(() => done()));
+        retainedState = await retainedBytes([
+          join(root, "data"),
+          join(root, "state"),
+          join(root, "central/.abracode"),
+        ]);
         await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+        resources.cleanup = "removed";
+        recordResources();
         await recordEvidence(true);
       } catch (error) {
+        resources.cleanup = "cleanup_failed";
+        recordResources();
         await recordEvidence(false);
         throw error;
       }
@@ -955,6 +1039,8 @@ test(
       ABRACODE_SERVER_PASSWORD: password,
       OPENCODE_SERVER_PASSWORD: password,
       ABRACODE_TEST_MODEL_URL: `http://127.0.0.1:${address.port}/v1`,
+      ...(evidenceDirectory ? { ABRACODE_TEST_EVIDENCE_DIR: evidenceDirectory } : {}),
+      ABRACODE_TEST_FAULT_PROFILE: journey === "crash-windows" ? "communication-crash" : undefined,
     };
     const start = () => {
       logs = "";
@@ -974,6 +1060,8 @@ test(
       );
       child.stdout!.on("data", (d) => (logs += d.toString()));
       child.stderr!.on("data", (d) => (logs += d.toString()));
+      if (child.pid) resources.native_children.push(child.pid);
+      recordResources();
     };
     start();
     const client = OpenCode.make({
@@ -1032,7 +1120,7 @@ test(
         : undefined,
     );
     const progressUpdates: any[] = [];
-    const invoke = async (tool: string, args: any, observeBusy = false) => {
+    const invokeRaw = async (tool: string, args: any, observeBusy = false) => {
       const deadline = Date.now() + 5000;
       while (true) {
         try {
@@ -1064,6 +1152,17 @@ test(
           throw Error(`${error.data?.code ?? error.type}: ${error.message}`, { cause: error });
         }
       }
+    };
+    const invoke: typeof invokeRaw = (tool, args, observeBusy) => {
+      const started = performance.now();
+      return invokeRaw(tool, args, observeBusy).finally(() => {
+        const elapsed = performance.now() - started;
+        const metric = controllerCalls[tool] ?? { count: 0, total_ms: 0, max_ms: 0 };
+        metric.count++;
+        metric.total_ms += elapsed;
+        metric.max_ms = Math.max(metric.max_ms, elapsed);
+        controllerCalls[tool] = metric;
+      });
     };
     const runParallel = () =>
       parallelJourney({
@@ -1112,6 +1211,8 @@ test(
       });
     const runLeads = () =>
       leadJourney({
+        observe: (value) => engineeringEvidence.push(value),
+        snapshot: () => observer.snapshot({}, loc),
         root,
         home,
         client,
@@ -1136,6 +1237,16 @@ test(
       });
     const runReports = () =>
       reportJourney({
+        observe: (value) => engineeringEvidence.push(value),
+        compilerRunning:
+          process.env.ABRACODE_TEST_METRICS === "1" && process.platform === "linux"
+            ? () =>
+                compilerRunning(
+                  child!.pid!,
+                  home,
+                  join(evidenceDirectory!, "report-process-progress.jsonl"),
+                )
+            : undefined,
         root,
         home,
         client,
@@ -1163,6 +1274,44 @@ test(
         eventually,
         seen: acceptanceSeen,
         release: releaseAcceptance,
+        quietSample: async () => {
+          assert.ok(child?.pid);
+          const settling = performance.now();
+          const initial = { ...providerRequests };
+          let prior = JSON.stringify(providerRequests),
+            stableAt = performance.now();
+          // First route meaningful completion/decision notifications. Measure
+          // an unchanged fleet only after it and the provider are quiescent.
+          await eventually(async () => {
+            const current = JSON.stringify(providerRequests);
+            if (
+              current !== prior ||
+              Object.keys(await client.session.active()).length ||
+              (await client.session.inbox.list({ sessionID: supervisor.id })).length
+            ) {
+              prior = current;
+              stableAt = performance.now();
+            }
+            return performance.now() - stableAt >= 2200 ? true : undefined;
+          }, 15000);
+          const before = { ...providerRequests };
+          const observation = await idleResources(child.pid, async () => {
+            await delay(Number(process.env.ABRACODE_TEST_IDLE_MS ?? 2200));
+          });
+          assert.deepEqual(
+            providerRequests,
+            before,
+            "Human-gated idle work must admit no extra provider request",
+          );
+          return {
+            ...observation,
+            provider_requests_added: 0,
+            settling_ms: performance.now() - settling - observation.sample_ms,
+            provider_requests_during_settling:
+              Object.values(before).reduce((a, b) => a + b, 0) -
+              Object.values(initial).reduce((a, b) => a + b, 0),
+          };
+        },
         restart: async () => {
           child!.kill("SIGTERM");
           await new Promise<void>((done) => child!.once("exit", () => done()));
@@ -1172,23 +1321,86 @@ test(
         },
       });
     };
-    if (process.env.ABRACODE_TEST_JOURNEY === "acceptance") {
+    const runReplyRecovery = () => {
+      failFirstExplore = false;
+      return replyRecoveryJourney({
+        root,
+        supervisor: supervisor.id,
+        client,
+        invoke,
+        eventually,
+        holdExplore: () => {
+          holdExplore = true;
+          exploreHeld = false;
+        },
+        held: () => exploreHeld,
+        releaseExplore: () => releaseExplore?.(),
+        observe: (value) => engineeringEvidence.push(value),
+        restart: async () => {
+          child!.kill("SIGTERM");
+          await new Promise<void>((done) => child!.once("exit", () => done()));
+          start();
+          await eventually(() => client.server.info());
+          await client.location.get({ location: { directory: home } });
+        },
+      });
+    };
+    if (journey === "crash-windows") {
+      failFirstExplore = false;
+      engineeringEvidence.push(
+        await communicationCrashJourney({
+          root,
+          evidence: evidenceDirectory!,
+          observe: (value) => engineeringEvidence.push(value),
+          client,
+          supervisor: supervisor.id,
+          invoke,
+          eventually,
+          holdExplore: () => {
+            holdExplore = true;
+            exploreHeld = false;
+          },
+          held: () => exploreHeld,
+          releaseExplore: () => releaseExplore?.(),
+          restart: async () => {
+            const owned = child!;
+            await new Promise<void>((done) => {
+              const force = setTimeout(() => owned.kill("SIGKILL"), 5000);
+              owned.once("exit", () => {
+                clearTimeout(force);
+                done();
+              });
+              owned.kill("SIGTERM");
+            });
+            start();
+            await eventually(() => client.server.info());
+            await client.location.get({ location: { directory: home } });
+          },
+        }),
+      );
+      return;
+    }
+    if (journey === "reply-recovery") {
+      engineeringEvidence.push(await runReplyRecovery());
+      return;
+    }
+    if (journey === "acceptance") {
       engineeringEvidence.push(await runAcceptance());
       return;
     }
-    if (process.env.ABRACODE_TEST_JOURNEY === "reports") {
+    if (journey === "reports") {
       engineeringEvidence.push(await runReports());
       return;
     }
-    if (process.env.ABRACODE_TEST_JOURNEY === "leads") {
+    if (journey === "leads") {
       engineeringEvidence.push(await runLeads());
       return;
     }
-    if (process.env.ABRACODE_TEST_JOURNEY === "models") {
+    if (journey === "models") {
       engineeringEvidence.push(await runModels());
       return;
     }
-    if (process.env.ABRACODE_TEST_JOURNEY === "parallel") {
+    if (journey === "parallel") {
       engineeringEvidence.push(await runParallel());
       return;
     }
@@ -1708,6 +1920,20 @@ test(
     const observed = sidebarSnapshot.work.find((work) => work.issue_id === issue.id)!;
     assert.equal(observed.phase, "awaiting_plan_approval");
     assert.ok(observed.sessions.some((session) => session.id === e.explore_session_id));
+    assert.ok(sidebarSnapshot.fleet!.counts.human_wait >= 1);
+    assert.equal(
+      Object.values(sidebarSnapshot.fleet!.counts).reduce((total, n) => total + n, 0),
+      sidebarSnapshot.fleet!.total,
+    );
+    const communicationPage = await observer.messages({ issue_id: issue.id }, loc);
+    assert.ok(
+      communicationPage.entries.some(
+        (entry) =>
+          entry.record.request_id === "native-correlated-answer" &&
+          entry.record.type !== "finding" &&
+          entry.record.status === "answered",
+      ),
+    );
     const sidebarDetail = await observer.detail({ issue_id: issue.id }, loc);
     assert.match(sidebarDetail.proposal!, /Why/);
     assert.equal(sidebarDetail.progress?.complete, 0);
@@ -2516,7 +2742,7 @@ test(
     });
     engineeringEvidence.push(await runParallel());
     // A recipe may drive just this complete journey; the default suite still exercises all PR/finishing assertions.
-    if (process.env.ABRACODE_TEST_JOURNEY === "engineering") {
+    if (journey === "engineering") {
       engineeringEvidence.push({
         journey: "engineering",
         complete: true,
@@ -2713,5 +2939,25 @@ test(
       providerCalls: () => missingToolProviderCalls,
     });
     engineeringEvidence.push(await runAcceptance());
-  },
+  });
+}
+
+nativeTest(
+  "real v2 server loads tools and guards across three repositories, executes full OpenSpec through native worker sessions, approvals, preserved branch, cleanup and durable restart",
 );
+if (!process.env.ABRACODE_TEST_JOURNEY)
+  nativeTest("required worker and lead replies recover once across native restart", {
+    journey: "reply-recovery",
+    timeout: 120000,
+    evidenceDirectory: process.env.ABRACODE_TEST_EVIDENCE_DIR
+      ? join(process.env.ABRACODE_TEST_EVIDENCE_DIR, "reply-recovery")
+      : undefined,
+  });
+if (!process.env.ABRACODE_TEST_JOURNEY && process.env.ABRACODE_TEST_OPERATIONAL === "1")
+  nativeTest("communication commits survive receipt loss at isolated crash windows", {
+    journey: "crash-windows",
+    timeout: 180000,
+    evidenceDirectory: process.env.ABRACODE_TEST_EVIDENCE_DIR
+      ? join(process.env.ABRACODE_TEST_EVIDENCE_DIR, "crash-windows")
+      : undefined,
+  });
