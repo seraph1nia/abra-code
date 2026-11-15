@@ -2,6 +2,49 @@
 
 Validated on 2026-10-17 for `prepare-abracode-open-source-release`. This records local working-tree acceptance for the Linux source-clone distribution. It does not publish a package, binary or release.
 
+## Dependency refresh acceptance — 2026-11-15
+
+The dependency refresh uses OpenCode 2.3.0, OpenSpec 2.0.0, Node 26.13.0 and
+pnpm 12.21.0. `pnpm check`, `pnpm test` (487 tests in 75 files),
+`pnpm test:e2e` (3 tests in 2 files), `pnpm build`, `pnpm config:schema`,
+`pnpm licenses:check`, `pnpm format:check`, peer checks and diff checks passed.
+The direct workspace dependency audit reports no outdated versions. Commands
+ran with the mise toolchain. The earlier release evidence below remains dated
+and version-specific.
+
+Full native evidence is retained outside the removed fixtures at
+`/tmp/abra-dependency-update-20261115-verified`; its native JSON records a pass,
+completed cleanup and 24 observations. The upgrade preserves controller-owned
+approvals and delivery behavior in the disposable suite. It adds no optional
+OpenCode integration. Historical native-database migration, paired graphical
+click-through, live-provider/forge behavior and remote CI remain unverified.
+See the [adoption report](opencode-update-2026-11-15.md) and
+[updated API evidence](supported-apis.md#dependency-update-on-2026-11-15).
+
+## OpenSpec 2 instruction migration acceptance — 2026-11-15
+
+The six shared workflows now match the OpenSpec 2.0.0 CLI output. Twelve retired
+OpenCode command/skill copies are removed; project-owned controller skills and
+role profiles are preserved. Real CLI coverage forces regeneration of all six
+stale workflows, checks their expected content and custom-file preservation,
+then requires a second refresh to be byte-for-byte idempotent.
+
+`pnpm check`, `pnpm test` (492 tests in 76 files), `pnpm test:e2e` (3 tests in
+2 files), build, schema and license checks passed. After strengthening the
+regeneration assertion, all 7 migration-specific tests passed again. The final
+CLI dry run reports no changes. License evidence covers 761 locked components
+and 12 distributed source files after removal of the duplicates.
+
+Final native evidence is retained at `/tmp/abra-openspec2-final-verified`.
+Both the main and reply-recovery JSON record a pass and completed cleanup;
+the fixture directories are removed. Full E2E completed in 371.15 seconds.
+The deterministic lead responder now selects current lead requests, parses the
+exact decision key and leaves its lead-routing question to the lead; the native
+assertion verifies the lead's exact answer. Production decision logic is unchanged.
+The checkout also contained concurrent web-client work, exercised by this full
+suite. These are local working-tree results; the earlier verification limits
+remain. See [instruction ownership](openspec.md).
+
 ## Environment and checks
 
 Linux x86-64/glibc; Node 24.21.0; pnpm 11.28.5; Git 2.56.0; util-linux/flock 2.42.4; pinned OpenCode 2.0.28 and OpenSpec 1.13.2. The test pool uses one worker to bound native-process and installation memory. Full source installs use disk-backed temporary roots and copied supplier packages.

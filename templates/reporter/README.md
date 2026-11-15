@@ -132,7 +132,7 @@ Put the explanation beside the visual it supports. Use actual names and include 
 
 4. For an HTTP page link, explicitly run `pnpm report:preview`, wait for successful startup and return the URL it prints alongside the file link.
 
-OpenCode 2.0.28's graphical client resolves file links into its existing HTML preview beside the conversation, or its native desktop browser pane. HTML is not embedded inside the message. Other clients can open the same file in a browser; no TUI HTML rendering is promised. See [native verification and limitations](../../docs/supported-apis.md#report-html-preview).
+OpenCode 2.3.0's graphical client resolves file links into its existing HTML preview beside the conversation, or its native desktop browser pane. HTML is not embedded inside the message. Other clients can open the same file in a browser; no TUI HTML rendering is promised. See [native verification and limitations](../../docs/supported-apis.md#report-html-preview).
 
 The HTTP URL works only while the foreground preview process runs, and only on the serving machine. A remote browser's `127.0.0.1` refers to that browser's machine. Use the native file preview when connected remotely; this template does not provide hosting or a durable public URL. The built file remains usable after preview stops.
 

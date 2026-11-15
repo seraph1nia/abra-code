@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { ProcessRunner } from "../../src/process.ts";
 test("native terminal sidebar renders, handles clicks and updates without stealing focus", async () => {
-  // Reuse the pinned CLI's bundled Bun; Node 24 cannot run OpenTUI's native FFI.
+  // Exercise the pinned CLI's actual bundled Bun and native terminal FFI.
   const result = await run(
     new ProcessRunner().run(
       Id.Executable.make(resolve("node_modules/.bin/opencode")),

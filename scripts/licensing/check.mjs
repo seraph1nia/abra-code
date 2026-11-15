@@ -3,11 +3,11 @@ import { classifyUses } from "./uses.mjs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { parse } from "yaml";
+import { parseLock } from "./lock.mjs";
 export const digest = (text) => createHash("sha256").update(text).digest("hex");
 export function validateInventory(inventory, lockText, readEvidence) {
   const errors = [];
-  const lock = parse(lockText);
+  const lock = parseLock(lockText);
   if (inventory.version !== 1 || inventory.lock_sha256 !== digest(lockText))
     errors.push("Inventory version/lock is stale");
   const uses = classifyUses(lock);

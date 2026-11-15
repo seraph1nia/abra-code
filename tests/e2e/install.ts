@@ -1,6 +1,6 @@
 import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { promisify, stripVTControlCharacters } from "node:util";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 export const command = promisify(execFile);
@@ -126,7 +126,8 @@ export async function interactiveLaunch(home: string, env: NodeJS.ProcessEnv) {
   });
   try {
     const deadline = Date.now() + 30_000;
-    while (!output.includes("Talk to Abra")) {
+    // OpenTUI may insert terminal styling between words in the same text node.
+    while (!stripVTControlCharacters(output).includes("Talk to Abra")) {
       if (child.exitCode !== null || Date.now() >= deadline)
         throw new Error(
           `Interactive Abra launch did not render its footer: ${output.slice(-3000)}`,

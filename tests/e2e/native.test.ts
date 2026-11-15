@@ -1,5 +1,8 @@
 import { acceptanceJourney } from "./acceptance.ts";
+import { Effect, Scope, Exit } from "effect";
+import { webProxy } from "../../src/web/proxy.ts";
 import { reportJourney } from "./reports.ts";
+import { reportBrowserExecutable } from "../../templates/reporter/scripts/browser.ts";
 import { leadJourney } from "./leads.ts";
 import { safeEvidence } from "../operational/evidence.ts";
 import { modelDispatchJourney } from "./model-dispatch.ts";
@@ -173,7 +176,10 @@ function nativeTest(
         )?.content ??
         messages.findLast(
           (m: any) =>
-            m.role === "user" && typeof m.content === "string" && m.content.includes("AbraCode"),
+            m.role === "user" &&
+            typeof m.content === "string" &&
+            (m.content.includes("AbraCode") ||
+              m.content.startsWith("Controller project-lead request")),
         )?.content ??
         messages.findLast((m: any) => m.role === "user")?.content ??
         "";
@@ -352,7 +358,7 @@ function nativeTest(
         const revision = Number(/registration revision (\d+)/.exec(user)?.[1]);
         const request_id = /Controller project-lead request ([^,]+)/.exec(user)?.[1];
         calls.push({ name: "abra_lead_action", args: { action: "status", revision } });
-        const decision = /decision:(\d+):([a-zA-Z0-9._-]+)[. ]/.exec(user);
+        const decision = /decision:(\d+):([a-zA-Z0-9._-]+?)\. /.exec(user);
         if (decision)
           calls.push({
             name: "abra_lead_action",
@@ -646,31 +652,33 @@ function nativeTest(
         const issueID = /AbraCode attention for ([^. ]+)\./.exec(user)![1];
         if (user.includes(": decision_pending.")) {
           const decision = JSON.parse(user.split(": decision_pending. ")[1].split("\n")[0]);
-          calls.push(
-            { name: "abra_work_status", args: { issue_id: issueID } },
-            {
-              name: "abra_work_decision",
-              args: {
-                issue_id: issueID,
-                key: decision.key,
-                generation: Number(/generation (\d+)/.exec(user)![1]),
-                action: decision.owner === "user" ? "collect" : "answer",
-                ...(decision.owner === "supervisor"
-                  ? { answer: "Retained native fixture inventory evidence" }
-                  : {}),
+          // This question exercises project-lead routing; let its responder answer it.
+          if (decision.key !== "native-lead-decision")
+            calls.push(
+              { name: "abra_work_status", args: { issue_id: issueID } },
+              {
+                name: "abra_work_decision",
+                args: {
+                  issue_id: issueID,
+                  key: decision.key,
+                  generation: Number(/generation (\d+)/.exec(user)![1]),
+                  action: decision.owner === "user" ? "collect" : "answer",
+                  ...(decision.owner === "supervisor"
+                    ? { answer: "Retained native fixture inventory evidence" }
+                    : {}),
+                },
               },
-            },
-            {
-              name: "abra_work_attention",
-              args: {
-                issue_id: issueID,
-                incident_id: /Incident ([^,]+),/.exec(user)![1],
-                generation: Number(/generation (\d+)/.exec(user)![1]),
-                action: "handled",
-                reason: "Answered the retained worker question in the main Supervisor session",
+              {
+                name: "abra_work_attention",
+                args: {
+                  issue_id: issueID,
+                  incident_id: /Incident ([^,]+),/.exec(user)![1],
+                  generation: Number(/generation (\d+)/.exec(user)![1]),
+                  action: "handled",
+                  reason: "Answered the retained worker question in the main Supervisor session",
+                },
               },
-            },
-          );
+            );
         } else if (
           user.includes(": worker_failure.") &&
           user.includes("Fixture correlated request provider failure")
@@ -1033,6 +1041,7 @@ function nativeTest(
       XDG_DATA_HOME: join(root, "data"),
       XDG_STATE_HOME: join(root, "state"),
       XDG_CACHE_HOME: join(root, "cache"),
+      REPORT_CHROMIUM_PATH: reportBrowserExecutable(),
       OPENCODE_CONFIG_DIR: join(home, ".abracode/config/opencode"),
       OPENCODE_CONFIG: configPath,
       ABRACODE_HOME: home,
@@ -1064,12 +1073,38 @@ function nativeTest(
       recordResources();
     };
     start();
+    // All existing native chat, worker-guard and exact approval scenarios also
+    // traverse the login-free transport, without weakening controller authority.
+    const webScope = await Effect.runPromise(Scope.make());
+    t.onTestFinished(() => Effect.runPromise(Scope.close(webScope, Exit.void)));
+    const web = await Effect.runPromise(
+      webProxy({
+        port: 0,
+        sessionID: "fixture",
+        discover: Effect.succeed({
+          url: `http://127.0.0.1:${port}`,
+          auth: { type: "basic", username: "opencode", password },
+        }),
+      }).pipe(Effect.provideService(Scope.Scope, webScope)),
+    );
     const client = OpenCode.make({
-      baseUrl: `http://127.0.0.1:${port}`,
-      headers: { Authorization: `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}` },
+      baseUrl: web.origin,
     });
-    await eventually(() => client.server.info());
-    await client.location.get({ location: { directory: home } });
+    const ready = async () => {
+      await eventually(() => client.server.info());
+      await client.location.get({ location: { directory: home } });
+      await eventually(async () => {
+        const plugins = (await client.plugin.list({ location: { directory: home } })).data;
+        const failed = plugins.filter((p) => p.state.status === "failed");
+        if (failed.length) throw Object.assign(Error(JSON.stringify(failed)), { terminal: true });
+        return ["abracode", "abracode-test"].every((id) =>
+          plugins.some((p) => p.id === id && p.state.status === "active"),
+        )
+          ? true
+          : undefined;
+      });
+    };
+    await ready();
     const api = client.rpc(probe);
     const loc = { location: { directory: home } };
     const observer = client.rpc(visibility);
@@ -1185,7 +1220,7 @@ function nativeTest(
           child!.kill("SIGTERM");
           await new Promise<void>((done) => child!.once("exit", () => done()));
           start();
-          await eventually(() => client.server.info());
+          await ready();
           await client.location.get({ location: { directory: home } });
         },
       });
@@ -1199,7 +1234,7 @@ function nativeTest(
           child!.kill("SIGTERM");
           await new Promise<void>((done) => child!.once("exit", () => done()));
           start();
-          await eventually(() => client.server.info());
+          await ready();
           await client.location.get({ location: { directory: home } });
         },
         hold: () => {
@@ -1231,7 +1266,7 @@ function nativeTest(
           child!.kill("SIGTERM");
           await new Promise<void>((done) => child!.once("exit", () => done()));
           start();
-          await eventually(() => client.server.info());
+          await ready();
           await client.location.get({ location: { directory: home } });
         },
       });
@@ -1259,7 +1294,7 @@ function nativeTest(
           child!.kill("SIGTERM");
           await new Promise<void>((done) => child!.once("exit", () => done()));
           start();
-          await eventually(() => client.server.info());
+          await ready();
           await client.location.get({ location: { directory: home } });
         },
       });
@@ -1316,7 +1351,7 @@ function nativeTest(
           child!.kill("SIGTERM");
           await new Promise<void>((done) => child!.once("exit", () => done()));
           start();
-          await eventually(() => client.server.info());
+          await ready();
           await client.location.get({ location: { directory: home } });
         },
       });
@@ -1340,7 +1375,7 @@ function nativeTest(
           child!.kill("SIGTERM");
           await new Promise<void>((done) => child!.once("exit", () => done()));
           start();
-          await eventually(() => client.server.info());
+          await ready();
           await client.location.get({ location: { directory: home } });
         },
       });
@@ -1373,7 +1408,7 @@ function nativeTest(
               owned.kill("SIGTERM");
             });
             start();
-            await eventually(() => client.server.info());
+            await ready();
             await client.location.get({ location: { directory: home } });
           },
         }),
@@ -1778,7 +1813,7 @@ function nativeTest(
       await new Promise<void>((done) => child!.once("exit", () => done()));
       releaseExplore?.();
       start();
-      await eventually(() => client.server.info());
+      await ready();
       await client.location.get({ location: { directory: home } });
       stopChanges();
       t.onTestFinished(observeChanges());
@@ -2167,7 +2202,7 @@ function nativeTest(
     child!.kill("SIGTERM");
     await new Promise<void>((done) => child!.once("exit", () => done()));
     start();
-    await eventually(() => client.server.info());
+    await ready();
     await client.location.get({ location: { directory: home } });
     const recovered = await invoke("abra_work_status", { issue_id: issue.id });
     assert.equal(recovered.execution.current_phase, "awaiting_plan_approval");
@@ -2474,7 +2509,7 @@ function nativeTest(
     child!.kill("SIGTERM");
     await new Promise<void>((done) => child!.once("exit", () => done()));
     start();
-    await eventually(() => client.server.info());
+    await ready();
     await client.location.get({ location: { directory: home } });
     const unresolvedAfterRestart = await invoke("abra_work_messages", {
       issue_id: lightweightIssue.id,
@@ -2647,7 +2682,7 @@ function nativeTest(
     child!.kill("SIGTERM");
     await new Promise<void>((done) => child!.once("exit", () => done()));
     start();
-    await eventually(() => client.server.info());
+    await ready();
     await client.location.get({ location: { directory: home } });
     engineeringEvidence.push({
       posture: "unattended",
@@ -2788,7 +2823,7 @@ function nativeTest(
     child!.kill("SIGTERM");
     await new Promise<void>((done) => child!.once("exit", () => done()));
     start();
-    await eventually(() => client.server.info());
+    await ready();
     await client.location.get({ location: { directory: home } });
     assert.equal(
       (await invoke("abra_work_status", { issue_id: issue.id })).execution.current_phase,

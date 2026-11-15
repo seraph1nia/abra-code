@@ -73,14 +73,15 @@ export function faultEvents(ctx: Context): Context {
   process.once("exit", () =>
     appendFileSync(join(output, "fault-events.jsonl"), JSON.stringify(counts) + "\n"),
   );
-  type Event = Stream.Success<ReturnType<Context["event"]["subscribe"]>>;
-  const previous = new Map<string, Event>();
   return {
     ...ctx,
     event: {
       ...ctx.event,
-      subscribe: () =>
-        ctx.event.subscribe().pipe(
+      subscribe: (input) => {
+        const events = ctx.event.subscribe(input);
+        type Event = Stream.Success<typeof events>;
+        const previous = new Map<string, Event>();
+        return events.pipe(
           Stream.flatMap((event) => {
             if (
               [
@@ -108,7 +109,8 @@ export function faultEvents(ctx: Context): Context {
             }
             return Stream.fromArray([event]);
           }),
-        ),
+        );
+      },
     },
   };
 }

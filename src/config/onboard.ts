@@ -18,8 +18,7 @@ import { type Runner } from "../process.ts";
 import { decode, decodeJSON } from "../decode.ts";
 import { PackageSchema, ProjectInputSchema, VerificationSchema } from "./contracts.ts";
 import { RepositorySources, remoteIdentity } from "../git/source.ts";
-const exists = (p: string) =>
-  domainEffect(access(p).pipe(Effect.match({ onSuccess: () => true, onFailure: () => false })));
+const exists = (p: string) => domainEffect(access(p).pipe(Effect.isSuccess));
 export class Onboarding {
   constructor(
     private records: Records,

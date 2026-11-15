@@ -37,9 +37,9 @@ export default Plugin.define({
   effect: (ctx) => {
     const home = process.env.ABRACODE_HOME ?? fileURLToPath(new URL("../../../", import.meta.url));
     return Effect.gen(function* () {
-      if (ctx.app.version !== "2.0.28")
+      if (ctx.app.version !== "2.3.0")
         return yield* Effect.die(
-          new Error(`AbraCode requires OpenCode 2.0.28; got ${ctx.app.version}`),
+          new Error(`AbraCode requires OpenCode 2.3.0; got ${ctx.app.version}`),
         );
       // Callbacks outlive registration: retain layer resources in the host plugin scope.
       const services = yield* Layer.build(applicationLayer(ctx, home));

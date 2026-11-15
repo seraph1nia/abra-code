@@ -11,7 +11,7 @@ import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 
 const issue = Id.IssueId.make("abra-1");
-const generated = ".opencode/commands/opsx-propose.md";
+const generated = ".agents/skills/openspec-propose/SKILL.md";
 
 test("controller refreshes instructions before Explore and retains its baseline across restart", async (t) => {
   const f = await run(fixture);
@@ -23,7 +23,9 @@ test("controller refreshes instructions before Explore and retains its baseline 
         assert.equal(f.runtime.creates, 0);
         updates++;
         yield* Effect.promise(() =>
-          mkdir(join(e.worktree_directory!, ".opencode/commands"), { recursive: true }),
+          mkdir(join(e.worktree_directory!, ".agents/skills/openspec-propose"), {
+            recursive: true,
+          }),
         );
         yield* Effect.promise(() =>
           writeFile(join(e.worktree_directory!, generated), "Refreshed instructions\n"),

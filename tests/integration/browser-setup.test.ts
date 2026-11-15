@@ -23,7 +23,7 @@ test("doctor checks the absolute central browser version without provisioning or
 import { appendFileSync } from 'node:fs';
 appendFileSync(process.env.BROWSER_DIAGNOSTIC_LOG, JSON.stringify(process.argv.slice(2))+'\\n');
 if (JSON.stringify(process.argv.slice(2)) !== '["--version"]') process.exit(23);
-console.log('agent-browser 0.39.1');
+console.log('agent-browser 0.43.0');
 `,
     { mode: 0o755 },
   );
@@ -39,7 +39,7 @@ console.log('agent-browser 0.39.1');
       timeout: 15000,
     }).catch((error: { stdout: string; stderr: string }) => error);
   const result = await doctor();
-  assert.match(result.stdout, new RegExp(`${central}: agent-browser 0\\.39\\.1`));
+  assert.match(result.stdout, new RegExp(`${central}: agent-browser 0\\.43\\.0`));
   assert.equal(await readFile(log, "utf8"), '["--version"]\n');
   assert.match(result.stdout, /pnpm browser:install/);
   await rm(central);

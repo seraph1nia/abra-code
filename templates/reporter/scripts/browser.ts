@@ -1,10 +1,14 @@
 import { chromium } from "playwright";
 
+/** Resolve before a fixture isolates XDG_CACHE_HOME; never provisions a browser. */
+export const reportBrowserExecutable = () =>
+  process.env.REPORT_CHROMIUM_PATH ?? chromium.executablePath();
+
 export async function launchReportBrowser() {
   try {
     return await chromium.launch({
       channel: "chromium",
-      executablePath: process.env.REPORT_CHROMIUM_PATH,
+      executablePath: reportBrowserExecutable(),
     });
   } catch (cause) {
     throw new Error(

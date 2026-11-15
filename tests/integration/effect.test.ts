@@ -35,7 +35,7 @@ test("failed plugin setup releases scoped scheduler leadership", async (t) => {
   });
   // Missing skill files fail after leadership acquisition, before any native mutation.
   const context = {
-    app: { version: "2.0.28" },
+    app: { version: "2.3.0" },
     location: { directory: home },
     storage: {},
   } as unknown as Context;

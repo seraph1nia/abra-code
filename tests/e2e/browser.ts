@@ -93,7 +93,7 @@ export async function assertBrowserWorker(
         if (unreachable) assert.match(text, /ERR_UNSAFE_PORT|failed|error/i);
       }
       const command = string(call.state.input.command ?? "");
-      if (command.endsWith("--version")) assert.match(text, /agent-browser 0\.39\.1/);
+      if (command.endsWith("--version")) assert.match(text, /agent-browser 0\.43\.0/);
       if (command.endsWith("snapshot -i")) assert.match(text, /Increment/);
       if (command.includes("get text"))
         assert.equal(

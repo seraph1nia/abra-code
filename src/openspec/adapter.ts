@@ -46,8 +46,7 @@ export class OpenSpec {
   create = Effect.fn("OpenSpec.create")(
     function* (this: OpenSpec, e: Execution) {
       const dir = join(yield* this.cwd(e), "openspec/changes", e.openspec_change);
-      if (yield* access(dir).pipe(Effect.match({ onSuccess: () => true, onFailure: () => false })))
-        return;
+      if (yield* access(dir).pipe(Effect.isSuccess)) return;
       yield* this.call(e, CreatedSchema, ["new", "change", e.openspec_change]);
     }.bind(this),
     domainEffect,
@@ -162,9 +161,7 @@ export class OpenSpec {
           ),
         ),
       )).filter((n) => n.endsWith(`-${e.openspec_change}`));
-      const active = yield* access(join(root, e.openspec_change)).pipe(
-        Effect.match({ onSuccess: () => true, onFailure: () => false }),
-      );
+      const active = yield* access(join(root, e.openspec_change)).pipe(Effect.isSuccess);
       if (!active && matches.length === 1) {
         yield* this.validateCanonical(e);
         return RelativePath.make(join("openspec/changes/archive", matches[0]));
@@ -181,9 +178,7 @@ export class OpenSpec {
       if (
         !(
           after.length === 1 &&
-          !(yield* access(join(root, e.openspec_change)).pipe(
-            Effect.match({ onSuccess: () => true, onFailure: () => false }),
-          ))
+          !(yield* access(join(root, e.openspec_change)).pipe(Effect.isSuccess))
         )
       )
         return yield* new CrewError("ARCHIVE_FAILED", "Archive completion could not be verified");

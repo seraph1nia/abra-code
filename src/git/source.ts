@@ -17,8 +17,7 @@ import { access, mkdir, readFile, rename, writeFile } from "../filesystem.ts";
 import { isAbsolute, join, resolve } from "node:path";
 import { CrewError, ensure, identifier, type Project } from "../domain.ts";
 import { Git } from "./repository.ts";
-const exists = (path: AbsolutePath) =>
-  access(path).pipe(Effect.match({ onSuccess: () => true, onFailure: () => false }));
+const exists = (path: AbsolutePath) => access(path).pipe(Effect.isSuccess);
 // Identity is separate from the transport URL: HTTPS and SSH may name the same repository.
 export function remoteIdentity(remote: GitRemote, cwd?: AbsolutePath): RemoteIdentity {
   ensure(remote.length > 0 && !remote.startsWith("-"), "REMOTE", "Invalid remote");

@@ -61,7 +61,7 @@ const declaration = {
   deadline_seconds: deadline,
   idle_seconds: idleSeconds,
   fault_schedule: faultSchedule,
-  runtime: { node: process.version, opencode: "2.0.28", provider: "deterministic loopback only" },
+  runtime: { node: process.version, opencode: "2.3.0", provider: "deterministic loopback only" },
   coverage: {
     full: "Existing complete native journey: provider failure/retry, queued/reply/notification restart, parallel scheduling, decisions, findings, Review, reports, delivery and cleanup",
     communication:

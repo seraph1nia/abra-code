@@ -9,7 +9,7 @@ import { actions, box, text, type Buttons } from "./controls.ts";
 function patch(ctx: Context, view: WorkView, wide: () => boolean) {
   let node: DiffRenderable;
   const syntax = createMemo(() => {
-    const value = generateSyntax(ctx.theme);
+    const value = generateSyntax(ctx.theme, ctx.renderer.nativeScene);
     onCleanup(() => value.destroy());
     return value;
   });

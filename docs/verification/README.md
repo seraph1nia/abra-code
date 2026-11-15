@@ -8,7 +8,7 @@ measurements and a separate authorized real-provider procedure, use
 
 ## Prepare and check health
 
-Use Node 24.11+ and the frozen pnpm toolchain. From the checkout:
+Use Node 26.4+ and the frozen pnpm toolchain. From the checkout:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -42,6 +42,12 @@ After the runner exits, confirm both files still exist and the recorded `result`
 The test stops only its own child server/provider and browser sessions, then removes its own installation root. It never kills by process name, touches the operator service, or pushes to user remotes. Failure teardown runs too. Evidence outside the fixture root survives; the caller owns that directory. Do not remove retained evidence to make a failed run appear clean.
 
 The [feature map](features/README.md) describes other journeys and their limitations. When a scoped change alters a mapped entry point, precondition or expected state, update that journey alongside the harness. Recipes in foreign repositories use their existing documentation/checks; this document is not globally registered as a worker skill. Scoped recipe creation uses `abra-verification` and must be exercised before being described as usable.
+
+## Local web acceptance
+
+`pnpm exec vp test run --project e2e tests/e2e/installation.test.ts` also starts the shipped `scripts/web.ts --no-open` against its disposable installation. A fresh Chromium context opens retained Abra without credentials, answers both a legacy pending form and a live form in the native UI, reloads, reconnects after native service restart and confirms proxy shutdown leaves the service usable. It uses the existing report Chromium setup and never starts or stops the operator service.
+
+`pnpm exec vp test run --project integration tests/integration/web-proxy.test.ts` proves internal authentication, host/origin rejection, streaming, endpoint/credential rediscovery without submission replay, bounded legacy form projection and WebSocket forwarding. The full native E2E journey sends its existing chat, worker-guard and exact-checkpoint scenarios through the proxy as well. Browser interaction with simple boolean forms is distinct from the controller's full approval/finishing scenarios.
 
 ## Recorded exercise
 

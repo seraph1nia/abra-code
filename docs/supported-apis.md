@@ -1,19 +1,25 @@
 # Supported APIs and environment evidence
 
-Inspected on 2026-10-14. AbraCode installs a local pinned runtime rather than upgrading the user's global binary.
+Updated on 2026-11-15. AbraCode installs a local pinned runtime rather than upgrading the user's global binary. Dated subsections below retain their original version-specific evidence; the current upgrade is described in [the dependency and adoption report](opencode-update-2026-11-15.md).
 
 | Component          | Supported version                  | Verified interface                                                                                                                                                                    |
 | ------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenCode CLI       | 2.0.28                             | `serve`, `service`, `--server`, `--session`, `pair`, `api`, `auth login`                                                                                                              |
-| `@opencode/plugin` | 2.0.28                             | Effect `Plugin.define({ id, effect(ctx) })`; scoped transforms, hooks and RPC registrations                                                                                           |
-| `@opencode/client` | 2.0.28                             | Effect `OpenCode.make`, native `Service.ensure/discover/stop/headers`, branded location and form APIs                                                                                 |
+| OpenCode CLI       | 2.3.0                              | `serve`, `service`, `--server`, `--session`, `pair`, `api`, `auth login`                                                                                                              |
+| `@opencode/plugin` | 2.3.0                              | Effect `Plugin.define({ id, effect(ctx) })`; scoped transforms, hooks and RPC registrations                                                                                           |
+| `@opencode/client` | 2.3.0                              | Effect `OpenCode.make`, native `Service.ensure/discover/stop/headers`, branded location and form APIs                                                                                 |
 | Work graph         | Node built-in SQLite               | `DatabaseSync`, scoped connections, SQL transactions, WAL, foreign keys, guarded ownership and unique request IDs                                                                     |
-| OpenSpec           | 1.13.2                             | `init --tools none`, `new change --json`, status, instructions, strict validation, JSON archive                                                                                       |
+| OpenSpec           | 2.0.0                              | `init --tools none`, `new change --json`, status, instructions, strict validation, JSON archive                                                                                       |
 | Git                | tested 2.56.0                      | `GIT_OPTIONAL_LOCKS=0` and `diff.autoRefreshIndex=false` for observer index refresh, argument-array invocation, detached native worktrees, issue branches, clean retirement, ancestry |
-| Node / flock       | tested 24.21.0 / util-linux 2.42.4 | Runtime and single-host kernel advisory locks                                                                                                                                         |
+| Node / flock       | tested 26.13.0 / util-linux 2.42.4 | Runtime and single-host kernel advisory locks                                                                                                                                         |
 | GitHub CLI         | tested CLI 2.102.0                 | PR JSON, CI/review status, merge head guard                                                                                                                                           |
 
 ## OpenCode contracts
+
+### Local web transport and form presentation
+
+`pnpm web` reuses the installation's `Service.ensure/discover` bootstrap and retained Abra session. A foreground HTTP proxy binds only `127.0.0.1`, supplies the discovered Basic credential upstream and forwards the bundled UI, streaming HTTP and WebSocket upgrades. Host and browser-origin checks happen before authentication is added. Pairing routes, authentication cookies and Basic challenges are excluded. Requests are forwarded once; rediscovery affects new requests without replaying uncertain submissions.
+
+The pinned 2.3.0 web app keys HTTP servers by origin and routes sessions as `/server/<base64url-origin>/session/<session-id>` ([source](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/app/src/shell/routes/session.ts)). Its [request selector](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/app/src/session/requests/model.ts) ignores arbitrary untagged forms. The `mcp-elicitation` presentation tag selects its generic typed-field dock, including boolean checkpoints and text answers. AbraCode adds that renderer tag to new human forms while preserving its source, exact-target metadata and controller checks. The web proxy projects the same tag onto older AbraCode forms in bounded GET responses only; persisted forms and submitted answers are unchanged. Events and ordinary chat are streamed without buffering. This is a presentation adapter to a pinned client, not MCP ownership or authorization.
 
 ### Scoped communication observation
 
@@ -333,3 +339,94 @@ file-link handoff; the actual Research/terminal-render/restart journey verifies 
 retained link and artifact without a hosted application. Offline and opaque-Blob
 browser tests execute the exact HTML sandbox flags. The lack of a paired graphical
 session still makes chat click-through/desktop routing source evidence only.
+
+## Dependency update on 2026-11-15
+
+The current pins are OpenCode 2.3.0, OpenTUI 0.8.4, Effect/platform-node 4.1.4,
+OpenSpec 2.0.0, agent-browser 0.43.0, TypeScript 7.0.2, Effect tsgo 0.69.0,
+Oxlint 1.93.0/tsgolint 7.0.2007, Vite+ 1.6.0 and Vitest 5.1.0. Node 26.13.0
+and pnpm 12.21.0 are pinned in mise; OpenTUI requires Node >=26.4.0.
+
+Installed declarations require a native resource owner for `generateSyntax`;
+the Markdown and diff views pass `ctx.renderer.nativeScene` and retain scoped
+style destruction. The 2.3.0 [prompt footer implementation](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/tui/src/feature-plugins/prompt/footer.tsx)
+no longer renders `prompt.footer.status`; AbraCode appends to `prompt.footer`.
+The home status slot remains unchanged. Terminal rendering and actual installed
+CLI startup are distinct acceptance cases.
+
+The 2.2.7 [activation change](https://github.com/anomalyco/opencode/releases/tag/v2.2.7)
+means location discovery alone cannot establish RPC readiness. Worker preflight
+and service bootstrap retain their explicit plugin barriers. The disposable
+native fixture also observes AbraCode and its probe active after every restart
+before calling their RPCs; failed activation is reported directly.
+
+OpenSpec 2 writes generated skills under `.agents/skills`. Its real refresh test
+still proves worktree-only regeneration before planning, preserving the fetched
+base and the source checkout's old instructions. Adapted tracked AbraCode skills
+retain their original upstream attribution and are not regenerated wholesale.
+
+The refreshed license inventory covers both documents of the pnpm 12 lockfile,
+including package-manager dependencies. Effect's regenerated JSON schema adds
+safe-integer bounds and normalizes existing constraints; it introduces no new
+configuration setting. This update does not explicitly enable optional OpenCode experiments; the
+role allowlists still filter newly registered native tools. The report distinguishes available APIs from recommended follow-ups.
+
+The v2.3.0 graphical [file renderer](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/gui-plugins/src/file/renderer.tsx)
+and [artifact viewer](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/gui-plugins/src/file/artifact-view.tsx)
+were inspected at their new paths. HTML retains the opaque iframe sandbox and
+no-referrer policy. Actual paired desktop click-through is still unverified.
+A database containing historical native 2.0.28 sessions was not upgraded in this
+run; old AbraCode record compatibility is covered separately by the unit/restart
+fixtures. Remote CI and real-provider/forge execution are not local acceptance.
+
+Final acceptance on 2026-11-15 passed `pnpm check` (including zero Effect
+warnings/errors), `pnpm test` (487 tests in 75 files), `pnpm test:e2e` (3 tests
+in 2 files), `pnpm build`, `pnpm config:schema`, `pnpm format:check`,
+`pnpm licenses:check` (3 fixtures; 761 locked components and 24 distributed
+source files), and `git diff --check`. `pnpm peers check` reports no issues;
+`pnpm outdated -r --format json` returns `{}` for the direct workspace packages.
+Commands ran under `mise exec --` with Node 26.13.0 and pnpm 12.21.0.
+
+The full native run retained evidence in
+`/tmp/abra-dependency-update-20261115-verified`. Its `native-engineering.json`
+records `result: pass`, `cleanup_complete: true` and 24 observations after
+teardown. `resources.json` records the fixture as removed. Full E2E completed
+in 373.83 seconds; unit/integration completed in 277.27 seconds. The same suite
+includes the separate reply-recovery and fresh-installation cases. Sibling log
+files preserve the command outcomes; this is local acceptance, not remote CI.
+
+### OpenSpec 2 shared instruction migration
+
+The six generated workflow skills now use OpenSpec 2.0.0 templates and have one
+shared copy in `.agents/skills`. The target marker names Codex and OpenCode;
+the twelve former command/skill copies under `.opencode` have been removed.
+Generated workflows use skill-name handoffs and retain their exact CLI bytes;
+formatting excludes only those six supplier-generated files.
+
+AbraCode-specific procedures remain in separate project-owned skills, including
+`openspec-execution`, whose registered native ID, source path and body are
+unchanged. No restoration wrapper, generated prompt patch or new worker authority
+is added. The real CLI integration test copies the repository's instruction tree,
+marks all six generated skills stale, and runs `openspec update` twice under
+isolated configuration. It requires the first refresh to restore the expected
+generated content while preserving custom skills and role profiles, and the
+second to leave the tree byte-for-byte unchanged with no legacy directories
+recreated. The controller provisioning test also requires the
+custom worker procedure to survive a stale generated-skill refresh before Explore.
+See [ownership and verification](openspec.md).
+
+Migration acceptance on 2026-11-15 passed `pnpm check`, `pnpm test` (492 tests in
+76 files), `pnpm test:e2e` (3 tests in 2 files, 371.15 seconds), build, schema,
+license and diff checks. The strengthened regeneration/preservation cases passed
+again with the 5 existing refresh unit cases (7 tests total). A final isolated
+`openspec update --dry-run` reports no changes. The license inventory now records
+761 locked components and 12 distributed source files.
+
+Evidence survives at `/tmp/abra-openspec2-final-verified`: main and reply-recovery
+native JSON record a pass and completed cleanup, and both fixture roots are
+removed. The lead fixture also now proves its intended actor answers: it selects
+the current lead request, excludes sentence punctuation from the key and reserves
+that one routing question for the lead responder. Production controller logic is
+unchanged. Concurrent web-client work was present in this checkout and exercised
+by the full native/install suite. This evidence does not extend the live-provider,
+historical-database or remote-CI claims above.

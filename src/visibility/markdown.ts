@@ -7,7 +7,7 @@ import { type Context } from "@opencode/plugin/tui/context";
 export function markdown(ctx: Context, content: () => string) {
   let node: MarkdownRenderable;
   const syntax = createMemo(() => {
-    const style = generateSyntax(ctx.theme);
+    const style = generateSyntax(ctx.theme, ctx.renderer.nativeScene);
     onCleanup(() => style.destroy());
     return style;
   });

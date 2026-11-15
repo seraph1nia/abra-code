@@ -55,7 +55,7 @@ export async function reportJourney(o: {
     return current.execution.current_phase === "completed" ? current : undefined;
   }, 90000);
   const first = (await artifacts())[0];
-  assert.equal(first.status, "published");
+  assert.equal(first.status, "published", JSON.stringify(first));
   assert.equal(first.artifact.source_report.report_id, "native-findings");
   assert.equal(first.artifact.generation, started.control_generation);
   assert.equal(first.snapshot, undefined);
@@ -208,7 +208,8 @@ export async function reportJourney(o: {
     recovered: recovered.artifact,
     lost_response: responseLost,
     retired_worktree: true,
-    native_file_link_source: "OpenCode v2.0.28 graphical file renderer/artifact viewer",
+    native_file_link_source:
+      "OpenCode v2.3.0 graphical file renderer/artifact viewer (source inspection)",
     native_gui_clickthrough: "not_run: no paired graphical client",
     permissions_unchanged: true,
   };

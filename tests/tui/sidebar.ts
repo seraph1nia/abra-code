@@ -178,7 +178,7 @@ const action = {
     ),
 };
 const ctx = {
-  app: { version: "2.0.28", channel: "stable" },
+  app: { version: "2.3.0", channel: "stable" },
   location: { directory: "/fixture" },
   theme: {
     hue: { accent: { 200: RGBA.fromHex("#a9b7ff") } },
@@ -463,7 +463,7 @@ const mount = (render: () => ReturnType<typeof sidebar.render>, width = 90, heig
     },
     { width, height },
   );
-for (const name of ["home.footer.status", "prompt.footer.status"]) {
+for (const name of ["home.footer.status", "prompt.footer"]) {
   const footer = slots.find((slot) => slot.append === name)!;
   assert.ok(footer, `Missing supported footer slot ${name}`);
   const frame = await mount(() => footer.render({} as never), 26, 4);
@@ -1196,7 +1196,7 @@ try {
 }
 assert.ok(stopped, "Plugin unload stops its event listener");
 assert.ok(
-  disposedSlots.has("home.footer.status") && disposedSlots.has("prompt.footer.status"),
+  disposedSlots.has("home.footer.status") && disposedSlots.has("prompt.footer"),
   "Plugin unload removes both branding slots",
 );
 console.log("Native sidebar checks passed");

@@ -1,3 +1,4 @@
+/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect platform APIs are required by the native adapters and covered by integration tests. */
 import { Executable } from "../src/identities.ts";
 import { Effect, Console } from "effect";
 import { ProcessRunner } from "../src/process.ts";
@@ -19,7 +20,7 @@ await Effect.runPromise(
     );
     const endpoint = yield* Service.discover({
       file: join(config.home, ".abracode/state/opencode/service.json"),
-      version: "2.0.28",
+      version: "2.3.0",
     }).pipe(Effect.provide(NodeFileSystem.layer));
     if (endpoint) {
       const client = yield* makeClient(endpoint);

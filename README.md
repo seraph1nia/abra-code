@@ -1,12 +1,14 @@
 # AbraCode
 
-AbraCode is a local coding orchestrator powered by **OpenCode 2.0.28** and **OpenSpec 1.13.2**. Talk to **Abra**, your persistent supervisor. Abra coordinates independent workers, while a deterministic controller owns claims, approvals, checks, delivery and recovery.
+AbraCode is a local coding orchestrator powered by **OpenCode 2.3.0** and **OpenSpec 2.0.0**. Talk to **Abra**, your persistent supervisor. Abra coordinates independent workers, while a deterministic controller owns claims, approvals, checks, delivery and recovery.
+
+OpenSpec workflows use one shared skill tree; see [instruction ownership and refresh behavior](docs/openspec.md).
 
 Each issue has one owned worktree. SQLite owns the work graph, OpenSpec owns planning artifacts and implementation tasks, and OpenCode owns persistent sessions and worktree inventory. Work and decisions survive service restart.
 
 ## Requirements
 
-The first release supports **Linux**. The tested environment is Linux x86-64 with glibc, Node **24.21.0**, pnpm **11.28.5**, Git **2.56.0** and util-linux `flock` **2.42.4**. Other Linux combinations are not covered by that acceptance result; macOS and Windows are unsupported.
+The first release supports **Linux**. The tested environment is Linux x86-64 with glibc, Node **26.13.0**, pnpm **12.21.0**, Git **2.56.0** and util-linux `flock` **2.42.4**. OpenTUI requires Node 26.4 or newer. Other Linux combinations are not covered by that acceptance result; macOS and Windows are unsupported.
 
 | Capability                    | Requirements                                                                                                       |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -35,6 +37,8 @@ pnpm start
 ```
 
 `pnpm start` starts/discovers the dedicated service and opens **Abra** in an interactive terminal. Repeated launches reuse that service and conversation. `pnpm service:start` starts only the background service and bootstraps Abra, which allows authentication before the first model request. Existing native provider credentials can make `pnpm auth` unnecessary. Credentials belong in native auth storage or environment variables, never in the YAML.
+
+For browser access, run `pnpm web`. It opens the standard OpenCode web UI directly into the same Abra conversation at `http://127.0.0.1:4097`, without a login or pairing step. Use `pnpm web --port 4098 --no-open` to choose another port and print the URL. Keep that terminal open; Ctrl+C stops the web proxy and leaves the background service running. Access is limited to this computer, and native service authentication stays inside the proxy. AbraCode's custom Work views remain available in the terminal. See [browser operation](docs/operations.md#local-web-ui).
 
 [mise](https://mise.jdx.dev/walkthrough.html) can install the pinned Node/pnpm versions: run `mise trust` and `mise run setup`. It is an alternative toolchain installer, not an additional runtime requirement. Create/configure `abracode.yaml` before diagnostics. See [configuration](docs/configuration.md) and [operations](docs/operations.md).
 

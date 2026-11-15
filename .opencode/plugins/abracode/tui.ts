@@ -9,9 +9,9 @@ export default Plugin.define({
   id: "abracode",
   setup(ctx) {
     const view = createWorkView(ctx);
-    const footers = ["home.footer.status", "prompt.footer.status"].map((slot) =>
+    const footers = ["home.footer.status", "prompt.footer"].map((slot) =>
       ctx.ui.slot({
-        append: slot as "home.footer.status" | "prompt.footer.status",
+        append: slot as "home.footer.status" | "prompt.footer",
         render: () => text(ctx, () => "AbraCode · Talk to Abra", true),
       }),
     );

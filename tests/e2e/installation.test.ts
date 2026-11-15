@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { writeFile, readFile, rm, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { installSource, installationRoot, interactiveLaunch, command } from "./install.ts";
+import { webJourney } from "./web.ts";
 
 test(
   "fresh frozen Linux installation validates offline and reuses its own service and Abra",
@@ -83,7 +84,17 @@ test(
     assert.deepEqual(JSON.parse((await run("config-apply.ts", ["--json"])).stdout).outcomes, []);
     await interactiveLaunch(home, env);
     await interactiveLaunch(home, env);
-    assert.equal((await run("start.ts")).stdout, first.stdout);
+    await webJourney(home, env, /Abra: (ses_\S+)/.exec(first.stdout)![1], async () => {
+      await run("stop.ts");
+      assert.equal(
+        (await run("start.ts")).stdout.match(/Abra: (ses_\S+)/)?.[1],
+        /Abra: (ses_\S+)/.exec(first.stdout)![1],
+      );
+    });
+    assert.equal(
+      (await run("start.ts")).stdout.match(/Abra: (ses_\S+)/)?.[1],
+      /Abra: (ses_\S+)/.exec(first.stdout)![1],
+    );
     await run("stop.ts");
     assert.equal(await readFile(join(home, ".opencrew/service.json"), "utf8"), "legacy sentinel");
     assert.equal(await readFile(join(home, "projects.yaml"), "utf8"), "legacy config sentinel");

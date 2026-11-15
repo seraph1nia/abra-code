@@ -220,11 +220,7 @@ export class ProjectSetup {
         }
         yield* this.c.workspaces.provision(p, e, () => this.save(e!));
         const path = e.worktree_directory!;
-        if (
-          !(yield* access(join(path, "openspec/config.yaml")).pipe(
-            Effect.match({ onSuccess: () => true, onFailure: () => false }),
-          ))
-        )
+        if (!(yield* access(join(path, "openspec/config.yaml")).pipe(Effect.isSuccess)))
           yield* this.c.git.runner.run(
             this.c.config.commands.openspec,
             ["init", "--tools", "none", "--no-animation", path],

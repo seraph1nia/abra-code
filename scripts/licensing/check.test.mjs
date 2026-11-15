@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parse } from "yaml";
 import { validateInventory, digest } from "./check.mjs";
+import { parseLock } from "./lock.mjs";
+import { classifyUses } from "./uses.mjs";
 const lock = "packages:\n  example@1.0.0:\n    resolution: { integrity: sha512-example }\n";
 const text = "MPL-2.0 reviewed source-availability evidence";
 const evidence = [{ source: "supplier license", sha256: digest(text) }];
@@ -44,4 +46,26 @@ await test("unreviewed, changed, missing and stale evidence fails release readin
   }
   assert.ok(validateInventory(inventory(), lock, () => undefined).length);
   assert.ok(validateInventory(inventory(), lock, () => text + "changed").length);
+});
+
+await test("pnpm toolchain documents participate in license checks and reachability", () => {
+  const combined = `importers:
+  .:
+    packageManagerDependencies:
+      pnpm: {version: 12.21.0}
+packages:
+  pnpm@12.21.0: {resolution: {integrity: sha512-toolchain}}
+snapshots:
+  pnpm@12.21.0: {}
+---
+${lock}`;
+  assert.deepEqual(Object.keys(parseLock(combined).packages), ["pnpm@12.21.0", "example@1.0.0"]);
+  assert.deepEqual(classifyUses(parseLock(combined)).get("pnpm@12.21.0"), ["contributor-build"]);
+  const value = inventory();
+  value.lock_sha256 = digest(combined);
+  assert.ok(
+    validateInventory(value, combined, () => text).includes("Unreviewed license: pnpm@12.21.0"),
+  );
+  assert.throws(() => parseLock(`${lock}\n---\npackages:\n  example@1.0.0: {}\n`), /Conflicting/);
+  assert.throws(() => parseLock("packages: ["));
 });

@@ -3,11 +3,11 @@ import fs from "node:fs";
 import { classifyUses } from "./uses.mjs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { parse } from "yaml";
+import { parseLock } from "./lock.mjs";
 const root = process.cwd();
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const lockText = fs.readFileSync("pnpm-lock.yaml", "utf8");
-const lock = parse(lockText);
+const lock = parseLock(lockText);
 const uses = classifyUses(lock);
 const installed = new Map();
 for (const entry of fs.readdirSync("node_modules/.pnpm")) {

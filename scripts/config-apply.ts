@@ -1,3 +1,4 @@
+/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect platform APIs are required by the native adapters and covered by integration tests. */
 import { Effect, Console } from "effect";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Service } from "@opencode/client/effect/service";
@@ -13,7 +14,7 @@ await Effect.runPromise(
     const config = yield* loadConfig(installationHome());
     const endpoint = yield* Service.discover({
       file: runtimePaths(config.home).service,
-      version: "2.0.28",
+      version: "2.3.0",
     });
     if (!endpoint)
       return yield* new CrewError(

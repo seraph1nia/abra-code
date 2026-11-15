@@ -227,6 +227,7 @@ export class NativeRuntime implements Runtime {
         title: question.slice(0, 512),
         metadata: {
           source: "abracode",
+          kind: "mcp-elicitation",
           decision_identity: identity,
           finishing_target: fingerprint,
         },
@@ -973,7 +974,7 @@ export class NativeRuntime implements Runtime {
         sessionID: session,
         id: id,
         title: question.slice(0, 512),
-        metadata: { source: "abracode", decision_identity: identity },
+        metadata: { source: "abracode", kind: "mcp-elicitation", decision_identity: identity },
         fields: [
           {
             key: "answer",
@@ -1027,7 +1028,7 @@ export class NativeRuntime implements Runtime {
         sessionID: sessionID,
         id: id,
         title,
-        metadata: { source: "abracode", fingerprint },
+        metadata: { source: "abracode", kind: "mcp-elicitation", fingerprint },
         fields: [
           {
             key: "authorize",

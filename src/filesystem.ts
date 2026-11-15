@@ -1,3 +1,4 @@
+/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect platform APIs are required by the native adapters and covered by integration tests. */
 import { AbsolutePath } from "./identities.ts";
 import * as fs from "node:fs/promises";
 import { type Dirent, type MakeDirectoryOptions, type PathLike, type RmOptions } from "node:fs";
@@ -74,5 +75,4 @@ export function readdir(
     ? io(() => fs.readdir(path, options))
     : platform((fs) => fs.readDirectory(pathname(path)));
 }
-export const exists = (path: PathLike) =>
-  access(path).pipe(Effect.match({ onSuccess: () => true, onFailure: () => false }));
+export const exists = (path: PathLike) => access(path).pipe(Effect.isSuccess);

@@ -236,7 +236,7 @@ export class Finalization {
       if (
         yield* access(
           join(evidence.worktree_directory, "openspec/changes", e.openspec_change),
-        ).pipe(Effect.match({ onSuccess: () => true, onFailure: () => false }))
+        ).pipe(Effect.isSuccess)
       ) {
         if (
           !(

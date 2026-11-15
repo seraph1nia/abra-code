@@ -39,7 +39,7 @@ test("controller defaults run pinned workflow CLIs outside the central home with
     await run(
       runner.run(config.commands.openspec, ["--version"], Id.AbsolutePath.make(worktree), env),
     ),
-    /1\.13\.2/,
+    /2\.0\.0/,
   );
 });
 test("command overrides are preserved and unavailable workflow CLIs fail before service startup", async (t) => {

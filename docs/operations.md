@@ -33,6 +33,21 @@ Restart reactivates the coordinator without an attached UI. Stop retains durable
 
 A location reload can unload the plugin's monitor; it does not delete sessions or worktrees. The leadership lock is released, and the replacement plugin reconciles existing resources.
 
+## Local web UI
+
+Run `pnpm web` from the installation root to start/discover the dedicated service and open the standard OpenCode web UI in the retained Abra conversation. Model-provider authentication still uses `pnpm auth` or existing native credentials. No browser password or pairing is required.
+
+```sh
+pnpm web
+pnpm web --port 4098 --no-open
+```
+
+The proxy listens only on `127.0.0.1` (port 4097 by default); use the exact printed URL. It rejects other hosts and browser origins and does not enable cross-origin access. An occupied port produces an error; choose another with `--port`. Browser-opening failure leaves the proxy running and prints the URL. Ctrl+C or SIGTERM stops only the proxy, including active streams and WebSockets. The native service, worker execution and history keep running.
+
+Terminal and browser clients share the same service, configuration and Abra session. Chat and native approval forms use the existing controller gates; direct prompts to managed workers remain refused. The standard web UI does not load AbraCode's terminal Work dashboard or sidebar. Custom browser Work views are deferred.
+
+Native credentials are read through service discovery and applied only on upstream requests; the proxy does not put them in URLs, browser storage or logs. Native pairing routes and authentication cookies are excluded from the proxy. After a native service restart, new requests rediscover its endpoint and credentials. A failed submission is never replayed by the proxy: inspect the retained conversation or form before submitting again. Start a stopped native service with `pnpm service:start`, then reload the browser if needed.
+
 ## Terminal work view
 
 The native TUI loads the plugin's `./tui` entrypoint on `pnpm attach`. Its sidebar retains the current worker's ticket, prioritizes items needing attention and shows up to three tickets within a terminal-height budget. **Work home** opens the grouped list. Its sections are **Needs you**, **Working**, **Blocked**, **Queued**, **Done**, and an **Other** fallback for unknown states. Approvals/recovery need attention; dependency/setup/policy blockers are separate from temporary capacity waits. Done requires a closed work-graph issue without a conflicting execution, and loads in pages of 50. Search and repository filters apply to loaded tickets.
@@ -101,7 +116,7 @@ Explore/Apply have `abra_spec` for read-only CLI status/instructions; Review has
 For a full coding issue:
 
 1. Ask the Supervisor for the desired work. It uses `abra_work_create` to record your goal in the work graph with repository association and optional dependencies/priority, then starts the returned issue when requested. Explore investigates implementation details; the human plan form approves its resulting scope. Issues have an explicit typed `repository_id`.
-2. Start a ready issue. The unique execution actor atomically claims it. The controller fetches the remote target, saves its SHA and delivery branch, and the native API creates its worktree from that SHA; the controller creates its issue branch. For full OpenSpec work, it runs `openspec update` in that owned worktree before creating the change or launching Explore. Generated instruction changes are committed as a controller preparation baseline; the fetched base remains unchanged. Successful refresh is retained across provisioning retries and restarts. Update failure blocks worker launch and retains resources; partial changes must be inspected and resolved to a clean worktree before retry. Failed fetches block provisioning. Resuming preserves the recorded base.
+2. Start a ready issue. The unique execution actor atomically claims it. The controller fetches the remote target, saves its SHA and delivery branch, and the native API creates its worktree from that SHA; the controller creates its issue branch. For full OpenSpec work, it runs `openspec update` in that owned worktree before creating the change or launching Explore. OpenSpec 2 maintains the shared `.agents/skills` workflows; AbraCode's separate custom skills and role profiles retain controller guidance (see [instruction ownership](openspec.md)). Generated instruction changes are committed as a controller preparation baseline; the fetched base remains unchanged. Successful refresh is retained across provisioning retries and restarts. Update failure blocks worker launch and retains resources; partial changes must be inspected and resolved to a clean worktree before retry. Failed fetches block provisioning. Resuming preserves the recorded base.
 3. Explore reads project instructions and writes the configured OpenSpec artifacts. Source edits and unrelated shell commands are denied; agent-browser is the browser exception.
 4. The controller validates/stages planning artifacts and waits for a native human form. Calling an approval tool alone grants no authorization.
 5. Apply implements the approved change and marks real tasks complete. Review is a separate read-only session in the same worktree. Full-spec Review includes OpenSpec completeness, correctness and coherence verification with concrete evidence and unresolved conflict references; a generic pass without this evidence is rejected. Lightweight Review uses its short contract.

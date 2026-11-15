@@ -1,4 +1,4 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- OpenCode 2.0.28 requires Effect HTTP; versions are pinned and real-server tested. */
+/* oxlint-disable effecttsgo/unstable-api-usage -- OpenCode 2.3.0 requires Effect HTTP; versions are pinned and real-server tested. */
 import { OpenCode } from "@opencode/client/effect";
 import { Service, type Endpoint } from "@opencode/client/effect/service";
 import { Effect, Exit, Duration } from "effect";

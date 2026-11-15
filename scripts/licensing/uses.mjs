@@ -23,6 +23,8 @@ export function classifyUses(lock) {
   };
   for (const [name, ref] of Object.entries(lock.importers?.["."]?.dependencies ?? {}))
     visit(name, ref, "application-runtime");
+  for (const [name, ref] of Object.entries(lock.importers?.["."]?.packageManagerDependencies ?? {}))
+    visit(name, ref, "contributor-build");
   for (const [name, ref] of Object.entries(lock.importers?.["."]?.devDependencies ?? {}))
     visit(
       name,

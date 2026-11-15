@@ -1,3 +1,4 @@
+/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect platform APIs are required by the native adapters and covered by integration tests. */
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { Service } from "@opencode/client/effect/service";
@@ -19,7 +20,7 @@ await Effect.runPromise(
     const state = join(home, ".abracode/state");
     const endpoint = yield* Service.discover({
       file: join(state, "opencode/service.json"),
-      version: "2.0.28",
+      version: "2.3.0",
     });
     if (!endpoint)
       return yield* new CrewError(

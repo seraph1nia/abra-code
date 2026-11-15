@@ -235,12 +235,17 @@ export async function leadJourney(o: {
     scope: "Existing accepted source investigation",
     question: "Which retained scope should guide this investigation?",
   });
-  await o.eventually(async () =>
-    (await o.invoke("abra_work_status", { issue_id: issue.id })).execution.decisions?.some(
+  const decisionAnswer = await o.eventually(async () => {
+    const decision = (
+      await o.invoke("abra_work_status", { issue_id: issue.id })
+    ).execution.decisions?.find(
       (d: any) => d.key === "native-lead-decision" && d.status === "answered",
-    )
-      ? true
-      : undefined,
+    );
+    return decision ?? undefined;
+  });
+  assert.equal(
+    decisionAnswer.answer,
+    "Use the existing retained read-only source scope; no additional changes are authorized.",
   );
   assert.ok((await status()).requests.some((r: any) => r.request.body.includes("decision:")));
   o.releaseResearch();

@@ -11,4 +11,6 @@ Workflow references:
 - [Onboarding](.agents/skills/project-onboarding/SKILL.md): inspect and explicitly register repositories.
 - [Recovery](.agents/skills/recovery/SKILL.md): reconcile incomplete executions.
 
+OpenSpec 2's six generated workflow skills have one shared copy under `.agents/skills/`; invoke them by skill name, such as `openspec-propose` or `openspec-apply-change`. Keep AbraCode-specific guidance in the project-owned skills above, including `openspec-execution`, whose native worker ID remains `abra-openspec-execution`. Generated skills are refreshed by the CLI; do not customize their bodies or restore tool-specific skill/command copies. Registered work still goes through Abra and the controller checkpoints. See [instruction ownership](docs/openspec.md).
+
 For work on this orchestrator, run `pnpm check`, `pnpm test`, and `pnpm test:e2e`. Tests use temporary repositories and must never push to user remotes. Use the [verification recipe](docs/verification/README.md) for disposable native journeys and retained evidence. Consult [API evidence](docs/supported-apis.md) before changing native integrations. Keep lifecycle gates in the controller, not solely in prompts.
