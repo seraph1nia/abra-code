@@ -243,6 +243,8 @@ export class Reports {
 
   generate = (...args: Parameters<VisualReports["generate"]>) => this.visual.generate(...args);
   recover = () => this.visual.recover();
+  readArtifact = (...args: Parameters<VisualReports["readArtifact"]>) =>
+    this.visual.readArtifact(...args);
   private readReceipt = Effect.fn("Reports.readReceipt")(
     function* (this: Reports, e: Execution, receipt: typeof ReportReceiptSchema.Type) {
       if (

@@ -53,6 +53,13 @@ test("visual artifacts retain snapshot/provenance and independent immutable iden
   const before = await run(f.controller.get(issue));
   const result = await run(reports().generate(parent, issue, request));
   assert.equal(result.status, "published");
+  const browserRead = await run(reports().readArtifact(issue, request.request_id));
+  assert.equal(browserRead.hash, result.artifact!.hash);
+  assert.equal(browserRead.html, await readFile(result.artifact!.path, "utf8"));
+  await assert.rejects(
+    run(reports().readArtifact(issue, Id.RequestId.make("unknown"))),
+    /unavailable/,
+  );
   assert.equal(result.artifact!.hash, reportHash(await readFile(result.artifact!.path, "utf8")));
   assert.equal(
     result.snapshot.status,

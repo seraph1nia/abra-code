@@ -140,6 +140,29 @@ export class VisualReports {
       }),
     );
   }
+  /** Read only a retained published revision through the existing containment/hash checks. */
+  readArtifact = (issue: IssueId, request: RequestId) =>
+    domainEffect(
+      Effect.gen({ self: this }, function* () {
+        const e = yield* this.records.execution(issue);
+        const build = e?.visual_reports?.find((b) => b.request.request_id === request);
+        ensure(
+          e && build?.status === "published" && build.artifact,
+          "REPORT_UNAVAILABLE",
+          "Published visual report is unavailable",
+        );
+        ensure(
+          build.artifact.issue_id === issue && build.artifact.execution_id === e.execution_id,
+          "REPORT_IDENTITY",
+          "Visual report belongs to another execution",
+        );
+        return {
+          html: yield* this.artifactContent(build),
+          hash: build.artifact.hash,
+          bytes: build.artifact.bytes,
+        };
+      }),
+    );
   private artifactContent(build: VisualBuild) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {

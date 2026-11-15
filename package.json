@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "check": "vp check && pnpm typecheck && pnpm lint:effect && pnpm check:lsp && pnpm report:check",
+    "check": "vp check && pnpm typecheck && pnpm lint:effect && pnpm check:lsp && pnpm report:check && pnpm web:check",
     "test": "vp test run --project unit --project integration",
     "test:e2e": "vp test run --project e2e",
     "test:soak": "tsx tests/operational/soak.ts",
@@ -24,7 +24,7 @@
     "lint": "vp lint && pnpm lint:effect",
     "format": "vp fmt",
     "test:watch": "vp test watch --project unit --project integration",
-    "build": "vp pack",
+    "build": "vp pack && pnpm web:build",
     "prepare": "effect-tsgo patch --typescript --oxlint",
     "lint:effect": "vp lint --type-aware --deny-warnings",
     "check:lsp": "effect-tsgo diagnostics --project tsconfig.json --format json --strict --lspconfig '{\"diagnostics\":true,\"diagnosticSeverity\":{\"unstableApiUsage\":\"off\"}}'",
@@ -41,9 +41,15 @@
     "licenses:refresh": "node scripts/licensing/refresh.mjs",
     "licenses:check": "node --test scripts/licensing/check.test.mjs && node scripts/licensing/check.mjs",
     "config:apply": "tsx scripts/config-apply.ts",
-    "config:status": "tsx scripts/config-apply.ts --status"
+    "config:status": "tsx scripts/config-apply.ts --status",
+    "web:build": "pnpm --filter @abracode/web build",
+    "web:check": "pnpm --filter @abracode/web check",
+    "dev": "tsx scripts/dev.ts"
   },
   "dependencies": {
+    "@ag-ui/client": "1.0.4",
+    "@ag-ui/core": "1.0.4",
+    "@copilotkit/runtime": "1.88.0",
     "@effect/platform-node": "4.1.4",
     "@opencode/client": "2.3.0",
     "@opencode/plugin": "2.3.0",
@@ -52,7 +58,9 @@
     "@toon-format/toon": "4.4.0",
     "diff": "9.0.0",
     "effect": "4.1.4",
-    "yaml": "2.9.1"
+    "rxjs": "7.8.2",
+    "yaml": "2.9.1",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@effect/tsgo": "0.69.0",

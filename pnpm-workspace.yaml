@@ -1,7 +1,11 @@
 packages:
   - templates/reporter
+  - apps/web
 
 overrides:
+  rxjs: 7.8.2
+  "@ag-ui/client": 1.0.4
+  "@ag-ui/core": 1.0.4
   # Keep the plugin and its host-facing adapters on one Effect implementation.
   effect: 4.1.4
   "@effect/platform-node-shared": 4.1.4
@@ -10,6 +14,7 @@ overrides:
   "vitest@*": 5.1.0
 
 allowBuilds:
+  "@scarf/scarf": false
   "@opencode/cli": true
   agent-browser: true
   esbuild: true
@@ -37,6 +42,7 @@ minimumReleaseAgeExclude:
 # The Vite+ core alias uses the toolchain version rather than Vite's version.
 peerDependencyRules:
   allowedVersions:
+    "@vitejs/plugin-react>vite": "1.6.0"
     "@opencode/client>effect": "4.1.4"
     "vitest>vite": "1.6.0"
     "@vitest/mocker>vite": "1.6.0"

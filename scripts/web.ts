@@ -5,13 +5,14 @@ import { Console, Effect } from "effect";
 import { bootstrapService } from "../src/opencode/bootstrap.ts";
 import { runtimePaths } from "../src/config/identity.ts";
 import { CrewError } from "../src/domain.ts";
-import { webProxy } from "../src/web/proxy.ts";
+import { workspaceServer } from "../src/web/server.ts";
+import { NativeWebBackend } from "../src/web/backend.ts";
 import { spawn } from "node:child_process";
 
 const args = process.argv.slice(2);
 if (args.includes("--help")) {
   console.log(
-    "Usage: pnpm web [--port 4097] [--no-open]\nOpens Abra in the standard OpenCode web UI on localhost without login.",
+    "Usage: pnpm web [--port 4097] [--no-open]\nOpens the single-session AbraCode CopilotKit workspace on localhost.",
   );
 } else {
   const program = Effect.gen(function* () {
@@ -28,15 +29,16 @@ if (args.includes("--help")) {
     const { home, supervisor } = yield* bootstrapService;
     return yield* Effect.scoped(
       Effect.gen(function* () {
-        const web = yield* webProxy({
-          port,
-          sessionID: supervisor.id,
-          discover: Service.discover({ file: runtimePaths(home).service, version: "2.3.0" }).pipe(
+        const backend = new NativeWebBackend(
+          home,
+          supervisor.id,
+          Service.discover({ file: runtimePaths(home).service, version: "2.3.0" }).pipe(
             Effect.provide(NodeFileSystem.layer),
           ),
-        });
+        );
+        const web = yield* workspaceServer({ port, backend });
         yield* Console.log(
-          `Abra web: ${web.url}\nKeep this terminal open. Ctrl+C stops the web proxy; the AbraCode service keeps running.`,
+          `Abra web: ${web.url}\nKeep this terminal open. Ctrl+C stops the frontend; the AbraCode service keeps running.`,
         );
         if (open)
           // The browser is user-owned: an opener that waits for its window must

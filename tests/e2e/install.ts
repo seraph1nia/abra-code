@@ -33,6 +33,7 @@ export async function installSource(home: string) {
     ".opencode",
     ".agents",
     "templates",
+    "apps",
   ])
     await cp(resolve(path), join(home, path), {
       recursive: true,
@@ -60,6 +61,7 @@ export async function installSource(home: string) {
       );
     throw cause;
   });
+  await command("pnpm", ["web:build"], { cwd: home, timeout: 60000, maxBuffer: 4 * 1024 * 1024 });
   if (process.env.ABRACODE_TEST_METRICS === "1") {
     await mkdir(join(home, "tests/operational"), { recursive: true });
     await cp(resolve("tests/operational/metrics.ts"), join(home, "tests/operational/metrics.ts"));

@@ -1,3 +1,4 @@
+import { registerWebGateway } from "../../../src/web/gateway.ts";
 import { WorkerInspectionSchema } from "../../../src/visibility/worker.ts";
 import { configurationReport } from "../../../src/config/declarations.ts";
 import { configuration } from "../../../src/config/protocol.ts";
@@ -109,6 +110,8 @@ export default Plugin.define({
               provide,
             ),
         });
+      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native RPC registration declares an open handler-error channel; handlers map domain errors to refused.
+      if (central) yield* registerWebGateway(ctx, config, c, provide);
       const observer = new Visibility(c);
       const json =
         <S extends Schema.Constraint>(schema: S) =>

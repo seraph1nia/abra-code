@@ -69,6 +69,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     "package.json",
     ".opencode/plugins/abracode/package.json",
     "templates/reporter/package.json",
+    "apps/web/package.json",
   ]) {
     if (JSON.parse(fs.readFileSync(file, "utf8")).license !== "MIT")
       errors.push(`Project license metadata differs: ${file}`);

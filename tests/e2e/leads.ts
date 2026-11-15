@@ -27,7 +27,9 @@ export async function leadJourney(o: {
     merge_approval: false,
     verification: [],
     delivery: "branch",
-    diagnostic_turns: 4,
+    // Intake, decision routing and completion reporting consume three lead
+    // turns; concurrent central attention shares this same finite allowance.
+    diagnostic_turns: 5,
   });
   const issue = (
     await o.invoke("abra_work_create", {
@@ -225,6 +227,16 @@ export async function leadJourney(o: {
     }),
     accepted,
   );
+  // An answered request can precede native idle and release of its management
+  // slot. Start the routing assertion only after earlier attention has settled.
+  await o.eventually(async () => {
+    const current = await status();
+    const fleet = await o.invoke("abra_work_list", {});
+    const occupied = fleet.executions.some((e: any) =>
+      (e.attention ?? []).some((a: any) => ["uncertain", "admitted"].includes(a.status)),
+    );
+    return !current.active && !occupied ? true : undefined;
+  });
   o.holdResearch();
   const started = await o.invoke("abra_work_start", { issue_id: issue.id });
   await o.eventually(async () => (o.held() ? true : undefined));
@@ -235,14 +247,51 @@ export async function leadJourney(o: {
     scope: "Existing accepted source investigation",
     question: "Which retained scope should guide this investigation?",
   });
-  const decisionAnswer = await o.eventually(async () => {
-    const decision = (
-      await o.invoke("abra_work_status", { issue_id: issue.id })
-    ).execution.decisions?.find(
-      (d: any) => d.key === "native-lead-decision" && d.status === "answered",
-    );
-    return decision ?? undefined;
-  });
+  const decisionAnswer = await o
+    .eventually(async () => {
+      const decision = (
+        await o.invoke("abra_work_status", { issue_id: issue.id })
+      ).execution.decisions?.find(
+        (d: any) => d.key === "native-lead-decision" && d.status === "answered",
+      );
+      return decision ?? undefined;
+    })
+    .catch(async (error) => {
+      const current = await status();
+      const execution = (await o.invoke("abra_work_status", { issue_id: issue.id })).execution;
+      const fleet = await o.invoke("abra_work_list", {});
+      const context = await o.client.session.context({ sessionID: lead.session_id });
+      o.observe({
+        lead_decision_timeout: execution.decisions,
+        lead_active: current.active,
+        root_attention_turns: execution.attention_turns,
+        occupied_attention: fleet.executions.flatMap((e: any) =>
+          (e.attention ?? [])
+            .filter((a: any) => ["uncertain", "admitted"].includes(a.status))
+            .map((a: any) => ({
+              issue_id: e.issue_id,
+              status: a.status,
+              code: a.code,
+              generation: a.generation,
+            })),
+        ),
+        lead_requests: current.requests.slice(-12),
+        lead_tools: context
+          .flatMap((m: any) =>
+            m.type === "assistant"
+              ? m.content
+                  .filter((p: any) => p.type === "tool")
+                  .map((p: any) => ({
+                    name: p.name,
+                    status: p.state.status,
+                    error: p.state.error,
+                  }))
+              : [],
+          )
+          .slice(-12),
+      });
+      throw error;
+    });
   assert.equal(
     decisionAnswer.answer,
     "Use the existing retained read-only source scope; no additional changes are authorized.",
@@ -255,13 +304,44 @@ export async function leadJourney(o: {
       ? true
       : undefined,
   );
-  await o.eventually(async () =>
-    (await status()).requests.some(
-      (r: any) => r.request.body.includes("completed") && r.request.status === "answered",
+  await o
+    .eventually(async () =>
+      (await status()).requests.some(
+        (r: any) => r.request.body.includes("completed") && r.request.status === "answered",
+      )
+        ? true
+        : undefined,
     )
-      ? true
-      : undefined,
-  );
+    .catch(async (error) => {
+      const current = await status();
+      const execution = (await o.invoke("abra_work_status", { issue_id: issue.id })).execution;
+      o.observe({
+        lead_completion_timeout: {
+          active: current.active,
+          root_turns: execution.attention_turns,
+          budget: execution.effective_policy.diagnostic_turns,
+          requests: current.requests.map((r: any) => ({
+            issue_id: r.issue_id,
+            status: r.request.status,
+            recovery: r.request.response_recovery?.status,
+          })),
+        },
+      });
+      throw error;
+    });
+  const routed = await status();
+  const completed = (await o.invoke("abra_work_status", { issue_id: issue.id })).execution;
+  const leadTurns = routed.requests
+    .filter((r: any) => r.issue_id === issue.id)
+    .reduce((total: number, r: any) => total + 1 + (r.request.response_recovery ? 1 : 0), 0);
+  const managementTurns = leadTurns + (completed.attention_turns ?? 0);
+  assert.ok(leadTurns >= 3);
+  assert.ok(managementTurns <= completed.effective_policy.diagnostic_turns);
+  o.observe({
+    lead_routing_turns: leadTurns,
+    shared_management_turns: managementTurns,
+    finite_budget: completed.effective_policy.diagnostic_turns,
+  });
   assert.ok(used.length >= 3);
   assert.ok(used.every((p: any) => p.name === "abra_lead_action"));
   const parentContext = await o.client.session.context({ sessionID: o.supervisor });

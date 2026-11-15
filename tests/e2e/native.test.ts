@@ -1,6 +1,5 @@
+import { workspaceJourney } from "./workspace.ts";
 import { acceptanceJourney } from "./acceptance.ts";
-import { Effect, Scope, Exit } from "effect";
-import { webProxy } from "../../src/web/proxy.ts";
 import { reportJourney } from "./reports.ts";
 import { reportBrowserExecutable } from "../../templates/reporter/scripts/browser.ts";
 import { leadJourney } from "./leads.ts";
@@ -310,8 +309,13 @@ function nativeTest(
         );
         return;
       }
+      const scopedMessages = user.startsWith("AbraCode workspace operation ")
+        ? messages.slice(
+            messages.findLastIndex((m: any) => m.role === "user" && m.content === user),
+          )
+        : messages;
       const used = new Set(
-        messages
+        scopedMessages
           .filter((m: any) => m.role === "assistant")
           .flatMap((m: any) => m.tool_calls ?? [])
           .map((call: any) => call.function.arguments),
@@ -320,6 +324,10 @@ function nativeTest(
         name: string;
         args: any;
       }> = [];
+      if (role === "supervisor" && user.startsWith("AbraCode workspace operation ")) {
+        const operation = JSON.parse(user.slice("AbraCode workspace operation ".length));
+        calls.push({ name: operation.tool, args: operation.args });
+      }
       const correlated = messages.filter(
         (m: any) =>
           m.role === "user" &&
@@ -1073,22 +1081,11 @@ function nativeTest(
       recordResources();
     };
     start();
-    // All existing native chat, worker-guard and exact approval scenarios also
-    // traverse the login-free transport, without weakening controller authority.
-    const webScope = await Effect.runPromise(Scope.make());
-    t.onTestFinished(() => Effect.runPromise(Scope.close(webScope, Exit.void)));
-    const web = await Effect.runPromise(
-      webProxy({
-        port: 0,
-        sessionID: "fixture",
-        discover: Effect.succeed({
-          url: `http://127.0.0.1:${port}`,
-          auth: { type: "basic", username: "opencode", password },
-        }),
-      }).pipe(Effect.provideService(Scope.Scope, webScope)),
-    );
+    // Native administrative fixtures use their own authenticated service. Browser
+    // operations are covered by the bounded workspace journey, never a raw proxy.
     const client = OpenCode.make({
-      baseUrl: web.origin,
+      baseUrl: `http://127.0.0.1:${port}`,
+      headers: { authorization: `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}` },
     });
     const ready = async () => {
       await eventually(() => client.server.info());
@@ -1141,6 +1138,7 @@ function nativeTest(
     const supervisor = await client.session.create({
       location: { directory: home },
       title: "Abra",
+      metadata: { abracode_supervisor_home: home },
       agent: "abra",
       model: { providerID: "fixture", id: "gpt-fixture" },
     });
@@ -1417,6 +1415,24 @@ function nativeTest(
     }
     if (journey === "reply-recovery") {
       engineeringEvidence.push(await runReplyRecovery());
+      return;
+    }
+    if (journey === "workspace") {
+      failFirstExplore = false;
+      engineeringEvidence.push(
+        await workspaceJourney({
+          home,
+          project: projects[0],
+          session: supervisor.id,
+          client,
+          endpoint: {
+            url: `http://127.0.0.1:${port}`,
+            auth: { type: "basic", username: "opencode", password },
+          },
+          readStatus: (id) => invoke("abra_work_status", { issue_id: id }),
+          evidence: evidenceDirectory,
+        }),
+      );
       return;
     }
     if (journey === "acceptance") {
@@ -1742,7 +1758,11 @@ function nativeTest(
           (m) => m.id === withdrawnID,
         ),
       );
-      const paused = await invoke("abra_work_control", { issue_id: issue.id, action: "pause" });
+      await invoke("abra_work_control", { issue_id: issue.id, action: "pause" });
+      const paused = await eventually(async () => {
+        const current = (await invoke("abra_work_status", { issue_id: issue.id })).execution;
+        return current.stop_status === "confirmed" ? current : undefined;
+      });
       assert.equal(paused.stop_status, "confirmed");
       assert.ok(paused.messages.every((m: any) => m.status === "superseded"));
       assert.equal(
@@ -2980,6 +3000,14 @@ function nativeTest(
 nativeTest(
   "real v2 server loads tools and guards across three repositories, executes full OpenSpec through native worker sessions, approvals, preserved branch, cleanup and durable restart",
 );
+if (!process.env.ABRACODE_TEST_JOURNEY)
+  nativeTest("single CopilotKit workspace implements work through native approvals and delivery", {
+    journey: "workspace",
+    timeout: 180000,
+    evidenceDirectory: process.env.ABRACODE_TEST_EVIDENCE_DIR
+      ? join(process.env.ABRACODE_TEST_EVIDENCE_DIR, "workspace")
+      : undefined,
+  });
 if (!process.env.ABRACODE_TEST_JOURNEY)
   nativeTest("required worker and lead replies recover once across native restart", {
     journey: "reply-recovery",

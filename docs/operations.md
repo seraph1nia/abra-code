@@ -35,18 +35,15 @@ A location reload can unload the plugin's monitor; it does not delete sessions o
 
 ## Local web UI
 
-Run `pnpm web` from the installation root to start/discover the dedicated service and open the standard OpenCode web UI in the retained Abra conversation. Model-provider authentication still uses `pnpm auth` or existing native credentials. No browser password or pairing is required.
+Use `pnpm dev` for development at `http://127.0.0.1:5173`. Vite provides frontend HMR and `tsx watch` reloads the Effect HTTP backend. `pnpm dev --port 5174 --backend-port 4099` changes the local ports. Native service/work lifetimes are independent of these development servers.
 
-```sh
-pnpm web
-pnpm web --port 4098 --no-open
-```
+Run `pnpm web:build` and `pnpm web` from the installation root. This opens the single-session CopilotKit v2 workspace at `http://127.0.0.1:4097`. `pnpm web --port 4098 --no-open` prints another local URL. Provider authentication still uses `pnpm auth` and the frontend uses existing model configuration.
 
-The proxy listens only on `127.0.0.1` (port 4097 by default); use the exact printed URL. It rejects other hosts and browser origins and does not enable cross-origin access. An occupied port produces an error; choose another with `--port`. Browser-opening failure leaves the proxy running and prints the URL. Ctrl+C or SIGTERM stops only the proxy, including active streams and WebSockets. The native service, worker execution and history keep running.
+The Effect HTTP listener accepts only the printed loopback Host and same browser Origin. Native credentials stay server-side. Closing a tab detaches its observations; Ctrl+C stops the frontend listener while the native service and workers continue. An occupied port fails without taking over another process.
 
-Terminal and browser clients share the same service, configuration and Abra session. Chat and native approval forms use the existing controller gates; direct prompts to managed workers remain refused. The standard web UI does not load AbraCode's terminal Work dashboard or sidebar. Custom browser Work views are deferred.
+Chat, work-control requests, native approvals, forms and permissions share the retained main Abra session. The browser has no separate agent/model loop or conversation database. After native-service restart, requests rediscover the endpoint and credentials. Uncertain submissions retain their original identities for reconciliation and are never automatically replayed.
 
-Native credentials are read through service discovery and applied only on upstream requests; the proxy does not put them in URLs, browser storage or logs. Native pairing routes and authentication cookies are excluded from the proxy. After a native service restart, new requests rediscover its endpoint and credentials. A failed submission is never replayed by the proxy: inspect the retained conversation or form before submitting again. Start a stopped native service with `pnpm service:start`, then reload the browser if needed.
+See [workspace details](web-workspace.md) for work views, exact checkpoint handling, recovery and the bounded API.
 
 ## Terminal work view
 

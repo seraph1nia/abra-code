@@ -1,3 +1,4 @@
+import { workSurfaceTool } from "../web/render-tool.ts";
 import { LeadActionSchema, LeadControlSchema } from "../workflow/lead-contracts.ts";
 import { deliveryAction, observeDeliveryOutcome } from "../workflow/delivery-outcome.ts";
 import { MessageInputSchema, WorkerReplySchema } from "../workflow/message-contracts.ts";
@@ -50,6 +51,7 @@ export function registerTools(
   return domainEffect(
     Effect.gen(function* () {
       const definitions = [
+        workSurfaceTool(ctx, c),
         define({
           name: "lead_control",
           description:

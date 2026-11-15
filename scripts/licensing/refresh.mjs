@@ -50,6 +50,12 @@ async function inspect(id) {
   const local = installed.get(id);
   const pkg = local?.pkg ?? meta;
   let license = typeof pkg.license === "string" ? pkg.license : pkg.license?.type;
+  if (!license && Array.isArray(pkg.licenses)) {
+    const declared = pkg.licenses
+      .map((entry) => (typeof entry === "string" ? entry : entry.type))
+      .filter(Boolean);
+    if (declared.length === 1) license = declared[0];
+  }
   const evidence = [];
   if (local) {
     for (const file of fs
@@ -131,6 +137,31 @@ async function inspect(id) {
         basis: "supplier SPDX declaration; package ships no license notice",
       });
     }
+  }
+  if (local && name === "@bufbuild/protobuf") {
+    // The declared conjunction includes the Google BSD source header, which
+    // ships inside varint.js rather than as a root LICENSE file.
+    const file = "dist/esm/wire/varint.js";
+    const text = fs.readFileSync(path.join(local.location, file), "utf8").split("/**")[0];
+    if (!text.includes("Redistribution and use")) throw Error("Protobuf BSD header moved");
+    const digest = hash(text);
+    texts.set(digest, text);
+    evidence.push({ source: `npm:${id}/${file}#license-header`, sha256: digest });
+  }
+  if (name === "highlightjs-vue" && license === "CC0-1.0") {
+    // Preserve both the published package's CC0 declaration and the separately
+    // supplied upstream BSD notice; neither supersedes the other here.
+    const result = await request(
+      "https://raw.githubusercontent.com/spdx/license-list-data/main/text/CC0-1.0.txt",
+    );
+    if (!result) throw Error("CC0 supplier-declaration terms unavailable");
+    const digest = hash(result.text);
+    texts.set(digest, result.text);
+    evidence.push({
+      source: result.url,
+      sha256: digest,
+      basis: "published package declares CC0-1.0; upstream BSD notice also retained",
+    });
   }
   const resolution = lock.packages[id].resolution;
   const fingerprint = hash(JSON.stringify({ id, license, resolution, evidence }));

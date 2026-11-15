@@ -15,11 +15,17 @@ Updated on 2026-11-15. AbraCode installs a local pinned runtime rather than upgr
 
 ## OpenCode contracts
 
-### Local web transport and form presentation
+### Single-session workspace transport
 
-`pnpm web` reuses the installation's `Service.ensure/discover` bootstrap and retained Abra session. A foreground HTTP proxy binds only `127.0.0.1`, supplies the discovered Basic credential upstream and forwards the bundled UI, streaming HTTP and WebSocket upgrades. Host and browser-origin checks happen before authentication is added. Pairing routes, authentication cookies and Basic challenges are excluded. Requests are forwarded once; rediscovery affects new requests without replaying uncertain submissions.
+The frontend uses CopilotKit 1.88.0's **v2** exports (`@copilotkit/react-core/v2`, `@copilotkit/runtime/v2`) with AG-UI 1.0.4. The custom native-backed `AbstractAgent` and `AgentRunner` implement run/connect/isRunning/stop. No default model runner, thread store, Mastra or additional agent harness is used. The pinned OpenCode interrupt API cannot select an expected run ID; run-specific stop is explicitly refused.
 
-The pinned 2.3.0 web app keys HTTP servers by origin and routes sessions as `/server/<base64url-origin>/session/<session-id>` ([source](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/app/src/shell/routes/session.ts)). Its [request selector](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/app/src/session/requests/model.ts) ignores arbitrary untagged forms. The `mcp-elicitation` presentation tag selects its generic typed-field dock, including boolean checkpoints and text answers. AbraCode adds that renderer tag to new human forms while preserving its source, exact-target metadata and controller checks. The web proxy projects the same tag onto older AbraCode forms in bounded GET responses only; persisted forms and submitted answers are unchanged. Events and ordinary chat are streamed without buffering. This is a presentation adapter to a pinned client, not MCP ownership or authorization.
+Effect **4.1.4** HTTP APIs are pinned with `@effect/platform-node` 4.1.4. Local declaration/source evidence: `effect/http-api` HttpApi, HttpApiEndpoint, HttpApiBuilder, HttpApiClient; `effect/http` HttpRouter and HttpServerResponse.fromWeb; `NodeHttpServer.make` and its request-scope interruption semantics. Shared contracts set Effect HttpApi query/payload parse options explicitly to preserve strict validation. CopilotKit's Fetch handler and AG-UI protocol remain intact behind the fixed route allowlist. Native data continues through `@opencode/client/effect` and the `abracode-web`/existing visibility plugin RPCs. Request cancellation detaches streams; only native admission's durable critical section masks interruption.
+
+Generated work views use **A2UI v1.0**, including inline components on `createSurface`, the flat component-ID adjacency list and a closed local catalog. The [official schema](https://a2ui.org/specification/v1.0/schemas/) is the protocol reference. The renderer implements this bounded catalog directly; CopilotKit's automatic prompt/middleware UI generation is disabled. Schema 0.9 messages and executable/custom remote components are rejected.
+
+Native session.message.get, paginated message.list, inbox observation, current form detail/reply and permission request/reply remain the authority for browser interactions. Form presentation no longer depends on OpenCode's generic web dock or a synthetic MCP tag. Controller exact fingerprints/decision identities are re-read before settlement. Retained visual reports reuse their existing receipt/containment/hash checks.
+
+See [workspace architecture](web-workspace.md) and [verification](verification/README.md) for the current boundary and proof limits.
 
 ### Scoped communication observation
 

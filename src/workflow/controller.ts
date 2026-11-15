@@ -21,6 +21,8 @@ export class Controller {
     this.workflow.prFeedback.reviewerSuggestions(...args);
   findings = (...args: Parameters<Advancement["prFeedback"]["findings"]>) =>
     this.workflow.prFeedback.findings(...args);
+  visualArtifact = (...args: Parameters<Advancement["reports"]["readArtifact"]>) =>
+    this.workflow.reports.readArtifact(...args);
   reconcileReports = () => this.workflow.reports.recover();
   visualReport = (...args: Parameters<Advancement["reports"]["generate"]>) =>
     this.workflow.reports.generate(...args);
