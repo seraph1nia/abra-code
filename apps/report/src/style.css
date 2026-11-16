@@ -1,9 +1,8 @@
 @layer theme, base, components, utilities;
 @import "tailwindcss" source(none);
-@import "../../web/src/theme-tokens.css";
-@import "../../web/src/presentation/presentation.css";
-@source "../../web/src/components/ui";
-@source "../../web/src/presentation";
+@import "@abracode/presentation/tokens.css";
+@import "@abracode/presentation/styles.css";
+@source "../../../packages/presentation/src";
 @source "./";
 
 body {

@@ -2,4 +2,20 @@
 @import "tailwindcss";
 @import "@copilotkit/react-core/v2/styles.css" layer(copilotkit);
 
-@import "./theme-tokens.css";
+@import "@abracode/presentation/tokens.css";
+@source "../../../packages/presentation/src";
+
+/* Optional panel loading/errors remain visible while the conversation stays mounted. */
+.deferred-panel {
+  position: fixed;
+  z-index: 60;
+  top: 4rem;
+  right: 1rem;
+  width: min(32rem, calc(100vw - 2rem));
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: 0 4px 24px #0002;
+}

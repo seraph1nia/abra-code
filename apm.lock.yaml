@@ -1,0 +1,1348 @@
+lockfile_version: "1"
+apm_version: 0.35.1
+dependencies:
+  - repo_url: a2ui-project/a2ui
+    name: a2ui
+    host: github.com
+    resolved_commit: 57f961f143da23f4212313e432a64b5843d978f9
+    resolved_ref: 57f961f143da23f4212313e432a64b5843d978f9
+    version: unknown
+    virtual_path: skills/a2ui
+    is_virtual: true
+    package_type: claude_skill
+    deployed_files:
+      - .agents/skills/a2ui
+      - .agents/skills/a2ui/SKILL.md
+    deployed_file_hashes:
+      .agents/skills/a2ui/SKILL.md: sha256:ada0d9989d5efd195d821b57d24f041021b486e13ec85febb395c4c35fb3da5e
+    content_hash: sha256:797ee609e1c007dfa18d676e1a5347bf758dceca61fa39b14419c5809b704a83
+  - repo_url: ag-ui-protocol/ag-ui
+    name: ag-ui-a2ui-integration
+    host: github.com
+    resolved_commit: 2330368a2a74573902858867072406638ba3073d
+    resolved_ref: 2330368a2a74573902858867072406638ba3073d
+    version: unknown
+    virtual_path: skills/ag-ui-a2ui-integration
+    is_virtual: true
+    package_type: claude_skill
+    deployed_files:
+      - .agents/skills/ag-ui-a2ui-integration
+      - .agents/skills/ag-ui-a2ui-integration/SKILL.md
+      - .agents/skills/ag-ui-a2ui-integration/references/a2ui-runtime-and-renderer.md
+      - .agents/skills/ag-ui-a2ui-integration/references/framework-adapters.md
+      - .agents/skills/ag-ui-a2ui-integration/references/verification.md
+      - .agents/skills/ag-ui-a2ui-integration/sources.md
+    deployed_file_hashes:
+      .agents/skills/ag-ui-a2ui-integration/SKILL.md: sha256:8b0a2187fd4c901aa4d7073aae3b86c83e6bb0300618b4b6530a073fb1f66e9b
+      .agents/skills/ag-ui-a2ui-integration/references/a2ui-runtime-and-renderer.md: sha256:e3c1149e5cbc1128e920bd6621dbe78ecb378ed75035cae4191a5b0e29fe1a69
+      .agents/skills/ag-ui-a2ui-integration/references/framework-adapters.md: sha256:316ed38cb43ce4f9f482f6bc309d95083d1b4175295391acf09bfe4f107a83bf
+      .agents/skills/ag-ui-a2ui-integration/references/verification.md: sha256:7e2b7503ebd42b7f2049c3f69424e6a1d77e468168bb63c78df7ef045e1ba23c
+      .agents/skills/ag-ui-a2ui-integration/sources.md: sha256:7de76b2ff18181b507963c7fe29d92994d30dd09ea6c990e9a1c9bb6b1b54de6
+    content_hash: sha256:0bfdab8fa1ca43b06f9e6ffffdb134d9c99f1dff3b0c8f8d8e129db27879ff81
+  - repo_url: anthropics/skills
+    name: frontend-design
+    host: github.com
+    resolved_commit: 1780c5e5a552fd4d1c9d6a7b0cab26b0c2bef064
+    resolved_ref: 1780c5e5a552fd4d1c9d6a7b0cab26b0c2bef064
+    version: unknown
+    virtual_path: skills/frontend-design
+    is_virtual: true
+    package_type: claude_skill
+    deployed_files:
+      - .agents/skills/frontend-design
+      - .agents/skills/frontend-design/LICENSE.txt
+      - .agents/skills/frontend-design/SKILL.md
+    deployed_file_hashes:
+      .agents/skills/frontend-design/LICENSE.txt: sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594
+      .agents/skills/frontend-design/SKILL.md: sha256:d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3
+    content_hash: sha256:89496d5dd00f4810205f351759594fc2742bf8eea85a2f2b2d1de59f4bd91576
+  - repo_url: copilotkit/copilotkit
+    materialization_repo_url: CopilotKit/CopilotKit
+    name: copilotkit
+    host: github.com
+    resolved_commit: 7b88608455528bd2dd62752a01cc25b8c917d35c
+    resolved_ref: 7b88608455528bd2dd62752a01cc25b8c917d35c
+    version: unknown
+    virtual_path: skills/copilotkit
+    is_virtual: true
+    package_type: claude_skill
+    deployed_files:
+      - .agents/skills/copilotkit
+      - .agents/skills/copilotkit/SKILL.md
+    deployed_file_hashes:
+      .agents/skills/copilotkit/SKILL.md: sha256:611a927ce644c6650750c2eb5bc4e52b28595730ab113ffc118431dd00865eae
+    content_hash: sha256:797dab664dc25520e5b38baf91fa50be23aa5888b168b9a05a9417ddf3a05b6a
+  - repo_url: mattpocock/skills
+    alias: mattpocock-codebase-design
+    name: codebase-design
+    host: github.com
+    resolved_commit: 5863806dd4e15c63174bee4e7515a4256792ecfa
+    resolved_ref: 5863806dd4e15c63174bee4e7515a4256792ecfa
+    version: unknown
+    virtual_path: skills/engineering/codebase-design
+    is_virtual: true
+    package_type: claude_skill
+    deployed_files:
+      - .agents/skills/mattpocock-codebase-design
+      - .agents/skills/mattpocock-codebase-design/DEEPENING.md
+      - .agents/skills/mattpocock-codebase-design/DESIGN-IT-TWICE.md
+      - .agents/skills/mattpocock-codebase-design/SKILL.md
+      - .agents/skills/mattpocock-codebase-design/agents/openai.yaml
+    deployed_file_hashes:
+      .agents/skills/mattpocock-codebase-design/DEEPENING.md: sha256:f3dd099ce99289bd213914d8ee3e2429b78309c3957ca4583f7659551b1d53c1
+      .agents/skills/mattpocock-codebase-design/DESIGN-IT-TWICE.md: sha256:c222ab5a82e0405672eb9062d62496139a08828e45d07fc5f18e4952c10fac1a
+      .agents/skills/mattpocock-codebase-design/SKILL.md: sha256:2c20617f87ec8af6a434859f381b2f061a69b530444e74eb39e78bb016a6d1e2
+      .agents/skills/mattpocock-codebase-design/agents/openai.yaml: sha256:edebc9e4fcfe102114012575eaa9600b9b5fd08c311664f389c36e7bc717740f
+    content_hash: sha256:667012327c54634ddc0fea22ccdf5d43c797b97038a6d4aadc09de29d50d0185
+  - repo_url: mattpocock/skills
+    name: improve-codebase-architecture
+    host: github.com
+    resolved_commit: 5863806dd4e15c63174bee4e7515a4256792ecfa
+    resolved_ref: 5863806dd4e15c63174bee4e7515a4256792ecfa
+    version: unknown
+    virtual_path: skills/engineering/improve-codebase-architecture
+    is_virtual: true
+    package_type: claude_skill
+    deployed_files:
+      - .agents/skills/improve-codebase-architecture
+      - .agents/skills/improve-codebase-architecture/HTML-REPORT.md
+      - .agents/skills/improve-codebase-architecture/SKILL.md
+      - .agents/skills/improve-codebase-architecture/agents/openai.yaml
+    deployed_file_hashes:
+      .agents/skills/improve-codebase-architecture/HTML-REPORT.md: sha256:581e8bb5a521e46bbda8ca7e19b15948bed882187108092ebb90c62513b77528
+      .agents/skills/improve-codebase-architecture/SKILL.md: sha256:35b03a3db61e0f5aa333ea59b54963e45a3d2ace6649b2ef4f9576603e2582a6
+      .agents/skills/improve-codebase-architecture/agents/openai.yaml: sha256:c8cb20f68ebf0edb4e497bc11ae5fcaa196004e661cd189015b04f4109ced7f1
+    content_hash: sha256:499043a54914592b8d40160e0ecae3787452869aed4fce50c3e574c1926329d8
+  - repo_url: mattpocock/skills
+    name: retro
+    host: github.com
+    resolved_commit: 5863806dd4e15c63174bee4e7515a4256792ecfa
+    resolved_ref: 5863806dd4e15c63174bee4e7515a4256792ecfa
+    version: unknown
+    virtual_path: skills/engineering/retro
+    is_virtual: true
+    package_type: claude_skill
+    deployed_files:
+      - .agents/skills/retro
+      - .agents/skills/retro/SKILL.md
+      - .agents/skills/retro/agents/openai.yaml
+    deployed_file_hashes:
+      .agents/skills/retro/SKILL.md: sha256:33fbc28568e3146f20fd908b12998bc0ab30aa4f4c87288199a40793efa94696
+      .agents/skills/retro/agents/openai.yaml: sha256:cb6fb9d7e6b4be5975f41f6def1dd00a1255bad5d9b02696b124c924a8b8745c
+    content_hash: sha256:e13af4f6dfecd777815adde57811398dc59d0118692a70d996968b59e3d13db8
+  - repo_url: mattpocock/skills
+    name: grilling
+    host: github.com
+    resolved_commit: 5863806dd4e15c63174bee4e7515a4256792ecfa
+    resolved_ref: 5863806dd4e15c63174bee4e7515a4256792ecfa
+    version: unknown
+    virtual_path: skills/productivity/grilling
+    is_virtual: true
+    package_type: claude_skill
+    deployed_files:
+      - .agents/skills/grilling
+      - .agents/skills/grilling/SKILL.md
+      - .agents/skills/grilling/agents/openai.yaml
+    deployed_file_hashes:
+      .agents/skills/grilling/SKILL.md: sha256:a146842ed93ca43d833550fa9adf02e58cb63c83fea9d4b4522995b82242d4e2
+      .agents/skills/grilling/agents/openai.yaml: sha256:1411d7df7d99b7e621a1ff8283c8133cc2464be63d064e52d8ce169c6800ee9b
+    content_hash: sha256:823f08ad33368a9626991e6782f7ae14b958e39ef8503f6bdb3b98a58d237a58
+  - repo_url: mattpocock/skills
+    name: writing-for-agents
+    host: github.com
+    resolved_commit: 5863806dd4e15c63174bee4e7515a4256792ecfa
+    resolved_ref: 5863806dd4e15c63174bee4e7515a4256792ecfa
+    version: unknown
+    virtual_path: skills/productivity/writing-for-agents
+    is_virtual: true
+    package_type: claude_skill
+    deployed_files:
+      - .agents/skills/writing-for-agents
+      - .agents/skills/writing-for-agents/SKILL-MECHANICS.md
+      - .agents/skills/writing-for-agents/SKILL.md
+      - .agents/skills/writing-for-agents/agents/openai.yaml
+    deployed_file_hashes:
+      .agents/skills/writing-for-agents/SKILL-MECHANICS.md: sha256:c768e6307c7c10728c401c213f2c4ba71c542127eeb7ad2956aabd15a0fa0059
+      .agents/skills/writing-for-agents/SKILL.md: sha256:551adca942227b44192edba88acd4e8db911f0121ce58ad16944ccf6a896a74a
+      .agents/skills/writing-for-agents/agents/openai.yaml: sha256:eacb24b2a618cfb81dacb0416f4fdd75ddf3a8060f8ddb99aae1b1e301907e4b
+    content_hash: sha256:8365ebe1d0c343d3d46970526f30fcf7c5e0c5e49fd39a3c882977024626ff3c
+  - repo_url: vercel-labs/agent-skills
+    name: vercel-react-best-practices
+    host: github.com
+    resolved_commit: 1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62
+    resolved_ref: 1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62
+    version: unknown
+    virtual_path: skills/react-best-practices
+    is_virtual: true
+    package_type: claude_skill
+    deployed_files:
+      - .agents/skills/react-best-practices
+      - .agents/skills/react-best-practices/AGENTS.md
+      - .agents/skills/react-best-practices/README.md
+      - .agents/skills/react-best-practices/SKILL.md
+      - .agents/skills/react-best-practices/metadata.json
+      - .agents/skills/react-best-practices/rules/_sections.md
+      - .agents/skills/react-best-practices/rules/_template.md
+      - .agents/skills/react-best-practices/rules/advanced-effect-event-deps.md
+      - .agents/skills/react-best-practices/rules/advanced-event-handler-refs.md
+      - .agents/skills/react-best-practices/rules/advanced-init-once.md
+      - .agents/skills/react-best-practices/rules/advanced-use-latest.md
+      - .agents/skills/react-best-practices/rules/async-api-routes.md
+      - .agents/skills/react-best-practices/rules/async-cheap-condition-before-await.md
+      - .agents/skills/react-best-practices/rules/async-defer-await.md
+      - .agents/skills/react-best-practices/rules/async-dependencies.md
+      - .agents/skills/react-best-practices/rules/async-parallel.md
+      - .agents/skills/react-best-practices/rules/async-suspense-boundaries.md
+      - .agents/skills/react-best-practices/rules/bundle-analyzable-paths.md
+      - .agents/skills/react-best-practices/rules/bundle-barrel-imports.md
+      - .agents/skills/react-best-practices/rules/bundle-conditional.md
+      - .agents/skills/react-best-practices/rules/bundle-defer-third-party.md
+      - .agents/skills/react-best-practices/rules/bundle-dynamic-imports.md
+      - .agents/skills/react-best-practices/rules/bundle-preload.md
+      - .agents/skills/react-best-practices/rules/client-event-listeners.md
+      - .agents/skills/react-best-practices/rules/client-localstorage-schema.md
+      - .agents/skills/react-best-practices/rules/client-passive-event-listeners.md
+      - .agents/skills/react-best-practices/rules/client-swr-dedup.md
+      - .agents/skills/react-best-practices/rules/js-batch-dom-css.md
+      - .agents/skills/react-best-practices/rules/js-cache-function-results.md
+      - .agents/skills/react-best-practices/rules/js-cache-property-access.md
+      - .agents/skills/react-best-practices/rules/js-cache-storage.md
+      - .agents/skills/react-best-practices/rules/js-combine-iterations.md
+      - .agents/skills/react-best-practices/rules/js-early-exit.md
+      - .agents/skills/react-best-practices/rules/js-flatmap-filter.md
+      - .agents/skills/react-best-practices/rules/js-hoist-regexp.md
+      - .agents/skills/react-best-practices/rules/js-index-maps.md
+      - .agents/skills/react-best-practices/rules/js-length-check-first.md
+      - .agents/skills/react-best-practices/rules/js-min-max-loop.md
+      - .agents/skills/react-best-practices/rules/js-request-idle-callback.md
+      - .agents/skills/react-best-practices/rules/js-set-map-lookups.md
+      - .agents/skills/react-best-practices/rules/js-tosorted-immutable.md
+      - .agents/skills/react-best-practices/rules/rendering-activity.md
+      - .agents/skills/react-best-practices/rules/rendering-animate-svg-wrapper.md
+      - .agents/skills/react-best-practices/rules/rendering-conditional-render.md
+      - .agents/skills/react-best-practices/rules/rendering-content-visibility.md
+      - .agents/skills/react-best-practices/rules/rendering-hoist-jsx.md
+      - .agents/skills/react-best-practices/rules/rendering-hydration-no-flicker.md
+      - .agents/skills/react-best-practices/rules/rendering-hydration-suppress-warning.md
+      - .agents/skills/react-best-practices/rules/rendering-resource-hints.md
+      - .agents/skills/react-best-practices/rules/rendering-script-defer-async.md
+      - .agents/skills/react-best-practices/rules/rendering-svg-precision.md
+      - .agents/skills/react-best-practices/rules/rendering-usetransition-loading.md
+      - .agents/skills/react-best-practices/rules/rerender-defer-reads.md
+      - .agents/skills/react-best-practices/rules/rerender-dependencies.md
+      - .agents/skills/react-best-practices/rules/rerender-derived-state-no-effect.md
+      - .agents/skills/react-best-practices/rules/rerender-derived-state.md
+      - .agents/skills/react-best-practices/rules/rerender-functional-setstate.md
+      - .agents/skills/react-best-practices/rules/rerender-lazy-state-init.md
+      - .agents/skills/react-best-practices/rules/rerender-memo-with-default-value.md
+      - .agents/skills/react-best-practices/rules/rerender-memo.md
+      - .agents/skills/react-best-practices/rules/rerender-move-effect-to-event.md
+      - .agents/skills/react-best-practices/rules/rerender-no-inline-components.md
+      - .agents/skills/react-best-practices/rules/rerender-simple-expression-in-memo.md
+      - .agents/skills/react-best-practices/rules/rerender-split-combined-hooks.md
+      - .agents/skills/react-best-practices/rules/rerender-transitions.md
+      - .agents/skills/react-best-practices/rules/rerender-use-deferred-value.md
+      - .agents/skills/react-best-practices/rules/rerender-use-ref-transient-values.md
+      - .agents/skills/react-best-practices/rules/server-after-nonblocking.md
+      - .agents/skills/react-best-practices/rules/server-auth-actions.md
+      - .agents/skills/react-best-practices/rules/server-cache-lru.md
+      - .agents/skills/react-best-practices/rules/server-cache-react.md
+      - .agents/skills/react-best-practices/rules/server-dedup-props.md
+      - .agents/skills/react-best-practices/rules/server-hoist-static-io.md
+      - .agents/skills/react-best-practices/rules/server-no-shared-module-state.md
+      - .agents/skills/react-best-practices/rules/server-parallel-fetching.md
+      - .agents/skills/react-best-practices/rules/server-parallel-nested-fetching.md
+      - .agents/skills/react-best-practices/rules/server-serialization.md
+    deployed_file_hashes:
+      .agents/skills/react-best-practices/AGENTS.md: sha256:fc93e7421177bbf869cce892bc60a6c83a4517d974bc3bf65c4e2c1e58a6ccf6
+      .agents/skills/react-best-practices/README.md: sha256:9eafb2123d3b8b2aef41fba0db2648a3f4f49996f8c7c8bb2c86263befd8b48a
+      .agents/skills/react-best-practices/SKILL.md: sha256:71ed7794962fa6e803ee83030517b5b93a9f70fbfeb431ec4535c5480a8d8355
+      .agents/skills/react-best-practices/metadata.json: sha256:c4e18bac3290fbe1b471a605867d4df68b03144ea26b8befdbe8f9d8fd124354
+      .agents/skills/react-best-practices/rules/_sections.md: sha256:01c59969e4e867f0708c8f8ef9c6d87fab9a07d0586244f429ff84013db8a115
+      .agents/skills/react-best-practices/rules/_template.md: sha256:99df2a3ea088c6c22de2484ddc7e964d0e9923846f44c63380343ecc64455442
+      .agents/skills/react-best-practices/rules/advanced-effect-event-deps.md: sha256:55ed8f9f27a1bff803d6fa55828176207714b02123cbb97ddb8a90d88024a723
+      .agents/skills/react-best-practices/rules/advanced-event-handler-refs.md: sha256:a3097edeecfb2ff6851cd66ed8cdf0617c3c88180504bee824aa6e75a215bbbc
+      .agents/skills/react-best-practices/rules/advanced-init-once.md: sha256:3e4dc22173eb0e2b6dcf583e3babd862b8696328f8f59aee7c4d746c5bc05f6c
+      .agents/skills/react-best-practices/rules/advanced-use-latest.md: sha256:8a3f64dfe5a77d1564248faf17fe662ae75b55d497a243cb30b38eb07ccbbf9a
+      .agents/skills/react-best-practices/rules/async-api-routes.md: sha256:523338540d73427dc14c0cbb19f2741ebccdf8b105a7b2c1b33d2905cf237a42
+      .agents/skills/react-best-practices/rules/async-cheap-condition-before-await.md: sha256:03107c1f70a293cd58a8abc5474c5548e20ea4efdf01b6d45aae7ad0ac1cb32c
+      .agents/skills/react-best-practices/rules/async-defer-await.md: sha256:f3c142d090615abdcc99d31c123be37b31f0f1ed8d9ec9f7789a3bc6883ae0fb
+      .agents/skills/react-best-practices/rules/async-dependencies.md: sha256:16ef469f877e30c6b8e1e1b4bc3e527312fa3c6318cb785a4eca186ea236131a
+      .agents/skills/react-best-practices/rules/async-parallel.md: sha256:6d2f841896279e976dfcdc1ac89e70771ac188baadfd43c096b5706cb838b961
+      .agents/skills/react-best-practices/rules/async-suspense-boundaries.md: sha256:de05fedac2eb7ae563b887b5a424464ec3dfaf84e5b7797467ebe2a796ac8afc
+      .agents/skills/react-best-practices/rules/bundle-analyzable-paths.md: sha256:62090b5c815fd71bf1133dce754f51abc16a9456d0ccd025fd627de27726e92a
+      .agents/skills/react-best-practices/rules/bundle-barrel-imports.md: sha256:e648f6d54525f07a691357040ca5bff6ea3424788a91ff63812adb29622a671b
+      .agents/skills/react-best-practices/rules/bundle-conditional.md: sha256:09c8259c3efb04fc0abb8e412ccbda217c222ae8118516283e571c995fe3a7d4
+      .agents/skills/react-best-practices/rules/bundle-defer-third-party.md: sha256:3719fb47b191e8db4fe22686ec88448ad5af9e6838585425abbe103d0b642e37
+      .agents/skills/react-best-practices/rules/bundle-dynamic-imports.md: sha256:401817a7369f315fc5a68a1095742ff7d53d0461906880dc9d64a41495ee1986
+      .agents/skills/react-best-practices/rules/bundle-preload.md: sha256:d1f7cc28da7cd5ab249acd287edc5b761afcfb194e9cb62cd44c5f3543db2de2
+      .agents/skills/react-best-practices/rules/client-event-listeners.md: sha256:242a873349febc1ce685e85617994784dbab92c2eaa68aed7fed5a83e7680e93
+      .agents/skills/react-best-practices/rules/client-localstorage-schema.md: sha256:0fb7cdf9dc93fdf22f87e3669f953fb9d4ac9b0be42eec4a29fe9a2560610b88
+      .agents/skills/react-best-practices/rules/client-passive-event-listeners.md: sha256:1f35016f9053de69e884ee9be00654e37979c2ca85f5e57764dc2626ff7acb4b
+      .agents/skills/react-best-practices/rules/client-swr-dedup.md: sha256:644652c39c6cc00de8d1c77a7273612e868dc3f7edda30764164c12ec0f764a3
+      .agents/skills/react-best-practices/rules/js-batch-dom-css.md: sha256:480b891b9eaf96e929dc1e964274a4828e3a78009b7d00ccd965a0d425215959
+      .agents/skills/react-best-practices/rules/js-cache-function-results.md: sha256:3daaa11d24f4295cb6be8bc6f407f2ce83cc7b5bd1f0e68891ea8ab835721dc7
+      .agents/skills/react-best-practices/rules/js-cache-property-access.md: sha256:73e47431e74878a927061bf0ddc7cd91a7556cb35d2573f3421e82300d9ae311
+      .agents/skills/react-best-practices/rules/js-cache-storage.md: sha256:11b826b0433898c1ece2d3547010d8e77db9fb240185748c45db91493de9b6cc
+      .agents/skills/react-best-practices/rules/js-combine-iterations.md: sha256:71add08aeeb43091d4ff4c0b2842cce8b4bdef8ad3e732cc034bb5a84827e746
+      .agents/skills/react-best-practices/rules/js-early-exit.md: sha256:925ce5ce87f3347186ca62212f29cc6baa2b8c85a96d2720ad07c3d0abf781c0
+      .agents/skills/react-best-practices/rules/js-flatmap-filter.md: sha256:9e5b166a41914d975bef7635467f8fb32cd98b5c3126c0bc6f163490812fb5f0
+      .agents/skills/react-best-practices/rules/js-hoist-regexp.md: sha256:f9e9aef2f7c2307dd7310f283df85dcada45fc43e9bb941b0c3aa414dec21ec4
+      .agents/skills/react-best-practices/rules/js-index-maps.md: sha256:5df1bdc2cfabb2c98abd55d26762e5c18189535c2e686184f426082e62920391
+      .agents/skills/react-best-practices/rules/js-length-check-first.md: sha256:8b54a311c826b299272f29187fc58bc55772a04c4a72eeb29456ee96dc9fc624
+      .agents/skills/react-best-practices/rules/js-min-max-loop.md: sha256:87dfb67e2f39df6ad8bcfb5b78c5fb364d3c07554ad188a202408d99f3763421
+      .agents/skills/react-best-practices/rules/js-request-idle-callback.md: sha256:ee08f83905b4011abbc33d594033157d77561b5bbd9b36b04f0f409581ffec32
+      .agents/skills/react-best-practices/rules/js-set-map-lookups.md: sha256:a7fd781a6ba9ad49065961b6f9a90ef486bf6b648390e1a08704025f98e1642b
+      .agents/skills/react-best-practices/rules/js-tosorted-immutable.md: sha256:d0a5e1b0fec48a0a81397957e2f068e224329f7c42cb5feeed8aae6fa64025e8
+      .agents/skills/react-best-practices/rules/rendering-activity.md: sha256:1e5e7eaf3555e61d6a2e900089c676527d26259501db5594f59544b6c664f85a
+      .agents/skills/react-best-practices/rules/rendering-animate-svg-wrapper.md: sha256:9c6ae0ca7a51434e803887c64cded760956579a1452ccb80a461a03f9c937c77
+      .agents/skills/react-best-practices/rules/rendering-conditional-render.md: sha256:2ec2fa23c4148285144687050c52369adba3da2fbe3d486f8d3e0aad8f06f2bc
+      .agents/skills/react-best-practices/rules/rendering-content-visibility.md: sha256:64eee6d5b916fe74df33363994b27fc7f71bea3bcedc7ee04bda23107ca3e6e4
+      .agents/skills/react-best-practices/rules/rendering-hoist-jsx.md: sha256:93b229560fae92005ed9a2a829064607b39b2e984e92d221d05b2d41df2b7c0e
+      .agents/skills/react-best-practices/rules/rendering-hydration-no-flicker.md: sha256:dc7ab358c67c177bca6e6f360fbc935ebe4efa928c0ba3ebd3f9f3d9e2000ca3
+      .agents/skills/react-best-practices/rules/rendering-hydration-suppress-warning.md: sha256:915bacb934e2927d84b37a3f3d225a47b309ac8f9e494ed2bcb66ce07c5676a2
+      .agents/skills/react-best-practices/rules/rendering-resource-hints.md: sha256:351b1095d641717b930f1b2253282b7120af3023bc74e06c17675168d4286864
+      .agents/skills/react-best-practices/rules/rendering-script-defer-async.md: sha256:4cea07b7875ba7fc2c7465ff23b63a2bb334f90aaf2d9293d38d67b05fdb32ab
+      .agents/skills/react-best-practices/rules/rendering-svg-precision.md: sha256:ed468533f6e95f622859c884b122cf21f9f593ed6bb3d500a54de4b9f9bcb9fb
+      .agents/skills/react-best-practices/rules/rendering-usetransition-loading.md: sha256:3a1249c3f13026b6f54ab5712c388df219d6af01b12aa542749acd99a46f4bc1
+      .agents/skills/react-best-practices/rules/rerender-defer-reads.md: sha256:234050a77faf50cb306be10a9e15bd4421134ab5907e75f13e6d78e2bd262dc9
+      .agents/skills/react-best-practices/rules/rerender-dependencies.md: sha256:17eb5830956fb56486fd3cfc7431f5849d39751730c05ad9e77dd4f0c27169c5
+      .agents/skills/react-best-practices/rules/rerender-derived-state-no-effect.md: sha256:cb11ec76f50aa7b6847269f02d79b120c889a30d9ecd2c1d578f75144419c77a
+      .agents/skills/react-best-practices/rules/rerender-derived-state.md: sha256:1c326bb67b01fb084eb00c8911b0a7cff54681c2315b629f88e49b64eaa6481d
+      .agents/skills/react-best-practices/rules/rerender-functional-setstate.md: sha256:5e68df6b2ae8058e67f476ff1ac67bde159f5a9d18df439e46eabcdeb7b52e58
+      .agents/skills/react-best-practices/rules/rerender-lazy-state-init.md: sha256:4ae844740f266fc8cbf050701230286624a2440ec5be67b9a63d9edc3c580573
+      .agents/skills/react-best-practices/rules/rerender-memo-with-default-value.md: sha256:81c47476564ad8a79fc68fc442734255ca7d6829424359464503fda0a9f9a0dd
+      .agents/skills/react-best-practices/rules/rerender-memo.md: sha256:1f258990c2f27ff6256b3cc5c43300631bb3f0d81f749aed08d07fcdcc131dd1
+      .agents/skills/react-best-practices/rules/rerender-move-effect-to-event.md: sha256:abc2cbf167bee056743023351e96806a411d3398da8802093620aecf0721f029
+      .agents/skills/react-best-practices/rules/rerender-no-inline-components.md: sha256:1cc32907a770272524ba682eef9e7efdd8ad4533b6f89b718a1fcd7d1d0eb6a3
+      .agents/skills/react-best-practices/rules/rerender-simple-expression-in-memo.md: sha256:5bdcf2d1558ba5204e643c887b7b4060f89630969425651eb68e96427d97f800
+      .agents/skills/react-best-practices/rules/rerender-split-combined-hooks.md: sha256:6f45d703343484ef9acef9388397f3642966ae6a5a258899a0cf1f9977cfbf6c
+      .agents/skills/react-best-practices/rules/rerender-transitions.md: sha256:60f4033909a62df5e5b8c601494f9e50a562e2f8c1c2d81eac24f38142265f1c
+      .agents/skills/react-best-practices/rules/rerender-use-deferred-value.md: sha256:8c3579576a61a949884167745dcfaf1d5426ba305cc61fd0a79602d70fda4909
+      .agents/skills/react-best-practices/rules/rerender-use-ref-transient-values.md: sha256:f1a649af9d1d0b5c762f6c9c4c1c70c90d7df82aa10296ee87aadb78c1b76c54
+      .agents/skills/react-best-practices/rules/server-after-nonblocking.md: sha256:d0b8d24a3db9f0f65f9e2bddbf230b0e03a5f60e1229d93a4a18f5e7a991c7c2
+      .agents/skills/react-best-practices/rules/server-auth-actions.md: sha256:a2ca8aa102839251c7971ec784560fab943c20b36fe6f80365d4110c13260c23
+      .agents/skills/react-best-practices/rules/server-cache-lru.md: sha256:1924b64561841923b88a657085097a0aeba3e0ba2d5470b9f5c15cc10d6ae70f
+      .agents/skills/react-best-practices/rules/server-cache-react.md: sha256:fddeea6c870bb3da4134b61d54b7d09b83d2603f929b7547cd3dc1dc269edd5c
+      .agents/skills/react-best-practices/rules/server-dedup-props.md: sha256:c2747424cdac46be62f835f245a0aa887b0090b416d28e2ac8676702645eeb37
+      .agents/skills/react-best-practices/rules/server-hoist-static-io.md: sha256:5abea4dd882b13661bd5f7dfb93f9e547d5f08176c61c448ade91b210ed5d49f
+      .agents/skills/react-best-practices/rules/server-no-shared-module-state.md: sha256:4d869bf1cd2f1632e5ca4c0e64b1cf0e71c5f5a0f940bc8a22174d205e735ed7
+      .agents/skills/react-best-practices/rules/server-parallel-fetching.md: sha256:569a2e9fc04f9606686cd75c5894ef8781b502786a7fffe241396846c7733472
+      .agents/skills/react-best-practices/rules/server-parallel-nested-fetching.md: sha256:ad5d9656984d4a959997a2367bf59cc6632297b4634a1dd13a087939d83f30b3
+      .agents/skills/react-best-practices/rules/server-serialization.md: sha256:f4c7d68b29c82381baad059c4a7f09e868e71ec9c3115a26ad3ae7d24c0dfe1f
+    content_hash: sha256:74f142d28d360d78e8bac4f239a84c87f0ced9015729bc72b5458d82ff45b015
+  - repo_url: vercel-labs/agent-skills
+    name: web-design-guidelines
+    host: github.com
+    resolved_commit: 1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62
+    resolved_ref: 1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62
+    version: unknown
+    virtual_path: skills/web-design-guidelines
+    is_virtual: true
+    package_type: claude_skill
+    deployed_files:
+      - .agents/skills/web-design-guidelines
+      - .agents/skills/web-design-guidelines/SKILL.md
+    deployed_file_hashes:
+      .agents/skills/web-design-guidelines/SKILL.md: sha256:f4647ca866a3accf763777f83e7682954f0187cd6bea7eea0399796652414e8f
+    content_hash: sha256:a6a44d5498f7e8f68289902f3dedfc6f38ae0cee1e96527c80724cf27f727c2a
+deployments:
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/a2ui
+    runtime: null
+    scope: project
+    owners:
+      - a2ui-project/a2ui/skills/a2ui
+    active_owner: a2ui-project/a2ui/skills/a2ui
+    content_hash: null
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/a2ui/SKILL.md
+    runtime: null
+    scope: project
+    owners:
+      - a2ui-project/a2ui/skills/a2ui
+    active_owner: a2ui-project/a2ui/skills/a2ui
+    content_hash: sha256:ada0d9989d5efd195d821b57d24f041021b486e13ec85febb395c4c35fb3da5e
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/ag-ui-a2ui-integration
+    runtime: null
+    scope: project
+    owners:
+      - ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
+    active_owner: ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
+    content_hash: null
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/ag-ui-a2ui-integration/SKILL.md
+    runtime: null
+    scope: project
+    owners:
+      - ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
+    active_owner: ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
+    content_hash: sha256:8b0a2187fd4c901aa4d7073aae3b86c83e6bb0300618b4b6530a073fb1f66e9b
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/ag-ui-a2ui-integration/references/a2ui-runtime-and-renderer.md
+    runtime: null
+    scope: project
+    owners:
+      - ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
+    active_owner: ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
+    content_hash: sha256:e3c1149e5cbc1128e920bd6621dbe78ecb378ed75035cae4191a5b0e29fe1a69
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/ag-ui-a2ui-integration/references/framework-adapters.md
+    runtime: null
+    scope: project
+    owners:
+      - ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
+    active_owner: ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
+    content_hash: sha256:316ed38cb43ce4f9f482f6bc309d95083d1b4175295391acf09bfe4f107a83bf
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/ag-ui-a2ui-integration/references/verification.md
+    runtime: null
+    scope: project
+    owners:
+      - ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
+    active_owner: ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
+    content_hash: sha256:7e2b7503ebd42b7f2049c3f69424e6a1d77e468168bb63c78df7ef045e1ba23c
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/ag-ui-a2ui-integration/sources.md
+    runtime: null
+    scope: project
+    owners:
+      - ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
+    active_owner: ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
+    content_hash: sha256:7de76b2ff18181b507963c7fe29d92994d30dd09ea6c990e9a1c9bb6b1b54de6
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/copilotkit
+    runtime: null
+    scope: project
+    owners:
+      - copilotkit/copilotkit/skills/copilotkit
+    active_owner: copilotkit/copilotkit/skills/copilotkit
+    content_hash: null
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/copilotkit/SKILL.md
+    runtime: null
+    scope: project
+    owners:
+      - copilotkit/copilotkit/skills/copilotkit
+    active_owner: copilotkit/copilotkit/skills/copilotkit
+    content_hash: sha256:611a927ce644c6650750c2eb5bc4e52b28595730ab113ffc118431dd00865eae
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/frontend-design
+    runtime: null
+    scope: project
+    owners:
+      - anthropics/skills/skills/frontend-design
+    active_owner: anthropics/skills/skills/frontend-design
+    content_hash: null
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/frontend-design/LICENSE.txt
+    runtime: null
+    scope: project
+    owners:
+      - anthropics/skills/skills/frontend-design
+    active_owner: anthropics/skills/skills/frontend-design
+    content_hash: sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/frontend-design/SKILL.md
+    runtime: null
+    scope: project
+    owners:
+      - anthropics/skills/skills/frontend-design
+    active_owner: anthropics/skills/skills/frontend-design
+    content_hash: sha256:d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/grilling
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/productivity/grilling
+    active_owner: mattpocock/skills/skills/productivity/grilling
+    content_hash: null
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/grilling/SKILL.md
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/productivity/grilling
+    active_owner: mattpocock/skills/skills/productivity/grilling
+    content_hash: sha256:a146842ed93ca43d833550fa9adf02e58cb63c83fea9d4b4522995b82242d4e2
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/grilling/agents/openai.yaml
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/productivity/grilling
+    active_owner: mattpocock/skills/skills/productivity/grilling
+    content_hash: sha256:1411d7df7d99b7e621a1ff8283c8133cc2464be63d064e52d8ce169c6800ee9b
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/improve-codebase-architecture
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/engineering/improve-codebase-architecture
+    active_owner: mattpocock/skills/skills/engineering/improve-codebase-architecture
+    content_hash: null
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/improve-codebase-architecture/HTML-REPORT.md
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/engineering/improve-codebase-architecture
+    active_owner: mattpocock/skills/skills/engineering/improve-codebase-architecture
+    content_hash: sha256:581e8bb5a521e46bbda8ca7e19b15948bed882187108092ebb90c62513b77528
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/improve-codebase-architecture/SKILL.md
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/engineering/improve-codebase-architecture
+    active_owner: mattpocock/skills/skills/engineering/improve-codebase-architecture
+    content_hash: sha256:35b03a3db61e0f5aa333ea59b54963e45a3d2ace6649b2ef4f9576603e2582a6
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/improve-codebase-architecture/agents/openai.yaml
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/engineering/improve-codebase-architecture
+    active_owner: mattpocock/skills/skills/engineering/improve-codebase-architecture
+    content_hash: sha256:c8cb20f68ebf0edb4e497bc11ae5fcaa196004e661cd189015b04f4109ced7f1
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/mattpocock-codebase-design
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/engineering/codebase-design
+    active_owner: mattpocock/skills/skills/engineering/codebase-design
+    content_hash: null
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/mattpocock-codebase-design/DEEPENING.md
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/engineering/codebase-design
+    active_owner: mattpocock/skills/skills/engineering/codebase-design
+    content_hash: sha256:f3dd099ce99289bd213914d8ee3e2429b78309c3957ca4583f7659551b1d53c1
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/mattpocock-codebase-design/DESIGN-IT-TWICE.md
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/engineering/codebase-design
+    active_owner: mattpocock/skills/skills/engineering/codebase-design
+    content_hash: sha256:c222ab5a82e0405672eb9062d62496139a08828e45d07fc5f18e4952c10fac1a
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/mattpocock-codebase-design/SKILL.md
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/engineering/codebase-design
+    active_owner: mattpocock/skills/skills/engineering/codebase-design
+    content_hash: sha256:2c20617f87ec8af6a434859f381b2f061a69b530444e74eb39e78bb016a6d1e2
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/mattpocock-codebase-design/agents/openai.yaml
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/engineering/codebase-design
+    active_owner: mattpocock/skills/skills/engineering/codebase-design
+    content_hash: sha256:edebc9e4fcfe102114012575eaa9600b9b5fd08c311664f389c36e7bc717740f
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: null
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/AGENTS.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:fc93e7421177bbf869cce892bc60a6c83a4517d974bc3bf65c4e2c1e58a6ccf6
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/README.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:9eafb2123d3b8b2aef41fba0db2648a3f4f49996f8c7c8bb2c86263befd8b48a
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/SKILL.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:71ed7794962fa6e803ee83030517b5b93a9f70fbfeb431ec4535c5480a8d8355
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/metadata.json
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:c4e18bac3290fbe1b471a605867d4df68b03144ea26b8befdbe8f9d8fd124354
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/_sections.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:01c59969e4e867f0708c8f8ef9c6d87fab9a07d0586244f429ff84013db8a115
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/_template.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:99df2a3ea088c6c22de2484ddc7e964d0e9923846f44c63380343ecc64455442
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/advanced-effect-event-deps.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:55ed8f9f27a1bff803d6fa55828176207714b02123cbb97ddb8a90d88024a723
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/advanced-event-handler-refs.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:a3097edeecfb2ff6851cd66ed8cdf0617c3c88180504bee824aa6e75a215bbbc
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/advanced-init-once.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:3e4dc22173eb0e2b6dcf583e3babd862b8696328f8f59aee7c4d746c5bc05f6c
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/advanced-use-latest.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:8a3f64dfe5a77d1564248faf17fe662ae75b55d497a243cb30b38eb07ccbbf9a
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/async-api-routes.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:523338540d73427dc14c0cbb19f2741ebccdf8b105a7b2c1b33d2905cf237a42
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/async-cheap-condition-before-await.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:03107c1f70a293cd58a8abc5474c5548e20ea4efdf01b6d45aae7ad0ac1cb32c
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/async-defer-await.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:f3c142d090615abdcc99d31c123be37b31f0f1ed8d9ec9f7789a3bc6883ae0fb
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/async-dependencies.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:16ef469f877e30c6b8e1e1b4bc3e527312fa3c6318cb785a4eca186ea236131a
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/async-parallel.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:6d2f841896279e976dfcdc1ac89e70771ac188baadfd43c096b5706cb838b961
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/async-suspense-boundaries.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:de05fedac2eb7ae563b887b5a424464ec3dfaf84e5b7797467ebe2a796ac8afc
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/bundle-analyzable-paths.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:62090b5c815fd71bf1133dce754f51abc16a9456d0ccd025fd627de27726e92a
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/bundle-barrel-imports.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:e648f6d54525f07a691357040ca5bff6ea3424788a91ff63812adb29622a671b
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/bundle-conditional.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:09c8259c3efb04fc0abb8e412ccbda217c222ae8118516283e571c995fe3a7d4
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/bundle-defer-third-party.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:3719fb47b191e8db4fe22686ec88448ad5af9e6838585425abbe103d0b642e37
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/bundle-dynamic-imports.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:401817a7369f315fc5a68a1095742ff7d53d0461906880dc9d64a41495ee1986
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/bundle-preload.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:d1f7cc28da7cd5ab249acd287edc5b761afcfb194e9cb62cd44c5f3543db2de2
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/client-event-listeners.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:242a873349febc1ce685e85617994784dbab92c2eaa68aed7fed5a83e7680e93
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/client-localstorage-schema.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:0fb7cdf9dc93fdf22f87e3669f953fb9d4ac9b0be42eec4a29fe9a2560610b88
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/client-passive-event-listeners.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:1f35016f9053de69e884ee9be00654e37979c2ca85f5e57764dc2626ff7acb4b
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/client-swr-dedup.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:644652c39c6cc00de8d1c77a7273612e868dc3f7edda30764164c12ec0f764a3
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-batch-dom-css.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:480b891b9eaf96e929dc1e964274a4828e3a78009b7d00ccd965a0d425215959
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-cache-function-results.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:3daaa11d24f4295cb6be8bc6f407f2ce83cc7b5bd1f0e68891ea8ab835721dc7
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-cache-property-access.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:73e47431e74878a927061bf0ddc7cd91a7556cb35d2573f3421e82300d9ae311
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-cache-storage.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:11b826b0433898c1ece2d3547010d8e77db9fb240185748c45db91493de9b6cc
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-combine-iterations.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:71add08aeeb43091d4ff4c0b2842cce8b4bdef8ad3e732cc034bb5a84827e746
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-early-exit.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:925ce5ce87f3347186ca62212f29cc6baa2b8c85a96d2720ad07c3d0abf781c0
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-flatmap-filter.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:9e5b166a41914d975bef7635467f8fb32cd98b5c3126c0bc6f163490812fb5f0
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-hoist-regexp.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:f9e9aef2f7c2307dd7310f283df85dcada45fc43e9bb941b0c3aa414dec21ec4
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-index-maps.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:5df1bdc2cfabb2c98abd55d26762e5c18189535c2e686184f426082e62920391
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-length-check-first.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:8b54a311c826b299272f29187fc58bc55772a04c4a72eeb29456ee96dc9fc624
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-min-max-loop.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:87dfb67e2f39df6ad8bcfb5b78c5fb364d3c07554ad188a202408d99f3763421
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-request-idle-callback.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:ee08f83905b4011abbc33d594033157d77561b5bbd9b36b04f0f409581ffec32
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-set-map-lookups.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:a7fd781a6ba9ad49065961b6f9a90ef486bf6b648390e1a08704025f98e1642b
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/js-tosorted-immutable.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:d0a5e1b0fec48a0a81397957e2f068e224329f7c42cb5feeed8aae6fa64025e8
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rendering-activity.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:1e5e7eaf3555e61d6a2e900089c676527d26259501db5594f59544b6c664f85a
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rendering-animate-svg-wrapper.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:9c6ae0ca7a51434e803887c64cded760956579a1452ccb80a461a03f9c937c77
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rendering-conditional-render.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:2ec2fa23c4148285144687050c52369adba3da2fbe3d486f8d3e0aad8f06f2bc
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rendering-content-visibility.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:64eee6d5b916fe74df33363994b27fc7f71bea3bcedc7ee04bda23107ca3e6e4
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rendering-hoist-jsx.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:93b229560fae92005ed9a2a829064607b39b2e984e92d221d05b2d41df2b7c0e
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rendering-hydration-no-flicker.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:dc7ab358c67c177bca6e6f360fbc935ebe4efa928c0ba3ebd3f9f3d9e2000ca3
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rendering-hydration-suppress-warning.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:915bacb934e2927d84b37a3f3d225a47b309ac8f9e494ed2bcb66ce07c5676a2
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rendering-resource-hints.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:351b1095d641717b930f1b2253282b7120af3023bc74e06c17675168d4286864
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rendering-script-defer-async.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:4cea07b7875ba7fc2c7465ff23b63a2bb334f90aaf2d9293d38d67b05fdb32ab
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rendering-svg-precision.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:ed468533f6e95f622859c884b122cf21f9f593ed6bb3d500a54de4b9f9bcb9fb
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rendering-usetransition-loading.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:3a1249c3f13026b6f54ab5712c388df219d6af01b12aa542749acd99a46f4bc1
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-defer-reads.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:234050a77faf50cb306be10a9e15bd4421134ab5907e75f13e6d78e2bd262dc9
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-dependencies.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:17eb5830956fb56486fd3cfc7431f5849d39751730c05ad9e77dd4f0c27169c5
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-derived-state-no-effect.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:cb11ec76f50aa7b6847269f02d79b120c889a30d9ecd2c1d578f75144419c77a
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-derived-state.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:1c326bb67b01fb084eb00c8911b0a7cff54681c2315b629f88e49b64eaa6481d
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-functional-setstate.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:5e68df6b2ae8058e67f476ff1ac67bde159f5a9d18df439e46eabcdeb7b52e58
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-lazy-state-init.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:4ae844740f266fc8cbf050701230286624a2440ec5be67b9a63d9edc3c580573
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-memo-with-default-value.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:81c47476564ad8a79fc68fc442734255ca7d6829424359464503fda0a9f9a0dd
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-memo.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:1f258990c2f27ff6256b3cc5c43300631bb3f0d81f749aed08d07fcdcc131dd1
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-move-effect-to-event.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:abc2cbf167bee056743023351e96806a411d3398da8802093620aecf0721f029
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-no-inline-components.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:1cc32907a770272524ba682eef9e7efdd8ad4533b6f89b718a1fcd7d1d0eb6a3
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-simple-expression-in-memo.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:5bdcf2d1558ba5204e643c887b7b4060f89630969425651eb68e96427d97f800
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-split-combined-hooks.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:6f45d703343484ef9acef9388397f3642966ae6a5a258899a0cf1f9977cfbf6c
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-transitions.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:60f4033909a62df5e5b8c601494f9e50a562e2f8c1c2d81eac24f38142265f1c
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-use-deferred-value.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:8c3579576a61a949884167745dcfaf1d5426ba305cc61fd0a79602d70fda4909
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/rerender-use-ref-transient-values.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:f1a649af9d1d0b5c762f6c9c4c1c70c90d7df82aa10296ee87aadb78c1b76c54
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/server-after-nonblocking.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:d0b8d24a3db9f0f65f9e2bddbf230b0e03a5f60e1229d93a4a18f5e7a991c7c2
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/server-auth-actions.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:a2ca8aa102839251c7971ec784560fab943c20b36fe6f80365d4110c13260c23
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/server-cache-lru.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:1924b64561841923b88a657085097a0aeba3e0ba2d5470b9f5c15cc10d6ae70f
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/server-cache-react.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:fddeea6c870bb3da4134b61d54b7d09b83d2603f929b7547cd3dc1dc269edd5c
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/server-dedup-props.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:c2747424cdac46be62f835f245a0aa887b0090b416d28e2ac8676702645eeb37
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/server-hoist-static-io.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:5abea4dd882b13661bd5f7dfb93f9e547d5f08176c61c448ade91b210ed5d49f
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/server-no-shared-module-state.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:4d869bf1cd2f1632e5ca4c0e64b1cf0e71c5f5a0f940bc8a22174d205e735ed7
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/server-parallel-fetching.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:569a2e9fc04f9606686cd75c5894ef8781b502786a7fffe241396846c7733472
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/server-parallel-nested-fetching.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:ad5d9656984d4a959997a2367bf59cc6632297b4634a1dd13a087939d83f30b3
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/react-best-practices/rules/server-serialization.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/react-best-practices
+    active_owner: vercel-labs/agent-skills/skills/react-best-practices
+    content_hash: sha256:f4c7d68b29c82381baad059c4a7f09e868e71ec9c3115a26ad3ae7d24c0dfe1f
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/retro
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/engineering/retro
+    active_owner: mattpocock/skills/skills/engineering/retro
+    content_hash: null
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/retro/SKILL.md
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/engineering/retro
+    active_owner: mattpocock/skills/skills/engineering/retro
+    content_hash: sha256:33fbc28568e3146f20fd908b12998bc0ab30aa4f4c87288199a40793efa94696
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/retro/agents/openai.yaml
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/engineering/retro
+    active_owner: mattpocock/skills/skills/engineering/retro
+    content_hash: sha256:cb6fb9d7e6b4be5975f41f6def1dd00a1255bad5d9b02696b124c924a8b8745c
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/web-design-guidelines
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/web-design-guidelines
+    active_owner: vercel-labs/agent-skills/skills/web-design-guidelines
+    content_hash: null
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/web-design-guidelines/SKILL.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-skills/skills/web-design-guidelines
+    active_owner: vercel-labs/agent-skills/skills/web-design-guidelines
+    content_hash: sha256:f4647ca866a3accf763777f83e7682954f0187cd6bea7eea0399796652414e8f
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/writing-for-agents
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/productivity/writing-for-agents
+    active_owner: mattpocock/skills/skills/productivity/writing-for-agents
+    content_hash: null
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/writing-for-agents/SKILL-MECHANICS.md
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/productivity/writing-for-agents
+    active_owner: mattpocock/skills/skills/productivity/writing-for-agents
+    content_hash: sha256:c768e6307c7c10728c401c213f2c4ba71c542127eeb7ad2956aabd15a0fa0059
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/writing-for-agents/SKILL.md
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/productivity/writing-for-agents
+    active_owner: mattpocock/skills/skills/productivity/writing-for-agents
+    content_hash: sha256:551adca942227b44192edba88acd4e8db911f0121ce58ad16944ccf6a896a74a
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/writing-for-agents/agents/openai.yaml
+    runtime: null
+    scope: project
+    owners:
+      - mattpocock/skills/skills/productivity/writing-for-agents
+    active_owner: mattpocock/skills/skills/productivity/writing-for-agents
+    content_hash: sha256:eacb24b2a618cfb81dacb0416f4fdd75ddf3a8060f8ddb99aae1b1e301907e4b

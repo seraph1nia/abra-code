@@ -13,8 +13,8 @@ The controller owns delivery and retirement after verification and Review. An ig
 After the [recipe prerequisites](../README.md#prepare-and-check-health), run:
 
 ```sh
-pnpm exec vp test run --project e2e tests/e2e/native.test.ts
-pnpm exec vp test run --project unit tests/unit/retirement.test.ts tests/unit/worker-lifecycle.test.ts tests/unit/engineering-recovery.test.ts
+pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts
+pnpm exec vp test run --project unit packages/runtime/tests/unit/retirement.test.ts packages/runtime/tests/unit/worker-lifecycle.test.ts packages/runtime/tests/unit/engineering-recovery.test.ts
 ```
 
 Native expected state: delivery is verified while cleanup remains blocked across a service restart; authorizing only the known generated directory disposes of it automatically, while a new unknown sibling remains protected until explicit preservation and fresh absence permit retirement/closure, and the recording forge counts exactly one merge. Archived report/diff and captured context identity remain inspectable afterward. The native suite uses only local bare remotes.

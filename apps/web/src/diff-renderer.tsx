@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { FileDiff } from "@pierre/diffs/react";
-import type { WorkDiffSchema } from "../../../src/web/wire.ts";
+import type { WorkDiffSchema } from "@abracode/contracts/web/wire";
 import { parseDiffPatch } from "./diff-patch.ts";
 import type { WorkspaceSearch } from "./navigation.ts";
 import { queries } from "./data.ts";
 import { RequestState } from "./request-state.tsx";
-import { Input } from "./components/ui/input.tsx";
-import { Alert, AlertDescription } from "./components/ui/alert.tsx";
+import { Input } from "@abracode/presentation/ui/input";
+import { Alert, AlertDescription } from "@abracode/presentation/ui/alert";
 
 type Diff = typeof WorkDiffSchema.Type;
 

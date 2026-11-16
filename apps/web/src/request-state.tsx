@@ -3,10 +3,10 @@ import type { ReactNode } from "react";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { Cause, Option } from "effect";
 import { AsyncResult, type Atom } from "effect/reactivity";
-import { Alert, AlertDescription } from "./components/ui/alert.tsx";
-import { Button } from "./components/ui/button.tsx";
-import { Skeleton } from "./components/ui/skeleton.tsx";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip.tsx";
+import { Alert, AlertDescription } from "@abracode/presentation/ui/alert";
+import { Button } from "@abracode/presentation/ui/button";
+import { Skeleton } from "@abracode/presentation/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@abracode/presentation/ui/tooltip";
 
 export function requestError(cause: Cause.Cause<unknown>) {
   const error = Cause.findErrorOption(cause);

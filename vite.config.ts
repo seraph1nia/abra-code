@@ -15,10 +15,18 @@ export default defineConfig({
   },
   lint: {
     extends: [recommended],
+    jsPlugins: ["./scripts/lint/workspace-boundaries.mjs"],
+    rules: { "abracode/boundaries": "error" },
     ignorePatterns: [".abracode/**", ".lavish/**", "**/dist/**"],
     overrides: [
       {
-        files: ["apps/report/src/**/*.{ts,tsx}", "apps/report/scripts/mermaid-engine.ts"],
+        files: [
+          "apps/report/src/**/*.{ts,tsx}",
+          "apps/web/src/**/*.{ts,tsx}",
+          "packages/contracts/src/**/*.ts",
+          "packages/presentation/src/**/*.{ts,tsx}",
+          "apps/report/scripts/mermaid-engine.ts",
+        ],
         env: { browser: true, node: false },
       },
     ],
@@ -33,13 +41,17 @@ export default defineConfig({
     projects: [
       {
         extends: true,
-        test: { name: "unit", include: ["tests/unit/**/*.test.ts"] },
+        test: { name: "fast", include: ["packages/runtime/tests/fast/**/*.test.ts"] },
+      },
+      {
+        extends: true,
+        test: { name: "unit", include: ["packages/runtime/tests/unit/**/*.test.ts"] },
       },
       {
         extends: true,
         test: {
           name: "integration",
-          include: ["tests/integration/**/*.test.ts"],
+          include: ["packages/runtime/tests/integration/**/*.test.ts"],
           testTimeout: 30_000,
         },
       },
@@ -47,7 +59,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "e2e",
-          include: ["tests/e2e/**/*.test.ts"],
+          include: ["packages/runtime/tests/e2e/**/*.test.ts"],
           testTimeout: 120_000,
           hookTimeout: 30_000,
         },

@@ -1,19 +1,19 @@
 import { useState } from "react";
-import { CopilotChatAssistantMessage } from "@copilotkit/react-core/v2";
-import type { IssueId } from "../../../../src/identities.ts";
-import type { FeedbackPageSchema } from "../../../../src/web/wire.ts";
+import { Markdown as DeferredMarkdown } from "../markdown.tsx";
+import type { IssueId } from "@abracode/contracts/identities";
+import type { FeedbackPageSchema } from "@abracode/contracts/web/wire";
 import { queries } from "../data.ts";
 import { RequestState } from "../request-state.tsx";
-import { Button } from "../components/ui/button.tsx";
+import { Button } from "@abracode/presentation/ui/button";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-} from "../components/ui/card.tsx";
-import { Badge } from "../components/ui/badge.tsx";
-import { FindingCard, Evidence } from "./cards.tsx";
+} from "@abracode/presentation/ui/card";
+import { Badge } from "@abracode/presentation/ui/badge";
+import { FindingCard, Evidence } from "@abracode/presentation/cards";
 const words = (value: string) =>
   value
     .replaceAll("_", " ")
@@ -21,14 +21,7 @@ const words = (value: string) =>
     .replace(/^./, (c) => c.toUpperCase());
 type Page = typeof FeedbackPageSchema.Type;
 function Markdown({ text }: { text: string }) {
-  return (
-    <CopilotChatAssistantMessage.MarkdownRenderer
-      key={text}
-      content={text}
-      mode="static"
-      className="prose"
-    />
-  );
+  return <DeferredMarkdown key={text} content={text} mode="static" className="prose" />;
 }
 export function ReviewsPanel({ issue }: { issue: IssueId }) {
   const [page, setPage] = useState(0);

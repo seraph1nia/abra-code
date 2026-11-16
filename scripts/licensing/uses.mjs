@@ -1,8 +1,24 @@
+import { posix } from "node:path";
+
 /** Classify every frozen component by the workspace entry points that reach it. */
 export function classifyUses(lock) {
   const groups = new Map();
-  const visit = (name, ref, use, seen = new Set()) => {
+  const visit = (name, ref, use, seen = new Set(), importer = ".") => {
     const version = String(ref?.version ?? ref).split("(")[0];
+    if (version.startsWith("link:")) {
+      const workspace = posix.normalize(posix.join(importer, version.slice(5)));
+      const identity = `workspace:${workspace}`;
+      if (seen.has(identity)) return;
+      seen.add(identity);
+      const linked = lock.importers?.[workspace];
+      if (!linked) throw Error(`Missing workspace importer: ${workspace}`);
+      for (const [child, value] of Object.entries({
+        ...linked.dependencies,
+        ...linked.optionalDependencies,
+      }))
+        visit(child, value, use, seen, workspace);
+      return;
+    }
     const key = Object.hasOwn(lock.packages, `${name}@${version}`) ? `${name}@${version}` : version;
     if (seen.has(key)) return;
     seen.add(key);
@@ -18,7 +34,7 @@ export function classifyUses(lock) {
         ...snapshot.dependencies,
         ...snapshot.optionalDependencies,
       }))
-        visit(child, value, use, seen);
+        visit(child, value, use, seen, importer);
     }
   };
   for (const [name, ref] of Object.entries(lock.importers?.["."]?.dependencies ?? {}))
@@ -34,13 +50,18 @@ export function classifyUses(lock) {
         : "contributor-build",
     );
   for (const [name, ref] of Object.entries(lock.importers?.["apps/web"]?.dependencies ?? {}))
-    visit(name, ref, "web-client");
+    visit(name, ref, "web-client", new Set(), "apps/web");
   for (const [name, ref] of Object.entries(lock.importers?.["apps/web"]?.devDependencies ?? {}))
-    visit(name, ref, "web-client-build");
+    visit(name, ref, "web-client-build", new Set(), "apps/web");
   for (const [name, ref] of Object.entries(lock.importers?.["apps/report"]?.dependencies ?? {}))
-    visit(name, ref, "report-artifact");
+    visit(name, ref, "report-artifact", new Set(), "apps/report");
   for (const [name, ref] of Object.entries(lock.importers?.["apps/report"]?.devDependencies ?? {}))
-    visit(name, ref, "report-authoring-build");
+    visit(name, ref, "report-authoring-build", new Set(), "apps/report");
+  for (const [workspace, importer] of Object.entries(lock.importers ?? {})) {
+    if (!workspace.startsWith("packages/")) continue;
+    for (const [name, ref] of Object.entries(importer.devDependencies ?? {}))
+      visit(name, ref, "contributor-build", new Set(), workspace);
+  }
   return new Map(
     Object.keys(lock.packages).map((id) => [
       id,

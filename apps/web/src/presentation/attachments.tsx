@@ -1,13 +1,27 @@
-import type { PresentationAttachmentSchema } from "../../../../src/presentation/contracts.ts";
-import { useState } from "react";
-import { ReportDocumentView } from "./report-document.tsx";
+import type { PresentationAttachmentSchema } from "@abracode/contracts/presentation/contracts";
+import { useState, type ComponentProps } from "react";
+import { deferred } from "../deferred.tsx";
+const ReportDocumentView = deferred<
+  ComponentProps<typeof import("@abracode/presentation/report-document").ReportDocumentView>
+>(
+  () =>
+    import("@abracode/presentation/report-document").then((module) => ({
+      default: module.ReportDocumentView,
+    })),
+  "Saved report",
+);
 import { api } from "../api.ts";
-import type { WebWorkItem } from "../../../../src/web/wire.ts";
-import type { WorkspaceSnapshot } from "../../../../src/web/contracts.ts";
-import { WorkViews } from "../surfaces.tsx";
+import type { WebWorkItem } from "@abracode/contracts/web/wire";
+import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
+const WorkViews = deferred<
+  ComponentProps<typeof import("@abracode/presentation/surfaces").WorkViews>
+>(
+  () => import("@abracode/presentation/surfaces").then((module) => ({ default: module.WorkViews })),
+  "Generated view",
+);
 import { surfaceQuery, queries } from "../data.ts";
 import { RequestState } from "../request-state.tsx";
-import { ArtifactCard, type Inspect } from "./cards.tsx";
+import { ArtifactCard, type Inspect } from "@abracode/presentation/cards";
 import { SaveSurfaceButton } from "./save-surface.tsx";
 
 type Target = typeof PresentationAttachmentSchema.Type.target;

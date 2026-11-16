@@ -1,37 +1,35 @@
-import type { EvidenceReferenceSchema } from "../../../../src/workflow/report-contracts.ts";
+import type { EvidenceReferenceSchema } from "@abracode/contracts/workflow/report-contracts";
 import { useState, type ReactNode } from "react";
 import { useSearch } from "@tanstack/react-router";
-import { CopilotChatAssistantMessage } from "@copilotkit/react-core/v2";
-import type { IssueId } from "../../../../src/identities.ts";
+import { Markdown } from "../markdown.tsx";
+import type { IssueId } from "@abracode/contracts/identities";
 import type {
   DeclaredWaitSchema,
   DecisionSchema,
   MessagesPageSchema,
-} from "../../../../src/web/wire.ts";
-import type { AttentionForm } from "../../../../src/web/contracts.ts";
-import { communicationSummary } from "../../../../src/web/presentation-contracts.ts";
+} from "@abracode/contracts/web/wire";
+import type { AttentionForm } from "@abracode/contracts/web/contracts";
+import { communicationSummary } from "@abracode/contracts/web/presentation-contracts";
 import { queries } from "../data.ts";
 import { RequestState } from "../request-state.tsx";
-import { Button } from "../components/ui/button.tsx";
+import { Button } from "@abracode/presentation/ui/button";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-} from "../components/ui/card.tsx";
-import { Badge } from "../components/ui/badge.tsx";
-import { CommunicationCard, DecisionCard, Evidence, type Inspect } from "./cards.tsx";
+} from "@abracode/presentation/ui/card";
+import { Badge } from "@abracode/presentation/ui/badge";
+import {
+  CommunicationCard,
+  DecisionCard,
+  Evidence,
+  type Inspect,
+} from "@abracode/presentation/cards";
 const words = (value: string) => value.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
 function Body({ children }: { children: string }) {
-  return (
-    <CopilotChatAssistantMessage.MarkdownRenderer
-      key={children}
-      content={children}
-      mode="static"
-      className="prose"
-    />
-  );
+  return <Markdown key={children} content={children} mode="static" className="prose" />;
 }
 function Disclosure({ title, children }: { title: string; children: ReactNode }) {
   return (

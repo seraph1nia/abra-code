@@ -6,6 +6,14 @@ Start with `pnpm start` (or `pnpm service:restart`), then `abra_work_status`, `a
 
 ## Normal interruptions
 
+`STALE_REVISION` refuses a whole-record replacement without mutating retained
+state or advancing the caller. Production writers use explicitly owned field
+commits; setup, operation preparation, phase transitions and workspace callbacks
+follow the same ownership rules. `STALE_OPERATION` means execution/control or
+operation ownership changed and the late completion must be discarded. Reread
+the retained execution and inspect its existing uncertain effect before retrying.
+Do not resolve either conflict by restoring a stale record or dropping history.
+
 - `interrupted`: the session stopped. `work_control resume` validates ownership and reuses its session/worktree. A busy session prevents a new writer.
 - `blocked` / `failed`: inspect the concrete gate error and issue blocker. For worker failures, `abra_work_diagnostics` exposes native error type/message/status and actual/configured models without global log-file access. Correct the provider/model/tool problem, then `retry`. Guarded issue status changes restore in-progress ownership. Failed Review returns its findings to the existing Apply session.
 - `awaiting_plan_approval`: request/answer the plan form. If requirements changed, use `replan` while idle; pause the writer first if necessary. A rejected plan blocks the issue and returns to Explore on retry.
@@ -84,6 +92,17 @@ Records already stranded in `recovery_required` by an older runtime are not auto
 ## Versioned plugin records and backup
 
 Project, setup and execution records use schema version 1. Durable execution variants require phase-specific ownership and preservation evidence. Reads decode records individually and normalize supported legacy data in memory. A coordinated save retains `legacy-original/<original-key>` before the first migration write, preserves additive evidence, and increments the record revision. Unknown versions, mismatched keys and incomplete legacy evidence remain unchanged and visible through `abra_work_list`, readiness, the native work surface and `pnpm doctor` when the service is available. One unavailable record does not hide valid history; new admission and registry changes remain blocked until its ownership is resolved.
+
+`STALE_REVISION` refuses a full execution/setup replacement after another commit;
+neither retained bytes nor the rejected caller's revision/generation/timestamp
+are changed. Reread current ownership and use the existing operation's explicit
+owned-field update for a legitimate independent change. Never retry a stale
+aggregate as a force replacement or clear evidence to make it pass. A changed
+generation/operation remains `STALE_OPERATION` and requires its existing control
+recovery. Field deletion is an owned change too: a stale value cannot resurrect
+independently cleared progress or retry instructions. Scoped updates preserve
+additive unknown evidence and still refuse immutable-history rewrites and
+unsupported record versions.
 
 Legacy records without a retained verification receipt normalize with an empty verification snapshot: no new commands are guessed from a later project configuration. Preserve their sessions, claims, approvals and worktrees and inspect the missing evidence before an explicit policy revision. A phase name never creates a receipt or authorization. New executions snapshot verification and delivery policy at admission.
 
@@ -242,3 +261,11 @@ Mandatory form routing retains its session/form/target before native submission,
 Typed synchronization recovery adopts a lost push response only when retained intended commit/tree, verification/Review and exact remote PR/head/target agree. It does not infer success from an error string or push to a merged PR. A verified already-merged source proceeds to cleanup; unpublished late edits get a retained follow-on decision. Legacy unsafe records remain subject to explicit recovery. Pauses and external custody suppress automatic finishing throughout.
 
 Removal journals are committed before disposal and native retirement. Confirmed absence reconciles a lost response. A `removing` directory or `requested` native worktree still present is uncertain and is never automatically removed again; inspect/reconcile the original request. Replacements remain unsafe. Native retirement uses `force:false`; graph closure follows confirmed filesystem and native-inventory absence and the original claim check. A lost closure response is reconciled from actual graph status. Completion notification has a retained message ID and bounded retries; notification failure cannot undo closure or duplicate disposal.
+
+Recovery implementation is owned by `ExecutionRecovery`, assembled with admission,
+worker, approval, finishing and publication services in the application entry
+point. It delegates provisioning to `WorkAdmission` and phase checkpoints to
+`Advancement`; those internal continuations are absent from the public controller
+ports. A restarted application uses the same composition as a fresh application.
+No additional engine, replay ledger or execution database has been introduced.
+Native uncertain-effect and approval fences still run before each external action.

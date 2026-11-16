@@ -85,3 +85,36 @@ treat a decision answer as checkpoint authorization.
 New coding admissions select role-relevant native engineering skills. Explore loads `abra-codebase-design`, `abra-domain-modeling` or `abra-verification` for relevant planning decisions; Apply can also load `abra-diagnosing-bugs` and `abra-blast-radius` for difficult bugs and concrete safety assumptions. Review loads design, verification or blast-radius guidance only for applicable read-only assessments. Procedures remain conditional; trivial tasks do not need every technique. Research has no new coding prerequisites.
 
 Review includes current staged, unstaged and untracked implementation and proof, not only a committed diff ending at HEAD. Match proof to accepted scenarios, the verified worktree and existing controller check receipts. Inaccessible Apply output or scratch paths are not automatically available evidence. Full-spec applicable missing proof is `not_verified` under the existing dimensions; lightweight Review keeps the short contract. Skill loading proves no behavior and changes no gate, permission, scope or correction budget.
+
+## Assignment reports and reusable role procedures
+
+Assignments supply the issue, accepted contract, retained base/worktree, generation,
+schema and recovery feedback. Role instructions supply responsibility and boundaries;
+use this skill for the shared procedure instead of duplicating it in every prompt.
+Never claim/close work, approve checkpoints, commit/push/merge/archive, remove
+execution resources or delegate another writing session from a worker. Repository
+edits stay in the assigned worktree; screenshots stay in assigned scratch evidence.
+
+Explore follows the native Apply prerequisite closure and captured plan requirement
+above. A compact schema requires neither design nor a redundant report. For a new
+capability, include a meaningful `## Purpose` in its delta so canonical archival
+passes strict validation. Finish planning with actual valid artifacts and task tracking.
+Apply implements the approved contract, uses native apply instructions and marks
+only completed tasks. A lightweight assignment has no OpenSpec task package.
+Review uses the verification dimensions above for full-spec, or its accepted short
+contract for lightweight work. A failed review blocks delivery; unavailable applicable
+proof remains `not_verified`. These procedures do not grant shell/edit authority.
+
+Use `abra_worker_reply` to acknowledge/answer explicit controller request IDs with
+the current generation, or submit a keyed finding. Nominating another worker does
+not send it a prompt or change scope. Native completion is not a communication reply.
+
+Research submits `abra_research_report` with stable `report_id`, `generation`,
+conclusions, findings carrying retained base/path/line or URL references, one
+acceptance result per criterion in order, and limitations. The controller publishes
+outside the worktree. Native success without this report is incomplete. Optional
+visual output uses `render: {request_id, title?}` in that ordinary retained submission.
+Reuse request identity after response loss. The controller captures canonical JSON
+and uses its trusted React renderer for optional portable HTML; workers gain no
+shell or template-editing authority. Pending/building is not a ready artifact.
+Preserve retained Markdown and report concrete build failures through existing tools.

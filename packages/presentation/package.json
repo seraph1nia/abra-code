@@ -1,0 +1,51 @@
+{
+  "name": "@abracode/presentation",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./ui/alert": "./src/ui/alert.tsx",
+    "./ui/badge": "./src/ui/badge.tsx",
+    "./ui/button": "./src/ui/button.tsx",
+    "./ui/card": "./src/ui/card.tsx",
+    "./ui/checkbox": "./src/ui/checkbox.tsx",
+    "./ui/field": "./src/ui/field.tsx",
+    "./ui/input": "./src/ui/input.tsx",
+    "./ui/label": "./src/ui/label.tsx",
+    "./ui/native-select": "./src/ui/native-select.tsx",
+    "./ui/separator": "./src/ui/separator.tsx",
+    "./ui/sheet": "./src/ui/sheet.tsx",
+    "./ui/skeleton": "./src/ui/skeleton.tsx",
+    "./ui/tabs": "./src/ui/tabs.tsx",
+    "./ui/textarea": "./src/ui/textarea.tsx",
+    "./ui/tooltip": "./src/ui/tooltip.tsx",
+    "./cards": "./src/cards.tsx",
+    "./report-document": "./src/report-document.tsx",
+    "./report-evidence": "./src/report-evidence.tsx",
+    "./work-widgets": "./src/work-widgets.tsx",
+    "./surfaces": "./src/surfaces.tsx",
+    "./utils": "./src/utils.ts",
+    "./tokens.css": "./src/tokens.css",
+    "./styles.css": "./src/styles.css"
+  },
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@a2ui/react": "0.15.0",
+    "@a2ui/web_core": "0.15.0",
+    "@abracode/contracts": "workspace:*",
+    "@base-ui/react": "1.9.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "effect": "4.1.4",
+    "lucide-react": "1.73.0",
+    "react": "19.3.1",
+    "tailwind-merge": "3.7.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2"
+  }
+}

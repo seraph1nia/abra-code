@@ -1,0 +1,52 @@
+{
+  "name": "@abracode/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/workflow/public-api.ts",
+    "./plugin": "./src/plugin/index.ts",
+    "./cli/client": "./src/cli/client.ts",
+    "./cli/config-apply": "./src/cli/config-apply.ts",
+    "./cli/config-schema": "./src/cli/config-schema.ts",
+    "./cli/config": "./src/cli/config.ts",
+    "./cli/dev": "./src/cli/dev.ts",
+    "./cli/doctor": "./src/cli/doctor.ts",
+    "./cli/launch": "./src/cli/launch.ts",
+    "./cli/report": "./src/cli/report.ts",
+    "./cli/start": "./src/cli/start.ts",
+    "./cli/stop": "./src/cli/stop.ts",
+    "./cli/web": "./src/cli/web.ts",
+    "./cli/report-shell": "./src/cli/report-shell.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@abracode/contracts": "workspace:*",
+    "@ag-ui/client": "1.0.4",
+    "@ag-ui/core": "1.0.4",
+    "@copilotkit/runtime": "1.88.0",
+    "@effect/platform-node": "4.1.4",
+    "@opencode/client": "2.3.0",
+    "@opencode/plugin": "2.3.0",
+    "@opencode/schema": "2.3.0",
+    "@opencode/util": "2.3.0",
+    "@toon-format/toon": "4.4.0",
+    "diff": "9.0.0",
+    "effect": "4.1.4",
+    "rxjs": "7.8.2",
+    "yaml": "2.9.1",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@a2ui/web_core": "0.15.0",
+    "@abracode/report-export": "workspace:*",
+    "@abracode/web": "workspace:*",
+    "@types/node": "26.6.6",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite-plus": "1.6.0"
+  }
+}

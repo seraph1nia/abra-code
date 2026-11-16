@@ -1,13 +1,13 @@
 import { useId, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
-import { CopilotChatAssistantMessage } from "@copilotkit/react-core/v2";
-import type { WebWorkItem } from "../../../../src/web/wire.ts";
-import { orderedParts } from "../../../../src/web/transcript.ts";
+import { Markdown } from "../markdown.tsx";
+import type { WebWorkItem } from "@abracode/contracts/web/wire";
+import { orderedParts } from "@abracode/contracts/web/transcript";
 import { queries } from "../data.ts";
 import { RequestState } from "../request-state.tsx";
-import { Button } from "../components/ui/button.tsx";
-import { NativeSelect } from "../components/ui/native-select.tsx";
-import { SessionCard, type Inspect } from "./cards.tsx";
+import { Button } from "@abracode/presentation/ui/button";
+import { NativeSelect } from "@abracode/presentation/ui/native-select";
+import { SessionCard, type Inspect } from "@abracode/presentation/cards";
 import { ToolObservation } from "./tools.tsx";
 
 export function SessionsPanel({ work, inspect }: { work: WebWorkItem; inspect: Inspect }) {
@@ -117,7 +117,7 @@ function WorkerTranscript({
                 </header>
                 {orderedParts(message).map((part, index) =>
                   part.type === "text" ? (
-                    <CopilotChatAssistantMessage.MarkdownRenderer
+                    <Markdown
                       key={`${index}:${part.text}`}
                       content={part.text}
                       mode="static"

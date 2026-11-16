@@ -1,45 +1,38 @@
 import { ExportReport } from "./presentation/export-report.tsx";
 import { ActivityPanel } from "./presentation/activity.tsx";
-import { ReportDocumentView } from "./presentation/report-document.tsx";
+import { ReportDocumentView } from "@abracode/presentation/report-document";
 import { DecisionsPanel } from "./presentation/obligations.tsx";
-import type { AttentionForm } from "../../../src/web/contracts.ts";
-import type { Inspect } from "./presentation/cards.tsx";
+import type { AttentionForm } from "@abracode/contracts/web/contracts";
+import type { Inspect } from "@abracode/presentation/cards";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4 HTTP atoms provide scoped inspector reads. */
 import { lazy, Suspense } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { Option } from "effect";
-import { IssueId } from "../../../src/identities.ts";
-import { artifactPageSize } from "../../../src/web/wire.ts";
+import { IssueId } from "@abracode/contracts/identities";
+import { artifactPageSize } from "@abracode/contracts/web/wire";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import type { WebWorkItem as WorkItem, WorkDetailSchema } from "../../../src/web/wire.ts";
-import { CopilotChatAssistantMessage } from "@copilotkit/react-core/v2";
+import type { WebWorkItem as WorkItem, WorkDetailSchema } from "@abracode/contracts/web/wire";
+import { Markdown as DeferredMarkdown } from "./markdown.tsx";
 import { api } from "./api.ts";
-import { phaseLabel } from "../../../src/presentation/work-state.ts";
-import { OutcomeSummary, Evidence } from "./presentation/cards.tsx";
+import { phaseLabel } from "@abracode/contracts/presentation/work-state";
+import { OutcomeSummary, Evidence } from "@abracode/presentation/cards";
 import { ExecutionContractSummary } from "./presentation/execution-contract.tsx";
 import { queries } from "./data.ts";
 import { RequestState } from "./request-state.tsx";
 import { inspectorTabs, type InspectorTab } from "./navigation.ts";
 import { useMediaQuery } from "./use-media-query.ts";
 import { useTheme } from "./theme.tsx";
-import { Button } from "./components/ui/button.tsx";
-import { Badge } from "./components/ui/badge.tsx";
-import { Alert, AlertDescription } from "./components/ui/alert.tsx";
-import { Skeleton } from "./components/ui/skeleton.tsx";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs.tsx";
-import { Sheet, SheetContent, SheetTitle, SheetDescription } from "./components/ui/sheet.tsx";
+import { Button } from "@abracode/presentation/ui/button";
+import { Badge } from "@abracode/presentation/ui/badge";
+import { Alert, AlertDescription } from "@abracode/presentation/ui/alert";
+import { Skeleton } from "@abracode/presentation/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@abracode/presentation/ui/tabs";
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@abracode/presentation/ui/sheet";
 
 const DiffRenderer = lazy(() => import("./diff-renderer.tsx"));
 function Markdown({ content, className }: { content: string; className?: string }) {
-  return (
-    <CopilotChatAssistantMessage.MarkdownRenderer
-      key={content}
-      content={content}
-      className={className}
-      mode="static"
-    />
-  );
+  return <DeferredMarkdown key={content} content={content} className={className} mode="static" />;
 }
 type Props = {
   work?: WorkItem;
@@ -365,6 +358,11 @@ function Overview({
             ))}
           </ul>
         </section>
+      )}
+      {work.eligibility_observed === false && (
+        <p className="muted">
+          Readiness to start has not been checked. Ask Abra to assess ready work.
+        </p>
       )}
       <div className="button-row">
         {["pause", "resume", "advance"].map((action) => (

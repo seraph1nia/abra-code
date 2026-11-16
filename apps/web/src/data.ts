@@ -1,20 +1,24 @@
-import type { LeadEvidenceQuery } from "../../../src/visibility/lead-observation.ts";
-import type { SaveSurfaceSchema, ExportDocumentSchema } from "../../../src/web/report-actions.ts";
+import { workInvalidationKeys, type ChangeScope } from "@abracode/contracts/web/changes";
+import type { LeadEvidenceQuery } from "@abracode/contracts/visibility/lead-observation";
+import type {
+  SaveSurfaceSchema,
+  ExportDocumentSchema,
+} from "@abracode/contracts/web/report-actions";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4 HTTP atoms are the browser query boundary. */
 import { Effect } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { Atom, AtomHttpApi, Reactivity } from "effect/reactivity";
 import { Form } from "@opencode/schema/form";
 import { Permission } from "@opencode/schema/permission";
-import { workspaceApi } from "../../../src/web/http-api.ts";
+import { workspaceApi } from "@abracode/contracts/web/http-api";
 import {
   IssueId,
   RelativePath,
   SessionId,
   RequestId,
   ContentHash,
-} from "../../../src/identities.ts";
-import type { WorkDiscovery } from "../../../src/visibility/discovery-contracts.ts";
+} from "@abracode/contracts/identities";
+import type { WorkDiscovery } from "@abracode/contracts/visibility/discovery-contracts";
 
 export class WorkspaceApi extends AtomHttpApi.Service<WorkspaceApi>()("WorkspaceApi", {
   api: workspaceApi,
@@ -27,6 +31,10 @@ const queryOptions = (issue: string) => ({
   timeToLive: "30 seconds" as const,
 });
 export const bootstrapQuery = WorkspaceApi.query("workspace", "bootstrap", {});
+/** An uncached exact read; missing admission evidence must be checked afresh. */
+export const readReceipt = WorkspaceApi.runtime.fn((request_id: string) =>
+  Effect.flatMap(WorkspaceApi, (client) => client.workspace.receipt({ query: { request_id } })),
+);
 export const historyQuery = (cursor: string) =>
   WorkspaceApi.query("workspace", "history", { query: { cursor }, timeToLive: "30 seconds" });
 export const surfaceQuery = (id: string, revision: number) =>
@@ -150,9 +158,10 @@ export const saveSurface = Atom.family((_request: string) =>
     Effect.flatMap(WorkspaceApi, (client) => client.work.saveSurface({ payload })),
   ),
 );
-export const invalidateWork = WorkspaceApi.runtime.fn((issues: readonly string[]) =>
-  Reactivity.invalidate(["work-observed", "work-finder", ...issues.map(workKey)]),
-);
+export const invalidateWork = WorkspaceApi.runtime.fn((scope: ChangeScope) => {
+  const keys = workInvalidationKeys(scope);
+  return keys.length ? Reactivity.invalidate(keys) : Effect.void;
+});
 
 export const exportDocument = Atom.family((_identity: string) =>
   WorkspaceApi.runtime.fn<typeof ExportDocumentSchema.Type>()((payload) =>

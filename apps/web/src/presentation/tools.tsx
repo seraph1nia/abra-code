@@ -1,12 +1,12 @@
 import { createContext, useContext } from "react";
-import { useRenderTool, useRenderToolCall } from "@copilotkit/react-core/v2";
+import { useRenderTool, useRenderToolCall } from "@copilotkit/react-core/v2/headless";
 import type {
   TranscriptTool,
   ToolPresentation,
-} from "../../../../src/web/presentation-contracts.ts";
-import { nativeToolCall, nativeToolMessage } from "../../../../src/web/transcript.ts";
-import type { PresentationAttachmentSchema } from "../../../../src/presentation/contracts.ts";
-import type { WebWorkItem } from "../../../../src/web/wire.ts";
+} from "@abracode/contracts/web/presentation-contracts";
+import { nativeToolCall, nativeToolMessage } from "@abracode/contracts/web/transcript";
+import type { PresentationAttachmentSchema } from "@abracode/contracts/presentation/contracts";
+import type { WebWorkItem } from "@abracode/contracts/web/wire";
 import { SurfaceAttachment, MessageAttachment } from "./attachments.tsx";
 import {
   TaskCard,
@@ -16,7 +16,7 @@ import {
   FindingCard,
   ArtifactCard,
   type Inspect,
-} from "./cards.tsx";
+} from "@abracode/presentation/cards";
 
 const ObservationContext = createContext<
   | {

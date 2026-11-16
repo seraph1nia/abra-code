@@ -1,11 +1,16 @@
 [tools]
 node = "26.13.0"
 pnpm = "12.21.0"
+"github:microsoft/apm" = "0.35.1"
 
 [env]
 # Use the CLI versions pinned in pnpm-lock.yaml.
 _.path = ["{{ config_root }}/node_modules/.bin"]
 
 [tasks.setup]
-description = "Install project dependencies and verify the required CLIs"
-run = ["pnpm install --frozen-lockfile --prod=false", "pnpm config:schema"]
+description = "Install project dependencies, shared agent skills and verify the required CLIs"
+run = ["pnpm install --frozen-lockfile --prod=false", "apm install --frozen", "pnpm config:schema"]
+
+[tasks."skills:install"]
+description = "Restore pinned project skills for Codex and OpenCode"
+run = "apm install --frozen"

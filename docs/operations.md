@@ -8,7 +8,7 @@ Abra is the only conversational agent. Worker selections open read-only inspecti
 
 ## Persistent service and Supervisor
 
-`pnpm service:start` uses the pinned native `Service.ensure()` API to start/discover an OpenCode 2.0.28 background process, activate the central location, verify plugin activation, and create/reuse a session tagged with the orchestration home. The process remains active after the command and every UI client exit. The dedicated registration is `.abracode/state/opencode/service.json`; this avoids replacing another default OpenCode service. Execution/session data lives in OpenCode's native data location, not in a new AbraCode database. The managed service sets `OPENCODE_CONFIG_DIR` to `<home>/.abracode/config/opencode`, so globally installed plugins under `~/.config/opencode/plugins` are not inherited by its pinned v2 runtime. Provider authentication remains in the native data location. AbraCode generates `.abracode/config/opencode/opencode.json` from the selected personal YAML; do not edit generated settings directly; the managed service does not inherit another OpenCode installation's global config or agents. Existing global files are not deleted.
+`pnpm service:start` uses the pinned native `Service.ensure()` API to start/discover an OpenCode 2.3.0 background process, activate the central location, verify plugin activation, and create/reuse a session tagged with the orchestration home. The process remains active after the command and every UI client exit. The dedicated registration is `.abracode/state/opencode/service.json`; this avoids replacing another default OpenCode service. Execution/session data lives in OpenCode's native data location, not in a new AbraCode database. The managed service sets `OPENCODE_CONFIG_DIR` to `<home>/.abracode/config/opencode`, so globally installed plugins under `~/.config/opencode/plugins` are not inherited by its pinned v2 runtime. Provider authentication remains in the native data location. AbraCode generates `.abracode/config/opencode/opencode.json` from the selected personal YAML; do not edit generated settings directly; the managed service does not inherit another OpenCode installation's global config or agents. Existing global files are not deleted.
 
 ```sh
 pnpm service:start
@@ -295,7 +295,7 @@ The work graph stores the normalized request and issue in one SQLite transaction
 
 ## Remote attachment
 
-Use supported v2 client/server access; v1's `attach` command is not the v2 interface. Install the matching 2.0.28 client on the other machine. SSH forwarding keeps the service loopback-only:
+Use supported v2 client/server access; v1's `attach` command is not the v2 interface. Install the matching 2.3.0 client on the other machine. SSH forwarding keeps the service loopback-only:
 
 ```sh
 # On the client machine, use the current port printed by pnpm start:
@@ -580,3 +580,9 @@ are same-user application boundaries, not OS isolation.
 ### Portable visual reports
 
 Save exact generated views as immutable JSON, then explicitly export HTML from an opened report. New authorized generation requests also default to JSON. No preview service starts automatically. Use `pnpm report:export /absolute/saved.json /absolute/new.html` and `pnpm report:preview /absolute/new.html 4174` for a foreground loopback preview; Ctrl+C stops only that preview. See [saved report operations](reports.md) for browser prerequisites, local feedback, legacy HTML/staging compatibility, storage integrity and downgrade limits.
+
+Saved-report backups must retain canonical generated JSON, published HTML exports
+and their native receipts together. The reusable `reports/renderers/v2` directory
+is derived code/style cache and can be reconstructed by `pnpm report:prepare` for
+the installed renderer. Removing it does not migrate or rewrite old report receipts;
+retain published export bytes if an older renderer identity must remain readable.

@@ -1,10 +1,10 @@
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
-import { ReportDocumentView } from "../../web/src/presentation/report-document.tsx";
+import { ReportDocumentView } from "@abracode/presentation/report-document";
 import { FeedbackForm } from "./feedback.tsx";
 import { preparedDiagrams } from "@report/prepared-diagrams";
 import { Schema } from "effect";
-import { ContentHash } from "../../../src/identities.ts";
+import { ContentHash } from "@abracode/contracts/identities";
 import "./style.css";
 
 function PortableReport() {

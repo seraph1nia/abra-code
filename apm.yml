@@ -1,0 +1,21 @@
+name: abracode
+version: 0.1.0
+targets:
+  - opencode
+  - codex
+dependencies:
+  apm:
+    - a2ui-project/a2ui/skills/a2ui#57f961f143da23f4212313e432a64b5843d978f9
+    - ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration#2330368a2a74573902858867072406638ba3073d
+    - CopilotKit/CopilotKit/skills/copilotkit#7b88608455528bd2dd62752a01cc25b8c917d35c
+    - vercel-labs/agent-skills/skills/react-best-practices#1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62
+    - vercel-labs/agent-skills/skills/web-design-guidelines#1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62
+    - anthropics/skills/skills/frontend-design#1780c5e5a552fd4d1c9d6a7b0cab26b0c2bef064
+    - mattpocock/skills/skills/engineering/retro#5863806dd4e15c63174bee4e7515a4256792ecfa
+    - mattpocock/skills/skills/productivity/writing-for-agents#5863806dd4e15c63174bee4e7515a4256792ecfa
+    - mattpocock/skills/skills/engineering/improve-codebase-architecture#5863806dd4e15c63174bee4e7515a4256792ecfa
+    - git: https://github.com/mattpocock/skills.git
+      path: skills/engineering/codebase-design
+      ref: 5863806dd4e15c63174bee4e7515a4256792ecfa
+      alias: mattpocock-codebase-design
+    - mattpocock/skills/skills/productivity/grilling#5863806dd4e15c63174bee4e7515a4256792ecfa

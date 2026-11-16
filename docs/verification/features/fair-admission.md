@@ -7,7 +7,7 @@ isolates parallel intake/scheduling/restart behavior from the larger coding flow
 REPORT_CHROMIUM_PATH=/path/to/compatible/chrome \
 ABRACODE_TEST_JOURNEY=parallel \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-parallel-native \
-  pnpm exec vp test run --project e2e tests/e2e/native.test.ts
+  pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts
 ```
 
 The scheduler-only focused run at `/tmp/abra-parallel-focused2-20261018` passed
@@ -33,17 +33,17 @@ The extended focused journey passed in 29.98 seconds at
 observation records the incident/form identity, zero explanatory prompts for that
 incident, unchanged approval ownership and all four tasks completed.
 
-`tests/unit/scheduler.test.ts` covers equal-priority repository rotation,
+`packages/runtime/tests/unit/scheduler.test.ts` covers equal-priority repository rotation,
 priority, a crash between claim and cursor commit, missing/wrong-location Abra,
 concurrent starts, uncertain admissions and paused work. The cursor records only
 retained controller intent and cannot authorize a claim. Readiness/capacity and
 worker-inspection tests distinguish dependency, active/retained/role capacity,
 missing authority and native queued activity.
 
-`tests/unit/configuration.test.ts`, `attention.test.ts`, `corrections.test.ts`
+`packages/runtime/tests/unit/configuration.test.ts`, `attention.test.ts`, `corrections.test.ts`
 and `supervision.test.ts` exercise omitted/conflicting postures, suppressed manual
 repairs, retained human forms, notice deduplication/provenance, bounded primary
-counts and unavailable native evidence. `tests/integration/effect.test.ts`
+counts and unavailable native evidence. `packages/runtime/tests/integration/effect.test.ts`
 proves event-burst coalescing, event subscription recovery, periodic fallback and
 scoped shutdown without routine model turns. A stale-save regression in
 `policies.test.ts` protects published research report intent/receipt/acceptance

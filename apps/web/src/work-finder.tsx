@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
-import type { WorkspaceSnapshot } from "../../../src/web/contracts.ts";
-import type { WorkDiscovery } from "../../../src/visibility/discovery-contracts.ts";
-import { RepositoryId } from "../../../src/identities.ts";
-import { phaseLabel } from "../../../src/presentation/work-state.ts";
-import { fleetLabels } from "../../../src/visibility/fleet.ts";
+import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
+import type { WorkDiscovery } from "@abracode/contracts/visibility/discovery-contracts";
+import { RepositoryId } from "@abracode/contracts/identities";
+import { phaseLabel } from "@abracode/contracts/presentation/work-state";
+import { fleetLabels } from "@abracode/contracts/visibility/fleet";
 import { queries } from "./data.ts";
 import { RequestState } from "./request-state.tsx";
 import { useMediaQuery } from "./use-media-query.ts";
-import { Button } from "./components/ui/button.tsx";
-import { Input } from "./components/ui/input.tsx";
-import { NativeSelect } from "./components/ui/native-select.tsx";
-import { Sheet, SheetContent, SheetTitle, SheetDescription } from "./components/ui/sheet.tsx";
+import { Button } from "@abracode/presentation/ui/button";
+import { Input } from "@abracode/presentation/ui/input";
+import { NativeSelect } from "@abracode/presentation/ui/native-select";
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@abracode/presentation/ui/sheet";
 
 export function WorkFinder({
   shown,

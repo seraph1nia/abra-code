@@ -1,5 +1,5 @@
-import type { ExecutionContract } from "../../../../src/visibility/execution-contract.ts";
-import { Evidence } from "./cards.tsx";
+import type { ExecutionContract } from "@abracode/contracts/visibility/execution-contract";
+import { Evidence } from "@abracode/presentation/cards";
 
 export function ExecutionContractSummary({ contract }: { contract: ExecutionContract }) {
   const schema = contract.schema;

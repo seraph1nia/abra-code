@@ -42,7 +42,32 @@ For development, run `pnpm dev` and open `http://127.0.0.1:5173`. Vite provides 
 
 For browser access, run `pnpm web:build` and `pnpm web`. The CopilotKit v2 workspace opens at `http://127.0.0.1:4097` and shares the existing Abra session, work graph and native approvals. It includes work navigation, an inspector and bounded A2UI v1 work views. Use `pnpm web --port 4098 --no-open` to print another local URL. Closing the frontend leaves native work running. See [workspace operation and architecture](docs/web-workspace.md).
 
-[mise](https://mise.jdx.dev/walkthrough.html) can install the pinned Node/pnpm versions: run `mise trust` and `mise run setup`. It is an alternative toolchain installer, not an additional runtime requirement. Create/configure `abracode.yaml` before diagnostics. See [configuration](docs/configuration.md) and [operations](docs/operations.md).
+[mise](https://mise.jdx.dev/walkthrough.html) installs the pinned Node, pnpm and
+[Agent Package Manager (APM)](https://github.com/microsoft/apm) versions: run
+`mise trust` and `mise run setup`. Setup also restores the upstream A2UI,
+AG-UI A2UI integration, CopilotKit, React best practices, web design guidelines,
+frontend design and Matt Pocock's retro, architecture and codebase design skills
+into `.agents/skills/`, shared by Codex and OpenCode. The required
+`writing-for-agents` and `grilling` companion skills are included.
+APM uses a native binary; uv and Python are not required.
+Mise is an alternative toolchain installer, not
+an additional application runtime requirement. Create/configure `abracode.yaml`
+before diagnostics. See [configuration](docs/configuration.md) and
+[operations](docs/operations.md).
+
+Project skill dependencies and their exact revisions live in `apm.yml` and
+`apm.lock.yaml`. Run `mise run skills:install` to restore them independently.
+Downloaded APM packages and their installed skills are ignored by Git; existing
+project-owned and OpenSpec skills stay tracked. Matt Pocock's upstream
+`codebase-design` installs under `mattpocock-codebase-design/`; the local worker
+adaptation keeps its existing path and uses the discovery name
+`abra-codebase-design`, matching its native worker ID.
+OpenSpec 2's six workflows are
+managed by the pinned OpenSpec CLI and refreshed with `pnpm exec openspec update`.
+To upgrade an APM skill, change its commit in `apm.yml`, run
+`mise exec -- apm install`, and review both manifest and lockfile changes.
+Downloaded tools and skills retain their upstream licenses; A2UI uses
+[Apache-2.0](https://github.com/a2ui-project/a2ui/blob/main/LICENSE).
 
 ## Configuration
 

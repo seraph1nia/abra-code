@@ -1,5 +1,5 @@
 ---
-name: codebase-design
+name: abra-codebase-design
 description: Reason about caller interfaces, ownership and test seams when an assigned change needs a design decision.
 license: MIT
 ---

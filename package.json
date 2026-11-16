@@ -5,10 +5,12 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "check": "vp check && pnpm typecheck && pnpm lint:effect && pnpm check:lsp && pnpm report:check && pnpm web:check",
-    "test": "vp test run --project unit --project integration",
+    "check": "pnpm format:check && pnpm lint:effect && pnpm check:packages && pnpm typecheck && pnpm check:lsp",
+    "contracts:check": "pnpm --filter @abracode/contracts check",
+    "presentation:check": "pnpm --filter @abracode/presentation check",
+    "test": "vp test run --project fast --project unit --project integration",
     "test:e2e": "vp test run --project e2e",
-    "test:soak": "tsx tests/operational/soak.ts",
+    "test:soak": "tsx packages/runtime/tests/operational/soak.ts",
     "doctor": "tsx scripts/doctor.ts",
     "browser:install": "agent-browser install",
     "serve": "tsx scripts/start.ts",
@@ -21,13 +23,13 @@
     "auth": "tsx scripts/client.ts --auth",
     "format:check": "vp fmt --check",
     "typecheck": "tsc --noEmit",
-    "lint": "vp lint && pnpm lint:effect",
+    "lint": "pnpm lint:effect",
     "format": "vp fmt",
-    "test:watch": "vp test watch --project unit --project integration",
-    "build": "vp pack && pnpm web:build",
+    "test:watch": "vp test watch --project fast --project unit --project integration",
+    "build": "vp pack && pnpm web:build && pnpm report:prepare",
     "prepare": "effect-tsgo patch --typescript --oxlint",
     "lint:effect": "vp lint --type-aware --deny-warnings",
-    "check:lsp": "effect-tsgo diagnostics --project tsconfig.json --format json --strict --lspconfig '{\"diagnostics\":true,\"diagnosticSeverity\":{\"unstableApiUsage\":\"off\"}}'",
+    "check:lsp": "effect-tsgo diagnostics --project packages/runtime/tsconfig.json --format json --strict --lspconfig '{\"diagnostics\":true,\"diagnosticSeverity\":{\"unstableApiUsage\":\"off\"}}'",
     "report:check": "pnpm --filter @abracode/report-export check",
     "report:preview": "tsx scripts/report.ts preview",
     "report:validate": "tsx apps/report/scripts/validate.ts",
@@ -43,23 +45,14 @@
     "web:build": "pnpm --filter @abracode/web build",
     "web:check": "pnpm --filter @abracode/web check",
     "dev": "tsx scripts/dev.ts",
-    "report:export": "tsx scripts/report.ts export"
+    "report:export": "tsx scripts/report.ts export",
+    "runtime:check": "pnpm --filter @abracode/runtime check",
+    "report:prepare": "tsx scripts/report-shell.ts",
+    "check:packages": "pnpm -r --sort --workspace-concurrency=1 run check",
+    "test:fast": "vp test run --project fast"
   },
   "dependencies": {
-    "@a2ui/web_core": "0.15.0",
-    "@ag-ui/client": "1.0.4",
-    "@ag-ui/core": "1.0.4",
-    "@copilotkit/runtime": "1.88.0",
-    "@effect/platform-node": "4.1.4",
-    "@opencode/client": "2.3.0",
-    "@opencode/plugin": "2.3.0",
-    "@opencode/schema": "2.3.0",
-    "@opencode/util": "2.3.0",
-    "@toon-format/toon": "4.4.0",
-    "diff": "9.0.0",
-    "effect": "4.1.4",
-    "rxjs": "7.8.2",
-    "yaml": "2.9.1",
+    "@abracode/runtime": "workspace:*",
     "zod": "3.25.76"
   },
   "devDependencies": {
@@ -72,7 +65,8 @@
     "oxlint-tsgolint": "7.0.2007",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
-    "vite-plus": "1.6.0"
+    "vite-plus": "1.6.0",
+    "yaml": "2.9.1"
   },
   "engines": {
     "node": ">=26.4.0"

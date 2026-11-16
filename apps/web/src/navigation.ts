@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { ResourceSelectionSchema, type ResourceSelection } from "../../../src/web/resources.ts";
+import { ResourceSelectionSchema, type ResourceSelection } from "@abracode/contracts/web/resources";
 
 export const inspectorTabs = ["Overview", "Plan", "Diff", "Activity", "Reports"] as const;
 export type InspectorTab = (typeof inspectorTabs)[number];

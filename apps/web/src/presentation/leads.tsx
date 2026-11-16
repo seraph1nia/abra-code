@@ -1,32 +1,25 @@
 import { useState } from "react";
-import { CopilotChatAssistantMessage } from "@copilotkit/react-core/v2";
-import type { IssueId, LeadId, RepositoryId } from "../../../../src/identities.ts";
+import { Markdown } from "../markdown.tsx";
+import type { IssueId, LeadId, RepositoryId } from "@abracode/contracts/identities";
 import type {
   LeadEvidencePageSchema,
   LeadEvidenceQuery,
-} from "../../../../src/visibility/lead-observation.ts";
+} from "@abracode/contracts/visibility/lead-observation";
 import { queries } from "../data.ts";
 import { RequestState } from "../request-state.tsx";
-import { Button } from "../components/ui/button.tsx";
+import { Button } from "@abracode/presentation/ui/button";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardContent,
   CardDescription,
-} from "../components/ui/card.tsx";
-import { Badge } from "../components/ui/badge.tsx";
-import { Evidence, type Inspect } from "./cards.tsx";
+} from "@abracode/presentation/ui/card";
+import { Badge } from "@abracode/presentation/ui/badge";
+import { Evidence, type Inspect } from "@abracode/presentation/cards";
 const words = (value: string) => value.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
 function Body({ text }: { text: string }) {
-  return (
-    <CopilotChatAssistantMessage.MarkdownRenderer
-      key={text}
-      content={text}
-      mode="static"
-      className="prose"
-    />
-  );
+  return <Markdown key={text} content={text} mode="static" className="prose" />;
 }
 type Scope = { issue: IssueId; repository?: never } | { repository: RepositoryId; issue?: never };
 export function LeadsPanel({

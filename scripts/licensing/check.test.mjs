@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parse } from "yaml";
-import { validateInventory, digest } from "./check.mjs";
+import { validateInventory, digest, reusableSupplier } from "./check.mjs";
 import { parseLock } from "./lock.mjs";
 import { classifyUses } from "./uses.mjs";
 const lock = "packages:\n  example@1.0.0:\n    resolution: { integrity: sha512-example }\n";
@@ -68,4 +68,59 @@ ${lock}`;
   );
   assert.throws(() => parseLock(`${lock}\n---\npackages:\n  example@1.0.0: {}\n`), /Conflicting/);
   assert.throws(() => parseLock("packages: ["));
+});
+
+await test("linked workspaces retain transitive distribution uses through relative links and cycles", () => {
+  const uses = classifyUses({
+    importers: {
+      ".": { dependencies: { "@local/contracts": { version: "link:packages/contracts" } } },
+      "apps/web": { dependencies: { "@local/ui": { version: "link:../../packages/ui" } } },
+      "apps/report": { dependencies: { "@local/ui": { version: "link:../../packages/ui" } } },
+      "packages/ui": {
+        dependencies: { "@local/contracts": { version: "link:../contracts" } },
+      },
+      "packages/contracts": {
+        dependencies: { example: { version: "1.0.0" }, "@local/ui": { version: "link:../ui" } },
+      },
+    },
+    packages: { "example@1.0.0": {} },
+    snapshots: {},
+  });
+  assert.deepEqual(uses.get("example@1.0.0"), [
+    "application-runtime",
+    "report-artifact",
+    "web-client",
+  ]);
+  assert.throws(
+    () =>
+      classifyUses({
+        importers: { ".": { dependencies: { missing: { version: "link:packages/missing" } } } },
+        packages: {},
+      }),
+    /Missing workspace importer/,
+  );
+});
+
+await test("incremental refresh reuses only matching resolutions with exact retained evidence", () => {
+  const record = inventory().packages[0];
+  assert.equal(
+    reusableSupplier(record, resolution, () => text),
+    true,
+  );
+  assert.equal(
+    reusableSupplier(record, { integrity: "sha512-changed" }, () => text),
+    false,
+  );
+  assert.equal(
+    reusableSupplier(record, resolution, () => "changed license bytes"),
+    false,
+  );
+  assert.equal(
+    reusableSupplier(record, resolution, () => undefined),
+    false,
+  );
+  assert.equal(
+    reusableSupplier(undefined, resolution, () => text),
+    false,
+  );
 });

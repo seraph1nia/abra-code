@@ -4,7 +4,7 @@ import { useAtom } from "@effect/atom-react";
 import { Exit } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import type { Form } from "@opencode/schema/form";
-import type { AttentionForm, AttentionPermission } from "../../../src/web/contracts.ts";
+import type { AttentionForm, AttentionPermission } from "@abracode/contracts/web/contracts";
 import { formReply, permissionReply } from "./data.ts";
 import {
   activeFields,
@@ -14,14 +14,14 @@ import {
   type FormValues,
 } from "./native-form.ts";
 import { requestError } from "./request-state.tsx";
-import { Alert, AlertDescription } from "./components/ui/alert.tsx";
-import { Button } from "./components/ui/button.tsx";
-import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card.tsx";
-import { Checkbox } from "./components/ui/checkbox.tsx";
-import { Field, FieldDescription, FieldError, FieldLabel } from "./components/ui/field.tsx";
-import { Input } from "./components/ui/input.tsx";
-import { NativeSelect } from "./components/ui/native-select.tsx";
-import { Textarea } from "./components/ui/textarea.tsx";
+import { Alert, AlertDescription } from "@abracode/presentation/ui/alert";
+import { Button } from "@abracode/presentation/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@abracode/presentation/ui/card";
+import { Checkbox } from "@abracode/presentation/ui/checkbox";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@abracode/presentation/ui/field";
+import { Input } from "@abracode/presentation/ui/input";
+import { NativeSelect } from "@abracode/presentation/ui/native-select";
+import { Textarea } from "@abracode/presentation/ui/textarea";
 
 export function NativeForm(props: { item: AttentionForm; refresh: () => void }) {
   return <FormContent key={`${props.item.form.id}:${props.item.binding}`} {...props} />;

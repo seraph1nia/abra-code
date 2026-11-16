@@ -16,12 +16,5 @@
       }
     ]
   },
-  "include": [
-    "src/**/*.ts",
-    "scripts/**/*.ts",
-    "tests/**/*.ts",
-    ".opencode/plugins/**/*.ts",
-    "vite.config.ts",
-    "apps/report/scripts/**/*.ts"
-  ]
+  "include": ["scripts/**/*.ts", ".opencode/plugins/**/*.ts", "vite.config.ts"]
 }

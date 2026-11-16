@@ -1,0 +1,94 @@
+import type { ChangeScope } from "@abracode/contracts/web/changes";
+import type { Form } from "@opencode/schema/form";
+import type { Permission } from "@opencode/schema/permission";
+import type { SubmissionReceipt } from "@abracode/contracts/web/workspace-wire";
+import type { ResourceSelection } from "./resources.ts";
+import type {
+  SaveSurfaceSchema,
+  ExportDocumentSchema,
+  ReadExportSchema,
+} from "./report-actions.ts";
+import type { ArtifactSummarySchema } from "./wire.ts";
+
+import { type Effect, type Stream } from "effect";
+import { type CrewError } from "../domain.ts";
+import type { PresentationPageSchema } from "@abracode/contracts/web/workspace-wire";
+import type {
+  WorkspaceSnapshot,
+  TranscriptMessage,
+  SurfaceEntry,
+} from "@abracode/contracts/web/contracts";
+export type {
+  WorkspaceSnapshot,
+  TranscriptMessage,
+  SurfaceEntry,
+  SurfaceRecord,
+  AttentionForm,
+  AttentionPermission,
+} from "@abracode/contracts/web/contracts";
+
+import type { WorkReadName, WorkReadInput, WorkReadOutput } from "@abracode/contracts/web/http-api";
+export type { WorkReadName } from "@abracode/contracts/web/http-api";
+export type WorkQueries = {
+  readonly [K in WorkReadName]: (
+    input: WorkReadInput<K>,
+  ) => Effect.Effect<WorkReadOutput<K>, CrewError>;
+};
+
+/** The only browser-facing capability surface. No arbitrary native path or location. */
+export interface WebBackend {
+  readonly sessionID: string;
+  readonly snapshot: Effect.Effect<WorkspaceSnapshot, CrewError>;
+  observe(scope: ChangeScope): Effect.Effect<WorkspaceSnapshot, CrewError>;
+  resolve(target: ResourceSelection): Effect.Effect<ResourceSelection, CrewError>;
+  surface(id: string, revision: number): Effect.Effect<SurfaceEntry, CrewError>;
+  history(cursor: string): Effect.Effect<
+    {
+      messages: readonly TranscriptMessage[];
+      older?: string;
+      presentations?: typeof PresentationPageSchema.Type;
+    },
+    CrewError
+  >;
+  submit(input: {
+    request_id: string;
+    text: string;
+    delivery: "queue" | "steer";
+  }): Effect.Effect<SubmissionReceipt, CrewError>;
+  receipt(requestID: string): Effect.Effect<SubmissionReceipt | null, CrewError>;
+  readonly stop: Effect.Effect<boolean, CrewError>;
+  readonly work: WorkQueries;
+  replyForm(input: {
+    id: string;
+    binding: string;
+    answer: Form.Answer;
+  }): Effect.Effect<void, CrewError>;
+  replyPermission(input: {
+    id: string;
+    binding: string;
+    decision: Permission.Reply;
+  }): Effect.Effect<void, CrewError>;
+  exportDocument(
+    input: typeof ExportDocumentSchema.Type,
+  ): Effect.Effect<
+    typeof import("../presentation/report-export-contract.ts").ReportExportSchema.Type,
+    CrewError
+  >;
+  readExport(input: typeof ReadExportSchema.Type): Effect.Effect<
+    typeof import("../presentation/report-export-contract.ts").ReportExportSchema.Type & {
+      html: string;
+    },
+    CrewError
+  >;
+  saveSurface(
+    input: typeof SaveSurfaceSchema.Type,
+  ): Effect.Effect<typeof ArtifactSummarySchema.Type, CrewError>;
+  artifact(
+    issue: string,
+    request: string,
+  ): Effect.Effect<
+    { readonly html: string; readonly hash: string; readonly bytes: number },
+    CrewError
+  >;
+  readonly changes: Stream.Stream<ChangeScope | void, CrewError>;
+}

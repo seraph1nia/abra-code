@@ -5,7 +5,7 @@ import { defineConfig } from "vite-plus";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { workCatalogDocument } from "../../src/web/catalog.ts";
+import { workCatalogDocument } from "@abracode/contracts/web/catalog";
 
 const development = developmentConfig();
 

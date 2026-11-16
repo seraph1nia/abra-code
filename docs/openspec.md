@@ -40,7 +40,7 @@ before Explore, then retains the instruction-refresh commit separately from the
 fetched base. A failed or partial refresh retains resources and blocks workers;
 it does not authorize a new baseline or silent retry. This behavior is unchanged.
 
-`tests/integration/openspec-update.test.ts` exercises the real pinned CLI. It
+`packages/runtime/tests/integration/openspec-update.test.ts` exercises the real pinned CLI. It
 checks that controller provisioning updates a stale generated skill while
 preserving the complete custom worker procedure. It also marks all six generated
 skills stale in a copy of the migrated repository's instruction tree. One refresh
@@ -104,3 +104,14 @@ planning and detailed planning through controller-owned Apply, matching checks,
 independent Review, native archival and the retained human merge form. They use
 scripted worker outcomes in disposable repositories; autonomous task quality is
 not measured by this contract proof.
+
+Role files now state responsibilities and authority boundaries. Reusable policy,
+reporting, schema/apply/review and research/export procedures live in the owning
+project skills. Assignment prompts carry issue-specific scope, generation,
+retained answers, base/worktree/schema and recovery feedback, plus conditional
+engineering-skill selection. The shared native identifiers and mandatory role
+capabilities remain unchanged. Registered `abra-openspec-execution` covers all
+policies; lightweight assignments still do not invent OpenSpec tasks. Research
+uses captured JSON and the trusted React exporter, replacing retired Vite/Solid
+instruction text. Existing captured contexts are immutable and are never rewritten
+to pretend an older worker received today's instructions.

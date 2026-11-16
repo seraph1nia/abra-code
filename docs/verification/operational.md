@@ -107,11 +107,11 @@ the probe never silently substitutes a successful build for an interrupted one.
 Use the [comparison protocol](comparison.md) for repeated paired scenarios with
 Firstmate. Deterministic native receipts do not establish practical parity.
 
-The [reconciliation benchmark](../../tests/benchmarks/reconciliation.ts) is a
+The [reconciliation benchmark](../../packages/runtime/tests/benchmarks/reconciliation.ts) is a
 separate deterministic count probe:
 
 ```sh
-pnpm exec tsx tests/benchmarks/reconciliation.ts > /tmp/reconciliation.json
+pnpm exec tsx packages/runtime/tests/benchmarks/reconciliation.ts > /tmp/reconciliation.json
 ```
 
 Its 35 cases use one warmup and five counted samples with a real adapter and

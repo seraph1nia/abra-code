@@ -1,6 +1,7 @@
 packages:
   - apps/web
   - apps/report
+  - packages/*
 
 overrides:
   rxjs: 7.8.2

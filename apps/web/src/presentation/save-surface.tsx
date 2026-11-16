@@ -3,13 +3,13 @@ import { useRef, useState } from "react";
 import { useAtom } from "@effect/atom-react";
 import { Exit, Schema } from "effect";
 import { saveSurface } from "../data.ts";
-import { SaveSurfaceSchema } from "../../../../src/web/report-actions.ts";
-import { ArtifactSummarySchema } from "../../../../src/web/wire.ts";
-import type { SurfaceRecord } from "../../../../src/web/contracts.ts";
-import { IssueId, RequestId } from "../../../../src/identities.ts";
-import { Button } from "../components/ui/button.tsx";
-import { NativeSelect } from "../components/ui/native-select.tsx";
-import type { Inspect } from "./cards.tsx";
+import { SaveSurfaceSchema } from "@abracode/contracts/web/report-actions";
+import { ArtifactSummarySchema } from "@abracode/contracts/web/wire";
+import type { SurfaceRecord } from "@abracode/contracts/web/contracts";
+import { IssueId, RequestId } from "@abracode/contracts/identities";
+import { Button } from "@abracode/presentation/ui/button";
+import { NativeSelect } from "@abracode/presentation/ui/native-select";
+import type { Inspect } from "@abracode/presentation/cards";
 
 const RetainedSave = Schema.Struct({
   input: SaveSurfaceSchema,

@@ -1,4 +1,4 @@
-@import "./presentation/presentation.css";
+@import "@abracode/presentation/styles.css";
 
 .workspace {
   display: grid;

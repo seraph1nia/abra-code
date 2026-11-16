@@ -4,34 +4,34 @@
   "private": true,
   "license": "MIT",
   "type": "module",
+  "exports": {
+    "./navigation": "./src/navigation.ts",
+    "./native-form": "./src/native-form.ts",
+    "./diff-patch": "./src/diff-patch.ts"
+  },
   "scripts": {
     "build": "vp build",
     "check": "tsc --noEmit",
     "dev": "vp dev"
   },
   "dependencies": {
-    "@a2ui/react": "0.15.0",
-    "@a2ui/web_core": "0.15.0",
+    "@abracode/contracts": "workspace:*",
+    "@abracode/presentation": "workspace:*",
     "@ag-ui/client": "1.0.4",
-    "@ag-ui/core": "1.0.4",
-    "@base-ui/react": "1.9.0",
     "@copilotkit/react-core": "1.88.0",
     "@effect/atom-react": "4.1.4",
     "@opencode/schema": "2.3.0",
     "@pierre/diffs": "1.6.4",
     "@tanstack/react-router": "1.170.46",
-    "class-variance-authority": "0.7.1",
-    "clsx": "2.1.1",
     "effect": "4.1.4",
-    "lucide-react": "1.73.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "tailwind-merge": "3.7.0"
+    "streamdown": "1.6.11"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.5",
-    "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",
     "tailwindcss": "4.3.5",
     "typescript": "7.0.2",

@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from "react";
-import { Button } from "../../web/src/components/ui/button.tsx";
-import { Textarea } from "../../web/src/components/ui/textarea.tsx";
-import { NativeSelect } from "../../web/src/components/ui/native-select.tsx";
+import { Button } from "@abracode/presentation/ui/button";
+import { Textarea } from "@abracode/presentation/ui/textarea";
+import { NativeSelect } from "@abracode/presentation/ui/native-select";
 
 const quote = (text: string) =>
   (text || "None supplied")

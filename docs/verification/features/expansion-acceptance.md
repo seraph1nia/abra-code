@@ -6,10 +6,10 @@ The existing native provider/forge runs the complete combined scenario:
 REPORT_CHROMIUM_PATH=/path/to/compatible/chrome \
 ABRACODE_TEST_JOURNEY=acceptance \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-expansion-acceptance \
-  pnpm exec vp test run --project e2e tests/e2e/native.test.ts
+  pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts
 ```
 
-`tests/e2e/acceptance.ts` records authentication, database investigation and flaky
+`packages/runtime/tests/e2e/acceptance.ts` records authentication, database investigation and flaky
 consumer-test tasks in one stable batch. Two start at worker capacity two; the
 third has an accurate capacity blocker. Investigation and the lightweight fix
 complete while authentication waits on its human-owned plan. Investigation uses

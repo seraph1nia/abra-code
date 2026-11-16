@@ -6,7 +6,7 @@ Native-client acquisition is lazy and shared: concurrent initial requests use on
 
 Expected invariants inside Effect generators yield typed domain failures. Pure normalization, record compatibility checks and synchronous SQLite transactions retain explicit synchronous assertions; their adapter boundary maps failures without changing transaction atomicity. `domainEffect` retains a compatibility boundary for synchronous domain helpers, while unrelated programmer defects remain defects. Native tool-policy rejections use the recoverable native tool-error channel.
 
-Workflow evidence projections in `src/workflow/evidence.ts` carry required provisioned, approved, verified and delivered fields into checks, finalization and native worktree operations. They establish schema validity for an observation; generation, operation ownership and exact-content checks still run before committing side effects. Full-spec, lightweight, research and setup policy distinctions remain in the controller.
+Workflow evidence projections in `packages/runtime/src/workflow/evidence.ts` carry required provisioned, approved, verified and delivered fields into checks, finalization and native worktree operations. They establish schema validity for an observation; generation, operation ownership and exact-content checks still run before committing side effects. Full-spec, lightweight, research and setup policy distinctions remain in the controller.
 
 AbraCode’s SQLite work graph owns issues, priority, repository association, dependency edges and execution claims. Every issue has an explicit `repository_id`. One execution snapshots the workflow and approval/delivery policies before claiming the issue. Request identity and issue creation commit together; claims and guarded transitions run in database transactions.
 
@@ -27,7 +27,11 @@ flowchart LR
 
 ## Modules
 
-`src/config` inspects/registers explicit projects and runs authorized setup delivery. `src/git/source.ts` owns managed clones, remote identity/discovery, fetching and inspection; `src/git/workspaces.ts` owns native worktree provisioning and safe retirement shared by issue executions and setup. `src/work` owns the work graph; `src/openspec`, `src/opencode` and `src/git` adapt authoritative systems. `src/workflow/controller.ts` enforces the lifecycle. `src/storage` persists native records and applies OS locks. `src/recovery` handles events and reconciliation; `src/scheduler` filters/prioritizes native ready work. The plugin entrypoint only assembles these modules.
+The [runtime refactor evidence and ownership inventory](verification/runtime-refactor.md)
+records the source baseline, field/caller boundaries and measurements for the
+workspace refactor. Its baseline passes are not final implementation evidence.
+
+`packages/runtime/src/config` inspects/registers explicit projects and runs authorized setup delivery. `packages/runtime/src/git/source.ts` owns managed clones, remote identity/discovery, fetching and inspection; `packages/runtime/src/git/workspaces.ts` owns native worktree provisioning and safe retirement shared by issue executions and setup. `packages/runtime/src/work` owns the work graph; `packages/runtime/src/openspec`, `packages/runtime/src/opencode` and `packages/runtime/src/git` adapt authoritative systems. `packages/runtime/src/workflow/controller.ts` enforces the lifecycle. `packages/runtime/src/storage` persists native records and applies OS locks. `packages/runtime/src/recovery` handles events and reconciliation; `packages/runtime/src/scheduler` filters/prioritizes native ready work. The plugin entrypoint only assembles these modules.
 
 Batch intake reuses `WorkIntake` policy checks and `SqliteWorkGraph` transactions.
 `work/batch.ts` owns the bounded keyed definitions and deterministic local-reference
@@ -70,13 +74,36 @@ history. No message grants plan, scope, merge or delivery authority. See
 
 Blocked/failed work is reflected in the work graph with guarded ownership updates. Interrupted/recovery-required executions retain their evidence and worktree. A paused worker is stopped without removing its session. An idle/succeeded model is never itself a completion gate.
 
-The public controller exposes lifecycle commands and a read-only query surface. Advancement, authorization, operation ownership and queries own their internal adapters. Setup receives its shared workspace/delivery dependencies directly. Observers and assignment lookup have no controller adapter access.
+The application entry point assembles controller dependencies. `Controller` receives
+named admission, execution/planning, publication, verification/correction, external
+validation, communication/obligation, report and lead ports from `public-api.ts`.
+Its signatures follow those public owners, without traversing `Advancement`'s
+private implementation. Queries remain a separate read-only owner; observers
+and assignment lookup have no access to command adapters. Setup receives the
+same workspace/delivery owners directly.
 
-`WorkerSessions` owns native worker admission, session-location validation, turn observation, retained admission recovery and native stop confirmation. Explicit checkpoints require a successful turn without resubmitting its prompt, and retain the completed role for role-specific evidence checks. Recovery reuses retained session/prompt IDs; an authorized new turn may reuse the session with a fresh prompt. `Advancement` coordinates role selection and policy/approval gates. `ExecutionTransitions` owns phase writes, pause/stop checkpoints, failure reflection and notifications; `Finalization` owns archival, delivery evidence and retirement. A successful native turn still requires matching planning, task, verification and Review evidence.
+`WorkerSessions` owns native worker admission, session-location validation, turn observation, retained admission recovery and native stop confirmation. Explicit checkpoints require a successful turn without resubmitting its prompt, and retain the completed role for role-specific evidence checks. Recovery reuses retained session/prompt IDs; an authorized new turn may reuse the session with a fresh prompt. `WorkAdmission` owns validated intake, atomic claim/capacity admission and
+resumable provisioning. `ExecutionRecovery` owns retained-claim reconciliation,
+uncertain publication/admission recovery, approval/capacity waits and cleanup
+continuation. `Advancement` coordinates phase progression, correction and explicit
+control/checkpoint gates. Their continuation callbacks are bound by application
+composition; each use case declares only the dependencies it uses. Existing pure
+role, finishing-readiness and synchronization decisions remain the shared policy
+seams. `ExecutionTransitions` owns phase writes, pause/stop checkpoints, failure reflection and notifications; `Finalization` owns archival, delivery evidence and retirement. A successful native turn still requires matching planning, task, verification and Review evidence.
 
 Pause persists the stop request and advances control generation in the controller, then interrupts its owned operation and obtains exclusive execution ownership. `WorkerSessions` cancels the exact retained native prompt, interrupts recorded sessions and confirms quiescence before releasing worker activity/capacity fields. One controller helper commits the confirmed stop and stopped-operation checkpoint for both foreground pause and restart reconciliation. Native waits run outside shared coordination; uncertain stopping retains the request and reservation.
 
 Short controller-lock sections serialize claims, capacity reservations and validated record commits across processes. Execution-specific kernel locks own slow checks, provisioning, delivery and retirement outside global coordination; reconciliation bounds parallel tickets. Registration/setup have separate resource locks. Never acquire an execution lock, wait for native stop, run Git/checks, or make network calls while holding coordination. Native session/prompt IDs and operation generation, fingerprint and expected postconditions are persisted before submission. Commits reject changed operation identity/input or control generation and preserve newer diagnostic observations.
+
+Execution/setup full replacement also requires the current record revision.
+`Records.saveOwned` commits an explicit field set against current retained
+execution data under that same short lock, including intentional field absence;
+`saveFinishing` owns selected nested finishing fields. Both retain execution,
+generation and operation checks and all existing immutable-history validation.
+An old aggregate is not a partial patch. Verification owns its command wait and
+receipts; worker completion owns its capacity observations. Their commits cannot
+overwrite concurrent progress, questions, failure incidents or report evidence.
+Remaining writer migrations are tracked by the refactor's task 4.1.
 
 Active native-turn capacity is separate from retained incomplete execution/worktree capacity. Pending or uncertain admission reserves compute conservatively; confirmed idle/stop releases compute while retaining the issue claim and resources. Approval/CI waits consume retained capacity. Explicit `max_executions` enables multiple retained tickets without increasing model concurrency; omitted limits preserve the old resource ceiling. Every role admission rechecks global, repository and role budgets atomically. Each worker handoff confirms owned sessions are idle.
 
@@ -107,13 +134,71 @@ The plugin scope owns SQLite connections, scheduler leadership, hook/tool/RPC re
 
 Subprocess interruption terminates the command’s private process group and waits for the child to close, escalating to SIGKILL for surviving descendants, before releasing writer ownership. Filesystem mutations and record writes finish before interruption releases ownership. Temporary PR files and proposal handles use scoped acquisition and release. Durable intents, native IDs, authorization receipts and delivery evidence still provide restart recovery; fiber interruption does not roll back admitted native work or replace reconciliation. Mutation retries remain guarded by existing identity and evidence checks.
 
-`@opencode/client/effect` supplies HTTP operations and Streams, using the same pinned Effect 4.0.1 runtime as OpenCode 2.0.28. Authentication is captured in a supplied HTTP client. Controller and adapter interfaces retain native ID brands, and the adapter encodes transcript schemas back to wire values for diagnostics, including millisecond timestamps. Effect and host packages stay external to plugin bundles.
+`@opencode/client/effect` supplies HTTP operations and Streams, using the same pinned Effect 4.1.4 runtime as OpenCode 2.3.0. Authentication is captured in a supplied HTTP client. Controller and adapter interfaces retain native ID brands, and the adapter encodes transcript schemas back to wire values for diagnostics, including millisecond timestamps. Effect and host packages stay external to plugin bundles.
 
 The browser frontend owns a scoped HTTP/AG-UI observer. Effect HTTP atoms own typed reads, cancellation and invalidation; TanStack Router owns resource bookmarks. React/catalog components render both generated views and immutable reports. The portable export excludes live app capabilities. The custom terminal observer is retired; native CLI attachment remains OpenCode-owned.
 
 ## Domain contracts
 
-`src/identities.ts` defines schema-backed identities for issues, repositories, executions, operations, requests, obligations, reports and other named resources. Commits, Git trees, content hashes and fingerprints remain distinct types. Native sessions, messages, forms, projects, models and paths reuse OpenCode's brands. Text, command arguments and raw I/O remain strings; adapters decode consumed values before passing domain identities into the workflow. Construct generated identities at their owner rather than casting strings or rebranding already typed values downstream. Path brands identify path roles; containment and Git reference validation still run in their owning adapters.
+Execution writers commit named fields from current retained state with
+`Records.saveOwned`; setup uses `saveSetupOwned` against its independent key.
+`create` refuses occupied identities. `beginOperation` compares the previous
+execution/generation/operation before replacing only the operation. Pause and
+explicit policy/scope revisions retain the revision-checked control boundary.
+Full record replacement remains a strict current-revision operation inside the
+repository; production lifecycle callers no longer submit whole working copies.
+There is no stale-field merge whitelist.
+
+| Writer                         | Owned evidence                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------- |
+| Transitions                    | Phase, recovery reason and explicit caller-supplied transition fields           |
+| Capacity                       | Reservation, wait and idle observation                                          |
+| Worker admission/completion    | Session/prompt/context bindings, progress interval, capacity and worker failure |
+| Obligations and diagnostics    | Their decisions/waits/progress or attention incidents/turns                     |
+| Verification and feedback      | Command waits, check/Review receipts, feedback and forge observation            |
+| Correction and synchronization | Explicit reset fields and append-only revision histories                        |
+| Workspaces                     | Base/target, directory identity and retained retirement/disposition evidence    |
+| Publication and cleanup        | Exact archive/publication/receipt fields and cleanup blockers                   |
+| Finishing                      | Named nested finishing fields, preserving other finishing evidence              |
+
+Commit helpers synchronize the caller only after success. A scoped commit may
+preserve a newer unrelated field but cannot cross an execution, generation or
+operation boundary. Same-field/history conflicts are refused by the retained
+invariants; recovery rereads current state rather than replaying a full stale
+working copy. Commit helpers perform retained-state reads and writes; native
+session and worktree effects remain with their callers.
+
+`Queries.observe` captures only retained issue, project, execution and setup
+collections. A short shared record-coordination section prevents record commits from
+interleaving; the work graph's committed event sequence is checked before and
+after capture because intake also commits independently of that lock. A changed
+graph discards the attempted bundle. The successful request-local bundle retains
+its source revision, capture time and individual record revisions. It never
+caches mutation authority.
+
+Observers make at most three nonblocking shared lock attempts, each with a 500 ms
+deadline for asynchronous capture work. Contention or slow storage produces a
+classified `OBSERVATION_UNAVAILABLE` resource result, preserving last-valid UI
+state rather than publishing a mixed bundle. The 50/100 ms retry backoffs happen
+outside capture coordination. Other readers may share capture ownership; commits
+remain exclusive, and a shared section cannot upgrade into a write. Cancellation
+releases coordination.
+Native session, OpenSpec, Git and other external projections run after capture;
+their separately labeled observations are not an atomic native/storage snapshot.
+The SQLite revision read neither writes nor takes a writer transaction.
+
+`packages/contracts` (`@abracode/contracts`) owns browser-safe schemas, identities,
+HTTP contracts and bounded catalog/resource/report definitions.
+`packages/presentation` (`@abracode/presentation`) depends on those contracts and
+owns pure React primitives, tokens and captured rendering. `apps/web` and
+`apps/report` declare both as `workspace:*` dependencies and consume explicit
+exports. Shared modules have no filesystem/controller/native-registration
+capabilities; frozen rendering also excludes router, admission and live queries.
+Oxlint checks both value and type dependency edges using its upstream AST API.
+Root forwarders temporarily preserve host schema imports while runtime ownership
+is extracted. Host resolvers and projections remain at the host boundary.
+
+`packages/runtime/src/identities.ts` defines schema-backed identities for issues, repositories, executions, operations, requests, obligations, reports and other named resources. Commits, Git trees, content hashes and fingerprints remain distinct types. Native sessions, messages, forms, projects, models and paths reuse OpenCode's brands. Text, command arguments and raw I/O remain strings; adapters decode consumed values before passing domain identities into the workflow. Construct generated identities at their owner rather than casting strings or rebranding already typed values downstream. Path brands identify path roles; containment and Git reference validation still run in their owning adapters.
 
 Schemas own record and protocol shapes. Domain types derive from them, with mutable working execution state for transitions and a discriminated `SavedExecution` for decoded phase evidence. Config loading and project reads resolve defaults at their boundaries; `createExecution` captures a complete policy snapshot once at admission. Setup has its own discriminant and permits an empty change name before initialization. Wait kinds determine their reference type, and native question results require an answer only in the answered variant. OpenSpec and forge observation contracts live in pure schema modules shared with storage and native/browser observation.
 
@@ -171,7 +256,7 @@ Canonical app-aware check/status observations supply both readiness and feedback
 
 ## Managed role policy
 
-`src/opencode/role-policy.ts` owns the five managed role boundaries. Native session permissions, request tool filtering, execution checks and central profile transforms derive from it. Agent Markdown keeps discovery metadata and behavior guidance; injected frontmatter is not permission enforcement. Foreign worktrees retain their native project configuration and use `build` by default with an assigned role overlay. Native file guards protect control files and planning scope; Shell and CLI execution remain trusted same-user execution, not an OS sandbox. Native command permissions restrict Explore/Review/Research to `agent-browser` and `agent-browser *` under default deny; arbitrary CLI file arguments or shell redirections are not filesystem isolation. Plan/merge approvals and delivery stay in the controller.
+`packages/runtime/src/opencode/role-policy.ts` owns the five managed role boundaries. Native session permissions, request tool filtering, execution checks and central profile transforms derive from it. Agent Markdown keeps discovery metadata and behavior guidance; injected frontmatter is not permission enforcement. Foreign worktrees retain their native project configuration and use `build` by default with an assigned role overlay. Native file guards protect control files and planning scope; Shell and CLI execution remain trusted same-user execution, not an OS sandbox. Native command permissions restrict Explore/Review/Research to `agent-browser` and `agent-browser *` under default deny; arbitrary CLI file arguments or shell redirections are not filesystem isolation. Plan/merge approvals and delivery stay in the controller.
 
 Apply may edit repository `AGENTS.md` files within its owned worktree and approved scope. Native file tools continue to reject `.git` and `.opencode` paths; Explore retains planning-only writes and protected instruction files. `worker-assignment.ts` supplies the shared current-session, role/phase, generation and stop checks used by prompt/tool hooks, context observations and worker report endpoints. Checks evaluate fresh retained state at their existing entry and commit points rather than caching authorization across asynchronous work.
 
@@ -270,3 +355,90 @@ A crash after publication reconciles the original digest. A source revision or
 occupied output is a refusal, not permission to mint a replacement identity.
 This uses no report backend, watcher, message broker, workflow engine or agent
 session manager.
+
+Publication and retirement keep their established safe owners (`Finalization`,
+`Finishing`, `Workspaces` and report publication). Setup and issue workflows have
+different captured authorities and receipts, so they share those primitives
+without combining their policy gates into a generic publication/mutation engine.
+
+`@abracode/runtime` owns host/controller/storage/adapters and their tests under
+`packages/runtime`. Root `scripts/*.ts` and the native plugin entry retain the
+existing command paths as thin package consumers. CLI/plugin exports are explicit;
+application internals stay inside the runtime workspace. Browser workspaces still
+consume only contracts/presentation. Runtime tests use declared UI-boundary exports
+for navigation/form/diff projections and offline verification helper exports;
+applications do not import one another's implementation source. Installation-root
+resolution belongs to the runtime's source-installation adapter. Generated host
+configuration still points at the root native plugin entry and captures the same
+home; relocation does not change storage or session identities.
+
+## Execution durability decision (2026-11-16)
+
+Keep the explicit public ports, native execution receipts, owned record updates
+and SQLite work graph for this change. This decision compares the resulting
+interfaces; it introduces no engine, ORM or physical execution-store migration.
+
+Effect 4.1.4 provides named activities with replayable results and idempotency
+helpers. Its own API warns that external side effects must be made idempotent.
+That is directly relevant to prompt admission and Git publication after a lost
+response. [Activity API](https://effect.website/docs/v4/api/effect/workflow/Activity)
+
+The workflow engine provides execution/resume/activity/deferred/clock facilities;
+its memory layer is for development/tests without durability. A persistent
+replacement would require a durable backend, not a switch to that layer.
+[WorkflowEngine API](https://effect.website/docs/v4/api/effect/workflow/WorkflowEngine)
+The cluster implementation persists execution/activity/deferred/interrupt/clock
+messages through sharding and message storage.
+[ClusterWorkflowEngine API](https://effect.website/docs/v4/api/effect/cluster/ClusterWorkflowEngine)
+Durable deferreds offer named waits and external completion tokens.
+[DurableDeferred API](https://effect.website/docs/v4/api/effect/workflow/DurableDeferred)
+These declarations were also inspected in the pinned local package.
+
+The implications below are our assessment of this repository, rather than claims
+that those facilities automatically enforce AbraCode's contracts.
+
+| Option                                                | Benefit                                                                                                           | Required preservation and migration cost                                                                                                                                                                                               |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Current explicit use cases                            | Existing uncertainty/restart evidence remains readable; smaller owners and public ports allow incremental changes | Retain generation/operation/CAS fences, bounded coherent capture and native receipt reconciliation                                                                                                                                     |
+| Effect durable workflows                              | Shared activity, durable wait and scheduling infrastructure could replace some custom continuation machinery      | New persistence/runner lifecycle; version old executions; translate retained phase/history; prove human/session/generation/content bindings before completing waits; preserve uncertain external effects without blind activity replay |
+| Transactional execution storage beside the work graph | One transaction could commit related issue/execution fields and simplify retained capture                         | Migrate native KV records, unknown/additive fields, legacy originals, revisions and every writer; handle concurrent old/new processes, rollback, backup and native session associations                                                |
+
+A deferred/token completion would remain insufficient authorization by itself:
+plan/merge/finishing approvals must still match the current human actor, native
+form, generation and exact content. Similarly, a database transaction cannot
+atomically include a remote push or a native prompt; their explicit admitted,
+uncertain and reconciled outcomes must survive either migration.
+
+A future engine/storage change should be separately scoped around a measured
+operational need. Its acceptance would include import/export and rollback of old
+records, mixed-process exclusion, crash windows before/after native admission and
+publication, and unchanged human gates. The new ports provide that seam now;
+this refactor does not make a future migration a prerequisite for completion.
+
+The live workspace uses CopilotKit's public `v2/context` and `v2/headless`
+interfaces: `WorkspaceProvider` owns one deferred `CopilotKitCoreReact` connection,
+render-tool notifications and context, while the observation owner detaches its
+own agent subscription. Native OpenCode remains the only model/tool executor.
+The main v2 web provider also wires unrelated MCP/sandbox/Intelligence renderers;
+measured initial graphs kept those and Markdown eager even with lazy app leaves.
+The small application context adapter therefore uses the documented custom-provider
+contract, not private package paths or copied SDK implementation. The existing
+shared Textarea/Button primitives own the native admission form, preserving Enter,
+Shift+Enter, IME composition and explicit Stop semantics. No attachment/command
+feature was configured on the prior composer.
+
+Markdown uses the same pinned Streamdown renderer directly behind a content
+boundary, preserving its supported code/theme/table/math/diagram facilities.
+The finder loads on first open and remains mounted afterward to retain its filters;
+lead history, inspector, report and diff capabilities load on demand. No timer
+hides eager work beyond a byte-measurement window.
+
+Native `work_list` and `work_status` also use the retained capture owner. Listing
+reuses one captured issue/execution/diagnostic bundle; an explicitly requested raw
+backup joins that capture. Status captures its selected issue, execution and SQL
+history together, then observes Git, OpenSpec and native sessions after releasing
+coordination. Their additive `retained_source` identifies the graph revision,
+capture time and applicable execution revision. Outcome closure uses the captured
+issue rather than rereading it after native observation. Semantic failures such as
+a missing issue retain their original classification; only exhausted coherence
+contention/deadlines become temporary observation unavailability.

@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { reportNotices } from "./scripts/notices.ts";
+import { rendererManifest } from "./scripts/renderer-manifest.ts";
 import { resolve } from "node:path";
 import { defineConfig } from "vite-plus";
 import react from "@vitejs/plugin-react";
@@ -7,48 +8,29 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 import { mermaidDiagrams } from "./scripts/mermaid-plugin.ts";
 
 export function exportConfiguration(
-  options: { installationRoot?: string; cacheDir?: string; preparedDiagrams?: string } = {},
+  options: {
+    installationRoot?: string;
+    cacheDir?: string;
+    preparedDiagrams?: string;
+    portableShell?: boolean;
+  } = {},
 ) {
   const root = options.installationRoot ?? resolve(import.meta.dirname, "../..");
   return defineConfig({
     ...(options.cacheDir ? { cacheDir: options.cacheDir } : {}),
     resolve: {
       alias: {
-        "@": resolve(root, "apps/web/src"),
         "@report/prepared-diagrams":
           options.preparedDiagrams ?? resolve(root, "apps/report/src/prepared-diagrams.ts"),
       },
-      dedupe: ["react", "react-dom", "effect", "@a2ui/web_core"],
+      dedupe: ["react", "react-dom", "effect"],
     },
     plugins: [
+      ...(options.portableShell ? [rendererManifest(root)] : []),
       {
         name: "saved-report-notices",
         transformIndexHtml() {
-          const inventory = JSON.parse(
-            readFileSync(resolve(root, "licenses/inventory.json"), "utf8"),
-          ) as {
-            packages: {
-              id: string;
-              license: string;
-              author: unknown;
-              uses: string[];
-              evidence: { sha256: string }[];
-            }[];
-          };
-          const notices = {
-            project: readFileSync(resolve(root, "LICENSE"), "utf8"),
-            shadcn: readFileSync(resolve(root, "licenses/shadcn-ui.txt"), "utf8"),
-            dependencies: inventory.packages
-              .filter((item) => item.uses.includes("report-artifact"))
-              .map((item) => ({
-                id: item.id,
-                license: item.license,
-                author: item.author,
-                notices: item.evidence.map((evidence) =>
-                  readFileSync(resolve(root, `licenses/texts/${evidence.sha256}.txt`), "utf8"),
-                ),
-              })),
-          };
+          const notices = reportNotices(root);
           return [
             {
               tag: "script",

@@ -1,12 +1,12 @@
 import { useSearch, useNavigate } from "@tanstack/react-router";
-import type { WebWorkItem } from "../../../../src/web/wire.ts";
+import type { WebWorkItem } from "@abracode/contracts/web/wire";
 import { activitySections, searchForResource } from "../navigation.ts";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs.tsx";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@abracode/presentation/ui/tabs";
 import { SessionsPanel } from "./sessions.tsx";
 import { CommunicationPanel } from "./obligations.tsx";
 import { ReviewsPanel } from "./reviews.tsx";
 import { LeadsPanel } from "./leads.tsx";
-import type { Inspect } from "./cards.tsx";
+import type { Inspect } from "@abracode/presentation/cards";
 const labels = {
   sessions: "Sessions",
   communication: "Communication",

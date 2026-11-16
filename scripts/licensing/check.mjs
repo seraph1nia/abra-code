@@ -70,6 +70,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     ".opencode/plugins/abracode/package.json",
     "apps/web/package.json",
     "apps/report/package.json",
+    ...fs.readdirSync("packages").map((name) => `packages/${name}/package.json`),
   ]) {
     if (JSON.parse(fs.readFileSync(file, "utf8")).license !== "MIT")
       errors.push(`Project license metadata differs: ${file}`);
@@ -84,4 +85,26 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(
       `License evidence matches ${inventory.packages.length} locked components and ${inventory.sources.length} distributed source files. External supplier installations are not relicensed by AbraCode.`,
     );
+}
+
+/** Retain an existing supplier review only under the same resolution and exact evidence. */
+export function reusableSupplier(record, resolution, readEvidence) {
+  if (!record || !resolution || !record.evidence?.length) return false;
+  if (
+    record.fingerprint !==
+    digest(
+      JSON.stringify({
+        id: record.id,
+        license: record.license,
+        resolution,
+        evidence: record.evidence,
+      }),
+    )
+  )
+    return false;
+  return record.evidence.every((evidence) => {
+    if (!/^[a-f0-9]{64}$/.test(evidence.sha256)) return false;
+    const text = readEvidence(evidence.sha256);
+    return typeof text === "string" && digest(text) === evidence.sha256;
+  });
 }

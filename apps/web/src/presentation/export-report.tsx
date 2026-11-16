@@ -3,9 +3,9 @@ import { useState } from "react";
 import { useAtom } from "@effect/atom-react";
 import { Exit } from "effect";
 import { exportDocument } from "../data.ts";
-import { IssueId, RequestId, ContentHash } from "../../../../src/identities.ts";
-import type { ReportExportSchema } from "../../../../src/presentation/report-export-contract.ts";
-import { Button } from "../components/ui/button.tsx";
+import { IssueId, RequestId, ContentHash } from "@abracode/contracts/identities";
+import type { ReportExportSchema } from "@abracode/contracts/presentation/report-export-contract";
+import { Button } from "@abracode/presentation/ui/button";
 import { api } from "../api.ts";
 
 /** Host action. Never imported by the pure frozen renderer or offline export. */

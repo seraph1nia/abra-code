@@ -5,10 +5,10 @@ Use [disposable native prerequisites](../README.md). Focused real-server command
 ```sh
 ABRACODE_TEST_JOURNEY=leads \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-project-leads \
-  pnpm exec vp test run --project e2e tests/e2e/native.test.ts
+  pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts
 ```
 
-`tests/e2e/leads.ts` proves static hidden native inventory, explicit complete model,
+`packages/runtime/tests/e2e/leads.ts` proves static hidden native inventory, explicit complete model,
 parent/location/session identity, denied direct steering and global management
 access, scoped proposals without admission, correlated replies, restart retention,
 Abra-only transactional acceptance, supervisor-owned blocker answering, completed
@@ -16,7 +16,7 @@ work notices, revocation/stop and explicit session rotation. The actual native
 model turn executes only `abra_lead_action`. The integrated journey retains the
 original human plan/merge approval and independent worker permissions scenarios.
 
-`tests/unit/leads.test.ts` exercises retained create intent after response loss,
+`packages/runtime/tests/unit/leads.test.ts` exercises retained create intent after response loss,
 wrong sender/revision, conflicting identities, cross-project queries/proposals and
 dependencies, duplicate admission/replies, uncertain absent admission, shared
 attention capacity/budget, failed stop, revoked historical sessions, forged Abra

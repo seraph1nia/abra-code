@@ -2,7 +2,41 @@
 
 The workspace uses React, TanStack Router, Effect HTTP atoms, CopilotKit v2/AG-UI, shadcn components on Base UI, Tailwind CSS 4 and Pierre Diffs. Saved reports share the React/catalog renderer; the custom Solid terminal/report presentation is retired. OpenCode still owns its native CLI.
 
+Shared schemas, branded identities, resource selections, HTTP operations and the
+bounded catalog belong to `@abracode/contracts`. Its explicit subpath exports
+carry browser-safe data and validation only. Policy resolution, native observation
+and execution projections stay with their host owners. Root schema forwarders
+preserve existing host imports during the runtime extraction.
+
+`@abracode/presentation` owns UI primitives, design tokens, captured work/report
+bindings and the upstream A2UI React renderer. Both applications use the same
+exports. Navigation callbacks are supplied by the web caller; frozen callers
+omit them. Query atoms, router state, admission, native tool rendering and report
+save/export actions remain in `apps/web`. Shared rendering performs no live
+reads. Tailwind scans the presentation workspace in both application builds.
+
+Oxlint's workspace boundary rule checks value and type imports, re-exports and
+literal dynamic imports against direct dependencies and explicit local exports.
+It rejects cross-package source traversal, host imports in browser source, live
+capabilities in frozen rendering and build-only dependencies in shipped source.
+Package checks resolve the same exports as Vite and relocated source installs;
+there are no report aliases back into web implementation files.
+
 ## State and transport ownership
+
+Retained work bundles validate a work-graph source revision around a coordinated
+record capture. Readers refuse a mixed capture and return resource-unavailable
+after bounded contention/timeout retries. Native activity is observed separately
+after that section. A source revision identifies captured retained state; a
+timestamp describes observation freshness and never grants mutation authority.
+
+An unavailable retained-work capture is local to that resource. The native web
+adapter retains one last-valid, decoded work projection and sets the optional
+`work_unavailable` status; it continues projecting current native conversation,
+forms and permissions. Before any valid capture, work rows remain unavailable
+with no fabricated fleet totals. The workspace labels retained work explicitly
+and clears that label after a valid read. This presentation cache is never used
+for native ownership checks, form answers, report capture or lifecycle actions.
 
 - OpenCode owns the native session, model/tool loop, inbox, forms and permissions. Closing a browser only detaches observation.
 - CopilotKit owns the live AG-UI state. `use-workspace.ts` validates snapshots against the shared JSON codec, retains the last valid snapshot and refuses another session's state. It also owns reconnect cleanup and durable submission reconciliation. HTTP bootstrap runs at startup, on explicit refresh and after mutations; live observation retains the server's five-second snapshot fallback. There is no second browser polling loop.
@@ -127,3 +161,14 @@ Run the required repository checks described in [verification](verification/READ
 Portable HTML uses an isolated React entry in `apps/report`, importing the same pure catalog components, shared presentation CSS and design tokens. Live query/router/CopilotKit/controller capabilities remain outside that bundle. Export is an explicit host action, keyed by saved digest and exporter identity; preview/download revalidate owned immutable files. Local feedback has no app capability. The Solid template and its compiler/manual authoring entry are retired. [Report operations and compatibility](reports.md) describe the canonical format, explicit commands, retention and downgrade limits.
 
 The finder exposes complete-population fleet counts and per-project classification/attention counts independently of visible history pages. Native queued prompts, capacity waits and dependencies retain separate labels; task rows show retained wait reasons. Reviews retain preflight refusal/retry evidence and overdue observation times. [Frontend parity](verification/frontend-parity.md) maps the retired terminal scenarios and the active operational-maturity Native Work requirements to browser/native proof.
+
+Workspace state has independent owners under `apps/web/src/workspace-state`:
+observation owns ordering/connection/freshness/selective invalidation; admission
+owns pending identity, exact receipt reconciliation and submission transports;
+draft owns best-effort browser persistence; history owns transcript/association
+paging. Navigation owns selection races and focus restoration; viewport owns
+scroll/resize/history anchors. The shell composes them and displays errors. Each
+transport detaches on unmount without stopping native work. Inspector, captured
+reports/generated views and Markdown use retryable React lazy boundaries; hooks
+and tool rendering use CopilotKit's supported headless entry. Final byte-graph,
+deferred-feature, Back/focus and 375/390px acceptance remains pending.

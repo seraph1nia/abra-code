@@ -1,4 +1,4 @@
 declare module "*.mmd" {
-  const diagram: import("../../web/src/presentation/report-evidence.tsx").PreparedReportDiagram;
+  const diagram: import("@abracode/presentation/report-evidence").PreparedReportDiagram;
   export default diagram;
 }

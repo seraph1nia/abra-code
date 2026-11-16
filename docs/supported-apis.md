@@ -17,6 +17,20 @@ The planning observer uses Git's `rev-parse --verify --end-of-options`, literal-
 
 ## OpenCode contracts
 
+The retained-read boundary also uses util-linux `flock --shared` for bounded
+concurrent captures against the existing exclusive controller lock. Independent
+helper-process tests verify shared coexistence, exclusive writer refusal/release
+and refused in-process read-to-write upgrades. SQLite's committed work-event
+sequence validates graph capture without a writer transaction or schema change;
+native session observations run afterward. This adds no native storage CAS or
+transaction guarantee. See [the refactor evidence](verification/runtime-refactor.md).
+
+The work finder uses Node's supported [`DatabaseSync.function`](https://nodejs.org/api/sqlite.html#databasefunctionname-options-fn)
+for Unicode lowercase matching and request-local legacy identifier rank, plus
+SQLite `json_each` for parameterized dependency/request batches. Bounded row
+selection and counts remain SQL operations inside the read transaction. No
+extension loading or arbitrary SQL endpoint is added.
+
 ### A2UI and AG-UI web boundary
 
 The web integration pins `@a2ui/web_core` and `@a2ui/react` 0.15.0. Custom props are authored in Effect 4.1.4 and exported through `Schema.toJsonSchemaDocument`; `Catalog.fromJson` derives SDK models from that generated document. Upstream layout/text schemas, `PayloadValidator`, `MessageProcessor` and the React surface renderer own protocol behavior. Application publication remains complete, bounded surface revisions rather than arbitrary renderer functions or interactive forms.
@@ -26,6 +40,18 @@ AG-UI 1.0.4 standard types and `@ag-ui/core/schemas` validators own protocol env
 The worker transcript reader reuses the same supported native `message.list` API with a limit of eight, descending order only for the first page, and the returned cursor for subsequent pages. Every page first resolves the exact session against retained issue ownership through the authenticated web gateway. Cursor bindings are local to the issue/session and bounded to 500; an unknown or foreign cursor is refused. The disposable workspace journey verifies real history after worktree retirement, optional earlier pages, foreign-session refusal and forged-cursor refusal without tool replay.
 
 ### Single-session workspace transport
+
+The additive `abracode-web.receipt` RPC takes a validated `session_id` and browser
+`request_id`, validates the retained central Abra session, and returns one
+validated retained receipt or `null`. The browser-facing typed GET
+`/api/admission/receipt` accepts only `request_id`; it cannot select a session or
+native operation. Lookup never calls native prompt/admission recovery. The
+recent `receipts` operation remains a time/identity-ordered display window of
+100 entries. Unit and HTTP tests cover missing, uncertain, conflicting and
+unsafe identities. The disposable workspace journey now exercises 101 later
+real admissions, lost receipt-read response, two tabs and native restart,
+asserting the original native message ID, zero replay and foreign-session
+refusal. See [refactor evidence](verification/runtime-refactor.md).
 
 The frontend uses CopilotKit 1.88.0's **v2** exports (`@copilotkit/react-core/v2`, `@copilotkit/runtime/v2`) with AG-UI 1.0.4. The custom native-backed `AbstractAgent` and `AgentRunner` implement run/connect/isRunning/stop. No default model runner, thread store, Mastra or additional agent harness is used. The pinned OpenCode interrupt API cannot select an expected run ID; run-specific stop is explicitly refused.
 
@@ -178,7 +204,7 @@ The code type-checks against installed published declarations. Official [v2 plug
 
 ## Terminal observer contracts
 
-The installed `@opencode/plugin@2.0.28` public TUI declarations and [CLI plugin documentation](https://dev.opencode.ai/v2/docs/build/plugins/cli) support `Plugin.define` from `@opencode/plugin/tui`, package export `./tui`, `ui.slot` with `sidebar.content` and `session.panel`, `ui.panel.open`, native session tabs, routing and command layers. `src/visibility/ui.ts` uses the published OpenTUI JSX runtime with reactive property getters; it requires no custom JSX compiler. The UI uses host theme colors and authenticated `context.client` access, including remote servers.
+The installed `@opencode/plugin@2.0.28` public TUI declarations and [CLI plugin documentation](https://dev.opencode.ai/v2/docs/build/plugins/cli) support `Plugin.define` from `@opencode/plugin/tui`, package export `./tui`, `ui.slot` with `sidebar.content` and `session.panel`, `ui.panel.open`, native session tabs, routing and command layers. `packages/runtime/src/visibility/ui.ts` uses the published OpenTUI JSX runtime with reactive property getters; it requires no custom JSX compiler. The UI uses host theme colors and authenticated `context.client` access, including remote servers.
 
 Issue descriptions and OpenSpec proposals use the installed OpenTUI 0.5.17 `markdown` element with concealed formatting markers and completed (non-streaming) content. `generateSyntax(ctx.theme)` from the pinned `@opencode/theme/tui` supplies host Markdown and code styles. Each mounted document owns its syntax style and releases it on theme changes or unmount. Style changes explicitly request a render because Markdown applies them during its next render pass. The native renderer test checks headings, emphasis, links, lists, code, tables, narrow layouts and live theme updates; it awaits code-renderer highlighting because Tree-sitter runs outside the frame queue.
 
@@ -250,7 +276,7 @@ The pinned [native tool input-repair hook](https://github.com/anomalyco/opencode
 
 Native `Tool.Context.progress` is captured per call through an Effect Context reference. Setup, verification, delivery, merge and cleanup emit finite milestones; verification additionally emits command counts and throttled stdout/stderr byte counts. Payloads exclude command output, environment and provider content. These ephemeral updates do not alter retained command/worker progress, ownership, heartbeat or authorization. Display failure is best effort and cannot fail a completed mutation; interruption still propagates.
 
-Observer methods declare `not_found`, `resource_unavailable` and `invalid_selection` errors through native RPC factories. Unexpected failures remain internal defects. The `changed` event carries only the controller home; its authenticated native event envelope supplies the emitting location. A scoped, coalesced queue receives notifications after SQLite/record commits. Publication waits for the commit lock to release and cannot fail a committed mutation. TUI subscriptions filter by home, reconnect and refresh; periodic reads recover missed events without replay.
+Observer methods declare `not_found`, `resource_unavailable` and `invalid_selection` errors through native RPC factories. Unexpected failures remain internal defects. The `changed` event carries the controller home and optional typed resource scope; its authenticated native event envelope supplies the emitting location. A scoped, coalesced queue receives notifications after SQLite/record commits. Publication waits for the commit lock to release and cannot fail a committed mutation. TUI subscriptions filter by home, reconnect and refresh; periodic reads recover missed events without replay.
 
 Worker preflight reads the assigned worktree's native agent/model inventory before new prompt admission, checking explicit IDs, enabled models, variants and tool capability. The native [agent selection](https://github.com/anomalyco/opencode/blob/v2.0.28/packages/core/src/agent.ts) permits an implicit `build` profile without a registry entry, using `Agent.Info.default`; the [session model comparison](https://github.com/anomalyco/opencode/blob/v2.0.28/packages/core/src/session/session.ts) treats omitted and `default` variants equivalently. These native defaults remain valid. Missing explicit selections do not cause substitution. Existing inbox/transcript prompt IDs bypass new-inventory validation during admission recovery.
 
@@ -286,7 +312,7 @@ The public native `shell.create.before` hook supplies `cwd/command/env` without 
 
 ## Worker context and capability admission
 
-The pinned public declarations expose `AgentEditor.update` (existing profiles only), `SkillApi.list({location})` returning `Skill.Info` with ID/path/content, `SessionContext.tools`, and `ToolHooks.execute.before`. AbraCode derives central profile/session permissions and tool checks from `src/opencode/role-policy.ts`; frontmatter injected as role text is not native configuration. Required skills use the worker-location skill inventory. No foreign agent files or new registry entries are generated.
+The pinned public declarations expose `AgentEditor.update` (existing profiles only), `SkillApi.list({location})` returning `Skill.Info` with ID/path/content, `SessionContext.tools`, and `ToolHooks.execute.before`. AbraCode derives central profile/session permissions and tool checks from `packages/runtime/src/opencode/role-policy.ts`; frontmatter injected as role text is not native configuration. Required skills use the worker-location skill inventory. No foreign agent files or new registry entries are generated.
 
 Validation has two stages. Before queue admission, native agent/model and required skills are resolved and tool requirements are checked against role policy. The context hook validates actual model-visible tools after native shaping and role filtering before a provider call. `ctx.tool.list()` describes the location registry, not a preview of a foreign session's shaped tool set. Request-time rejection can follow successful queue admission and must not be reported as definitely unsubmitted. Native inbox/transcript proof is checked before inventory drift during recovery; captured context is never evidence of admission by itself.
 
@@ -308,7 +334,7 @@ The public pinned `SessionApi.update({sessionID, permissions})` supports permiss
 
 ## Abra-only conversation and generated bootstrap
 
-The pinned public `ctx.session.hook("prompt", handler)` runs before **new** native prompt admission, including queued prompts; existing-ID reconciliation can return before the hook (see the replay audit above). AbraCode resolves initial assignment and follow-up intents against active role, session, control generation and exact immutable text/delivery. It rejects unowned new IDs and added files/agents/skills before provider work. The hook reads retained records without acquiring the execution lock; native admission runs outside short controller coordination, so hook callbacks do not deadlock. Existing request/context/tool guards remain independent. `tests/e2e/native.test.ts` counts provider-visible denied/owned markers and native instruction identities; a provider may see the same one instruction on multiple subsequent model requests.
+The pinned public `ctx.session.hook("prompt", handler)` runs before **new** native prompt admission, including queued prompts; existing-ID reconciliation can return before the hook (see the replay audit above). AbraCode resolves initial assignment and follow-up intents against active role, session, control generation and exact immutable text/delivery. It rejects unowned new IDs and added files/agents/skills before provider work. The hook reads retained records without acquiring the execution lock; native admission runs outside short controller coordination, so hook callbacks do not deadlock. Existing request/context/tool guards remain independent. `packages/runtime/tests/e2e/native.test.ts` counts provider-visible denied/owned markers and native instruction identities; a provider may see the same one instruction on multiple subsequent model requests.
 
 Generated `.abracode/config/opencode/opencode.json` uses public `plugins`, `default_agent` and `agent.abra` settings. Its paths point to tracked absolute plugin/prompt assets. The pinned `Service.ensure/discover/stop` contract owns a dedicated service registration; native auth uses that same endpoint. Fresh-install acceptance checks service/session reuse and the auth command's native argument route without writing provider credentials. `model.list` supplies enabled model/variant readiness to doctor; authentication is reported unverified until a request succeeds. Static schema/config validation makes no native calls.
 
@@ -316,9 +342,9 @@ Worker inspection uses the declared read-only `abracode-visibility.worker` RPC a
 
 ## Portable engineering guidance
 
-The five `abra-codebase-design`, `abra-domain-modeling`, `abra-diagnosing-bugs`, `abra-verification` and `abra-blast-radius` IDs use the existing pinned `ctx.skill.transform` registration and native `skill({id})` loading path. `tests/unit/engineering-skills.test.ts` checks central/foreign registration without replacing local skills. The real-server engineering journey in `tests/e2e/native.test.ts` lists the suite at both locations, loads each role's applicable IDs through native tool calls and observes their returned content. Post-loading source-edit, Review shell, management and delegation attempts retain their native refusals. No new registry API, permission, report endpoint or worker-location control file is introduced.
+The five `abra-codebase-design`, `abra-domain-modeling`, `abra-diagnosing-bugs`, `abra-verification` and `abra-blast-radius` IDs use the existing pinned `ctx.skill.transform` registration and native `skill({id})` loading path. `packages/runtime/tests/unit/engineering-skills.test.ts` checks central/foreign registration without replacing local skills. The real-server engineering journey in `packages/runtime/tests/e2e/native.test.ts` lists the suite at both locations, loads each role's applicable IDs through native tool calls and observes their returned content. Post-loading source-edit, Review shell, management and delegation attempts retain their native refusals. No new registry API, permission, report endpoint or worker-location control file is introduced.
 
-`tests/unit/engineering-recovery.test.ts` exercises the actual NativeRuntime adapter with missing new defaults in a retained inventory, preserving exact captured groups/provenance and original context/prompt identity. `tests/e2e/engineering-recovery.ts` serializes a seeded pre-suite capture before the fixture service restarts, then validates it through NativeRuntime against the restarted server's actual inbox/context/plugin/agent/model/skill APIs. It does not submit a historical prompt; fresh preflight selects current defaults. Existing lost-response controller tests independently assert no duplicate admission, and incompatible current permission policy remains a blocker. Native availability still records digests and `loading: unobserved`; a scripted invocation test is separate evidence of loading, not behavioral quality or authorization.
+`packages/runtime/tests/unit/engineering-recovery.test.ts` exercises the actual NativeRuntime adapter with missing new defaults in a retained inventory, preserving exact captured groups/provenance and original context/prompt identity. `packages/runtime/tests/e2e/engineering-recovery.ts` serializes a seeded pre-suite capture before the fixture service restarts, then validates it through NativeRuntime against the restarted server's actual inbox/context/plugin/agent/model/skill APIs. It does not submit a historical prompt; fresh preflight selects current defaults. Existing lost-response controller tests independently assert no duplicate admission, and incompatible current permission policy remains a blocker. Native availability still records digests and `loading: unobserved`; a scripted invocation test is separate evidence of loading, not behavioral quality or authorization.
 
 ## Typed finishing forms and completion notices
 
@@ -472,3 +498,50 @@ New full-spec executions retain a pending then content-bound schema record: sele
 Native 2.0 status includes each artifact’s `requires` array even when it is already done or natively skipped (`core/artifact-graph/instruction-loader.js`). Planning traverses `applyRequires` transitively and requires only that closure to be done/skipped; missing IDs, missing dependency lists, duplicates and cycles are refused. Strict native validation and nonempty consistent task tracking still run afterward. Global `isPlanningComplete` is not an Apply gate. Real-CLI coverage leaves an unrelated artifact ready while valid `skip_specs` planning proceeds, rejects prematurely written tasks and conflicting skip/delta declarations, and preserves unfinished-task refusal. Custom schemas must keep tracking in `tasks.md` for the existing checkbox fingerprint normalization; arbitrary task filenames are not newly supported.
 
 Correction and finishing revisions explicitly reuse the bound name while retaining the original policy, rounds and approval ownership. Legacy revisions without a binding recover only the original name from the retained round/synchronization commit's archived `.openspec.yaml`: bounded read-only `git --literal-pathspecs ls-tree -z <commit> -- <path>` must identify exactly one regular blob, then `git cat-file blob <oid>` supplies the metadata. Current archive edits or a new project default cannot supply historical authority. Missing original metadata blocks creation rather than selecting a fallback; no historical content digest is invented. Real-CLI archive/revision tests preserve the original archive and prove both bound and legacy selection; controller correction/finishing restart and lost-response tests retain the stronger plan gate, binding and consumed budgets.
+
+Committed controller notifications now include an optional typed resource scope.
+The native authenticated location envelope is preserved; a matching controller
+home accepts commits from managed worker locations. Missing/malformed legacy
+scope triggers broad work recovery. Transcript, attention, admissions, affected
+issue IDs, finder/fleet, projects and presentations have separate hints; bounded
+burst coalescing unions identities, promoting overflow to broad work recovery.
+Hidden reasoning and unrelated native sessions do not trigger web observations.
+
+Each web-feed lifetime owns an opaque epoch and increasing sequence. Every
+connection/HTTP bootstrap starts from a full baseline. Contiguous observations
+use AG-UI `STATE_DELTA`; append-only visible text uses the standard text events.
+Tool/structural transcript changes use `MESSAGES_SNAPSHOT` to preserve exact
+native IDs, metadata and ordering. Subscriber gaps and epoch changes recover a
+full baseline. The browser refuses gaps, duplicates, reordered/retired epochs
+and foreign sessions while preserving its last valid state, then requests a
+baseline without resubmitting input. Wall time reports freshness only.
+
+One server-owned five-second fallback remains. Unchanged observations emit a
+small freshness event, preserving mounted data and receipts without full-message
+emissions or work invalidation. Semantic comparison omits only observation-owned
+timestamps; retained receipt/native/evidence times remain significant. Scoped
+native reads reuse the last valid display observations of unaffected resources;
+these values never authorize mutations. Issue hints invalidate exact mounted
+queries, including selected off-page issues; transcript/attention/admission-only
+updates do not invalidate work documents. Unknown legacy scopes still invalidate
+all mounted work. Browser/native integration acceptance remains tracked with
+the final disposable journeys.
+
+### Headless workspace composition
+
+CopilotKit 1.88.0 exposes `CopilotKitCoreReact`, `CopilotKitContext` and
+`CopilotKitAgentIdContext` through the public `v2/context` entry. Its context type
+explicitly supports custom providers. Core's `deferInitialConnection`/`connect()`
+contract starts the runtime probe during the React commit phase and coalesces
+StrictMode calls; hook subscriptions retain their documented unsubscribe owner.
+The application adapter initializes only the existing REST Abra connection and
+render-only hooks. It does not register browser tools or model execution.
+The [official import-surface reference](https://docs.copilotkit.ai/reference/v2)
+documents the headless hook boundary; installed context/core declarations establish
+the custom-provider and connection details. The pinned UI provider's optional web
+renderers remain available upstream but are outside this native-authoritative UI.
+
+The existing Streamdown 1.6.11 dependency is declared directly by the web consumer
+and used through its public `Streamdown`/`StreamdownProps` export. Its original
+Markdown/code/table/math/diagram rendering is deferred together; no private deep
+imports, copied renderer or excluded language/theme features are used.

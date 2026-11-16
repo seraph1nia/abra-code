@@ -1,8 +1,39 @@
+# Fast feedback and complete acceptance
+
+`pnpm test:fast` runs 48 scenarios in `packages/runtime/tests/fast`: identity
+contracts, observation order/scopes, planning prerequisites, canonical report
+validation, AG-UI streams with controlled time, catalog/surfaces, native forms,
+transcript/worker history, attention and real in-memory SQLite finder queries.
+It uses the frozen installed toolchain and no browser, native service, remote
+credentials or repository lifecycle. Optional evidence writes occur only when an
+external `ABRACODE_TEST_EVIDENCE_DIR` is explicitly set.
+
+The twelve pure/stream files moved from `unit` to `fast` unchanged in behavior;
+the in-memory finder scenario moved from integration. File-backed legacy query
+and dangling-dependency scenarios stay in integration. `pnpm test` executes all
+three projects once. `pnpm test:e2e` retains all five native/browser journey files.
+CI runs fast before browser setup, then unit/integration, then end-to-end; no
+scenario is removed or run twice by that partition. Full acceptance still requires
+the commands in [CONTRIBUTING](../CONTRIBUTING.md).
+
+Package checks use pnpm's dependency graph, with explicit dependent selectors for
+focused shared changes. A passing fast tier or selected package check never stands
+in for final integration/native acceptance. Existing graph fakes remain solely for
+controller fault injection; SQL paging/readiness cases use the shared scoped real
+SQLite fixture rather than a second query implementation.
+
 # Acceptance coverage
 
-Specification Review regressions in `tests/unit/spec-verification.test.ts` cover required assessment evidence, contradictory verdicts, intentional schema omissions, retained conflict decisions, blocked unsafe retry, approved-scope correction, fresh planning approval and legacy Review recovery. The native provider fixture submits the same full-spec evidence through `abra_review_report`; lightweight Review retains its short-contract report.
+`work-queries.test.ts` exercises real in-memory/file SQLite pages, Unicode and
+literal search, legacy identifier collation, complete totals/readiness,
+normalized request-byte preservation and malformed dependency refusal. A native
+statement spy verifies constant SQL operation counts for 161 issues and paged
+reads. `work-database.ts` supplies the shared scoped database fixture; existing
+independent-process batch/claim tests continue to use the same graph owner.
 
-`tests/unit/native-contracts.test.ts` covers native model/error projection, UTC validation with TestClock, JSON omission semantics, phase evidence types, lazy single-flight acquisition with failure retry and injected FileSystem reads. Native guard fixtures assert the Effect cause category as well as rejection text. Existing Effect/process, coordination and native-renderer suites continue to validate callback lifetime, process-tree cancellation, task replacement and cleanup.
+Specification Review regressions in `packages/runtime/tests/unit/spec-verification.test.ts` cover required assessment evidence, contradictory verdicts, intentional schema omissions, retained conflict decisions, blocked unsafe retry, approved-scope correction, fresh planning approval and legacy Review recovery. The native provider fixture submits the same full-spec evidence through `abra_review_report`; lightweight Review retains its short-contract report.
+
+`packages/runtime/tests/unit/native-contracts.test.ts` covers native model/error projection, UTC validation with TestClock, JSON omission semantics, phase evidence types, lazy single-flight acquisition with failure retry and injected FileSystem reads. Native guard fixtures assert the Effect cause category as well as rejection text. Existing Effect/process, coordination and native-renderer suites continue to validate callback lifetime, process-tree cancellation, task replacement and cleanup.
 
 Validation uses Vite+ default formatting and linting, TypeScript strict checking, Vitest, disposable Git repositories, CLI adapters and a real OpenCode v2 server. No production repositories or forge endpoints are mutated.
 
@@ -128,17 +159,17 @@ Set `ABRACODE_TEST_EVIDENCE_DIR` outside disposable roots to retain portable-rep
 
 `action-lifecycle.test.ts` records run-level POSTs for two failed job findings, preserves reservations through restart/control generation, recovers an approved permission preflight without another form, and proves a pause between preparation and admission sends nothing. Legacy uncertain permission errors remain observation-only and keep their original receipts. `action-clearance.test.ts` exercises explicit finish, completed merge approval and periodic reconciliation before required outbox work exists, checks same-head approval retention and verifies the manual-default path. A completed merge shares one canonical check observation with feedback clearance. `action-recovery.test.ts` covers lost command responses, deadlines, malformed output and interruption across ready/reviewer/reply/rerun actions, crash after admission, and mixed legacy stages through storage. Every potentially submitted case reloads its original identity and reconciles without another send.
 
-The canonical provenance fixtures in `pr-feedback.test.ts` keep same-name required/advisory apps and commit statuses distinct and exclude superseded failures. Supplemental logs may be unavailable without changing authority. Shared feedback/external fixtures live in `tests/helpers/review-evidence.ts`; browser acceptance covers lazy reads, narrow layout, uncertain/unsubmitted action states and preflight/stale evidence. The custom terminal renderer test is retired with its presentation. Existing external validation and coordination fixtures exercise custody, capacity and stop/restart through the owning service rather than an inline lifecycle branch.
+The canonical provenance fixtures in `pr-feedback.test.ts` keep same-name required/advisory apps and commit statuses distinct and exclude superseded failures. Supplemental logs may be unavailable without changing authority. Shared feedback/external fixtures live in `packages/runtime/tests/helpers/review-evidence.ts`; browser acceptance covers lazy reads, narrow layout, uncertain/unsubmitted action states and preflight/stale evidence. The custom terminal renderer test is retired with its presentation. Existing external validation and coordination fixtures exercise custody, capacity and stop/restart through the owning service rather than an inline lifecycle branch.
 
-The native `tests/e2e/pr-feedback.ts` scenario runs through the real server and workers with a local recording forge: recoverable permission preflight, completed approval before required actions, two failed jobs sharing one old-attempt rerun, correction, lost reply response, resolution, merge and server restart. `native.test.ts` owns the shared process/worker harness. External preflight failure separately verifies reservation release before launch.
+The native `packages/runtime/tests/e2e/pr-feedback.ts` scenario runs through the real server and workers with a local recording forge: recoverable permission preflight, completed approval before required actions, two failed jobs sharing one old-attempt rerun, correction, lost reply response, resolution, merge and server restart. `native.test.ts` owns the shared process/worker harness. External preflight failure separately verifies reservation release before launch.
 
 All fixtures remain temporary and external mutations are recording fakes; no live GitHub write, user remote, model provider or shared no-mistakes runtime is used. Action versions must preserve IDs/forms/markers/history/budget and refuse unsupported or incomplete evidence without inventing a safe retry.
 
 ## Worker policy and context acceptance
 
-`tests/unit/role-policy.test.ts` covers role authority, native permission scope, additive requirements and forbidden alternatives. `tests/unit/patch-guards.test.ts` retains symlink/move/control-file checks and direct forbidden/inactive tool calls. `tests/unit/worker-context.test.ts` covers native-ID skill resolution, unusable content, tool alternatives, immutable capture, pre-session failures, bounded/legacy/malformed diagnostics, read-only inspection with an unresolved question, partial payload publication, stale observations, policy incompatibility and cold-location activation. `tests/unit/worker-lifecycle.test.ts` changes issue/role sources between uncertain admission attempts and requires the original prompt identity and payload.
+`packages/runtime/tests/unit/role-policy.test.ts` covers role authority, native permission scope, additive requirements and forbidden alternatives. `packages/runtime/tests/unit/patch-guards.test.ts` retains symlink/move/control-file checks and direct forbidden/inactive tool calls. `packages/runtime/tests/unit/worker-context.test.ts` covers native-ID skill resolution, unusable content, tool alternatives, immutable capture, pre-session failures, bounded/legacy/malformed diagnostics, read-only inspection with an unresolved question, partial payload publication, stale observations, policy incompatibility and cold-location activation. `packages/runtime/tests/unit/worker-lifecycle.test.ts` changes issue/role sources between uncertain admission attempts and requires the original prompt identity and payload.
 
-The real native test in `tests/e2e/native.test.ts` also runs `tests/e2e/worker-context.ts`. It uses copied central role definitions and disposable foreign repositories to verify that a central-only explicit agent is absent at a worker location, a required skill blocks before session creation, and a permitted required tool removed by the test plugin prevents its provider request. Its deterministic provider counts requests carrying the missing-tool assignment. Existing patch-only, denied management, full-spec/lightweight/research, spec-verification Review, protected approval/delivery, restart and retired-resource cases remain in the same suite. The fixtures use local bare remotes only.
+The real native test in `packages/runtime/tests/e2e/native.test.ts` also runs `packages/runtime/tests/e2e/worker-context.ts`. It uses copied central role definitions and disposable foreign repositories to verify that a central-only explicit agent is absent at a worker location, a required skill blocks before session creation, and a permitted required tool removed by the test plugin prevents its provider request. Its deterministic provider counts requests carrying the missing-tool assignment. Existing patch-only, denied management, full-spec/lightweight/research, spec-verification Review, protected approval/delivery, restart and retired-resource cases remain in the same suite. The fixtures use local bare remotes only.
 
 | Contract                                                | Verification evidence                                                                                                                     |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -164,7 +195,7 @@ pnpm test:e2e
 
 On Ubuntu CI the explicit setup step uses `pnpm browser:install --with-deps`. Local CachyOS/system Chromium setup and `AGENT_BROWSER_EXECUTABLE_PATH` are described in [operations](operations.md#browser-cli). Missing browser binaries or libraries must fail the acceptance with their invocation output. The reporter's Playwright Chromium prerequisite remains independent (`pnpm report:browser:install`, or `REPORT_CHROMIUM_PATH`).
 
-`tests/e2e/browser.ts` extends the existing native server's model-scripted tool calls; browser commands traverse the real native tool executor rather than a fake CLI. All four roles load `abra-browser`, run `skills get core` and `--version`, browse a local HTTP counter, inspect a snapshot, click its reference, capture a generated screenshot outside the repository, read its PNG through the native file tool and close the assigned name. Browser-only roles attempt both an unrelated command and a forbidden command chained to an allowed CLI command. The test checks native refusal and absence of their output files. A separate driver check opens two real worker-named browsers concurrently and verifies navigation/storage isolation and close independence. Local bare remotes remain the only Git remotes used by these fixtures.
+`packages/runtime/tests/e2e/browser.ts` extends the existing native server's model-scripted tool calls; browser commands traverse the real native tool executor rather than a fake CLI. All four roles load `abra-browser`, run `skills get core` and `--version`, browse a local HTTP counter, inspect a snapshot, click its reference, capture a generated screenshot outside the repository, read its PNG through the native file tool and close the assigned name. Browser-only roles attempt both an unrelated command and a forbidden command chained to an allowed CLI command. The test checks native refusal and absence of their output files. A separate driver check opens two real worker-named browsers concurrently and verifies navigation/storage isolation and close independence. Local bare remotes remain the only Git remotes used by these fixtures.
 
 The browser setup integration test runs the actual doctor entrypoint in a disposable home with a recording executable: only absolute-central `--version` is invoked, and a missing executable reports the central install/build clearing action. Unit tests cover ordinary admission without browser guidance or browser-only shell tools, explicit browser prerequisites without OpenSpec, retained Apply development-shell requirements, per-session context naming, narrow evidence read rules and unchanged recovery captures. Browser skill frontmatter also passes the skill validator. CLI/browser acceptance was verified on 2026-10-17 with agent-browser 0.39.1 and Chrome 155.0.8059.84; native API evidence is retained in [supported APIs](supported-apis.md#agent-browser-cli-and-native-command-permissions).
 
@@ -182,7 +213,7 @@ Delivery-outcome regressions cover receipt-only merge approval, actual execution
 
 Use the [executable recipe and feature map](verification/README.md) for isolated journeys and evidence that survives teardown. `engineering-skills.test.ts` tests portable registration, local preservation, exact IDs and role/default/configured selection. `engineering-recovery.test.ts` exercises NativeRuntime preflight against a serialized pre-suite context with only old inventory, lost admitted responses, original provenance, current policy incompatibility and fresh admission defaults. Existing immutable-context/request-tool and lost-response lifecycle regressions remain applicable.
 
-`tests/e2e/engineering.ts` supplies deterministic native tool calls within the existing real-server fixture: applicable skill loading by every coding role, post-loading management/delegation and edit/shell denials, a symptom-specific failing consumer invocation followed by the original green recheck, and Review reading unstaged/untracked proof under controller receipts. A separate full-spec unavailable-evidence report uses existing `not_verified` and scope decisions. The lightweight fixture retains correction budgets. The foreign repository has no upstream package or AbraCode recipe, preserves local skills/control files and uses existing documented checks. No automatic recipe/glossary/host setup is performed.
+`packages/runtime/tests/e2e/engineering.ts` supplies deterministic native tool calls within the existing real-server fixture: applicable skill loading by every coding role, post-loading management/delegation and edit/shell denials, a symptom-specific failing consumer invocation followed by the original green recheck, and Review reading unstaged/untracked proof under controller receipts. A separate full-spec unavailable-evidence report uses existing `not_verified` and scope decisions. The lightweight fixture retains correction budgets. The foreign repository has no upstream package or AbraCode recipe, preserves local skills/control files and uses existing documented checks. No automatic recipe/glossary/host setup is performed.
 
 Set `ABRACODE_TEST_JOURNEY=engineering` to execute the complete engineering recipe through the missing-evidence decision; the default native run retains all PR-feedback and post-merge assertions. Set `ABRACODE_TEST_EVIDENCE_DIR` outside the disposable installation root to retain `native-engineering.json`; bounded tool text, actual outcomes and matching receipts survive teardown. The fixture waits for its own server to exit before deleting its root and records success only after cleanup, with `cleanup_complete: true`. Screenshots remain scratch and are not claimed as durable attachments. These are scripted integration assertions, not an evaluation of autonomous model quality or proof of live remote behavior.
 
@@ -228,3 +259,13 @@ and refuse unavailable model/variant selections before session creation. See the
 [model-dispatch recipe](verification/features/model-dispatch.md) for the focused
 invocation and the full native suite for combined Apply/batch coverage. Fixture
 models test routing and authority; they do not measure model quality or cost.
+
+Native success assertions use `nativeObservation` only for documented transient
+`resource_unavailable`/`OBSERVATION_UNAVAILABLE` reads, bounded to five seconds.
+The native tool fixture applies the same bounded handling only to read-only
+`work_list`, `work_ready` and `work_status`. It does not replay mutations or retry
+semantic failures. Dedicated contention fixtures still require bounded unavailable
+output, independent pause and valid-state restoration; missing selections still
+require `not_found`. The browser branch journey asserts human plan authorization;
+PR merge authorization remains in the separate real native PR journey. A branch's
+transient finishing phase is not a PR approval gate.

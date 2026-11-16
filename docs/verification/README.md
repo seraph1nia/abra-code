@@ -17,7 +17,7 @@ pnpm typecheck
 
 The native journey requires the frozen supplier cache, Git, util-linux `flock`, and a previously provisioned compatible Chromium for agent-browser. Follow [browser prerequisites](../operations.md#browser-cli); browser installation is an explicit contributor setup step, never a recipe's automatic repair. `pnpm browser:install` provisions the browser if needed. Missing binaries/libraries must fail with the actual command output. Do not start or restart the operator's AbraCode service.
 
-The harness in [native.test.ts](../../tests/e2e/native.test.ts) creates its own installation root using [install.ts](../../tests/e2e/install.ts), isolated native config/data/cache/state, loopback ports/provider, local repositories and bare remotes. It checks the native server's `server.info()` and activates the central location before driving it. Worker preflight waits for the worker plugin to become active. A process merely listening is not sufficient health evidence.
+The harness in [native.test.ts](../../packages/runtime/tests/e2e/native.test.ts) creates its own installation root using [install.ts](../../packages/runtime/tests/e2e/install.ts), isolated native config/data/cache/state, loopback ports/provider, local repositories and bare remotes. It checks the native server's `server.info()` and activates the central location before driving it. Worker preflight waits for the worker plugin to become active. A process merely listening is not sufficient health evidence.
 
 ## Drive and retain evidence
 
@@ -27,7 +27,7 @@ Run the mapped [full-spec journey](features/full-spec.md) from the repository ro
 mkdir -p /tmp/abracode-verification-evidence
 ABRACODE_TEST_JOURNEY=engineering \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abracode-verification-evidence \
-  pnpm exec vp test run --project e2e tests/e2e/native.test.ts \
+  pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts \
   > /tmp/abracode-verification-evidence/native.log 2>&1
 ```
 
@@ -45,15 +45,23 @@ The [feature map](features/README.md) describes other journeys and their limitat
 
 ## Local web acceptance
 
-`pnpm exec vp test run --project e2e tests/e2e/web-coherence.test.ts` exercises the built frontend against a disposable typed HTTP/AG-UI fixture: Pierre split diff/search without a separate file list, URL history, desktop/mobile themes, policy-specific planning, exact decision/communication navigation, response recovery and pagination, off-page refreshes with retained data after errors, focus restoration, form binding resets, simultaneous native reply state, one startup bootstrap and explicit same-ID recovery after reload. Set `ABRACODE_TEST_EVIDENCE_DIR` outside the fixture for retained screenshots. Build the web assets first with `pnpm web:build`. This fixture proves frontend behavior; the installation journey below proves real native contracts.
+`pnpm exec vp test run --project integration packages/runtime/tests/integration/retained-observation.test.ts`
+uses real in-memory SQLite and the existing controller fixture to force an
+intervening graph commit, continuous contention and a stalled record scan.
+It also exercises real independent shared `flock` holders, exclusive commits and
+refused read-to-write upgrades. It verifies coherent retry, bounded unavailable output, released locks and pause
+availability while a native observation remains pending. It starts no service
+and uses no user repository or remote. Contributor fixtures remain disposable.
 
-`pnpm exec vp test run --project e2e tests/e2e/installation.test.ts` builds and starts the shipped CopilotKit v2 workspace against its disposable installation. Chromium opens the retained Abra without credentials, answers native conditional/default/hidden/string/number/integer/choice/multiselect/external fields, rejects an unbound controller checkpoint, reloads and reconnects after native service restart. Frontend shutdown must leave the native service and session usable. With `ABRACODE_TEST_EVIDENCE_DIR` set outside the fixture root, desktop and narrow screenshots survive teardown. It uses the existing report Chromium prerequisite and never touches the operator service.
+`pnpm exec vp test run --project e2e packages/runtime/tests/e2e/web-coherence.test.ts` exercises the built frontend against a disposable typed HTTP/AG-UI fixture: Pierre split diff/search without a separate file list, URL history, desktop/mobile themes, policy-specific planning, exact decision/communication navigation, response recovery and pagination, off-page refreshes with retained data after errors, focus restoration, form binding resets, simultaneous native reply state, one startup bootstrap and explicit same-ID recovery after reload. Set `ABRACODE_TEST_EVIDENCE_DIR` outside the fixture for retained screenshots. Build the web assets first with `pnpm web:build`. This fixture proves frontend behavior; the installation journey below proves real native contracts.
 
-`pnpm exec vp test run --project integration tests/integration/web-workspace.test.ts` exercises Effect HTTP plus shared `HttpApiClient`: response/payload/query validation, typed failures, exact host/origin checks, encoded-path rejection, raw native-route exclusion, CopilotKit v2 Fetch/AG-UI identity and retry behavior, and report sandbox/download headers. Unit tests in `web-admissions.test.ts` and `web-agent.test.ts` prove durable-before-admission identity binding, simultaneous tabs, response loss, interruptible observations and explicit native stop semantics. The retired general proxy/WebSocket/form-projection contract is removed.
+`pnpm exec vp test run --project e2e packages/runtime/tests/e2e/installation.test.ts` builds and starts the shipped CopilotKit v2 workspace against its disposable installation. Chromium opens the retained Abra without credentials, answers native conditional/default/hidden/string/number/integer/choice/multiselect/external fields, rejects an unbound controller checkpoint, reloads and reconnects after native service restart. Frontend shutdown must leave the native service and session usable. With `ABRACODE_TEST_EVIDENCE_DIR` set outside the fixture root, desktop and narrow screenshots survive teardown. It uses the existing report Chromium prerequisite and never touches the operator service.
 
-`pnpm exec vp test run --project e2e tests/e2e/development.test.ts` launches the public `pnpm dev` command in a disposable source install, exercises TanStack Router navigation, edits React source and checks that HMR preserves the draft, edits the Effect server and observes changed response headers through the Vite proxy, then proves shutdown preserves the native session. With an external evidence directory it retains `development.json` after cleanup.
+`pnpm exec vp test run --project integration packages/runtime/tests/integration/web-workspace.test.ts` exercises Effect HTTP plus shared `HttpApiClient`: response/payload/query validation, typed failures, exact host/origin checks, encoded-path rejection, raw native-route exclusion, CopilotKit v2 Fetch/AG-UI identity and retry behavior, and report sandbox/download headers. Unit tests in `web-admissions.test.ts` and `web-agent.test.ts` prove durable-before-admission identity binding, simultaneous tabs, response loss, interruptible observations and explicit native stop semantics. The retired general proxy/WebSocket/form-projection contract is removed.
 
-`ABRACODE_TEST_JOURNEY=workspace pnpm exec vp test run --project e2e tests/e2e/native.test.ts` drives project registration, work intake, A2UI v1 rendering, full-spec plan approval, implementation, independent Review and branch delivery/closure from the browser. Native reads supply assertions; all workflow mutations in that journey enter through the main chat or native form dock. The branch policy requires plan approval; PR-specific merge gating remains covered by the native PR journey. The default E2E suite runs both journeys. Evidence records the actual approval kinds, retains screenshots outside the disposable installation, and reports cleanup.
+`pnpm exec vp test run --project e2e packages/runtime/tests/e2e/development.test.ts` launches the public `pnpm dev` command in a disposable source install, exercises TanStack Router navigation, edits React source and checks that HMR preserves the draft, edits the Effect server and observes changed response headers through the Vite proxy, then proves shutdown preserves the native session. With an external evidence directory it retains `development.json` after cleanup.
+
+`ABRACODE_TEST_JOURNEY=workspace pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts` drives project registration, work intake, A2UI v1 rendering, full-spec plan approval, implementation, independent Review and branch delivery/closure from the browser. Native reads supply assertions; all workflow mutations in that journey enter through the main chat or native form dock. The branch policy requires plan approval; PR-specific merge gating remains covered by the native PR journey. The default E2E suite runs both journeys. Evidence records the actual approval kinds, retains screenshots outside the disposable installation, and reports cleanup.
 
 The full native fixture continues to use its own authenticated native service for administrative setup and worker inspection. Its controller/approval/finishing assertions and deterministic-provider limits remain separate from the browser field journey. The new browser does not expose that native administrative API.
 
@@ -64,7 +72,7 @@ Executed on 2026-10-17 using:
 ```sh
 ABRACODE_TEST_JOURNEY=engineering \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-engineering-journey \
-  pnpm exec vp test run --project e2e tests/e2e/native.test.ts \
+  pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts \
   > /tmp/abra-engineering-journey/native.log 2>&1
 ```
 
@@ -83,3 +91,13 @@ native test/evidence command above. It checks attended automatic planning and
 finite repair, retained stronger human plan/merge gates, skipped specifications,
 scope decisions, pause and restart. See the [full-spec feature map](features/full-spec.md#compact-routine-loop-and-retained-gates)
 for its assertions and limits. Only disposable fixture policy is opted in.
+
+The portable renderer's focused compiler/cache proof is
+`pnpm exec vp test run --project integration packages/runtime/tests/integration/renderer-shell.test.ts`.
+It needs the frozen supplier cache but no browser or native service. It simulates
+interrupted compiler output, then uses the actual application compiler to verify
+cross-owner concurrent preparation, second-document reuse, inert JSON, source and
+notice identity changes, unrelated backend/lock stability and cache tamper refusal.
+SVG, offline opaque-frame interactions and browser caching remain in final native/
+browser acceptance. `pnpm build` includes preparation; `pnpm report:prepare` is the
+same explicit source-installation recipe without rebuilding the other applications.

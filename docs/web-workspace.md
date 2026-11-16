@@ -25,9 +25,9 @@ See [the frontend architecture](frontend.md) for state ownership, shared compone
 
 ## State and transport
 
-`apps/web` uses the CopilotKit **v2** React API. `src/web/agent.ts` implements its custom `AbstractAgent` and `AgentRunner`; `src/web/server.ts` preserves CopilotKit's v2 Fetch handler and AG-UI wire protocol. The only advertised runtime agent is `abra`; its thread is the installation's retained native supervisor ID. Run input contributes one text message, never a replayed transcript or client-supplied model, tools, role or location.
+`apps/web` uses the CopilotKit **v2** React API. `packages/runtime/src/web/agent.ts` implements its custom `AbstractAgent` and `AgentRunner`; `packages/runtime/src/web/server.ts` preserves CopilotKit's v2 Fetch handler and AG-UI wire protocol. The only advertised runtime agent is `abra`; its thread is the installation's retained native supervisor ID. Run input contributes one text message, never a replayed transcript or client-supplied model, tools, role or location.
 
-The loopback server uses pinned **Effect 4.1.4** `NodeHttpServer`, `HttpRouter`, `HttpApiBuilder` and shared `HttpApi` contracts. The browser uses Effect `AtomHttpApi` and `@effect/atom-react` for typed queries and mutations; `apps/web/src/api.ts` only builds report navigation URLs. Payload/query schemas, responses and typed operation errors are shared. `src/web/wire.ts` owns browser data projections and imports no controller or Node adapters. Native reads and submissions still cross the existing authenticated OpenCode plugin RPC boundary; this adds no browser RPC protocol.
+The loopback server uses pinned **Effect 4.1.4** `NodeHttpServer`, `HttpRouter`, `HttpApiBuilder` and shared `HttpApi` contracts. The browser uses Effect `AtomHttpApi` and `@effect/atom-react` for typed queries and mutations; `apps/web/src/api.ts` only builds report navigation URLs. Payload/query schemas, responses and typed operation errors are shared. `packages/runtime/src/web/wire.ts` owns browser data projections and imports no controller or Node adapters. Native reads and submissions still cross the existing authenticated OpenCode plugin RPC boundary; this adds no browser RPC protocol.
 
 Task summaries extend the shared visibility schema, and communication/review/check pages reuse their owning native schemas. The bounded discovery endpoint `/api/work/find` supports repository and active/closed/all filters, title/ID search across retained history, pages of at most 50 and explicit totals/continuations. Fleet counts are independent of the loaded page. Attention retains current owners/next actions, examines obligations outside that page, and reports its 100-item coverage limit. Direct detail remains available for tasks outside the current filter. See [observation contracts](frontend.md#observation-and-resource-contracts) for bounds and freshness semantics.
 
@@ -35,7 +35,25 @@ Typed resource selections name task sections, owned sessions, generation-bound d
 
 Observers are scoped Effect streams, coalesced through bounded PubSubs with a five-second snapshot fallback. Unsubscribing AG-UI interrupts the observer fiber. HTTP request scopes abort the Fetch/response stream on disconnect. Native admission masks interruption only inside the short locked persist/admit/persist operation; observing a turn never owns that turn's lifetime.
 
+Native event subscriptions reconnect one second after either clean EOF or a
+failure. Repeated empty streams cannot spin without that delay. The server-owned
+five-second fallback remains active between subscriptions. Closing the observer
+scope cancels both backoff and fallback without stopping native work. Controlled
+clock regressions in `packages/runtime/tests/unit/web-agent.test.ts` exercise both termination
+paths, changes on the second subscription, fallback and disposal during backoff.
+
 A stable browser submission ID binds exact text and queue/steer mode. Plugin storage retains its native message ID before admission. Identical retries reuse that receipt; changed input under the same ID fails. A lost response is reconciled against native inbox/history, including exact message lookup across compaction. Absence remains uncertain and does not cause automatic replay. Admission is separate from native execution and controller work completion. The frontend persists only an outstanding submission identity/input for recovery, not a second conversation database.
+
+The latest 100 receipts are display history, ordered by retained time and request
+identity. Pending input outside that window is observed through the uncached
+typed GET `/api/admission/receipt?request_id=…`. Its authenticated native `receipt`
+operation reads exactly one key in the fixed Abra session. A missing receipt is
+`null`; an uncertain receipt remains uncertain. Neither result admits or
+resubmits input. The browser clears pending state only when request ID, exact
+text, delivery mode and admitted status agree. A conflict preserves the pending
+input with an explanation. The existing explicit Reconcile submission action
+retains its same-ID recovery behavior. This also works for restored tabs and
+does not clear their separate unsent drafts.
 
 History is paginated using native identities. The backend accepts only cursors it issued for this session. Existing native text/tool observations are projected explicitly; provider replay blobs and hidden reasoning never enter the browser. Terminal/controller-originated turns appear through the same observation path.
 
@@ -86,3 +104,49 @@ Reports can open an exact immutable JSON document using the shared A2UI/React ca
 An opened JSON report offers explicit offline HTML export, verified attachment download and a sandboxed preview. Export uses the exact saved values and an exporter fingerprint; it does not call the provider. [Saved reports](reports.md) describes local commands, runtime size bounds and legacy compatibility.
 
 Acceptance on 2026-11-16 supersedes the earlier frontend checkpoint: 560 unit/integration tests, 27 end-to-end tests, formatting/types/Effect diagnostics, build, schema, license evidence and strict validation passed. The [parity map](verification/frontend-parity.md#integrated-acceptance-on-2026-11-16) identifies retained command logs, screenshots, portable artifacts and native cleanup outcomes.
+
+The backend's `work` interface has fixed typed operations derived from the shared
+HTTP endpoint contracts. It carries decoded numeric paging fields and branded
+identities directly to fixed native RPCs. The server validates outputs before
+responding, including optional compatibility fields; query parsing rejects excess
+capabilities before invoking the adapter. Adapter observation/receipt timestamps
+use the supplied Effect Clock; native message timestamps retain their provenance.
+For performance probes, selected detail must have zero fleet-readiness, collection
+scan and unrelated native/lead reads. Finder aggregates still describe all work,
+independently of its filter/page; mutation admission always reads current authority.
+
+Committed controller notifications now include an optional typed resource scope.
+The native authenticated location envelope is preserved; a matching controller
+home accepts commits from managed worker locations. Missing/malformed legacy
+scope triggers broad work recovery. Transcript, attention, admissions, affected
+issue IDs, finder/fleet, projects and presentations have separate hints; bounded
+burst coalescing unions identities, promoting overflow to broad work recovery.
+Hidden reasoning and unrelated native sessions do not trigger web observations.
+
+Each web-feed lifetime owns an opaque epoch and increasing sequence. Every
+connection/HTTP bootstrap starts from a full baseline. Contiguous observations
+use AG-UI `STATE_DELTA`; append-only visible text uses the standard text events.
+Tool/structural transcript changes use `MESSAGES_SNAPSHOT` to preserve exact
+native IDs, metadata and ordering. Subscriber gaps and epoch changes recover a
+full baseline. The browser refuses gaps, duplicates, reordered/retired epochs
+and foreign sessions while preserving its last valid state, then requests a
+baseline without resubmitting input. Wall time reports freshness only.
+
+One server-owned five-second fallback remains. Unchanged observations emit a
+small freshness event, preserving mounted data and receipts without full-message
+emissions or work invalidation. Semantic comparison omits only observation-owned
+timestamps; retained receipt/native/evidence times remain significant. Scoped
+native reads reuse the last valid display observations of unaffected resources;
+these values never authorize mutations. Issue hints invalidate exact mounted
+queries, including selected off-page issues; transcript/attention/admission-only
+updates do not invalidate work documents. Unknown legacy scopes still invalidate
+all mounted work. Browser/native integration acceptance remains tracked with
+the final disposable journeys.
+
+Public `/assets/` files with content-hashed names use a one-year immutable cache
+policy; mutable HTML, API, private reports and errors remain `no-store`. Effect's
+compression middleware negotiates gzip at level 6 for public asset bodies above
+1 KiB. Compression applies only to that static route, leaving SSE and private
+report response policies with their existing owners. Focused HTTP fixtures verify
+headers, changed asset identities, exact decompressed bytes, meaningful byte
+reduction and same-origin refusal. Browser cache reuse remains final acceptance.

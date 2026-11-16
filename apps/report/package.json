@@ -4,27 +4,25 @@
   "private": true,
   "license": "MIT",
   "type": "module",
+  "exports": {
+    "./browser": "./scripts/browser.ts",
+    "./diagrams": "./scripts/diagrams.ts"
+  },
   "scripts": {
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@a2ui/react": "0.15.0",
-    "@a2ui/web_core": "0.15.0",
-    "@base-ui/react": "1.9.0",
-    "@opencode/schema": "2.3.0",
-    "class-variance-authority": "0.7.1",
-    "clsx": "2.1.1",
+    "@abracode/contracts": "workspace:*",
+    "@abracode/presentation": "workspace:*",
     "effect": "4.1.4",
-    "lucide-react": "1.73.0",
     "react": "19.3.1",
-    "react-dom": "19.3.1",
-    "tailwind-merge": "3.7.0"
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.5",
     "@types/node": "26.6.6",
-    "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",
     "mermaid": "12.3.0",
     "playwright": "1.65.1",

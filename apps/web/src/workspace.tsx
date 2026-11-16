@@ -1,37 +1,47 @@
-import { LeadsPanel } from "./presentation/leads.tsx";
-import { WorkFinder } from "./work-finder.tsx";
+import { Markdown } from "./markdown.tsx";
+import type { ResourceSelection } from "@abracode/contracts/web/resources";
+import { useWorkspaceNavigation } from "./workspace-state/navigation.ts";
+import { useTranscriptViewport } from "./workspace-state/viewport.ts";
 import { MessageAttachment, RetainedSurfaces } from "./presentation/attachments.tsx";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Workspace presentation consumes the typed Effect atom layer. */
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
-  CopilotKitProvider,
-  CopilotChatInput,
-  CopilotChatAssistantMessage,
-} from "@copilotkit/react-core/v2";
-import { useAtom, useAtomRefresh, useAtomValue, useAtomSet } from "@effect/atom-react";
+import React, { useEffect, useRef, useState } from "react";
+import { WorkspaceProvider } from "./workspace-provider.tsx";
+import { Textarea } from "@abracode/presentation/ui/textarea";
+import { useAtom, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { Exit } from "effect";
-import { useNavigate, useSearch } from "@tanstack/react-router";
-import type { WorkspaceSnapshot } from "../../../src/web/contracts.ts";
-import { bootstrapQuery, stopMutation, resolveResource } from "./data.ts";
+import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
+import { bootstrapQuery, stopMutation } from "./data.ts";
 import { useWorkspace } from "./use-workspace.ts";
 import { requestError } from "./request-state.tsx";
 import { NativeForm, NativePermission } from "./attention.tsx";
-import { Inspector } from "./inspector.tsx";
-import {
-  workspaceSearch,
-  searchForResource,
-  resourceFromSearch,
-  type InspectorTab,
-} from "./navigation.ts";
-import { orderedParts } from "../../../src/web/transcript.ts";
-import type { ResourceSelection } from "../../../src/web/resources.ts";
+import { deferred } from "./deferred.tsx";
+const WorkFinder = deferred<React.ComponentProps<typeof import("./work-finder.tsx").WorkFinder>>(
+  () => import("./work-finder.tsx").then((module) => ({ default: module.WorkFinder })),
+  "Work finder",
+  "deferred-panel",
+  ({ shown }) => shown,
+);
+const LeadsPanel = deferred<
+  React.ComponentProps<typeof import("./presentation/leads.tsx").LeadsPanel>
+>(
+  () => import("./presentation/leads.tsx").then((module) => ({ default: module.LeadsPanel })),
+  "Lead history",
+  "deferred-panel",
+);
+
+const Inspector = deferred<React.ComponentProps<typeof import("./inspector.tsx").Inspector>>(
+  () => import("./inspector.tsx").then((module) => ({ default: module.Inspector })),
+  "Work inspection",
+  "deferred-panel",
+);
+import { workspaceSearch, resourceFromSearch } from "./navigation.ts";
+import { orderedParts } from "@abracode/contracts/web/transcript";
 import { useNativeToolRendering, ToolObservation } from "./presentation/tools.tsx";
 import { useTheme } from "./theme.tsx";
-import { Button } from "./components/ui/button.tsx";
-import { NativeSelect } from "./components/ui/native-select.tsx";
+import { Button } from "@abracode/presentation/ui/button";
+import { NativeSelect } from "@abracode/presentation/ui/native-select";
 
-const Markdown = CopilotChatAssistantMessage.MarkdownRenderer;
 export function Application() {
   const initial = useAtomValue(bootstrapQuery);
   const retry = useAtomRefresh(bootstrapQuery);
@@ -56,9 +66,9 @@ export function Application() {
       </main>
     );
   return (
-    <CopilotKitProvider runtimeUrl="/api/copilotkit" agentId="abra" useSingleEndpoint={false}>
+    <WorkspaceProvider>
       <Workspace key={snapshot.session_id} initial={snapshot} />
-    </CopilotKitProvider>
+    </WorkspaceProvider>
   );
 }
 function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
@@ -83,100 +93,23 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
     loadHistory,
   } = useWorkspace(initial);
   const [sidebar, setSidebar] = useState(false);
+  const [finderOpened, setFinderOpened] = useState(false);
+  useEffect(() => {
+    if (sidebar) setFinderOpened(true);
+  }, [sidebar]);
+
   const [attentionOpen, setAttentionOpen] = useState(true);
   const [retainedViews, setRetainedViews] = useState(false);
   const { theme, setTheme } = useTheme();
-  const route = useSearch({ from: "/" });
-  const navigate = useNavigate({ from: "/" });
-  const scroller = useRef<HTMLDivElement>(null);
-  const transcript = useRef<HTMLDivElement>(null);
-  const nearBottom = useRef(true);
-  const historyAnchor = useRef<{ height: number; top: number } | undefined>(undefined);
-  const viewAnchor = useRef<{ element: HTMLElement; offset: number } | undefined>(undefined);
-  function rememberPosition() {
-    const container = scroller.current;
-    if (!container || nearBottom.current) return;
-    const top = container.getBoundingClientRect().top;
-    const element = [...container.querySelectorAll<HTMLElement>("[data-native-message-id]")].find(
-      (element) => element.getBoundingClientRect().bottom > top,
-    );
-    if (element)
-      viewAnchor.current = { element, offset: element.getBoundingClientRect().top - top };
-  }
-  const resolve = useAtomSet(resolveResource, { mode: "promiseExit" });
-  const selectionRequest = useRef(0);
-  const inspectorOrigin = useRef<HTMLElement | null>(null);
-  const returnInspectorFocus = () => {
-    const origin = inspectorOrigin.current;
-    return (
-      (origin?.isConnected ? origin : null) ??
-      document.querySelector<HTMLElement>('[aria-label="Toggle work finder"]') ??
-      false
-    );
-  };
-  function inspect(target: ResourceSelection) {
-    const request = ++selectionRequest.current;
-    const address = window.location.href;
-    const origin = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    void resolve({ payload: target }).then((result) => {
-      if (request !== selectionRequest.current || window.location.href !== address) return;
-      if (Exit.isFailure(result)) setError(requestError(result.cause));
-      else {
-        inspectorOrigin.current = origin;
-        rememberPosition();
-        void navigate({ search: searchForResource(result.value) });
-        setSidebar(false);
-      }
-    });
-  }
-  const selected = resourceFromSearch(route)?.issue_id;
-  const tab = route.tab ?? "Overview";
-  const setTab = (tab: InspectorTab) => {
-    void navigate({ search: { issue: selected, tab } });
-  };
-  const closeInspector = () => {
-    selectionRequest.current++;
-    rememberPosition();
-    void navigate({ search: {} }).then(() => {
-      requestAnimationFrame(() => {
-        const origin = returnInspectorFocus();
-        if (origin) origin.focus({ preventScroll: true });
-      });
-    });
-  };
+  const navigation = useWorkspaceNavigation(
+    () => viewport.rememberPosition(),
+    () => setSidebar(false),
+    setError,
+  );
+  const { selected, tab, inspect, setTab, closeInspector, returnInspectorFocus } = navigation;
+  const viewport = useTranscriptViewport(messages, loadingHistory, `${selected ?? ""}/${sidebar}`);
+  const { scroller, transcript, bottom, rememberPosition } = viewport;
   const [stopResult, stop] = useAtom(stopMutation, { mode: "promiseExit" });
-  const bottom = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (nearBottom.current && !historyAnchor.current)
-      bottom.current?.scrollIntoView({ block: "end" });
-  }, [messages.at(-1)?.id, messages.at(-1)?.text.length]);
-  useEffect(() => {
-    if (!transcript.current) return;
-    const observer = new ResizeObserver(() => {
-      if (nearBottom.current && !historyAnchor.current)
-        bottom.current?.scrollIntoView({ block: "end" });
-    });
-    observer.observe(transcript.current);
-    return () => observer.disconnect();
-  }, []);
-  useLayoutEffect(() => {
-    const container = scroller.current,
-      anchor = viewAnchor.current;
-    if (container && anchor?.element.isConnected)
-      container.scrollTop +=
-        anchor.element.getBoundingClientRect().top -
-        container.getBoundingClientRect().top -
-        anchor.offset;
-    viewAnchor.current = undefined;
-  }, [selected, sidebar]);
-  useLayoutEffect(() => {
-    const container = scroller.current,
-      anchor = historyAnchor.current;
-    if (container && anchor && !loadingHistory) {
-      container.scrollTop = anchor.top + container.scrollHeight - anchor.height;
-      historyAnchor.current = undefined;
-    }
-  }, [messages[0]?.id, loadingHistory]);
   const managementAttention = workspace.work.management?.entries ?? [];
   const attention =
     workspace.forms.filter((item) => item.active).length + workspace.permissions.length;
@@ -221,18 +154,10 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
       );
       return;
     }
-    selectionRequest.current++;
     setAttentionOpen(true);
-    void navigate({ search: {} }).then(() =>
-      requestAnimationFrame(() => {
-        const form = document.querySelector<HTMLElement>(
-          `[data-native-form-id="${CSS.escape(id)}"]`,
-        );
-        form?.scrollIntoView({ block: "center" });
-        form?.focus({ preventScroll: true });
-      }),
-    );
+    navigation.focusForm(id);
   }
+
   function ask(text: string) {
     setDraft(text);
     requestAnimationFrame(() =>
@@ -298,13 +223,15 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
           </NativeSelect>
         </div>
       </header>
-      <WorkFinder
-        shown={sidebar}
-        close={() => setSidebar(false)}
-        workspace={workspace}
-        open={open}
-        ask={ask}
-      />
+      {(sidebar || finderOpened) && (
+        <WorkFinder
+          shown={sidebar}
+          close={() => setSidebar(false)}
+          workspace={workspace}
+          open={open}
+          ask={ask}
+        />
+      )}
       <main className="main-pane">
         <header className="conversation-header">
           <div>
@@ -327,16 +254,7 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
             </span>
           </Button>
         </header>
-        <div
-          className="conversation-scroll"
-          ref={scroller}
-          onScroll={() => {
-            const element = scroller.current;
-            if (element)
-              nearBottom.current =
-                element.scrollHeight - element.scrollTop - element.clientHeight < 80;
-          }}
-        >
+        <div className="conversation-scroll" ref={scroller} onScroll={viewport.onScroll}>
           {(attention > 0 ||
             workAttention.length > 0 ||
             managementAttention.length > 0 ||
@@ -408,11 +326,7 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
                 className="load-history"
                 disabled={loadingHistory}
                 onClick={() => {
-                  if (scroller.current)
-                    historyAnchor.current = {
-                      height: scroller.current.scrollHeight,
-                      top: scroller.current.scrollTop,
-                    };
+                  viewport.beforeHistory();
                   void loadHistory();
                 }}
               >
@@ -558,9 +472,9 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
           </div>
         </div>
         <footer className="composer-area">
-          {(error || stateError || connectionError) && (
+          {(error || stateError || connectionError || workspace.work_unavailable) && (
             <div role="alert" className="error-banner">
-              {error || stateError || connectionError}
+              {error || stateError || connectionError || workspace.work_unavailable}
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -591,54 +505,66 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
               )}
             </div>
           )}
-          <CopilotChatInput
-            value={draft}
-            onChange={setDraft}
-            onSubmitMessage={() => {
-              if (!pending && !admitting && isReady) void send();
-            }}
-            isRunning={false}
-            textArea={{
-              "aria-label": "Message Abra",
-              placeholder: workspace.busy
-                ? "Queue a message for Abra…"
-                : "Ask Abra to explore, plan, or build…",
-              rows: 2,
-              maxLength: 32768,
-              disabled: !isReady || admitting || Boolean(pending),
-            }}
-            sendButton={{
-              "aria-label": "Send message",
-              disabled: !isReady || admitting || !draft.trim() || Boolean(pending),
-              className: "send-button",
+          <form
+            className="composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!pending && !admitting && isReady && draft.trim()) void send();
             }}
           >
-            {({ textArea, sendButton }) => (
-              <div className="composer">
-                {textArea}
-                <div className="composer-controls">
-                  <span className="muted">{workspace.model ?? "Using the current model"}</span>
-                  <div>
-                    {workspace.busy && (
-                      <Button
-                        variant="outline"
-                        disabled={stopResult.waiting}
-                        onClick={() => {
-                          void stop({ payload: {} }).then((result) => {
-                            if (Exit.isSuccess(result)) refresh();
-                            else setError(requestError(result.cause));
-                          });
-                        }}
-                      >
-                        ■ Stop current Abra turn
-                      </Button>
-                    )}
-                    {sendButton}
-                  </div>
-                </div>
+            <Textarea
+              aria-label="Message Abra"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing &&
+                  event.keyCode !== 229
+                ) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
+              placeholder={
+                workspace.busy
+                  ? "Queue a message for Abra…"
+                  : "Ask Abra to explore, plan, or build…"
+              }
+              rows={2}
+              maxLength={32768}
+              disabled={!isReady || admitting || Boolean(pending)}
+            />
+            <div className="composer-controls">
+              <span className="muted">{workspace.model ?? "Using the current model"}</span>
+              <div>
+                {workspace.busy && (
+                  <Button
+                    variant="outline"
+                    type="button"
+                    disabled={stopResult.waiting}
+                    onClick={() => {
+                      void stop({ payload: {} }).then((result) => {
+                        if (Exit.isSuccess(result)) refresh();
+                        else setError(requestError(result.cause));
+                      });
+                    }}
+                  >
+                    ■ Stop current Abra turn
+                  </Button>
+                )}
+                <Button
+                  type="submit"
+                  aria-label="Send message"
+                  className="send-button"
+                  disabled={!isReady || admitting || !draft.trim() || Boolean(pending)}
+                >
+                  <span aria-hidden="true">↑</span>
+                </Button>
               </div>
-            )}
-          </CopilotChatInput>
+            </div>
+          </form>
           <p className="composer-caption">
             Connected to the main Abra thread · Work continues when you close this page
           </p>

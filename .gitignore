@@ -1,4 +1,19 @@
 node_modules/
+
+# APM dependencies and generated shared skills (restored from apm.lock.yaml)
+apm_modules/
+/.agents/skills/a2ui/
+/.agents/skills/ag-ui-a2ui-integration/
+/.agents/skills/copilotkit/
+/.agents/skills/react-best-practices/
+/.agents/skills/web-design-guidelines/
+/.agents/skills/frontend-design/
+/.agents/skills/retro/
+/.agents/skills/writing-for-agents/
+/.agents/skills/improve-codebase-architecture/
+/.agents/skills/mattpocock-codebase-design/
+/.agents/skills/grilling/
+
 /projects.yaml
 /abracode.yaml
 /abracode.yaml.*.tmp

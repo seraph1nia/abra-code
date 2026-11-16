@@ -1,5 +1,9 @@
-import { IssueId, RequestId, ContentHash } from "../../../src/identities.ts";
-import { workspaceUrls } from "../../../src/web/client.ts";
+/* oxlint-disable effecttsgo/unstable-api-usage -- URL-only use of the pinned Effect 4 HTTP endpoint definitions. */
+import { IssueId, RequestId, ContentHash } from "@abracode/contracts/identities";
+import { HttpApiClient } from "effect/http-api";
+import { workspaceApi } from "@abracode/contracts/web/http-api";
+
+const workspaceUrls = HttpApiClient.urlBuilder(workspaceApi);
 
 /** Binary/HTML navigation uses the same shared endpoint definitions as query atoms. */
 export const api = {

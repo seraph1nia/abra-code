@@ -1,5 +1,6 @@
 // Explicit maintainer operation: downloads metadata/license evidence; never used by startup.
 import fs from "node:fs";
+import { reusableSupplier } from "./check.mjs";
 import { classifyUses } from "./uses.mjs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -28,6 +29,33 @@ for (const entry of fs.readdirSync("node_modules/.pnpm")) {
 const old = fs.existsSync("licenses/inventory.json")
   ? JSON.parse(fs.readFileSync("licenses/inventory.json", "utf8"))
   : undefined;
+// Workspace extraction changes reachability without changing supplier bytes.
+// Refuse this mode if any supplier identity, resolution or retained review changed.
+if (process.argv.includes("--reachability-only")) {
+  if (!old || old.packages.length !== Object.keys(lock.packages).length)
+    throw Error("Supplier set changed; a full license refresh is required");
+  for (const record of old.packages) {
+    const resolution = lock.packages[record.id]?.resolution;
+    if (
+      !resolution ||
+      record.fingerprint !==
+        hash(
+          JSON.stringify({
+            id: record.id,
+            license: record.license,
+            resolution,
+            evidence: record.evidence,
+          }),
+        )
+    )
+      throw Error(`Supplier evidence changed: ${record.id}; run a full refresh`);
+    record.uses = uses.get(record.id);
+  }
+  old.lock_sha256 = hash(lockText);
+  fs.writeFileSync("licenses/inventory.json", JSON.stringify(old, null, 2) + "\n");
+  console.log(`Updated workspace reachability for ${old.packages.length} unchanged suppliers.`);
+  process.exit(0);
+}
 const records = new Map();
 const texts = new Map();
 const sourceNotes = [];
@@ -39,6 +67,21 @@ const request = async (url) => {
 const ids = Object.keys(lock.packages).sort();
 const queue = [...ids];
 async function inspect(id) {
+  if (process.argv.includes("--changed-only")) {
+    const retained = old?.packages.find((record) => record.id === id);
+    if (
+      reusableSupplier(retained, lock.packages[id]?.resolution, (sha) => {
+        try {
+          return fs.readFileSync(`licenses/texts/${sha}.txt`, "utf8");
+        } catch {
+          return undefined;
+        }
+      })
+    ) {
+      records.set(id, { ...retained, installed: installed.has(id), uses: uses.get(id) });
+      return;
+    }
+  }
   const at = id.lastIndexOf("@");
   const name = id.slice(0, at),
     version = id.slice(at + 1);
