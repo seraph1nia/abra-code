@@ -1,26 +1,87 @@
-# Fast feedback and complete acceptance
+# Test selection and budgets
 
-`pnpm test:fast` runs 48 scenarios in `packages/runtime/tests/fast`: identity
-contracts, observation order/scopes, planning prerequisites, canonical report
-validation, AG-UI streams with controlled time, catalog/surfaces, native forms,
-transcript/worker history, attention and real in-memory SQLite finder queries.
-It uses the frozen installed toolchain and no browser, native service, remote
-credentials or repository lifecycle. Optional evidence writes occur only when an
-external `ABRACODE_TEST_EVIDENCE_DIR` is explicitly set.
+Load [the testing skill](../.agents/skills/testing/SKILL.md) as `$testing` or
+native `abra-testing` for implementation, regression selection and final checks.
+Its command table is the agent workflow; `package.json` owns the executable commands.
 
-The twelve pure/stream files moved from `unit` to `fast` unchanged in behavior;
-the in-memory finder scenario moved from integration. File-backed legacy query
-and dangling-dependency scenarios stay in integration. `pnpm test` executes all
-three projects once. `pnpm test:e2e` retains all five native/browser journey files.
-CI runs fast before browser setup, then unit/integration, then end-to-end; no
-scenario is removed or run twice by that partition. Full acceptance still requires
-the commands in [CONTRIBUTING](../CONTRIBUTING.md).
+`pnpm test` retains the fast, unit and integration projects. `pnpm test:all`
+builds the frontend once and runs those projects plus every E2E test. Use
+`test:one <test-file>` for an explicit regression, `test:affected <source-files>`
+for statically imported callers, or `test:fast`, `test:unit`, `test:integration`,
+`test:e2e` and `test:native` for explicit tiers. File-loaded/subprocess inputs
+need explicit test selection. Run full acceptance once on completed work, not
+between small implementation edits.
 
-Package checks use pnpm's dependency graph, with explicit dependent selectors for
-focused shared changes. A passing fast tier or selected package check never stands
-in for final integration/native acceptance. Existing graph fakes remain solely for
-controller fault injection; SQL paging/readiness cases use the shared scoped real
-SQLite fixture rather than a second query implementation.
+The budgets are 10 seconds for focused feedback, 60 seconds for core tests and
+120 seconds for all tests including fixture setup and cleanup. They are targets
+until a complete measured passing run proves them. Lower concurrency on smaller
+hosts with `ABRACODE_TEST_WORKERS`; focused runs default to eight file workers, bounded by available CPUs.
+Full acceptance budgets up to twelve workers across its separate runners.
+Fixture compiler pools default to two Rayon threads to bound nested parallelism.
+Pure fast tests use threads. Unit files reuse fork workers after passing
+both normal and shuffled ordering; each test closes its own state. Process-backed
+integration and native files retain fresh fork isolation because their process
+cancellation/runtime seams require it. The multi-workflow `combined-restart`
+scenario lives in integration with the other real Git/restart checks. Within each runner, files are scheduled by measured duration across projects.
+`test:all` reserves separate core/integration/E2E worker budgets (4/3/5 on
+a twelve-CPU host), starting all three partitions together after one web build.
+This prevents native services and compilers from occupying every worker before
+controller tests can begin. Increasing one global pool to twelve workers caused
+more contention and deadline failures. Native waits poll the existing retained
+work query, then fetch complete Git/OpenSpec/native diagnostics for assertions
+after the target phase is reached. The nine independent OpenSpec
+schema cases own private repositories and can overlap their CLI waits.
+
+The shared Git seed is immutable and owned by the current runner. Its temporary
+root uses the disk-backed test cache so compiler fixtures can use copy-on-write
+suppliers instead of allocating gigabytes on a memory-backed `/tmp`. Each fixture
+copies private working Git metadata and a private bare remote, rebinding origin
+locally. No repository is shared between tests. Setup failures and shutdown
+failures remove their acquired roots; runner teardown removes its seed and any
+unfinished unit fixture directories. Supplier-heavy fixture cleanup uses an owned
+`rm` subprocess to avoid saturating Node’s filesystem worker pool. Tests never push
+to user remotes.
+
+The lock path also had a production performance cost: each acquisition launched
+Node solely to hold `flock`. The default holder now uses POSIX shell builtins with
+the same kernel descriptor lifetime. Tests retain real shared/exclusive exclusion,
+callback-failure cleanup, cancellation and release after owner SIGKILL. Explicit
+Node overrides remain supported. See [API evidence](supported-apis.md).
+
+Git fingerprints also batch untracked file hashing through the real Git command,
+retaining attributes/clean filters, symlinks, staged/unstaged distinctions and
+the exact persisted fingerprint bytes. A 100-file probe over five fingerprints
+fell from 500 Git object processes (1.47s) to ten (0.087s).
+
+The fresh-install test still performs a frozen offline install and its hooks.
+Compiler/HTML fixtures copy only the renderer/compiler dependency closure with
+copy-on-write when supported; unrelated installed CLI suppliers stay immutable
+links. Protocol-only native fixtures link installed external suppliers and
+rebind workspace packages to private writable source; they cannot serve as trusted
+renderer/compiler isolation proof. Both modes preserve private workspace resolution.
+They never run install hooks against shared suppliers. Native journeys live in
+separately schedulable `native-*.test.ts` files; the common fixture is
+`native-fixture.ts`. `test:native` runs all of them. `ABRACODE_TEST_JOURNEY` still
+selects a focused journey through `native.test.ts`. The former native monolith is partitioned into core lifecycle/captured-context,
+research/lightweight and PR-finishing cases, each with its own native state.
+The existing model and communication journeys cover cross-capture/reply contracts;
+the combined stress exercise also retains the original cross-journey comparisons.
+The instrumented soak runner
+sets `ABRACODE_TEST_COMBINED=1` to retain its serialized combined journey receipts.
+
+Repeated-finding, repair-exhaustion and scope-change matrices now have direct
+controller restart regressions in `unit/corrections.test.ts`. The native compact
+journey retains uncertain-scope pause/restart, automatic correction, stronger human
+gates and real skip/archive behavior. Combined soak still repeats all four native
+failure paths. This avoids three redundant native worker lifecycles. Keep policy and
+fault matrices cheap, and retain real Git, durable SQL, process cancellation,
+browser and native-contract checks at their actual boundaries. Timing-sensitive
+notification assertions wait for delivery before comparing retained state. The work
+finder regression controls the debounce clock: an unchanged initial search must
+not reset a page the reader already selected. Native exact-receipt recovery keeps
+a real admission and restart, but seeds the 101 later records through the public
+native storage SDK in the private fixture plugin rather than running 101 model
+turns. The test-only seed RPC is never installed by production.
 
 # Acceptance coverage
 
@@ -64,38 +125,19 @@ The real-server test uses a test-only native RPC probe to invoke the actual regi
 
 The test selects an explicit preserved-branch delivery condition against a disposable bare remote. GitHub merge behavior is tested with fake forge replies; no live GitHub PR or branch protection mutation is part of validation. Real provider/model quality, production forge permissions and a repository's chosen checks still require onboarding verification.
 
-Run:
-
-```sh
-pnpm format:check
-pnpm check
-pnpm typecheck
-pnpm test
-pnpm test:e2e
-pnpm build
-pnpm run doctor
-```
-
-The `test` block in `vite.config.ts` defines three Vitest projects: `unit`, `integration` (30-second timeout for real CLIs), and `e2e` (120-second timeout for the native server). `pnpm test` selects unit and integration; `pnpm test:e2e` selects the native-server test. Cleanup uses Vitest test-scoped hooks. `pnpm exec vp test run` runs all three projects.
+Use the [testing skill](../.agents/skills/testing/SKILL.md) for focused commands
+and [CONTRIBUTING](../CONTRIBUTING.md) for required final acceptance. The runner
+has four projects: fast, unit, integration and E2E. Real boundary tests declare
+their own deadlines; a per-test deadline does not establish the suite time budget.
 
 Skill frontmatter is validated with the bundled skill-creator validator (using a temporary `uv` environment for its PyYAML dependency); linked local references and documented scripts are checked separately.
 
 ## Continuous integration
 
-The `test` workflow runs on pushes to `main` and pull requests targeting `main`, including opened, reopened and updated PRs. Other branch pushes and PR bases do not trigger it. One Ubuntu job uses the Node version pinned in `mise.toml` and pnpm from `package.json`, caches the pnpm store, and runs:
-
-```sh
-pnpm install --frozen-lockfile --prod=false
-pnpm format:check
-pnpm config:schema
-pnpm licenses:check
-pnpm check
-pnpm report:browser:install --with-deps
-pnpm test
-pnpm browser:install --with-deps
-pnpm test:e2e
-pnpm build
-```
+The [test workflow](../.github/workflows/test.yml) runs on pushes to `main` and
+pull requests targeting `main`. It provisions the pinned toolchain and browsers,
+then runs static checks, `pnpm test:all` and the build. Each regression executes
+once in that partition; the workflow owns the exact step order.
 
 The frozen install includes developer dependencies and lifecycle scripts for Effect tooling, and populates the store used by offline installation tests. `pnpm check` includes linting, TypeScript, Effect diagnostics and React report-export and web type checking. Named steps fail on errors without automatically formatting or fixing files. Reporter Playwright Chromium is provisioned before integration tests, and the native browser is provisioned before end-to-end tests. Both setup steps install Ubuntu browser libraries with `--with-deps`; local systems can use the commands without that flag and supply compatible system libraries. Fixtures use temporary repositories, local model endpoints and disposable local bare remotes, with no personal credentials or user-remote pushes.
 
@@ -201,7 +243,7 @@ The browser setup integration test runs the actual doctor entrypoint in a dispos
 
 ## AbraCode source-release acceptance
 
-`pnpm test:e2e` includes two isolated Linux source installations. `installation.test.ts` copies current tracked application assets into a temporary root, runs `pnpm install --frozen-lockfile --prod=false --offline` against the supplier cache populated by the initial frozen install, and checks alternate personal config selection, static validation without state, noninteractive launch diagnostics, generated settings, repeated service/Abra reuse, the native auth command route, explicit config application and legacy-file preservation. It launches/relaunches the normal entry point through a disposable util-linux PTY, observes the AbraCode footer and verifies that the same Abra/service is retained. Selecting another personal file refuses the running service before changing generated settings. Full installs use disk-backed temporary directories (override with `ABRACODE_TEST_INSTALL_ROOT`) and copy supplier packages so install hooks cannot modify another fixture's dependencies. The test pool is bounded to one worker to keep native processes and installation memory bounded. Native config/data/cache/state are isolated; it writes no personal credentials.
+`pnpm test:e2e` includes two isolated Linux source installations. `installation.test.ts` copies current tracked application assets into a temporary root, runs `pnpm install --frozen-lockfile --prod=false --offline` against the supplier cache populated by the initial frozen install, and checks alternate personal config selection, static validation without state, noninteractive launch diagnostics, generated settings, repeated service/Abra reuse, the native auth command route, explicit config application and legacy-file preservation. It launches/relaunches the normal entry point through a disposable util-linux PTY, observes the AbraCode footer and verifies that the same Abra/service is retained. Selecting another personal file refuses the running service before changing generated settings. Full installs use disk-backed temporary directories (override with `ABRACODE_TEST_INSTALL_ROOT`) and copy supplier packages so install hooks cannot modify another fixture's dependencies. File workers are bounded; installations own private state and use copy-on-write supplier copies, except the fresh-install test. Native config/data/cache/state are isolated; it writes no personal credentials.
 
 `native.test.ts` also installs the frozen source fixture, then exercises the installed plugin/CLI against a deterministic loopback provider and disposable local bare Git remotes. It covers controller-owned work, direct foreground/queued prompt denial before provider calls, Abra-only questions/forms, preserved approval identity, config edit/application, declaration removal/restoration, captured settings across restart, delivery and retained history. Browser prerequisites are provisioned explicitly before the suite. Nothing pushes to a user remote or calls a paid provider.
 

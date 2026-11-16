@@ -16,7 +16,7 @@ export function registerSkills(ctx: Context, home: AbsolutePath, central: boolea
       const workflowNames = central
         ? ["orchestration", "openspec-execution", "project-onboarding", "recovery", "browser"]
         : ["openspec-execution", "browser"];
-      const names = [...workflowNames, ...engineeringSkills.map(({ name }) => name)];
+      const names = [...workflowNames, "testing", ...engineeringSkills.map(({ name }) => name)];
       const skills = yield* Effect.forEach(
         names,
         (name) =>

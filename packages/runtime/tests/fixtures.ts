@@ -1,3 +1,5 @@
+import { cp } from "node:fs/promises";
+import { removeFixture } from "./helpers/resources.ts";
 import {
   normalizeBatch,
   batchRequests,
@@ -25,7 +27,7 @@ import {
   WorkDiscoveryQuery,
   type WorkDiscovery,
 } from "@abracode/contracts/visibility/discovery-contracts";
-import { mkdtemp, mkdir, writeFile, readFile, rm, rename } from "../src/filesystem.ts";
+import { mkdtemp, mkdir, writeFile, readFile, rename } from "../src/filesystem.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProcessRunner } from "../src/process.ts";
@@ -754,6 +756,24 @@ export function repo(root: string, name: string) {
   return domainEffect(
     Effect.gen(function* () {
       const path = join(root, name);
+      const seed = process.env.ABRACODE_TEST_REPOSITORY_SEED;
+      if (seed) {
+        yield* Effect.tryPromise({
+          try: () =>
+            Promise.all([
+              cp(join(seed, "repository"), path, { recursive: true }),
+              cp(join(seed, "remote.git"), `${path}.git`, { recursive: true }),
+            ]),
+          catch: CrewError.from,
+        });
+        yield* new Git(new ProcessRunner()).run(Id.AbsolutePath.make(path), [
+          "remote",
+          "add",
+          "origin",
+          join(root, `${name}.git`),
+        ]);
+        return path;
+      }
       yield* mkdir(path, { recursive: true });
       const git = new Git(new ProcessRunner());
       yield* git.run(Id.AbsolutePath.make(path), ["init", "-b", "main"]);
@@ -782,107 +802,111 @@ export function repo(root: string, name: string) {
 }
 export const fixture = domainEffect(
   Effect.gen(function* () {
-    const root = yield* mkdtemp(join(tmpdir(), "abracode-unit-"));
-    yield* mkdir(join(root, ".opencode/agents"), { recursive: true });
-    for (const role of ["explore", "apply", "review", "research"])
-      yield* writeFile(
-        join(root, ".opencode/agents", `${role}.md`),
-        yield* readFile(join(process.cwd(), ".opencode/agents", `${role}.md`), "utf8"),
-      );
-    const runner = new ProcessRunner();
-    const git = new Git(runner);
-    const store = new MemoryStore();
-    const records = new Records(store);
-    const locks = new TestLocks();
-    const work = new FakeWorkGraph();
-    const spec = new FakeSpec();
-    const runtime = new FakeRuntime(git);
-    runtime.managementHome = root;
-    const delivery = new FakeDelivery(git);
-    const config: Config = yield* decode(
-      ConfigSchema,
-      {
-        version: 1,
-        models: { default: { providerID: "fixture", id: "fixture" } },
-        supervisor_model: { providerID: "fixture", id: "fixture" },
-        config_path: join(root, "abracode.yaml"),
-        config_digest: "fixture",
-        home: root,
-        work_database: Id.AbsolutePath.make(join(root, "work.sqlite")),
-        worktree_root: Id.AbsolutePath.make(join(root, "trees")),
-        repository_root: Id.AbsolutePath.make(join(root, "repositories")),
-        default_workflow: "full-openspec",
-        auto_schedule: false,
-        max_workers: 2,
-        explore_capacity: 2,
-        review_capacity: 2,
-        reconcile_interval_ms: 30000,
-        workers: {},
-        commands: { openspec: "openspec", forge: "gh" },
-        repositories: [],
-        max_executions: 2,
-        attention_capacity: 1,
-        research_capacity: 2,
-        progress_timeout_ms: {
-          explore: 900000,
-          apply: 1800000,
-          review: 900000,
-          research: 900000,
-          operation: 300000,
-        },
-      },
-      "Fixture configuration",
+    const root = yield* mkdtemp(
+      join(process.env.ABRACODE_TEST_REPOSITORY_SEED ?? tmpdir(), "abracode-unit-"),
     );
-    yield* writeFile(
-      config.config_path,
-      "version: 1\nmodels: { default: { providerID: fixture, id: fixture } }\nrepositories: []\n",
-    );
-    runtime.profiles = config.workers;
-    const onboarding = new Onboarding(
-      records,
-      git,
-      runner,
-      Id.Executable.make("openspec"),
-      config.repository_root,
-      locks,
-      config,
-    );
-    for (const id of ["frontend", "api", "worker"].map((value) => Id.RepositoryId.make(value)))
-      yield* onboarding.register(
+    return yield* Effect.gen(function* () {
+      yield* mkdir(join(root, ".opencode/agents"), { recursive: true });
+      for (const role of ["explore", "apply", "review", "research"])
+        yield* writeFile(
+          join(root, ".opencode/agents", `${role}.md`),
+          yield* readFile(join(process.cwd(), ".opencode/agents", `${role}.md`), "utf8"),
+        );
+      const runner = new ProcessRunner();
+      const git = new Git(runner);
+      const store = new MemoryStore();
+      const records = new Records(store);
+      const locks = new TestLocks();
+      const work = new FakeWorkGraph();
+      const spec = new FakeSpec();
+      const runtime = new FakeRuntime(git);
+      runtime.managementHome = root;
+      const delivery = new FakeDelivery(git);
+      const config: Config = yield* decode(
+        ConfigSchema,
         {
-          id,
-          path: Id.AbsolutePath.make(yield* repo(root, id)),
-          verification: [[process.execPath, "-e", "process.exit(0)"]],
+          version: 1,
+          models: { default: { providerID: "fixture", id: "fixture" } },
+          supervisor_model: { providerID: "fixture", id: "fixture" },
+          config_path: join(root, "abracode.yaml"),
+          config_digest: "fixture",
+          home: root,
+          work_database: Id.AbsolutePath.make(join(root, "work.sqlite")),
+          worktree_root: Id.AbsolutePath.make(join(root, "trees")),
+          repository_root: Id.AbsolutePath.make(join(root, "repositories")),
+          default_workflow: "full-openspec",
+          auto_schedule: false,
+          max_workers: 2,
+          explore_capacity: 2,
+          review_capacity: 2,
+          reconcile_interval_ms: 30000,
+          workers: {},
+          commands: { openspec: "openspec", forge: "gh" },
+          repositories: [],
+          max_executions: 2,
+          attention_capacity: 1,
+          research_capacity: 2,
+          progress_timeout_ms: {
+            explore: 900000,
+            apply: 1800000,
+            review: 900000,
+            research: 900000,
+            operation: 300000,
+          },
         },
-        false,
+        "Fixture configuration",
       );
-    const { controller, setup, scheduler } = createWorkflow(
-      config,
-      records,
-      work,
-      spec,
-      git,
-      runtime,
-      delivery,
-      locks,
-    );
-    return {
-      root,
-      git,
-      records,
-      locks,
-      work,
-      spec,
-      runtime,
-      delivery,
-      config,
-      onboarding,
-      controller,
-      setup,
-      scheduler,
-      close: () =>
-        controller.close().pipe(Effect.andThen(rm(root, { recursive: true, force: true }))),
-    };
+      yield* writeFile(
+        config.config_path,
+        "version: 1\nmodels: { default: { providerID: fixture, id: fixture } }\nrepositories: []\n",
+      );
+      runtime.profiles = config.workers;
+      const onboarding = new Onboarding(
+        records,
+        git,
+        runner,
+        Id.Executable.make("openspec"),
+        config.repository_root,
+        locks,
+        config,
+      );
+      for (const id of ["frontend", "api", "worker"].map((value) => Id.RepositoryId.make(value)))
+        yield* onboarding.register(
+          {
+            id,
+            path: Id.AbsolutePath.make(yield* repo(root, id)),
+            verification: [[process.execPath, "-e", "process.exit(0)"]],
+          },
+          false,
+        );
+      const { controller, setup, scheduler } = createWorkflow(
+        config,
+        records,
+        work,
+        spec,
+        git,
+        runtime,
+        delivery,
+        locks,
+      );
+      return {
+        root,
+        git,
+        records,
+        locks,
+        work,
+        spec,
+        runtime,
+        delivery,
+        config,
+        onboarding,
+        controller,
+        setup,
+        scheduler,
+        close: () =>
+          controller.close().pipe(Effect.ensuring(Effect.promise(() => removeFixture(root)))),
+      };
+    }).pipe(Effect.onError(() => Effect.promise(() => removeFixture(root))));
   }),
 );
 type PlanningChoices = Pick<Issue, "openspec_schema" | "require_plan_approval">;

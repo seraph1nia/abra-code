@@ -17,7 +17,7 @@ pnpm typecheck
 
 The native journey requires the frozen supplier cache, Git, util-linux `flock`, and a previously provisioned compatible Chromium for agent-browser. Follow [browser prerequisites](../operations.md#browser-cli); browser installation is an explicit contributor setup step, never a recipe's automatic repair. `pnpm browser:install` provisions the browser if needed. Missing binaries/libraries must fail with the actual command output. Do not start or restart the operator's AbraCode service.
 
-The harness in [native.test.ts](../../packages/runtime/tests/e2e/native.test.ts) creates its own installation root using [install.ts](../../packages/runtime/tests/e2e/install.ts), isolated native config/data/cache/state, loopback ports/provider, local repositories and bare remotes. It checks the native server's `server.info()` and activates the central location before driving it. Worker preflight waits for the worker plugin to become active. A process merely listening is not sufficient health evidence.
+The shared harness in [native-fixture.ts](../../packages/runtime/tests/e2e/native-fixture.ts) creates its own installation root using [install.ts](../../packages/runtime/tests/e2e/install.ts), isolated native config/data/cache/state, loopback ports/provider, local repositories and bare remotes. It checks the native server's `server.info()` and activates the central location before driving it. Worker preflight waits for the worker plugin to become active. A process merely listening is not sufficient health evidence.
 
 ## Drive and retain evidence
 
@@ -65,6 +65,10 @@ and uses no user repository or remote. Contributor fixtures remain disposable.
 
 The full native fixture continues to use its own authenticated native service for administrative setup and worker inspection. Its controller/approval/finishing assertions and deterministic-provider limits remain separate from the browser field journey. The new browser does not expose that native administrative API.
 
+For complete current native coverage use `pnpm test:native`; the explicit
+`native.test.ts` path selects the core journey or `ABRACODE_TEST_JOURNEY` subset.
+The independently scheduled native files preserve the other feature journeys.
+
 ## Recorded exercise
 
 Executed on 2026-10-17 using:
@@ -78,7 +82,8 @@ ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-engineering-journey \
 
 Observed one native test passed in 105.29 seconds. The consumer invocation returned exit 1 before the scoped source edit and exit 0 afterward with `sample consumer observed sample`. Independent Review read the untracked proof under matching controller receipts; the unavailable runtime audit case retained `not_verified` and an open decision without delivery. The seeded historical capture remained unchanged across the native restart, and fresh preflight selected current defaults. After the server/provider stopped and the temporary installation root was removed, `native.log` and `native-engineering.json` remained at the named external paths; the JSON recorded `result: pass` and `cleanup_complete: true`. This focused run excludes the separate PR-feedback/post-merge-residue assertions and does not measure autonomous model quality.
 
-Finishing behavior requires the full default native run. The focused engineering recipe excludes the additional PR synchronization and native finishing forms; neither planning artifacts nor an older engineering result establish those acceptance cases.
+Finishing behavior uses `pnpm test:one packages/runtime/tests/e2e/native-finishing.test.ts`
+or the complete `pnpm test:native` run. The focused engineering recipe excludes the additional PR synchronization and native finishing forms; neither planning artifacts nor an older engineering result establish those acceptance cases.
 
 Full acceptance completed on 2026-10-18: `pnpm check`, `pnpm test` (349 tests in 59 files), `pnpm test:e2e` (both native and source-installation tests), `pnpm licenses:check`, and strict validation of `add-worker-engineering-skills` passed. The full native run used `ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-engineering-final-acceptance`; its JSON recorded `result: pass` and `cleanup_complete: true` after teardown. It covered the PR-feedback/post-merge-residue path in addition to the focused engineering journey.
 

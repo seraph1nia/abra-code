@@ -1,16 +1,18 @@
 # Independent Review handoff
 
-Implementation and technical acceptance are complete. Task 10.5 remains open only
-for submission to independent Review through Abra's controller. This is a prepared
-handoff, not a Review report or lifecycle transition.
+Implementation and technical acceptance are complete. On 2026-11-16 the user
+explicitly accepted the result and requested that it be marked successful. Task
+10.5 is closed under that acceptance, with independent Review submission waived.
+This document remains an optional future Review handoff; it is not a Review report
+or controller lifecycle transition.
 
 Review the current uncommitted checkout at `/home/bart/Projects/abra-code`, including
 new workspace files. The verified product digest and exact per-file hashes are in
 `/tmp/abracode-refactor-final-fkv2j2r_/verified-product-source.json`. The acceptance
 index is `acceptance-summary.json` beside it; the durable narrative is
-[refactor evidence](../../../docs/verification/runtime-refactor.md).
+[refactor evidence](../../../../docs/verification/runtime-refactor.md).
 
-The [execution skill](../../../.agents/skills/openspec-execution/SKILL.md) states:
+The [execution skill](../../../../.agents/skills/openspec-execution/SKILL.md) states:
 “Review inspects implementation read-only and submits `abra_review_report`”. The
 controller owns independent Review progression and retained human checkpoints.
 No matching Supervisor/controller tools are available here; do not manufacture an

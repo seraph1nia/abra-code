@@ -161,22 +161,44 @@ export class Git {
         .update(scope ? "" : head)
         .update(tracked)
         .update(staged);
+      const entries: Array<{ name: string; link?: string }> = [];
       for (const name of untracked.split("\0").filter(Boolean).sort()) {
         const file = join(path, name);
         const stat = yield* lstat(file);
-        if (stat.isSymbolicLink())
-          hash
-            .update(name)
-            .update("symlink:")
-            .update(yield* readlink(file));
-        else if (stat.isFile())
-          hash.update(name).update(yield* this.run(path, ["hash-object", "--", name]));
+        if (stat.isSymbolicLink()) entries.push({ name, link: yield* readlink(file) });
+        else if (stat.isFile()) entries.push({ name });
         else
           return yield* new CrewError(
             "CONTENT_UNAVAILABLE",
             "Special untracked path prevents content observation",
           );
       }
+      // Keep Git's attributes/clean filters and object format. Batch only the
+      // process boundary; the persisted fingerprint byte order stays unchanged.
+      const files = entries.filter((entry) => entry.link === undefined);
+      const objects: string[] = [];
+      for (let offset = 0; offset < files.length; offset += 64) {
+        const batch = files.slice(offset, offset + 64);
+        const values = (yield* this.run(path, [
+          "hash-object",
+          "--",
+          ...batch.map((entry) => entry.name),
+        ])).split("\n");
+        if (
+          values.length !== batch.length ||
+          values.some((value) => !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(value))
+        )
+          return yield* new CrewError(
+            "CONTENT_UNAVAILABLE",
+            "Git object observation is incomplete",
+          );
+        objects.push(...values);
+      }
+      let index = 0;
+      for (const entry of entries)
+        hash
+          .update(entry.name)
+          .update(entry.link === undefined ? objects[index++]! : `symlink:${entry.link}`);
       return Fingerprint.make(hash.digest("hex"));
     }.bind(this),
     domainEffect,

@@ -48,6 +48,7 @@ test("portable registration preserves local skills centrally and at foreign loca
     }
     assert.equal(inventory.has("abra-orchestration"), central);
     assert.ok(inventory.has("abra-openspec-execution"));
+    assert.ok(inventory.has("abra-testing"));
   }
 });
 

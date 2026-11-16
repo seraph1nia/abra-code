@@ -25,6 +25,7 @@ interface Context {
   failExploreOnce: () => void;
   feedback: (issue: IssueId) => Promise<typeof FeedbackPageSchema.Type>;
   eventually: <T>(action: () => Promise<T | undefined>, timeout?: number) => Promise<T>;
+  work: (id: string) => Promise<{ phase?: string }>;
 }
 export async function prFeedbackLifecycle({
   root,
@@ -36,6 +37,7 @@ export async function prFeedbackLifecycle({
   failExploreOnce,
   feedback,
   eventually,
+  work,
 }: Context) {
   // Complete PR feedback lifecycle against a recording local forge, with real native workers and Git preservation.
   const feedbackPath = await run(repo(root, "feedback"));
@@ -90,7 +92,12 @@ export async function prFeedbackLifecycle({
   failExploreOnce();
   await invoke("abra_work_start", { issue_id: feedbackIssue.id });
   const feedbackStatus = () => invoke("abra_work_status", { issue_id: feedbackIssue.id });
+  const atPhase = async (phase: string) => {
+    const retained = await work(feedbackIssue.id);
+    return [phase, "failed", "blocked", "recovery_required"].includes(retained.phase ?? "");
+  };
   const exhausted = await eventually(async () => {
+    if (!(await atPhase("failed"))) return undefined;
     const current = (await feedbackStatus()).execution!;
     if (
       current.current_phase === "failed" &&
@@ -107,10 +114,12 @@ export async function prFeedbackLifecycle({
   }, 40000);
   await invoke("abra_work_control", { issue_id: feedbackIssue.id, action: "retry" });
   let feedbackExecution: Execution = await eventually(async () => {
+    if (!(await atPhase("awaiting_merge"))) return undefined;
     const status = await feedbackStatus();
     if (["blocked", "failed", "recovery_required"].includes(status.execution!.current_phase))
       throw Error(JSON.stringify(status));
     return status.execution!.current_phase === "awaiting_merge" &&
+      status.execution!.operation?.status === "completed" &&
       status.execution!.feedback?.actions.some(
         (a) => a.kind === "reviewers" && a.schema_version === 2 && a.preflight?.retryable,
       )
@@ -285,10 +294,12 @@ export async function prFeedbackLifecycle({
   correctingForge.check = "pass";
   await writeFile(forgeState, JSON.stringify(correctingForge));
   feedbackExecution = await eventually(async () => {
+    if (!(await atPhase("awaiting_merge"))) return undefined;
     const status = await feedbackStatus();
     if (["blocked", "failed", "recovery_required"].includes(status.execution!.current_phase))
       throw Error(JSON.stringify(status));
     return status.execution!.current_phase === "awaiting_merge" &&
+      status.execution!.operation?.status === "completed" &&
       status.execution!.delivered_commit !== feedbackHead &&
       status.execution!.feedback?.actions.some(
         (a) => a.kind === "reply" && a.status === "uncertain",
@@ -342,10 +353,13 @@ export async function prFeedbackLifecycle({
   }, 40000);
   await answerDisposition(adoption.form_id!, { action: "authorize" });
   feedbackExecution = await eventually(async () => {
+    if (!(await atPhase("awaiting_merge"))) return undefined;
     const current = (await feedbackStatus()).execution!;
     if (["blocked", "failed", "recovery_required"].includes(current.current_phase))
       throw Error(JSON.stringify(current));
-    return current.current_phase === "awaiting_merge" && current.delivered_commit !== lateHead
+    return current.current_phase === "awaiting_merge" &&
+      current.operation?.status === "completed" &&
+      current.delivered_commit !== lateHead
       ? current
       : undefined;
   }, 40000);

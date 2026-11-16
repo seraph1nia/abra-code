@@ -17,6 +17,14 @@ The planning observer uses Git's `rev-parse --verify --end-of-options`, literal-
 
 ## OpenCode contracts
 
+Kernel lock holders use `flock --no-fork` with POSIX `/bin/sh` builtins: stdout
+announces acquisition, then `read` holds the inherited descriptor until stdin EOF.
+Shared/exclusive flags, conflict exit 75, cancellation and process-death release
+remain unchanged. `ABRACODE_NODE_BINARY`, when explicitly set, retains the previous
+Node holder. Independent-process and owner-SIGKILL regressions exercise this ABI.
+A 100-acquisition local probe measured 2691 ms with the default Node holder and
+303 ms with the shell holder; these are setup costs, not lock-contention latency.
+
 The retained-read boundary also uses util-linux `flock --shared` for bounded
 concurrent captures against the existing exclusive controller lock. Independent
 helper-process tests verify shared coexistence, exclusive writer refusal/release
@@ -545,3 +553,15 @@ The existing Streamdown 1.6.11 dependency is declared directly by the web consum
 and used through its public `Streamdown`/`StreamdownProps` export. Its original
 Markdown/code/table/math/diagram rendering is deferred together; no private deep
 imports, copied renderer or excluded language/theme features are used.
+
+## Batched Git fingerprint reads
+
+`Git.fingerprint` uses bounded `git hash-object -- <files...>` batches instead
+of launching Git once per untracked regular file. Git still owns clean filters
+and object format; symlinks retain their raw target bytes. Sorted filename/hash
+concatenation, HEAD and separate staged/unstaged diffs retain the previous
+persisted fingerprint format. `git-fingerprint.test.ts` compares the old and new
+algorithms through actual Git with CRLF attributes, mixed index/worktree edits,
+symlinks, leading hyphens, whitespace, Unicode and newline filenames across a
+batch boundary. The 100-file, five-fingerprint probe changed from 500 object
+processes/1471ms to ten/87ms on the development host.

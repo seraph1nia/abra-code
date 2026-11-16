@@ -17,6 +17,7 @@ import { workspaceServer } from "../../src/web/server.ts";
 import { catalogId } from "../../src/web/surfaces.ts";
 import { webGateway } from "../../src/web/protocol.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
+import { receiptHistoryProbe } from "../helpers/native-receipts.ts";
 
 type Native = ReturnType<typeof OpenCode.make>;
 type BrowserPage = Awaited<ReturnType<Awaited<ReturnType<typeof launchReportBrowser>>["newPage"]>>;
@@ -32,15 +33,14 @@ async function prepareOldAdmission(
     (receipt) => receipt.status === "admitted",
   );
   assert.ok(original);
-  for (let index = 0; index < 101; index++)
-    await Effect.runPromise(
-      backend.submit({
-        request_id: `native-receipt-history-${index}`,
-        text: `AbraCode receipt history fixture ${index}`,
-        delivery: "queue",
-      }),
+  const providerBefore = input.providerCount();
+  const seeded = await input.client
+    .rpc(receiptHistoryProbe)
+    .seedReceiptHistory(
+      { session: input.session, request_id: original.request_id },
+      { location: { directory: input.home } },
     );
-  await input.client.session.wait({ sessionID: input.session });
+  assert.deepEqual(seeded, { count: 101 });
   assert.equal(
     (await Effect.runPromise(backend.snapshot)).receipts.some(
       (receipt) => receipt.request_id === original.request_id,
@@ -57,7 +57,6 @@ async function prepareOldAdmission(
       { location: { directory: input.home } },
     ),
   );
-  const providerBefore = input.providerCount();
   const pending = {
     request_id: original.request_id,
     text: original.text,
@@ -109,6 +108,7 @@ async function prepareOldAdmission(
         request_id: original.request_id,
         message_id: original.message_id,
         later_receipts: 101,
+        history_setup: "Seeded native storage; original admission is real",
         replayed_inputs: replayed,
         native_restart: true,
         foreign_session_refused: true,
@@ -148,7 +148,14 @@ export async function workspaceJourney(input: {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(web.origin);
-    await page.getByRole("textbox", { name: "Message Abra" }).waitFor();
+    await page
+      .getByRole("textbox", { name: "Message Abra" })
+      .waitFor({ timeout: 10000 })
+      .catch((cause: unknown) => {
+        throw new Error(`Workspace did not mount; browser errors: ${JSON.stringify(errors)}`, {
+          cause,
+        });
+      });
     let ordinal = 0;
     async function command(tool: string, args: Record<string, unknown>, question?: string) {
       const text =

@@ -149,6 +149,7 @@ if (values["dry-run"]) {
       ...process.env,
       ABRACODE_TEST_EVIDENCE_DIR: dir,
       ABRACODE_TEST_METRICS: "1",
+      ABRACODE_TEST_COMBINED: "1",
       ABRACODE_TEST_IDLE_MS: String(idleSeconds * 1000),
       ABRACODE_TEST_OPERATIONAL: "1",
     };

@@ -1,7 +1,7 @@
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { parseDocument } from "yaml";
 import assert from "node:assert/strict";
-import { test } from "vite-plus/test";
+import { test as baseTest } from "vite-plus/test";
 import { readFile, writeFile, access, cp, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { OpenSpec } from "../../src/openspec/adapter.ts";
@@ -11,6 +11,10 @@ import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import * as Id from "../../src/identities.ts";
 import { verifiedSpec } from "../helpers/spec-review.ts";
+
+// Each case owns its Git repositories, native schema and controller. Overlap
+// CLI waits without sharing mutable repositories or process-wide environment.
+const test = baseTest.concurrent;
 
 async function prepare(
   t: { onTestFinished: (cleanup: () => Promise<void>) => void },

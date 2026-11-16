@@ -1,6 +1,7 @@
+import { removeFixture } from "../helpers/resources.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { writeFile, readFile, rm, mkdir, readdir } from "node:fs/promises";
+import { writeFile, readFile, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { installSource, installationRoot, interactiveLaunch, command } from "./install.ts";
 import { webJourney } from "./web.ts";
@@ -34,10 +35,10 @@ test(
       try {
         await run("stop.ts");
       } finally {
-        await rm(root, { recursive: true, force: true });
+        await removeFixture(root);
       }
     });
-    await installSource(home);
+    await installSource(home, { fresh: true });
     const pluginRoot = join(home, ".opencode/plugins/abracode");
     const plugin = JSON.parse(await readFile(join(pluginRoot, "package.json"), "utf8"));
     assert.equal("./tui" in plugin.exports, false);

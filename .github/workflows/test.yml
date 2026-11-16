@@ -31,15 +31,11 @@ jobs:
         run: pnpm licenses:check
       - name: Check lint, types, and Effect diagnostics
         run: pnpm check
-      - name: Run pure and in-memory tests
-        run: pnpm test:fast
       - name: Install reporter browser prerequisites
         run: pnpm report:browser:install --with-deps
-      - name: Run unit and integration tests
-        run: pnpm exec vp test run --project unit --project integration
       - name: Install browser prerequisites
         run: pnpm browser:install --with-deps
-      - name: Run end-to-end tests
-        run: pnpm test:e2e
+      - name: Run complete test suite
+        run: pnpm test:all
       - name: Build plugin
         run: pnpm build

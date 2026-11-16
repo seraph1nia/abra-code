@@ -33,12 +33,13 @@ export function WorkFinder({
   const [offset, setOffset] = useState(0);
   const [fleetOpen, setFleetOpen] = useState(false);
   useEffect(() => {
+    if (search === settled) return;
     const timer = setTimeout(() => {
       setSettled(search);
       setOffset(0);
     }, 200);
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [search, settled]);
   const query: WorkDiscovery = {
     state,
     search: settled,

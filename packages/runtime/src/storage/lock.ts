@@ -35,6 +35,18 @@ export class FileLocks implements Locks {
           try: () => mkdir(this.root, { recursive: true, mode: 0o700 }),
           catch: CrewError.from,
         });
+        // The holder only needs to announce readiness and wait for stdin EOF.
+        // POSIX builtins avoid starting a Node VM on every lock acquisition.
+        // Keep the explicit Node override for existing operator environments.
+        const node = process.env.ABRACODE_NODE_BINARY;
+        const holder =
+          node !== undefined
+            ? [
+                node,
+                "-e",
+                'process.stdout.write("locked\\n");process.stdin.resume();process.stdin.on("end",()=>process.exit(0))',
+              ]
+            : ["/bin/sh", "-c", 'printf "locked\\n"; read -r abra_lock_release'];
         const child = yield* Effect.acquireRelease(
           Effect.sync(() =>
             spawn(
@@ -46,9 +58,7 @@ export class FileLocks implements Locks {
                 "75",
                 ...(waitSeconds ? ["-w", String(waitSeconds)] : ["-n"]),
                 join(this.root, `${key}.lock`),
-                process.env.ABRACODE_NODE_BINARY ?? "node",
-                "-e",
-                'process.stdout.write("locked\\n");process.stdin.resume();process.stdin.on("end",()=>process.exit(0))',
+                ...holder,
               ],
               { stdio: ["pipe", "pipe", "pipe"] },
             ),

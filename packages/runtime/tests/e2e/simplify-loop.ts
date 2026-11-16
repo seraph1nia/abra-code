@@ -64,6 +64,7 @@ export async function simplifyLoopJourney(o: {
   client: any;
   invoke: (tool: string, args: any) => Promise<any>;
   eventually: <T>(action: () => Promise<T | undefined>, timeout?: number) => Promise<T>;
+  work: (id: string) => Promise<{ phase?: string; error?: string }>;
   restart: () => Promise<void>;
   observe: (value: unknown) => void;
 }) {
@@ -112,8 +113,14 @@ export async function simplifyLoopJourney(o: {
       })
     ).issue;
   const status = (id: string) => o.invoke("abra_work_status", { issue_id: id });
-  const wait = (id: string, predicate: (s: any) => boolean) =>
+  const wait = (id: string, predicate: (s: any) => boolean, phase?: string) =>
     o.eventually(async () => {
+      if (phase) {
+        const work = await o.work(id);
+        if (["failed", "recovery_required"].includes(work.phase ?? ""))
+          throw Error(JSON.stringify(work));
+        if (work.phase !== phase) return undefined;
+      }
       const s = await status(id);
       if (predicate(s)) return s;
       if (["failed", "recovery_required"].includes(s.execution.current_phase))
@@ -127,7 +134,11 @@ export async function simplifyLoopJourney(o: {
     }, 90000);
   const routine = await create("routine");
   await o.invoke("abra_work_start", { issue_id: routine.id });
-  const finished = await wait(routine.id, (s) => s.execution.current_phase === "awaiting_merge"),
+  const finished = await wait(
+      routine.id,
+      (s) => s.execution.current_phase === "awaiting_merge",
+      "awaiting_merge",
+    ),
     e = finished.execution;
   assert.equal(e.openspec_schema_binding.name, "abra-compact-v1");
   assert.equal(e.openspec_schema_binding.source, "project");
@@ -173,6 +184,7 @@ export async function simplifyLoopJourney(o: {
   const planned = await wait(
     stronger.id,
     (s) => s.execution.current_phase === "awaiting_plan_approval",
+    "awaiting_plan_approval",
   );
   const plan = await o.invoke("abra_work_approve", { issue_id: stronger.id, kind: "plan" });
   assert.ok(plan.form_id);
@@ -216,8 +228,14 @@ export async function simplifyLoopJourney(o: {
     },
   });
 
-  // Keep the PR fixture single-owned; other cases stop before publication.
-  for (const kind of ["repeated", "exhausted", "uncertain", "scope-change"] as const) {
+  // The native boundary keeps uncertain-scope pause/restart. Repeated findings,
+  // exhaustion and scope-change matrices run through the real controller in
+  // unit/corrections.test.ts; the opt-in combined soak repeats them natively.
+  const cases =
+    process.env.ABRACODE_TEST_COMBINED === "1"
+      ? (["repeated", "exhausted", "uncertain", "scope-change"] as const)
+      : (["uncertain"] as const);
+  for (const kind of cases) {
     if (kind === "exhausted")
       await o.invoke("abra_project_onboard", {
         id: "compact-loop",
@@ -231,6 +249,7 @@ export async function simplifyLoopJourney(o: {
         (s) =>
           s.execution.current_phase === "blocked" &&
           s.execution.decisions?.some((d: any) => d.status === "open"),
+        "blocked",
       ),
       rounds = blocked.execution.rounds?.length ?? 0,
       decision = blocked.execution.decisions.find((d: any) => d.status === "open");
@@ -309,7 +328,11 @@ export async function simplifyLoopJourney(o: {
     })
   ).issue;
   await o.invoke("abra_work_start", { issue_id: skipped.id });
-  const complete = await wait(skipped.id, (s) => s.execution.current_phase === "completed");
+  const complete = await wait(
+    skipped.id,
+    (s) => s.execution.current_phase === "completed",
+    "completed",
+  );
   assert.equal(complete.execution.openspec_schema_binding.name, "abra-compact-v1");
   const metadata = await run(
     git.run(AbsolutePath.make(`${skipPath}.git`), [

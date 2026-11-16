@@ -16,21 +16,14 @@ Use the Linux Node and pnpm versions pinned in `mise.toml`. Install with `pnpm i
 
 Read [AGENTS.md](AGENTS.md), [architecture](docs/architecture.md), [API evidence](docs/supported-apis.md), [testing](docs/testing.md) and the relevant OpenSpec change before editing. Preserve controller-owned approvals, execution identity and native resource ownership. Contributor fixes do not authorize production delivery or resource deletion.
 
-For a projection or contract edit, start with `pnpm test:fast` (pure data,
-controlled streams and real in-memory SQLite; no Git/browser/native service).
-Run only affected package checks and focused behavior tests while implementing.
-Batch related edits; run the full acceptance commands once after implementation.
-`pnpm check:packages` uses pnpm's dependency order. To check a shared contract and
-all consumers use:
-
-```sh
-pnpm --filter '...@abracode/contracts' --filter '!abracode' --workspace-concurrency=1 -r run check
-pnpm typecheck
-```
-
-For tracked changes relative to a branch, pnpm also supports `--filter '...[main]'`;
-include untracked new workspaces explicitly. Root/configuration changes require
-all packages. Focused checks are not full acceptance.
+For implementation, regression coverage and suite selection, load
+[testing](.agents/skills/testing/SKILL.md) (`$testing` or native `abra-testing`).
+Use `pnpm test:one <test-file>` or `pnpm test:affected <source-files>` while
+implementing, plus relevant package checks. `pnpm test:fast`, `pnpm test:unit`,
+`pnpm test:integration` and `pnpm test:native` select explicit tiers.
+Run the complete suite once on finished work with `pnpm test:all`; it builds the
+web assets and includes every fast, unit, integration and E2E scenario.
+A focused pass does not replace final acceptance.
 
 Required final checks:
 
@@ -38,12 +31,15 @@ Required final checks:
 pnpm config:schema
 pnpm licenses:check
 pnpm check
-pnpm report:browser:install --with-deps
-pnpm test
-pnpm browser:install --with-deps
-pnpm test:e2e
+pnpm test:all
 pnpm build
 ```
+
+Install the existing browser prerequisites once before browser/native tests:
+`pnpm report:browser:install` and `pnpm browser:install` (CI adds `--with-deps`).
+The test time budget includes test fixture setup and cleanup; first-time supplier
+and browser provisioning is separate. See [testing](docs/testing.md) for coverage,
+resource isolation and runtime measurements.
 
 GitHub Actions runs this sequence in one Linux job on pushes to `main` and pull requests targeting `main`. `pnpm check` includes formatting, one strict type-aware lint, dependency-ordered TypeScript, Effect diagnostics and React report-export and web type checking. Checks report failures without automatically fixing files. Superseded runs for the same PR/ref are canceled, and each job has a 30-minute timeout.
 

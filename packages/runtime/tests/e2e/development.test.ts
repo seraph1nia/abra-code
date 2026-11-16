@@ -1,9 +1,10 @@
+import { removeFixture } from "../helpers/resources.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { installSource, installationRoot, command } from "./install.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 
@@ -57,7 +58,7 @@ test(
       }
     };
     try {
-      await installSource(home);
+      await installSource(home, { buildWeb: false, sharedSuppliers: true });
       await writeFile(
         join(home, "personal.yaml"),
         "version: 1\nmodels: {default: {providerID: example, id: example}}\n",
@@ -176,7 +177,7 @@ test(
       try {
         await run("stop.ts");
       } finally {
-        await rm(root, { recursive: true, force: true });
+        await removeFixture(root);
       }
       if (process.env.ABRACODE_TEST_EVIDENCE_DIR) {
         const evidence = process.env.ABRACODE_TEST_EVIDENCE_DIR;

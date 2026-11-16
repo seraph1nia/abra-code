@@ -10,7 +10,7 @@ The native harness registers a repository with OpenSpec removed and creates a `l
 
 ## Driving it with the native harness
 
-After the [recipe prerequisites](../README.md#prepare-and-check-health), run `pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts`. “Small native fix” fails the initial independent Review, takes one approved in-scope correction and completes with verification, Review and delivery receipts and no archive path. “Exhaust native correction budget” remains blocked with one round and an open budget-exhaustion decision. Both load applicable engineering skills before reporting; loading cannot reset that budget.
+After the [recipe prerequisites](../README.md#prepare-and-check-health), run `pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native-research.test.ts`. “Small native fix” fails the initial independent Review, takes one approved in-scope correction and completes with verification, Review and delivery receipts and no archive path. “Exhaust native correction budget” remains blocked with one round and an open budget-exhaustion decision. Both load applicable engineering skills before reporting; loading cannot reset that budget.
 
 Expected health and isolation are the same as the full-spec recipe. Native assertions and the runner's result are the evidence; retain the runner log outside teardown using the recipe invocation.
 

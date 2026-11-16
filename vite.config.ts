@@ -1,5 +1,11 @@
+import { availableParallelism } from "node:os";
+import Sequencer from "./scripts/test-sequencer.ts";
 import { recommended } from "@effect/tsgo/oxlint-presets";
 import { defineConfig } from "vite-plus";
+
+const requestedWorkers = Number(process.env.ABRACODE_TEST_WORKERS ?? 8);
+if (!Number.isSafeInteger(requestedWorkers) || requestedWorkers < 1)
+  throw new Error("ABRACODE_TEST_WORKERS must be a positive integer");
 
 export default defineConfig({
   fmt: {
@@ -36,16 +42,26 @@ export default defineConfig({
     },
   },
   test: {
-    maxWorkers: 1,
+    maxWorkers: Math.min(availableParallelism(), requestedWorkers),
     environment: "node",
+    globalSetup: ["./packages/runtime/tests/global-setup.ts"],
+    sequence: { sequencer: Sequencer },
     projects: [
       {
         extends: true,
-        test: { name: "fast", include: ["packages/runtime/tests/fast/**/*.test.ts"] },
+        test: {
+          name: "fast",
+          pool: "threads",
+          include: ["packages/runtime/tests/fast/**/*.test.ts"],
+        },
       },
       {
         extends: true,
-        test: { name: "unit", include: ["packages/runtime/tests/unit/**/*.test.ts"] },
+        test: {
+          name: "unit",
+          isolate: false,
+          include: ["packages/runtime/tests/unit/**/*.test.ts"],
+        },
       },
       {
         extends: true,
@@ -59,6 +75,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "e2e",
+          maxConcurrency: 2,
           include: ["packages/runtime/tests/e2e/**/*.test.ts"],
           testTimeout: 120_000,
           hookTimeout: 30_000,

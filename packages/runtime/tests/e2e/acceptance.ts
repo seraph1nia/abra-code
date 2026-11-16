@@ -15,6 +15,7 @@ export async function acceptanceJourney(o: {
   supervisor: string;
   invoke: (tool: string, args: unknown) => Promise<any>;
   eventually: <T>(action: () => Promise<T | undefined>, timeout?: number) => Promise<T>;
+  work: (id: string) => Promise<{ phase?: string; issue_status: string; error?: string }>;
   restart: () => Promise<void>;
   seen: Set<string>;
   release: (key: string) => void;
@@ -151,12 +152,27 @@ export async function acceptanceJourney(o: {
     o.release("auth-explore");
     o.release("db-research");
     const plan = await o.eventually(async () => {
+      const work = await o.work(ids.authentication);
+      if (
+        !["awaiting_plan_approval", "failed", "blocked", "recovery_required"].includes(
+          work.phase ?? "",
+        )
+      )
+        return undefined;
       const s = await status("authentication");
       return s.execution.current_phase === "awaiting_plan_approval" ? s.execution : undefined;
     }, 45000);
     assert.equal(plan.apply_session_id, undefined);
     assert.deepEqual(plan.approval_receipts, []);
     const independent = await o.eventually(async () => {
+      const retained = await Promise.all([o.work(ids.database), o.work(ids.flaky)]);
+      if (
+        retained.some((work) =>
+          ["failed", "blocked", "recovery_required"].includes(work.phase ?? ""),
+        )
+      )
+        throw Object.assign(Error(JSON.stringify(retained)), { terminal: true });
+      if (!retained.every((work) => work.issue_status === "closed")) return undefined;
       const database = await status("database"),
         flaky = await status("flaky");
       if (
@@ -248,6 +264,10 @@ export async function acceptanceJourney(o: {
     assert.equal(intent.recipient_session_id, applying.execution.apply_session_id);
     o.release("auth-apply");
     const done = await o.eventually(async () => {
+      const work = await o.work(ids.authentication);
+      if (["failed", "blocked", "recovery_required"].includes(work.phase ?? ""))
+        throw Object.assign(Error(JSON.stringify(work)), { terminal: true });
+      if (work.issue_status !== "closed") return undefined;
       const s = await status("authentication");
       if (["failed", "blocked", "recovery_required"].includes(s.execution.current_phase))
         throw Object.assign(Error(JSON.stringify(s)), { terminal: true });

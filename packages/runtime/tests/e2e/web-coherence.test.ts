@@ -1,6 +1,6 @@
 import { feedbackFixture } from "../helpers/review-evidence.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Disposable browser/HTTP/stream fixtures exercise the shipped frontend. */
-import { test } from "vite-plus/test";
+import { test as baseTest, beforeAll, afterAll } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { reportDocument } from "../helpers/report-document.ts";
@@ -28,7 +28,17 @@ import type { AttentionForm } from "../../src/web/contracts.ts";
 
 import { launchReportBrowser } from "@abracode/report-export/browser";
 
-import { workspaceBrowserFixture as fixture } from "../helpers/workspace-browser.ts";
+import { workspaceBrowserFixture } from "../helpers/workspace-browser.ts";
+
+const test = baseTest.concurrent;
+let browser: Awaited<ReturnType<typeof launchReportBrowser>>;
+beforeAll(async () => {
+  browser = await launchReportBrowser();
+});
+afterAll(async () => {
+  await browser?.close();
+});
+const fixture = () => workspaceBrowserFixture(browser);
 
 type BrowserPage = Awaited<ReturnType<Awaited<ReturnType<typeof launchReportBrowser>>["newPage"]>>;
 async function screenshot(page: BrowserPage, name: string) {
@@ -780,6 +790,8 @@ test("native tool cards use CopilotKit render-only hooks, preserve order and ins
     await page.locator(`[data-presentation="${kind}"]`).waitFor();
   }
   const article = page.locator('[data-native-message-id="msg_ordered"]');
+  await article.getByText("Before cards.", { exact: true }).waitFor();
+  await article.getByText("After cards.", { exact: true }).waitFor();
   const order = await article
     .locator(".message-text, [data-tool-call-id]")
     .evaluateAll((nodes) =>
@@ -1677,10 +1689,18 @@ test("chat stays mounted while the finder searches retained pages, preserving dr
       offset: message.getBoundingClientRect().top - top,
     };
   });
+  // Freeze the initial search debounce until pagination has already advanced.
+  // An unchanged empty search must not send the reader back to page one.
+  await page.clock.install();
+  await page.clock.pauseAt(Date.now() + 100);
   await page.getByRole("button", { name: "Toggle work finder" }).click();
   await page.getByRole("button", { name: "Closed", exact: true }).click();
   await page.getByText(/56 matching tasks/).waitFor();
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByText("51–56 of 56", { exact: true }).waitFor();
+  await page.clock.runFor(250);
+  await page.getByRole("button", { name: /Closed task 55/ }).waitFor({ timeout: 1000 });
+  await page.clock.resume();
   await page.getByRole("button", { name: /Closed task 55/ }).click();
   await page.getByRole("heading", { name: "Closed task 55", exact: true }).waitFor();
   assert.equal(await composer.getAttribute("data-mount-identity"), "same-composer");

@@ -310,3 +310,65 @@ test("manual posture suppresses new automatic repair without erasing the capture
   assert.match(stopped.decisions!.find((d) => d.status === "open")!.question, /budget exhausted/);
   assert.equal(stopped.apply_session_id, e.apply_session_id);
 });
+
+// Policy matrices belong at the controller seam; native-simplify-loop retains
+// real host scope decisions and pause/restart integration.
+for (const kind of ["repeated", "exhausted", "scope-change"] as const)
+  test(`correction stop contract: ${kind} retains its decision across restart without another writer`, async (t) => {
+    const f = await run(fixture);
+    t.onTestFinished(() => run(f.close()));
+    await budget(f, kind === "exhausted" ? 1 : 2);
+    let e = await run(applying(f));
+    f.spec.done = true;
+    for (let round = 0; round < (kind === "scope-change" ? 1 : 2); round++) {
+      f.runtime.success(e.apply_session_id!);
+      e = await run(f.controller.advance(e.issue_id));
+      assert.equal(e.current_phase, "verifying");
+      await run(
+        f.controller.reviewReport(
+          e.review_session_id!,
+          false,
+          kind === "exhausted" ? `Distinct defect ${round}` : "Retained boundary defect",
+          kind === "scope-change" ? "scope_change" : "in_scope",
+          failedSpec,
+        ),
+      );
+      f.runtime.success(e.review_session_id!);
+      try {
+        await run(f.controller.advance(e.issue_id));
+      } catch {
+        /* stopped Review is asserted below */
+      }
+      e = await run(f.controller.get(e.issue_id));
+      if (round === 0 && kind !== "scope-change") assert.equal(e.current_phase, "applying");
+    }
+    assert.equal(e.current_phase, "blocked");
+    assert.equal(e.rounds?.length ?? 0, kind === "scope-change" ? 0 : 1);
+    assert.match(
+      e.decisions!.find((d) => d.status === "open")!.question,
+      kind === "repeated"
+        ? /Repeated correction/
+        : kind === "exhausted"
+          ? /budget exhausted/
+          : /revised scope/,
+    );
+    assert.equal(e.delivered_commit, undefined);
+    const prompts = f.runtime.prompts;
+    const restarted = createWorkflow(
+      f.config,
+      f.records,
+      f.work,
+      f.spec,
+      f.git,
+      f.runtime,
+      f.delivery,
+      f.locks,
+    ).controller;
+    t.onTestFinished(() => run(restarted.close()));
+    await run(restarted.reconcile(e.issue_id));
+    const retained = await run(restarted.get(e.issue_id));
+    assert.equal(retained.current_phase, "blocked");
+    assert.deepEqual(retained.rounds, e.rounds);
+    assert.deepEqual(retained.decisions, e.decisions);
+    assert.equal(f.runtime.prompts, prompts);
+  });

@@ -188,7 +188,9 @@ export async function leadJourney(o: {
     o.invoke("abra_lead_control", { action: "status", id: lead.id }).then((rows: any[]) => rows[0]);
   const answered = await o.eventually(async () => {
     const current = await status();
-    return current.requests[0]?.request.status === "answered" && current.proposals.length === 1
+    return current.requests[0]?.request.status === "answered" &&
+      current.proposals.length === 1 &&
+      current.proposals[0].notified === true
       ? current
       : undefined;
   });

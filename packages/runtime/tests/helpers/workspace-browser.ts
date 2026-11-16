@@ -29,7 +29,8 @@ import { workspaceServer } from "../../src/web/server.ts";
 import { WorkspaceFixture } from "./web.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 
-export async function workspaceBrowserFixture() {
+type Browser = Awaited<ReturnType<typeof launchReportBrowser>>;
+export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
   const source = new WorkspaceFixture();
   const signals = await Effect.runPromise(PubSub.unbounded<void>());
   const scope = await Effect.runPromise(Scope.make());
@@ -284,7 +285,22 @@ export async function workspaceBrowserFixture() {
   const web = await Effect.runPromise(
     workspaceServer({ port: 0, backend }).pipe(Effect.provideService(Scope.Scope, scope)),
   );
-  const browser = await launchReportBrowser();
+  const owner = sharedBrowser ?? (await launchReportBrowser());
+  const contexts = new Set<Awaited<ReturnType<Browser["newContext"]>>>();
+  const newContext = async (options?: Parameters<Browser["newContext"]>[0]) => {
+    const context = await owner.newContext(options);
+    contexts.add(context);
+    return context;
+  };
+  const browser = {
+    newContext,
+    newPage: async (options?: Parameters<Browser["newPage"]>[0]) =>
+      (await newContext(options)).newPage(),
+    close: async () => {
+      await Promise.all([...contexts].map((context) => context.close()));
+      if (!sharedBrowser) await owner.close();
+    },
+  };
   return {
     source,
     backend,
@@ -316,8 +332,11 @@ export async function workspaceBrowserFixture() {
     origin: web.origin,
     changed: () => Effect.runPromise(PubSub.publish(signals, undefined)),
     close: async () => {
-      await browser.close();
-      await Effect.runPromise(Scope.close(scope, Exit.void));
+      try {
+        await browser.close();
+      } finally {
+        await Effect.runPromise(Scope.close(scope, Exit.void));
+      }
     },
   };
 }

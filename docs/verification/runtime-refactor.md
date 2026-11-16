@@ -639,3 +639,12 @@ Independent Review submission remains a controller action. No Supervisor/control
 tools are connected to this Codex session. The completed source and proof are
 prepared for that handoff; no approval, archive, commit, delivery or issue closure
 was fabricated.
+
+## User acceptance
+
+On 2026-11-16, after the remaining controller Review submission was identified as
+the sole blocker, the user explicitly accepted the result and requested success.
+Task 10.5 is closed under that acceptance; independent Review submission was
+waived. This records user acceptance, not an independent Review report or a
+controller approval, archive, commit, delivery or issue closure. Product code and
+its retained verification evidence are unchanged.
