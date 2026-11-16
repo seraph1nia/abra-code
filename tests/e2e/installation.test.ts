@@ -38,6 +38,10 @@ test(
       }
     });
     await installSource(home);
+    const pluginRoot = join(home, ".opencode/plugins/abracode");
+    const plugin = JSON.parse(await readFile(join(pluginRoot, "package.json"), "utf8"));
+    assert.equal("./tui" in plugin.exports, false);
+    assert.equal((await readdir(pluginRoot)).includes("tui.ts"), false);
     await writeFile(
       join(home, "personal.yaml"),
       "version: 1\nmodels: {default: {providerID: example, id: example}}\n",

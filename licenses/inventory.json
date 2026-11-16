@@ -1,7 +1,7 @@
 {
   "version": 1,
   "distribution": "source clone; dependencies downloaded by the operator from their suppliers",
-  "lock_sha256": "36ce40d0fd4f44add9ce5d8a80abcae877796ba64b82262e9d497795d21757c5",
+  "lock_sha256": "fbce8f45131a0c937d70aa041dbe6d0a1e3599730e783ea0a683c418322f8e98",
   "packages": [
     {
       "id": "@0no-co/graphql.web@1.3.4",
@@ -26,6 +26,46 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
+      "id": "@a2ui/markdown-it@0.2.2",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/a2ui-project/a2ui",
+      "author": {
+        "name": "Google"
+      },
+      "registry": "https://registry.npmjs.org/%40a2ui%2Fmarkdown-it/0.2.2",
+      "integrity": "sha512-oj58ybxIPwnRzN2NpvgxrOOwDlZuBKoEtW5U6wRs6SOq1dDjk/zAAkRtb0U52WPSu01gHJOFSGEkuE+Xe09dcQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@a2ui/markdown-it@0.2.2/LICENSE",
+          "sha256": "8c8b5b632d56c4c1658296963c693db5396772a33caaddb9a22593c4155c437a"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "7a87abefcb5e6c26114870634e5b65ecd4cb55df3811ba95ebd73e0a1d7c7af2",
+      "disposition": "reviewed: Apache-2.0 supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
+    },
+    {
+      "id": "@a2ui/react@0.15.0",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/a2ui-project/a2ui",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40a2ui%2Freact/0.15.0",
+      "integrity": "sha512-SkbdIMoRgtYNGh+nSEvK8YHDSAgS8LVFggDMCYdDqrUAWMLb2PS1unYOL8lfkXjskYK/+VoD7sa6X+I2F+F62w==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@a2ui/react@0.15.0/LICENSE",
+          "sha256": "8c8b5b632d56c4c1658296963c693db5396772a33caaddb9a22593c4155c437a"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "1d9c58eb5169be5ca13874883e5a0123a086634ebcdea465eecf177aafa8344f",
+      "disposition": "reviewed: Apache-2.0 supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
+    },
+    {
       "id": "@a2ui/web_core@0.15.0",
       "license": "Apache-2.0",
       "repository": "https://github.com/a2ui-project/a2ui",
@@ -42,7 +82,7 @@
           "sha256": "8c8b5b632d56c4c1658296963c693db5396772a33caaddb9a22593c4155c437a"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "40b09a2473f82e8721712d64055492b60bfa1c14f6003af291c13848e7207969",
       "disposition": "reviewed: Apache-2.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -1259,28 +1299,9 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "9e507bf411bdf534b3b40c2815a7adf31427335f8fa927b18ee44480be301b0c",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
-    },
-    {
-      "id": "@babel/core@7.29.13",
-      "license": "MIT",
-      "repository": "https://github.com/babel/babel",
-      "author": "The Babel Team (https://babel.dev/team)",
-      "registry": "https://registry.npmjs.org/%40babel%2Fcore/7.29.13",
-      "integrity": "sha512-j1nvOQCZYSgp7HLmisnCXFTpVvFODiijQ9QHkORfGKWH6YDtskTEeCJS7eV545GZ9UBzrq0e2xsOd5QQ5PjIqw==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@babel/core@7.29.13/LICENSE",
-          "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
-        }
-      ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
-      "fingerprint": "2e2ed507a7668d87e5886b0fb2a4911bd68d100a25fd8385ba91460196af425c",
-      "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
     {
       "id": "@babel/core@7.29.7",
@@ -1297,7 +1318,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "cf66322398b8778e8a5b47039ac3e78963dc744bea982943c6679393a28d353f",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1316,7 +1337,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "0960870d0e29136c2991865ff9a4494bd83443dc30b9c5804db06fa15424d174",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -1335,7 +1356,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "6d82bb99dc418c2cda81c9a387cbcf7c5a8e625816f768fe85eaa19cee63fe6b",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1354,7 +1375,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "814a1a53761bb2c334d4e3826356739b619995bcb21faae5a97064de8b573865",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -1373,7 +1394,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "ef73c8be54f9e111046173b3aca20ce746514057c8e67818a41d526519cec23f",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -1392,7 +1413,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "e6de316029aa9748b3e487516dc2c1dd562c65a747783cdb8134fa723062ee90",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1411,7 +1432,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "4ca0f79f44888ee324ac29255703b0e74f2538a539fa6f784b040078a2b0aff9",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -1430,7 +1451,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "ddc5c75a0e2f980862b8be9b266897dc75c57d05cd6061100594639f9102a2ed",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1449,7 +1470,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "a1519f04feaf1055339a3761349b7b6ca6ce985156b5adf8a01e8470cbde50c4",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1468,7 +1489,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "4e8d6a93cd5b059c1b801c19b0f258a3880f1fad74606d84a54450c59b4eefed",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -1487,7 +1508,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "661c00aead03838006bb649ad8700954052f055b0e6f98bd7e1f9230539bdc35",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1506,7 +1527,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "6a3bdcad46e1e9daa79d3475681c52e7c47e5cb0944c069381cbe1d8aec2139f",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1525,7 +1546,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "fdb21e40f55dc3e47ffc3ffd6e10337732426879b8f83436ee6806ae5d874dc1",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1544,7 +1565,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "97907e3d1bc2e3ccd401b7ecc5c2274d51258d6aca0b982c17cdbbad9ad53f31",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -1563,7 +1584,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "db66be403ad74d437b97249c91915fb84be4c02ff596fa16492d27f6163167ab",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -1606,7 +1627,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "5e71078213d561a1eef94d1827ce232455bdc472aacbe4793def47543013c433",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1625,7 +1646,7 @@
           "sha256": "4be9d87b56a306293223b490c0d0b245e9e94f39884147bf051a6c7b825aeb30"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "c17567d2efd762d06b4115d103f8319e8387e1120a691cfe42dc725e72a8268d",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -1644,7 +1665,7 @@
           "sha256": "2e97627cb278aa7556fb9e8817368302301a595b6c7582512b8d74c57b773652"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "461b2dddfdcc673070128e262d54f4d9239ed9399305e78e51f40e700d69d9e3",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -1663,7 +1684,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "562114e002dcf6689b5f0b31d46a237522128bc7b3540d99a96b840f465b1dc6",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1682,7 +1703,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "ce1603f0e6e37e36994a5f493894df917c92a5431c5ff731a67dcefd2c94091e",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1701,7 +1722,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "93b0ef764ae96f93d0f24870497aa682c726afbd8925c029b25c928891db9ddf",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -1720,7 +1741,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "09dd96e9020caca1f270d30f5cb38302efc38d14e3f0cfe33141be5b7ad36686",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1739,7 +1760,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "5833f1b89fe23e4e4fc0c35e640de507819f34efc47066512f83108ac65bf1ab",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1758,7 +1779,13 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client", "web-client-build"],
+      "uses": [
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client",
+        "web-client-build"
+      ],
       "fingerprint": "837851f2ff74dc8b66e5f6a0940c13c4fb525317010649d2453bbea4dd0ec7de",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1777,7 +1804,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "586bcaffc8d1db3d49293525a85621d03300b79cdb525c52061eeae309b3b43b",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -1796,7 +1823,7 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "5bce3dccca970a558c4b3ae388f0a616f0600ca6ef4fedb56534c127aa3bfe43",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -1815,9 +1842,47 @@
           "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "5b8862a1e819df679c27927b83b42de4bd7434bdcc69890d524483cdc300844e",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
+    },
+    {
+      "id": "@base-ui/react@1.9.0",
+      "license": "MIT",
+      "repository": "https://github.com/mui/base-ui",
+      "author": "MUI Team",
+      "registry": "https://registry.npmjs.org/%40base-ui%2Freact/1.9.0",
+      "integrity": "sha512-S8CSYosASBKtpL8SWUfS78rFElfLijiCgA7oHOK22jCJ95FULsYyKwBNFOgudt0RA+/7yNc7F81bOvQnRgbBiQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@base-ui/react@1.9.0/LICENSE",
+          "sha256": "07fc1b39d69d14bc7d40482a628f47226258eb01265db68ae684944b916beb2a"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "08724775a4852770865c5de07757069080176cee45527af6bbe61946cd882fd6",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
+    },
+    {
+      "id": "@base-ui/utils@0.5.0",
+      "license": "MIT",
+      "repository": "https://github.com/mui/base-ui",
+      "author": "MUI Team",
+      "registry": "https://registry.npmjs.org/%40base-ui%2Futils/0.5.0",
+      "integrity": "sha512-dYGGcEttjkYiMoa5nHm8vLaJ2UcuTWxo3BFAwOYXeRg/q7UVVvA6cacEIXEs3FgBfK1CGtW1ptElqs7wsx+t9A==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@base-ui/utils@0.5.0/LICENSE",
+          "sha256": "07fc1b39d69d14bc7d40482a628f47226258eb01265db68ae684944b916beb2a"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "3605ffa95095cc817175e4fb5a6fc34a48c6dae8752d966cccc0b828d9da4649",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },
     {
       "id": "@blazediff/core@1.10.0",
@@ -2238,25 +2303,6 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
-      "id": "@copilotkit/react-ui@1.88.0",
-      "license": "MIT",
-      "repository": "https://github.com/CopilotKit/CopilotKit",
-      "author": null,
-      "registry": "https://registry.npmjs.org/%40copilotkit%2Freact-ui/1.88.0",
-      "integrity": "sha512-ucYnmIRji/1I+CLYE4qnk+DeSJC4x1O7+kJ9bAfpvPr1njzW6x5srNbz6IS946AnVDbxaip8aM7hNeXIOY1wJQ==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@copilotkit/react-ui@1.88.0/LICENSE",
-          "sha256": "15a0e5343aea872c0573ad72feb6044b336f162d724cc1673c608e6b37ea071b"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "526b139d52e842c059ae0f0fff22f57827357e5736ab414eedbe364ed1336f3a",
-      "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
       "id": "@copilotkit/runtime-client-gql@1.88.0",
       "license": "MIT",
       "repository": "https://github.com/CopilotKit/CopilotKit",
@@ -2350,6 +2396,25 @@
       "uses": ["web-client"],
       "fingerprint": "9a362bf3b9663d7205034987e33f1c9a7fa31956b19a260ee9d7e7fee7e1dda1",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
+    },
+    {
+      "id": "@effect/atom-react@4.1.4",
+      "license": "MIT",
+      "repository": "https://github.com/Effect-TS/effect",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40effect%2Fatom-react/4.1.4",
+      "integrity": "sha512-Xj58DcAzKsysHhzBCPaz2v1QAJq6NvMdGVmG7SV4zkw1RMiTZv8gaOXA1VqIRlpmvdspMwRe/BQ4eayuzRZTpQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@effect/atom-react@4.1.4/LICENSE",
+          "sha256": "f6d8d56714209bca4f23969f7b219acb442d3b7b0f95f23605da354d4757f00c"
+        }
+      ],
+      "uses": ["web-client"],
+      "fingerprint": "8562c83310ff00a167a0ebad0ff93bef382f1e6b4a0f59f59a84adc3e494c555",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },
     {
       "id": "@effect/opentelemetry@4.1.0",
@@ -3187,7 +3252,7 @@
           "sha256": "0e4c9a9b6c71019cbbea3bdc20b01223110a9035700f9c960c8fcbf78c2325ce"
         }
       ],
-      "uses": ["web-client"],
+      "uses": ["report-artifact", "web-client"],
       "fingerprint": "38233b7e6044b2f6918a6938f7fca3a8b5f4b59c460d115a34f92e49266d68de",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -3208,7 +3273,7 @@
           "sha256": "0e4c9a9b6c71019cbbea3bdc20b01223110a9035700f9c960c8fcbf78c2325ce"
         }
       ],
-      "uses": ["web-client"],
+      "uses": ["report-artifact", "web-client"],
       "fingerprint": "00c6d3cc335637cc5cda2822542cba6a31c8a7f3e68eae37b8a68404820be37c",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -3229,29 +3294,8 @@
           "sha256": "0e4c9a9b6c71019cbbea3bdc20b01223110a9035700f9c960c8fcbf78c2325ce"
         }
       ],
-      "uses": ["web-client"],
+      "uses": ["report-artifact", "web-client"],
       "fingerprint": "4c2a7856521f6a0f50cd370cf09d6b83173d838bf9cc815f583c86e5c9c0d2b4",
-      "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
-      "id": "@floating-ui/react@0.26.28",
-      "license": "MIT",
-      "repository": "https://github.com/floating-ui/floating-ui",
-      "author": {
-        "name": "atomiks"
-      },
-      "registry": "https://registry.npmjs.org/%40floating-ui%2Freact/0.26.28",
-      "integrity": "sha512-yORQuuAtVpiRjpMhdc0wJj06b9JFjrYF4qp96j++v2NBpbi6SEGF7donUJ3TMieerQ6qVkAv1tgr7L4r5roTqw==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@floating-ui/react@0.26.28/LICENSE",
-          "sha256": "0e4c9a9b6c71019cbbea3bdc20b01223110a9035700f9c960c8fcbf78c2325ce"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "1e05e27a5aea3c538f44cac21c57c0e3e85efe71259a7e0651c3a35a559549d8",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
@@ -3271,7 +3315,7 @@
           "sha256": "0e4c9a9b6c71019cbbea3bdc20b01223110a9035700f9c960c8fcbf78c2325ce"
         }
       ],
-      "uses": ["web-client"],
+      "uses": ["report-artifact", "web-client"],
       "fingerprint": "4abb68be095bcdd26d0fb295004c80141c2b31f351f2e8f4f78891f4f0a740b5",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -3475,25 +3519,6 @@
       ],
       "uses": ["application-runtime"],
       "fingerprint": "0e193dcff4a4a58d1194a453e5ce96e71180fa4a7ab5ed6d9c728bda9cf0e65f",
-      "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
-      "id": "@headlessui/react@2.2.10",
-      "license": "MIT",
-      "repository": "https://github.com/tailwindlabs/headlessui",
-      "author": null,
-      "registry": "https://registry.npmjs.org/%40headlessui%2Freact/2.2.10",
-      "integrity": "sha512-5pVLNK9wlpxTUTy9GpgbX/SdcRh+HBnPktjM2wbiLTH4p+2EPHBO1aoSryUCuKUIItdDWO9ITlhUL8UnUN/oIA==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@headlessui/react@2.2.10/LICENSE",
-          "sha256": "c0812e5b3b5848765343baffe9e304233fceae7891ba414a10d679aa7eccc0a6"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "82fe621ae8f80151b419c34133eda5630dd48fe897f39f23ddac63340964a220",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
@@ -3912,63 +3937,6 @@
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
     {
-      "id": "@internationalized/date@3.12.4",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/@internationalized/date",
-      "author": null,
-      "registry": "https://registry.npmjs.org/%40internationalized%2Fdate/3.12.4",
-      "integrity": "sha512-M1dEn4c1U1HsSlaVR8upZtSqvXrTkHDfv18H01uCSJyjVLDxnBR38v/fMxecmlwXKR4i9HeZcmgQAPE6A+aGJQ==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@internationalized/date@3.12.4/LICENSE",
-          "sha256": "7dfe6526888bac51759c99f9a51262ba2711a8c12a067f2181609dd9a4066b84"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "bb5d3e646ab7352533521e69755c11b966566420d8a2db91fd6d281d252b244d",
-      "disposition": "reviewed: Apache-2.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
-      "id": "@internationalized/number@3.6.9",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/adobe/react-spectrum",
-      "author": null,
-      "registry": "https://registry.npmjs.org/%40internationalized%2Fnumber/3.6.9",
-      "integrity": "sha512-GgWy2caO/+hV9sT/oCTWGHvbjmJMPT9kkXzoKRLnkEq7adghhR7UprhvY9sXrKfrp3NcDfhF6QQHXR1KfQbB8g==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@internationalized/number@3.6.9/LICENSE",
-          "sha256": "7dfe6526888bac51759c99f9a51262ba2711a8c12a067f2181609dd9a4066b84"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "b5888a43cf3d3cef6dfea5960505fe278f1083b56b12a083d5a0517b01a6761b",
-      "disposition": "reviewed: Apache-2.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
-      "id": "@internationalized/string@3.2.10",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/adobe/react-spectrum",
-      "author": null,
-      "registry": "https://registry.npmjs.org/%40internationalized%2Fstring/3.2.10",
-      "integrity": "sha512-PDx6//vHSpRnHfxqMqto11zQvhsaU74O3mKv2F/0eicGZcl9NLjQmGlbHz/LsJh5tLKp4A4L7ZVTzN1/MmMTvA==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@internationalized/string@3.2.10/LICENSE",
-          "sha256": "7dfe6526888bac51759c99f9a51262ba2711a8c12a067f2181609dd9a4066b84"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "8986bfb05dde3d030bb1722de59ca6450019b218e91018e02948278e5bf1e8b1",
-      "disposition": "reviewed: Apache-2.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
       "id": "@isaacs/cliui@8.0.2",
       "license": "ISC",
       "repository": "https://github.com/yargs/cliui",
@@ -4073,7 +4041,7 @@
           "sha256": "769d154fbde32a915af110b1123650bc79f4cbe675acc66e005265bf069c6c6c"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime", "report-authoring-build", "web-client-build"],
       "fingerprint": "69b4d2bdefd19dbf25ba388a223f976368d6ff276779c5a122e229b80b7a6cc5",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -4095,7 +4063,7 @@
           "sha256": "769d154fbde32a915af110b1123650bc79f4cbe675acc66e005265bf069c6c6c"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime", "report-authoring-build", "web-client-build"],
       "fingerprint": "6cf5182237038dbb182d79878695c89637d8b178765212b4f4dd72018c3c8c4d",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -4298,7 +4266,7 @@
           "sha256": "45d31799d0db956cc3eb5469346abbd9b7025babc5ff29fab10d7095da992ef1"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "408a3a71a5e9d81d3b0b8b48068d1d929e8f1d3979d28c61f2564fd437527ccf",
       "disposition": "reviewed: BSD-3-Clause supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -4319,7 +4287,7 @@
           "sha256": "2503b5766520d283dd6cc9c9852bdfc59ffe16b0538d554db4e5b9b725269604"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "5c042aa832430f20ad5e11485eb04dfc4ff5ce5b3a86ff7655b7f41dbea5c8f8",
       "disposition": "reviewed: BSD-3-Clause supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -4340,7 +4308,7 @@
           "sha256": "45d31799d0db956cc3eb5469346abbd9b7025babc5ff29fab10d7095da992ef1"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "7c3b93d6028f4341b0e5056f967985848dbb9c11aba219d2394fcab37fd86673",
       "disposition": "reviewed: BSD-3-Clause supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -5079,7 +5047,7 @@
           "sha256": "625f0f619133f89bbbb2abe37369613dfa1885eba1e50d02170deb62bb42cb6b"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "712889fc5801604fc6461ac54fb6f3ed3202b20162a52fd8addabdaed547d84d",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -5098,7 +5066,7 @@
           "sha256": "625f0f619133f89bbbb2abe37369613dfa1885eba1e50d02170deb62bb42cb6b"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "2b4441e5ab35fdbecef5add1697f3d36747b5ce663677c151e9089765580306e",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -5409,7 +5377,7 @@
       "installed": false,
       "category": "optional-platform-not-installed",
       "evidence": [],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "7718cc39db78719b3b3dd7f0903ef4636d3d2e9d17dc37275833c9fb16957e8f",
       "disposition": "reviewed: supplier-installed OpenTUI binary includes LGPL FFmpeg; retain all supplied notices; binary excluded from source distribution and report artifacts; binary redistribution requires separate corresponding-source/linking review"
     },
@@ -5423,7 +5391,7 @@
       "installed": false,
       "category": "optional-platform-not-installed",
       "evidence": [],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "0db14ba6010fc570ca7e3ba1d5374e4e29628cee2d6265ab9e47ac1a1c21f746",
       "disposition": "reviewed: supplier-installed OpenTUI binary includes LGPL FFmpeg; retain all supplied notices; binary excluded from source distribution and report artifacts; binary redistribution requires separate corresponding-source/linking review"
     },
@@ -5437,7 +5405,7 @@
       "installed": false,
       "category": "optional-platform-not-installed",
       "evidence": [],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "16ecf87b755a24a49ac6ed128dd559ce89cbce4525bd19d4880d6cf3d254d541",
       "disposition": "reviewed: supplier-installed OpenTUI binary includes LGPL FFmpeg; retain all supplied notices; binary excluded from source distribution and report artifacts; binary redistribution requires separate corresponding-source/linking review"
     },
@@ -5451,7 +5419,7 @@
       "installed": false,
       "category": "optional-platform-not-installed",
       "evidence": [],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "e19c202851f64c3aa7fab14a06598145e88f2974c60765ebe362a48a2b3e3546",
       "disposition": "reviewed: supplier-installed OpenTUI binary includes LGPL FFmpeg; retain all supplied notices; binary excluded from source distribution and report artifacts; binary redistribution requires separate corresponding-source/linking review"
     },
@@ -5465,7 +5433,7 @@
       "installed": false,
       "category": "optional-platform-not-installed",
       "evidence": [],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "bd0f33a2d4cf645467bcbf63aab561648980cf0032a33bcefa51ae7e61ed8aa0",
       "disposition": "reviewed: supplier-installed OpenTUI binary includes LGPL FFmpeg; retain all supplied notices; binary excluded from source distribution and report artifacts; binary redistribution requires separate corresponding-source/linking review"
     },
@@ -5512,7 +5480,7 @@
           "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "c6b8bf5d2dcdec7562bd34a43f2d68db278ba2891c956686feddb584127da7d8",
       "disposition": "reviewed: supplier-installed OpenTUI binary includes LGPL FFmpeg; retain all supplied notices; binary excluded from source distribution and report artifacts; binary redistribution requires separate corresponding-source/linking review"
     },
@@ -5526,7 +5494,7 @@
       "installed": false,
       "category": "optional-platform-not-installed",
       "evidence": [],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "d9fbf30cb3f546bebd99a4596f346f234a59c5a489e26c1d327de1952a92ee7f",
       "disposition": "reviewed: supplier-installed OpenTUI binary includes LGPL FFmpeg; retain all supplied notices; binary excluded from source distribution and report artifacts; binary redistribution requires separate corresponding-source/linking review"
     },
@@ -5540,7 +5508,7 @@
       "installed": false,
       "category": "optional-platform-not-installed",
       "evidence": [],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "0792dd22b62c99cd069680cbd4709719f8b46c4be5f02b790d93d29e580e8ea6",
       "disposition": "reviewed: supplier-installed OpenTUI binary includes LGPL FFmpeg; retain all supplied notices; binary excluded from source distribution and report artifacts; binary redistribution requires separate corresponding-source/linking review"
     },
@@ -5559,7 +5527,7 @@
           "sha256": "d9c397a5dc5ac77a2a08fc967ea06a65317a4b5b8de48f6f732ffcb21737e3d2"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "f44633a4c644d5dc20da1c6e77dcd39d6c007bb08aab4f33d0f8ab12cef8a679",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -5578,7 +5546,7 @@
           "sha256": "d9c397a5dc5ac77a2a08fc967ea06a65317a4b5b8de48f6f732ffcb21737e3d2"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "f32b8653899da84e16a3c4b35883cccc0a6ceec542dcb04f801347d2695ffd49",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -6357,6 +6325,90 @@
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
     {
+      "id": "@pierre/diffs@1.6.4",
+      "license": "apache-2.0",
+      "repository": null,
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40pierre%2Fdiffs/1.6.4",
+      "integrity": "sha512-RsKoruCOp50qaDM3a7BQan5K77xMkGWT1NF01fiYP1PfT3v4CvIjwytNk5WjZG0BesBkMOP2UbrBIDigB1k0ug==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@pierre/diffs@1.6.4/LICENSE.md",
+          "sha256": "13d92be18d5ceac526f33cc96b6902a14d168f3e1d4b16be738f0fa70da7fe98"
+        }
+      ],
+      "uses": ["web-client"],
+      "fingerprint": "cef1f318815ea47dd99fd9ef6fb9e5d413a4b3b669c7a32502c3ed2dbec3a3fb",
+      "disposition": "reviewed: apache-2.0 supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
+    },
+    {
+      "id": "@pierre/highlights@0.4.0",
+      "license": "apache-2.0",
+      "repository": null,
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40pierre%2Fhighlights/0.4.0",
+      "integrity": "sha512-2a38H7ep3KweGi1fGQpJk+Krod2OMpDIXagKPlqBd1Y9P460T7zQmc66Wm2JAH1SpIG93wCyyhZVrkc5dnAJVQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@pierre/highlights@0.4.0/LICENSE.md",
+          "sha256": "13d92be18d5ceac526f33cc96b6902a14d168f3e1d4b16be738f0fa70da7fe98"
+        },
+        {
+          "source": "npm:@pierre/highlights@0.4.0/NOTICE.md",
+          "sha256": "39d0825be530e8b8aaeb1610c096aaa3c556941c635df77551c45b78cbbcc9a9"
+        }
+      ],
+      "uses": ["web-client"],
+      "fingerprint": "a39854f6706b5a0d567468fc1a6eab05de179984f563f66cb089d05f545904e2",
+      "disposition": "reviewed: apache-2.0 supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
+    },
+    {
+      "id": "@pierre/theme@2.0.0",
+      "license": "apache-2.0",
+      "repository": "https://github.com/pierrecomputer/pierre",
+      "author": "Pierre Computer <support@pierre.co>",
+      "registry": "https://registry.npmjs.org/%40pierre%2Ftheme/2.0.0",
+      "integrity": "sha512-yNDd9GYLQl1mEUJR8AneJ5e4ohLIHQd/wZLWr4fagt78vS2RwwZNW530vVgHqXFAyFVcFlRmGUD5ramXH46OXw==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@pierre/theme@2.0.0/LICENSE",
+          "sha256": "13d92be18d5ceac526f33cc96b6902a14d168f3e1d4b16be738f0fa70da7fe98"
+        },
+        {
+          "source": "npm:@pierre/theme@2.0.0/NOTICE.md",
+          "sha256": "d64db9acda54bde8eb5ca1a679166b9376fc8bd8059967a396a156b3db8a1983"
+        }
+      ],
+      "uses": ["web-client"],
+      "fingerprint": "89f776d2a499849b58f9dfb5d93bb98a447d3c8bffc8422ab633ed66157d764f",
+      "disposition": "reviewed: apache-2.0 supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
+    },
+    {
+      "id": "@pierre/theming@1.0.2",
+      "license": "apache-2.0",
+      "repository": null,
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40pierre%2Ftheming/1.0.2",
+      "integrity": "sha512-RmXLLqtx31UGcR8kZyO5hGAQ1EXz6loT1Cu0BFAGsbnBboIxp2BlomkLfWyvdT4WZXnBGyu25onL1gKpFQuSUw==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@pierre/theming@1.0.2/LICENSE.md",
+          "sha256": "13d92be18d5ceac526f33cc96b6902a14d168f3e1d4b16be738f0fa70da7fe98"
+        }
+      ],
+      "uses": ["web-client"],
+      "fingerprint": "5301b5fe646ed3deea90e80a3bb9b60eb1b12eb28ec2cabc38c629263f0fc353",
+      "disposition": "reviewed: apache-2.0 supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
+    },
+    {
       "id": "@pinojs/redact@0.4.0",
       "license": "MIT",
       "repository": "https://github.com/pinojs/redact",
@@ -6645,7 +6697,7 @@
           "sha256": "a11fc89e4c6b118854c7a667734a0b2e6bf2af5e45c6686de31adbccc8f3ae8d"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "32f07501422a7f59e5b0afb78400f4410106696eb8fa76111d5b0c461bb85e16",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -7223,63 +7275,6 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
-      "id": "@react-aria/focus@3.22.1",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/adobe/react-spectrum",
-      "author": null,
-      "registry": "https://registry.npmjs.org/%40react-aria%2Ffocus/3.22.1",
-      "integrity": "sha512-CPxtkyrBi/HYY5P3lE/57sQ6qfa0lN8E55TOm89H0kNGv0lKt+/0zP7lWERzBjRr5IxBVrQX4gFEowBN52LPaA==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@react-aria/focus@3.22.1/LICENSE",
-          "sha256": "7dfe6526888bac51759c99f9a51262ba2711a8c12a067f2181609dd9a4066b84"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "a04f14b94f3f02bb4e4bb37018cf3fd8689fed8702bda23b606558dc8e191b10",
-      "disposition": "reviewed: Apache-2.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
-      "id": "@react-aria/interactions@3.28.1",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/adobe/react-spectrum",
-      "author": null,
-      "registry": "https://registry.npmjs.org/%40react-aria%2Finteractions/3.28.1",
-      "integrity": "sha512-Bqb+HrD5I5MHS2SKBhISYqo2SW8Y2dfzgF/Y1lIJq7xqLxheo9vzxPGEHhz+XzkgGfoqEJx8A6a3C7uiqS3HWA==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@react-aria/interactions@3.28.1/LICENSE",
-          "sha256": "7dfe6526888bac51759c99f9a51262ba2711a8c12a067f2181609dd9a4066b84"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "47a97a7b9762d07f5c240c0f35182ab280d1592fd24ef7da9ec948895b3f7f14",
-      "disposition": "reviewed: Apache-2.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
-      "id": "@react-types/shared@3.37.0",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/adobe/react-spectrum",
-      "author": null,
-      "registry": "https://registry.npmjs.org/%40react-types%2Fshared/3.37.0",
-      "integrity": "sha512-VNlZuifu4tHdxWPfHvoMfKsHA9kVTCGkduv5vKVTdinm8wHFJNhyVB5RzIMiRFj0q3RKoCbP68u2zaoBSiFueg==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@react-types/shared@3.37.0/LICENSE",
-          "sha256": "7dfe6526888bac51759c99f9a51262ba2711a8c12a067f2181609dd9a4066b84"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "59035ded598c95830bfc42a2ba160a8ab697951bd14745ef62cd2f891dce60e6",
-      "disposition": "reviewed: Apache-2.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
       "id": "@redis/bloom@6.3.0",
       "license": "MIT",
       "repository": "https://github.com/redis/node-redis",
@@ -7452,7 +7447,7 @@
           "sha256": "e1919b3b98b8bf6c1b99fcc60a0ed46027c97ac947432e1278446c9606f50161"
         }
       ],
-      "uses": ["web-client-build"],
+      "uses": ["report-authoring-build", "web-client-build"],
       "fingerprint": "c36f11dc0b7eb46635212f5babc2ec2336054e65e6e964f834982c09d059ab4d",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -8245,7 +8240,7 @@
           "sha256": "653b779005a3a4d64a7288c940f7b9a0e8f0b1e0375f6aa6af9473caf131e564"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "511b010bdc126d5dd08e68a55544d416615a462ef7f4f968cc07bf0016ec41ed",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -8271,26 +8266,239 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
-      "id": "@swc/helpers@0.5.24",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/swc-project/swc",
-      "author": {
-        "name": "강동윤",
-        "email": "kdy1997.dev@gmail.com"
-      },
-      "registry": "https://registry.npmjs.org/%40swc%2Fhelpers/0.5.24",
-      "integrity": "sha512-6tcXo4kA8HgGO7AVmawB57RYi/piBPYVHVcO6dXjX+SZw8GoHmi262sp4v2Ha2kNP9Cx84qei27yT+fjS1lxgg==",
+      "id": "@tailwindcss/node@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Fnode/4.3.5",
+      "integrity": "sha512-yT53FzV4ke0cr/BguDxhWMpm5MJu1O2muzk+tKw6lKHjODAsYArBbWwFbJiaksfzFv1tpkO9QHGzmfs1hJT66g==",
       "installed": true,
       "category": "dependency-installation",
       "evidence": [
         {
-          "source": "npm:@swc/helpers@0.5.24/LICENSE",
-          "sha256": "d96eba1f1881334d50ffc144276dfa98e147a415e7c591ecdfcb81680361dc91"
+          "source": "npm:@tailwindcss/node@4.3.5/LICENSE",
+          "sha256": "60e0b68c0f35c078eef3a5d29419d0b03ff84ec1df9c3f9d6e39a519a5ae7985"
         }
       ],
-      "uses": ["web-client"],
-      "fingerprint": "47a2b71b5c58835f4681acc55b7c1c42803237f1529fc5accdf72bcd439511c7",
-      "disposition": "reviewed: Apache-2.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "e9a8b4a21536a6e1a53997d24f662e1e6aa4065816cf41cbe827aac337b1a6d3",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
+    },
+    {
+      "id": "@tailwindcss/oxide-android-arm64@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Foxide-android-arm64/4.3.5",
+      "integrity": "sha512-Se0z5xMqcSQanJD1IYmO0cGpK3iv0fp3ZsIT7xRJZ1Da5PghvNoc46zz4jIQn+aan3dV9T8AermFNN9QPmsh0Q==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "78769ac105baa26882f59c1264fe54655a1ca1072354a1c54563f6c324be4c7b",
+      "disposition": "reviewed: MIT supplier declaration for optional platform package; not distributed in source or web assets"
+    },
+    {
+      "id": "@tailwindcss/oxide-darwin-arm64@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Foxide-darwin-arm64/4.3.5",
+      "integrity": "sha512-UPrgTDuUbvmqGMZuCnmI3FKee/tYKzKdp00/kuB4oSGB213VYg8QTdF7lVhnPoBXq/mIfJ+ILoBFqNOboWcMwQ==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "30985a6bad20d528795b75d28b7f2a3c3f3d21e6f31ff5c66c43833bbec8074f",
+      "disposition": "reviewed: MIT supplier declaration for optional platform package; not distributed in source or web assets"
+    },
+    {
+      "id": "@tailwindcss/oxide-darwin-x64@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Foxide-darwin-x64/4.3.5",
+      "integrity": "sha512-E+p7HEtjI0b8D7kbbWxH067cGui6d4c79COGko9fAPVE3rwc1E7ld2HFCbaG86AOGWS5VKQYqZOaf38ya4uxTQ==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "7afb567c935b0744a2bace1ba6c61f20aca4437e1653e07f0aff8e007fa9c3a0",
+      "disposition": "reviewed: MIT supplier declaration for optional platform package; not distributed in source or web assets"
+    },
+    {
+      "id": "@tailwindcss/oxide-freebsd-x64@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Foxide-freebsd-x64/4.3.5",
+      "integrity": "sha512-yWEWcWyAG7rWOcTpJTjdhQ3pcaFY2h+0bqTRfgU3G2fz87ZU3AKdvdZKhslD+kyHnjBUWKvNdRYwIYC5dI1tIg==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "1f89be26fef8bcdaccc0a640c12e77eedf1fd1ce527bd86e9aff0ad9bfcea3f3",
+      "disposition": "reviewed: MIT supplier declaration for optional platform package; not distributed in source or web assets"
+    },
+    {
+      "id": "@tailwindcss/oxide-linux-arm-gnueabihf@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Foxide-linux-arm-gnueabihf/4.3.5",
+      "integrity": "sha512-WmeVjtJhZlr+smpqcdR2kQkkn6arHIJnUIBxTO2EJcTLGY1ecVXNo2hbSn8xc0IH2aEtys936iMWKGyj0GaKnA==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "7a35aef99d8370cfc28eb0db62caec7c7998c8c0c5f7df6641e9bd212d9dad63",
+      "disposition": "reviewed: MIT supplier declaration for optional platform package; not distributed in source or web assets"
+    },
+    {
+      "id": "@tailwindcss/oxide-linux-arm64-gnu@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Foxide-linux-arm64-gnu/4.3.5",
+      "integrity": "sha512-DTCSyucc6ShMp1QMqV5R94Z7xlgNgUzkGmFF1rL5HH2Qjy4eSmEqy+YLGkqqYvWa4sILtgrBt1JjRKbneQtiFQ==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "c7443ac578f9f715cd2ae594b36bb61cb3fc52b3a8e29bc99d672f12728875b5",
+      "disposition": "reviewed: MIT supplier declaration for optional platform package; not distributed in source or web assets"
+    },
+    {
+      "id": "@tailwindcss/oxide-linux-arm64-musl@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Foxide-linux-arm64-musl/4.3.5",
+      "integrity": "sha512-H9lsvO4x9E4nE4Hi8h7NHHw0O/kcVSu+iOyFHNGdYzazGgDjFHZbE6S3hQ8kMcbNXSBlMdNi67LV5EVqtpaJtw==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "f36a317909b31b69770a32d0f78e7578f2bb5d3e5cdd6e789a7b0be0f63fafe4",
+      "disposition": "reviewed: MIT supplier declaration for optional platform package; not distributed in source or web assets"
+    },
+    {
+      "id": "@tailwindcss/oxide-linux-x64-gnu@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Foxide-linux-x64-gnu/4.3.5",
+      "integrity": "sha512-4uxQvtBvPuIdl13WfUBj9xMZHH14PtHZ8OZdtLmdyDtG66sCa1t599NZT+jagkUzRtWhuul1qRZQ1nAJscXN5g==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@tailwindcss/oxide-linux-x64-gnu@4.3.5/LICENSE",
+          "sha256": "60e0b68c0f35c078eef3a5d29419d0b03ff84ec1df9c3f9d6e39a519a5ae7985"
+        }
+      ],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "de141958c0df6f29c4115a7ee3445535df3f101fde115f286776a15032412a70",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
+    },
+    {
+      "id": "@tailwindcss/oxide-linux-x64-musl@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Foxide-linux-x64-musl/4.3.5",
+      "integrity": "sha512-0JQAzs7jwbA7O6+z/adU+Jk3AXwsu3npAhtr5escXS7TqEqWcaDV7qHuI+0Vy/KQRuVGnLQREcSJWYauyV3oqg==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "3fc7f6454849d29cdc5f6fd674c269340b9ebbc8effa8fda20e44b71cfdade56",
+      "disposition": "reviewed: MIT supplier declaration for optional platform package; not distributed in source or web assets"
+    },
+    {
+      "id": "@tailwindcss/oxide-wasm32-wasi@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Foxide-wasm32-wasi/4.3.5",
+      "integrity": "sha512-OJhFmlEfdzMr+avACdi40RPtnkW0B6hXyxL/8r+tnEHBWZji36CYRjEXrrvgBmaYsD3oEOBqwYFRKsYvzFe7Bw==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "https://raw.githubusercontent.com/tailwindlabs/tailwindcss/v4.3.5/LICENSE",
+          "sha256": "60e0b68c0f35c078eef3a5d29419d0b03ff84ec1df9c3f9d6e39a519a5ae7985"
+        }
+      ],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "6721df5901cb66dca9ad9a17503062f7197dd70647758d441f31691cbd3e0c69",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
+    },
+    {
+      "id": "@tailwindcss/oxide-win32-arm64-msvc@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Foxide-win32-arm64-msvc/4.3.5",
+      "integrity": "sha512-9o8jgthi+QE5eandnboiJT64VQfnIArfZzSTdgbhEK5aafdiu2jTW9Honi/mwYHxBZuH1vAC57IFyrh+0iK5Gg==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "a9e0341bf370d7ac2ecd4b6bba01bdd6e9d9d228d1bc1621b3e20d9e9d42f470",
+      "disposition": "reviewed: MIT supplier declaration for optional platform package; not distributed in source or web assets"
+    },
+    {
+      "id": "@tailwindcss/oxide-win32-x64-msvc@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Foxide-win32-x64-msvc/4.3.5",
+      "integrity": "sha512-XiKFfIy1RWe7qK4WqByxNW7Oz1/nkOy8o/BWhHminyV1PmpUd8Eedj5v2A8h2kpqeVlz6xRnwk9Fr/ZXNLcZfg==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "5bc1608c335a8c0397006554bc28edff235d38135ad6727b4458258aaa549bb5",
+      "disposition": "reviewed: MIT supplier declaration for optional platform package; not distributed in source or web assets"
+    },
+    {
+      "id": "@tailwindcss/oxide@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Foxide/4.3.5",
+      "integrity": "sha512-PynqGLZsZvwM9tqD/CUxkOIfyd6K5elZ2MooauzJryP/UqXYgi3yYbtt3N0Xe+MHV/eFKPFQCEfIKAqlAS1CBg==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@tailwindcss/oxide@4.3.5/LICENSE",
+          "sha256": "60e0b68c0f35c078eef3a5d29419d0b03ff84ec1df9c3f9d6e39a519a5ae7985"
+        }
+      ],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "c9045a6b7a5a6e93aad77d3bfd882f3ca910d12aba501be9b102e3de13e66a0c",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
+    },
+    {
+      "id": "@tailwindcss/vite@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tailwindcss%2Fvite/4.3.5",
+      "integrity": "sha512-BCNiY0a1ZjdOHVqw7kyb7U72BwfMF3dfUuN+tQsLWky/J5JOI/r7abibglXfygrZhVO/3u3V+E25kkKTeMkXaQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@tailwindcss/vite@4.3.5/LICENSE",
+          "sha256": "60e0b68c0f35c078eef3a5d29419d0b03ff84ec1df9c3f9d6e39a519a5ae7985"
+        }
+      ],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "bedbcbb452504e49440daf51498fc420f71616e16e6ca3f5d64b4915a5fef0e3",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },
     {
       "id": "@tanstack/devtools-event-client@0.4.4",
@@ -8609,82 +8817,6 @@
       ],
       "uses": ["contributor-build", "report-authoring-build", "web-client-build"],
       "fingerprint": "2308ff8c542af59e3c2ae64b29bb51995be2c47f2588bf28d0660c3c880256c1",
-      "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
-    },
-    {
-      "id": "@types/babel__core@7.20.5",
-      "license": "MIT",
-      "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
-      "author": null,
-      "registry": "https://registry.npmjs.org/%40types%2Fbabel__core/7.20.5",
-      "integrity": "sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@types/babel__core@7.20.5/LICENSE",
-          "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
-        }
-      ],
-      "uses": ["report-authoring-build"],
-      "fingerprint": "7ac7ec68e6e8001f75386fda6560a35ea2457d09ed7263e08b5a2c983759ab2a",
-      "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
-    },
-    {
-      "id": "@types/babel__generator@7.27.0",
-      "license": "MIT",
-      "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
-      "author": null,
-      "registry": "https://registry.npmjs.org/%40types%2Fbabel__generator/7.27.0",
-      "integrity": "sha512-ufFd2Xi92OAVPYsy+P4n7/U7e68fex0+Ee8gSG9KX7eo084CWiQ4sdxktvdl0bOPupXtVJPY19zk6EwWqUQ8lg==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@types/babel__generator@7.27.0/LICENSE",
-          "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
-        }
-      ],
-      "uses": ["report-authoring-build"],
-      "fingerprint": "594d3504e9251c993268cd8e5ac3454a81fb26d466d3de8bd1069b60381162b4",
-      "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
-    },
-    {
-      "id": "@types/babel__template@7.4.4",
-      "license": "MIT",
-      "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
-      "author": null,
-      "registry": "https://registry.npmjs.org/%40types%2Fbabel__template/7.4.4",
-      "integrity": "sha512-h/NUaSyG5EyxBIp8YRxo4RMe2/qQgvyowRwVMzhYhBCONbW8PUsg4lkFMrhgZhUe5z3L3MiLDuvyJ/CaPa2A8A==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@types/babel__template@7.4.4/LICENSE",
-          "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
-        }
-      ],
-      "uses": ["report-authoring-build"],
-      "fingerprint": "f75c9cf0138944d95b561a82644f548c41f77a2ad442d906afc0bc845e40051b",
-      "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
-    },
-    {
-      "id": "@types/babel__traverse@7.28.0",
-      "license": "MIT",
-      "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
-      "author": null,
-      "registry": "https://registry.npmjs.org/%40types%2Fbabel__traverse/7.28.0",
-      "integrity": "sha512-8PvcXf70gTDZBgt9ptxJ8elBeBjcLOAcOtoO/mPJjtji1+CdGbHgm77om1GrsPxsiE+uXIpNSK64UYaIwQXd4Q==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@types/babel__traverse@7.28.0/LICENSE",
-          "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
-        }
-      ],
-      "uses": ["report-authoring-build"],
-      "fingerprint": "91dcef779fd0b0c67302d82acd126d9f018ead92af90f138d6b2d06bffe449e9",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
     {
@@ -9681,25 +9813,6 @@
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
     {
-      "id": "@types/prismjs@1.26.6",
-      "license": "MIT",
-      "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
-      "author": null,
-      "registry": "https://registry.npmjs.org/%40types%2Fprismjs/1.26.6",
-      "integrity": "sha512-vqlvI7qlMvcCBbVe0AKAb4f97//Hy0EBTaiW8AalRnG/xAN5zOiWWyrNqNXeq8+KAuvRewjCVY1+IPxk4RdNYw==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:@types/prismjs@1.26.6/LICENSE",
-          "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "6d715364a370576d0ee266a96a6df27596a92fc11d48c11f89dced2b9c943f6a",
-      "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
       "id": "@types/prop-types@15.7.15",
       "license": "MIT",
       "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
@@ -9771,7 +9884,7 @@
           "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
         }
       ],
-      "uses": ["web-client", "web-client-build"],
+      "uses": ["report-authoring-build", "web-client", "web-client-build"],
       "fingerprint": "f403d2abe2b4826289c14b5ad1a1013983709b3bcc6b045fafe2284d626c9802",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -9790,7 +9903,7 @@
           "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
         }
       ],
-      "uses": ["web-client", "web-client-build"],
+      "uses": ["report-artifact", "report-authoring-build", "web-client", "web-client-build"],
       "fingerprint": "0d7c4ffd6be4e12ad6db6b69fcb7aeae3391011c7c5f95b853239590ad25d8d6",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -9885,7 +9998,7 @@
           "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
         }
       ],
-      "uses": ["application-runtime", "report-authoring-build", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "report-authoring-build", "web-client"],
       "fingerprint": "a588977e7c63099adf03d440350dbec2cd82e04dcdb6bc7fedfe4797a46d3429",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -10533,7 +10646,7 @@
           "sha256": "29b68325fe026047d13e187b44c33b2acacf7dc647dec4583702e59f235e13b5"
         }
       ],
-      "uses": ["web-client-build"],
+      "uses": ["report-authoring-build", "web-client-build"],
       "fingerprint": "b386283daadf99df4b755af318329587c6e8507ce7492fc8eaf29eea101036eb",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -11555,7 +11668,7 @@
           "sha256": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "4663f651ae55c50634df052164a017e7e310b463907e6de08feb0a4d3c1a33b1",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -11627,6 +11740,25 @@
       "uses": ["application-runtime"],
       "fingerprint": "441c5183b1bc9631f5055c84fdc8be7c26f0a0ed263ff9de49a5312fe3fde2fc",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
+    },
+    {
+      "id": "argparse@2.0.1",
+      "license": "Python-2.0",
+      "repository": "https://github.com/nodeca/argparse",
+      "author": null,
+      "registry": "https://registry.npmjs.org/argparse/2.0.1",
+      "integrity": "sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:argparse@2.0.1/LICENSE",
+          "sha256": "de4d1f2d2ad5ad0cfd1657a106476b31cb5db5ef9d1ff842b237c0c81f0c8a23"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "f065152ac126ac2ddfdc3785825c2dc0d27a57432668d50e9690f38c972303e2",
+      "disposition": "reviewed: Python-2.0 supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
     },
     {
       "id": "aria-hidden@1.2.6",
@@ -11800,7 +11932,7 @@
           "sha256": "f309720128d29476b91891a60c0e9270c96a41ce0f241cd05fcf11d771300a4a"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "97e1f55254243b3d97c69c79a289fba0c84f8f68c693cadc8cc87a107af70f32",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -11823,7 +11955,7 @@
           "sha256": "6c21ef4ee82f61419a3b7f5c532423f1d5d1c61a2da75d6f21493aab868c756e"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "c4bfc99e2cfeab673e810e3e21775a763ce5cfb70a68785402fe3c73da5a9648",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -11845,30 +11977,8 @@
           "sha256": "59a76ed2f4a3ebe8d20a58869ef9c09420f796aa179420c8fb916f5557defc9b"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "391440001a94bce0ab80e3b324e41c545d91a62c1f646e236afce4464c502b73",
-      "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
-    },
-    {
-      "id": "babel-preset-solid@1.9.19",
-      "license": "MIT",
-      "repository": "https://github.com/packages/babel-preset-solid",
-      "author": {
-        "name": "Ryan Carniato",
-        "email": "ryansolid@gmail.com"
-      },
-      "registry": "https://registry.npmjs.org/babel-preset-solid/1.9.19",
-      "integrity": "sha512-2rKUVbaYtjA1xSrRac537GA5g+Ug4v8dCDSZC/8sleosFQPo5pVxvAu1SdKZpSGoOL4A2zM5OLT5PRPPzjU6rA==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:babel-preset-solid@1.9.19/LICENSE",
-          "sha256": "59a76ed2f4a3ebe8d20a58869ef9c09420f796aa179420c8fb916f5557defc9b"
-        }
-      ],
-      "uses": ["report-authoring-build"],
-      "fingerprint": "23b2fab11b361d02faa2da34935a4ddeb0ec730d1593352d9757db525883af93",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
     {
@@ -11913,7 +12023,7 @@
           "sha256": "a1bd5deadb6a06dd74efa852c1b8b23f63b67f2214fbe9c8bd591da51da69268"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "d2c72fb85b804a813094df0a6675f5fb7a4635885847e4c9aa63bc72bd5d24dc",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -11973,7 +12083,7 @@
           "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "36acc69201e6825373bbab84f6d60f2d94957967cfcf7c64ea8d8217e09c1d3a",
       "disposition": "reviewed: Apache-2.0; preserve license, notices and attribution"
     },
@@ -12081,7 +12191,7 @@
           "sha256": "68f12f6e2c33688699249c01d8f9623c534da20aa71989c57b061b7bc1676d14"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "ddda992856b445e0a94b2867fb3294f9fbdb84bf45a9b7356f24362d7f6e6c15",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -12122,7 +12232,7 @@
           "sha256": "21c2679a63d7699c0e644409e2f17d0adbc7a965003feb06b3ff4b833d21f722"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "1fe9c3b91a8b8259baa46916d169f0859f98d05f8462966dda4c935972bf5d63",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -12207,7 +12317,7 @@
           "sha256": "f2046b2f212d286d06a53214867136c8152a481737e62fcda49c1412488c3a74"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "3a5ff1ef31019730bae3ab3224a37a238e15a59f5ce0cfdd9df555090bead5be",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -12341,7 +12451,7 @@
           "sha256": "fd3a263fe19ed8faa9068b43abaebafc02c77897b0c6fc09abc04bb592e5f16e"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "3c6851851e682176eaf81210871a30a65d66db092587cca14f57f3c46678bdae",
       "disposition": "reviewed: CC-BY-4.0 data; preserve author attribution and supplied terms"
     },
@@ -12673,7 +12783,7 @@
           "sha256": "0ccbf956cffc8dcf515809433cb5242ee67c94513d46e48c261d68d0880de406"
         }
       ],
-      "uses": ["web-client"],
+      "uses": ["report-artifact", "web-client"],
       "fingerprint": "dc134be7014c4e982960b0478278ceb013be454fc1955c57a3c3244f3dbec775",
       "disposition": "reviewed: Apache-2.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -12764,7 +12874,7 @@
           "sha256": "9a9edad7baae52622bddf3c15b2ef8a33d2c89f2d25408ad13e8a7481c6b0c97"
         }
       ],
-      "uses": ["web-client"],
+      "uses": ["report-artifact", "web-client"],
       "fingerprint": "19db8ba7d424ba9c529c04e9df76d7f340a1cf2dc45625aefd00691fc9c85931",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -13314,7 +13424,6 @@
       ],
       "uses": [
         "application-runtime",
-        "contributor-build",
         "report-artifact",
         "report-authoring-build",
         "web-client",
@@ -14259,7 +14368,7 @@
           "sha256": "3a61c6c96caf5c1d9b623fb9b04c822b783dfcb78aa7e49c76a3f643e6ed7f95"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build", "web-client"],
+      "uses": ["application-runtime", "web-client"],
       "fingerprint": "f46087534d2254aa06d19eedaeff0564ae7c43908fc63bab8cc5f56b73021ca2",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -14571,7 +14680,7 @@
           "sha256": "eda81a415869e67809f6a9f3fd6056062cb83a462118e07eec5e92b2e0c40ce9"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime", "web-client"],
       "fingerprint": "c87bfa6d40b725ecc39f635253e506154272b3d32568279980a44165b2b2f450",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -14593,6 +14702,33 @@
       "uses": ["contributor-build", "report-authoring-build", "web-client-build"],
       "fingerprint": "528bfaeac8b36cf8315756c82788e8496081950ef42670e9bb829f840ec920d0",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
+    },
+    {
+      "id": "dompurify@3.4.11",
+      "license": "(MPL-2.0 OR Apache-2.0)",
+      "repository": "https://github.com/cure53/DOMPurify",
+      "author": {
+        "url": "https://cure53.de/",
+        "name": "Dr.-Ing. Mario Heiderich, Cure53",
+        "email": "mario@cure53.de"
+      },
+      "registry": "https://registry.npmjs.org/dompurify/3.4.11",
+      "integrity": "sha512-zhlUV12GsaRzMsf9q5M254YhA4+VuF0fG+QFqu6aYpoGlKtz+w8//jBcGVYBgQkR5GHjUomejY84AV+/uPbWdw==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:dompurify@3.4.11/LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "source": "npm:dompurify@3.4.11/LICENSE-MPL",
+          "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "9704fb33c7a0f9ca3a82f66407bc758187030d8226665c356d86fa3c65a754a8",
+      "disposition": "reviewed: unmodified DOMPurify under the Apache-2.0 alternative; both supplier license texts retained in inventory and generated web-client notices"
     },
     {
       "id": "dompurify@3.4.17",
@@ -14751,7 +14887,7 @@
           "sha256": "e15b07af077a1866fd0acaedd07295c61892dba326f13dfd516f68f56e66e3ed"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "d3d8da7f350f54360c933df22f6eea11922bb7775f3e55024f29ee0be6bdaa50",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -14772,7 +14908,7 @@
           "sha256": "25ba5c59dad3e0dd8f9540beaa0f0a86a10e3aec35af5fdc8e88c5f6a5c0d8c6"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "785bcb74fe333659046697c371105efef7fa4031fc412d5ff4c1edccab833342",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
@@ -14816,7 +14952,7 @@
           "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "c36556991a66ac2f183a6d5d56f4270da634f380084a06ae9928abf61758463c",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -14906,6 +15042,49 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
+      "id": "enhanced-resolve@5.27.0",
+      "license": "MIT",
+      "repository": "https://github.com/webpack/enhanced-resolve",
+      "author": {
+        "name": "Tobias Koppers @sokra"
+      },
+      "registry": "https://registry.npmjs.org/enhanced-resolve/5.27.0",
+      "integrity": "sha512-Do6BB2xzlcc/odFg+XEYyneAx4T/WfywO71yw9ePS2tVfRsf7JVR4mUeELadIeHzixkzbG5DpluiEFPi2WGfYQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:enhanced-resolve@5.27.0/LICENSE",
+          "sha256": "9068a8782d2fb4c6e432cfa25334efa56f722822180570802bf86e71b6003b1e"
+        }
+      ],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "69c80823e8bf114c82d4820f211791a2295fbccf2ea9a9776a1f206cd17749b2",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
+    },
+    {
+      "id": "entities@4.5.0",
+      "license": "BSD-2-Clause",
+      "repository": "https://github.com/fb55/entities",
+      "author": {
+        "name": "Felix Boehm",
+        "email": "me@feedic.com"
+      },
+      "registry": "https://registry.npmjs.org/entities/4.5.0",
+      "integrity": "sha512-V0hjH4dGPh9Ao5p0MoRY6BVqtwCjhz6vI5LT8AJ55H+4g9/4vbHx1I54fS0XuclLhDHArPQCiMjDxjaL8fPxhw==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:entities@4.5.0/LICENSE",
+          "sha256": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "44e9ffcbbcfea40ed77359d7c5c734351e2254f9f2a45a0c8080c059bc17edf7",
+      "disposition": "reviewed: BSD-2-Clause supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
+    },
+    {
       "id": "entities@6.0.1",
       "license": "BSD-2-Clause",
       "repository": "https://github.com/fb55/entities",
@@ -14923,7 +15102,7 @@
           "sha256": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "442607d9369bbeb844a4e4ae6f13d86bfd16164e402ebdbe5ec6454fa023c5dd",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -14945,7 +15124,7 @@
           "sha256": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "cfab82e3b11cd881e780f48d6169db24d8d35e2bc18d342e10601f61791ddeb7",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -15034,7 +15213,7 @@
           "sha256": "5e325595b4ea8cfec3802f545b1def5d7b73e4a5b8e9ba63e32a320f67732292"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "web-client"],
+      "uses": ["application-runtime", "web-client"],
       "fingerprint": "4d7a44c31098403478820f880273cf3ab7425b4b0c9ef8a9d96c40ae675419ce",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -15169,7 +15348,7 @@
           "sha256": "9a9edad7baae52622bddf3c15b2ef8a33d2c89f2d25408ad13e8a7481c6b0c97"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "1ac82671a5fae4e929340b2a1dafb04a369a3d11419409d504394b00546e5653",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -15708,29 +15887,6 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
-      "id": "fault@1.0.4",
-      "license": "MIT",
-      "repository": "https://github.com/wooorm/fault",
-      "author": {
-        "url": "https://wooorm.com",
-        "name": "Titus Wormer",
-        "email": "tituswormer@gmail.com"
-      },
-      "registry": "https://registry.npmjs.org/fault/1.0.4",
-      "integrity": "sha512-CJ0HCB5tL5fYTEA7ToAq5+kTwd++Borf1/bifxd9iT70QcXr4MRrO3Llf8Ifs70q+SJcGHFtnIE/Nw6giCtECA==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:fault@1.0.4/license",
-          "sha256": "63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "4ac78139c1ccd606402e8cb15306624dc3991ef3fefaab2e0049a99808cda63d",
-      "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
       "id": "fd-slicer@1.1.0",
       "license": "MIT",
       "repository": "https://github.com/andrewrk/node-fd-slicer",
@@ -15865,7 +16021,7 @@
           "sha256": "ec5696fcba435679958162f5fcd71bd77cee6d2008e5bd0cbb2e88aedd1822b2"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "67a5dc1f567c3f280181f238cb0488a196f47b4fe8132d519d5442c41b170144",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -15888,7 +16044,7 @@
           "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "ee3dc7d245e5279f95c09f34ceeac78efaa6dae258cf841c2e97fd9acf43fc5b",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -15980,29 +16136,6 @@
       ],
       "uses": ["application-runtime"],
       "fingerprint": "827d841a0b3ef4f36ca8d25000f0449535ba8770b0c6319c1bb67d31e897d1c2",
-      "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
-      "id": "format@0.2.2",
-      "license": "MIT",
-      "repository": "https://github.com/samsonjs/format",
-      "author": {
-        "name": "Sami Samhuri",
-        "email": "sami@samhuri.net"
-      },
-      "registry": "https://registry.npmjs.org/format/0.2.2",
-      "integrity": "sha512-wzsgA6WOq+09wrU1tsJ09udeR/YZRaeArL9e1wPbFg3GG2yDnC2ldKpxs4xunpFF9DgqCqOIra3bc1HWrJ37Ww==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
-          "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
-          "basis": "supplier SPDX declaration; package ships no license notice"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "efcfec00a78fab99b709d59cbfafec2e302dd3595a6cb29bbdba836d1781a6cb",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
@@ -16108,7 +16241,7 @@
           "sha256": "8465b04b67f473341171b5c9c8b2c741a4a395b3f6ed58339b3a4f4db3db7472"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "5bc7f0c2ac9f76845b1c4d2edf04b9065046ca32c16df2c479500cc88c476e45",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -16149,7 +16282,7 @@
           "sha256": "773e131a7684726005a7e4688a80b4620033bc08499bc1404dd1a1eb3bca725e"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "web-client"],
+      "uses": ["application-runtime", "web-client"],
       "fingerprint": "06d67d95ddd651da30f5a289c22f301cfe3cc6dc325fac791ee221f3c350b2e8",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -16234,7 +16367,7 @@
           "sha256": "e3a956681ee067f971ac413994171b3d90ca801ec6324e76c9c55366cfe31cb0"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "46aa0b92114c82c128f1504ff4cb5f6b29cbdf440cc1de2d7eb41e33ff35aadd",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -16257,7 +16390,7 @@
           "sha256": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "web-client"],
+      "uses": ["application-runtime", "web-client"],
       "fingerprint": "13391309872e846eae3fcf21ce758902ced1c9a58fb83d3e1172b43d921e5864",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -16392,7 +16525,7 @@
           "sha256": "cdbc258d13806538e727964c2436a8806e6e2496ccd616224aace6f7bf98dbc1"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "33810a326ec2a8ec33d67eae57610804488f17bac849e3539d8f4519fa7855a9",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -16496,7 +16629,7 @@
           "sha256": "8a1af140fdfbf5afd3df27f7e662f989c5b963a300020dfafce42033cae9e004"
         }
       ],
-      "uses": ["application-runtime"],
+      "uses": ["application-runtime", "report-authoring-build", "web-client-build"],
       "fingerprint": "eda1ae2a7220c15259e43ee3afeb0ae9af051dfe91dd582355b4a41a3d7ed019",
       "disposition": "reviewed: permissive BlueOak-1.0.0; preserve supplier terms"
     },
@@ -16684,7 +16817,7 @@
           "sha256": "bf9b0d665be2a689851eea667ca9f42066ea1d903b38349c51e6a44b2577680a"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "web-client"],
+      "uses": ["application-runtime", "web-client"],
       "fingerprint": "272f1486fb550a28d28f00245f888202e3c1ef56e40f0c80bd27d79ff287fa4b",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -16849,7 +16982,7 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
-      "id": "hast-util-to-html@9.0.6",
+      "id": "hast-util-to-html@9.0.5",
       "license": "MIT",
       "repository": "https://github.com/syntax-tree/hast-util-to-html",
       "author": {
@@ -16857,19 +16990,19 @@
         "name": "Titus Wormer",
         "email": "tituswormer@gmail.com"
       },
-      "registry": "https://registry.npmjs.org/hast-util-to-html/9.0.6",
-      "integrity": "sha512-1SZUxCN3TtJAE7e2BQN2MBHsoZ1gnmi9GoCP5Di59CSWptIezSAW09yDZyVbanb78V9eCwrKqdQsjtfVTxYHWA==",
+      "registry": "https://registry.npmjs.org/hast-util-to-html/9.0.5",
+      "integrity": "sha512-OguPdidb+fbHQSU4Q4ZiLKnzWo8Wwsf5bZfbvu7//a9oTYoqD/fWpe96NuHkoS9h0ccGOTe0C4NGXdtS0iObOw==",
       "installed": true,
       "category": "dependency-installation",
       "evidence": [
         {
-          "source": "npm:hast-util-to-html@9.0.6/license",
+          "source": "npm:hast-util-to-html@9.0.5/license",
           "sha256": "dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb"
         }
       ],
       "uses": ["web-client"],
-      "fingerprint": "fead9441335814dc7effb74810cee2482594f05c5d2dd7c67609227f35b15750",
-      "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
+      "fingerprint": "183dca8b70e4f4a1ee62e918c661e47184a83cbe967309efe8515db43a5536ff",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },
     {
       "id": "hast-util-to-jsx-runtime@2.3.7",
@@ -17055,56 +17188,6 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
-      "id": "highlight.js@10.7.3",
-      "license": "BSD-3-Clause",
-      "repository": "https://github.com/highlightjs/highlight.js",
-      "author": {
-        "name": "Ivan Sagalaev",
-        "email": "maniac@softwaremaniacs.org"
-      },
-      "registry": "https://registry.npmjs.org/highlight.js/10.7.3",
-      "integrity": "sha512-tzcUFauisWKNHaRkN4Wjl/ZA07gENAjFl3J/c480dprkGTg5EQstgaNFqBfUqCq54kZRIEcreTsAgF/m2quD7A==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:highlight.js@10.7.3/LICENSE",
-          "sha256": "6c081431591d9df696c82dc598fe1423765b8a299b200ed00b281afd0f64c490"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "267f19a6bc7604ce2c0f92078fe919507bc343ffaa3afeebb4f0dd5909da77f4",
-      "disposition": "reviewed: BSD-3-Clause supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
-      "id": "highlightjs-vue@1.0.0",
-      "license": "CC0-1.0",
-      "repository": "https://github.com/highlightjs/highlightjs-vue",
-      "author": {
-        "url": "https://github.com/LissetteIbnz",
-        "name": "Sara Lissette",
-        "email": "lissette.ibnz@gmail.com"
-      },
-      "registry": "https://registry.npmjs.org/highlightjs-vue/1.0.0",
-      "integrity": "sha512-PDEfEF102G23vHmPhLyPboFCD+BkMGu+GuJe2d9/eH4FsCwvgBpnc9n0pGE+ffKdph38s6foEZiEjdgHdzp+IA==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "https://raw.githubusercontent.com/highlightjs/highlightjs-vue/HEAD/LICENSE",
-          "sha256": "e02de3f1cb136ad72488c7661392e88c5e8c3b7150297cf6fe8eb7851db54fc8"
-        },
-        {
-          "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/CC0-1.0.txt",
-          "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
-          "basis": "published package declares CC0-1.0; upstream BSD notice also retained"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "602440e9c0fe874b5a0205d4ea710c1bddc4d680042a1ec7edcb80e74a06e6fe",
-      "disposition": "reviewed: CC0-1.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
       "id": "hono@4.13.18",
       "license": "MIT",
       "repository": "https://github.com/honojs/hono",
@@ -17166,7 +17249,7 @@
           "sha256": "10b2831912dc4dc91b25429511e6c74f901eebf64b625328f8fd08dd9c3cf8fe"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "bf63f5292b76bcad1dc55d69792e82103df76d97c582826b444094370337d06a",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -17719,7 +17802,7 @@
           "sha256": "5c496ce5ae47eb8e5ddcaa5e29c27c446a3855b19e3a66991b52f361bed22b28"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "3b9467d1875ad157b3bdf36600d407d929b7e7bf779f4f2bd9605eda7754b41a",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -18020,27 +18103,6 @@
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
     {
-      "id": "is-what@4.1.16",
-      "license": "MIT",
-      "repository": "https://github.com/mesqueeb/is-what",
-      "author": {
-        "name": "Luca Ban - Mesqueeb"
-      },
-      "registry": "https://registry.npmjs.org/is-what/4.1.16",
-      "integrity": "sha512-ZhMwEosbFJkA0YhFnNDgTM4ZxDRsS6HqTo7qsZM08fehyRYIYa0yHu5R6mgo1n/8MgaPBXiPimPD77baVFYg+A==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:is-what@4.1.16/LICENSE",
-          "sha256": "91d090a8e06fd0f8b599f7bd5bc9e3d97896548037ef43ee1926c6109b7cd342"
-        }
-      ],
-      "uses": ["report-authoring-build"],
-      "fingerprint": "8cc483e2b4b70f3e43d99f072e8c31848ce9bf304f4a0f871dd6eab698c6f5fe",
-      "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
-    },
-    {
       "id": "is-wsl@3.1.1",
       "license": "MIT",
       "repository": "https://github.com/sindresorhus/is-wsl",
@@ -18149,6 +18211,30 @@
       "uses": ["application-runtime"],
       "fingerprint": "49290f84a497fea6e0128f45da73fd14ce4c26f46648c47ce93ef336b7c906b1",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
+    },
+    {
+      "id": "jiti@2.7.0",
+      "license": "MIT",
+      "repository": "https://github.com/unjs/jiti",
+      "author": null,
+      "registry": "https://registry.npmjs.org/jiti/2.7.0",
+      "integrity": "sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:jiti@2.7.0/LICENSE",
+          "sha256": "46231df5a7733c3f52f11b71f3df61813007745b62b09031acfb45fb42d75082"
+        }
+      ],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-authoring-build",
+        "web-client-build"
+      ],
+      "fingerprint": "3cb8789eb605e8fb2cec6e2bacfd4ff3e4a981fe7941fedad9cbec707feb9bc7",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },
     {
       "id": "jose@5.10.0",
@@ -18280,7 +18366,7 @@
           "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "e7c72b922531b2163a79aaa72281b3cd85fc0a5a819d442375092a032cf24d83",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -18432,7 +18518,7 @@
           "sha256": "53e59feb13058722d977c699eb0407c7bce2f93c949b681bbd2ff31698535927"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "713ae290e116f3b63eb77ea6b3fe4f314c08257f4c1e8c3805b92c7cddde1ad5",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -19010,6 +19096,25 @@
       "disposition": "reviewed: supplier-installed build/data tooling; preserve attribution and license; source available at repository; no covered engine embedded in report HTML; do not relicense covered files"
     },
     {
+      "id": "linkify-it@5.0.2",
+      "license": "MIT",
+      "repository": "https://github.com/markdown-it/linkify-it",
+      "author": null,
+      "registry": "https://registry.npmjs.org/linkify-it/5.0.2",
+      "integrity": "sha512-ONTm2jCMAVZjgQa/Fy1kScXsuOoF5NPTsoFBdE1KVIZ2vAh/r9+Bqo+0jINCBYnavTPQZz38QzFTme79ENoN3Q==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:linkify-it@5.0.2/LICENSE",
+          "sha256": "95e3f7f0e81e9b4940cdfaa1956aaff5e4dfd2fb1565041e7c78eb9a606f23e3"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "401e9ac8d9d02780872cf8b7fe4161c13e721baf20426dceaf381a5f445a8097",
+      "disposition": "reviewed: MIT supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
+    },
+    {
       "id": "lit-element@4.2.2",
       "license": "BSD-3-Clause",
       "repository": "https://github.com/lit/lit",
@@ -19026,7 +19131,7 @@
           "sha256": "45d31799d0db956cc3eb5469346abbd9b7025babc5ff29fab10d7095da992ef1"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "49474000d5b8cc627d119abc57a6a7230f0896edccdaa330ce7280483eb0c662",
       "disposition": "reviewed: BSD-3-Clause supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -19047,7 +19152,7 @@
           "sha256": "2b66f9390afde29edfe4314daff93f01fb182e1178053e228120178987e5db75"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "97caff82c17264397d26e81862c52618d7241cdfeb3c8f925e68832c64357d6d",
       "disposition": "reviewed: BSD-3-Clause supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -19068,7 +19173,7 @@
           "sha256": "45d31799d0db956cc3eb5469346abbd9b7025babc5ff29fab10d7095da992ef1"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "0148bb05c20251ae67769aef3915abd105634f7a25931a74b0457e23c68b79ab",
       "disposition": "reviewed: BSD-3-Clause supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -19091,7 +19196,7 @@
           "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "11cb0ff14f22890fa19a7c597eb7b47dcd763aeb6e03a07cad8d6a6e88b645b2",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -19370,29 +19475,6 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
-      "id": "lowlight@1.20.0",
-      "license": "MIT",
-      "repository": "https://github.com/wooorm/lowlight",
-      "author": {
-        "url": "https://wooorm.com",
-        "name": "Titus Wormer",
-        "email": "tituswormer@gmail.com"
-      },
-      "registry": "https://registry.npmjs.org/lowlight/1.20.0",
-      "integrity": "sha512-8Ktj+prEb1RoCPkEOrPMYUN/nCggB7qAWe3a7OpMjWQkh3l2RD5wKRQ+o8Q8YuI9RG/xs95waaI/E6ym/7NsTw==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:lowlight@1.20.0/license",
-          "sha256": "ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "eff10802722b2d0a57b26f2347765cc4b794783df59c1c00719003515e907e4a",
-      "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
       "id": "lru-cache@10.4.3",
       "license": "ISC",
       "repository": "https://github.com/isaacs/node-lru-cache",
@@ -19410,7 +19492,7 @@
           "sha256": "451ec07eeb9c4e1b86de9abdaa426462a8be48f887ec7421cf0bbb9c769555ab"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "0bbb34d0521e62c779459584e55fea56a7ab606aba3e90a97e27727d338a4827",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -19454,9 +19536,31 @@
           "sha256": "4ec3d4c66cd87f5c8d8ad911b10f99bf27cb00cdfcff82621956e379186b016b"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "0dbf3dcff192de607969f1ad50f95e8ebcab4685fa1d499332706f267d250b80",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
+    },
+    {
+      "id": "lru_map@0.4.1",
+      "license": "MIT",
+      "repository": "https://github.com/rsms/js-lru",
+      "author": {
+        "name": "Rasmus Andersson",
+        "email": "me@rsms.me"
+      },
+      "registry": "https://registry.npmjs.org/lru_map/0.4.1",
+      "integrity": "sha512-I+lBvqMMFfqaV8CJCISjI3wbjmwVu/VyOoU7+qtu9d7ioW5klMgsTTiUOUp+DJvfTTzKXoPbyC6YfgkNcyPSOg==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "https://raw.githubusercontent.com/rsms/js-lru/HEAD/LICENSE.txt",
+          "sha256": "e56e8761e8eb0576edcf9e0cd68f41c78cb6db84f63740cb051d68af1d847be6"
+        }
+      ],
+      "uses": ["web-client"],
+      "fingerprint": "2df0c27a9d4f6e1e150a99983732d8968f856eb15b29694dd37e033493cc0a18",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },
     {
       "id": "lucide-react@0.525.0",
@@ -19499,6 +19603,25 @@
       "uses": ["web-client"],
       "fingerprint": "1eac02c0da3233db4efb795e574eb94b1673446bc4c7b081d06cdb65c8f0f27d",
       "disposition": "reviewed: ISC supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
+    },
+    {
+      "id": "lucide-react@1.73.0",
+      "license": "ISC",
+      "repository": "https://github.com/lucide-icons/lucide",
+      "author": "Eric Fennis",
+      "registry": "https://registry.npmjs.org/lucide-react/1.73.0",
+      "integrity": "sha512-fVOzGviL9mTfHenG1PbCfIceavyGlnpYNSYr+aGZHLRymAJ7DTP6KHuqt0uBkCKAoenr1UVkwSbDIYt2xIesEQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:lucide-react@1.73.0/LICENSE",
+          "sha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "b98de0759b453d5e7af137e3f3a471bab228158d000ef3a10249808e514a22d3",
+      "disposition": "reviewed: ISC supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },
     {
       "id": "lucide@0.525.0",
@@ -19582,6 +19705,25 @@
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
     {
+      "id": "markdown-it@14.3.3",
+      "license": "MIT",
+      "repository": "https://github.com/markdown-it/markdown-it",
+      "author": null,
+      "registry": "https://registry.npmjs.org/markdown-it/14.3.3",
+      "integrity": "sha512-L//tDAkjTjJCU6pBUSBTgs3Kg4InVaZuUZog/b6V12UKhcDQ7S78877ibbCanRExwPuYP1CZD7Gd2dxSy1GXRg==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:markdown-it@14.3.3/LICENSE",
+          "sha256": "792c48c5a849a15fdf9e37e8bcf9e6d1dd13b32b46c642a748a0a46a9919d473"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "0c8773a77df9a48ca1a8479fe0430fb20519dc40f3116a3f97b81d97d166673a",
+      "disposition": "reviewed: MIT supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
+    },
+    {
       "id": "markdown-table@3.1.0",
       "license": "MIT",
       "repository": "https://github.com/wooorm/markdown-table",
@@ -19663,7 +19805,7 @@
           "sha256": "8e3a3f82f59a60958f56ca08f445647c32a4733dc7ca6c2c46f6eb898471ab9c"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "b2aec021b714ffacdea1deecaf9690a75ac4d9964417d6a0907a4d651d5510a5",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -20150,6 +20292,25 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
+      "id": "mdurl@2.1.0",
+      "license": "MIT",
+      "repository": "https://github.com/markdown-it/mdurl",
+      "author": null,
+      "registry": "https://registry.npmjs.org/mdurl/2.1.0",
+      "integrity": "sha512-1+HBaOx0zi/dQWht8rNv9MYf9qqpqL/kxI0hXImU6Y547zM6Sni8BQibt7ifgMcYtQg41ao3Ivd6cnSM86inpg==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:mdurl@2.1.0/LICENSE",
+          "sha256": "6b6a356c4337e2446841f30f3cdf7e7023af8c5260b5e347c0f987b9f6aa2644"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "e2a64d7163040bf0964dc6e78a6bdfaaa0fbc0e9afde3f86be76c722c2b91e2f",
+      "disposition": "reviewed: MIT supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
+    },
+    {
       "id": "media-typer@1.1.1",
       "license": "MIT",
       "repository": "https://github.com/jshttp/media-typer",
@@ -20170,27 +20331,6 @@
       "uses": ["application-runtime", "web-client"],
       "fingerprint": "be0c21402239596880a597439bf33bcdcae57e8fb1aa00e537c6beadf89a02cd",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
-      "id": "merge-anything@5.1.7",
-      "license": "MIT",
-      "repository": "https://github.com/mesqueeb/merge-anything",
-      "author": {
-        "name": "Luca Ban - Mesqueeb"
-      },
-      "registry": "https://registry.npmjs.org/merge-anything/5.1.7",
-      "integrity": "sha512-eRtbOb1N5iyH0tkQDAoQ4Ipsp/5qSR79Dzrz8hEPxRX10RWWR/iQXdoKmBSRCThY1Fh5EhISDtpSc93fpxUniQ==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:merge-anything@5.1.7/LICENSE",
-          "sha256": "91d090a8e06fd0f8b599f7bd5bc9e3d97896548037ef43ee1926c6109b7cd342"
-        }
-      ],
-      "uses": ["report-authoring-build"],
-      "fingerprint": "705bc19ee2cb92a431e69fb14f1f2a79e0bebce42e817d5232b7dba3461a3074",
-      "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
     {
       "id": "merge-descriptors@2.0.0",
@@ -21657,7 +21797,7 @@
           "sha256": "d11323827fa4edeaafc437cc5b91b6971b335f0127efeeb42bf5122fe8657e8f"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "cdea813c2c2c2786bfa31b6dd5d29f6cfe539b05be18a6c7536ba21d6ede8acf",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -21862,7 +22002,7 @@
           "sha256": "833faa18ac4b83a6372c05b3643d0d44ecd27d6627b8cd19b0f48fe74260cf39"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "8159c933572a58999d10cc1b94b039296471c6d9a39a2924ef26760b1ce2faee",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -21885,7 +22025,7 @@
           "sha256": "8a1af140fdfbf5afd3df27f7e662f989c5b963a300020dfafce42033cae9e004"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "671f150258b24364d08136fdd70f3b4517728cc429e432bf3f87a76b8ea38206",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -21973,7 +22113,7 @@
           "sha256": "1662fae9b5314d11cf51284e2dcd1f006a354f7343f08712a730fcff9a359801"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build", "web-client"],
+      "uses": ["application-runtime", "web-client"],
       "fingerprint": "70e291a4e264a676c5333862ae7395785b36dec33a1846cb5488d1d8e08463df",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -22170,7 +22310,7 @@
           "sha256": "3706296ed611888111ceccc1dff4712844dea4bde0b185c82d718c3b69895abe"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "10392a79996a5670811a9f61e20330a31a3d2eb72dab31f737c99631fcd1e4b4",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -22703,7 +22843,7 @@
           "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "f0053fbc671dde73c3aa6511155e2ea1a3758804c32f6f8a2514e0d5b6b7745a",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -22726,7 +22866,7 @@
           "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "529f7f0783fdd995ff1748eecb9130f7ab664f932ca2dd065ebc4f11c314c3a9",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -22902,7 +23042,7 @@
           "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "6dbcf0dfaaabc9881ce2ccd6c9d233fa6d4caeae765e2cc9fd90fd629ead07a2",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -23032,7 +23172,7 @@
           "sha256": "8c535800331e1e4439835555b3f9edc7fe9dee2fab0d8bbbd5a982e8b8343d4d"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "9fe344fa6c1bfba026cf17ce1b4cf029fdec227045c072a84ec23d722a13dfd5",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -23140,7 +23280,7 @@
           "sha256": "6fb9754611c20f6649f68805e8c990e83261f29316e29de9e6cedae607b8634c"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "5376ee1f285363301b86ce89e55f42b494e09d3201fb84748a05f23cc4fc3652",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -23185,7 +23325,7 @@
           "sha256": "3f4609137f65070541b9214300ea0d640af8192857de0eeb2b03403003d9228a"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "e328a97b8c45f23b3f6bb421f0458d90698aa4dd9a0093a16b4ef84fc56bf767",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -23208,7 +23348,7 @@
           "sha256": "8a1af140fdfbf5afd3df27f7e662f989c5b963a300020dfafce42033cae9e004"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "68936ee2153c80d01ac1a84c7550a41d912cc8855d3ccd1ea1c7d47c3a2aaafa",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -23521,7 +23661,7 @@
           "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "191d5bd835ff6e6a4f5c0c160a76550b51fc37bd8ef9bcb438a6359b1094700b",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -23748,27 +23888,6 @@
       "uses": ["contributor-build", "report-authoring-build", "web-client-build"],
       "fingerprint": "4437b779429d2c405ba73e8e3931dbc63a76f524140cd572814ed7aab325badf",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
-    },
-    {
-      "id": "prismjs@1.30.0",
-      "license": "MIT",
-      "repository": "https://github.com/PrismJS/prism",
-      "author": {
-        "name": "Lea Verou"
-      },
-      "registry": "https://registry.npmjs.org/prismjs/1.30.0",
-      "integrity": "sha512-DEvV2ZF2r2/63V+tK8hQvrR2ZGn10srHbXviTlcv7Kpzw8jWiNTqbVgjO3IY8RxrrOUF8VPMQQFysYYYv0YZxw==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:prismjs@1.30.0/LICENSE",
-          "sha256": "2b947f0901a7ffcf08a89957da9783c0e9c6e72cb6ce8e959f501ab5409e4d2b"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "8dff2bcf6f9e8ef2f96d2b1447a6e2c0b95dc5f6d43c84c0c1a1674c19594091",
-      "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
       "id": "proc-log@6.1.0",
@@ -24034,6 +24153,28 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
+      "id": "punycode.js@2.3.1",
+      "license": "MIT",
+      "repository": "https://github.com/mathiasbynens/punycode.js",
+      "author": {
+        "url": "https://mathiasbynens.be/",
+        "name": "Mathias Bynens"
+      },
+      "registry": "https://registry.npmjs.org/punycode.js/2.3.1",
+      "integrity": "sha512-uxFIHU0YlHYhDQtV4R9J6a52SLx28BCjT+4ieh7IGbgwVJWO+km431c4yRlREUAsAmt/uMjQUyQHNEPf0M39CA==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:punycode.js@2.3.1/LICENSE-MIT.txt",
+          "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "16470cb553a22732209cbfa7a73dc119a11115d45c9e605843775df62221c0ca",
+      "disposition": "reviewed: MIT supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
+    },
+    {
       "id": "qs@6.17.1",
       "license": "BSD-3-Clause",
       "repository": "https://github.com/ljharb/qs",
@@ -24120,25 +24261,6 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
-      "id": "react-aria@3.53.1",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/adobe/react-spectrum",
-      "author": null,
-      "registry": "https://registry.npmjs.org/react-aria/3.53.1",
-      "integrity": "sha512-dikisyOjJd3D2fFrIDWmVWzqiLz5B86GzZv1zxs7xI4dVc0JIz/1Wa52I20gYvVL2WXeFXlygYsle/QcOMhtcg==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:react-aria@3.53.1/LICENSE",
-          "sha256": "7dfe6526888bac51759c99f9a51262ba2711a8c12a067f2181609dd9a4066b84"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "a2f4cfa29e39ce835349ba46637241240d1811905bbace2da305694e217b2abc",
-      "disposition": "reviewed: Apache-2.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
       "id": "react-dom@19.3.1",
       "license": "MIT",
       "repository": "https://github.com/react/react",
@@ -24153,7 +24275,7 @@
           "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "63f996e38654b845bab2a0f1125748257712e117716e0fd0719f59def3675f32",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -24212,28 +24334,6 @@
       ],
       "uses": ["web-client"],
       "fingerprint": "3b565506306d5b5d03662cb78be3c49bbcaf8a0624c310724eda6dfaccb62027",
-      "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
-      "id": "react-markdown@10.1.0",
-      "license": "MIT",
-      "repository": "https://github.com/remarkjs/react-markdown",
-      "author": {
-        "name": "Espen Hovlandsdal",
-        "email": "espen@hovlandsdal.com"
-      },
-      "registry": "https://registry.npmjs.org/react-markdown/10.1.0",
-      "integrity": "sha512-qKxVopLT/TyA6BX3Ue5NwabOsAzm0Q7kAPwq6L+wWDwisYs7R8vZ0nRXqq6rkueboxpkjvLGU9fWifiX/ZZFxQ==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:react-markdown@10.1.0/license",
-          "sha256": "f6196c64e144f9a6fa9154c3a80bc8b89615a9567934b83a8951879f06ba2aef"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "6a92831879c785c7132b9eca86a4eec917fc70257451cea2cee7e5c46aadd8cb",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
@@ -24326,25 +24426,6 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
-      "id": "react-stately@3.51.0",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/adobe/react-spectrum",
-      "author": null,
-      "registry": "https://registry.npmjs.org/react-stately/3.51.0",
-      "integrity": "sha512-YJcmkAXu2XOQP97hO/qz/cC3qv9kni3oVhwBlxWr358BHePJUpY15XwL3YSRMKxYt4EkslPqAz11JRirMfANGw==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:react-stately@3.51.0/LICENSE",
-          "sha256": "7dfe6526888bac51759c99f9a51262ba2711a8c12a067f2181609dd9a4066b84"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "201d124eb9b5d6b393931064abec6dec947ae4451178dd4184b9c90af466b7a4",
-      "disposition": "reviewed: Apache-2.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
       "id": "react-style-singleton@2.2.3",
       "license": "MIT",
       "repository": "https://github.com/theKashey/react-style-singleton",
@@ -24367,27 +24448,6 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
-      "id": "react-syntax-highlighter@16.1.2",
-      "license": "MIT",
-      "repository": "https://github.com/react-syntax-highlighter/react-syntax-highlighter",
-      "author": {
-        "name": "Conor Hastings"
-      },
-      "registry": "https://registry.npmjs.org/react-syntax-highlighter/16.1.2",
-      "integrity": "sha512-4dM0+mYtfnhgwYWAvFx56fgyjIYk2yFopfiICFvMDhRfeSGRNd+ngFALdPD9q7llyGAmiE6pzOSOwI8Lf9ca1w==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:react-syntax-highlighter@16.1.2/LICENSE",
-          "sha256": "a74e9029bdf2e92141bc711a6b17fa77b90c10eeec51193c83279cc69848f5bf"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "672e4adcfff0c198a42ace41713f6ede46f0a233b55e1e075fd29a3dec9ac761",
-      "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
       "id": "react@19.3.1",
       "license": "MIT",
       "repository": "https://github.com/react/react",
@@ -24402,7 +24462,7 @@
           "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "3559e0ecca3d58cbd392142b5ac8dbe285c7c3b4f317b0052f0ebcb4f43c1ac9",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -24526,7 +24586,7 @@
           "sha256": "26cdf2329b82081dcbe72b4c72fbfe6ba0c785ad1762af29afb9c6249b8a4416"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "1507c008b4a6c214162a5755912876ec49ed68de7ef372a11cade1ae64e6b1c6",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -24597,29 +24657,6 @@
       "uses": ["application-runtime"],
       "fingerprint": "0b62085b07448e061b531c933bca438d7bec262125aacf98284e9f45cda06ce3",
       "disposition": "reviewed: Apache-2.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
-    },
-    {
-      "id": "refractor@5.0.0",
-      "license": "MIT",
-      "repository": "https://github.com/wooorm/refractor",
-      "author": {
-        "url": "https://wooorm.com",
-        "name": "Titus Wormer",
-        "email": "tituswormer@gmail.com"
-      },
-      "registry": "https://registry.npmjs.org/refractor/5.0.0",
-      "integrity": "sha512-QXOrHQF5jOpjjLfiNk5GFnWhRXvxjUVnlFxkeDmewR5sXkr3iM46Zo+CnRR8B+MDVqkULW4EcLVcRBNOPXHosw==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:refractor@5.0.0/license",
-          "sha256": "4b74d4b7b5ec11a254b1482d85a23dd944c873dc73c2ec3a86eaee43c13bdb53"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "11d768cbba32b8c5a835d3df3071b47ccfb597fd7efe94fdff8ac22329b90d19",
-      "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
       "id": "regex-recursion@6.0.2",
@@ -24702,7 +24739,7 @@
           "sha256": "2d65cdba6e67bd7fa9c59070eb3ef5b65490cf1644560eb30c931a1d364009c2"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "70f6a0a59beb50c93606c81eb3e3b9bc64d36e377b824d8506e7fc7fcccc42e9",
       "disposition": "reviewed: BSD-2-Clause supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -25065,7 +25102,7 @@
           "sha256": "0bb5035e49bf9b5661655b402bab3c3efccb8eab2a50e37392100139fe3280f2"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "c6ac588fe33464c87f07d64c8c3d8c0169b0bc251ccd1e6888c6e9dd0aec1d2b",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -25089,6 +25126,25 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
+      "id": "reselect@5.3.0",
+      "license": "MIT",
+      "repository": "https://github.com/reduxjs/reselect",
+      "author": null,
+      "registry": "https://registry.npmjs.org/reselect/5.3.0",
+      "integrity": "sha512-XGoLeRAVzUTcJ1qkxPQhDJyIZ5d6zzZD9nT7AEZOaaU9UbWclhycElmhO+VD5bFeLuzhPBaOV2oXC8uG35ZSpg==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:reselect@5.3.0/LICENSE",
+          "sha256": "e98047a5dee068b33f82e8c4b7a63037b5108c93393198efd4097753004af5dd"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "ef05763981e36753ef6adde3cf313f7a4d88961a784e7c2c32aaf4cec335ae2c",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
+    },
+    {
       "id": "resolve@1.22.14",
       "license": "MIT",
       "repository": "https://github.com/browserify/resolve",
@@ -25107,7 +25163,7 @@
           "sha256": "60acd7711e6c138e6041836e32d922705254cc1568a30fdf16aa8f59bb87aeaa"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "871c74967ee283a728e5d06b459ceeca3ef90a4d30ccef6421b605ee2f3479de",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -25329,7 +25385,7 @@
           "sha256": "b2b93854987428637d6147d4d560d0457c40640088327c3f466c91c23c8405fd"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "9fcf92701f2d89858579f0ea68ca21b3759a17afc1c2da9def273dc17a058a87",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -25438,7 +25494,7 @@
           "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "5e31f6cb73fadb7cfffe37629e9475049e94c19afbbe387fcba6735ec7178674",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -25478,7 +25534,7 @@
           "sha256": "4ec3d4c66cd87f5c8d8ad911b10f99bf27cb00cdfcff82621956e379186b016b"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "4f7cadf22b2a2fa8513125ad76e715bf35ca8a49fae2f15a2d5da90aa4f571ab",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
@@ -25540,13 +25596,7 @@
           "sha256": "2bd8a2c61751fc47dcd214f864b6fcdbcb518995fbf497c81a06c3bfe8d1d9d4"
         }
       ],
-      "uses": [
-        "application-runtime",
-        "contributor-build",
-        "report-artifact",
-        "report-authoring-build",
-        "web-client"
-      ],
+      "uses": ["application-runtime", "web-client"],
       "fingerprint": "3207b58d19af07a19958edc2be3b5d35f3054af9370d740a8754690a34fd782e",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -25565,13 +25615,7 @@
           "sha256": "2bd8a2c61751fc47dcd214f864b6fcdbcb518995fbf497c81a06c3bfe8d1d9d4"
         }
       ],
-      "uses": [
-        "application-runtime",
-        "contributor-build",
-        "report-artifact",
-        "report-authoring-build",
-        "web-client"
-      ],
+      "uses": ["application-runtime", "web-client"],
       "fingerprint": "14d4af083e71324b7c49d95055195b9df311daca3d85090e47e90c6ebb3e0a4b",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -25922,35 +25966,9 @@
           "sha256": "59a76ed2f4a3ebe8d20a58869ef9c09420f796aa179420c8fb916f5557defc9b"
         }
       ],
-      "uses": [
-        "application-runtime",
-        "contributor-build",
-        "report-artifact",
-        "report-authoring-build"
-      ],
+      "uses": ["application-runtime"],
       "fingerprint": "cadd628d56e18881a5e51f4b993ab140f3de5573bd59436bc29e8d5970ea7460",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
-    },
-    {
-      "id": "solid-refresh@0.6.3",
-      "license": "MIT",
-      "repository": "https://github.com/solidjs/solid-refresh",
-      "author": {
-        "name": "Ryan Carniato"
-      },
-      "registry": "https://registry.npmjs.org/solid-refresh/0.6.3",
-      "integrity": "sha512-F3aPsX6hVw9ttm5LYlth8Q15x6MlI/J3Dn+o3EQyRTtTxidepSTwAYdozt01/YA+7ObcciagGEyXIopGZzQtbA==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:solid-refresh@0.6.3/LICENSE",
-          "sha256": "035389ed56027b7dccc1a8eabb0e4fed4d053a7cf2b7b1f5eefcc28a2846d16a"
-        }
-      ],
-      "uses": ["report-authoring-build"],
-      "fingerprint": "5b9401532b2c4368a785e869fed73253832e717b4a03eb74223d5f8deb5a63a4",
-      "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
     {
       "id": "sonic-boom@4.2.1",
@@ -26306,7 +26324,7 @@
           "sha256": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "ce3058b43e6d869b91c67c3151d044134b875d2a1c7afeea49653c0e396c13b1",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -26417,7 +26435,7 @@
           "sha256": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "4e8090f6b4fb08f5cc773a665b26eb81bdb17af43d1b5952d6c9f615a8ddb0d5",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -26528,31 +26546,9 @@
           "sha256": "0f0ca96f50793990031ebc488a38f7292ff70bce8ab6a8e5eeda674abc32ccdf"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "15bd3738edf69405f0639fd97c582ad569274e18a4887839eff535eccbcb9919",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
-    },
-    {
-      "id": "tabbable@6.5.1",
-      "license": "MIT",
-      "repository": "https://github.com/focus-trap/tabbable",
-      "author": {
-        "url": "http://davidtheclark.com/",
-        "name": "David Clark"
-      },
-      "registry": "https://registry.npmjs.org/tabbable/6.5.1",
-      "integrity": "sha512-dMCuwDUY6Noz3zVKLefBC4wq+aJV20yc7vWmM7uTNGwtQSFF5kX7OUIUsxuVajz/bdt5Xqdah3/0NLjth+cM5A==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:tabbable@6.5.1/LICENSE",
-          "sha256": "8e714750725e75c8b31172ef84c0805f94873f86e3b5cfca8a948553f0778fa1"
-        }
-      ],
-      "uses": ["web-client"],
-      "fingerprint": "067ab98c9f5b7ade8c588ace3feeb0495453b44e3ad99547af2ca6ae8819f922",
-      "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
       "id": "tailwind-merge@3.7.0",
@@ -26569,9 +26565,49 @@
           "sha256": "d4c70c7ce38cea8778f0aed3fc0bef0a9dbd27f13bd8b6773cbd6d37941971e5"
         }
       ],
-      "uses": ["web-client"],
+      "uses": ["report-artifact", "web-client"],
       "fingerprint": "3d12f146fe4f7f42ff6eb68e43df5600c5718836e80bae0c91fc9964ebb1ebe3",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
+    },
+    {
+      "id": "tailwindcss@4.3.5",
+      "license": "MIT",
+      "repository": "https://github.com/tailwindlabs/tailwindcss",
+      "author": null,
+      "registry": "https://registry.npmjs.org/tailwindcss/4.3.5",
+      "integrity": "sha512-FcQk9BuffmEHJP2G0XmB2SplU1aLTI7j07Kunk+U74Ny+XiWOtzXz9aujFZ/avntw1e2cOv/3PkgzflQ7gX2vQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:tailwindcss@4.3.5/LICENSE",
+          "sha256": "60e0b68c0f35c078eef3a5d29419d0b03ff84ec1df9c3f9d6e39a519a5ae7985"
+        }
+      ],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "6c89ae8dadf11d73afcfd680fedb13fc3182df874036813de516ee3877c1e0cc",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
+    },
+    {
+      "id": "tapable@2.3.4",
+      "license": "MIT",
+      "repository": "https://github.com/webpack/tapable",
+      "author": {
+        "name": "Tobias Koppers @sokra"
+      },
+      "registry": "https://registry.npmjs.org/tapable/2.3.4",
+      "integrity": "sha512-NHFiWnAbMJxNNpBwiO7jJVGDuqMxT9/oV8v57RR+fgBQShkJil5inGD8/xWy0hjLyHQyX1tu27QANhlz3KBqCg==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:tapable@2.3.4/LICENSE",
+          "sha256": "824ef6c33ae5ecbbab65d37f2b37da2bfc81d76cf7676ec0f59d00a0a38bdb75"
+        }
+      ],
+      "uses": ["report-authoring-build", "web-client-build"],
+      "fingerprint": "f7705e6aae23780de58230325e93aa2d3f7500d22b8fa4669eb62aec2be49fc6",
+      "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },
     {
       "id": "tar@7.5.23",
@@ -27085,6 +27121,25 @@
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
     {
+      "id": "uc.micro@2.1.0",
+      "license": "MIT",
+      "repository": "https://github.com/markdown-it/uc.micro",
+      "author": null,
+      "registry": "https://registry.npmjs.org/uc.micro/2.1.0",
+      "integrity": "sha512-ARDJmphmdvUk6Glw7y9DQ2bFkKBHwQHLi2lsaH6PPmz/Ka9sFOBsBluozhDltWmnv9u/cF6Rt87znRTPV+yp/A==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:uc.micro@2.1.0/LICENSE.txt",
+          "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
+        }
+      ],
+      "uses": ["report-artifact", "web-client"],
+      "fingerprint": "7e00ebb88491213e524b61f3c19941ca275e1555b8bd69295d067bb705fc200e",
+      "disposition": "reviewed: MIT supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
+    },
+    {
       "id": "undici-types@8.9.0",
       "license": "MIT",
       "repository": "https://github.com/nodejs/undici",
@@ -27550,7 +27605,7 @@
           "sha256": "9877e90da14aa8c931a1f9d07cc2a20ce119106e5dab1ebb41af865266d0cd2a"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "5266e216e641bdc41bdafa17b26022cd65bdcaec86d385ebd88c1076accb16fa",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -27676,7 +27731,7 @@
           "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
         }
       ],
-      "uses": ["web-client"],
+      "uses": ["report-artifact", "web-client"],
       "fingerprint": "5a28af3864ce17ac9c1b5cba302714ddfc01c34c0bda4b6e6b170f8ec31d1ec2",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -27779,7 +27834,7 @@
           "sha256": "7306d2fb8d7c571ae75082fa8db3c167930be903f87dfa49274621c804c4dea2"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "9153a05b8ca857ff6b4091d2556daaae3c4da9211ec92830108f8c224d613ecb",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -28004,29 +28059,6 @@
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
     {
-      "id": "vite-plugin-solid@2.11.16",
-      "license": "MIT",
-      "repository": "https://github.com/solidjs/solid-vite-plugin",
-      "author": {
-        "name": "Alexandre Mouton-Brady",
-        "email": "amoutonbrady@gmail.com"
-      },
-      "registry": "https://registry.npmjs.org/vite-plugin-solid/2.11.16",
-      "integrity": "sha512-qguFUmqY2ICuoGHrZjm+cWpvKkqVyWDMptipC/BIEGr9q6wEzwTWYOjM9pEWJ+yoTuF6T5OpysI2Okdy7rsVlQ==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
-          "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
-          "basis": "supplier SPDX declaration; package ships no license notice"
-        }
-      ],
-      "uses": ["report-authoring-build"],
-      "fingerprint": "eacd4c96e17155ecc4f868bbb5c1772c0b029cddfc94f93a9f2fcd2e361d735f",
-      "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
-    },
-    {
       "id": "vite-plus@1.6.0",
       "license": "MIT",
       "repository": "https://github.com/voidzero-dev/vite-plus",
@@ -28044,25 +28076,6 @@
       "uses": ["contributor-build", "report-authoring-build", "web-client-build"],
       "fingerprint": "1a3031f82f418b1f201374c4cd4f5477547454a2f048c035745f395416d1bb79",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
-    },
-    {
-      "id": "vitefu@1.1.3",
-      "license": "MIT",
-      "repository": "https://github.com/svitejs/vitefu",
-      "author": null,
-      "registry": "https://registry.npmjs.org/vitefu/1.1.3",
-      "integrity": "sha512-ub4okH7Z5KLjb6hDyjqrGXqWtWvoYdU3IGm/NorpgHncKoLTCfRIbvlhBm7r0YstIaQRYlp4yEbFqDcKSzXSSg==",
-      "installed": true,
-      "category": "dependency-installation",
-      "evidence": [
-        {
-          "source": "npm:vitefu@1.1.3/LICENSE",
-          "sha256": "ed0b4f44d335645e243ff856c66b5ca7b353ed58d10307e6d4dbfb35658a7814"
-        }
-      ],
-      "uses": ["report-authoring-build"],
-      "fingerprint": "7b2e1498d7df70976e38b7575f83d3668ff774336290a94629f3f4a2637c357a",
-      "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
     {
       "id": "vitest@5.1.0",
@@ -28169,7 +28182,7 @@
           "sha256": "5f9cf9fb6acb1972b35ae29119ce563bb60ec097656bc4b69b9bac2d04c7a147"
         }
       ],
-      "uses": ["application-runtime", "contributor-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "6e3aabdeee64a1917e001f799eae9a847216ad54c6cb07509344ec74a20a08b4",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -28466,7 +28479,7 @@
           "sha256": "4ec3d4c66cd87f5c8d8ad911b10f99bf27cb00cdfcff82621956e379186b016b"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "report-authoring-build"],
+      "uses": ["application-runtime"],
       "fingerprint": "4778bbf11d61cb892a31826af8910bfbc938aae0c64ad85bf495f2f7f5c93503",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -28653,7 +28666,7 @@
           "sha256": "80d3168ad2f70f6f5bb2ab22b23414707abf6f0a392034891481ae36a1a429d4"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "1a7acff8b38c1277309ab0961f9afbd6dce167bb2b1eb4a691752b9ee5d0149f",
       "disposition": "reviewed: ISC supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -28675,7 +28688,7 @@
           "sha256": "3f1189b28e3866e0d979968d466b78f813f76827cfdca1fbb124cc0a5c8841f8"
         }
       ],
-      "uses": ["application-runtime", "web-client"],
+      "uses": ["application-runtime", "report-artifact", "web-client"],
       "fingerprint": "120b2095f373960e29eb1ed3271460f183dcb7c054d618b498659eeeb11ddf45",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -28734,6 +28747,38 @@
   ],
   "sources": [
     {
+      "file": ".agents/skills/blast-radius/SKILL.md",
+      "sha256": "881275d291c9b95e707533b6b014aa9f4d0fa9d70ed6b163031761332e1a3338",
+      "license": "MIT",
+      "upstream": "https://github.com/cursor/plugins/tree/0317eb8b858c991c57721358daaee19dbe8c814d/pstack",
+      "notice": "licenses/pstack.txt",
+      "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
+    },
+    {
+      "file": ".agents/skills/codebase-design/SKILL.md",
+      "sha256": "0c51e552c6f43a41ca555206911a42ce54104c04a2aad12d6fa8be98b442e4b2",
+      "license": "MIT",
+      "upstream": "https://github.com/mattpocock/skills/tree/49dd158d1076134a641b33efb035946536778336",
+      "notice": "licenses/aihero-skills.txt",
+      "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
+    },
+    {
+      "file": ".agents/skills/diagnosing-bugs/SKILL.md",
+      "sha256": "b2cfecdf021f61a93429dd772a92b332bab3d2d7bbc98f68e75ff724730ceebb",
+      "license": "MIT",
+      "upstream": "https://github.com/mattpocock/skills/tree/49dd158d1076134a641b33efb035946536778336",
+      "notice": "licenses/aihero-skills.txt",
+      "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
+    },
+    {
+      "file": ".agents/skills/domain-modeling/SKILL.md",
+      "sha256": "de830b58fec5e91ce33ad07889136203c94d966d4304da9bbfd3eab4d6cf7b87",
+      "license": "MIT",
+      "upstream": "https://github.com/mattpocock/skills/tree/49dd158d1076134a641b33efb035946536778336",
+      "notice": "licenses/aihero-skills.txt",
+      "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
+    },
+    {
       "file": ".agents/skills/openspec-apply-change/SKILL.md",
       "sha256": "71f084a1ea26194f62cb9ed31da8e4aa837fd57abb2b91b9cbb0c6ee8d503b79",
       "license": "MIT",
@@ -28751,7 +28796,7 @@
     },
     {
       "file": ".agents/skills/openspec-execution/SKILL.md",
-      "sha256": "1366a012d2a93242e968123b5f2cde6bf27d66500f081c0d3e844fa2171672b3",
+      "sha256": "867ace5d679d56aa10c5982673a3978023a360152fe4c62ef58d2435db80ebb7",
       "license": "MIT",
       "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v1.13.2",
       "notice": "licenses/openspec.txt",
@@ -28790,30 +28835,6 @@
       "modifications": "Unmodified OpenSpec 2.0.0 generated shared workflow; upstream copyright retained in notice"
     },
     {
-      "file": ".agents/skills/codebase-design/SKILL.md",
-      "sha256": "0c51e552c6f43a41ca555206911a42ce54104c04a2aad12d6fa8be98b442e4b2",
-      "license": "MIT",
-      "upstream": "https://github.com/mattpocock/skills/tree/49dd158d1076134a641b33efb035946536778336",
-      "notice": "licenses/aihero-skills.txt",
-      "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
-    },
-    {
-      "file": ".agents/skills/domain-modeling/SKILL.md",
-      "sha256": "de830b58fec5e91ce33ad07889136203c94d966d4304da9bbfd3eab4d6cf7b87",
-      "license": "MIT",
-      "upstream": "https://github.com/mattpocock/skills/tree/49dd158d1076134a641b33efb035946536778336",
-      "notice": "licenses/aihero-skills.txt",
-      "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
-    },
-    {
-      "file": ".agents/skills/diagnosing-bugs/SKILL.md",
-      "sha256": "b2cfecdf021f61a93429dd772a92b332bab3d2d7bbc98f68e75ff724730ceebb",
-      "license": "MIT",
-      "upstream": "https://github.com/mattpocock/skills/tree/49dd158d1076134a641b33efb035946536778336",
-      "notice": "licenses/aihero-skills.txt",
-      "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
-    },
-    {
       "file": ".agents/skills/verification/SKILL.md",
       "sha256": "59ce33db36528b9a37079f039f7b2c84687418b1fb85b336732b3a5b6c2acebd",
       "license": "MIT",
@@ -28822,12 +28843,156 @@
       "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
     },
     {
-      "file": ".agents/skills/blast-radius/SKILL.md",
-      "sha256": "881275d291c9b95e707533b6b014aa9f4d0fa9d70ed6b163031761332e1a3338",
+      "file": "apps/web/src/components/ui/alert.tsx",
+      "sha256": "20be9f2cd865b81269b64acd3c1c0343375ba14de414cfbf8fadd1e08c4a582d",
       "license": "MIT",
-      "upstream": "https://github.com/cursor/plugins/tree/0317eb8b858c991c57721358daaee19dbe8c814d/pstack",
-      "notice": "licenses/pstack.txt",
-      "modifications": "Concise self-contained AbraCode adaptation with scoped role guidance; upstream attribution and full MIT notice retained"
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/badge.tsx",
+      "sha256": "45e23953daa15d507937ca181ff8415f71883612b8b139fb52dfa8af2fa62b83",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/button.tsx",
+      "sha256": "7439d4b8ae2772fb370b4c423a930623117fb24e88a896c5b6712028ad949443",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/card.tsx",
+      "sha256": "6ba946cdd47aee71f447e8e878acedc87cf5d68941e0fc57cb31af5058cb2d35",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/checkbox.tsx",
+      "sha256": "267850f8ad3318e9701bcfbe951bc9d06cc6bd64a443f065b8e54398c791b575",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/field.tsx",
+      "sha256": "fada049906938531d1c302aa9c0f7db1d14199f650a9d738e8a82a815118b2f3",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/input.tsx",
+      "sha256": "60a184d4ea6196e021b58912e0ebea88c407eabfeefb7fde723f048477a1ad54",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/label.tsx",
+      "sha256": "ac36c09749a827b198fa6e995a917c9749cb8819bfb75a89ff1fac5c3121093d",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/native-select.tsx",
+      "sha256": "e31a30da10facc50718f34955057e422af3ca934df1fb81b20483aaec4ed817a",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/separator.tsx",
+      "sha256": "c8cba0699fb8b77da2e14f7bf0fe4cc91e18d97658622dc5427fca7fe80945fe",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/sheet.tsx",
+      "sha256": "a6b4841068651b0e6354477ffea4353f55bc8905bd5e5df10dab1cb030f91c0e",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/skeleton.tsx",
+      "sha256": "485c6867daf193a560bc4a0c5f8eea424cb823b7eddff0e6f7768ffe79eb552b",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/tabs.tsx",
+      "sha256": "b6b99272d00ddaba10b0ca1ed106fc407e645fd667245e3db2a71456929ead5f",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/textarea.tsx",
+      "sha256": "11d5a95e077bb40356c65a6909380840ac3e7cface8efa8cde5baeed75069205",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "apps/web/src/components/ui/tooltip.tsx",
+      "sha256": "fe8092a84a9cd8c24f712f294d0af46161fc1b3208f10f1a6c038227389c9157",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors"
+    },
+    {
+      "file": "openspec/schemas/abra-compact-v1/schema.yaml",
+      "sha256": "7537aaa0bb352387b583a846e8925190520902db9449e0f2b44c8ecef9605c5d",
+      "license": "MIT",
+      "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v2.0.0",
+      "notice": "licenses/openspec.txt",
+      "modifications": "AbraCode compact schema fork: three-artifact planning with verification guidance; upstream copyright retained in notice"
+    },
+    {
+      "file": "openspec/schemas/abra-compact-v1/templates/proposal.md",
+      "sha256": "8ebf3f9d7e20e45ab77d8d3eeb60af0dcb2b5c8382f7e38371c20d3a060b0ca4",
+      "license": "MIT",
+      "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v2.0.0",
+      "notice": "licenses/openspec.txt",
+      "modifications": "AbraCode compact schema fork: three-artifact planning with verification guidance; upstream copyright retained in notice"
+    },
+    {
+      "file": "openspec/schemas/abra-compact-v1/templates/spec.md",
+      "sha256": "03607a9324f832dc0c3f0f48bd1d251fb3377f8c453c5c015c0c9a9b4b08a7fb",
+      "license": "MIT",
+      "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v2.0.0",
+      "notice": "licenses/openspec.txt",
+      "modifications": "AbraCode compact schema fork: three-artifact planning with verification guidance; upstream copyright retained in notice"
+    },
+    {
+      "file": "openspec/schemas/abra-compact-v1/templates/tasks.md",
+      "sha256": "80b2f50a8fa5493ca29b4b21c9576b26b33c30a9347895cde7c79f5eb752dcb8",
+      "license": "MIT",
+      "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v2.0.0",
+      "notice": "licenses/openspec.txt",
+      "modifications": "AbraCode compact schema fork: three-artifact planning with verification guidance; upstream copyright retained in notice"
     }
   ],
   "assets": [
@@ -28837,7 +29002,7 @@
     },
     {
       "file": "THIRD_PARTY_NOTICES.md",
-      "sha256": "36c75e58b4ec0bcd3e3e9830a18e0d27ae6fb04bd1dabebcbcdeedf511aa93c2"
+      "sha256": "f3d0cd61a30552fcb21da984b4fd10530e14e3398549943c6c15590847b8f94d"
     },
     {
       "file": "licenses/openspec.txt",
@@ -28850,6 +29015,10 @@
     {
       "file": "licenses/pstack.txt",
       "sha256": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e"
+    },
+    {
+      "file": "licenses/shadcn-ui.txt",
+      "sha256": "1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f"
     }
   ]
 }

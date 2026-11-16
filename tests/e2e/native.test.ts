@@ -1,7 +1,8 @@
+import { simplifyCalls, simplifyLoopJourney } from "./simplify-loop.ts";
 import { workspaceJourney } from "./workspace.ts";
 import { acceptanceJourney } from "./acceptance.ts";
 import { reportJourney } from "./reports.ts";
-import { reportBrowserExecutable } from "../../templates/reporter/scripts/browser.ts";
+import { reportBrowserExecutable } from "../../apps/report/scripts/browser.ts";
 import { leadJourney } from "./leads.ts";
 import { safeEvidence } from "../operational/evidence.ts";
 import { modelDispatchJourney } from "./model-dispatch.ts";
@@ -309,11 +310,12 @@ function nativeTest(
         );
         return;
       }
-      const scopedMessages = user.startsWith("AbraCode workspace operation ")
-        ? messages.slice(
-            messages.findLastIndex((m: any) => m.role === "user" && m.content === user),
-          )
-        : messages;
+      const scopedMessages =
+        user.startsWith("AbraCode workspace operation ") || user.includes("simplify-loop:")
+          ? messages.slice(
+              messages.findLastIndex((m: any) => m.role === "user" && m.content === user),
+            )
+          : messages;
       const used = new Set(
         scopedMessages
           .filter((m: any) => m.role === "assistant")
@@ -328,6 +330,8 @@ function nativeTest(
         const operation = JSON.parse(user.slice("AbraCode workspace operation ".length));
         calls.push({ name: operation.tool, args: operation.args });
       }
+      if (role === "supervisor" && user === "What AbraCode work is currently retained?")
+        calls.push({ name: "abra_work_list", args: {} });
       const correlated = messages.filter(
         (m: any) =>
           m.role === "user" &&
@@ -660,8 +664,22 @@ function nativeTest(
         const issueID = /AbraCode attention for ([^. ]+)\./.exec(user)![1];
         if (user.includes(": decision_pending.")) {
           const decision = JSON.parse(user.split(": decision_pending. ")[1].split("\n")[0]);
-          // This question exercises project-lead routing; let its responder answer it.
-          if (decision.key !== "native-lead-decision")
+          // Observe this notice without answering the lead-owned question. Leaving
+          // it admitted occupies the shared attention slot and prevents the
+          // project lead from receiving the decision it must actually answer.
+          if (decision.key === "native-lead-decision")
+            calls.push({
+              name: "abra_work_attention",
+              args: {
+                issue_id: issueID,
+                incident_id: /Incident ([^,]+),/.exec(user)![1],
+                generation: Number(/generation (\d+)/.exec(user)![1]),
+                action: "handled",
+                reason:
+                  "Observed the decision notice; the assigned project lead must supply the scoped answer",
+              },
+            });
+          else
             calls.push(
               { name: "abra_work_status", args: { issue_id: issueID } },
               {
@@ -762,6 +780,7 @@ function nativeTest(
             "unavailable-proof.json is absent and the configured source check cannot establish the additional claimed runtime observation.",
         };
       }
+      await simplifyCalls(user, role, calls);
       calls.unshift(...browserCalls(user, role, `http://127.0.0.1:${address.port}`, messages));
       calls.unshift(...engineeringCalls(user, role));
       if (
@@ -1033,7 +1052,7 @@ function nativeTest(
     });
     await writeFile(
       join(home, "abracode.yaml"),
-      `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture } }\nprofiles:\n  native-investigator: { role: research, model: { providerID: fixture, id: gpt-specialist } }\nworktree_root: ${root}/trees\nserver_url: http://127.0.0.1:${port}\nreconcile_interval_ms: 1000\nmax_executions: 8\ncommands:\n  forge: ${fakeForge}\n`,
+      `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture } }\nprofiles:\n  native-investigator: { role: research, model: { providerID: fixture, id: gpt-specialist } }\nworktree_root: ${root}/trees\nserver_url: http://127.0.0.1:${port}\nreconcile_interval_ms: 1000\n${journey === "simplify-loop" ? "supervision_mode: attended-automatic\n" : ""}max_executions: 8\ncommands:\n  forge: ${fakeForge}\n`,
     );
     const password = "abracode-disposable-test-password";
     const globalPlugins = join(root, "config/opencode/plugins");
@@ -1246,6 +1265,7 @@ function nativeTest(
       leadJourney({
         observe: (value) => engineeringEvidence.push(value),
         snapshot: () => observer.snapshot({}, loc),
+        leadEvidence: (query) => observer.leads(query, loc),
         root,
         home,
         client,
@@ -1378,6 +1398,29 @@ function nativeTest(
         },
       });
     };
+    if (journey === "simplify-loop") {
+      failFirstExplore = false;
+      engineeringEvidence.push(
+        await simplifyLoopJourney({
+          root,
+          home,
+          forgeState,
+          supervisor: supervisor.id,
+          client,
+          invoke,
+          eventually,
+          observe: (value) => engineeringEvidence.push(value),
+          restart: async () => {
+            child!.kill("SIGTERM");
+            await new Promise<void>((done) => child!.once("exit", () => done()));
+            start();
+            await ready();
+            await client.location.get({ location: { directory: home } });
+          },
+        }),
+      );
+      return;
+    }
     if (journey === "crash-windows") {
       failFirstExplore = false;
       engineeringEvidence.push(
@@ -1425,6 +1468,17 @@ function nativeTest(
           project: projects[0],
           session: supervisor.id,
           client,
+          providerCount: () => providerRequests.supervisor ?? 0,
+          restart: async () => {
+            const owned = child!;
+            await new Promise<void>((done) => {
+              owned.once("exit", () => done());
+              owned.kill("SIGTERM");
+            });
+            start();
+            await ready();
+            await client.location.get({ location: { directory: home } });
+          },
           endpoint: {
             url: `http://127.0.0.1:${port}`,
             auth: { type: "basic", username: "opencode", password },
@@ -3024,3 +3078,15 @@ if (!process.env.ABRACODE_TEST_JOURNEY && process.env.ABRACODE_TEST_OPERATIONAL 
       ? join(process.env.ABRACODE_TEST_EVIDENCE_DIR, "crash-windows")
       : undefined,
   });
+
+if (!process.env.ABRACODE_TEST_JOURNEY)
+  nativeTest(
+    "compact routine continuation retains human gates and finite corrections across restart",
+    {
+      journey: "simplify-loop",
+      timeout: 420000,
+      evidenceDirectory: process.env.ABRACODE_TEST_EVIDENCE_DIR
+        ? join(process.env.ABRACODE_TEST_EVIDENCE_DIR, "simplify-loop")
+        : undefined,
+    },
+  );

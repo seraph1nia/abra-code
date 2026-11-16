@@ -7,12 +7,17 @@ import {
   type Project,
   type SetupExecution,
 } from "../domain.ts";
-import { automation, codingPolicy, type QualityProfile } from "../config/policy.ts";
-import { timestamp, type ChangeName } from "../identities.ts";
+import { automation, planPolicy, type QualityProfile } from "../config/policy.ts";
+import { timestamp, type ChangeName, type SpecSchemaName } from "../identities.ts";
 import { verificationCommand } from "../config/contracts.ts";
 import { Effect } from "effect";
 
-type NewExecution = { quality_profile?: QualityProfile; dispatch?: Dispatch } & Pick<
+type NewExecution = {
+  quality_profile?: QualityProfile;
+  dispatch?: Dispatch;
+  openspec_schema?: SpecSchemaName;
+  require_plan_approval?: true;
+} & Pick<
   ManagedExecution,
   | "issue_id"
   | "repository_id"
@@ -44,31 +49,46 @@ export function createExecution(
     ),
   config?: Config,
 ): Effect.Effect<ManagedExecution> {
+  const coding = input.setup
+    ? undefined
+    : planPolicy(
+        project,
+        input.workflow_policy,
+        input.quality_profile,
+        input.require_plan_approval,
+      );
   const policy = {
     verification: project.verification.map(verificationCommand),
     delivery: project.delivery,
-    ...(!input.setup ? codingPolicy(project, input.workflow_policy, input.quality_profile) : {}),
+    ...coding,
     ...(!input.setup && input.workflow_policy !== "research-only" ? automation(project) : {}),
-    plan_approval: input.setup
-      ? false
-      : codingPolicy(project, input.workflow_policy, input.quality_profile).plan_approval,
+    plan_approval: coding?.plan_approval ?? false,
     merge_approval: project.merge_approval,
     merge_method: project.merge_method,
-    ci_policy: input.setup
-      ? project.ci_policy
-      : codingPolicy(project, input.workflow_policy, input.quality_profile).ci_policy,
+    ci_policy: coding?.ci_policy ?? project.ci_policy,
     allow_no_checks: project.allow_no_checks,
     generated_paths: project.generated_paths,
     diagnostic_turns: project.diagnostic_turns,
     repair_rounds: project.repair_rounds,
   } as const;
-  const { dispatch, ...executionInput } = input;
+  const { dispatch, require_plan_approval: _required, ...executionInput } = input;
   return timestamp.pipe(
     Effect.map((at) => ({
       ...executionInput,
       ...(config
         ? { configuration_snapshot: captureConfiguration(config, project.dispatch, dispatch) }
         : {}),
+      ...(input.setup || input.workflow_policy !== "full-openspec"
+        ? {}
+        : {
+            openspec_schema_binding: {
+              schema_version: 1 as const,
+              state: "pending" as const,
+              selection_source: input.openspec_schema
+                ? ("task" as const)
+                : ("repository_default" as const),
+            },
+          }),
       schema_version: 1,
       revision: 1,
       control_generation: 0,

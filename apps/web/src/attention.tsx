@@ -1,333 +1,395 @@
-import { useState } from "react";
+/* oxlint-disable effecttsgo/unstable-api-usage -- Native form replies use independent typed Effect mutation atoms. */
+import { useRef, useState } from "react";
+import { useAtom } from "@effect/atom-react";
+import { Exit } from "effect";
+import { AsyncResult } from "effect/reactivity";
 import type { Form } from "@opencode/schema/form";
 import type { AttentionForm, AttentionPermission } from "../../../src/web/contracts.ts";
-import { api } from "./api.ts";
+import { formReply, permissionReply } from "./data.ts";
+import {
+  activeFields,
+  initialValues,
+  prepareAnswer,
+  externalURL,
+  type FormValues,
+} from "./native-form.ts";
+import { requestError } from "./request-state.tsx";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card.tsx";
+import { Checkbox } from "./components/ui/checkbox.tsx";
+import { Field, FieldDescription, FieldError, FieldLabel } from "./components/ui/field.tsx";
+import { Input } from "./components/ui/input.tsx";
+import { NativeSelect } from "./components/ui/native-select.tsx";
+import { Textarea } from "./components/ui/textarea.tsx";
 
-type Answer = Record<string, string | number | boolean | string[]>;
-function active(field: Form.Field, values: Answer) {
-  if (field.type === "external") return true;
-  return (field.when ?? []).every((condition) => {
-    const value = values[condition.key];
-    if (value === undefined) return false;
-    const equal = Array.isArray(value)
-      ? value.includes(String(condition.value))
-      : value === condition.value;
-    return condition.op === "eq" ? equal : !equal;
-  });
+export function NativeForm(props: { item: AttentionForm; refresh: () => void }) {
+  return <FormContent key={`${props.item.form.id}:${props.item.binding}`} {...props} />;
 }
-function initial(fields: readonly Form.Field[]): Answer {
-  const values: Answer = {};
-  for (const field of fields) {
-    if (field.type === "external" || field.default === undefined) continue;
-    values[field.key] = typeof field.default === "object" ? [...field.default] : field.default;
-  }
-  return values;
-}
-
-function externalURL(url: string) {
-  try {
-    const value = new URL(url);
-    return ["https:", "http:"].includes(value.protocol) && !value.username && !value.password
-      ? value.href
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-export function NativeForm({ item, refresh }: { item: AttentionForm; refresh: () => void }) {
+function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => void }) {
   const { form } = item;
-  const [values, setValues] = useState<Answer>(() => initial(form.fields));
-  const [error, setError] = useState("");
-  const [pending, setPending] = useState(false);
-  const set = (key: string, value: Answer[string]) => setValues((v) => ({ ...v, [key]: value }));
-  async function submit(event: React.FormEvent) {
+  const [values, setValues] = useState(() => initialValues(form.fields));
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [result, reply] = useAtom(formReply(`${form.id}:${item.binding}`), { mode: "promiseExit" });
+  const submitting = useRef(false);
+  const enabled = activeFields(form.fields, values);
+  function set(key: string, value: Form.Value | undefined) {
+    setValues((previous) => {
+      const next = { ...previous };
+      if (value === undefined) delete next[key];
+      else next[key] = value;
+      return next;
+    });
+    setErrors((previous) => {
+      const next = { ...previous };
+      delete next[key];
+      return next;
+    });
+  }
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setPending(true);
-    setError("");
+    if (submitting.current || !item.active) return;
+    const prepared = prepareAnswer(form.fields, values);
+    setErrors(prepared.errors);
+    const first = Object.keys(prepared.errors)[0];
+    if (first) {
+      requestAnimationFrame(() => document.getElementById(`${form.id}-${first}`)?.focus());
+      return;
+    }
+    submitting.current = true;
     try {
-      const answer: Answer = {};
-      for (const f of form.fields) {
-        if (!active(f, values)) continue;
-        if (f.type === "external") {
-          if (values[f.key] !== true)
-            throw new Error(`Acknowledge ${f.title ?? "the external step"}`);
-          answer[f.key] = true;
-          continue;
-        }
-        const value = values[f.key];
-        if (
-          f.required &&
-          (value === undefined || value === "" || (Array.isArray(value) && !value.length))
-        )
-          throw new Error(`${f.title ?? f.key} is required`);
-        if (value !== undefined) {
-          if (
-            f.type === "multiselect" &&
-            Array.isArray(value) &&
-            (value.length < (f.minItems ?? 0) || value.length > (f.maxItems ?? Infinity))
-          )
-            throw new Error(`Check the number of selections for ${f.title ?? f.key}`);
-          answer[f.key] = value;
-        }
-      }
-      await api.replyForm({ id: form.id, binding: item.binding, answer });
-      refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Answer could not be confirmed");
+      const response = await reply({ id: form.id, binding: item.binding, answer: prepared.answer });
+      if (Exit.isSuccess(response)) refresh();
     } finally {
-      setPending(false);
+      submitting.current = false;
     }
   }
   return (
-    <form
-      className="attention-card"
-      onSubmit={(event) => {
-        void submit(event);
-      }}
-    >
-      <div className="eyebrow">
-        {item.checkpoint
-          ? `${item.checkpoint.kind} decision · ${item.checkpoint.issue_id}`
-          : "Abra needs your input"}
-      </div>
-      <h3>{form.title}</h3>
-      {item.checkpoint?.fingerprint ? (
-        <code className="fingerprint">{String(item.checkpoint.fingerprint)}</code>
-      ) : null}
-      {!item.active && (
-        <p role="status" className="warning">
-          This checkpoint is no longer current. Ask Abra to reconcile it.
-        </p>
-      )}
-      <fieldset disabled={pending || !item.active}>
-        {form.fields.map((f) => {
-          if (!active(f, values)) return null;
-          if (f.type === "external") {
-            const href = externalURL(f.url);
-            return (
-              <div key={f.key}>
-                <p>{f.description}</p>
-                {href ? (
-                  <a href={href} target="_blank" rel="noopener noreferrer">
-                    {f.title ?? "Continue in a new tab"} ↗
-                  </a>
-                ) : (
-                  <p>Unsupported external link</p>
-                )}
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    required
-                    checked={values[f.key] === true}
-                    onChange={(event) => set(f.key, event.target.checked)}
-                  />
-                  I have completed: {f.title ?? "External step"}
-                </label>
-              </div>
-            );
-          }
-          if (f.hidden) return null;
-          const title = f.title ?? f.key;
-          return (
-            <div className="field" key={f.key}>
-              {f.type === "boolean" ? (
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={values[f.key] === true}
-                    onChange={(e) => set(f.key, e.target.checked)}
-                  />
-                  {title}
-                  {f.required ? " *" : ""}
-                </label>
-              ) : (
-                <label htmlFor={`${form.id}-${f.key}`}>
-                  {title}
-                  {f.required ? " *" : ""}
-                </label>
-              )}
-              {f.description && <p className="muted">{f.description}</p>}
-              {f.type === "string" &&
-                (f.options && !f.custom ? (
-                  <select
-                    id={`${form.id}-${f.key}`}
-                    required={f.required}
-                    value={String(values[f.key] ?? "")}
-                    onChange={(e) => set(f.key, e.target.value)}
-                  >
-                    <option value="">Choose…</option>
-                    {f.options.map((o) => (
-                      <option value={o.value} key={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <>
-                    <input
-                      id={`${form.id}-${f.key}`}
-                      type={
-                        f.format === "email"
-                          ? "email"
-                          : f.format === "uri"
-                            ? "url"
-                            : f.format === "date"
-                              ? "date"
-                              : f.format === "date-time"
-                                ? "datetime-local"
-                                : "text"
-                      }
-                      required={f.required}
-                      minLength={f.minLength}
-                      maxLength={f.maxLength}
-                      pattern={f.pattern}
-                      placeholder={f.placeholder}
-                      list={f.options ? `${form.id}-${f.key}-choices` : undefined}
-                      value={String(values[f.key] ?? "")}
-                      onChange={(e) => set(f.key, e.target.value)}
-                    />
-                    {f.options && (
-                      <datalist id={`${form.id}-${f.key}-choices`}>
-                        {f.options.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </datalist>
-                    )}
-                  </>
-                ))}
-              {(f.type === "number" || f.type === "integer") && (
-                <input
-                  id={`${form.id}-${f.key}`}
-                  type="number"
-                  step={f.type === "integer" ? 1 : "any"}
-                  min={f.minimum}
-                  max={f.maximum}
-                  required={f.required}
-                  value={values[f.key] === undefined ? "" : String(values[f.key])}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    if (raw === "")
-                      setValues((v) => {
-                        const next = { ...v };
-                        delete next[f.key];
-                        return next;
-                      });
-                    else set(f.key, Number(raw));
-                  }}
+    <Card className="attention-card" data-native-form-id={form.id} tabIndex={-1}>
+      <CardHeader>
+        <div className="eyebrow">
+          {item.checkpoint
+            ? `${item.checkpoint.kind} decision · ${item.checkpoint.issue_id}`
+            : "Abra needs your input"}
+        </div>
+        <CardTitle>
+          <h3>{form.title}</h3>
+        </CardTitle>
+        {item.checkpoint?.fingerprint && (
+          <code className="fingerprint">{item.checkpoint.fingerprint}</code>
+        )}
+      </CardHeader>
+      <CardContent>
+        {!item.active && (
+          <Alert>
+            <AlertDescription>
+              This checkpoint is no longer current. Ask Abra to reconcile it.
+            </AlertDescription>
+          </Alert>
+        )}
+        <form
+          onSubmit={(event) => {
+            void submit(event);
+          }}
+          noValidate
+        >
+          <fieldset disabled={result.waiting || !item.active} className="space-y-5">
+            {form.fields
+              .filter(
+                (field) => enabled.has(field.key) && (field.type === "external" || !field.hidden),
+              )
+              .map((field) => (
+                <NativeField
+                  key={field.key}
+                  field={field}
+                  id={`${form.id}-${field.key}`}
+                  values={values}
+                  set={set}
+                  error={errors[field.key]}
                 />
-              )}
-              {f.type === "multiselect" && (
-                <div className="choices">
-                  {f.options.map((o) => (
-                    <label key={o.value} className="checkbox">
-                      <input
-                        type="checkbox"
-                        checked={
-                          Array.isArray(values[f.key]) &&
-                          (values[f.key] as string[]).includes(o.value)
-                        }
-                        onChange={(e) => {
-                          const prior = Array.isArray(values[f.key])
-                            ? (values[f.key] as string[])
-                            : [];
-                          set(
-                            f.key,
-                            e.target.checked
-                              ? [...prior, o.value]
-                              : prior.filter((v) => v !== o.value),
-                          );
-                        }}
-                      />
-                      {o.label}
-                      {o.description && <small>{o.description}</small>}
-                    </label>
-                  ))}
-                  {f.custom && (
-                    <label>
-                      Additional choices, one per line
-                      <textarea
-                        value={(Array.isArray(values[f.key]) ? (values[f.key] as string[]) : [])
-                          .filter((v) => !f.options.some((o) => o.value === v))
-                          .join("\n")}
-                        onChange={(e) => {
-                          const selected = (
-                            Array.isArray(values[f.key]) ? (values[f.key] as string[]) : []
-                          ).filter((v) => f.options.some((o) => o.value === v));
-                          set(f.key, [...selected, ...e.target.value.split("\n").filter(Boolean)]);
-                        }}
-                      />
-                    </label>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-        <button type="submit" className="primary">
-          {pending
-            ? "Submitting…"
-            : item.checkpoint?.kind === "plan" || item.checkpoint?.kind === "merge"
-              ? "Submit checkpoint decision"
-              : "Submit answer"}
-        </button>
-      </fieldset>
-      {error && (
-        <p role="alert" className="error">
-          {error}
-        </p>
-      )}
-    </form>
+              ))}
+            <Button type="submit">
+              {result.waiting
+                ? "Submitting…"
+                : item.checkpoint?.kind === "plan" || item.checkpoint?.kind === "merge"
+                  ? "Submit checkpoint decision"
+                  : "Submit answer"}
+            </Button>
+          </fieldset>
+          {Object.keys(errors).length > 0 && (
+            <p className="text-destructive mt-3" role="alert">
+              Check the highlighted fields before submitting.
+            </p>
+          )}
+          {AsyncResult.isFailure(result) && (
+            <Alert variant="destructive" role="alert" className="mt-3">
+              <AlertDescription>{requestError(result.cause)}</AlertDescription>
+            </Alert>
+          )}
+        </form>
+      </CardContent>
+    </Card>
   );
 }
-export function NativePermission({
-  item,
-  refresh,
+function NativeField({
+  field,
+  id,
+  values,
+  set,
+  error,
 }: {
-  item: AttentionPermission;
-  refresh: () => void;
+  field: Form.Field;
+  id: string;
+  values: FormValues;
+  set: (key: string, value: Form.Value | undefined) => void;
+  error?: string;
 }) {
-  const [error, setError] = useState("");
-  const [pending, setPending] = useState(false);
-  async function reply(decision: "once" | "always" | "reject") {
-    setPending(true);
-    setError("");
+  const value = values[field.key];
+  const title = field.title ?? field.key;
+  const control = {
+    id,
+    "aria-invalid": Boolean(error),
+    "aria-describedby": `${id}-description${error ? ` ${id}-error` : ""}`,
+  };
+  let content: React.ReactNode;
+  switch (field.type) {
+    case "external": {
+      const href = externalURL(field.url);
+      content = (
+        <>
+          {href ? (
+            <a className="underline" href={href} target="_blank" rel="noopener noreferrer">
+              {title} ↗
+            </a>
+          ) : (
+            <p>Unsupported external link</p>
+          )}
+          <FieldLabel className="flex items-center gap-3">
+            <Checkbox
+              {...control}
+              checked={value === true}
+              onCheckedChange={(checked) => set(field.key, checked)}
+            />
+            I have completed: {field.title ?? "External step"}
+          </FieldLabel>
+        </>
+      );
+      break;
+    }
+    case "boolean":
+      content = (
+        <FieldLabel className="flex items-center gap-3">
+          <Checkbox
+            {...control}
+            checked={value === true}
+            onCheckedChange={(checked) => set(field.key, checked)}
+          />
+          {title}
+          {field.required ? " *" : ""}
+        </FieldLabel>
+      );
+      break;
+    case "string":
+      content =
+        field.options && !field.custom ? (
+          <NativeSelect
+            {...control}
+            required={field.required}
+            value={typeof value === "string" ? value : ""}
+            onChange={(event) => set(field.key, event.target.value)}
+          >
+            <option value="">Choose…</option>
+            {field.options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </NativeSelect>
+        ) : (
+          <>
+            <Input
+              {...control}
+              type={
+                field.format === "uri"
+                  ? "url"
+                  : field.format === "date-time"
+                    ? "datetime-local"
+                    : (field.format ?? "text")
+              }
+              required={field.required}
+              minLength={field.minLength}
+              maxLength={field.maxLength}
+              pattern={field.pattern}
+              placeholder={field.placeholder}
+              list={field.options ? `${id}-choices` : undefined}
+              value={typeof value === "string" ? value : ""}
+              onChange={(event) => set(field.key, event.target.value)}
+            />
+            {field.options && (
+              <datalist id={`${id}-choices`}>
+                {field.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </datalist>
+            )}
+          </>
+        );
+      break;
+    case "number":
+    case "integer":
+      content = (
+        <Input
+          {...control}
+          type="number"
+          step={field.type === "integer" ? 1 : "any"}
+          required={field.required}
+          min={field.minimum}
+          max={field.maximum}
+          value={typeof value === "number" && Number.isFinite(value) ? value : ""}
+          onChange={(event) =>
+            set(field.key, event.target.value === "" ? undefined : event.target.valueAsNumber)
+          }
+        />
+      );
+      break;
+    case "multiselect": {
+      const selected = Array.isArray(value) ? value : [];
+      content = (
+        <div
+          id={id}
+          role="group"
+          aria-labelledby={`${id}-label`}
+          aria-describedby={control["aria-describedby"]}
+          tabIndex={-1}
+        >
+          <div className="space-y-3">
+            {field.options.map((option) => (
+              <FieldLabel key={option.value} className="flex items-start gap-3">
+                <Checkbox
+                  checked={selected.includes(option.value)}
+                  onCheckedChange={(checked) =>
+                    set(
+                      field.key,
+                      checked
+                        ? [...selected, option.value]
+                        : selected.filter((item) => item !== option.value),
+                    )
+                  }
+                />
+                <span>
+                  {option.label}
+                  {option.description && (
+                    <small className="block text-muted-foreground">{option.description}</small>
+                  )}
+                </span>
+              </FieldLabel>
+            ))}
+          </div>
+          {field.custom && (
+            <FieldLabel className="mt-3 block">
+              Additional choices, one per line
+              <Textarea
+                value={selected
+                  .filter((item) => !field.options.some((option) => option.value === item))
+                  .join("\n")}
+                onChange={(event) =>
+                  set(field.key, [
+                    ...new Set([
+                      ...selected.filter((item) =>
+                        field.options.some((option) => option.value === item),
+                      ),
+                      ...event.target.value.split("\n").filter(Boolean),
+                    ]),
+                  ])
+                }
+              />
+            </FieldLabel>
+          )}
+        </div>
+      );
+      break;
+    }
+    default:
+      field satisfies never;
+  }
+  return (
+    <Field data-invalid={Boolean(error)}>
+      {field.type !== "boolean" && field.type !== "external" && (
+        <FieldLabel id={`${id}-label`} htmlFor={id}>
+          {title}
+          {field.required ? " *" : ""}
+        </FieldLabel>
+      )}
+      {content}
+      {field.description && (
+        <FieldDescription id={`${id}-description`}>{field.description}</FieldDescription>
+      )}
+      {error && <FieldError id={`${id}-error`}>{error}</FieldError>}
+    </Field>
+  );
+}
+
+export function NativePermission(props: { item: AttentionPermission; refresh: () => void }) {
+  return <PermissionContent key={`${props.item.request.id}:${props.item.binding}`} {...props} />;
+}
+function PermissionContent({ item, refresh }: { item: AttentionPermission; refresh: () => void }) {
+  const [result, reply] = useAtom(permissionReply(`${item.request.id}:${item.binding}`), {
+    mode: "promiseExit",
+  });
+  const submitting = useRef(false);
+  async function answer(decision: "once" | "always" | "reject") {
+    if (submitting.current) return;
+    submitting.current = true;
     try {
-      await api.replyPermission({ id: item.request.id, binding: item.binding, decision });
-      refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Permission could not be confirmed");
+      const response = await reply({ id: item.request.id, binding: item.binding, decision });
+      if (Exit.isSuccess(response)) refresh();
     } finally {
-      setPending(false);
+      submitting.current = false;
     }
   }
   return (
-    <section className="attention-card">
-      <div className="eyebrow">Native permission</div>
-      <h3>{item.request.action}</h3>
-      <p>{item.request.message}</p>
-      <ul>
-        {item.request.resources.map((r) => (
-          <li key={r}>
-            <code>{r}</code>
-          </li>
-        ))}
-      </ul>
-      <div className="button-row">
-        {(["once", "always", "reject"] as const).map((d) => (
-          <button
-            key={d}
-            disabled={pending}
-            onClick={() => {
-              void reply(d);
-            }}
-          >
-            {d === "once" ? "Allow once" : d === "always" ? "Always allow" : "Reject"}
-          </button>
-        ))}
-      </div>
-      {error && <p role="alert">{error}</p>}
-    </section>
+    <Card className="attention-card">
+      <CardHeader>
+        <div className="eyebrow">Native permission</div>
+        <CardTitle>
+          <h3>{item.request.action}</h3>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p>{item.request.message}</p>
+        <ul>
+          {item.request.resources.map((resource) => (
+            <li key={resource}>
+              <code>{resource}</code>
+            </li>
+          ))}
+        </ul>
+        <div className="button-row">
+          {(["once", "always", "reject"] as const).map((decision) => (
+            <Button
+              key={decision}
+              variant={decision === "reject" ? "outline" : "default"}
+              disabled={result.waiting}
+              onClick={() => {
+                void answer(decision);
+              }}
+            >
+              {decision === "once"
+                ? "Allow once"
+                : decision === "always"
+                  ? "Always allow"
+                  : "Reject"}
+            </Button>
+          ))}
+        </div>
+        {AsyncResult.isFailure(result) && (
+          <Alert variant="destructive" role="alert">
+            <AlertDescription>{requestError(result.cause)}</AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
   );
 }

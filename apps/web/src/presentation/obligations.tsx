@@ -1,0 +1,316 @@
+import type { EvidenceReferenceSchema } from "../../../../src/workflow/report-contracts.ts";
+import { useState, type ReactNode } from "react";
+import { useSearch } from "@tanstack/react-router";
+import { CopilotChatAssistantMessage } from "@copilotkit/react-core/v2";
+import type { IssueId } from "../../../../src/identities.ts";
+import type {
+  DeclaredWaitSchema,
+  DecisionSchema,
+  MessagesPageSchema,
+} from "../../../../src/web/wire.ts";
+import type { AttentionForm } from "../../../../src/web/contracts.ts";
+import { communicationSummary } from "../../../../src/web/presentation-contracts.ts";
+import { queries } from "../data.ts";
+import { RequestState } from "../request-state.tsx";
+import { Button } from "../components/ui/button.tsx";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "../components/ui/card.tsx";
+import { Badge } from "../components/ui/badge.tsx";
+import { CommunicationCard, DecisionCard, Evidence, type Inspect } from "./cards.tsx";
+const words = (value: string) => value.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
+function Body({ children }: { children: string }) {
+  return (
+    <CopilotChatAssistantMessage.MarkdownRenderer
+      key={children}
+      content={children}
+      mode="static"
+      className="prose"
+    />
+  );
+}
+function Disclosure({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <details className="presentation-evidence">
+      <summary>{title}</summary>
+      {children}
+    </details>
+  );
+}
+export function DecisionsPanel({
+  issue,
+  forms,
+  focusForm,
+}: {
+  issue: IssueId;
+  forms: readonly AttentionForm[];
+  focusForm: (id: string) => void;
+}) {
+  const route = useSearch({ from: "/" });
+  const target = route.resource?.action === "open_decision" ? route.resource : undefined;
+  return (
+    <RequestState query={queries.decisions(issue)}>
+      {(page) => {
+        const selected = target
+          ? page.decisions.filter((d) => d.key === target.key && d.generation === target.generation)
+          : page.decisions.filter((decision) => decision.status === "open");
+        const history = page.decisions.filter((decision) => decision.status !== "open");
+        return (
+          <div className="space-y-4">
+            {target && !selected.length && (
+              <p role="status">This retained decision generation is unavailable.</p>
+            )}
+            {!target && !selected.length && <p>No retained decisions.</p>}
+            {selected.map((decision) => (
+              <DecisionRow
+                key={`${decision.key}/${decision.generation}`}
+                decision={decision}
+                forms={forms}
+                focusForm={focusForm}
+              />
+            ))}
+            {!target && history.length > 0 && (
+              <details>
+                <summary>Resolved decision history · {history.length}</summary>
+                <div className="space-y-3">
+                  {history.map((decision) => (
+                    <DecisionRow
+                      key={`${decision.key}/${decision.generation}`}
+                      decision={decision}
+                      forms={forms}
+                      focusForm={focusForm}
+                    />
+                  ))}
+                </div>
+              </details>
+            )}
+            {page.waits.length > 0 && (
+              <section className="space-y-3" aria-label="Declared waits">
+                <h3>Waits</h3>
+                {page.waits.map((wait) => (
+                  <WaitCard key={`${wait.key}/${wait.generation}`} wait={wait} />
+                ))}
+              </section>
+            )}
+          </div>
+        );
+      }}
+    </RequestState>
+  );
+}
+function DecisionRow({
+  decision,
+  forms,
+  focusForm,
+}: {
+  decision: typeof DecisionSchema.Type;
+  forms: readonly AttentionForm[];
+  focusForm: (id: string) => void;
+}) {
+  return (
+    <section data-decision-key={decision.key}>
+      <DecisionCard decision={decision}>
+        {decision.status === "open" &&
+          decision.owner === "user" &&
+          (forms.some((item) => item.active && item.form.id === decision.form_id) ? (
+            <Button variant="outline" onClick={() => focusForm(decision.form_id!)}>
+              Answer in native form
+            </Button>
+          ) : (
+            <p role="status">
+              The current native answer form is unavailable. Ask Abra to reconcile this existing
+              decision.
+            </p>
+          ))}
+      </DecisionCard>
+    </section>
+  );
+}
+function WaitCard({ wait }: { wait: typeof DeclaredWaitSchema.Type }) {
+  return (
+    <Card size="sm" data-presentation="wait">
+      <CardHeader>
+        <CardTitle>
+          {words(wait.kind)} wait <Badge variant="secondary">{words(wait.status)}</Badge>
+        </CardTitle>
+        <CardDescription>Owner: {wait.owner}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p>{wait.condition}</p>
+        <Evidence>
+          <p>
+            Reference: <code>{wait.reference}</code>
+          </p>
+          {wait.evidence && <Body>{wait.evidence}</Body>}
+          <p>
+            {wait.expires_at !== undefined
+              ? `Expires ${new Date(wait.expires_at).toLocaleString()}`
+              : "Expiry observation unavailable"}
+          </p>
+          {wait.next_check_at !== undefined && (
+            <p>Next observation {new Date(wait.next_check_at).toLocaleString()}</p>
+          )}
+          <p>Generation {wait.generation}</p>
+        </Evidence>
+      </CardContent>
+    </Card>
+  );
+}
+export function CommunicationPanel({ issue, inspect }: { issue: IssueId; inspect: Inspect }) {
+  const [offset, setOffset] = useState(0);
+  return (
+    <RequestState query={queries.messages(issue, offset)}>
+      {(page) => (
+        <>
+          <p>
+            {page.outstanding} unanswered · {page.total} retained
+          </p>
+          <p className="muted">Observed {new Date(page.observed_at).toLocaleString()}</p>
+          <div className="space-y-4">
+            {page.entries.map((entry) => (
+              <Thread key={entry.record.request_id} entry={entry} issue={issue} inspect={inspect} />
+            ))}
+          </div>
+          {!page.entries.length && <p>No retained communication on this page.</p>}
+          <nav aria-label="Communication pages" className="button-row">
+            <Button
+              variant="outline"
+              disabled={offset === 0}
+              onClick={() => setOffset(Math.max(0, offset - page.limit))}
+            >
+              Previous communication
+            </Button>
+            <Button
+              variant="outline"
+              disabled={page.next_offset === undefined}
+              onClick={() => {
+                if (page.next_offset !== undefined) setOffset(page.next_offset);
+              }}
+            >
+              Next communication
+            </Button>
+          </nav>
+        </>
+      )}
+    </RequestState>
+  );
+}
+function Thread({
+  entry,
+  issue,
+  inspect,
+}: {
+  entry: (typeof MessagesPageSchema.Type.entries)[number];
+  issue: IssueId;
+  inspect: Inspect;
+}) {
+  const record = entry.record;
+  return (
+    <CommunicationCard entry={communicationSummary(entry)} issue={issue}>
+      <Disclosure title="Request body & replies">
+        <Body>{record.body ?? "This legacy request has no separately captured display body."}</Body>
+        {record.type === "finding" ? (
+          <>
+            <p>Finding retained for Abra.</p>
+            <EvidenceReferences references={record.evidence} />
+          </>
+        ) : (
+          <>
+            <p>
+              Response required:{" "}
+              {record.response === "answer"
+                ? "Answer"
+                : record.response === "acknowledgement"
+                  ? "Acknowledgement"
+                  : record.response === "none"
+                    ? "None"
+                    : "Not recorded"}
+            </p>
+            {record.acknowledged_at && (
+              <p>Acknowledged {new Date(record.acknowledged_at).toLocaleString()}</p>
+            )}
+            {record.reply ? (
+              <>
+                <h4>Retained answer</h4>
+                <Body>{record.reply.body}</Body>
+                <EvidenceReferences references={record.reply.evidence} />
+                <p>{new Date(record.reply.at).toLocaleString()}</p>
+              </>
+            ) : (
+              <p>No retained answer.</p>
+            )}
+            <p>Original native admission: {entry.native ?? "unavailable"}</p>
+            <p>
+              Observed native turn: {entry.native_state ? words(entry.native_state) : "Unavailable"}
+              {entry.native_outcome ? ` · ${words(entry.native_outcome)}` : ""}
+            </p>
+            {record.response_recovery && (
+              <p>
+                Response recovery: {words(record.response_recovery.status)} · Native admission{" "}
+                {entry.recovery_native ?? "unavailable"}. A recovery admission does not establish an
+                answer.
+              </p>
+            )}
+            {entry.escalation && (
+              <div>
+                <p>Response escalation: {words(entry.escalation.status)}</p>
+                <Body>{entry.escalation.evidence}</Body>
+                {entry.escalation.disposition && <p>Disposition: {entry.escalation.disposition}</p>}
+              </div>
+            )}
+          </>
+        )}
+        {entry.decision ? (
+          <Button
+            variant="outline"
+            onClick={() =>
+              inspect({
+                action: "open_decision",
+                issue_id: issue,
+                key: entry.decision!.key,
+                generation: entry.decision!.generation,
+              })
+            }
+          >
+            Open existing decision
+          </Button>
+        ) : (
+          record.type !== "finding" &&
+          record.source?.type === "decision" && (
+            <p>The referenced decision is unavailable; no replacement question was created.</p>
+          )
+        )}
+      </Disclosure>
+    </CommunicationCard>
+  );
+}
+
+function EvidenceReferences({
+  references,
+}: {
+  references: readonly (typeof EvidenceReferenceSchema.Type)[];
+}) {
+  return references.length ? (
+    <ul aria-label="Retained source evidence">
+      {references.map((reference, index) => (
+        <li key={index}>
+          {reference.path && (
+            <span>
+              {reference.path}
+              {reference.line ? `:${reference.line}` : ""} at <code>{reference.base}</code>
+            </span>
+          )}
+          {reference.url && (
+            <a href={reference.url} target="_blank" rel="noreferrer">
+              Source evidence ↗
+            </a>
+          )}
+        </li>
+      ))}
+    </ul>
+  ) : null;
+}

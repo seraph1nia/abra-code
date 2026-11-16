@@ -129,11 +129,11 @@ when requested. Browser use, project leads and visual reporting are optional.
 
 ## Work views and optional browser use
 
-Use `/abra` for Work home, `/abra-find` for a ticket, `/abra-session` to inspect a worker, `/abra-spec` for Plan, and `/abra-refresh` to refresh. Work home shows fleet counts, attention and scoped project leads. Overview/Plan/Diff/Workers/Feedback/Communication remain read-only. Native queued/running status, keyboard navigation and disconnected snapshots remain visible; conversation actions return to Abra.
+Use the browser Work finder for fleet/project counts, attention, retained tasks and scoped leads. The inspector shows Overview, Plan, Diff, Activity and Reports. Session/communication/review evidence remains read-only; conversational work requests return to Abra and approvals use current native forms. `pnpm attach` still opens the native Abra conversation using OpenCode’s own terminal UI.
 
 For browser assignments, explicitly run `pnpm browser:install` as the service user, or select a compatible existing Chrome/Chromium through `AGENT_BROWSER_EXECUTABLE_PATH`. Install required Linux system libraries separately. Routine diagnostics do not provision or launch a browser, and non-browser work does not require Chrome. See [browser setup](docs/operations.md#browser-cli).
 
-The [reporter template](templates/reporter/README.md) builds offline HTML reports and validates Mermaid during authoring. Its browser/build prerequisites are separate from ordinary use. OpenCode graphical clients may preview a linked local HTML file; AbraCode does not replace their host branding or require publishing reports.
+[Saved reports](docs/reports.md) use immutable JSON and the shared React/A2UI catalog. Export offline HTML explicitly from a saved report; browser/build prerequisites are separate from ordinary viewing. Existing native graphical clients may preview linked HTML files.
 
 If work stops progressing, ask Abra to inspect the original issue and retained
 request before retrying. Use the runbooks for

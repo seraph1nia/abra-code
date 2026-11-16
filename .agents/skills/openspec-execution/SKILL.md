@@ -5,9 +5,11 @@ description: Execute an assigned AbraCode full-spec, research or lightweight iss
 
 Work only in the issue's assigned worktree. Abra is the only user conversation; report questions and results through your existing worker tools. Direct worker prompts are refused unless they match the retained controller assignment. Do not ask users to open a worker chat. Read its AGENTS.md and relevant project skills. Follow the policy named in the prompt. Research and lightweight use the retained short contract; Research submits abra_research_report read-only, while lightweight uses Apply, configured checks and independent Review without OpenSpec artifacts.
 
+Retain the selected schema through corrections and finishing revisions. Missing or changed bound schema inputs block dependent work; restore the original definition/templates instead of switching schemas or fabricating historical provenance. Earlier archives stay intact and correction budgets do not reset.
+
 For full-openspec, use `abra_spec` with `action: status` to discover the configured schema, then `action: instructions` and `artifact` for each next artifact. Artifact IDs come from actual status output, not a fixed list.
 
-Explore writes planning artifacts under `openspec/changes/<assigned-change>/`. The controller requires every configured planning artifact to be complete, strict validation to pass, and a tracked task checklist. Apply begins only after the recorded approval gate, uses `abra_spec` with `action: apply`, and updates actual task checkboxes as work is completed. Preserve approved planning contents.
+Explore writes planning artifacts under `openspec/changes/<assigned-change>/`. The controller requires the native Apply prerequisite closure (`applyRequires` and transitive `requires`, including done/skipped dependencies) to be complete or natively skipped, strict validation to pass, and nonempty consistent task tracking. Unrelated artifacts are not a gate. `abra-compact-v1` uses proposal, behavioral deltas and `tasks.md`; it requires neither design nor a redundant report. Use native `skip_specs: true` only for unchanged specification-level behavior, with no conflicting deltas. Apply begins after validation and the captured approval policy: a required human plan form must be answered; a captured false requirement permits controller continuation. It uses `abra_spec` with `action: apply`, and updates actual task checkboxes as work is completed. Preserve approved planning contents.
 
 Review inspects implementation read-only and submits `abra_review_report` with `passed` and `findings`. For full OpenSpec, follow the Review verification guidance below and include `spec_verification`; this is part of the existing independent Review, not another implementation or archive phase. The controller runs verification, archives OpenSpec into canonical specifications, commits and delivers. Any missing prerequisite, unfinished task, failed check or failed review blocks advancement. Explain unresolved requirements instead of declaring completion.
 
@@ -38,7 +40,7 @@ Submit `abra_review_report` with `spec_verification`:
   behavior; do not demand implementation of a removed requirement.
 - `correctness`: assess required behavior and scenarios against code and available
   test/check evidence. Disclose untested or unreadable applicable evidence.
-- `coherence`: assess adherence to the accepted design and relevant repository
+- `coherence`: assess adherence to the accepted planning choices and any applicable design and relevant repository
   conventions. Identify contradictions between artifacts, instructions, review
   recommendations and CI expectations.
 - `conflicts`: unresolved contradictions, each with at least two `sources` (artifact,

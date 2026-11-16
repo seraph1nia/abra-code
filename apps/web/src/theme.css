@@ -1,0 +1,5 @@
+@layer theme, base, copilotkit, components, utilities;
+@import "tailwindcss";
+@import "@copilotkit/react-core/v2/styles.css" layer(copilotkit);
+
+@import "./theme-tokens.css";

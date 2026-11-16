@@ -45,49 +45,17 @@ Chat, work-control requests, native approvals, forms and permissions share the r
 
 See [workspace details](web-workspace.md) for work views, exact checkpoint handling, recovery and the bounded API.
 
-## Terminal work view
+## Inspect work in the browser
 
-The native TUI loads the plugin's `./tui` entrypoint on `pnpm attach`. Its sidebar retains the current worker's ticket, prioritizes items needing attention and shows up to three tickets within a terminal-height budget. **Work home** opens the grouped list. Its sections are **Needs you**, **Working**, **Blocked**, **Queued**, **Done**, and an **Other** fallback for unknown states. Approvals/recovery need attention; dependency/setup/policy blockers are separate from temporary capacity waits. Done requires a closed work-graph issue without a conflicting execution, and loads in pages of 50. Search and repository filters apply to loaded tickets.
+The Work finder searches all retained tasks with repository/state filters and pages of 50. Its fleet summary and per-project breakdown show running, native queued, ready, capacity, dependency, human/supervisor and unknown states. Counts and completed-today use the complete retained population and timestamp/day boundary, independently of visible history rows. Attention remains accessible for current approvals, unanswered requests, recovery and lead proposals outside the loaded finder page.
 
-Work home includes an all-ticket fleet summary, per-repository states and a
-**Needs attention** selector for decisions, recovery, unanswered requests and lead
-proposals. These totals are independent of search, repository filters and the
-50-ticket closed page. Ready, capacity waiting, native queued, dependency waiting,
-human/supervisor waiting and unknown native state remain distinct. Native
-observation coverage is explicit: the bounded supervision scan prioritizes open
-tasks with assigned workers. Completed today counts authoritative work-graph
-closure events between host-local midnights; the displayed timezone and day
-boundary include daylight-saving changes. A conflicting live execution is not
-counted as completed.
+The shared inspector shows **Overview / Plan / Diff / Activity / Reports**. Activity contains read-only owned session tools/history, paginated communication, Reviews & checks and scoped lead/proposal history. Disabled leads preserve historical requests and assigned-work links. There is no worker or lead composer. Decisions link the existing question and current native form; observation never acknowledges or answers a request. Stale/unavailable native evidence stays labeled.
 
-Project leads expand in Work home to show scope, enabled/stopped/available state,
-current session, unanswered requests, pending proposals, latest retained outcome
-and links to scoped work. Malformed registrations produce separate diagnostics;
-other valid leads remain inspectable. Authority readers still reject malformed
-or conflicting registrations. The only conversation link returns to parent Abra.
+Plan reads bounded owned Markdown, including verified retained archive/commit blobs after worktree retirement. Changes use Pierre side-by-side patches, native file headers/hunk controls and one search input. There is no separate file list or layout toolbar. Existing all/uncommitted/file bookmarks remain readable. Git produces the retained base/worktree or historical base/delivery comparison; reads never stage, revert, fetch or merge. See [frontend contracts](frontend.md) for bounds, caches and invalidation ownership.
 
-Ticket tabs are **Overview / Plan / Diff / Workers / Feedback / Communication**. Overview labels ticket status, workflow phase and worker activity separately. Plan shows schema artifact status, implementation progress and a selectable Markdown document from the owned change. Document reads are limited to 64 KiB and the first 100 Markdown paths within eight directory levels; escaping symlinks are rejected. Archived tickets retain their archive path without reading a retired worktree.
+Chat/composer stay mounted during inspection. Back/reload restore resource selections; narrow screens use sheets with focus restoration. The single native observer reconnects through the server’s five-second fallback. Closing the frontend interrupts its owned listeners/queries and leaves the native service and workers running. `pnpm attach` still opens the retained Abra through OpenCode’s own terminal UI; AbraCode’s custom sidebar, footer, panels, routes and `/abra-*` commands are retired. Updating source does not authorize restarting an operator service.
 
-Communication loads lazily in pages of 20 from the existing retained history.
-Sender, recipient, kind, time and business response status stay visible; expand
-for the original request identity, body, reply and evidence references. Native
-lookup, explicit acknowledgement and correlated answer are separate observations.
-The view shows the original response requirement, zero/one recovery reservation,
-reminder transport, observed native activity/outcome and the original escalation.
-Admission alone never resolves a response. A linked worker question is the existing
-Decision, with its owner and next action; reading it does not answer it. Inspect
-worker opens read-only evidence, and questions/authorized retries return to Abra.
-No worker or lead composer is added.
-
-Diff defaults to **All ticket changes**, comparing the recorded base commit with the ticket's current worktree, including committed, staged, unstaged and untracked content. **Uncommitted only** compares HEAD with current files. A file selector loads one patch at a time. Unified view is used in narrow panels; split view is available at 100 columns, with the host panel's full-screen control providing more space. Binary and oversized files show explicit messages. Patches are limited to 64 KiB, file lists to 500, and command output to the existing runner's 8 MiB limit; unavailable counts are labeled. Renames appear as additions/deletions. Retired tickets compare retained base/delivery Git objects in their registered repository; if those objects are missing, the diff is unavailable. Reads never fetch, stage, revert or merge.
-
-Commands: `/abra` opens Home, `/abra-find` finds a ticket, `/abra-session` inspects a worker, `/abra-spec` opens Plan, `/abra-refresh` refreshes the observer, and `/abra-sidebar` focuses sidebar controls. They also appear in the command palette. Home and Back remain outside scrolling content, preserving filters, selected documents and files, and scroll positions. Esc goes back; H opens Home only within the work surface, and input fields retain text entry. Tab / Shift+Tab and arrows move focus; Enter / Space activate buttons. Full-page views offer a separate **OpenCode home** destination and return to the originating session. Conversation links return to Abra when its retained session is available.
-
-Snapshots refresh every five seconds and after session creation/execution events; selected details refresh while the work panel is open. Text/tool activity updates from native events. An open patch stays fixed until **Reload diff** or a new file/scope is selected, so background refreshes do not replace code under review. Diff responses carry their read timestamp. Disconnects retain the last snapshot with an unavailable indicator. Plugin unload aborts requests and removes timers/listeners. Newly discovered workers synchronize native activity without opening conversation tabs. Select Inspect worker for read-only evidence; Talk to Abra opens the central conversation.
-
-All reads use the authenticated native `abracode-visibility` RPC at central and worker locations. Management tools remain central-only. Display grouping and navigation never approve, advance, deliver, clean up or mutate issues.
-
-After updating an already running service, use native configuration reload against AbraCode's dedicated server (not an unrelated default service), then reattach the terminal client to load the new TUI entrypoint. If a restart is needed, `pnpm service:restart` retains history but interrupts active execution, so do it when workers are idle. The browser client does not load TUI sidebar widgets.
+See [browser workspace](web-workspace.md), [saved reports](reports.md), and the [terminal parity map](verification/frontend-parity.md). Controller tools still enforce central-session, worker, generation and approval authority.
 
 ## Tool workflow
 
@@ -611,62 +579,4 @@ are same-user application boundaries, not OS isolation.
 
 ### Portable visual reports
 
-`abra_work_report` keeps its default read-only Markdown response. Use
-`{"issue_id":"abra-example","action":"artifacts"}` for bounded visual-revision
-summaries. Explicit generation is separate from diagnostic read authority:
-
-```json
-{
-  "issue_id": "abra-example",
-  "action": "generate",
-  "request_id": "architecture-r1",
-  "title": "Architecture and retained evidence"
-}
-```
-
-A Research worker can include `render: {request_id: "architecture-r1"}` in its
-ordinary `abra_research_report` submission. Optional `diagrams` on that report
-are plain Mermaid data with titles and sources, retained in its Markdown input.
-This does not grant template editing, shell, management or delivery tools. Abra
-can render completed retained work without reopening it or creating another
-worker session. A new visual request may supply constrained `diagrams` annotations
-or an empty array to replace earlier diagram presentation; it changes no accepted
-research evidence, scope, check or approval. Request identity binds these inputs.
-
-OpenCode owns the existing file preview. The Reports owner captures read-only
-work/receipt/report inputs, validates them, and builds only the installed trusted
-Vite/Solid renderer. It never imports repository TSX/JavaScript, executes report
-text, or accepts a build command/template path. Generated diagrams forbid HTML,
-links, config directives, escapes and external resources; the strict build-time
-compiler also inspects SVG resources. Unsafe evidence links remain inert text.
-Reported findings and actual controller check receipts are labelled separately.
-Every page states its observation time and is a static snapshot.
-
-Outputs live under `.abracode/reports/generated/<issue-id>/<request-id>/index.html`.
-The retained request captures the snapshot, template/input hashes and source
-receipt. Builds use fresh owned scratch directories, independent source/cache/
-output paths, two shared compiler reservations and a 45-second deadline. Native
-Node config loading avoids shared temporary config bundles; license and Mermaid
-inputs are parameterized. No shared `report.tsx` or `dist/index.html` is edited.
-The existing monitor recovers authorized pending work without model polling.
-Restart retains a compiler reservation until its recorded deadline before retrying
-that same captured request. Failed builds require an explicit retry; changed
-trusted template/data needs a new request. A superseded source is not silently
-recaptured under the previous identity.
-
-Only validated single-file HTML receives a published receipt. Same-filesystem
-hard-link publication is atomic and refuses replacement of an occupied file.
-Recovery checks staged/published bytes against the retained digest before any
-rebuild. Earlier revisions and unrelated files are preserved. Cleanup removes
-only the current scratch directory after checking its identity, and its retained
-staging file after checking its digest. Orphaned scratch from a hard crash is
-preserved for inspection. Published artifacts survive worker/worktree retirement.
-Ready/failure details use stable native synthetic message IDs; they do not start
-supervisor-model turns. Only `status:published` is a ready report.
-
-Return a published path as `[Open report](</absolute/path/index.html>)` for native
-HTML preview or open that same file in an ordinary browser. It needs no server,
-network or storage privileges. Local feedback exports review input only; it never
-approves work or silently submits a prompt. Graphical-client click-through is an
-environment-specific handoff: current verification includes the exact sandbox's
-browser behavior and pinned client source, but no paired native GUI session.
+Save exact generated views as immutable JSON, then explicitly export HTML from an opened report. New authorized generation requests also default to JSON. No preview service starts automatically. Use `pnpm report:export /absolute/saved.json /absolute/new.html` and `pnpm report:preview /absolute/new.html 4174` for a foreground loopback preview; Ctrl+C stops only that preview. See [saved report operations](reports.md) for browser prerequisites, local feedback, legacy HTML/staging compatibility, storage integrity and downgrade limits.

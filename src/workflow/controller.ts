@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { Advancement } from "./advancement.ts";
+import { Visibility } from "../visibility/read-model.ts";
 /** Public lifecycle commands and read-only queries; implementation adapters remain private. */
 export class Controller {
   private workflow: Advancement;
@@ -23,9 +24,24 @@ export class Controller {
     this.workflow.prFeedback.findings(...args);
   visualArtifact = (...args: Parameters<Advancement["reports"]["readArtifact"]>) =>
     this.workflow.reports.readArtifact(...args);
+  exportVisualDocument = (...args: Parameters<Advancement["reports"]["exportDocument"]>) =>
+    this.workflow.reports.exportDocument(...args);
+  readVisualExport = (...args: Parameters<Advancement["reports"]["readExport"]>) =>
+    this.workflow.reports.readExport(...args);
+  visualDocument = (...args: Parameters<Advancement["reports"]["readDocument"]>) =>
+    this.workflow.reports.readDocument(...args);
+  saveVisualSurface = (
+    ...args: [
+      Parameters<Advancement["reports"]["saveSurface"]>[0],
+      Parameters<Advancement["reports"]["saveSurface"]>[1],
+      Parameters<Advancement["reports"]["saveSurface"]>[2],
+    ]
+  ) => this.workflow.reports.saveSurface(...args, new Visibility(this).snapshot());
   reconcileReports = () => this.workflow.reports.recover();
   visualReport = (...args: Parameters<Advancement["reports"]["generate"]>) =>
-    this.workflow.reports.generate(...args);
+    args[2].surface
+      ? this.saveVisualSurface(args[0], args[1], args[2])
+      : this.workflow.reports.generate(...args);
   researchReport = (...args: Parameters<Advancement["reports"]["submit"]>) =>
     this.workflow.reports.submit(...args);
   reviseScope = (...args: Parameters<Advancement["reviseScope"]>) =>

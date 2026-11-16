@@ -1,89 +1,125 @@
-import { useEffect, useState } from "react";
-import type {
-  WebWorkItem as WorkItem,
-  WorkDetailSchema,
-  WorkDiffSchema,
-} from "../../../src/web/wire.ts";
-type WorkDetail = typeof WorkDetailSchema.Type;
-type WorkDiff = typeof WorkDiffSchema.Type;
-import type { WorkerInspection } from "../../../src/visibility/worker.ts";
-import type { ArtifactSummarySchema } from "../../../src/web/wire.ts";
+import { ExportReport } from "./presentation/export-report.tsx";
+import { ActivityPanel } from "./presentation/activity.tsx";
+import { ReportDocumentView } from "./presentation/report-document.tsx";
+import { DecisionsPanel } from "./presentation/obligations.tsx";
+import type { AttentionForm } from "../../../src/web/contracts.ts";
+import type { Inspect } from "./presentation/cards.tsx";
+/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4 HTTP atoms provide scoped inspector reads. */
+import { lazy, Suspense } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
+import { Option } from "effect";
+import { IssueId } from "../../../src/identities.ts";
+import { artifactPageSize } from "../../../src/web/wire.ts";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import type { WebWorkItem as WorkItem, WorkDetailSchema } from "../../../src/web/wire.ts";
+import { CopilotChatAssistantMessage } from "@copilotkit/react-core/v2";
 import { api } from "./api.ts";
+import { phaseLabel } from "../../../src/presentation/work-state.ts";
+import { OutcomeSummary, Evidence } from "./presentation/cards.tsx";
+import { ExecutionContractSummary } from "./presentation/execution-contract.tsx";
+import { queries } from "./data.ts";
+import { RequestState } from "./request-state.tsx";
+import { inspectorTabs, type InspectorTab } from "./navigation.ts";
+import { useMediaQuery } from "./use-media-query.ts";
+import { useTheme } from "./theme.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Badge } from "./components/ui/badge.tsx";
+import { Alert, AlertDescription } from "./components/ui/alert.tsx";
+import { Skeleton } from "./components/ui/skeleton.tsx";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs.tsx";
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from "./components/ui/sheet.tsx";
 
-export const inspectorTabs = [
-  "Overview",
-  "Plan",
-  "Diff",
-  "Workers",
-  "Decisions",
-  "Communication",
-  "Feedback",
-  "Reports",
-];
-export function Inspector({
+const DiffRenderer = lazy(() => import("./diff-renderer.tsx"));
+function Markdown({ content, className }: { content: string; className?: string }) {
+  return (
+    <CopilotChatAssistantMessage.MarkdownRenderer
+      key={content}
+      content={content}
+      className={className}
+      mode="static"
+    />
+  );
+}
+type Props = {
+  work?: WorkItem;
+  issue: IssueId;
+  tab: InspectorTab;
+  setTab: (tab: InspectorTab) => void;
+  close: () => void;
+  returnFocus: () => HTMLElement | false;
+  forms: readonly AttentionForm[];
+  focusForm: (id: string) => void;
+  inspect: Inspect;
+  ask: (text: string) => void;
+};
+type ContentProps = Omit<Props, "work" | "issue"> & { work: WorkItem };
+export function Inspector(props: Props) {
+  const route = useSearch({ from: "/" });
+  const canvas = route.canvas === true;
+  const overlay = useMediaQuery("(max-width: 1250px)") || canvas;
+  const content = props.work ? (
+    <InspectorContent {...props} work={props.work} />
+  ) : (
+    <UnloadedInspector {...props} />
+  );
+  if (!overlay) return content;
+  return (
+    <Sheet
+      open
+      onOpenChange={(open) => {
+        if (!open) props.close();
+      }}
+    >
+      <SheetContent
+        showCloseButton={false}
+        finalFocus={props.returnFocus}
+        className={
+          canvas
+            ? "inspector-sheet report-canvas data-[side=right]:w-screen data-[side=right]:sm:max-w-none gap-0"
+            : "inspector-sheet data-[side=right]:w-[min(560px,100vw)] data-[side=right]:sm:max-w-none gap-0"
+        }
+      >
+        <SheetTitle className="sr-only">
+          {canvas ? "Report canvas" : "Work inspector"}: {props.work?.title ?? "Selected task"}
+        </SheetTitle>
+        <SheetDescription className="sr-only">
+          Read-only work details. Instructions go to Abra.
+        </SheetDescription>
+        {content}
+      </SheetContent>
+    </Sheet>
+  );
+}
+function UnloadedInspector(props: Props) {
+  const query = queries.detail(props.issue);
+  const result = useAtomValue(query);
+  const detail = AsyncResult.value(result);
+  if (Option.isSome(detail)) return <InspectorContent {...props} work={detail.value.work} />;
+  return (
+    <aside className="inspector" aria-label="Work inspector">
+      <header className="inspector-header">
+        <h2>Selected task</h2>
+        <Button variant="ghost" size="icon" onClick={props.close} aria-label="Close inspector">
+          ×
+        </Button>
+      </header>
+      <div className="inspector-content">
+        <RequestState query={query}>{() => null}</RequestState>
+      </div>
+    </aside>
+  );
+}
+function InspectorContent({
   work,
   tab,
   setTab,
   close,
   ask,
-}: {
-  work: WorkItem;
-  tab: string;
-  setTab: (tab: string) => void;
-  close: () => void;
-  ask: (text: string) => void;
-}) {
-  const [content, setContent] = useState<unknown>();
-  const [error, setError] = useState("");
-  const [selected, setSelected] = useState("");
-  useEffect(() => {
-    setSelected("");
-  }, [work.issue_id, tab]);
-  useEffect(() => {
-    let cancelled = false;
-    setError("");
-    setContent(undefined);
-    const name =
-      tab === "Overview" || tab === "Plan"
-        ? "detail"
-        : tab === "Diff"
-          ? "diff"
-          : tab === "Workers"
-            ? "worker"
-            : tab === "Decisions"
-              ? "decisions"
-              : tab === "Communication"
-                ? "messages"
-                : tab === "Feedback"
-                  ? "feedback"
-                  : "artifacts";
-    const rest: Record<string, string> = {};
-    if (name === "worker") {
-      const id = selected || work.sessions.at(-1)?.id;
-      if (!id) {
-        setContent({ note: "No worker sessions retained" });
-        return;
-      }
-      rest.session_id = id;
-    }
-    if (name === "diff" && selected) rest.file = selected;
-    const request =
-      tab === "Plan" && selected
-        ? api.read("document", work.issue_id, { path: selected })
-        : api.read(name, work.issue_id, rest);
-    void request
-      .then((value) => {
-        if (!cancelled) setContent(value);
-      })
-      .catch((cause) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : "Read unavailable");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [work.issue_id, work.phase, work.generation, tab, selected]);
-  const detail = content as WorkDetail | undefined,
-    diff = content as WorkDiff | undefined;
+  forms,
+  focusForm,
+  inspect,
+}: ContentProps) {
   return (
     <aside className="inspector" aria-label="Work inspector">
       <header className="inspector-header">
@@ -93,234 +129,440 @@ export function Inspector({
           </div>
           <h2>{work.title}</h2>
         </div>
-        <button onClick={close} aria-label="Close inspector">
+        <Button variant="ghost" size="icon" onClick={close} aria-label="Close inspector">
           ×
-        </button>
+        </Button>
       </header>
-      <nav className="tabs" aria-label="Work details">
-        {inspectorTabs.map((name) => (
-          <button
-            key={name}
-            aria-current={tab === name ? "page" : undefined}
-            onClick={() => setTab(name)}
-          >
-            {name}
-          </button>
-        ))}
-      </nav>
-      <div className="inspector-content">
-        {error ? (
-          <p className="warning" role="status">
-            {error}
-          </p>
-        ) : content === undefined ? (
-          <p className="muted" role="status">
-            Loading retained evidence…
-          </p>
-        ) : (
-          <>
-            {tab === "Overview" && (
-              <>
-                <div className="detail-status">
-                  <span className={`status-dot ${work.issue_status}`} />
-                  {work.phase ?? work.issue_status}
-                  <span className="pill">P{work.priority}</span>
-                </div>
-                <p className="prose">{detail?.description}</p>
-                {work.progress && (
-                  <section>
-                    <h3>Latest progress</h3>
-                    <p>{work.progress.summary}</p>
-                    <small>{new Date(work.progress.at).toLocaleString()}</small>
-                  </section>
-                )}
-                {work.blockers.length > 0 && (
-                  <section>
-                    <h3>Readiness</h3>
-                    <ul>
-                      {work.blockers.map((b) => (
-                        <li key={b}>{b}</li>
-                      ))}
-                    </ul>
-                  </section>
-                )}
-                <div className="button-row">
-                  {["pause", "resume", "advance"].map((action) => (
-                    <button
-                      key={action}
-                      onClick={() =>
-                        ask(
-                          `Request controller action ${action} for ${work.issue_id}. Inspect its current state and use the existing guarded work control.`,
-                        )
-                      }
-                    >
-                      {action[0].toUpperCase() + action.slice(1)} work
-                    </button>
-                  ))}
-                </div>
-                <p className="muted">
-                  Controls send a request to Abra. The controller validates each transition.
-                </p>
-              </>
-            )}
-            {tab === "Plan" && (
-              <>
-                {!selected && (
-                  <>
-                    <h3>Planning artifacts</h3>
-                    {detail?.documents?.map((path) => (
-                      <button
-                        className="document-link"
-                        key={path}
-                        onClick={() => setSelected(path)}
-                      >
-                        {path}
-                      </button>
-                    ))}
-                  </>
-                )}
-                {selected && <button onClick={() => setSelected("")}>← All artifacts</button>}
-                <pre className="prose">
-                  {selected
-                    ? (content as { content?: string }).content
-                    : (detail?.proposal ??
-                      "Select a planning artifact to read its retained content.")}
-                </pre>
-              </>
-            )}
-            {tab === "Diff" && (
-              <>
-                {diff?.message && <p>{diff.message}</p>}
-                <div className="file-list">
-                  {diff?.files?.map((file) => (
-                    <button key={file.path} onClick={() => setSelected(file.path)}>
-                      {file.path}
-                      <span className="diff-count">
-                        +{file.additions} −{file.deletions}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                {diff?.limited && (
-                  <p className="warning">
-                    Diff is bounded; inspect the repository for the complete change.
-                  </p>
-                )}
-                <pre className="diff">{diff?.patch}</pre>
-              </>
-            )}
-            {tab === "Workers" && (
-              <>
-                <label>
-                  Read-only worker session
-                  <select
-                    value={selected || work.sessions.at(-1)?.id || ""}
-                    onChange={(e) => setSelected(e.target.value)}
-                  >
-                    {work.sessions.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.role} · {s.id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <p className="muted">Give all instructions to Abra in the main conversation.</p>
-                <Worker content={content as WorkerInspection} />
-              </>
-            )}
-            {tab === "Reports" && (
-              <Reports
-                issue={work.issue_id}
-                content={content as { artifacts: readonly (typeof ArtifactSummarySchema.Type)[] }}
-              />
-            )}
-            {["Decisions", "Communication", "Feedback"].includes(tab) && (
-              <pre className="structured-evidence">{JSON.stringify(content, null, 2)}</pre>
-            )}
-          </>
-        )}
-      </div>
+      <Tabs
+        value={tab}
+        onValueChange={(value) => {
+          const next = inspectorTabs.find((tab) => tab === value);
+          if (next) setTab(next);
+        }}
+        className="inspector-tabs"
+      >
+        <TabsList variant="line" className="tabs" aria-label="Work details">
+          {inspectorTabs.map((name) => (
+            <TabsTrigger key={name} value={name}>
+              {name}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value={tab} className="inspector-content" key={`${work.issue_id}:${tab}`}>
+          <InspectorPanel
+            work={work}
+            tab={tab}
+            ask={ask}
+            forms={forms}
+            focusForm={focusForm}
+            inspect={inspect}
+          />
+        </TabsContent>
+      </Tabs>
     </aside>
   );
 }
-function Worker({ content }: { content: WorkerInspection }) {
+function InspectorPanel({
+  work,
+  tab,
+  ask,
+  forms,
+  focusForm,
+  inspect,
+}: Pick<ContentProps, "work" | "tab" | "ask" | "forms" | "focusForm" | "inspect">) {
+  const search = useSearch({ from: "/" });
+  const navigate = useNavigate({ from: "/" });
+  const file = search.file ?? "";
+  const selectFile = (file: string) => {
+    void navigate({ search: (previous) => ({ ...previous, file: file || undefined }) });
+  };
+  switch (tab) {
+    case "Overview":
+      return (
+        <RequestState query={queries.detail(work.issue_id)}>
+          {(detail) => (
+            <>
+              <Overview detail={detail} ask={ask} forms={forms} focusForm={focusForm} />
+              <DecisionsPanel issue={work.issue_id} forms={forms} focusForm={focusForm} />
+            </>
+          )}
+        </RequestState>
+      );
+    case "Plan":
+      return file ? (
+        <>
+          <Button variant="outline" onClick={() => selectFile("")}>
+            ← All artifacts
+          </Button>
+          <RequestState query={queries.document(work.issue_id, file)}>
+            {(document) => <Markdown className="prose" content={document.content} />}
+          </RequestState>
+        </>
+      ) : (
+        <RequestState query={queries.detail(work.issue_id)}>
+          {(detail) => (
+            <>
+              <h3>
+                {work.policy === "research-only"
+                  ? "Research contract"
+                  : work.policy === "lightweight-fix"
+                    ? "Lightweight scope"
+                    : "Planning artifacts"}
+              </h3>
+              {detail.planning?.source === "archive" && (
+                <p className="muted">
+                  Retained archive at <code>{detail.planning.commit?.slice(0, 12)}</code>
+                </p>
+              )}
+              {detail.planning?.limited && (
+                <p role="status">Planning document list is limited to 100 entries.</p>
+              )}
+              {detail.errors.map((error, index) => (
+                <Alert key={index}>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              ))}
+              {detail.progress &&
+                work.policy !== "research-only" &&
+                work.policy !== "lightweight-fix" && (
+                  <p>
+                    {detail.progress.complete} of {detail.progress.total} implementation tasks
+                    complete
+                  </p>
+                )}
+              {detail.documents?.map((path) => (
+                <Button
+                  variant="ghost"
+                  className="document-link"
+                  key={path}
+                  onClick={() => selectFile(path)}
+                >
+                  {path}
+                </Button>
+              ))}
+              <Markdown
+                className="prose"
+                content={
+                  detail.proposal ??
+                  (detail.documents?.length
+                    ? "Select a planning artifact to read its retained content."
+                    : "Planning documents are unavailable for this task.")
+                }
+              />
+            </>
+          )}
+        </RequestState>
+      );
+    case "Diff":
+      return <DiffPanel issue={work.issue_id} />;
+    case "Activity":
+      return <ActivityPanel key={work.issue_id} work={work} inspect={inspect} />;
+    case "Reports":
+      return <Reports key={work.issue_id} issue={work.issue_id} inspect={inspect} />;
+    default:
+      tab satisfies never;
+  }
+}
+function Overview({
+  detail,
+  ask,
+  forms,
+  focusForm,
+}: {
+  detail: typeof WorkDetailSchema.Type;
+  ask: (text: string) => void;
+  forms: readonly AttentionForm[];
+  focusForm: (id: string) => void;
+}) {
+  const work = detail.work;
   return (
-    <div>
-      <p>{content.note}</p>
-      {content.recent_messages?.map((m) => (
-        <article className="worker-message" key={m.id}>
-          <small>{m.type}</small>
-          {m.text && <p className="prose">{m.text}</p>}
-          {m.tools?.map((t, i) => (
-            <p className="tool-state" key={i}>
-              {t.name} · {t.status}
-            </p>
+    <>
+      <div className="detail-status">
+        <span className={`status-dot ${work.issue_status}`} />
+        {work.phase ? phaseLabel(work.phase) : work.issue_status}
+        <Badge variant="secondary">P{work.priority}</Badge>
+      </div>
+      <p>
+        {work.policy === "research-only"
+          ? "Research task"
+          : work.policy === "lightweight-fix"
+            ? "Lightweight fix"
+            : work.policy === "full-openspec"
+              ? "Full OpenSpec task"
+              : "Workflow policy unavailable"}
+      </p>
+      {forms
+        .filter(
+          (item) =>
+            item.active &&
+            item.checkpoint?.active &&
+            item.checkpoint.issue_id === work.issue_id &&
+            (item.checkpoint.kind === "plan" || item.checkpoint.kind === "merge"),
+        )
+        .map((item) => (
+          <Button key={item.form.id} variant="outline" onClick={() => focusForm(item.form.id)}>
+            Review current {item.checkpoint!.kind} approval
+          </Button>
+        ))}
+      <Markdown className="prose" content={detail.description} />
+      {work.execution_contract && <ExecutionContractSummary contract={work.execution_contract} />}
+      {work.outcome && (
+        <section aria-label="Independent work outcomes">
+          <h3>Outcomes</h3>
+          <OutcomeSummary outcome={work.outcome} />
+          <p>{work.outcome.next_action}</p>
+          <Evidence>
+            {work.outcome.delivered_commit && (
+              <p>
+                Delivered commit: <code>{work.outcome.delivered_commit}</code>
+              </p>
+            )}
+            {work.outcome.approval.evidence_at && (
+              <p>Approval recorded {work.outcome.approval.evidence_at}</p>
+            )}
+            {work.outcome.delivery.evidence_at && (
+              <p>Delivery recorded {work.outcome.delivery.evidence_at}</p>
+            )}
+            {work.outcome.cleanup.blocker && (
+              <>
+                <p>Cleanup is blocked by retained local resources.</p>
+                <ul>
+                  {work.outcome.cleanup.blocker.paths.map((path) => (
+                    <li key={path.path}>
+                      {path.path} · {path.category}
+                    </li>
+                  ))}
+                </ul>
+                {work.outcome.cleanup.blocker.truncated && (
+                  <p>More resources exist outside this preview.</p>
+                )}
+              </>
+            )}
+          </Evidence>
+        </section>
+      )}
+      {detail.errors.length > 0 && (
+        <details>
+          <summary>Unavailable planning evidence</summary>
+          {detail.errors.map((error, index) => (
+            <p key={index}>{error}</p>
           ))}
-        </article>
-      ))}
-    </div>
+        </details>
+      )}
+      {work.progress && (
+        <section>
+          <h3>Latest progress</h3>
+          <p>{work.progress.summary}</p>
+          <small>{new Date(work.progress.at).toLocaleString()}</small>
+        </section>
+      )}
+      {work.blockers.length > 0 && (
+        <section>
+          <h3>Readiness</h3>
+          <ul>
+            {work.blockers.map((blocker) => (
+              <li key={blocker}>{blocker}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <div className="button-row">
+        {["pause", "resume", "advance"].map((action) => (
+          <Button
+            variant="outline"
+            key={action}
+            onClick={() =>
+              ask(
+                `Request controller action ${action} for ${work.issue_id}. Inspect its current state and use the existing guarded work control.`,
+              )
+            }
+          >
+            Ask Abra to {action} work
+          </Button>
+        ))}
+      </div>
+      <p className="muted">
+        Controls send a request to Abra. The controller validates each transition.
+      </p>
+    </>
   );
 }
-
-function Reports({
-  issue,
-  content,
-}: {
-  issue: string;
-  content: { artifacts: readonly (typeof ArtifactSummarySchema.Type)[] };
-}) {
-  const [selected, setSelected] = useState("");
-  const [markdown, setMarkdown] = useState("");
-  const [error, setError] = useState("");
-  useEffect(() => {
-    let active = true;
-    setSelected("");
-    setMarkdown("");
-    setError("");
-    void api
-      .read("report", issue)
-      .then((value) => {
-        if (active) setMarkdown((value as { content: string }).content);
-      })
-      .catch(() => {
-        if (active) setError("No retained Markdown report available.");
-      });
-    return () => {
-      active = false;
-    };
-  }, [issue]);
+function DiffPanel({ issue }: { issue: string }) {
+  const search = useSearch({ from: "/" });
+  const { resolved } = useTheme();
+  return (
+    <RequestState query={queries.diff(issue, "", search.scope ?? "all")} showRefresh={false}>
+      {(diff) => (
+        <Suspense
+          fallback={<Skeleton className="h-40 w-full" aria-label="Loading diff renderer" />}
+        >
+          <DiffRenderer issue={issue} diff={diff} theme={resolved} />
+        </Suspense>
+      )}
+    </RequestState>
+  );
+}
+function Reports({ issue, inspect }: { issue: string; inspect: Inspect }) {
+  const route = useSearch({ from: "/" });
+  const navigate = useNavigate({ from: "/" });
+  const target = route.resource?.action === "open_artifact" ? route.resource : undefined;
   return (
     <>
       <div className="eyebrow">Retained reports</div>
-      {content.artifacts?.map((a) => (
-        <section key={a.request_id} className="report-revision">
-          <strong>{a.title ?? a.request_id}</strong>
-          <p className="muted">
-            {a.status} · generation {a.generation}
-            {a.hash ? ` · ${a.hash.slice(0, 12)}` : ""}
-          </p>
-          {a.status === "published" ? (
-            <div className="button-row">
-              <button onClick={() => setSelected(a.request_id)}>Preview</button>
-              <a href={api.reportURL(issue, a.request_id, true)} download>
-                Download HTML ↗
-              </a>
-            </div>
-          ) : (
-            <p>{a.error ?? "Report is not published yet."}</p>
-          )}
-        </section>
-      ))}
-      {selected && (
-        <iframe
-          className="report-preview"
-          title="Isolated retained visual report"
-          sandbox="allow-scripts"
-          src={api.reportURL(issue, selected)}
-        />
-      )}
+      <RequestState query={queries.artifacts(issue, route.artifact_offset ?? 0)}>
+        {(page) => (
+          <>
+            <p>
+              {page.total !== undefined
+                ? `${page.total} retained reports`
+                : `${page.artifacts.length} reports in this observation`}
+            </p>
+            {page.artifacts.map((artifact) => (
+              <section key={artifact.request_id} className="report-revision">
+                <strong>{artifact.title ?? artifact.request_id}</strong>
+                <p className="muted">
+                  {artifact.format === "a2ui-snapshot" ? "JSON snapshot" : "Retained HTML"} ·{" "}
+                  {artifact.status}
+                </p>
+                {artifact.status === "published" && artifact.hash ? (
+                  <div className="button-row">
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        inspect({
+                          action: "open_artifact",
+                          issue_id: IssueId.make(issue),
+                          request_id: artifact.request_id,
+                          hash: artifact.hash!,
+                        })
+                      }
+                    >
+                      Preview
+                    </Button>
+                    <a
+                      href={
+                        artifact.format === "a2ui-snapshot"
+                          ? api.documentURL(issue, artifact.request_id, artifact.hash)
+                          : api.reportURL(issue, artifact.request_id, true)
+                      }
+                      download
+                    >
+                      {artifact.format === "a2ui-snapshot" ? "Download JSON ↗" : "Download HTML ↗"}
+                    </a>
+                  </div>
+                ) : (
+                  <p>{artifact.error ?? "Report is not published yet."}</p>
+                )}
+              </section>
+            ))}
+            <nav aria-label="Report pages" className="button-row">
+              <Button
+                variant="outline"
+                disabled={!(page.offset ?? 0)}
+                onClick={() => {
+                  void navigate({
+                    search: {
+                      ...route,
+                      artifact_offset: Math.max(
+                        0,
+                        (page.offset ?? 0) - (page.limit ?? artifactPageSize),
+                      ),
+                    },
+                  });
+                }}
+              >
+                Previous reports
+              </Button>
+              <Button
+                variant="outline"
+                disabled={page.next_offset === undefined}
+                onClick={() => {
+                  if (page.next_offset !== undefined)
+                    void navigate({ search: { ...route, artifact_offset: page.next_offset } });
+                }}
+              >
+                Next reports
+              </Button>
+            </nav>
+          </>
+        )}
+      </RequestState>
+      {target && <SelectedReport target={target} inspect={inspect} />}
       <h3>Markdown report</h3>
-      <pre className="prose">{markdown || error || "Loading report…"}</pre>
+      <RequestState query={queries.report(issue)}>
+        {(report) => <Markdown className="prose" content={report.content} />}
+      </RequestState>
     </>
+  );
+}
+function SelectedReport({
+  target,
+  inspect,
+}: {
+  target: Extract<Parameters<Inspect>[0], { action: "open_artifact" }>;
+  inspect: Inspect;
+}) {
+  const route = useSearch({ from: "/" });
+  const navigate = useNavigate({ from: "/" });
+  return (
+    <RequestState query={queries.artifactSummary(target.issue_id, target.request_id, target.hash)}>
+      {(selected) =>
+        selected.hash !== target.hash ? (
+          <p role="status">This exact artifact revision is unavailable.</p>
+        ) : (
+          <>
+            <Button
+              variant="outline"
+              data-report-expand
+              onClick={() => {
+                void navigate({ search: { ...route, canvas: !route.canvas || undefined } });
+              }}
+            >
+              {route.canvas ? "Return to inspector" : "Expand report"}
+            </Button>
+            <a
+              href={
+                selected.format === "a2ui-snapshot"
+                  ? api.documentURL(target.issue_id, target.request_id, target.hash)
+                  : api.reportURL(target.issue_id, target.request_id, true)
+              }
+              download
+            >
+              {selected.format === "a2ui-snapshot"
+                ? "Download selected JSON ↗"
+                : "Download selected HTML ↗"}
+            </a>
+            {selected.format === "a2ui-snapshot" && (
+              <ExportReport
+                key={target.hash}
+                issue={target.issue_id}
+                request={target.request_id}
+                hash={target.hash}
+              />
+            )}
+            {selected.format === "a2ui-snapshot" ? (
+              <RequestState
+                query={queries.artifactDocument(target.issue_id, target.request_id, target.hash)}
+              >
+                {(artifact) =>
+                  artifact.hash === target.hash ? (
+                    <ReportDocumentView artifact={artifact} inspect={inspect} />
+                  ) : (
+                    <p role="status">The document does not match the selected artifact hash.</p>
+                  )
+                }
+              </RequestState>
+            ) : (
+              <iframe
+                className="report-preview"
+                title="Isolated retained visual report"
+                sandbox="allow-scripts"
+                src={api.reportURL(target.issue_id, target.request_id)}
+              />
+            )}
+          </>
+        )
+      }
+    </RequestState>
   );
 }

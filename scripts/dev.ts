@@ -38,7 +38,11 @@ if (args.includes("--help")) {
       const home = fileURLToPath(new URL("../", import.meta.url));
       const options = {
         cwd: home,
-        env: { ABRACODE_DEV_PORT: String(port), ABRACODE_DEV_BACKEND_PORT: String(backendPort) },
+        env: {
+          ABRACODE_DEV_PORT: String(port),
+          ABRACODE_DEV_BACKEND_PORT: String(backendPort),
+          COPILOTKIT_TELEMETRY_DISABLED: "true",
+        },
         extendEnv: true,
         detached: true,
         stdin: "ignore" as const,

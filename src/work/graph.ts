@@ -91,7 +91,8 @@ export class SqliteWorkGraph implements WorkGraph {
               version === 3 ||
               version === 4 ||
               version === 5 ||
-              version === 6,
+              version === 6 ||
+              version === 7,
             "WORK_DATABASE_VERSION",
             `Unsupported work database version ${String(version)}`,
           );
@@ -134,6 +135,12 @@ export class SqliteWorkGraph implements WorkGraph {
             db.exec("ALTER TABLE issues ADD COLUMN quality_profile TEXT");
           if (!columns.some((c) => c.name === "dispatch_json"))
             db.exec("ALTER TABLE issues ADD COLUMN dispatch_json TEXT");
+          if (!columns.some((c) => c.name === "openspec_schema"))
+            db.exec("ALTER TABLE issues ADD COLUMN openspec_schema TEXT");
+          if (!columns.some((c) => c.name === "require_plan_approval"))
+            db.exec(
+              "ALTER TABLE issues ADD COLUMN require_plan_approval INTEGER CHECK (require_plan_approval IS NULL OR require_plan_approval = 1)",
+            );
           db.exec(`
             CREATE TABLE IF NOT EXISTS work_batches (
               request_id TEXT PRIMARY KEY,
@@ -145,7 +152,7 @@ export class SqliteWorkGraph implements WorkGraph {
               issue_id TEXT NOT NULL UNIQUE REFERENCES issues(id),
               PRIMARY KEY(batch_request_id, client_key)
             );
-            PRAGMA user_version = 6;
+            PRAGMA user_version = 7;
             COMMIT;
           `);
         } catch (error) {
@@ -191,6 +198,9 @@ export class SqliteWorkGraph implements WorkGraph {
       scope,
       report_reference,
       quality_profile: row.quality_profile ?? undefined,
+      openspec_schema: row.openspec_schema ?? undefined,
+      require_plan_approval:
+        row.require_plan_approval == null ? undefined : row.require_plan_approval === 1,
       dispatch:
         row.dispatch_json == null
           ? undefined
@@ -237,8 +247,15 @@ export class SqliteWorkGraph implements WorkGraph {
         issue.assignee ?? null,
       );
     this.db
-      .prepare("UPDATE issues SET quality_profile = ? WHERE id = ?")
-      .run(issue.quality_profile ?? null, issue.id);
+      .prepare(
+        "UPDATE issues SET quality_profile = ?, openspec_schema = ?, require_plan_approval = ? WHERE id = ?",
+      )
+      .run(
+        issue.quality_profile ?? null,
+        issue.openspec_schema ?? null,
+        issue.require_plan_approval === true ? 1 : null,
+        issue.id,
+      );
     this.db
       .prepare(
         "UPDATE issues SET scope_json = ?, report_reference_json = ?, dispatch_json = ? WHERE id = ?",

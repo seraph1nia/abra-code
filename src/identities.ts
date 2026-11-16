@@ -122,8 +122,6 @@ export const QuestionIdentity = Schema.NonEmptyString.pipe(
 export type QuestionIdentity = typeof QuestionIdentity.Type;
 export const Executable = Schema.NonEmptyString.pipe(Schema.brand("abracode/Executable"));
 export type Executable = typeof Executable.Type;
-export const ViewKey = Schema.NonEmptyString.pipe(Schema.brand("abracode/ViewKey"));
-export type ViewKey = typeof ViewKey.Type;
 
 export const OperationAction = Schema.NonEmptyString.pipe(Schema.brand("abracode/OperationAction"));
 export type OperationAction = typeof OperationAction.Type;

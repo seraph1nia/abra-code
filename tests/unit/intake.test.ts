@@ -172,3 +172,38 @@ test("implicit request identity deduplicates retries while explicit new requests
   assert.notEqual(next.issue.id, first.issue.id);
   assert.equal(f.work.creations, 2);
 });
+
+test("full-spec intake retains schema and an affirmative plan requirement without allowing policy weakening", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const sender = Id.SessionId.make("ses_schema-intake"),
+    input = {
+      ...goal,
+      openspec_schema: Id.SpecSchemaName.make("spec-driven"),
+      require_plan_approval: true as const,
+    };
+  const created = await run(f.controller.createWork(input, sender));
+  assert.equal(created.issue.openspec_schema, "spec-driven");
+  assert.equal(created.issue.require_plan_approval, true);
+  assert.equal((await run(f.controller.createWork(input, sender))).issue.id, created.issue.id);
+  for (const changed of [
+    { ...input, openspec_schema: Id.SpecSchemaName.make("abra-compact-v1") },
+    { ...input, require_plan_approval: undefined },
+  ])
+    await assert.rejects(run(f.controller.createWork(changed, sender)), /different|rebind/);
+  for (const workflow_policy of ["research-only", "lightweight-fix"] as const)
+    await assert.rejects(
+      run(
+        f.controller.createWork(
+          {
+            ...input,
+            request_id: Id.RequestId.make(`incompatible-${workflow_policy}`),
+            workflow_policy,
+          },
+          sender,
+        ),
+      ),
+      /full-openspec/,
+    );
+  assert.equal((await run(f.work.list)).length, 1);
+});

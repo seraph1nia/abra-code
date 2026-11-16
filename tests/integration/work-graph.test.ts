@@ -256,12 +256,12 @@ test("early SQLite schema upgrades preserve work, ownership and history", async 
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 6);
-    verify.exec("PRAGMA user_version = 7");
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 7);
+    verify.exec("PRAGMA user_version = 8");
   } finally {
     verify.close();
   }
-  await assert.rejects(run(SqliteWorkGraph.open(path)), /Unsupported work database version 7/);
+  await assert.rejects(run(SqliteWorkGraph.open(path)), /Unsupported work database version 8/);
 });
 
 test("workflow/scope/report identities are persisted and cannot rebind a request; legacy full-spec input retries compatibly", async (t) => {
@@ -446,7 +446,7 @@ for (const version of [3, 4, 5])
     );
     const verify = new DatabaseSync(path);
     try {
-      assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 6);
+      assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 7);
       assert.equal(
         verify.prepare("SELECT request_input FROM issues WHERE id = ?").get(issue.id)!
           .request_input,
@@ -548,10 +548,109 @@ test("schema-5 batch receipts keep original mapping while new task dispatch is d
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 6);
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 7);
     assert.equal(
       verify.prepare("SELECT request_input FROM work_batches").get()!.request_input,
       receipt,
+    );
+  } finally {
+    verify.close();
+  }
+});
+
+test("version-6 migration preserves old request bytes while new schema/approval choices survive lost responses", async (t) => {
+  const { graph, path, scope } = await database(t);
+  const old = await run(graph.create(goal("old-schema-request")));
+  const oldBatch = await run(graph.createBatch(batchGoal()));
+  await run(Scope.close(scope, Exit.void));
+  const db = new DatabaseSync(path);
+  const original = db
+    .prepare("SELECT request_input FROM issues WHERE id = ?")
+    .get(old.id)!.request_input;
+  const originalBatch = db.prepare("SELECT request_input FROM work_batches").get()!.request_input;
+  db.exec(
+    "ALTER TABLE issues DROP COLUMN openspec_schema; ALTER TABLE issues DROP COLUMN require_plan_approval; PRAGMA user_version = 6",
+  );
+  db.close();
+  const single = {
+    ...goal("selected-schema"),
+    openspec_schema: Id.SpecSchemaName.make("spec-driven"),
+    require_plan_approval: true as const,
+  };
+  const selectedBatch = {
+    ...batchGoal("schema-batch"),
+    tasks: batchGoal("schema-batch").tasks.map((task) => ({
+      ...task,
+      openspec_schema: Id.SpecSchemaName.make("abra-compact-v1"),
+      require_plan_approval: true as const,
+    })),
+  };
+  let singleId: Id.IssueId;
+  let mapping: readonly string[];
+  await run(
+    Effect.gen(function* () {
+      const current = yield* SqliteWorkGraph.open(path);
+      assert.equal((yield* current.create(goal("old-schema-request"))).id, old.id);
+      assert.deepEqual(
+        (yield* current.createBatch(batchGoal())).tasks.map((t) => t.issue.id),
+        oldBatch.tasks.map((t) => t.issue.id),
+      );
+      singleId = (yield* current.create(single)).id;
+      mapping = (yield* current.createBatch(selectedBatch)).tasks.map((t) => t.issue.id);
+    }),
+  );
+  await run(
+    Effect.gen(function* () {
+      const current = yield* SqliteWorkGraph.open(path);
+      const retry = yield* current.create(single);
+      assert.equal(retry.id, singleId);
+      assert.equal(retry.require_plan_approval, true);
+      assert.equal(retry.openspec_schema, "spec-driven");
+      const batchRetry = yield* current.createBatch(selectedBatch);
+      assert.deepEqual(
+        batchRetry.tasks.map((t) => t.issue.id),
+        mapping,
+      );
+      assert.ok(
+        batchRetry.tasks.every(
+          (t) =>
+            t.issue.require_plan_approval === true && t.issue.openspec_schema === "abra-compact-v1",
+        ),
+      );
+      yield* Effect.promise(() =>
+        assert.rejects(
+          run(current.create({ ...single, require_plan_approval: undefined })),
+          /different/,
+        ),
+      );
+      yield* Effect.promise(() =>
+        assert.rejects(
+          run(
+            current.createBatch({
+              ...selectedBatch,
+              tasks: selectedBatch.tasks.map((t) => ({
+                ...t,
+                openspec_schema: Id.SpecSchemaName.make("spec-driven"),
+              })),
+            }),
+          ),
+          /different|changed/,
+        ),
+      );
+    }),
+  );
+  const verify = new DatabaseSync(path);
+  try {
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 7);
+    assert.equal(
+      verify.prepare("SELECT request_input FROM issues WHERE id = ?").get(old.id)!.request_input,
+      original,
+    );
+    assert.equal(
+      verify
+        .prepare("SELECT request_input FROM work_batches WHERE request_id = ?")
+        .get(batchGoal().request_id)!.request_input,
+      originalBatch,
     );
   } finally {
     verify.close();

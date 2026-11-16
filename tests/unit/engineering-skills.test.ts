@@ -104,6 +104,11 @@ test("conditional prompts and role leaves retain policy-specific assignments", a
       assert.ok(prompt.includes(`abra-${name}`));
       assert.ok(leaf.includes(`abra-${name}`));
     }
+    if (role === "explore") {
+      assert.match(prompt, /Apply prerequisite closure/);
+      assert.match(prompt, /neither design nor a redundant report/);
+      assert.match(prompt, /captured plan requirement/);
+    }
     if (role === "research") assert.ok(!prompt.includes("abra-codebase-design"));
     else assert.match(prompt, /does not require every procedure/);
     if (role === "apply" || role === "review") {

@@ -33,18 +33,14 @@ export function classifyUses(lock) {
         ? "application-runtime"
         : "contributor-build",
     );
-  for (const [name, ref] of Object.entries(
-    lock.importers?.["templates/reporter"]?.dependencies ?? {},
-  ))
-    visit(name, ref, "report-artifact");
-  for (const [name, ref] of Object.entries(
-    lock.importers?.["templates/reporter"]?.devDependencies ?? {},
-  ))
-    visit(name, ref, "report-authoring-build");
   for (const [name, ref] of Object.entries(lock.importers?.["apps/web"]?.dependencies ?? {}))
     visit(name, ref, "web-client");
   for (const [name, ref] of Object.entries(lock.importers?.["apps/web"]?.devDependencies ?? {}))
     visit(name, ref, "web-client-build");
+  for (const [name, ref] of Object.entries(lock.importers?.["apps/report"]?.dependencies ?? {}))
+    visit(name, ref, "report-artifact");
+  for (const [name, ref] of Object.entries(lock.importers?.["apps/report"]?.devDependencies ?? {}))
+    visit(name, ref, "report-authoring-build");
   return new Map(
     Object.keys(lock.packages).map((id) => [
       id,

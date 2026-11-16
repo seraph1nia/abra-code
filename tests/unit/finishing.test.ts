@@ -365,7 +365,13 @@ for (const fault of ["commit", "push"] as const)
   test(`late edits are adopted, reviewed and republished to the same PR after lost ${fault} response`, async (t) => {
     const f = await run(fixture);
     t.onTestFinished(() => run(f.close()));
-    let e = await run(delivered(f));
+    let e = await run(
+      delivered(f, Id.IssueId.make("abra-1"), {
+        openspec_schema: Id.SpecSchemaName.make("target-only"),
+        require_plan_approval: true,
+      }),
+    );
+    const binding = structuredClone(e.openspec_schema_binding);
     const original = e.delivered_commit!;
     const pr = e.pull_request_reference;
     const archive = e.archive_path!;
@@ -385,6 +391,8 @@ for (const fault of ["commit", "push"] as const)
     });
     e = (await run(f.controller.reconcile(e.issue_id)))[0];
     assert.equal(e.current_phase, "planning");
+    assert.deepEqual(e.openspec_schema_binding, binding);
+    assert.equal(e.effective_policy.plan_approval_source, "task_requirement");
     assert.equal(e.finishing!.synchronization!.length, 1);
     assert.equal(e.rounds?.length ?? 0, 0);
     assert.equal(e.effective_policy.repair_rounds, 0);
@@ -489,6 +497,8 @@ for (const fault of ["commit", "push"] as const)
     t.onTestFinished(() => run(restarted.close()));
     e = (await run(restarted.reconcile(e.issue_id)))[0];
     assert.equal(e.current_phase, "completed");
+    assert.deepEqual(e.openspec_schema_binding, binding);
+    assert.equal(e.plan_approval_required, true);
     assert.equal(e.finishing!.synchronization!.length, 1);
     assert.equal(
       await run(

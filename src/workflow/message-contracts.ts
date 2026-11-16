@@ -9,7 +9,7 @@ import {
   Timestamp,
 } from "../identities.ts";
 import { EvidenceReferenceSchema } from "./report-contracts.ts";
-import { DecisionSchema } from "./obligation-contracts.ts";
+import { DecisionSummarySchema as DecisionSchema } from "./obligation-summary.ts";
 import { AttentionSchema } from "./attention-contracts.ts";
 const MessageEvidence = Schema.Array(
   EvidenceReferenceSchema.check(
@@ -24,6 +24,11 @@ const MessageEvidence = Schema.Array(
 export const MessageBody = Schema.NonEmptyString.check(
   Schema.makeFilter((body) => new TextEncoder().encode(body).length <= 8192 || "Maximum 8 KiB"),
 );
+export const MessageReplySchema = Schema.Struct({
+  body: MessageBody,
+  evidence: MessageEvidence,
+  at: Timestamp,
+});
 const RequestPrompt = Schema.NonEmptyString.check(
   Schema.makeFilter(
     (text) => new TextEncoder().encode(text).length <= 32768 || "Maximum rendered prompt 32 KiB",
@@ -79,13 +84,7 @@ const RequestFields = {
     }),
   ),
   acknowledged_at: Schema.optional(Timestamp),
-  reply: Schema.optional(
-    Schema.Struct({
-      body: MessageBody,
-      evidence: MessageEvidence,
-      at: Timestamp,
-    }),
-  ),
+  reply: Schema.optional(MessageReplySchema),
 };
 export const RequestSchema = Schema.Struct(RequestFields).check(
   Schema.makeFilter((m) => {

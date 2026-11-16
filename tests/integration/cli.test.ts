@@ -55,9 +55,10 @@ test("installed OpenSpec: schema planning, strict validation, unfinished tasks, 
   };
   const spec = new OpenSpec(r, Id.Executable.make(bin("openspec")));
   await run(spec.update(e));
+  e.openspec_schema_binding = await run(spec.bind(e));
   await run(spec.create(e));
   assert.equal((await run(spec.status(e))).isPlanningComplete, false);
-  await assert.rejects(run(spec.plan(e)), /incomplete/);
+  await assert.rejects(run(spec.plan(e)), /prerequisite/);
   await run(writePlan(path, "sample"));
   await run(spec.plan(e));
   assert.equal((await run(spec.instructions(e, Id.ArtifactId.make("specs")))).artifactId, "specs");

@@ -38,7 +38,9 @@ export const CleanupPathsSchema = Schema.Array(
 ).check(
   Schema.isMaxLength(64),
   Schema.makeFilter(
-    (paths) => Buffer.byteLength(JSON.stringify(paths)) <= 16384 || "Cleanup sample exceeds 16 KiB",
+    (paths) =>
+      new TextEncoder().encode(JSON.stringify(paths)).length <= 16384 ||
+      "Cleanup sample exceeds 16 KiB",
   ),
 );
 export const CleanupBlockerSchema = Schema.Struct({

@@ -222,7 +222,7 @@ export class Leads {
                   enabled: input.enabled,
                   provisioned: changed ? false : (old?.provisioned ?? false),
                   active: old?.active ?? false,
-                  stop_pending: !!old?.provisioned && !input.enabled,
+                  stop_pending: !changed && !!old?.provisioned && !input.enabled,
                   requests:
                     old?.requests.map((r) => ({
                       ...r,

@@ -29,3 +29,31 @@ role profiles. A second refresh must leave the tree byte-for-byte unchanged and
 the legacy command/copy directories must remain absent throughout.
 Run `pnpm exec vp test run --project integration tests/integration/openspec-update.test.ts`
 for that bounded proof; it supplements the full native journey above.
+
+## Compact routine loop and retained gates
+
+Use `ABRACODE_TEST_JOURNEY=simplify-loop` with the same native test command and a
+fresh external `ABRACODE_TEST_EVIDENCE_DIR`. This journey opts in only its
+disposable installation to attended automatic supervision. It commits the owned
+compact schema only into disposable targets and uses their local bare remotes.
+
+The routine issue crosses valid compact planning with no plan form, fails an
+actual configured source check, consumes one in-scope repair round, passes
+same-content checks and independent native Review, archives without design, and
+stops at the unanswered human merge form. A selected detailed issue with
+`require_plan_approval: true` stops before Apply across service restart; its form,
+policy and schema binding survive and its dependent issue stays unclaimed.
+
+Other issues prove repeated-finding refusal, a distinct exhausted-budget failure,
+changed/uncertain scope decisions, and confirmed pause across restart. The test
+waits for asynchronous native stop confirmation. Unanswered decisions, prior
+archives and owned resources remain; reads admit no replay inbox entry. A separate
+branch-preservation issue completes valid native `skip_specs: true` planning and
+archival without inventing a delta. Branch preservation is separate from the
+routine PR's pending merge gate.
+
+Retained `native-engineering.json` observations record actual forms, selected
+schemas, round counts, matching receipts and stop reasons; `resources.json`
+records teardown. The default E2E suite includes this journey. Its scripted
+provider proves lifecycle contracts and boundaries, not autonomous planning or
+repair quality, external GitHub authorization, or live-provider performance.

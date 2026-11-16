@@ -1,53 +1,153 @@
-import { Clock, Effect } from "effect";
-import { randomUUID } from "node:crypto";
+import { Clock, Effect, Schema } from "effect";
+import { WorkSummarySchema } from "../visibility/work-summary.ts";
+import { ReportDocuments } from "./report-documents.ts";
+import { SurfacePublications } from "../web/surface-publications.ts";
+import { validateSurface } from "../web/surfaces.ts";
+import { presentationHash } from "../presentation/identity.ts";
+import { catalogId } from "../web/catalog.ts";
+import {
+  reportRendererVersion,
+  validateReportDocument,
+  readReportDocument,
+  type ReportProducer,
+} from "../presentation/report-document.ts";
+import type { WorkSnapshotSchema } from "../web/wire.ts";
 import { join } from "node:path";
 import { SessionMessage } from "@opencode/client/effect";
 import { type Runtime } from "../opencode/runtime.ts";
-import { IssueId, SessionId, RequestId, LockKey, AbsolutePath, Timestamp } from "../identities.ts";
+import { IssueId, SessionId, RequestId, LockKey, AbsolutePath } from "../identities.ts";
 import { CrewError, ensure, type Execution } from "../domain.ts";
 import { type Records } from "../storage/store.ts";
 import { type Locks } from "../storage/lock.ts";
 import { type WorkGraph } from "../work/graph.ts";
 import { domainEffect } from "../effect.ts";
 import { decode } from "../decode.ts";
-import { lstat, open, pathExists, readFile, realpath, rm, link } from "../filesystem.ts";
+import { lstat, pathExists, readFile, realpath, rm, link } from "../filesystem.ts";
 import { VisualRenderRequestSchema, type VisualBuild } from "./report-contracts.ts";
 import { isActiveWorker } from "./worker-assignment.ts";
 import { captureReportSnapshot } from "./report-snapshot.ts";
+import { PresentationAssociations } from "../presentation/associations.ts";
 import {
   reportDirectory,
   reportHash,
   maximumHTMLBytes,
   validateReportHTML,
-  type ReportRenderer,
 } from "./report-build.ts";
 const digest = reportHash;
-/** Private Reports implementation for optional HTML attachments. No workflow,
+/** Private Reports implementation for immutable reports and retained HTML. No workflow,
  * approval or Markdown acceptance transition is owned here. */
 export class VisualReports {
+  private documents: ReportDocuments;
   constructor(
     private home: AbsolutePath,
     private records: Records,
     private locks: Locks,
     private work: WorkGraph,
     private notify: Runtime["notify"],
-    private renderer: ReportRenderer,
     private readReport: (e: Execution) => Effect.Effect<string, CrewError>,
-  ) {}
+  ) {
+    this.documents = new ReportDocuments(home, records, locks);
+  }
   /** Explicit artifact authority, independent of workflow advancement. */
+  saveSurface = (
+    session: SessionId,
+    issue: IssueId,
+    raw: typeof VisualRenderRequestSchema.Type,
+    observe: Effect.Effect<Pick<typeof WorkSnapshotSchema.Type, "at" | "work">, CrewError>,
+  ) =>
+    domainEffect(
+      Effect.gen({ self: this }, function* () {
+        ensure(
+          (yield* this.records.supervisor()) === session,
+          "ABRA_REQUIRED",
+          "Retained Abra required to save a report",
+        );
+        const request = yield* decode(VisualRenderRequestSchema, raw, "Saved report request");
+        ensure(request.surface, "REPORT_SOURCE", "An exact observed surface revision is required");
+        const selection = request.surface;
+        const result = yield* this.documents.save(issue, session, request, (e, revision) =>
+          Effect.gen({ self: this }, function* () {
+            const source = yield* new SurfacePublications(
+              this.records.store,
+              this.locks,
+            ).readCurrent(session, selection.surface_id, selection.revision);
+            const current = yield* observe;
+            const capturedWork = yield* Schema.decodeEffect(Schema.Array(WorkSummarySchema))(
+              current.work.slice(0, 100),
+            ).pipe(Effect.mapError(CrewError.from));
+            const markdown = e.report_receipt ? yield* this.readReport(e) : undefined;
+            const snapshot = yield* captureReportSnapshot(this.work, e, markdown, request.title);
+            const document = yield* Effect.try({
+              try: () =>
+                validateReportDocument({
+                  format: "a2ui-snapshot",
+                  format_version: 1,
+                  document_id: request.request_id,
+                  revision,
+                  title: request.title ?? snapshot.title,
+                  captured_at: current.at,
+                  catalog_id: catalogId,
+                  catalog_version: 1,
+                  renderer_compatibility: reportRendererVersion,
+                  provenance: {
+                    issue_id: issue,
+                    execution_id: e.execution_id,
+                    generation: e.control_generation,
+                    ...(e.delivered_commit || e.base_commit
+                      ? { source_commit: e.delivered_commit ?? e.base_commit }
+                      : {}),
+                    ...(e.report_receipt
+                      ? {
+                          source_report: {
+                            report_id: e.report_receipt.report_id,
+                            hash: e.report_receipt.hash,
+                          },
+                        }
+                      : {}),
+                    source_surface: {
+                      session_id: session,
+                      surface_id: selection.surface_id,
+                      revision: selection.revision,
+                      hash: presentationHash(source),
+                    },
+                  },
+                  surface: source.surface,
+                  data: { work: capturedWork, snapshot_work: source.snapshot },
+                  limitations: [
+                    "Saved live and snapshot bindings are immutable; links inspect separately labeled current app resources.",
+                    "The original generated surface had no captured report evidence; report-evidence components remain unavailable.",
+                    ...(current.work.length > 100
+                      ? [`Live work capture includes 100 of ${current.work.length} observed tasks.`]
+                      : []),
+                  ],
+                }),
+              catch: CrewError.from,
+            });
+            return { document, snapshot };
+          }),
+        );
+        yield* this.noticeResult(issue, result).pipe(Effect.ignore);
+        return (yield* this.records.execution(issue))!.visual_reports!.find(
+          (build) => build.request.request_id === request.request_id,
+        )!;
+      }),
+    );
   generate = Effect.fn("Reports.generate")(
     function* (
       this: VisualReports,
       session: SessionId,
       issue: IssueId,
       request: typeof VisualRenderRequestSchema.Type,
+      producer?: ReportProducer,
     ) {
       ensure(
         (yield* this.records.supervisor()) === session,
         "ABRA_REQUIRED",
         "Retained Abra required for report generation",
       );
-      const result = yield* Effect.result(this.generateOwned(issue, session, request));
+      const result = yield* Effect.result(
+        this.generateOwned(issue, session, request, false, undefined, producer),
+      );
       const retained = (yield* this.records.execution(issue))?.visual_reports?.find(
         (b) => b.request.request_id === request.request_id,
       );
@@ -89,41 +189,6 @@ export class VisualReports {
       }))
       .pipe(Effect.map((e) => e.visual_reports!.find((b) => b.request.request_id === id)!));
   }
-  private withBuildSlot<A>(action: () => Effect.Effect<A, CrewError>) {
-    let first = false,
-      second = false;
-    return this.locks
-      .with(
-        LockKey.make("report-build-slot-0"),
-        () => {
-          first = true;
-          return action();
-        },
-        { waitSeconds: 0 },
-      )
-      .pipe(
-        Effect.catchIf(
-          (error) => !first && error.code === "LOCKED",
-          () =>
-            this.locks
-              .with(
-                LockKey.make("report-build-slot-1"),
-                () => {
-                  second = true;
-                  return action();
-                },
-                { waitSeconds: 0 },
-              )
-              .pipe(
-                Effect.catchIf(
-                  (error) => !second && error.code === "LOCKED",
-                  () =>
-                    Effect.fail(new CrewError("REPORT_CAPACITY", "Report build capacity occupied")),
-                ),
-              ),
-        ),
-      );
-  }
   private sourceCurrent(issue: IssueId, build: VisualBuild) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
@@ -141,6 +206,7 @@ export class VisualReports {
     );
   }
   /** Read only a retained published revision through the existing containment/hash checks. */
+  readDocument = (...args: Parameters<ReportDocuments["read"]>) => this.documents.read(...args);
   readArtifact = (issue: IssueId, request: RequestId) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
@@ -168,6 +234,11 @@ export class VisualReports {
       Effect.gen({ self: this }, function* () {
         const a = build.artifact;
         ensure(a, "REPORT_ARTIFACT", "Validated visual artifact receipt required");
+        ensure(
+          a.schema_version === 1,
+          "REPORT_FORMAT",
+          "This artifact is a JSON report; use its document reader",
+        );
         const expected = join(
           yield* realpath(this.home),
           ".abracode/reports/generated",
@@ -286,8 +357,132 @@ export class VisualReports {
       raw: typeof VisualRenderRequestSchema.Type,
       recovery = false,
       workerGeneration?: number,
+      producer?: ReportProducer,
     ) {
       const request = yield* decode(VisualRenderRequestSchema, raw, "Visual report request");
+      const retained = (yield* this.records.execution(issue))?.visual_reports?.find(
+        (build) => build.request.request_id === request.request_id,
+      );
+      if (!retained) {
+        if (request.surface)
+          return yield* this.saveSurface(
+            session,
+            issue,
+            request,
+            Effect.fail(
+              new CrewError(
+                "REPORT_SOURCE",
+                "Surface capture requires its workspace observation adapter",
+              ),
+            ),
+          );
+        return yield* this.documents.save(
+          issue,
+          session,
+          request,
+          (e, revision) =>
+            Effect.gen({ self: this }, function* () {
+              if (workerGeneration !== undefined)
+                ensure(
+                  isActiveWorker(e, session, { role: "research", generation: workerGeneration }),
+                  "RESEARCH_ROLE",
+                  "Current Research generation required for report capture",
+                );
+              const markdown = e.report_receipt ? yield* this.readReport(e) : undefined;
+              const snapshot = yield* captureReportSnapshot(
+                this.work,
+                e,
+                markdown,
+                request.title,
+                request.diagrams,
+              );
+              const sections = [
+                "summary",
+                "findings",
+                "checks",
+                "events",
+                "excerpts",
+                "limitations",
+                "diagrams",
+              ];
+              const surface = validateSurface({
+                version: "1.0",
+                createSurface: {
+                  surfaceId: `report-${digest(request.request_id).slice(0, 20)}`,
+                  catalogId,
+                  components: [
+                    { id: "root", component: "Column", children: sections },
+                    ...sections.map((section) => ({
+                      id: section,
+                      component: "ReportEvidence",
+                      section,
+                    })),
+                  ],
+                },
+              });
+              const document = yield* Effect.try({
+                try: () =>
+                  validateReportDocument({
+                    format: "a2ui-snapshot",
+                    format_version: 1,
+                    document_id: request.request_id,
+                    revision,
+                    title: snapshot.title,
+                    captured_at: snapshot.observed_at,
+                    catalog_id: catalogId,
+                    catalog_version: 1,
+                    renderer_compatibility: reportRendererVersion,
+                    provenance: {
+                      issue_id: issue,
+                      execution_id: e.execution_id,
+                      generation: e.control_generation,
+                      ...(producer ? { source_call: producer } : {}),
+                      ...(e.delivered_commit || e.base_commit
+                        ? { source_commit: e.delivered_commit ?? e.base_commit }
+                        : {}),
+                      ...(e.report_receipt
+                        ? {
+                            source_report: {
+                              report_id: e.report_receipt.report_id,
+                              hash: e.report_receipt.hash,
+                            },
+                          }
+                        : {}),
+                    },
+                    surface,
+                    data: { work: [], evidence: snapshot },
+                    limitations: snapshot.limitations,
+                  }),
+                catch: CrewError.from,
+              });
+              return { document, snapshot };
+            }),
+          recovery,
+        );
+      }
+      if (retained?.format === "a2ui-snapshot") {
+        if (workerGeneration !== undefined) {
+          const e = (yield* this.records.execution(issue))!;
+          ensure(
+            isActiveWorker(e, session, { role: "research", generation: workerGeneration }),
+            "RESEARCH_ROLE",
+            "Current Research generation required for a report request",
+          );
+        }
+        return yield* this.documents.save(
+          issue,
+          session,
+          request,
+          () =>
+            Effect.fail(
+              new CrewError(
+                "REPORT_IDENTITY",
+                "Captured document reservation is unavailable; preserve retained evidence",
+              ),
+            ),
+          recovery,
+        );
+      }
       return yield* this.locks.with(
         LockKey.make(
           `report-html-${digest(JSON.stringify([issue, request.request_id])).slice(0, 40)}`,
@@ -303,68 +498,14 @@ export class VisualReports {
                   "RESEARCH_ROLE",
                   "Current Research generation required for visual render request",
                 );
-              let build = e.visual_reports?.find(
+              const build = e.visual_reports?.find(
                 (b) => b.request.request_id === request.request_id,
               );
-              if (build)
-                ensure(
-                  JSON.stringify(build.request) === JSON.stringify(request),
-                  "REPORT_REBIND",
-                  "Visual report request is bound to different input",
-                );
-              else {
-                ensure(
-                  (e.visual_reports?.length ?? 0) < 16,
-                  "REPORT_LIMIT",
-                  "Visual report revision limit reached",
-                );
-                const content = e.report_receipt ? yield* this.readReport(e) : undefined;
-                const snapshot = yield* captureReportSnapshot(
-                  this.work,
-                  e,
-                  content,
-                  request.title,
-                  request.diagrams,
-                );
-                const template_hash = yield* this.renderer.fingerprint;
-                const captured: VisualBuild = {
-                  request,
-                  requested_by: session,
-                  notify_session: e.supervisor_session_id ?? (yield* this.records.supervisor()),
-                  generation: e.control_generation,
-                  source_report: e.report_receipt
-                    ? { report_id: e.report_receipt.report_id, hash: e.report_receipt.hash }
-                    : undefined,
-                  snapshot,
-                  input_hash: reportHash(JSON.stringify(snapshot)),
-                  template_hash,
-                  status: "pending",
-                };
-                const updated = yield* this.records.update(issue, (current) => {
-                  if (workerGeneration !== undefined)
-                    ensure(
-                      isActiveWorker(current, session, {
-                        role: "research",
-                        generation: workerGeneration,
-                      }),
-                      "RESEARCH_ROLE",
-                      "Research render request was superseded",
-                    );
-                  ensure(
-                    current.control_generation === captured.generation &&
-                      current.execution_id === captured.snapshot.execution_id,
-                    "REPORT_STALE",
-                    "Report source changed during capture",
-                  );
-                  return {
-                    ...current,
-                    visual_reports: [...(current.visual_reports ?? []), captured],
-                  };
-                });
-                build = updated.visual_reports!.find(
-                  (b) => b.request.request_id === request.request_id,
-                )!;
-              }
+              ensure(
+                build && JSON.stringify(build.request) === JSON.stringify(request),
+                "REPORT_REBIND",
+                "Legacy report request is bound to different input",
+              );
               ensure(
                 reportHash(JSON.stringify(build.snapshot)) === build.input_hash,
                 "REPORT_IDENTITY",
@@ -379,117 +520,14 @@ export class VisualReports {
                 // conflicting retained output is not evidence that rebuilding is safe.
                 return yield* this.publishVisual(issue, build);
               }
-              yield* this.sourceCurrent(issue, build);
-              if (
-                build.status === "building" &&
-                build.deadline_at! > (yield* Clock.currentTimeMillis)
-              )
-                return build;
-              const owned = build;
-              const attempt = yield* Effect.result(
-                this.withBuildSlot(() =>
-                  domainEffect(
-                    Effect.gen({ self: this }, function* () {
-                      build = yield* this.records.coordinateCommit(() =>
-                        domainEffect(
-                          Effect.gen({ self: this }, function* () {
-                            const now = yield* Clock.currentTimeMillis;
-                            const active = (yield* this.records.executions())
-                              .flatMap((record) => record.visual_reports ?? [])
-                              .filter(
-                                (b) => b.status === "building" && (b.deadline_at ?? Infinity) > now,
-                              );
-                            ensure(
-                              active.length < 2,
-                              "REPORT_CAPACITY",
-                              "Retained compiler reservations occupy capacity until their deadline",
-                            );
-                            return yield* this.updateVisual(
-                              issue,
-                              request.request_id,
-                              (current) => ({
-                                ...current,
-                                status: "building",
-                                deadline_at: now + 45000,
-                                error: undefined,
-                              }),
-                            );
-                          }),
-                        ),
-                      );
-                      const html = yield* this.renderer.render(owned.snapshot, owned.template_hash);
-                      validateReportHTML(html, owned.snapshot);
-                      yield* this.sourceCurrent(issue, owned);
-                      const directory = yield* reportDirectory(this.home, [
-                        ".abracode",
-                        "reports",
-                        "generated",
-                        issue,
-                        request.request_id,
-                      ]);
-                      const path = AbsolutePath.make(join(directory, "index.html"));
-                      ensure(
-                        !(yield* pathExists(path)),
-                        "REPORT_OCCUPIED",
-                        "Visual revision destination is occupied; preserve it and inspect retained evidence",
-                      );
-                      const staging = AbsolutePath.make(
-                        join(directory, `.stage-${randomUUID()}.html`),
-                      );
-                      yield* Effect.acquireUseRelease(
-                        open(staging, "wx"),
-                        (file) =>
-                          Effect.tryPromise({
-                            try: async () => {
-                              await file.chmod(0o600);
-                              await file.writeFile(html, "utf8");
-                              await file.sync();
-                            },
-                            catch: CrewError.from,
-                          }).pipe(Effect.uninterruptible),
-                        (file) =>
-                          Effect.tryPromise({
-                            try: () => file.close(),
-                            catch: CrewError.from,
-                          }).pipe(Effect.orDie),
-                      );
-                      build = yield* this.updateVisual(issue, request.request_id, (current) => ({
-                        ...current,
-                        status: "validated",
-                        staging,
-                        artifact: {
-                          schema_version: 1,
-                          request_id: request.request_id,
-                          issue_id: issue,
-                          execution_id: e.execution_id,
-                          generation: current.generation,
-                          input_hash: current.input_hash,
-                          template_hash: current.template_hash,
-                          hash: reportHash(html),
-                          bytes: Buffer.byteLength(html),
-                          path,
-                          observed_at: Timestamp.make(current.snapshot.observed_at),
-                          source_report: current.source_report,
-                        },
-                      }));
-                      return yield* this.publishVisual(issue, build);
-                    }),
-                  ),
-                ),
-              );
-              if (attempt._tag === "Success") return attempt.success;
-              if (attempt.failure.code === "REPORT_CAPACITY")
-                return yield* this.updateVisual(issue, request.request_id, (current) => ({
-                  ...current,
-                  status: "pending",
-                  error: "Report build capacity is occupied; retry the same request.",
-                }));
-              yield* this.updateVisual(issue, request.request_id, (current) => ({
+              // The retired compiler cannot resume captured legacy inputs. Keep their
+              // original identity, snapshot, hashes and any staged evidence intact.
+              return yield* this.updateVisual(issue, request.request_id, (current) => ({
                 ...current,
-                status: current.artifact ? "validated" : "failed",
-                error: attempt.failure.message.slice(0, 8192),
+                status: "failed",
+                error:
+                  "Legacy HTML compiler is retired. Retained build evidence is unavailable for resumption; create a new request to save JSON and explicitly export it.",
               }));
-              return yield* attempt.failure;
             }),
           ),
         { waitSeconds: recovery ? 0 : 30 },
@@ -500,6 +538,73 @@ export class VisualReports {
   private noticeResult(issue: IssueId, build: VisualBuild) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
+        if (build.format === "a2ui-snapshot" && build.producing_call) {
+          if (build.status !== "published" || !build.artifact || build.source_attachment) return;
+          const producer = build.producing_call;
+          yield* new PresentationAssociations(this.records.store, this.locks).associate({
+            ...producer,
+            source: "tool",
+            target: {
+              kind: "artifact",
+              issue_id: issue,
+              request_id: build.request.request_id,
+              hash: build.artifact.hash,
+            },
+          });
+          yield* this.updateVisual(issue, build.request.request_id, (current) => ({
+            ...current,
+            source_attachment: "associated",
+          }));
+          return;
+        }
+        if (build.format === "a2ui-snapshot" && build.request.surface) {
+          if (build.status !== "published" || !build.artifact || build.source_attachment) return;
+          const read = yield* this.documents.read(
+            issue,
+            build.request.request_id,
+            build.artifact.hash,
+          );
+          const loaded = yield* Effect.try({
+            try: () => readReportDocument(read.json),
+            catch: CrewError.from,
+          });
+          const provenance = loaded.supported
+            ? loaded.document.provenance.source_surface
+            : undefined;
+          let associated = false;
+          if (provenance) {
+            const source = yield* new SurfacePublications(this.records.store, this.locks).read(
+              provenance.session_id,
+              provenance.surface_id,
+              provenance.revision,
+            );
+            ensure(
+              provenance.hash === presentationHash(source),
+              "REPORT_IDENTITY",
+              "Saved surface provenance no longer matches its original revision",
+            );
+            if (source.message_id && source.tool_call_id.startsWith(`${source.message_id}/`)) {
+              yield* new PresentationAssociations(this.records.store, this.locks).associate({
+                session_id: provenance.session_id,
+                message_id: source.message_id,
+                tool_call_id: source.tool_call_id.slice(source.message_id.length + 1),
+                source: "tool",
+                target: {
+                  kind: "artifact",
+                  issue_id: issue,
+                  request_id: build.request.request_id,
+                  hash: build.artifact.hash,
+                },
+              });
+              associated = true;
+            }
+          }
+          yield* this.updateVisual(issue, build.request.request_id, (current) => ({
+            ...current,
+            source_attachment: associated ? "associated" : "unavailable",
+          }));
+          return;
+        }
         if (!build.notify_session || !["published", "failed"].includes(build.status)) return;
         const phase = build.status === "published" ? ("published" as const) : ("failed" as const);
         let current = build;
@@ -523,7 +628,26 @@ export class VisualReports {
                   ],
                 },
           );
-        for (const notice of current.notices ?? [])
+        for (const notice of current.notices ?? []) {
+          if (notice.phase === "published" && current.artifact && !notice.associated) {
+            yield* new PresentationAssociations(this.records.store, this.locks).associate({
+              session_id: current.notify_session!,
+              message_id: notice.message_id,
+              source: "notice",
+              target: {
+                kind: "artifact",
+                issue_id: issue,
+                request_id: current.request.request_id,
+                hash: current.artifact.hash,
+              },
+            });
+            current = yield* this.updateVisual(issue, build.request.request_id, (b) => ({
+              ...b,
+              notices: b.notices?.map((n) =>
+                n.message_id === notice.message_id ? { ...n, associated: true } : n,
+              ),
+            }));
+          }
           if (!notice.delivered) {
             yield* this.notify(current.notify_session!, notice.text, notice.message_id);
             current = yield* this.updateVisual(issue, build.request.request_id, (b) => ({
@@ -533,6 +657,7 @@ export class VisualReports {
               ),
             }));
           }
+        }
       }),
     );
   }
@@ -545,8 +670,17 @@ export class VisualReports {
         e.visual_reports?.some(
           (b) =>
             !["published", "failed"].includes(b.status) ||
+            (b.format === "a2ui-snapshot" &&
+              (b.request.surface || b.producing_call) &&
+              b.status === "published" &&
+              !b.source_attachment) ||
             (b.notify_session &&
-              !(b.notices ?? []).some((n) => n.phase === b.status && n.delivered)),
+              !b.request.surface &&
+              !b.producing_call &&
+              !(b.notices ?? []).some(
+                (n) =>
+                  n.phase === b.status && n.delivered && (b.status !== "published" || n.associated),
+              )),
         ),
       );
       if (!relevant) return;
@@ -560,8 +694,19 @@ export class VisualReports {
                 for (const e of yield* this.records.executions())
                   for (const build of e.visual_reports ?? []) {
                     if (["published", "failed"].includes(build.status)) {
+                      const pending =
+                        build.request.surface || build.producing_call
+                          ? build.status === "published" && !build.source_attachment
+                          : build.notify_session &&
+                            !(build.notices ?? []).some(
+                              (notice) =>
+                                notice.phase === build.status &&
+                                notice.delivered &&
+                                (build.status !== "published" || notice.associated),
+                            );
+                      if (!pending) continue;
                       yield* this.noticeResult(e.issue_id, build).pipe(Effect.ignore);
-                      continue;
+                      return;
                     }
                     if (build.status === "building" && build.deadline_at! > now) continue;
                     const result = yield* Effect.result(

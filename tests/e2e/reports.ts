@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { repo } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import { diagnosticText } from "../../src/opencode/diagnostics.ts";
+import { webGateway } from "../../src/web/protocol.ts";
 
 export async function reportJourney(o: {
   root: string;
@@ -60,11 +60,11 @@ export async function reportJourney(o: {
   assert.equal(first.artifact.generation, started.control_generation);
   assert.equal(first.snapshot, undefined);
   await assert.rejects(access(started.worktree_directory));
-  const html = await readFile(first.artifact.path, "utf8"),
-    hash = createHash("sha256").update(html).digest("hex");
+  const json = await readFile(first.artifact.path, "utf8"),
+    hash = createHash("sha256").update(json).digest("hex");
   assert.equal(hash, first.artifact.hash);
-  assert.ok(html.includes("abracode-license-notices"));
-  assert.ok(html.includes("abracode-report-data"));
+  assert.equal(JSON.parse(json).format, "a2ui-snapshot");
+  assert.equal(first.format, "a2ui-snapshot");
   assert.equal(completed.execution.report_receipt.hash, first.artifact.source_report.hash);
   assert.equal(completed.execution.current_phase, "completed");
   assert.deepEqual(completed.execution.approval_receipts, []);
@@ -92,74 +92,16 @@ export async function reportJourney(o: {
   assert.equal(terminal.generation, started.control_generation);
   assert.notEqual(terminal.artifact.path, first.artifact.path);
   const before = await status();
-  let responseLost = false;
-  const inFlight = o
-    .invoke("abra_work_report", {
-      issue_id: issue.id,
-      action: "generate",
-      request_id: "native-restarted-visual",
-    })
-    .catch(() => {
-      responseLost = true;
-    });
-  const captured = await o.eventually(async () => {
-    const b = (await artifacts()).find(
-      (b: any) => b.request.request_id === "native-restarted-visual",
-    );
-    return b?.status === "building" ? b : undefined;
+  const captured = await o.invoke("abra_work_report", {
+    issue_id: issue.id,
+    action: "generate",
+    request_id: "native-restarted-visual",
   });
-  if (o.compilerRunning) {
-    let last: { status?: string; error?: string; artifact_retained: boolean } | undefined;
-    try {
-      await o.eventually(async () => {
-        const build = (await artifacts()).find(
-          (b: any) => b.request.request_id === captured.request.request_id,
-        );
-        last = {
-          status: build?.status,
-          error: build?.error ? diagnosticText(build.error, 2048) : undefined,
-          artifact_retained: !!build?.artifact,
-        };
-        if (build?.status === "failed")
-          throw Object.assign(Error("REPORT_FAILED_BEFORE_RESTART"), { terminal: true });
-        if (build?.status === "published")
-          throw Object.assign(Error("REPORT_COMPILER_WINDOW_MISSED"), { terminal: true });
-        return (await o.compilerRunning!()) ? true : undefined;
-      }, 15000);
-    } catch (error) {
-      o.observe({
-        report_compiler_probe_failed: { request_id: captured.request.request_id, ...last },
-      });
-      throw error;
-    }
-    o.observe({
-      report_compiler_running_before_restart: {
-        request_id: captured.request.request_id,
-        verified_owned_child: true,
-      },
-    });
-  }
   await o.restart();
-  await inFlight;
-  const recovered = await o.eventually(async () => {
-    const b = (await artifacts()).find(
-      (b: any) => b.request.request_id === "native-restarted-visual",
-    );
-    if (b?.status === "failed") {
-      o.observe({
-        report_restart_failed: {
-          request_id: b.request.request_id,
-          status: b.status,
-          error: b.error ? diagnosticText(b.error, 2048) : undefined,
-          input_hash: b.input_hash,
-          template_hash: b.template_hash,
-          artifact_retained: !!b.artifact,
-        },
-      });
-      throw Object.assign(Error("REPORT_RESTART_FAILED"), { terminal: true });
-    }
-    return b?.status === "published" ? b : undefined;
-  }, 90000);
+  const recovered = (await artifacts()).find(
+    (b: any) => b.request.request_id === "native-restarted-visual",
+  );
+  assert.equal(recovered.status, "published");
   assert.equal(recovered.input_hash, captured.input_hash);
   assert.equal(recovered.request.request_id, captured.request.request_id);
   const retry = await o.invoke("abra_work_report", {
@@ -181,21 +123,35 @@ export async function reportJourney(o: {
       .digest("hex"),
     hash,
   );
-  await o.eventually(async () => {
-    const context = await o.client.session.context({ sessionID: o.supervisor });
-    return context.some(
-      (m: any) => m.type === "synthetic" && m.text.includes(recovered.artifact.path),
-    )
-      ? true
-      : undefined;
-  });
+  const gateway = o.client.rpc(webGateway),
+    options = { location: { directory: o.home } },
+    target = {
+      session_id: o.supervisor,
+      issue_id: issue.id,
+      request_id: first.request.request_id,
+      hash: first.artifact.hash,
+    };
+  const exported = await gateway.exportDocument(target, options);
+  assert.deepEqual(await gateway.exportDocument(target, options), exported);
+  const portable = await gateway.readExport(
+    { ...target, exporter_hash: exported.exporter_hash },
+    options,
+  );
+  assert.equal(createHash("sha256").update(portable.html).digest("hex"), exported.hash);
+  assert.equal(Buffer.byteLength(portable.html), exported.bytes);
+  assert.ok(portable.html.includes("abracode-license-notices"));
+  assert.ok(portable.html.includes("abracode-report-document"));
   let portable_artifact: string | undefined;
   if (process.env.ABRACODE_TEST_EVIDENCE_DIR) {
     const dir = resolve(process.env.ABRACODE_TEST_EVIDENCE_DIR);
     assert.ok(dir !== o.root && !dir.startsWith(o.root + "/"));
     await mkdir(dir, { recursive: true });
     portable_artifact = join(dir, `research-architecture-${first.artifact.hash}.html`);
-    await copyFile(first.artifact.path, portable_artifact);
+    await import("node:fs/promises").then((fs) => fs.writeFile(portable_artifact!, portable.html));
+    await copyFile(
+      first.artifact.path,
+      join(dir, `research-architecture-${first.artifact.hash}.json`),
+    );
   }
   return {
     feature: "controller-owned-visual-reports",
@@ -206,7 +162,8 @@ export async function reportJourney(o: {
     worker_render: first.artifact,
     terminal_render: terminal.artifact,
     recovered: recovered.artifact,
-    lost_response: responseLost,
+    exact_json_reopened_after_restart: true,
+    portable_export: exported,
     retired_worktree: true,
     native_file_link_source:
       "OpenCode v2.3.0 graphical file renderer/artifact viewer (source inspection)",

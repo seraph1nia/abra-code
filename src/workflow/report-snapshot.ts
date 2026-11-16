@@ -6,7 +6,7 @@ import {
   ReportSnapshotSchema,
   SourceReferenceSchema,
   type ReportSnapshot,
-} from "../../templates/reporter/src/snapshot-data.ts";
+} from "../presentation/report-evidence.ts";
 import { researchMarkdown } from "./report-contracts.ts";
 import { ensure } from "../domain.ts";
 import { decode } from "../decode.ts";

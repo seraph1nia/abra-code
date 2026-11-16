@@ -1,0 +1,304 @@
+import type { ReactNode } from "react";
+import type { WorkSummary } from "../../../../src/visibility/work-summary.ts";
+import type { WorkComponentName, WorkProps } from "../../../../src/web/catalog.ts";
+import type { ResourceSelection } from "../../../../src/web/resources.ts";
+import { workEvents } from "../../../../src/presentation/work-events.ts";
+import { phaseLabel } from "../../../../src/presentation/work-state.ts";
+import { Button } from "../components/ui/button.tsx";
+import { Badge } from "../components/ui/badge.tsx";
+import { ReportEvidence, type PreparedReportDiagram } from "./report-evidence.tsx";
+import type { ReportSnapshot } from "../../../../src/presentation/report-evidence.ts";
+
+type Binding = {
+  work: readonly WorkSummary[];
+  captured: readonly WorkSummary[];
+  capturedAt: string;
+  /** Both inputs are immutable captured values when frozen. */
+  frozen?: boolean;
+  evidence?: ReportSnapshot;
+  preparedDiagrams?: readonly PreparedReportDiagram[];
+  inspect?: (target: ResourceSelection) => void;
+};
+const statuses = ["open", "in_progress", "blocked", "closed", "unavailable"] as const;
+const words = (text: string) => text.replaceAll("_", " ");
+const observedState = (work: WorkSummary) =>
+  work.phase ? `${phaseLabel(work.phase)} · ${words(work.issue_status)}` : words(work.issue_status);
+
+/** The binding adapter is shared by app surfaces and immutable document viewers. */
+export function bindWork(props: WorkProps<"WorkTable">, binding: Binding) {
+  const snapshot = props.mode === "snapshot";
+  const source = snapshot ? binding.captured : binding.work;
+  const matching = source.filter(
+    (work) => !props.issueIds || props.issueIds.includes(work.issue_id),
+  );
+  return {
+    selected: matching.slice(0, 100),
+    total: matching.length,
+    label: binding.frozen
+      ? `Saved ${snapshot ? "snapshot" : "live"} binding · ${new Date(binding.capturedAt).toLocaleString()}`
+      : snapshot
+        ? `Snapshot · ${new Date(binding.capturedAt).toLocaleString()}`
+        : "Live work graph",
+  };
+}
+
+/** Presentation has no router, query client, model tool or controller dependency. */
+export function WorkWidget({
+  name,
+  props,
+  binding,
+}: {
+  name: WorkComponentName;
+  props: WorkProps<"WorkTable"> &
+    Partial<WorkProps<"ReportLink">> &
+    Partial<WorkProps<"ResourceLink">> &
+    Partial<WorkProps<"ReportEvidence">>;
+  binding: Binding;
+}) {
+  const { selected, total, label } = bindWork(props, binding);
+  const source = props.mode === "snapshot" ? binding.captured : binding.work;
+  const navigate = (target: ResourceSelection, text: ReactNode, className?: string) =>
+    binding.inspect ? (
+      <Button variant="ghost" className={className} onClick={() => binding.inspect?.(target)}>
+        {text}
+      </Button>
+    ) : (
+      <span className={className}>{text}</span>
+    );
+  const task = (work: WorkSummary) =>
+    navigate(
+      { action: "open_task", issue_id: work.issue_id },
+      <>
+        <strong>{work.title}</strong>
+        <span className="muted">{observedState(work)}</span>
+      </>,
+      "work-card h-auto flex-col items-stretch whitespace-normal text-left",
+    );
+  let content: ReactNode;
+  switch (name) {
+    case "ReportEvidence":
+      return (
+        <ReportEvidence
+          section={props.section ?? "summary"}
+          snapshot={binding.evidence}
+          preparedDiagrams={binding.preparedDiagrams}
+        />
+      );
+    case "ResourceLink":
+      content =
+        props.target && props.label ? (
+          navigate(props.target, props.label)
+        ) : (
+          <p>Resource target unavailable.</p>
+        );
+      break;
+    case "StatusSummary":
+      content = (
+        <dl className="metrics">
+          {statuses.map((status) => (
+            <div key={status}>
+              <dt>{words(status)}</dt>
+              <dd>{selected.filter((work) => work.issue_status === status).length}</dd>
+            </div>
+          ))}
+        </dl>
+      );
+      break;
+    case "WorkTable":
+      content = (
+        <div className="work-table-scroll" tabIndex={0} role="region" aria-label="Work table">
+          <table className="work-table">
+            <caption>Observed work</caption>
+            <thead>
+              <tr>
+                <th scope="col">Task</th>
+                <th scope="col">State</th>
+                <th scope="col">Priority</th>
+                <th scope="col">Latest progress</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selected.map((work) => (
+                <tr key={work.issue_id}>
+                  <th scope="row">
+                    {navigate(
+                      { action: "open_task", issue_id: work.issue_id },
+                      work.title,
+                      "h-auto whitespace-normal text-left justify-start",
+                    )}
+                  </th>
+                  <td>{observedState(work)}</td>
+                  <td>{work.priority}</td>
+                  <td>{work.progress?.summary ?? "No progress observation retained"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      break;
+    case "Kanban":
+      content = (
+        <div className="kanban" role="region" aria-label="Work board" tabIndex={0}>
+          {statuses.map((status) => (
+            <section key={status}>
+              <h4>{words(status)}</h4>
+              {selected
+                .filter((work) => work.issue_status === status)
+                .map((work) => (
+                  <div key={work.issue_id}>{task(work)}</div>
+                ))}
+            </section>
+          ))}
+        </div>
+      );
+      break;
+    case "Timeline": {
+      const { events, total } = workEvents(selected);
+      content = (
+        <>
+          <h4>Captured events</h4>
+          <p className="muted">
+            Retained observations, including the latest progress per task; this is not a complete
+            activity log.
+          </p>
+          {events.length ? (
+            <ol className="timeline">
+              {events.map((event) => (
+                <li key={event.id}>
+                  <time dateTime={new Date(event.at).toISOString()}>
+                    {new Date(event.at).toLocaleString()}
+                  </time>
+                  <strong>{event.label}</strong>
+                  <div>
+                    {navigate(
+                      { action: "open_task", issue_id: event.issue.issue_id },
+                      event.issue.title,
+                    )}
+                  </div>
+                  <p>{event.detail}</p>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p>No timed observations retained.</p>
+          )}
+          {total > events.length && (
+            <p role="status">
+              Showing {events.length} of {total} captured events.
+            </p>
+          )}
+        </>
+      );
+      break;
+    }
+    case "DependencyGraph":
+      content = (
+        <>
+          <h4>Dependency references</h4>
+          <ul className="dependency-graph">
+            {selected.map((work) => (
+              <li key={work.issue_id}>
+                {task(work)}
+                {work.dependencies ? (
+                  <>
+                    <p>Depends on:</p>
+                    {work.dependencies.length ? (
+                      <ul>
+                        {work.dependencies.map((id) => (
+                          <li key={id}>
+                            {navigate(
+                              { action: "open_task", issue_id: id },
+                              source.find((item) => item.issue_id === id)?.title ?? id,
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p>No declared dependencies.</p>
+                    )}
+                    {(work.dependency_count ?? 0) > work.dependencies.length && (
+                      <p role="status">
+                        Showing {work.dependencies.length} of {work.dependency_count} dependencies.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p>Dependency references unavailable in this observation.</p>
+                )}
+                {work.blockers.length > 0 && (
+                  <>
+                    <h5>Observed blockers</h5>
+                    <ul>
+                      {work.blockers.map((blocker, index) => (
+                        <li key={index}>{blocker}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      );
+      break;
+    case "DecisionSummary":
+      content = (
+        <div>
+          {selected.flatMap((work) =>
+            (work.decisions ?? []).map((decision) => (
+              <div key={`${work.issue_id}:${decision.generation}:${decision.key}`}>
+                {navigate(
+                  {
+                    action: "open_decision",
+                    issue_id: work.issue_id,
+                    key: decision.key,
+                    generation: decision.generation,
+                  },
+                  <>
+                    <strong>{decision.question}</strong>
+                    <span>
+                      {work.title} · <Badge variant="secondary">{decision.status}</Badge>
+                    </span>
+                  </>,
+                  "work-card h-auto flex-col items-stretch whitespace-normal text-left",
+                )}
+              </div>
+            )),
+          )}
+        </div>
+      );
+      break;
+    case "ReportLink":
+      content = props.issueId ? (
+        navigate(
+          { action: "open_task", issue_id: props.issueId, section: "reports" },
+          "Open retained reports ↗",
+        )
+      ) : (
+        <p>Report target unavailable.</p>
+      );
+      break;
+    default: {
+      const missing: never = name;
+      throw new Error("Missing work renderer", { cause: missing });
+    }
+  }
+  return (
+    <section className="surface-widget" data-work-widget={name}>
+      <div className="surface-binding">
+        {name === "ResourceLink" || name === "ReportLink" ? "Current app navigation" : label}
+        {binding.frozen && binding.inspect && " · Links inspect current app resources"}
+      </div>
+      {content}
+      {name !== "ResourceLink" && name !== "ReportLink" && total > selected.length && (
+        <p role="status">
+          Showing {selected.length} of {total} matching work observations.
+        </p>
+      )}
+      {!binding.inspect && (
+        <p className="muted">App navigation is unavailable in this document view.</p>
+      )}
+    </section>
+  );
+}

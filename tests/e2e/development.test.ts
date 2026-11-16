@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { installSource, installationRoot, command } from "./install.ts";
-import { launchReportBrowser } from "../../templates/reporter/scripts/browser.ts";
+import { launchReportBrowser } from "../../apps/report/scripts/browser.ts";
 
 async function unusedPort() {
   const server = createServer();

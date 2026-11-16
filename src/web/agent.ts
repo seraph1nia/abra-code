@@ -1,7 +1,7 @@
 import { CrewError } from "../domain.ts";
-import { Effect, Fiber, PubSub, Schedule, Stream } from "effect";
+import { Effect, Fiber, PubSub, Schedule, Schema, Stream } from "effect";
 import { AbstractAgent } from "@ag-ui/client";
-import { EventType, type BaseEvent, type Message, type RunAgentInput } from "@ag-ui/core";
+import { EventType, type Event, type BaseEvent, type RunAgentInput } from "@ag-ui/core";
 import {
   AgentRunner,
   type AgentRunnerConnectRequest,
@@ -11,6 +11,14 @@ import {
 } from "@copilotkit/runtime/v2";
 import { Observable } from "rxjs";
 import type { WebBackend, WorkspaceSnapshot } from "./contracts.ts";
+import { EventSchema, RunAgentInputSchema } from "@ag-ui/core/schemas";
+import {
+  SubmissionOptionsSchema,
+  WorkspaceSnapshotSchema,
+  WorkspaceStateJson,
+} from "./workspace-wire.ts";
+import { decode } from "../decode.ts";
+import { nativeAguiMessages } from "./transcript.ts";
 
 type FeedEvent = { type: "snapshot"; snapshot: WorkspaceSnapshot } | { type: "reconnecting" };
 /** Scoped, coalesced observations. Subscriptions never own a native execution. */
@@ -26,6 +34,9 @@ export class WorkspaceFeed {
       let latest: FeedEvent | undefined;
       const refresh = PubSub.publish(signals, undefined).pipe(Effect.asVoid);
       const read = backend.snapshot.pipe(
+        Effect.flatMap((snapshot) =>
+          decode(Schema.toType(WorkspaceSnapshotSchema), snapshot, "Workspace feed"),
+        ),
         Effect.match({
           onSuccess: (snapshot): FeedEvent => ({ type: "snapshot", snapshot }),
           onFailure: (): FeedEvent => ({ type: "reconnecting" }),
@@ -83,14 +94,26 @@ function observable<A, E>(stream: Stream.Stream<A, E>) {
   });
 }
 
-function messages(snapshot: WorkspaceSnapshot): Message[] {
-  return snapshot.messages.map((m) => ({ id: m.id, role: m.role, content: m.text }));
-}
-function snapshots(snapshot: WorkspaceSnapshot): BaseEvent[] {
+function snapshots(snapshot: WorkspaceSnapshot): Event[] {
+  const state = Schema.encodeSync(WorkspaceStateJson)({ workspace: snapshot });
   return [
-    { type: EventType.MESSAGES_SNAPSHOT, messages: messages(snapshot) } as BaseEvent,
-    { type: EventType.STATE_SNAPSHOT, snapshot: { workspace: snapshot } } as BaseEvent,
+    {
+      type: EventType.MESSAGES_SNAPSHOT,
+      messages: nativeAguiMessages(snapshot.messages),
+    } satisfies Event,
+    { type: EventType.STATE_SNAPSHOT, snapshot: state } satisfies Event,
   ];
+}
+function feedEvents(event: FeedEvent) {
+  return Stream.fromEffect(
+    Effect.try({
+      try: () => (event.type === "snapshot" ? snapshots(event.snapshot) : [connectionEvent()]),
+      catch: () => new CrewError("WEB_STATE", "Workspace update unavailable"),
+    }).pipe(Effect.orElseSucceed(() => [connectionEvent()])),
+  ).pipe(Stream.flatMap((events) => Stream.fromIterable(events)));
+}
+function aguiEvents<E>(stream: Stream.Stream<Event, E>) {
+  return observable(stream.pipe(Stream.map((event) => EventSchema.parse(event))));
 }
 /** OpenCode is the only model/tool loop. This agent advertises the bridge to CopilotKit. */
 export class AbraAgent extends AbstractAgent {
@@ -124,10 +147,10 @@ export class AbraRunner extends AgentRunner {
   }
   run(request: AgentRunnerRunRequest): Observable<BaseEvent> {
     const admitted = Effect.gen({ self: this }, function* () {
-      yield* Effect.try({
+      const submitted = yield* Effect.try({
         try: () => {
           this.assert(request.threadId, request.agent.agentId);
-          const input = request.input;
+          const input = RunAgentInputSchema.parse(request.input);
           if (input.threadId !== request.threadId || input.tools.length || input.context.length)
             throw new CrewError(
               "WEB_INPUT",
@@ -136,32 +159,21 @@ export class AbraRunner extends AgentRunner {
           const user = input.messages.at(-1);
           if (!user || user.role !== "user" || typeof user.content !== "string")
             throw new CrewError("WEB_INPUT", "Submit one text message to Abra");
-          const forwarded = input.forwardedProps;
-          if (
-            !forwarded ||
-            typeof forwarded !== "object" ||
-            typeof forwarded.request_id !== "string"
-          )
-            throw new CrewError("WEB_INPUT", "A stable submission identity is required");
-          if (Object.keys(forwarded).some((key) => !["request_id", "delivery"].includes(key)))
-            throw new CrewError("WEB_INPUT", "Unsupported submission options");
-          if (
-            forwarded.delivery !== undefined &&
-            forwarded.delivery !== "queue" &&
-            forwarded.delivery !== "steer"
-          )
-            throw new CrewError("WEB_INPUT", "Invalid delivery mode");
+          return {
+            text: user.content,
+            forwardedProps: input.forwardedProps,
+          };
         },
         catch: (error) => CrewError.from(error),
       });
-      const user = request.input.messages.at(-1)!;
-      const forwarded = request.input.forwardedProps as {
-        request_id: string;
-        delivery?: "queue" | "steer";
-      };
+      const forwarded = yield* decode(
+        SubmissionOptionsSchema,
+        submitted.forwardedProps,
+        "Submission options",
+      );
       const receipt = yield* this.backend.submit({
         request_id: forwarded.request_id,
-        text: user.content as string,
+        text: submitted.text,
         delivery: forwarded.delivery ?? "queue",
       });
       if (receipt.status === "uncertain")
@@ -183,46 +195,36 @@ export class AbraRunner extends AgentRunner {
                 event.snapshot.messages.some((m) => m.id === receipt.message_id) &&
                 !event.snapshot.inbox.some((i) => i.id === receipt.message_id),
             ),
-            Stream.flatMap((event) =>
-              Stream.fromIterable(
-                event.type === "snapshot" ? snapshots(event.snapshot) : [connectionEvent()],
-              ),
-            ),
+            Stream.flatMap(feedEvents),
           ),
         ),
       ),
     );
-    return observable(
+    return aguiEvents(
       Stream.concat(
         Stream.succeed({
           type: EventType.RUN_STARTED,
           threadId: request.threadId,
           runId: request.input.runId,
-        } as BaseEvent),
+        } satisfies Event),
         Stream.concat(
           observation,
           Stream.succeed({
             type: EventType.RUN_FINISHED,
             threadId: request.threadId,
             runId: request.input.runId,
-          } as BaseEvent),
+          } satisfies Event),
         ),
       ),
     );
   }
   connect(request: AgentRunnerConnectRequest): Observable<BaseEvent> {
-    return observable(
+    return aguiEvents(
       Stream.unwrap(
         Effect.try({
           try: () => {
             this.assert(request.threadId, request.agentId);
-            return this.feed.updates.pipe(
-              Stream.flatMap((event) =>
-                Stream.fromIterable(
-                  event.type === "snapshot" ? snapshots(event.snapshot) : [connectionEvent()],
-                ),
-              ),
-            );
+            return this.feed.updates.pipe(Stream.flatMap(feedEvents));
           },
           catch: () => new CrewError("WEB_INPUT", "Use the fixed Abra session"),
         }),
@@ -245,10 +247,10 @@ export class AbraRunner extends AgentRunner {
   }
 }
 
-function connectionEvent(): BaseEvent {
+function connectionEvent(): Event {
   return {
     type: EventType.CUSTOM,
     name: "abracode.connection",
     value: { status: "reconnecting" },
-  } as BaseEvent;
+  } satisfies Event;
 }

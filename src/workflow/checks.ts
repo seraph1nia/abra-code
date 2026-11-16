@@ -37,6 +37,7 @@ export class CodingChecks {
   private get = (id: IssueId) => this.queries.get(id);
   assertPlan = Effect.fn("CodingChecks.assertPlan")(
     function* (this: CodingChecks, e: Execution, _p: Project) {
+      if (e.workflow_policy === "full-openspec") yield* this.spec.assertSchema(e);
       const fp =
         e.workflow_policy === "full-openspec"
           ? yield* fullPlanFingerprint(this.git, e)

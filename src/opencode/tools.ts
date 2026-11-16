@@ -208,13 +208,20 @@ export function registerTools(
           description:
             "Read retained Markdown (default), inspect visual artifacts, or explicitly generate a trusted portable snapshot with action generate and stable request_id. Generation is not diagnostic/read authority.",
           input: WorkReportInputSchema,
-          run: (a, s) =>
+          run: (a, s, call) =>
             a.action === "generate"
-              ? c.visualReport(s, a.issue_id, {
-                  request_id: a.request_id,
-                  title: a.title,
-                  diagrams: a.diagrams,
-                })
+              ? c.visualReport(
+                  s,
+                  a.issue_id,
+                  {
+                    request_id: a.request_id,
+                    title: a.title,
+                    diagrams: a.diagrams,
+                    format: a.format,
+                    surface: a.surface,
+                  },
+                  { session_id: s, message_id: call.messageID, tool_call_id: call.id },
+                )
               : a.action === "artifacts"
                 ? c.get(a.issue_id).pipe(Effect.map((e) => e.visual_reports ?? []))
                 : c.queries.report(a.issue_id),
@@ -453,6 +460,7 @@ export function registerTools(
                 const e = yield* c.get(a.issue_id);
                 return {
                   execution: e,
+                  execution_contract: c.queries.executionContract(e),
                   supervision: yield* c.queries.supervision(e),
                   outcome: yield* observeDeliveryOutcome(c.queries, e),
                   issue: yield* c.queries.issue(a.issue_id),

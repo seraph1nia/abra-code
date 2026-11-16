@@ -111,7 +111,7 @@ export class TicketDiff {
         : yield* untrackedDiff(this.c.git, tree!, base, files, extra, fileLimit);
       files = extraDiff.files;
       files.sort((a, b) => a.path.localeCompare(b.path));
-      const file = selected ?? files[0]?.path;
+      const file = selected;
       const result: { -readonly [K in keyof WorkDiff]: WorkDiff[K] } = {
         at,
         base,
@@ -121,34 +121,72 @@ export class TicketDiff {
         file,
         limited: new Set([...statuses.keys(), ...extra]).size > fileLimit,
       };
-      if (!file) return { ...result, message: "No changes against this base." };
-      const entry = files.find((f) => f.path === file);
-      if (!entry)
-        return {
-          ...result,
-          file: undefined,
-          message: "Selected file is no longer in this comparison. Choose a changed file.",
-        };
-      if (entry.binary)
-        return { ...result, message: "Binary file changed. A text patch is not available." };
-      if (entry.limited)
-        return {
-          ...result,
-          message: "File is too large or unavailable for safe preview (64 KiB limit).",
-        };
-      const fresh = extraDiff.patches.get(file);
-      if (fresh) {
-        result.patch = fresh.patch;
-        result.message = fresh.message;
-      } else
-        result.patch = yield* this.c.git.run(path, [...diff, "--unified=3", ...range, "--", file], {
-          trim: false,
+      if (!files.length) return { ...result, message: "No changes against this base." };
+      const preview = (entry: DiffFile) =>
+        Effect.gen({ self: this }, function* () {
+          if (entry.binary)
+            return { message: "Binary file changed. A text patch is not available." };
+          if (entry.limited)
+            return { message: "File is too large or unavailable for safe preview (64 KiB limit)." };
+          const fresh = extraDiff.patches.get(entry.path);
+          if (fresh) return fresh;
+          const patch = yield* this.c.git
+            .run(path, [...diff, "--unified=3", ...range, "--", entry.path], {
+              trim: false,
+              max_output_bytes: documentLimit,
+            })
+            .pipe(Effect.result);
+          if (patch._tag === "Failure")
+            return { message: "Text preview is unavailable or exceeds 64 KiB." };
+          return { patch: patch.success };
         });
-      if (Buffer.byteLength(result.patch ?? "") > documentLimit) {
-        delete result.patch;
-        result.message = "Patch exceeds 64 KiB. Statistics are shown; text preview is limited.";
+      if (file) {
+        const entry = files.find((entry) => entry.path === file);
+        if (!entry)
+          return {
+            ...result,
+            file: undefined,
+            message: "Selected file is no longer in this comparison.",
+          };
+        const content = yield* preview(entry);
+        if (Buffer.byteLength(content.patch ?? "") > documentLimit)
+          return { ...result, message: "Patch exceeds 64 KiB. Text preview is limited." };
+        return { ...result, ...content };
       }
-      return result;
+      // Keep whole patches: truncating bytes can corrupt hunks or hide a later file's header.
+      // Exact-file reads remain available when a comparison exceeds this total preview budget.
+      const patches: string[] = [];
+      let bytes = 0,
+        omitted = 0;
+      for (const entry of files) {
+        if (bytes >= documentLimit) {
+          omitted++;
+          continue;
+        }
+        const content = yield* preview(entry);
+        if (!content.patch) {
+          omitted++;
+          continue;
+        }
+        const patch = content.patch.endsWith("\n") ? content.patch : `${content.patch}\n`;
+        const size = Buffer.byteLength(patch);
+        if (bytes + size > documentLimit) {
+          omitted++;
+          continue;
+        }
+        patches.push(patch);
+        bytes += size;
+      }
+      return {
+        ...result,
+        patch: patches.length ? patches.join("") : undefined,
+        limited: result.limited || omitted > 0,
+        ...(omitted
+          ? {
+              message: `${omitted} file preview(s) unavailable or outside the 64 KiB comparison preview. Search by file name to request an individual preview.`,
+            }
+          : {}),
+      };
     }.bind(this),
     domainEffect,
     Effect.catch((error) =>

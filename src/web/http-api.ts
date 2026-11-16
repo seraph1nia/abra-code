@@ -1,11 +1,14 @@
+import { ReportExportSchema } from "../presentation/report-export-contract.ts";
+import { LeadEvidenceQuery, LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
+import { WorkerHistoryQuery, WorkerHistoryPageSchema } from "./worker-history.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Shared contracts for the pinned Effect 4.1.4 HTTP API implementation. */
 import { Schema } from "effect";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
 import { Form } from "@opencode/schema/form";
 import { Permission } from "@opencode/schema/permission";
-import { SessionMessage } from "@opencode/schema/session-message";
+import { ResourceSelectionSchema } from "./resources.ts";
+import { WorkDiscoveryQuery, WorkPageSchema } from "../visibility/discovery-contracts.ts";
 import {
-  WorkSnapshotSchema,
   WorkDetailSchema,
   WorkDiffSchema,
   WorkDocumentSchema,
@@ -16,9 +19,10 @@ import {
   DecisionSchema,
   DeclaredWaitSchema,
   ArtifactsSchema,
+  DocumentArtifactSchema,
+  ArtifactSummarySchema,
 } from "./wire.ts";
-import { IssueId, RelativePath, SessionId, RequestId } from "../identities.ts";
-import { componentNames, catalogId } from "./surfaces.ts";
+import { IssueId, RelativePath, SessionId, RequestId, ContentHash } from "../identities.ts";
 
 export class WorkspaceError extends Schema.TaggedError<
   WorkspaceError,
@@ -41,100 +45,27 @@ export class WorkspaceForbidden extends Schema.TaggedError<
   },
   { httpApiStatus: 403 },
 ) {}
-export const ReceiptSchema = Schema.Struct({
-  request_id: Schema.String,
-  message_id: SessionMessage.ID,
-  text: Schema.String,
-  delivery: Schema.Literals(["queue", "steer"]),
-  status: Schema.Literals(["submitted", "admitted", "uncertain"]),
-  at: Schema.String,
-});
-export type SubmissionReceipt = typeof ReceiptSchema.Type;
-export const TranscriptMessageSchema = Schema.Struct({
-  id: Schema.String,
-  role: Schema.Literals(["user", "assistant", "system"]),
-  text: Schema.String,
-  at: Schema.String,
-  files: Schema.optional(Schema.Array(Schema.String)),
-  tools: Schema.optional(
-    Schema.Array(
-      Schema.Struct({
-        id: Schema.String,
-        name: Schema.String,
-        status: Schema.String,
-        input: Schema.optional(Schema.String),
-        result: Schema.optional(Schema.String),
-      }),
-    ),
-  ),
-});
-export const SurfaceSchema = Schema.Struct({
-  version: Schema.Literal("1.0"),
-  createSurface: Schema.Struct({
-    surfaceId: Schema.String,
-    catalogId: Schema.Literal(catalogId),
-    components: Schema.Array(
-      Schema.Struct({
-        id: Schema.String,
-        component: Schema.Literals(componentNames),
-        children: Schema.optional(Schema.Array(Schema.String)),
-        text: Schema.optional(Schema.String),
-        issueIds: Schema.optional(Schema.Array(Schema.String)),
-        issueId: Schema.optional(Schema.String),
-        mode: Schema.optional(Schema.Literals(["live", "snapshot"])),
-      }),
-    ),
-  }),
-});
-export const CheckpointSchema = Schema.Struct({
-  active: Schema.Boolean,
-  issue_id: Schema.optional(Schema.String),
-  kind: Schema.optional(Schema.Literals(["plan", "merge", "decision"])),
-  fingerprint: Schema.optional(Schema.String),
-  identity: Schema.optional(Schema.String),
-  generation: Schema.optional(Schema.Int),
-  finishing_target: Schema.optional(Schema.String),
-});
-export const WorkspaceSnapshotSchema = Schema.Struct({
-  session_id: SessionId,
-  agent_id: Schema.Literal("abra"),
-  at: Schema.String,
-  busy: Schema.Boolean,
-  outcome: Schema.optional(Schema.String),
-  model: Schema.optional(Schema.String),
-  messages: Schema.Array(TranscriptMessageSchema),
-  older: Schema.optional(Schema.String),
-  inbox: Schema.Array(
-    Schema.Struct({ id: Schema.String, text: Schema.String, delivery: Schema.String }),
-  ),
-  receipts: Schema.Array(ReceiptSchema),
-  forms: Schema.Array(
-    Schema.Struct({
-      form: Form.Info,
-      binding: Schema.String,
-      active: Schema.Boolean,
-      checkpoint: Schema.optional(CheckpointSchema),
-    }),
-  ),
-  permissions: Schema.Array(Schema.Struct({ request: Permission.Request, binding: Schema.String })),
-  projects: Schema.Array(
-    Schema.Struct({ id: Schema.String, name: Schema.String, path: Schema.optional(Schema.String) }),
-  ),
-  work: WorkSnapshotSchema,
-  surfaces: Schema.Array(
-    Schema.Struct({
-      session_id: Schema.String,
-      tool_call_id: Schema.String,
-      revision: Schema.Int,
-      at: Schema.String,
-      surface: SurfaceSchema,
-      snapshot: WorkSnapshotSchema.fields.work,
-    }),
-  ),
-});
+export {
+  ReceiptSchema,
+  TranscriptMessageSchema,
+  CheckpointSchema,
+  SurfaceRecordSchema,
+  WorkspaceSnapshotSchema,
+} from "./workspace-wire.ts";
+export { SurfaceSchema } from "./surfaces.ts";
+export type { SubmissionReceipt } from "./workspace-wire.ts";
+import {
+  TranscriptMessageSchema,
+  WorkspaceSnapshotSchema,
+  PresentationPageSchema,
+  SurfaceEntrySchema,
+} from "./workspace-wire.ts";
+import { ComponentId } from "./catalog.ts";
+import { SaveSurfaceSchema, ExportDocumentSchema, ReadExportSchema } from "./report-actions.ts";
 export const HistorySchema = Schema.Struct({
   messages: Schema.Array(TranscriptMessageSchema),
   older: Schema.optional(Schema.String),
+  presentations: Schema.optional(PresentationPageSchema),
 });
 export const DecisionsSchema = Schema.Struct({
   decisions: Schema.Array(DecisionSchema),
@@ -158,10 +89,26 @@ export const ArtifactQuery = Schema.Struct({ issue_id: IssueId, request_id: Requ
   exact,
 );
 const html = Schema.String.pipe(HttpApiSchema.asText({ contentType: "text/html; charset=utf-8" }));
+const documentQuery = Schema.Struct({
+  issue_id: IssueId,
+  request_id: RequestId,
+  hash: ContentHash,
+}).annotate(exact);
+const documentJSON = Schema.String.pipe(
+  HttpApiSchema.asText({ contentType: "application/json; charset=utf-8" }),
+);
 
 export const workspaceApi = HttpApi.make("abra-workspace")
   .add(
     HttpApiGroup.make("workspace").add(
+      HttpApiEndpoint.get("surface", "/api/surface", {
+        query: Schema.Struct({
+          surface_id: ComponentId,
+          revision: Schema.Int.check(Schema.isGreaterThan(0)),
+        }),
+        success: SurfaceEntrySchema,
+        error,
+      }),
       HttpApiEndpoint.get("bootstrap", "/api/bootstrap", {
         disableCodecs: true,
         success: WorkspaceSnapshotSchema,
@@ -189,6 +136,16 @@ export const workspaceApi = HttpApi.make("abra-workspace")
       }),
     ),
     HttpApiGroup.make("work").add(
+      HttpApiEndpoint.get("find", "/api/work/find", {
+        query: WorkDiscoveryQuery,
+        success: WorkPageSchema,
+        error,
+      }),
+      HttpApiEndpoint.post("resolve", "/api/work/resolve", {
+        payload: ResourceSelectionSchema,
+        success: ResourceSelectionSchema,
+        error,
+      }),
       HttpApiEndpoint.get("detail", "/api/work/detail", {
         query: WorkQuery,
         success: WorkDetailSchema,
@@ -213,6 +170,16 @@ export const workspaceApi = HttpApi.make("abra-workspace")
         success: WorkerInspectionSchema,
         error,
       }),
+      HttpApiEndpoint.get("worker-history", "/api/work/worker-history", {
+        query: WorkerHistoryQuery.annotate(exact),
+        success: WorkerHistoryPageSchema,
+        error,
+      }),
+      HttpApiEndpoint.get("leads", "/api/work/leads", {
+        query: LeadEvidenceQuery.annotate(exact),
+        success: LeadEvidencePageSchema,
+        error,
+      }),
       HttpApiEndpoint.get("messages", "/api/work/messages", {
         query: Schema.Struct({
           issue_id: IssueId,
@@ -235,8 +202,46 @@ export const workspaceApi = HttpApi.make("abra-workspace")
         error,
       }),
       HttpApiEndpoint.get("artifacts", "/api/work/artifacts", {
-        query: WorkQuery,
+        query: Schema.Struct({
+          issue_id: IssueId,
+          offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+        }).annotate(exact),
         success: ArtifactsSchema,
+        error,
+      }),
+      HttpApiEndpoint.get("artifactSummary", "/api/work/artifact-summary", {
+        query: documentQuery,
+        success: ArtifactSummarySchema,
+        error,
+      }),
+      HttpApiEndpoint.get("artifactDocument", "/api/work/artifact-document", {
+        query: documentQuery,
+        success: DocumentArtifactSchema,
+        error,
+      }),
+      HttpApiEndpoint.post("exportDocument", "/api/report/export", {
+        payload: ExportDocumentSchema,
+        success: ReportExportSchema,
+        error,
+      }),
+      HttpApiEndpoint.get("exportPreview", "/api/report/export/preview", {
+        query: ReadExportSchema,
+        success: html,
+        error,
+      }),
+      HttpApiEndpoint.get("exportDownload", "/api/report/export/download", {
+        query: ReadExportSchema,
+        success: HttpApiSchema.WithHeaders(html, { "content-disposition": Schema.String }),
+        error,
+      }),
+      HttpApiEndpoint.post("saveSurface", "/api/report/save-surface", {
+        payload: SaveSurfaceSchema,
+        success: ArtifactSummarySchema,
+        error,
+      }),
+      HttpApiEndpoint.get("downloadDocument", "/api/report/document/download", {
+        query: documentQuery,
+        success: HttpApiSchema.WithHeaders(documentJSON, { "content-disposition": Schema.String }),
         error,
       }),
       HttpApiEndpoint.get("preview", "/api/report/preview", {

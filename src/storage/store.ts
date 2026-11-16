@@ -374,6 +374,26 @@ export class Records {
                 else Reflect.deleteProperty(record, field);
               }
           }
+          if (!key.startsWith("project/") && object(prior) && object(value)) {
+            if (prior.openspec_schema !== value.openspec_schema)
+              return yield* new CrewError(
+                "SCHEMA_REBIND",
+                `${key}: Captured schema selection is immutable`,
+              );
+            const before = prior.openspec_schema_binding,
+              after = value.openspec_schema_binding;
+            if (
+              (before === undefined && after !== undefined) ||
+              (object(before) &&
+                (before.state === "bound"
+                  ? !isDeepStrictEqual(before, after)
+                  : !object(after) || before.selection_source !== after.selection_source))
+            )
+              return yield* new CrewError(
+                "SCHEMA_REBIND",
+                `${key}: Schema binding cannot be removed, rebound or fabricated for a legacy execution`,
+              );
+          }
           if (!key.startsWith("project/") && object(prior) && object(value) && !control) {
             if (
               !(JSON.stringify(prior.effective_policy) === JSON.stringify(value.effective_policy))
@@ -489,6 +509,9 @@ export class Records {
                   "snapshot",
                   "input_hash",
                   "template_hash",
+                  "format",
+                  "document_hash",
+                  "producing_call",
                 ].some(
                   (field) =>
                     !isDeepStrictEqual(
@@ -518,7 +541,8 @@ export class Records {
                     !object(replacement) ||
                     replacement.text !== notice.text ||
                     replacement.phase !== notice.phase ||
-                    (notice.delivered && !replacement.delivered)
+                    (notice.delivered && !replacement.delivered) ||
+                    (notice.associated && !replacement.associated)
                   )
                     return yield* new CrewError(
                       "REPORT_HISTORY",

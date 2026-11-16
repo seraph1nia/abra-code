@@ -1,6 +1,10 @@
-import { SupervisionSummarySchema, SupervisionAggregateSchema } from "./supervision.ts";
+import { LeadAttentionSchema } from "./lead-observation.ts";
+import { LeadEvidenceQuery, LeadEvidencePageSchema } from "./lead-observation.ts";
+import { PlanningObservationSchema } from "./document-contracts.ts";
+import { WorkSummarySchema } from "./work-summary.ts";
+import { WorkDiscoveryQuery, WorkPageSchema } from "./discovery-contracts.ts";
+import { SupervisionAggregateSchema } from "./supervision.ts";
 import { FleetSchema } from "./fleet.ts";
-import { DeliveryOutcomeSchema } from "../workflow/delivery-outcome.ts";
 import { WorkerInspectionSchema } from "./worker.ts";
 import { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
 import { MessagesPageSchema } from "../workflow/message-contracts.ts";
@@ -11,31 +15,23 @@ import {
   ChangeName,
   ArtifactId,
   IssueId,
-  RepositoryId,
   SessionId,
   Commit,
   RelativePath,
   RoundId,
   Timestamp,
   Fingerprint,
-  LeadId,
-  RequestId,
 } from "../identities.ts";
 import {
   ReadinessBlockerSchema,
   RecordDiagnosticSchema,
-  RoleSchema,
   Count,
-  Priority,
   Positive,
-  PolicySchema,
-  PhaseSchema,
   MergeMethodSchema,
   CIPolicySchema,
 } from "../contracts.ts";
 
-import { AttentionSchema } from "../workflow/attention-contracts.ts";
-import { DeliveryWaitSchema, OperationIntentSchema } from "../workflow/operation-contracts.ts";
+import { OperationIntentSchema } from "../workflow/operation-contracts.ts";
 import { ScopeRecordSchema } from "../work/scope.ts";
 import { ReportReceiptSchema } from "../workflow/report-contracts.ts";
 import {
@@ -43,53 +39,17 @@ import {
   DeclaredWaitSchema,
   ProgressSchema,
 } from "../workflow/obligation-contracts.ts";
+import { AttentionSchema } from "../workflow/attention-contracts.ts";
 import { Rpc } from "@opencode/plugin/rpc";
 import { Schema } from "effect";
 const strings = Schema.Array(Schema.String);
-const session = Schema.Struct({
-  id: SessionId,
-  role: RoleSchema,
-});
-export const LeadSummarySchema = Schema.Struct({
-  id: LeadId,
-  revision: Count,
-  repositories: Schema.Array(RepositoryId),
-  enabled: Schema.Boolean,
-  session_available: Schema.Boolean,
-  session_id: SessionId,
-  parent_session_id: SessionId,
-  state: Schema.Literals([
-    "disabled",
-    "stopping",
-    "unavailable",
-    "provisioning",
-    "running",
-    "queued",
-    "idle",
-    "unknown",
-  ]),
-  request_count: Count,
-  outstanding_count: Count,
-  requests: Schema.Array(
-    Schema.Struct({
-      issue_id: IssueId,
-      request_id: RequestId,
-      status: Schema.String,
-      question: Schema.String,
-      reply: Schema.optional(Schema.String),
-    }),
-  ),
-  pending_proposals: Schema.Array(RequestId),
-  assigned_work: Schema.Array(IssueId),
-  latest_outcome: Schema.optional(Schema.String),
-  observed_at: Timestamp,
-});
-export type LeadSummary = typeof LeadSummarySchema.Type;
+import { LeadSummarySchema } from "./lead-observation.ts";
+export { LeadSummarySchema, type LeadSummary } from "./lead-observation.ts";
 const work = Schema.Struct({
-  communication: Schema.optional(Schema.Struct({ total: Count, outstanding: Count })),
-  supervision: Schema.optional(SupervisionSummarySchema),
-  outcome: Schema.optional(DeliveryOutcomeSchema),
-  generation: Schema.optional(Count),
+  ...WorkSummarySchema.fields,
+  waits: Schema.optional(Schema.Array(DeclaredWaitSchema)),
+  progress: Schema.optional(ProgressSchema),
+  attention: Schema.optional(Schema.Array(AttentionSchema)),
   delivered_head: Schema.optional(Commit),
   implementation_head: Schema.optional(Commit),
   feedback_summary: Schema.optional(
@@ -117,17 +77,7 @@ const work = Schema.Struct({
     }),
   ),
   operation: Schema.optional(OperationIntentSchema),
-  attention: Schema.optional(Schema.Array(AttentionSchema)),
   attention_turns: Schema.optional(Count),
-  delivery_wait: Schema.optional(DeliveryWaitSchema),
-  capacity_wait: Schema.optional(
-    Schema.Struct({
-      role: RoleSchema,
-      reasons: strings,
-      consuming: Schema.Array(IssueId),
-      next_check_at: Schema.Int,
-    }),
-  ),
   command_wait: Schema.optional(Schema.Struct({ command: Schema.String, deadline_at: Schema.Int })),
   policy_summary: Schema.optional(
     Schema.Struct({
@@ -154,10 +104,7 @@ const work = Schema.Struct({
       }),
     ),
   ),
-  decision_count: Schema.optional(Count),
-  wait_count: Schema.optional(Count),
   report_available: Schema.optional(Schema.Boolean),
-  policy: Schema.optional(PolicySchema),
   scope: Schema.optional(ScopeRecordSchema),
   scope_history: Schema.optional(
     Schema.Array(
@@ -166,25 +113,11 @@ const work = Schema.Struct({
   ),
   report: Schema.optional(ReportReceiptSchema),
   decisions: Schema.optional(Schema.Array(DecisionSchema)),
-  waits: Schema.optional(Schema.Array(DeclaredWaitSchema)),
-  progress: Schema.optional(ProgressSchema),
-  issue_id: IssueId,
-  title: Schema.String,
-  repository_id: Schema.optional(RepositoryId),
-  priority: Priority,
-  issue_status: Schema.Literals(["open", "in_progress", "blocked", "closed", "unavailable"]),
-  phase: Schema.optional(PhaseSchema),
-  active_role: Schema.optional(RoleSchema),
-  sessions: Schema.Array(session),
-  eligible: Schema.Boolean,
-  blockers: strings,
-  error: Schema.optional(Schema.String),
-  supervisor_session_id: Schema.optional(SessionId),
-  closed_at: Schema.optional(Timestamp),
   blocker_details: Schema.optional(Schema.Array(ReadinessBlockerSchema)),
 });
 const snapshot = Schema.Struct({
   fleet: Schema.optional(FleetSchema),
+  management: Schema.optional(LeadAttentionSchema),
   leads: Schema.optional(Schema.Array(LeadSummarySchema)),
   lead_diagnostics: Schema.optional(strings),
   supervision: Schema.optional(SupervisionAggregateSchema),
@@ -206,6 +139,7 @@ const detail = Schema.Struct({
   progress: Schema.optional(TaskProgressSchema),
   proposal: Schema.optional(Schema.String),
   documents: Schema.optional(Schema.Array(RelativePath)),
+  planning: Schema.optional(PlanningObservationSchema),
   errors: strings,
 });
 const diff = Schema.Struct({
@@ -249,6 +183,20 @@ export const observerErrors = {
 export const visibility = Rpc.define({
   id: "abracode-visibility",
   methods: {
+    find: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(WorkDiscoveryQuery, {
+        parseOptions: { onExcessProperty: "error", reportInput: false },
+      }),
+      output: Schema.toStandardSchemaV1(WorkPageSchema),
+    },
+    leads: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(LeadEvidenceQuery, {
+        parseOptions: { onExcessProperty: "error", reportInput: false },
+      }),
+      output: Schema.toStandardSchemaV1(LeadEvidencePageSchema),
+    },
     messages: {
       errors: observerErrors,
       input: Schema.toStandardSchemaV1(

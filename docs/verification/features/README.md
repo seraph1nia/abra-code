@@ -26,8 +26,8 @@ immutable role choices and refusal of unavailable native models or variants.
 
 [Persistent scoped project leads](project-leads.md) — static native sessions, scoped proposals/replies, finite shared attention, restart and revocation.
 
-[Portable visual reports](visual-reports.md) — isolated controller builds, immutable
-publication, restart/deadline recovery, offline sandbox and native handoff limits.
+[Portable visual reports](visual-reports.md) — immutable JSON publication, explicit isolated React exports, exact restart
+recovery, legacy compatibility, offline sandbox and native handoff limits.
 
 [Combined expansion acceptance](expansion-acceptance.md) — three policies, two-slot
 automatic work, retained human decision, model selection, finding/acknowledgement,

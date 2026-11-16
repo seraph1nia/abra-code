@@ -1,0 +1,178 @@
+@custom-variant dark (&:is([data-theme="dark"] *));
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--ink);
+  --color-card: var(--panel);
+  --color-card-foreground: var(--ink);
+  --color-popover: var(--panel);
+  --color-popover-foreground: var(--ink);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--soft);
+  --color-secondary-foreground: var(--ink);
+  --color-muted: var(--soft);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--tint);
+  --color-accent-foreground: var(--ink);
+  --color-destructive: var(--danger);
+  --color-border: var(--line);
+  --color-input: var(--line);
+  --color-ring: var(--primary);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  :root {
+    font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+    font-synthesis: none;
+    --abra-bg: #fafbf8;
+    --abra-ink: #242722;
+    --abra-panel: #fff;
+    --abra-soft: #f3f5ef;
+    --abra-muted: #626b5b;
+    --abra-line: #e4e8de;
+    --abra-primary: #476c36;
+    --abra-primary-ink: #fff;
+    --abra-tint: #edf3e7;
+    --abra-danger: #b13e30;
+    --warning: #82551d;
+    --shadow: 0 8px 28px #1b2f1410;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --abra-bg: #151914;
+    --abra-ink: #e4eadc;
+    --abra-panel: #1c211a;
+    --abra-soft: #242b21;
+    --abra-muted: #a2af94;
+    --abra-line: #333c2e;
+    --abra-primary: #a1c58b;
+    --abra-primary-ink: #15200f;
+    --abra-tint: #2b3a22;
+    --abra-danger: #ef9b8e;
+    --warning: #ddb273;
+    color-scheme: dark;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  p {
+    margin: 0;
+  }
+  h1 {
+    font-size: 25px;
+    font-weight: 550;
+    letter-spacing: -0.7px;
+  }
+  h2 {
+    font-size: 20px;
+    font-weight: 550;
+    letter-spacing: -0.4px;
+  }
+  h3 {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  h4 {
+    font-size: 13px;
+    font-weight: 550;
+    text-transform: capitalize;
+  }
+  a {
+    color: var(--primary);
+  }
+  pre,
+  code {
+    font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  }
+  pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+  }
+  fieldset {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+  }
+}
+/* Upstream renderer tokens inherit the same theme, including portalled widgets. */
+.generated-views,
+.generated-surface {
+  --a2ui-color-background: var(--bg);
+  --a2ui-color-on-background: var(--ink);
+  --a2ui-color-surface: var(--panel);
+  --a2ui-color-on-surface: var(--ink);
+  --a2ui-color-primary: var(--primary);
+  --a2ui-color-on-primary: var(--primary-foreground);
+  --a2ui-color-border: var(--line);
+  --a2ui-color-input: var(--panel);
+  --a2ui-color-on-input: var(--ink);
+  --a2ui-border-radius: var(--radius);
+  --a2ui-font-size: 14px;
+  --a2ui-font-family-title: inherit;
+}
+
+/* Vendor defaults are scoped to [data-copilotkit]. Map them explicitly, above
+   the vendor layer, so controls and portal content share the same palette. */
+@layer components {
+  :root,
+  [data-copilotkit] {
+    --radius: 0.5rem;
+    --background: var(--abra-bg);
+    --foreground: var(--abra-ink);
+    --card: var(--abra-panel);
+    --card-foreground: var(--abra-ink);
+    --popover: var(--abra-panel);
+    --popover-foreground: var(--abra-ink);
+    --primary: var(--abra-primary);
+    --primary-foreground: var(--abra-primary-ink);
+    --secondary: var(--abra-soft);
+    --secondary-foreground: var(--abra-ink);
+    --muted: var(--abra-soft);
+    --muted-foreground: var(--abra-muted);
+    --accent: var(--abra-tint);
+    --accent-foreground: var(--abra-ink);
+    --destructive: var(--abra-danger);
+    --border: var(--abra-line);
+    --input: var(--abra-line);
+    --ring: var(--abra-primary);
+    --bg: var(--abra-bg);
+    --ink: var(--abra-ink);
+    --panel: var(--abra-panel);
+    --soft: var(--abra-soft);
+    --line: var(--abra-line);
+    --tint: var(--abra-tint);
+    --danger: var(--abra-danger);
+  }
+}

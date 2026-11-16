@@ -1,4 +1,5 @@
-import { ReportSnapshotSchema } from "../../templates/reporter/src/snapshot-data.ts";
+import { ReportSnapshotSchema } from "../presentation/report-evidence.ts";
+import { ReportDocumentSchema, ReportProducerSchema } from "../presentation/report-document.ts";
 import {
   RequestId,
   Timestamp,
@@ -38,9 +39,16 @@ export const EvidenceReferenceSchema = Schema.Struct({
   ),
 );
 export const VisualRenderRequestSchema = Schema.Struct({
+  format: Schema.optional(Schema.Literal("a2ui-snapshot")),
   diagrams: ReportSnapshotSchema.fields.diagrams,
   request_id: RequestId,
   title: Schema.optional(text),
+  surface: Schema.optional(
+    Schema.Struct({
+      surface_id: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,100}$/)),
+      revision: Schema.Int.check(Schema.isGreaterThan(0)),
+    }),
+  ),
 });
 export const ReportEvidenceSchema = Schema.Struct({
   diagrams: ReportSnapshotSchema.fields.diagrams,
@@ -98,7 +106,28 @@ export const VisualReceiptSchema = Schema.Struct({
   observed_at: Timestamp,
   source_report: Schema.optional(Schema.Struct({ report_id: ReportId, hash: ContentHash })),
 });
+/** Existing untagged v1 receipts are retained HTML, never reinterpreted as JSON. */
+export const ReportDocumentReceiptSchema = Schema.Struct({
+  ...VisualReceiptSchema.fields,
+  schema_version: Schema.Literal(2),
+  format: Schema.Literal("a2ui-snapshot"),
+  document_id: RequestId,
+  revision: ReportDocumentSchema.fields.revision,
+  catalog_id: Schema.String.check(Schema.isMaxLength(1024)),
+  catalog_version: Positive,
+  renderer_compatibility: Schema.String.check(Schema.isMaxLength(256)),
+  bytes: Positive.check(Schema.isLessThanOrEqualTo(1024 * 1024)),
+});
+export const ReportArtifactReceiptSchema = Schema.Union([
+  ReportDocumentReceiptSchema,
+  VisualReceiptSchema,
+]);
 export const VisualBuildSchema = Schema.Struct({
+  format: Schema.optional(Schema.Literal("a2ui-snapshot")),
+  document_hash: Schema.optional(ContentHash),
+  document_input: Schema.optional(ReportDocumentSchema),
+  source_attachment: Schema.optional(Schema.Literals(["associated", "unavailable"])),
+  producing_call: Schema.optional(ReportProducerSchema),
   request: VisualRenderRequestSchema,
   generation: Count,
   requested_by: SessionId,
@@ -111,6 +140,7 @@ export const VisualBuildSchema = Schema.Struct({
         message_id: MessageId,
         text: text,
         delivered: Schema.Boolean,
+        associated: Schema.optional(Schema.Boolean),
       }),
     ).check(
       Schema.isMaxLength(2),
@@ -127,7 +157,7 @@ export const VisualBuildSchema = Schema.Struct({
   input_hash: ContentHash,
   template_hash: ContentHash,
   status: Schema.Literals(["pending", "building", "validated", "published", "failed"]),
-  artifact: Schema.optional(VisualReceiptSchema),
+  artifact: Schema.optional(ReportArtifactReceiptSchema),
   staging: Schema.optional(AbsolutePath),
   error: Schema.optional(text),
 }).check(
@@ -165,6 +195,7 @@ export const WorkReportInputSchema = Schema.Union([
 ]);
 
 const {
+  document_input: _documentInput,
   snapshot: _snapshot,
   staging: _staging,
   notices: _notices,

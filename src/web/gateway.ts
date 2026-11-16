@@ -1,9 +1,7 @@
-import { Git } from "../git/repository.ts";
-import { ProcessRunner } from "../process.ts";
-import { fullPlanFingerprint } from "../workflow/planning.ts";
-import { createHash } from "node:crypto";
+import { observeCheckpoint } from "./checkpoint.ts";
+import { artifactSummary, artifactPage } from "./artifacts.ts";
 import { join } from "node:path";
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 import type { Context } from "@opencode/plugin/effect/plugin";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { AbsolutePath, LockKey, SessionId, StorageKey, StoragePrefix } from "../identities.ts";
@@ -16,8 +14,11 @@ import { type Controller } from "../workflow/controller.ts";
 import { decode } from "../decode.ts";
 import { webGateway } from "./protocol.ts";
 
-import { ReceiptSchema, type SubmissionReceipt } from "./http-api.ts";
-export type { SubmissionReceipt } from "./http-api.ts";
+import { ReceiptSchema, type SubmissionReceipt } from "./workspace-wire.ts";
+import { loadSurfaceRecord, compactSurface } from "./surface-records.ts";
+import { SurfacePublications } from "./surface-publications.ts";
+import { resolveOwnedResource } from "./resource-selection.ts";
+export type { SubmissionReceipt } from "./workspace-wire.ts";
 
 /** Admission is separate from controller effects. A receipt never authorizes work. */
 export class WebAdmissions {
@@ -95,6 +96,11 @@ export function registerWebGateway(
   provide: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E>,
 ) {
   const store = new NativeStore(ctx.storage);
+  const surfacePublications = new SurfacePublications(
+    store,
+    new FileLocks(AbsolutePath.make(join(config.home, ".abracode/locks"))),
+  );
+  let surfaceDiagnostics: { surface_id: string; unavailable: string }[] = [];
   const admissions = new WebAdmissions(
     store,
     new NativeRuntime(ctx, config),
@@ -111,125 +117,152 @@ export function registerWebGateway(
       )
         return yield* new CrewError("ABRA_REQUIRED", "Use the single central Abra session");
     });
-  const json = <A>(value: A) => JSON.parse(JSON.stringify(value)) as Schema.Json;
-  // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native RPC handler errors are mapped at the boundary.
-  return ctx.rpc.register(webGateway, {
-    submit: (input, { error }) =>
-      assertSupervisor(input.session_id).pipe(
-        Effect.andThen(admissions.submit(input.session_id, input)),
-        Effect.map(json),
-        Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-        provide,
-      ),
-    receipts: ({ session_id }, { error }) =>
-      assertSupervisor(session_id).pipe(
-        Effect.andThen(store.entries(StoragePrefix.make(`web/receipt/${session_id}/`))),
-        Effect.flatMap((rows) =>
-          Effect.forEach(rows, (r) => decode(ReceiptSchema, r.value, r.key)),
+  return Effect.gen(function* () {
+    const retained = yield* controller.queries.supervisor();
+    if (retained) {
+      const recovered = yield* assertSupervisor(retained).pipe(
+        Effect.andThen(surfacePublications.recover(retained)),
+        Effect.result,
+      );
+      if (recovered._tag === "Success") surfaceDiagnostics = recovered.success;
+      else
+        surfaceDiagnostics = [
+          {
+            surface_id: "recovery",
+            unavailable: "Generated-view recovery is unavailable; retained evidence was preserved.",
+          },
+        ];
+    }
+    // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native registration declares unknown; handler failures are mapped at the boundary.
+    return yield* ctx.rpc.register(webGateway, {
+      surface: ({ session_id, surface_id, revision }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(surfacePublications.read(session_id, surface_id, revision)),
+          Effect.catchIf(
+            (e) => e.code === "SURFACE_REVISION_UNAVAILABLE",
+            (e) => Effect.succeed({ surface_id, unavailable: e.message }),
+          ),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
         ),
-        Effect.map((rows) => json(rows.slice(-100))),
-        Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-        provide,
-      ),
-    surfaces: ({ session_id }, { error }) =>
-      assertSupervisor(session_id).pipe(
-        Effect.andThen(store.entries(StoragePrefix.make(`web/surface/${session_id}/`))),
-        Effect.map((rows) => json(rows.map((r) => r.value))),
-        Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-        provide,
-      ),
-    projects: ({ session_id }, { error }) =>
-      assertSupervisor(session_id).pipe(
-        Effect.andThen(controller.queries.projects()),
-        Effect.map((projects) =>
-          json(projects.map((p) => ({ id: p.id, name: p.id, path: p.path }))),
+      presentations: ({ session_id, message_ids }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(surfacePublications.associations(session_id, message_ids)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
         ),
-        Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-        provide,
-      ),
-    history: ({ session_id, issue_id }, { error }) =>
-      assertSupervisor(session_id).pipe(
-        Effect.andThen(controller.queries.execution(issue_id)),
-        Effect.map((e) =>
-          json({
+      resolve: ({ session_id, target }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(resolveOwnedResource(controller.queries, target)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      submit: (input, { error }) =>
+        assertSupervisor(input.session_id).pipe(
+          Effect.andThen(admissions.submit(input.session_id, input)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      receipts: ({ session_id }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(store.entries(StoragePrefix.make(`web/receipt/${session_id}/`))),
+          Effect.flatMap((rows) =>
+            Effect.forEach(rows, (r) => decode(ReceiptSchema, r.value, r.key)),
+          ),
+          Effect.map((rows) => rows.slice(-100)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      surfaces: ({ session_id }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(store.entries(StoragePrefix.make(`web/surface/${session_id}/`))),
+          Effect.map((rows) => [
+            ...rows.map((r) => compactSurface(loadSurfaceRecord(r.value, r.key))),
+            ...surfaceDiagnostics,
+          ]),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      projects: ({ session_id }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(controller.queries.projects()),
+          Effect.map((projects) => projects.map((p) => ({ id: p.id, name: p.id, path: p.path }))),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      history: ({ session_id, issue_id, artifact_offset }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(controller.queries.execution(issue_id)),
+          Effect.map((e) => ({
             decisions: e?.decisions ?? [],
             waits: e?.waits ?? [],
-            artifacts: (e?.visual_reports ?? []).map((b) => ({
-              request_id: b.request.request_id,
-              title: b.request.title,
-              status: b.status,
-              generation: b.generation,
-              hash: b.artifact?.hash,
-              bytes: b.artifact?.bytes,
-              error: b.error,
-            })),
-          }),
+            ...artifactPage(e?.visual_reports ?? [], artifact_offset),
+          })),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
         ),
-        Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-        provide,
-      ),
-    artifact: ({ session_id, issue_id, request_id }, { error }) =>
-      assertSupervisor(session_id).pipe(
-        Effect.andThen(controller.visualArtifact(issue_id, request_id)),
-        Effect.map(json),
-        Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-        provide,
-      ),
-    checkpoint: ({ session_id, form_id }, { error }) =>
-      assertSupervisor(session_id).pipe(
-        Effect.andThen(
-          Effect.gen(function* () {
-            for (const e of yield* controller.queries.executions()) {
-              const approval = e.approval_receipts.find(
-                (a) => a.session_id === session_id && a.form_id === form_id,
-              );
-              if (approval) {
-                let active =
-                  !approval.rejected_at &&
-                  !approval.authorized_at &&
-                  e.current_phase ===
-                    (approval.kind === "plan" ? "awaiting_plan_approval" : "awaiting_merge") &&
-                  approval.fingerprint ===
-                    (approval.kind === "plan" ? e.plan_fingerprint : e.delivered_commit);
-                if (active && approval.kind === "plan" && e.workflow_policy === "full-openspec") {
-                  const observed = yield* fullPlanFingerprint(new Git(new ProcessRunner()), e).pipe(
-                    Effect.result,
-                  );
-                  active = observed._tag === "Success" && observed.success === approval.fingerprint;
-                }
-                return json({
-                  active,
-                  issue_id: e.issue_id,
-                  kind: approval.kind,
-                  fingerprint: approval.fingerprint,
-                  generation: e.control_generation,
-                });
-              }
-              const decision = e.decisions?.find(
-                (d) => d.form_session === session_id && d.form_id === form_id,
-              );
-              if (decision)
-                return json({
-                  active:
-                    decision.status === "open" && decision.generation === e.control_generation,
-                  issue_id: e.issue_id,
-                  kind: "decision",
-                  identity: `${e.issue_id}:${decision.generation}:${decision.key}`,
-                  generation: e.control_generation,
-                  ...(decision.finishing_target
-                    ? {
-                        finishing_target: createHash("sha256")
-                          .update(JSON.stringify(decision.finishing_target))
-                          .digest("hex"),
-                      }
-                    : {}),
-                });
-            }
-            return json({ active: false });
-          }),
+      artifact: ({ session_id, issue_id, request_id }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(controller.visualArtifact(issue_id, request_id)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
         ),
-        Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-        provide,
-      ),
+      artifactDocument: ({ session_id, issue_id, request_id, hash }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(controller.visualDocument(issue_id, request_id, hash)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      artifactSummary: ({ session_id, issue_id, request_id, hash }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(
+            resolveOwnedResource(controller.queries, {
+              action: "open_artifact",
+              issue_id,
+              request_id,
+              hash,
+            }),
+          ),
+          Effect.andThen(controller.queries.execution(issue_id)),
+          Effect.map((execution) =>
+            artifactSummary(
+              execution!.visual_reports!.find((build) => build.request.request_id === request_id)!,
+            ),
+          ),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      exportDocument: ({ session_id, issue_id, request_id, hash }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(controller.exportVisualDocument(issue_id, request_id, hash)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      readExport: ({ session_id, issue_id, request_id, hash, exporter_hash }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(controller.readVisualExport(issue_id, request_id, hash, exporter_hash)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      saveSurface: ({ session_id, issue_id, request_id, surface_id, revision, title }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(
+            controller.saveVisualSurface(session_id, issue_id, {
+              request_id,
+              surface: { surface_id, revision },
+              ...(title ? { title } : {}),
+            }),
+          ),
+          Effect.map(artifactSummary),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      checkpoint: ({ session_id, form_id }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(observeCheckpoint(controller.queries, session_id, form_id)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+    });
   });
 }

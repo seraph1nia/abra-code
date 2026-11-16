@@ -101,7 +101,7 @@ export const ActionInput = Schema.Struct({
   body: Schema.optional(text),
 });
 export const ProvisionalSchema = Schema.Struct({ head: Commit, pr: PullRequestUrl, at: Count });
-export function actionable(f: Finding, head: Commit) {
+export function actionable(f: Pick<Finding, "blocking" | "disposition">, head: Commit) {
   return (
     f.blocking &&
     (!f.disposition ||

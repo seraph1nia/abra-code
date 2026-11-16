@@ -12,7 +12,7 @@ import { ProcessRunner } from "../../src/process.ts";
 
 async function instructionFiles(root: string) {
   const files = new Map<string, string>();
-  for (const directory of [".agents", ".opencode"]) {
+  for (const directory of [".agents", ".opencode", "openspec"]) {
     for (const entry of await readdir(join(root, directory), {
       recursive: true,
       withFileTypes: true,
@@ -79,6 +79,12 @@ test("OpenSpec 2 refresh is idempotent and preserves all project-owned guidance"
   await cp(resolve(".agents"), join(project, ".agents"), { recursive: true });
   await cp(resolve(".opencode/agents"), join(project, ".opencode/agents"), { recursive: true });
   await cp(resolve("openspec/config.yaml"), join(project, "openspec/config.yaml"));
+  await cp(resolve("openspec/schemas"), join(project, "openspec/schemas"), { recursive: true });
+  await mkdir(join(project, "openspec/changes/existing-detailed"), { recursive: true });
+  await writeFile(
+    join(project, "openspec/changes/existing-detailed/.openspec.yaml"),
+    "schema: spec-driven\ncreated: 2026-11-15\n",
+  );
   await mkdir(join(project, ".agents/skills/local-fixture"));
   await writeFile(
     join(project, ".agents/skills/local-fixture/SKILL.md"),

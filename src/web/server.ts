@@ -1,4 +1,7 @@
+import { LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
+import { WorkerHistoryPageSchema } from "./worker-history.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 HTTP server/router/API contracts. */
+import "./telemetry.ts";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,9 +26,12 @@ import {
   MessagesPageSchema,
   FeedbackPageSchema,
   ArtifactsSchema,
+  DocumentArtifactSchema,
+  ArtifactSummarySchema,
 } from "./wire.ts";
 import { AbraAgent, AbraRunner, WorkspaceFeed } from "./agent.ts";
 import { workspaceApi, WorkspaceError, DecisionsSchema } from "./http-api.ts";
+import { WorkPageSchema } from "../visibility/discovery-contracts.ts";
 import type { WebBackend, WorkReadName } from "./contracts.ts";
 
 const maximumBodyBytes = 262144;
@@ -64,6 +70,9 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
       );
   const operations = HttpApiBuilder.group(workspaceApi, "workspace", (handlers) =>
     handlers
+      .handle("surface", ({ query }) =>
+        backend.surface(query.surface_id, query.revision).pipe(Effect.mapError(refused)),
+      )
       .handle("bootstrap", () => backend.snapshot.pipe(Effect.mapError(refused)))
       .handle("history", ({ query }) =>
         backend.history(query.cursor).pipe(Effect.mapError(refused)),
@@ -96,14 +105,66 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
   );
   const work = HttpApiBuilder.group(workspaceApi, "work", (handlers) =>
     handlers
+      .handle("find", ({ query }) => read("find", query, WorkPageSchema))
+      .handle("resolve", ({ payload }) => backend.resolve(payload).pipe(Effect.mapError(refused)))
       .handle("detail", ({ query }) => read("detail", query, WorkDetailSchema))
       .handle("document", ({ query }) => read("document", query, WorkDocumentSchema))
       .handle("diff", ({ query }) => read("diff", query, WorkDiffSchema))
       .handle("worker", ({ query }) => read("worker", query, WorkerInspectionSchema))
+      .handle("worker-history", ({ query }) =>
+        read("worker-history", query, WorkerHistoryPageSchema),
+      )
+      .handle("leads", ({ query }) => read("leads", query, LeadEvidencePageSchema))
       .handle("messages", ({ query }) => read("messages", query, MessagesPageSchema))
       .handle("feedback", ({ query }) => read("feedback", query, FeedbackPageSchema))
       .handle("report", ({ query }) => read("report", query, WorkReportSchema))
       .handle("artifacts", ({ query }) => read("artifacts", query, ArtifactsSchema))
+      .handle("artifactSummary", ({ query }) =>
+        read("artifact-summary", query, ArtifactSummarySchema),
+      )
+      .handle("artifactDocument", ({ query }) =>
+        read("artifact-document", query, DocumentArtifactSchema),
+      )
+      .handle("exportDocument", ({ payload }) =>
+        backend.exportDocument(payload).pipe(Effect.mapError(refused)),
+      )
+      .handle("exportPreview", ({ query }) =>
+        backend.readExport(query).pipe(
+          Effect.map((a) => a.html),
+          Effect.mapError(refused),
+        ),
+      )
+      .handle("exportDownload", ({ query }) =>
+        backend.readExport(query).pipe(
+          Effect.map((a) =>
+            HttpApiSchema.withHeaders({
+              body: a.html,
+              headers: {
+                "content-disposition": `attachment; filename="abra-report-${query.request_id}.html"`,
+              },
+            }),
+          ),
+          Effect.mapError(refused),
+        ),
+      )
+      .handle("saveSurface", ({ payload }) =>
+        backend.saveSurface(payload).pipe(
+          Effect.tap(() => feed.refresh),
+          Effect.mapError(refused),
+        ),
+      )
+      .handle("downloadDocument", ({ query }) =>
+        read("artifact-document", query, DocumentArtifactSchema).pipe(
+          Effect.map((artifact) =>
+            HttpApiSchema.withHeaders({
+              body: artifact.json,
+              headers: {
+                "content-disposition": `attachment; filename="abra-report-${query.request_id}.json"`,
+              },
+            }),
+          ),
+        ),
+      )
       .handle("preview", ({ query }) =>
         backend.artifact(query.issue_id, query.request_id).pipe(
           Effect.map((a) => a.html),
@@ -267,7 +328,9 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
       Effect.flatMap((response) =>
         Effect.gen(function* () {
           const request = yield* HttpServerRequest.HttpServerRequest;
-          const preview = request.url.split("?")[0] === "/api/report/preview";
+          const preview = ["/api/report/preview", "/api/report/export/preview"].includes(
+            request.url.split("?")[0]!,
+          );
           return HttpServerResponse.setHeaders(response, {
             ...securityHeaders,
             ...(preview

@@ -2,13 +2,15 @@ import { Effect, Stream } from "effect";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { CrewError } from "../../src/domain.ts";
 import { AbsolutePath, IssueId, SessionId, Timestamp } from "../../src/identities.ts";
-import type { WebBackend, WorkspaceSnapshot } from "../../src/web/contracts.ts";
+import type { WebBackend, WorkspaceSnapshot, SurfaceEntry } from "../../src/web/contracts.ts";
 import type { SubmissionReceipt } from "../../src/web/http-api.ts";
+import type { ResourceSelection } from "../../src/web/resources.ts";
 
 /** Deterministic transport fixture; native authority is covered separately by E2E. */
 export class WorkspaceFixture implements WebBackend {
   readonly sessionID = SessionId.make("ses_webfixture");
   readonly changes = Stream.never;
+  readonly surfaceHistory = new Map<string, SurfaceEntry>();
   submissions = 0;
   stops = 0;
   reads = 0;
@@ -42,6 +44,20 @@ export class WorkspaceFixture implements WebBackend {
     },
   };
   snapshot = Effect.sync(() => this.value);
+  resolve = (target: ResourceSelection) => Effect.succeed(target);
+  surface = (id: string, revision: number) =>
+    Effect.sync(
+      () =>
+        this.surfaceHistory.get(`${id}/${revision}`) ??
+        this.value.surfaces
+          .filter((entry) => "surface" in entry)
+          .find(
+            (entry) => entry.surface.createSurface.surfaceId === id && entry.revision === revision,
+          ) ?? {
+          surface_id: id,
+          unavailable: "This exact generated-view revision is unavailable.",
+        },
+    );
   history = () => Effect.succeed({ messages: [] });
   submit = (input: { request_id: string; text: string; delivery: "queue" | "steer" }) =>
     Effect.gen({ self: this }, function* () {
@@ -84,6 +100,12 @@ export class WorkspaceFixture implements WebBackend {
     });
   artifact = () =>
     Effect.succeed({ html: "<!doctype html><p>Isolated report</p>", hash: "fixture", bytes: 42 });
+  exportDocument: WebBackend["exportDocument"] = () =>
+    Effect.fail(new CrewError("FIXTURE_EXPORT", "No export configured in this fixture"));
+  readExport: WebBackend["readExport"] = () =>
+    Effect.fail(new CrewError("FIXTURE_EXPORT", "No export configured in this fixture"));
+  saveSurface: WebBackend["saveSurface"] = () =>
+    Effect.fail(new CrewError("FIXTURE_SAVE", "No save configured in this fixture"));
   replyForm = () =>
     Effect.sync(() => {
       this.replies++;

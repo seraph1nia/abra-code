@@ -53,6 +53,12 @@ test("enabled check correction consumes one immutable round, reruns checks and i
   e = await run(f.controller.get(e.issue_id));
   assert.equal(e.rounds!.length, 1);
   assert.match(e.decisions!.find((d) => d.status === "open")!.question, /budget exhausted/);
+  assert.deepEqual((await run(f.controller.diagnostics(e.issue_id))).execution_contract.repair, {
+    configured: 1,
+    allowance: 1,
+    consumed: 1,
+    remaining: 0,
+  });
   const c = new Controller(
     f.config,
     f.records,
@@ -97,7 +103,17 @@ test("full-spec postarchive correction creates a new planning cycle, preserves a
   const f = await newFixture();
   t.onTestFinished(() => run(f.close()));
   await budget(f, 1);
-  let e = await run(delivered(f));
+  const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
+  project.plan_approval = false;
+  await run(f.records.saveProject(project));
+  let e = await run(
+    delivered(f, Id.IssueId.make("abra-1"), {
+      openspec_schema: Id.SpecSchemaName.make("target-only"),
+      require_plan_approval: true,
+    }),
+  );
+  const binding = structuredClone(e.openspec_schema_binding);
+  assert.equal(e.effective_policy.plan_approval_source, "task_requirement");
   const oldHead = e.delivered_commit!,
     oldArchive = e.archive_path!,
     oldChange = e.openspec_change;
@@ -128,6 +144,9 @@ test("full-spec postarchive correction creates a new planning cycle, preserves a
     }),
   );
   assert.equal(e.current_phase, "planning");
+  assert.deepEqual(e.openspec_schema_binding, binding);
+  assert.equal(e.plan_approval_required, true);
+  assert.equal(e.rounds?.length, 1);
   assert.notEqual(e.openspec_change, oldChange);
   assert.equal(e.pull_request_reference, pending.execution.pull_request_reference);
   assert.equal(e.delivered_commit, undefined);
@@ -138,6 +157,8 @@ test("full-spec postarchive correction creates a new planning cycle, preserves a
   f.runtime.success(e.explore_session_id!);
   e = await run(f.controller.advance(e.issue_id));
   assert.equal(e.current_phase, "awaiting_plan_approval");
+  assert.deepEqual(e.openspec_schema_binding, binding);
+  assert.equal(e.effective_policy.plan_approval_source, "task_requirement");
   const plan = await run(
     f.controller.approve(e.issue_id, "plan", Id.SessionId.make("ses_supervisor")),
   );
@@ -229,7 +250,13 @@ test("a lost corrective prompt response retries one reserved round and native ad
   const f = await newFixture();
   t.onTestFinished(() => run(f.close()));
   await budget(f, 1);
-  let e = await run(delivered(f));
+  let e = await run(
+    delivered(f, Id.IssueId.make("abra-1"), {
+      openspec_schema: Id.SpecSchemaName.make("target-only"),
+      require_plan_approval: true,
+    }),
+  );
+  const binding = structuredClone(e.openspec_schema_binding);
   const input = {
     issue_id: e.issue_id,
     expected_head: e.delivered_commit!,
@@ -257,6 +284,8 @@ test("a lost corrective prompt response retries one reserved round and native ad
   e = await run(f.controller.correct(input));
   assert.equal(e.rounds!.length, 1);
   assert.equal(e.prompt_id, message);
+  assert.deepEqual(e.openspec_schema_binding, binding);
+  assert.equal(e.effective_policy.plan_approval_source, "task_requirement");
   assert.equal(f.runtime.prompts, before + 1);
 });
 

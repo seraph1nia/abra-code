@@ -1,0 +1,61 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss" source(none);
+@import "../../web/src/theme-tokens.css";
+@import "../../web/src/presentation/presentation.css";
+@source "../../web/src/components/ui";
+@source "../../web/src/presentation";
+@source "./";
+
+body {
+  margin: 0;
+}
+.portable-report {
+  margin: auto;
+  padding: 24px;
+  max-width: 1120px;
+  min-width: 0;
+}
+.portable-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.portable-report .frozen-report > * {
+  margin-bottom: 16px;
+}
+.portable-feedback {
+  display: grid;
+  gap: 12px;
+  margin: 24px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.portable-feedback label {
+  display: grid;
+  gap: 6px;
+}
+.portable-feedback .feedback-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.portable-report .diagram-scroll {
+  max-width: 100%;
+  overflow: auto;
+}
+.portable-report .diagram-scroll svg {
+  max-width: none;
+}
+.portable-report pre {
+  max-width: 100%;
+  overflow: auto;
+}
+@media (max-width: 600px) {
+  .portable-report {
+    padding: 16px;
+  }
+}

@@ -1,6 +1,6 @@
 packages:
-  - templates/reporter
   - apps/web
+  - apps/report
 
 overrides:
   rxjs: 7.8.2
@@ -42,13 +42,15 @@ minimumReleaseAgeExclude:
 # The Vite+ core alias uses the toolchain version rather than Vite's version.
 peerDependencyRules:
   allowedVersions:
+    # The 0.15 React renderer depends on this adapter; browser acceptance exercises its text host.
+    "@a2ui/markdown-it>@a2ui/web_core": "0.15.0"
     "@vitejs/plugin-react>vite": "1.6.0"
+    "@tailwindcss/vite>vite": "1.6.0"
     "@opencode/client>effect": "4.1.4"
     "vitest>vite": "1.6.0"
     "@vitest/mocker>vite": "1.6.0"
     "@opencode/plugin>vite": "1.6.0"
     "vitefu>vite": "1.6.0"
-    "vite-plugin-solid>vite": "1.6.0"
     "vite-plugin-singlefile>vite": "1.6.0"
-    # Type-only peer; native terminal integration tests verify the pinned FFI package.
+    # Type-only peer of OpenCode’s transitive native CLI FFI package.
     "bun-ffi-structs>typescript": "7.0.2"

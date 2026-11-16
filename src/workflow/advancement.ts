@@ -129,6 +129,7 @@ export class Advancement {
       this.coordination,
       this.queries,
       git,
+      spec,
       this.attention,
     );
     this.messages = this.sessions.messages;
@@ -367,6 +368,8 @@ export class Advancement {
                         description: candidate.issue.description,
                       },
                       quality_profile: candidate.issue.quality_profile,
+                      openspec_schema: candidate.issue.openspec_schema,
+                      require_plan_approval: candidate.issue.require_plan_approval,
                       dispatch: candidate.issue.dispatch,
                       workflow_policy: candidate.issue.workflow_policy,
                       current_phase: "claiming",
@@ -441,6 +444,10 @@ export class Advancement {
           e.issue_id,
           `Refresh OpenSpec instructions for ${e.issue_id}`,
         );
+        yield* this.records.save(e);
+      }
+      if (e.openspec_schema_binding?.state === "pending") {
+        e.openspec_schema_binding = yield* this.spec.bind(e);
         yield* this.records.save(e);
       }
       yield* this.spec.create(e);

@@ -14,39 +14,41 @@ ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-reports \
   pnpm exec vp test run --project e2e tests/e2e/native.test.ts
 ```
 
-The unit tests exercise immutable inputs/digests, stale saves, native notice
-response loss, a lost validated/publication receipt, occupied revisions,
-symlinks, interrupted source authority, logical/compiler capacity, restart
-reservations and same-request recovery. Diagnostic tool tests distinguish report
-reads from generation authority. Snapshot tests reject malformed data, unsafe
-links, executable Mermaid directives and external resources.
+The JSON/document unit tests exercise bounded versioned envelopes, exact surface saves,
+immutable captured bindings, stale saves, lost validation/publication/association
+responses, concurrent requests, occupied paths, symlinks and unsupported versions.
+Legacy artifact fixtures prove original retries, staged publication, integrity
+and explicit unavailable unfinished builds without invoking a retired compiler.
+Export fixtures prove digest/exporter-keyed reuse, receipt repair and failure
+preservation. Diagnostic tool tests keep read authority separate from generation.
 
-The integration test runs two real Vite builds concurrently, with separate
-source/config/cache/output workspaces and unchanged trusted inputs. It moves the
-result, opens it offline at 375 pixels, and uses a Blob iframe with the pinned
-client's exact sandbox flags. Diagrams, inert hostile text, keyboard disclosures,
-local filtering, notice assets and local feedback work with parent access denied
-and no asset/network requests. Manual authoring, multiple diagram types and
-invalid-diagram failures retain the existing reporter integration coverage.
+`tests/integration/report-artifacts.test.ts` builds two real React exports
+concurrently using isolated source/config/cache/output roots. The input documents
+are saved JSON, including literal hostile text and captured diagrams. The shared
+catalog renders in an opaque iframe without repository code execution.
+`react-report-export.test.ts` relocates the real single-file output, blocks all
+network access, withholds same-origin privileges and checks 375/390px, filtering,
+disclosures, pending checks, prepared SVG, local Markdown/JSON feedback and clean
+explicit preview shutdown. `reporter.test.ts` checks multiple Mermaid types,
+syntax/rendering failures and explicit missing-file diagnostics. Manual Solid
+authoring/dev-server tests are retired with that workflow.
 
-`tests/e2e/reports.ts` uses actual native Research tool execution to request HTML,
-checks preserved read-only permissions, renders completed research after worktree
-retirement, interrupts a build with a service restart, then requires automatic
-reconciliation of the same captured request/digest. No new worker is launched or
-workflow reopened. Parent notifications retain a native file link. The focused
-proof at `/tmp/abra-reports-native2-20261018/native-engineering.json` passed in
-67.73 seconds on 2026-10-18 with cleanup complete. Subsequent full-suite results
-supersede this focused evidence as structured findings/diagram assertions expand.
+`tests/e2e/reports.ts` uses actual native Research tool execution to request JSON,
+keeps read-only permissions and accepted Markdown receipts, creates new saved
+revisions after worktree retirement, restarts, retries the exact request, then
+explicitly exports through authenticated native RPC. Canonical JSON and portable
+HTML digests are verified independently. `workspace.ts` exercises the browser
+save/export/preview/download path without provider calls, native restart, frozen
+pending checks and task completion. Set external evidence output to preserve the
+fixture's JSON/HTML after cleanup; these are sample claims, not production proof.
 
-The pinned 2.0.28 graphical renderer sources were fetched and re-inspected on
-2026-10-18: file links force-read into the existing side panel or supported desktop
-browser pane; HTML uses an opaque Blob iframe without same-origin access. See
-[supported APIs](../../supported-apis.md#report-html-preview). **No paired native
-graphical client is available**, so actual GUI chat click-through remains not-run.
-The native service, compiler and sandbox/browser assertions are executed proofs;
-they are not a claim that a graphical-client interaction was performed.
+Current focused evidence for the report migration is retained under
+`/tmp/abra-frontend-coherence-20261115/`: `report-retirement-native.log` and
+`report-retirement-native/native-engineering.json` passed on 2026-11-16;
+`report-retirement-focused-integration.log` records the shared renderer/helpers;
+`export-native.log` covers the explicit browser export and no-provider assertion.
+Full integrated checks remain a separate required gate.
 
-Native evidence output copies a portable fixture HTML outside the disposable
-installation when `ABRACODE_TEST_EVIDENCE_DIR` is set. JSON records its path and
-hash after fixture cleanup. These reports describe sample fixture evidence, not
-production architecture or real database performance.
+The pinned graphical file renderer's source and opaque sandbox contract are
+recorded in [supported APIs](../../supported-apis.md#report-html-preview).
+No paired graphical GUI click-through is claimed by these service/browser tests.

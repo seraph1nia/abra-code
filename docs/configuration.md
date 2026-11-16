@@ -191,6 +191,8 @@ Project registration and work creation accept `quality_profile: strict | standar
 
 Task profile selection takes precedence over a project profile. Explicit project `ci_policy` and `plan_approval` overrides are retained and shown as custom. An explicit profile registration applies that preset before overrides in the same request; omitting the profile preserves existing policy. Legacy projects remain unprofiled. Research ignores project coding profiles and rejects an explicit task coding profile. Active executions retain effective values and profile provenance through restart and registry edits.
 
+For full-openspec work, `require_plan_approval: true` strengthens the resolved result **after** task/project profile selection and repository overrides. A repository override disabling routine plan approval cannot defeat that task requirement. It does not alter merge authority or enable automation. The captured `effective_policy.plan_approval_source` distinguishes `task_requirement`, `repository_policy`, `repository_override`, `task_quality_profile` and `repository_quality_profile`. Existing execution records without that field retain unavailable historical provenance; configuration edits and replanning do not recalculate their authority. Schema size alone grants no approval. See [work intake choices](work-graph.md#openspec-planning-choices).
+
 Independent settings are `publication` (`ready`, `draft-until-verified`, `manual-ready`), `reviewers` (explicit `users`, `teams`, `request: manual | on-ready`, and `rerequest_after_correction`), `discussion` (`replies: manual | verified`, `resolve_threads: manual | addressed`), `ci_retry` (`max_reruns` 0–5 and exact `.github/workflows/*.yml` or `.yaml` paths), and `validation` (`engine: native | no-mistakes`, `max_runs` 1–6). Omission preserves final-ready publication, manual public actions, zero reruns and native validation. These settings never imply each other's authority. YAML changes require explicit application; active executions retain captured settings.
 
 ### GitHub publication and review automation
@@ -274,3 +276,37 @@ As the service user, run `pnpm browser:install` once to download Chrome, or set 
 Captured `generated_paths` remain the repository defaults selected at execution creation. A native finishing form can add exact inspected generated directories for that execution only; it does not edit configuration or broaden later executions. Receipts bind generation, native form/session, worktree and directory device/inode/birth identity. Contents may regenerate in that same directory; replaced directories, new siblings, tracked descendants, nested repositories, escaping links, special files and repository control paths fail safety inspection. An ignore rule alone grants no disposal permission. Preserve arbitrary files or select exact regular files for pre-merge inclusion instead.
 
 Synchronization of existing edits has two retained automatic attempts independent of diagnostic and repair budgets. An additional native exact-input receipt grants one extra assessment; restarting or changing a head never resets accounting. Revalidation still requires configured checks, independent Review, applicable planning approval and fresh exact-head merge authorization.
+
+## Explicit attended routine opt-in
+
+The [attended automatic example](examples/attended-automatic.yaml) combines
+`supervision_mode: attended-automatic` with one repository's
+`plan_approval: false`, `merge_approval: true` and `repair_rounds: 2`. Adapt the
+model, repository and verification commands to the inspected project, preserving
+its other declared verification/delivery policies. Review the concrete
+configuration before explicitly applying declarations through `abra_config` or
+`pnpm config:apply`; follow the existing service lifecycle when changing the
+supervision mode. This example is documentation, not an automatic installation
+step. The shipped example remains manual with no automatic repair allowance.
+
+Under this opt-in, strict valid planning with real tasks can continue into Apply
+without a plan form, and an in-scope check/Review failure can consume a retained
+repair round. Checks and independent Review must match the same content. A
+repeated finding, exhausted budget, changed/uncertain scope, pause, unavailable
+schema or unresolved required form still stops dependent work. Human merge
+approval remains exact-content authority. Scope answers do not replace approval
+receipts, and revisions preserve earlier archives, schema binding and budgets.
+
+At consequential intake (lifecycle authorization, persisted contracts, native
+integrations, migrations, deletion policy, substantial architecture/security or
+compatibility changes), request `openspec_schema: spec-driven` and
+`require_plan_approval: true`. This is an intake judgment with an enforceable
+captured gate, not an automatic risk classifier. Other repositories keep their
+own defaults and policies; active executions retain their captured policy.
+
+Status and worker diagnostics expose `execution_contract`: bounded retained
+schema identity/source/digest, effective human plan requirement/source and repair
+configured/allowed/consumed/remaining counts. Manual supervision reports zero
+allowance even when repair rounds are configured. Legacy records report original
+provenance unavailable. These reads neither validate current schema availability
+nor answer a form, consume a round, admit work or change any lifecycle authority.

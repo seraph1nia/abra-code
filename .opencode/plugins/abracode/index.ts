@@ -1,4 +1,6 @@
+import { LeadEvidencePageSchema } from "../../../src/visibility/lead-observation.ts";
 import { registerWebGateway } from "../../../src/web/gateway.ts";
+import { WorkPageSchema } from "../../../src/visibility/discovery-contracts.ts";
 import { WorkerInspectionSchema } from "../../../src/visibility/worker.ts";
 import { configurationReport } from "../../../src/config/declarations.ts";
 import { configuration } from "../../../src/config/protocol.ts";
@@ -119,6 +121,16 @@ export default Plugin.define({
           decodeJSON(schema, JSON.stringify(value), "Observer response");
       // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
       const registration = yield* ctx.rpc.register(visibility, {
+        find: (query, { error }) =>
+          observerResult(
+            observer.find(query).pipe(Effect.flatMap(json(WorkPageSchema))),
+            error,
+          ).pipe(provide),
+        leads: (query, { error }) =>
+          observerResult(
+            c.queries.leadEvidence(query).pipe(Effect.flatMap(json(LeadEvidencePageSchema))),
+            error,
+          ).pipe(provide),
         messages: ({ issue_id, offset }, { error }) =>
           observerResult(
             observerRequest("messages").pipe(

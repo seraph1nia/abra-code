@@ -7,7 +7,7 @@ import * as Id from "../../src/identities.ts";
 import { delivered, fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { deliveryOutcome, DeliveryOutcomeSchema } from "../../src/workflow/delivery-outcome.ts";
-import { section, stateLabel } from "../../src/visibility/presentation.ts";
+import { section, stateLabel } from "../../src/presentation/work-state.ts";
 import { Schema } from "effect";
 
 async function retained(files: string[]) {

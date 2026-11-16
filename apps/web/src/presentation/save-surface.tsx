@@ -1,0 +1,166 @@
+/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect atoms isolate each explicit artifact request. */
+import { useRef, useState } from "react";
+import { useAtom } from "@effect/atom-react";
+import { Exit, Schema } from "effect";
+import { saveSurface } from "../data.ts";
+import { SaveSurfaceSchema } from "../../../../src/web/report-actions.ts";
+import { ArtifactSummarySchema } from "../../../../src/web/wire.ts";
+import type { SurfaceRecord } from "../../../../src/web/contracts.ts";
+import { IssueId, RequestId } from "../../../../src/identities.ts";
+import { Button } from "../components/ui/button.tsx";
+import { NativeSelect } from "../components/ui/native-select.tsx";
+import type { Inspect } from "./cards.tsx";
+
+const RetainedSave = Schema.Struct({
+  input: SaveSurfaceSchema,
+  result: Schema.optionalKey(ArtifactSummarySchema),
+  attempted: Schema.optionalKey(Schema.Boolean),
+});
+type Attempt = typeof RetainedSave.Type;
+function retain(key: string, value: Attempt) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* Mounted identity remains retryable when storage is unavailable. */
+  }
+}
+/** A host artifact action, kept outside the reusable renderer and offline bundle. */
+export function SaveSurfaceButton({
+  record,
+  inspect,
+}: {
+  record: SurfaceRecord;
+  inspect: Inspect;
+}) {
+  const [issue, setIssue] = useState<string>(record.snapshot[0]?.issue_id ?? "");
+  if (!issue) return <p className="muted">Saving requires a retained task with an execution.</p>;
+  return (
+    <div className="surface-save space-y-2">
+      <NativeSelect
+        aria-label="Save snapshot with task"
+        value={issue}
+        onChange={(event) => setIssue(event.target.value)}
+      >
+        {record.snapshot.map((work) => (
+          <option key={work.issue_id} value={work.issue_id}>
+            {work.title}
+          </option>
+        ))}
+      </NativeSelect>
+      <SaveAttempt
+        key={`${record.revision}/${issue}`}
+        record={record}
+        issue={issue}
+        inspect={inspect}
+      />
+    </div>
+  );
+}
+function SaveAttempt({
+  record,
+  issue,
+  inspect,
+}: {
+  record: SurfaceRecord;
+  issue: string;
+  inspect: Inspect;
+}) {
+  const key = `abra-report-save-${record.session_id}/${record.surface.createSurface.surfaceId}/${record.revision}/${issue}`;
+  const makeInput = (): Attempt => ({
+    input: {
+      issue_id: IssueId.make(issue),
+      request_id: RequestId.make(`report-${crypto.randomUUID()}`),
+      surface_id: record.surface.createSurface.surfaceId,
+      revision: record.revision,
+    },
+  });
+  const [attempt, setAttempt] = useState<Attempt>(() => {
+    try {
+      const prior = Schema.decodeUnknownSync(RetainedSave)(
+        JSON.parse(localStorage.getItem(key) ?? "null"),
+      );
+      if (
+        prior.input.issue_id === issue &&
+        prior.input.surface_id === record.surface.createSurface.surfaceId &&
+        prior.input.revision === record.revision
+      )
+        return prior;
+    } catch {
+      /* A missing/invalid local receipt does not admit a request. */
+    }
+    return makeInput();
+  });
+  const [state, invoke] = useAtom(saveSurface(attempt.input.request_id), { mode: "promiseExit" });
+  const [failed, setFailed] = useState(!!attempt.attempted && !attempt.result);
+  const submitting = useRef(false);
+  const result = attempt.result;
+  async function save() {
+    if (submitting.current) return;
+    submitting.current = true;
+    retain(key, { ...attempt, attempted: true });
+    try {
+      const response = await invoke(attempt.input);
+      if (Exit.isSuccess(response)) {
+        const next = { input: attempt.input, result: response.value, attempted: true };
+        retain(key, next);
+        setAttempt(next);
+        setFailed(false);
+      } else setFailed(true);
+    } finally {
+      submitting.current = false;
+    }
+  }
+  return (
+    <div className="space-y-2">
+      <div className="button-row">
+        {result?.hash && result.status === "published" ? (
+          <>
+            <Button
+              variant="outline"
+              onClick={() =>
+                inspect({
+                  action: "open_artifact",
+                  issue_id: attempt.input.issue_id,
+                  request_id: result.request_id,
+                  hash: result.hash!,
+                })
+              }
+            >
+              Open saved report
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                const next = makeInput();
+                retain(key, next);
+                setAttempt(next);
+                setFailed(false);
+              }}
+            >
+              Save another snapshot
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="outline"
+            disabled={state.waiting}
+            onClick={() => {
+              void save();
+            }}
+          >
+            {state.waiting ? "Saving snapshot…" : failed ? "Retry same save" : "Save snapshot"}
+          </Button>
+        )}
+      </div>
+      {failed && (
+        <p role="status">
+          Save was not confirmed. Retry the same request; a changed layout must be reopened before
+          saving.
+        </p>
+      )}
+      <p className="muted">
+        Creates an immutable JSON report without asking Abra or advancing work.
+      </p>
+    </div>
+  );
+}

@@ -13,7 +13,7 @@ import type { AttentionService } from "../../src/workflow/attention.ts";
 import type { Execution } from "../../src/domain.ts";
 import type { LockKey } from "../../src/identities.ts";
 import { installCommunicationFaults, installReportFault } from "./faults.ts";
-import type { ReportRenderer } from "../../src/workflow/report-build.ts";
+import type { DocumentRenderer } from "../../src/workflow/report-export.ts";
 import type { Runner } from "../../src/process.ts";
 
 /** Injected only into the disposable ProcessRunner, after its scoped spawn. */
@@ -101,7 +101,7 @@ export function measureApplication(application: ReturnType<typeof createWorkflow
         records: Records;
         messages: Messages;
         coordination: { locks: Locks };
-        reports: { visual: { renderer: ReportRenderer } };
+        reports: { exports: { renderer: DocumentRenderer } };
         attention: AttentionService;
       };
     }
@@ -109,7 +109,7 @@ export function measureApplication(application: ReturnType<typeof createWorkflow
   const runtime = workflow.runtime;
   installCommunicationFaults(runtime);
   installReportFault(workflow.records);
-  const renderer = workflow.reports.visual.renderer;
+  const renderer = workflow.reports.exports.renderer;
   const runner = (renderer as unknown as { runner: Runner }).runner;
   const command = runner.run.bind(runner);
   runner.run = (file, args, cwd, env, options) => {

@@ -66,3 +66,41 @@ all 3 end-to-end tests and the strengthened 7-test refresh regression. The final
 CLI dry run reports no changes. Native proof and cleanup records are retained at
 `/tmp/abra-openspec2-final-verified`; see [release acceptance](release-acceptance.md#openspec-2-instruction-migration-acceptance--2026-11-15)
 for command results and limits.
+
+## Retained schema identity
+
+New full-openspec executions resolve their requested schema, or the owned worktree’s default, after instruction refresh and before Explore. The controller retains the resolved definition and referenced-template digests and passes the selected name explicitly when creating a change. A later default edit cannot switch that execution. New admissions, plan/check gates and archival reject unavailable or changed inputs and mismatched change metadata; restore the original schema source/templates to continue. Give incompatible schema revisions new names and implement them using an unaffected schema. There is no in-place rebinding command.
+
+Historical executions without schema-content evidence remain readable with unavailable original provenance; current files do not become a fabricated past pin. Captured plan authority remains independent of schema size. See [planning choices](work-graph.md#openspec-planning-choices) and [native API evidence](supported-apis.md#openspec-2-schema-resolution-and-binding).
+
+## Compact planning and schema revisions
+
+This repository's default for new changes is the owned `abra-compact-v1` schema:
+proposal, behavioral specs and trackable `tasks.md`, with no design prerequisite.
+Brief implementation choices and scope boundaries belong in the proposal. Every
+tracked task includes observable completion evidence. Behavioral deltas, strict
+validation, configured checks, independent Review and human checkpoints remain
+required. Native `skip_specs: true` is only for unchanged specification-level
+behavior; do not invent a delta or an extra report to satisfy the workflow.
+
+Use `openspec_schema: spec-driven` plus `require_plan_approval: true` at full-spec
+intake for consequential work needing deeper architecture, security, migration
+or compatibility analysis. Existing changes retain their own `.openspec.yaml`
+selection; changing the default does not convert them. Schema selection does not
+enable automatic supervision or weaken approval policy in any repository.
+
+The compact definition and its referenced templates are a named contract. Make
+incompatible updates under a new name, such as `abra-compact-v2`, and validate
+real planning, task tracking and archival before adopting it. Active executions
+retain content evidence and block on definition/template drift; restore their
+original inputs instead of rebinding them. To roll back future defaults, change
+this repository's tracked `openspec/config.yaml` to `schema: spec-driven`.
+Preserve earlier schema directories while selected executions or changes need
+them. `openspec update` refreshes the six shared generated workflows and preserves
+the owned schema and custom guidance; never edit generated workflow bodies.
+
+Real pinned-CLI integration cases exercise compact behavioral and skipped-spec
+planning and detailed planning through controller-owned Apply, matching checks,
+independent Review, native archival and the retained human merge form. They use
+scripted worker outcomes in disposable repositories; autonomous task quality is
+not measured by this contract proof.

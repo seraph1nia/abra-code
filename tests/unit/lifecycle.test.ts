@@ -97,7 +97,7 @@ test("rejects incomplete or invalid planning artifacts", async (t) => {
   f.work.add(Id.IssueId.make("abra-1"));
   const e = await run(f.controller.start(Id.IssueId.make("abra-1")));
   f.runtime.success(e.explore_session_id!);
-  await assert.rejects(run(f.controller.advance(Id.IssueId.make("abra-1"))), /incomplete/);
+  await assert.rejects(run(f.controller.advance(Id.IssueId.make("abra-1"))), /prerequisite/);
   assert.equal((await run(f.controller.get(Id.IssueId.make("abra-1")))).current_phase, "blocked");
   assert.equal(f.runtime.creates, 1);
 });

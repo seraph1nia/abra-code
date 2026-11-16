@@ -1,3 +1,6 @@
+import { ReportExports } from "./report-exports.ts";
+import { ReactDocumentRenderer } from "./report-export.ts";
+import { IssueId, RequestId } from "../identities.ts";
 import { VisualReports } from "./visual-reports.ts";
 import { LockKey, ContentHash, AbsolutePath, ReportId, SessionId } from "../identities.ts";
 import { synchronizeExecution, type Records } from "../storage/store.ts";
@@ -22,9 +25,10 @@ import {
 import { isActiveWorker } from "./worker-assignment.ts";
 const digest = reportHash;
 import { type WorkGraph } from "../work/graph.ts";
-import { reportHash, ViteReportRenderer, type ReportRenderer } from "./report-build.ts";
+import { reportHash } from "./report-build.ts";
 export class Reports {
   private visual: VisualReports;
+  private exports: ReportExports;
   constructor(
     private home: AbsolutePath,
     private records: Records,
@@ -32,17 +36,9 @@ export class Reports {
     private locks: Locks,
     work: WorkGraph,
     notify: Runtime["notify"],
-    renderer?: ReportRenderer,
   ) {
-    this.visual = new VisualReports(
-      home,
-      records,
-      locks,
-      work,
-      notify,
-      renderer ?? new ViteReportRenderer(home, git.runner),
-      (e) => this.read(e),
-    );
+    this.exports = new ReportExports(home, locks, new ReactDocumentRenderer(home, git.runner));
+    this.visual = new VisualReports(home, records, locks, work, notify, (e) => this.read(e));
   }
   private path(e: Execution, id: ReportId) {
     return AbsolutePath.make(join(this.home, ".abracode/reports", e.issue_id, `${id}.md`));
@@ -242,9 +238,22 @@ export class Reports {
   );
 
   generate = (...args: Parameters<VisualReports["generate"]>) => this.visual.generate(...args);
+  saveSurface = (...args: Parameters<VisualReports["saveSurface"]>) =>
+    this.visual.saveSurface(...args);
+  exportDocument = (issue: IssueId, request: RequestId, hash: ContentHash) =>
+    this.visual.readDocument(issue, request, hash).pipe(
+      Effect.flatMap((a) => this.exports.create(a.json, hash)),
+      Effect.map(({ html: _html, ...receipt }) => receipt),
+    );
+  readExport = (issue: IssueId, request: RequestId, hash: ContentHash, exporter: ContentHash) =>
+    this.visual
+      .readDocument(issue, request, hash)
+      .pipe(Effect.andThen(this.exports.read(hash, exporter)));
   recover = () => this.visual.recover();
   readArtifact = (...args: Parameters<VisualReports["readArtifact"]>) =>
     this.visual.readArtifact(...args);
+  readDocument = (...args: Parameters<VisualReports["readDocument"]>) =>
+    this.visual.readDocument(...args);
   private readReceipt = Effect.fn("Reports.readReceipt")(
     function* (this: Reports, e: Execution, receipt: typeof ReportReceiptSchema.Type) {
       if (

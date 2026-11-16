@@ -87,6 +87,11 @@ test("fleet counts and closure evidence cover closed tickets outside the visible
   assert.equal(first.fleet!.counts.human_wait, 1);
   assert.equal(first.fleet!.total, 57);
   assert.equal(first.fleet!.completed_today, 1);
+  assert.equal(
+    first.fleet!.repositories.find((group) => group.repository_id === e.repository_id)
+      ?.attention_total,
+    1,
+  );
   assert.deepEqual(first.fleet!.counts, second.fleet!.counts);
   assert.equal(second.fleet!.completed_today, 1);
   assert.equal(

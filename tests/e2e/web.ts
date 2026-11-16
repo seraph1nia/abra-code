@@ -8,7 +8,8 @@ import { Effect } from "effect";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Service } from "@opencode/client/effect/service";
 import { OpenCode } from "@opencode/client";
-import { launchReportBrowser } from "../../templates/reporter/scripts/browser.ts";
+import { Permission } from "@opencode/schema/permission";
+import { launchReportBrowser } from "../../apps/report/scripts/browser.ts";
 import { runtimePaths } from "../../src/config/identity.ts";
 import { AbsolutePath } from "../../src/identities.ts";
 
@@ -149,12 +150,14 @@ export async function webJourney(
       await page.getByRole("heading", { name: "Workspace field types" }).waitFor();
       await page.getByLabel("Work label").fill("Planning");
       assert.equal(await page.getByLabel("Additional details").count(), 0);
-      await page.getByLabel("Include details").check();
+      await page.getByRole("checkbox", { name: /Include details/ }).check();
       await page.getByLabel("Additional details").fill("One session");
       await page.getByLabel("Count", { exact: false }).fill("2");
       await page.getByLabel("Destination").selectOption("remote");
-      await page.getByLabel("Table", { exact: true }).check();
-      await page.getByLabel("I have completed: Open documentation").check();
+      await page.getByRole("checkbox", { name: "Table", exact: true }).check();
+      await page
+        .getByRole("checkbox", { name: "I have completed: Open documentation", exact: true })
+        .check();
       const replyResponse = page.waitForResponse(
         (response) => response.url() === `${origin}/api/form/reply`,
       );
@@ -190,6 +193,71 @@ export async function webJourney(
         true,
       );
       await client.session.form.cancel({ sessionID, formID: stale.id });
+      // Restrict these synthetic fixture actions to native human permission.
+      const originalPermissions = (await client.session.get({ sessionID })).permissions ?? [];
+      await client.session.update({
+        sessionID,
+        permissions: [
+          ...originalPermissions,
+          ...(["once", "reject", "always"] as const).map((decision) => ({
+            action: `workspace-fixture-${decision}`,
+            resource: "*",
+            effect: "ask" as const,
+          })),
+        ],
+      });
+      for (const decision of ["once", "reject", "always"] as const) {
+        const id = Permission.ID.create();
+        const action = `workspace-fixture-${decision}`;
+        const pending = client.permission
+          .create({
+            sessionID,
+            id,
+            action,
+            resources: ["disposable-fixture-resource"],
+            save: ["disposable-fixture-resource"],
+          })
+          .then(
+            (value) => ({ value }),
+            (error: unknown) => ({ error }),
+          );
+        const card = page
+          .locator(".attention-card")
+          .filter({ has: page.getByRole("heading", { name: action, exact: true }) });
+        await card.waitFor();
+        const staleReply = await fetch(`${origin}/api/permission/reply`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Origin: origin },
+          body: JSON.stringify({ id, binding: "superseded-binding", decision }),
+        });
+        assert.notEqual(staleReply.status, 200);
+        assert.ok(
+          (await client.permission.list({ sessionID })).some((request) => request.id === id),
+        );
+        const response = page.waitForResponse(
+          (reply) => reply.url() === `${origin}/api/permission/reply`,
+        );
+        await card
+          .getByRole("button", {
+            name:
+              decision === "once"
+                ? "Allow once"
+                : decision === "always"
+                  ? "Always allow"
+                  : "Reject",
+            exact: true,
+          })
+          .click();
+        assert.equal((await response).status(), 200);
+        const result = await pending;
+        assert.deepEqual(result, { value: { id, effect: "ask" } });
+        await card.waitFor({ state: "hidden" });
+        assert.equal(
+          (await client.permission.list({ sessionID })).some((request) => request.id === id),
+          false,
+        );
+      }
+      await client.session.update({ sessionID, permissions: originalPermissions });
       await page.reload();
       await page.getByRole("textbox", { name: "Message Abra" }).waitFor();
       const evidence = process.env.ABRACODE_TEST_EVIDENCE_DIR;
@@ -202,8 +270,8 @@ export async function webJourney(
         await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
         false,
       );
-      await page.getByRole("button", { name: "Toggle work navigation" }).click();
-      await page.getByRole("button", { name: "Close navigation" }).click();
+      await page.getByRole("button", { name: "Toggle work finder" }).click();
+      await page.getByRole("button", { name: "Close work finder" }).click();
       if (evidence)
         await page.screenshot({ path: join(evidence, "workspace-narrow.png"), fullPage: true });
       await restart();

@@ -1,0 +1,14 @@
+# Explicit opt-in example only. Do not apply as part of schema installation.
+# Replace model, repository identity and verification with inspected local values.
+version: 1
+models:
+  default: { providerID: your-provider, id: your-model }
+supervision_mode: attended-automatic
+repositories:
+  - id: routine-example
+    remote: https://github.com/your-account/your-repository.git
+    verification: [[pnpm, test], [pnpm, build]]
+    delivery: github-pr
+    plan_approval: false
+    merge_approval: true
+    repair_rounds: 2

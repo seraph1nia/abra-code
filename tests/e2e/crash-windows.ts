@@ -288,10 +288,7 @@ export async function communicationCrashJourney(o: {
   }, 90000);
   assert.equal(report.artifact.hash, linked.hash);
   assert.equal(report.artifact.path, linked.path);
-  assert.equal(
-    (await readFile(join(o.evidence, "report-builds.jsonl"), "utf8")).trim().split("\n").length,
-    1,
-  );
+  assert.equal(report.format, "a2ui-snapshot");
   const retry = await o.invoke("abra_work_report", {
     issue_id: eventIssue.id,
     action: "generate",

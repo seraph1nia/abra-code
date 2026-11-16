@@ -261,3 +261,54 @@ test("batch research follow-ons retain exact report validation and dependencies"
   assert.equal((await run(f.work.list)).length, 2);
   assert.equal(f.runtime.creates, count);
 });
+
+test("batch OpenSpec choices participate in canonical identity and reject incompatible items atomically", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const sender = Id.SessionId.make("ses_schema-batch");
+  const selected = {
+    ...batch,
+    tasks: [
+      {
+        ...task,
+        openspec_schema: Id.SpecSchemaName.make("spec-driven"),
+        require_plan_approval: true as const,
+      },
+      { ...task, client_key: "two" },
+    ],
+  };
+  const first = await run(f.controller.createWorkBatch(selected, sender));
+  assert.equal(first.tasks[0]!.issue.require_plan_approval, true);
+  assert.equal(first.tasks[0]!.issue.openspec_schema, "spec-driven");
+  await assert.rejects(
+    run(
+      f.controller.createWorkBatch(
+        {
+          ...selected,
+          tasks: [{ ...selected.tasks[0]!, require_plan_approval: undefined }, selected.tasks[1]!],
+        },
+        sender,
+      ),
+    ),
+    /different|changed|rebind/,
+  );
+  const before = (await run(f.work.list)).length;
+  await assert.rejects(
+    run(
+      f.controller.createWorkBatch(
+        {
+          ...selected,
+          request_id: Id.RequestId.make("bad-policy-batch"),
+          tasks: [selected.tasks[1]!, { ...selected.tasks[0]!, workflow_policy: "research-only" }],
+        },
+        sender,
+      ),
+    ),
+    /full-openspec/,
+  );
+  assert.equal((await run(f.work.list)).length, before);
+  const validate = strictInput(BatchInputSchema)["~standard"].validate;
+  assert.ok("issues" in validate({ ...batch, tasks: [{ ...task, require_plan_approval: false }] }));
+  for (const name of ["../schema", "bad/name", "Uppercase", "trailing-"])
+    assert.ok("issues" in validate({ ...batch, tasks: [{ ...task, openspec_schema: name }] }));
+});

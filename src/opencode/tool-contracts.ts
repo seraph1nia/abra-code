@@ -1,3 +1,6 @@
+import { SessionObservationSchema } from "./session-observation-contracts.ts";
+import { ExecutionContractSchema } from "../visibility/execution-contract.ts";
+export { SessionObservationSchema } from "./session-observation-contracts.ts";
 import { SelectionSourceSchema } from "../config/dispatch.ts";
 import { SupervisionSummarySchema, SupervisionAggregateSchema } from "../visibility/supervision.ts";
 import { DeliveryOutcomeSchema, OperationInProgressSchema } from "../workflow/delivery-outcome.ts";
@@ -10,7 +13,7 @@ import { WorkerContextSummarySchema } from "../workflow/worker-context-contracts
 import { ReviewerSuggestions } from "../git/reviewers.ts";
 import { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
 import { Schema } from "effect";
-import { Session, SessionMessage } from "@opencode/client/effect";
+
 import * as Id from "../identities.ts";
 import {
   Count,
@@ -19,7 +22,6 @@ import {
   ReadinessBlockerSchema,
   RecordDiagnosticSchema,
   WorkerModelSchema,
-  WorkerErrorSchema,
 } from "../contracts.ts";
 import { ExecutionStateSchema, ProjectRecordSchema } from "../storage/contracts.ts";
 import { BatchItemResultSchema, BatchResultSchema } from "../work/batch.ts";
@@ -71,58 +73,6 @@ const ready = Schema.Struct({
     ),
   ]),
   execution: Schema.optional(execution),
-});
-const message = Schema.Struct({
-  id: Id.MessageId,
-  type: Schema.Union([
-    SessionMessage.AgentSelected.fields.type,
-    SessionMessage.ModelSelected.fields.type,
-    SessionMessage.LocationSwitched.fields.type,
-    SessionMessage.User.fields.type,
-    SessionMessage.Synthetic.fields.type,
-    SessionMessage.System.fields.type,
-    SessionMessage.Skill.fields.type,
-    SessionMessage.Shell.fields.type,
-    SessionMessage.Assistant.fields.type,
-    SessionMessage.CompactionRunning.fields.type,
-    SessionMessage.Idle.fields.type,
-  ]),
-  at: Schema.Finite,
-  text: Schema.optional(Schema.String),
-  tools: Schema.optional(
-    Schema.Array(
-      Schema.Struct({
-        name: Id.ToolName,
-        status: Schema.Union([
-          SessionMessage.ToolStateStreaming.fields.status,
-          SessionMessage.ToolStateRunning.fields.status,
-          SessionMessage.ToolStateCompleted.fields.status,
-          SessionMessage.ToolStateError.fields.status,
-        ]),
-        error: Schema.optional(WorkerErrorSchema),
-      }),
-    ),
-  ),
-});
-export const SessionObservationSchema = Schema.Struct({
-  agent: Schema.optional(Id.AgentId),
-  id: Id.SessionId,
-  directory: Schema.optional(Id.AbsolutePath),
-  outcome: Session.Info.fields.outcome,
-  busy: Schema.optional(Schema.Boolean),
-  executing: Schema.optional(Schema.Boolean),
-  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
-  model: Schema.optional(WorkerModelSchema),
-  error: Schema.optional(WorkerErrorSchema),
-  error_at: Schema.optional(Schema.Finite),
-  diagnostic_error: Schema.optional(Schema.String),
-  recent_messages: Schema.optional(Schema.Array(message)),
-  activity: Schema.optional(
-    Schema.Struct({ identity: Id.ActivityId, at: Schema.Finite, summary: Schema.String }),
-  ),
-  available_tools: Schema.optional(
-    Schema.Struct({ model: WorkerModelSchema, names: Schema.Array(Id.ToolName), at: Id.Timestamp }),
-  ),
 });
 const inspection = Schema.Struct({
   project: ProjectRecordSchema,
@@ -200,6 +150,7 @@ export const toolOutputs = {
   work_ready: Schema.Array(ready),
   work_start: execution,
   work_diagnostics: Schema.Struct({
+    execution_contract: ExecutionContractSchema,
     contexts: Schema.Array(WorkerContextSummarySchema),
     issue_id: Id.IssueId,
     current_phase: PhaseSchema,
@@ -218,6 +169,7 @@ export const toolOutputs = {
     ),
   }),
   work_status: Schema.Struct({
+    execution_contract: ExecutionContractSchema,
     supervision: SupervisionSummarySchema,
     execution,
     outcome: Schema.optional(DeliveryOutcomeSchema),

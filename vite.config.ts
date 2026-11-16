@@ -18,10 +18,7 @@ export default defineConfig({
     ignorePatterns: [".abracode/**", ".lavish/**", "**/dist/**"],
     overrides: [
       {
-        files: [
-          "templates/reporter/src/**/*.{ts,tsx}",
-          "templates/reporter/scripts/mermaid-engine.ts",
-        ],
+        files: ["apps/report/src/**/*.{ts,tsx}", "apps/report/scripts/mermaid-engine.ts"],
         env: { browser: true, node: false },
       },
     ],
@@ -60,7 +57,6 @@ export default defineConfig({
   pack: {
     entry: {
       abracode: "./.opencode/plugins/abracode/index.ts",
-      "abracode-tui": "./.opencode/plugins/abracode/tui.ts",
     },
     platform: "node",
     target: "node26",

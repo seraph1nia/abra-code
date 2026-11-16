@@ -205,3 +205,54 @@ test("supervision postures compose scheduling without granting execution policy"
     true,
   );
 });
+
+test("documented attended opt-in resolves without changing shipped defaults or registered execution authority", async (t) => {
+  const { readFile } = await import("node:fs/promises");
+  const { fixture, planned } = await import("../fixtures.ts");
+  const { registrationPolicy, planPolicy } = await import("../../src/config/policy.ts");
+  const { RepositoryId, IssueId } = await import("../../src/identities.ts");
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(planned(f, IssueId.make("before-opt-in")));
+  const retained = await run(f.records.execution(e.issue_id));
+  const projects = await run(f.records.projects());
+  const config = await run(
+    resolveConfig(
+      f.root,
+      join(f.root, "opt-in.yaml"),
+      await readFile("docs/examples/attended-automatic.yaml", "utf8"),
+    ),
+  );
+  assert.equal(config.supervision_mode, "attended-automatic");
+  assert.equal(config.auto_schedule, true);
+  assert.equal(config.repositories.length, 1);
+  const selected = config.repositories[0]!;
+  assert.equal(planPolicy(registrationPolicy(selected), "full-openspec").plan_approval, false);
+  assert.equal(
+    planPolicy(registrationPolicy(selected), "full-openspec", undefined, true).plan_approval,
+    true,
+  );
+  assert.equal(selected.merge_approval, true);
+  assert.equal(selected.repair_rounds, 2);
+  assert.deepEqual(selected.verification, [
+    ["pnpm", "test"],
+    ["pnpm", "build"],
+  ]);
+  const defaults = await run(
+    resolveConfig(
+      f.root,
+      join(f.root, "default.yaml"),
+      await readFile("abracode.example.yaml", "utf8"),
+    ),
+  );
+  assert.equal(defaults.auto_schedule, false);
+  assert.equal(defaults.supervision_mode, undefined);
+  assert.deepEqual(defaults.repositories, []);
+  assert.equal(registrationPolicy({}).plan_approval, true);
+  const foreign = await run(f.records.project(RepositoryId.make("frontend")));
+  assert.equal(foreign?.plan_approval, true);
+  assert.equal(foreign?.merge_approval, true);
+  assert.equal(foreign?.repair_rounds, 0);
+  assert.deepEqual(await run(f.records.projects()), projects);
+  assert.deepEqual(await run(f.records.execution(e.issue_id)), retained);
+});

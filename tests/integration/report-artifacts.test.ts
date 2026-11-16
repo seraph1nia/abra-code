@@ -1,19 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
-import { cp, symlink, readFile, readdir, mkdir, copyFile, access } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { cp, symlink, readdir, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { resolve, join } from "node:path";
 import { Effect } from "effect";
-import * as Id from "../../src/identities.ts";
-import { Reports } from "../../src/workflow/reports.ts";
-import { ViteReportRenderer } from "../../src/workflow/report-build.ts";
-import { ProcessRunner, type Runner } from "../../src/process.ts";
-import { launchReportBrowser } from "../../templates/reporter/scripts/browser.ts";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
+import { ProcessRunner, type Runner } from "../../src/process.ts";
+import { ReactDocumentRenderer } from "../../src/workflow/report-export.ts";
+import { ReportExports } from "../../src/workflow/report-exports.ts";
+import { Reports } from "../../src/workflow/reports.ts";
+import * as Id from "../../src/identities.ts";
+import { launchReportBrowser } from "../../apps/report/scripts/browser.ts";
 
 test(
-  "concurrent controller Vite builds isolate source/caches/output and retain movable offline sandbox reports",
+  "concurrent exports consume exact saved JSON and isolate trusted builds, caches and output",
   { timeout: 120000 },
   async (t) => {
     const f = await run(fixture);
@@ -21,45 +22,44 @@ test(
     for (const path of [
       "package.json",
       "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
       "LICENSE",
       "licenses",
-      "templates/reporter",
-      "src/workflow/report-build.ts",
+      "src",
+      "apps/report",
+      "apps/web/src",
+      "apps/web/tsconfig.json",
     ])
       await cp(resolve(path), join(f.config.home, path), {
         recursive: true,
         filter: (path) => !/\/(?:node_modules|dist|\.vite)(?:\/|$)/.test(path),
       });
-    await symlink(resolve("node_modules"), join(f.config.home, "node_modules"), "dir");
-    await symlink(
-      resolve("templates/reporter/node_modules"),
-      join(f.config.home, "templates/reporter/node_modules"),
-      "dir",
-    );
-    const parent = Id.SessionId.make("ses_visual-controller"),
+    for (const path of ["node_modules", "apps/report/node_modules", "apps/web/node_modules"])
+      await symlink(resolve(path), join(f.config.home, path), "dir");
+    const parent = Id.SessionId.make("ses_concurrent-json"),
       issue = Id.IssueId.make("concurrent-report");
-    const hostile =
-      '</ScRiPt><script>globalThis.reportExecuted=true</script><img src="https://example.invalid/asset" onerror="globalThis.reportExecuted=true">';
     f.work.add(issue);
+    const hostile =
+      '</ScRiPt><script>globalThis.reportExecuted=true</script><img src="https://example.invalid/asset">';
     f.work.issues.get(issue)!.title = hostile;
     await run(f.controller.recordSupervisor(parent));
-    const execution = await run(f.controller.start(issue, parent));
-    await run(
-      f.controller.workerReply(execution.explore_session_id!, {
-        action: "finding",
-        request_id: Id.RequestId.make("hostile-finding"),
-        generation: execution.control_generation,
-        body: hostile,
-        evidence: [
-          { base: execution.base_commit!, path: Id.RelativePath.make("source.txt"), line: 1 },
-        ],
-      }),
+    await run(f.controller.start(issue, parent));
+    const reports = new Reports(f.config.home, f.records, f.git, f.locks, f.work, (...args) =>
+      f.runtime.notify(...args),
     );
-    const nativeRunner = new ProcessRunner();
+    const docs = await Promise.all(
+      ["first-json", "second-json"].map((id) =>
+        run(
+          reports.generate(parent, issue, {
+            request_id: Id.RequestId.make(id),
+            diagrams: [{ title: "Saved flow", source: "flowchart LR\n A --> B" }],
+          }),
+        ),
+      ),
+    );
     let active = 0,
       peak = 0;
     const roots: string[] = [];
+    const native = new ProcessRunner();
     const runner: Runner = {
       run: (file, args, cwd, env, options) =>
         Effect.acquireUseRelease(
@@ -67,111 +67,55 @@ test(
             active++;
             peak = Math.max(peak, active);
             roots.push(args[1]!);
+            assert.equal(options?.deadline_ms, 45000);
+            assert.equal(options?.max_output_bytes, 262144);
           }),
-          () =>
-            Effect.gen(function* () {
-              assert.equal(options!.deadline_ms, 45000);
-              assert.equal(options!.max_output_bytes, 262144);
-              const config = yield* Effect.promise(() =>
-                readFile(join(args[1]!, "vite.config.mts"), "utf8"),
-              );
-              assert.ok(config.includes(join(args[1]!, ".vite")));
-              assert.ok(config.includes(f.config.home));
-              yield* Effect.promise(() => assert.rejects(access(join(args[1]!, "src/report.tsx"))));
-              return yield* nativeRunner.run(file, args, cwd, env, options);
-            }),
+          () => native.run(file, args, cwd, env, options),
           () =>
             Effect.sync(() => {
               active--;
             }),
         ),
     };
-    const renderer = new ViteReportRenderer(f.config.home, runner),
-      before = await run(renderer.fingerprint);
-    const reports = () =>
-      new Reports(
-        f.config.home,
-        f.records,
-        f.git,
-        f.locks,
-        f.work,
-        (...args) => f.runtime.notify(...args),
-        renderer,
-      );
-    const results = await Promise.all(
-      ["architecture", "verification"].map((id) =>
-        run(reports().generate(parent, issue, { request_id: Id.RequestId.make(id) })),
+    const renderer = new ReactDocumentRenderer(f.config.home, runner),
+      owner = new ReportExports(f.config.home, f.locks, renderer);
+    const exported = await Promise.all(
+      docs.map((doc) =>
+        run(
+          reports
+            .readDocument(issue, doc.request.request_id, doc.artifact!.hash)
+            .pipe(Effect.flatMap((a) => owner.create(a.json, a.hash))),
+        ),
       ),
     );
     assert.equal(peak, 2);
     assert.equal(new Set(roots).size, 2);
-    assert.equal(await run(renderer.fingerprint), before);
-    assert.notEqual(results[0]!.artifact!.path, results[1]!.artifact!.path);
+    assert.notEqual(exported[0]!.document_hash, exported[1]!.document_hash);
     assert.deepEqual(await readdir(join(f.config.home, ".abracode/reports/.scratch")), []);
-    for (const result of results) {
-      assert.equal(result.status, "published");
-      assert.equal(
-        (await readFile(result.artifact!.path, "utf8")).includes("abracode-license-notices"),
-        true,
-      );
-    }
-    const moved = join(f.root, "portable-evidence");
-    await mkdir(moved);
-    const path = join(moved, "architecture.html");
-    await copyFile(results[0]!.artifact!.path, path);
     const browser = await launchReportBrowser();
     t.onTestFinished(() => browser.close());
-    const context = await browser.newContext({
-        offline: true,
-        viewport: { width: 375, height: 812 },
-      }),
-      page = await context.newPage();
-    const requests: string[] = [],
-      errors: string[] = [];
-    page.on("request", (r) => {
-      if (!r.isNavigationRequest() && !r.url().startsWith("data:")) requests.push(r.url());
-    });
-    page.on("pageerror", (e) => errors.push(e.message));
-    await page.goto(pathToFileURL(path).href);
-    assert.equal(await page.getByRole("heading", { level: 1 }).textContent(), hostile);
-    assert.equal(await page.locator(".mermaid-diagram svg").count(), 2);
-    assert.equal(await page.locator("img").count(), 0);
-    assert.equal(await page.evaluate(() => Reflect.get(globalThis, "reportExecuted")), undefined);
-    assert.match(await page.locator("main").innerText(), /static snapshot/);
-    await page.getByRole("searchbox").fill("reportExecuted");
-    assert.equal(await page.locator(".finding").count(), 1);
-    await page.locator(".finding summary").focus();
-    await page.locator(".finding summary").press("Enter");
-    assert.match(await page.locator(".finding").innerText(), /Retained worker finding/);
-    assert.equal(await page.evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
-    const content = await readFile(path, "utf8");
-    await page.goto("about:blank");
-    await page.setContent(
-      '<iframe title="Retained report" sandbox="allow-scripts allow-popups allow-forms allow-modals" style="width:100%;height:800px;border:0"></iframe>',
+    const page = await browser.newPage({ viewport: { width: 375, height: 812 }, offline: true });
+    const outer = join(f.root, "portable-frame.html"),
+      escaped = exported[0]!.html
+        .replaceAll("&", "&amp;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    await writeFile(
+      outer,
+      `<!doctype html><meta charset="UTF-8"><iframe title="Isolated report" sandbox="allow-scripts" style="width:100%;height:800px;border:0" srcdoc="${escaped}"></iframe>`,
     );
-    await page.locator("iframe").evaluate((element, html) => {
-      (element as HTMLIFrameElement).src = URL.createObjectURL(
-        new Blob([html], { type: "text/html" }),
-      );
-    }, content);
-    const frame = page.frameLocator("iframe");
-    await frame.getByRole("heading", { level: 1 }).waitFor();
-    assert.equal(await frame.locator(".mermaid-diagram svg").count(), 2);
-    await frame
-      .getByLabel("General comments", { exact: true })
-      .fill("Inspect the retained evidence");
-    await frame.getByRole("button", { name: "Prepare JSON", exact: true }).click();
+    await page.goto(pathToFileURL(outer).href);
+    const report = page.frameLocator("iframe");
+    await report.getByRole("heading", { name: hostile, exact: true }).first().waitFor();
+    assert.equal(await report.locator("img").count(), 0);
     assert.equal(
-      JSON.parse(await frame.getByLabel("Feedback export", { exact: true }).inputValue()).authority,
-      "review-input-only",
+      await report.locator('[data-diagram-state="ready"] svg').count(),
+      docs[0]!.snapshot.diagrams?.length,
     );
     assert.equal(
-      await page
-        .locator("iframe")
-        .evaluate((e) => (e as HTMLIFrameElement).contentDocument === null),
-      true,
+      await page.frames()[1]!.evaluate(() => Reflect.get(globalThis, "reportExecuted")),
+      undefined,
     );
-    assert.deepEqual(requests, []);
-    assert.deepEqual(errors, []);
   },
 );

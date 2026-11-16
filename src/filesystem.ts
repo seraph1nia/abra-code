@@ -38,6 +38,7 @@ export const realpath = (path: PathLike) =>
   platform((fs) => fs.realPath(pathname(path))).pipe(
     Effect.map((value) => AbsolutePath.make(value)),
   );
+export const readBytes = (path: PathLike) => platform((fs) => fs.readFile(pathname(path)));
 export const readFile = (path: PathLike, encoding: "utf8") =>
   platform((fs) => fs.readFileString(pathname(path), encoding));
 export const writeFile = (

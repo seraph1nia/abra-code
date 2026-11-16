@@ -1,10 +1,12 @@
 import { SelectionSourceSchema } from "../config/dispatch.ts";
 import { SupervisionSummarySchema } from "./supervision.ts";
 import { Schema } from "effect";
+import { ExecutionContractSchema } from "./execution-contract.ts";
 import { SessionId, Timestamp } from "../identities.ts";
 import { RoleSchema, WorkerModelSchema } from "../contracts.ts";
-import { SessionObservationSchema } from "../opencode/tool-contracts.ts";
+import { SessionObservationSchema } from "../opencode/session-observation-contracts.ts";
 export const WorkerInspectionSchema = Schema.Struct({
+  execution_contract: Schema.optional(ExecutionContractSchema),
   id: SessionId,
   role: RoleSchema,
   model: Schema.optional(WorkerModelSchema),

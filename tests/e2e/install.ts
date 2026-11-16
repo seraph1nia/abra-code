@@ -32,7 +32,6 @@ export async function installSource(home: string) {
     "scripts",
     ".opencode",
     ".agents",
-    "templates",
     "apps",
   ])
     await cp(resolve(path), join(home, path), {
@@ -128,11 +127,12 @@ export async function interactiveLaunch(home: string, env: NodeJS.ProcessEnv) {
   });
   try {
     const deadline = Date.now() + 30_000;
-    // OpenTUI may insert terminal styling between words in the same text node.
-    while (!stripVTControlCharacters(output).includes("Talk to Abra")) {
+    // Verify the native host's agent/model line, which cannot match bootstrap output.
+    // AbraCode no longer provides a custom terminal footer.
+    while (!/Abra\s*·[\s\S]{0,100}?OpenCode/.test(stripVTControlCharacters(output))) {
       if (child.exitCode !== null || Date.now() >= deadline)
         throw new Error(
-          `Interactive Abra launch did not render its footer: ${output.slice(-3000)}`,
+          `Interactive Abra launch did not render the native conversation: ${output.slice(-3000)}`,
         );
       await new Promise((resolve) => setTimeout(resolve, 100));
     }

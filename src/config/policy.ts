@@ -136,3 +136,41 @@ export function automation(value: typeof AutomationSchema.Type) {
     validation: value.validation ?? { engine: "native" as const, max_runs: 1 },
   });
 }
+
+export const PlanApprovalSource = Schema.Literals([
+  "task_requirement",
+  "repository_policy",
+  "repository_override",
+  "task_quality_profile",
+  "repository_quality_profile",
+]);
+/** Resolve existing quality precedence first; a task can only strengthen this gate. */
+export function planPolicy(
+  project: Parameters<typeof codingPolicy>[0],
+  workflow: Parameters<typeof codingPolicy>[1],
+  profile?: QualityProfile,
+  required?: true,
+) {
+  ensure(
+    required !== true || workflow === "full-openspec",
+    "OPENSPEC_WORKFLOW",
+    "Human plan requirements require full-openspec work",
+  );
+  const resolved = codingPolicy(project, workflow, profile);
+  const selected = workflow === "research-only" ? undefined : (profile ?? project.quality_profile);
+  const source: typeof PlanApprovalSource.Type =
+    required === true
+      ? "task_requirement"
+      : !selected
+        ? "repository_policy"
+        : project.quality_overrides?.plan_approval !== undefined
+          ? "repository_override"
+          : profile
+            ? "task_quality_profile"
+            : "repository_quality_profile";
+  return {
+    ...resolved,
+    plan_approval: required === true || resolved.plan_approval,
+    plan_approval_source: source,
+  };
+}

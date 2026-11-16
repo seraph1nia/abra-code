@@ -1,0 +1,221 @@
+.generated-surface {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+.surface-publication,
+.surface-save,
+.artifact-attachment {
+  min-width: 0;
+  max-width: 100%;
+}
+.surface-save {
+  padding: 12px 0;
+}
+.surface-save [data-slot="native-select-wrapper"] {
+  width: 100%;
+  max-width: 100%;
+}
+.generated-surface > .eyebrow {
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+}
+.generated-surface a2ui-basic-row {
+  flex-wrap: wrap;
+  min-width: 0;
+  align-items: stretch;
+}
+.generated-surface a2ui-basic-row > * {
+  min-width: 0;
+  flex: 1 1 min(100%, 320px);
+}
+.generated-surface a2ui-basic-column {
+  min-width: 0;
+  max-width: 100%;
+}
+.surface-column {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.surface-row {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+.surface-row > * {
+  flex: 1;
+  min-width: 150px;
+}
+.surface-binding {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-bottom: 9px;
+}
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.metrics dt {
+  font-size: 12px;
+  text-transform: capitalize;
+  color: var(--muted-foreground);
+}
+.metrics dd {
+  font-size: 27px;
+}
+.surface-widget {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.report-evidence {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.report-code {
+  max-width: 100%;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--soft);
+  font-size: 12px;
+  white-space: pre;
+}
+.report-reference {
+  font-size: 12px;
+  margin: 9px 0;
+}
+.work-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.work-table {
+  width: 100%;
+  min-width: 480px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+.work-table caption {
+  padding: 10px;
+  text-align: left;
+}
+.work-table th,
+.work-table td {
+  padding: 9px;
+  border-top: 1px solid var(--line);
+  vertical-align: top;
+}
+.work-table th {
+  font-weight: 500;
+}
+.work-table thead th,
+.work-table td:nth-child(2) {
+  white-space: nowrap;
+}
+.dependency-graph > li {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 9px;
+  margin-bottom: 9px;
+}
+.dependency-graph ul {
+  padding-left: 16px;
+  list-style: disc;
+}
+.metrics > div {
+  flex: 1;
+  padding: 13px;
+  display: grid;
+  border-right: 1px solid var(--line);
+  min-width: 80px;
+}
+.metrics > div:last-child {
+  border: 0;
+}
+.metrics strong {
+  font-size: 27px;
+  font-weight: 450;
+}
+.metrics span {
+  text-transform: capitalize;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.kanban {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 9px;
+  overflow-x: auto;
+}
+.kanban > section {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  min-height: 170px;
+}
+.kanban h4 {
+  color: var(--muted-foreground);
+  margin-bottom: 15px;
+}
+.work-card {
+  display: grid;
+  grid-template-columns: 7px 1fr;
+  gap: 6px 8px;
+  width: 100%;
+  padding: 11px;
+  margin-bottom: 7px;
+  text-align: left;
+}
+.work-card .status-dot {
+  margin-top: 5px;
+}
+.work-card strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.work-card > span:last-child {
+  grid-column: 2;
+  font-size: 12px;
+}
+.timeline {
+  border-left: 1px solid var(--line);
+  margin-left: 5px;
+  padding-left: 20px;
+}
+.timeline li {
+  padding-bottom: 15px;
+}
+.timeline time,
+.timeline strong {
+  display: block;
+}
+.timeline time {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.timeline small {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.dependency-edge {
+  border-left: 1px solid var(--line);
+  margin: -8px 0 16px 18px;
+  padding: 6px 15px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.report-export iframe {
+  width: 100%;
+  min-height: 70vh;
+  border: 1px solid var(--line);
+}

@@ -6,10 +6,8 @@ import { decodeSync } from "../decode.ts";
 import { WorkInputSchema, IssueSchema, normalizeIssue } from "./model.ts";
 
 const { request_id: _request, dependencies: _dependencies, ...workFields } = WorkInputSchema.fields;
-export const BatchDependencySchema = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("local"), client_key: Identifier }),
-  Schema.Struct({ type: Schema.Literal("existing"), issue_id: IssueId }),
-]);
+import { BatchDependencySchema } from "./batch-dependency.ts";
+export { BatchDependencySchema } from "./batch-dependency.ts";
 export const BatchTaskSchema = Schema.Struct({
   ...workFields,
   client_key: Identifier,

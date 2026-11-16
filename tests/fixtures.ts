@@ -153,6 +153,9 @@ export class FakeWorkGraph implements WorkGraph {
       issue.title = input.title;
       issue.description = input.description;
       issue.dispatch = input.dispatch;
+      issue.quality_profile = input.quality_profile;
+      issue.openspec_schema = input.openspec_schema;
+      issue.require_plan_approval = input.require_plan_approval;
       issue.priority = input.priority;
       issue.workflow_policy = input.workflow_policy ?? "full-openspec";
       issue.scope = input.scope;
@@ -296,6 +299,24 @@ export class FakeSpec extends OpenSpec {
     super(new ProcessRunner(), Id.Executable.make("unused"));
   }
   update = (_e: Execution): Effect.Effect<void, CrewError> => Effect.void;
+  bind = (e: Execution) =>
+    Effect.succeed({
+      schema_version: 1 as const,
+      state: "bound" as const,
+      selection_source: e.openspec_schema ? ("task" as const) : ("repository_default" as const),
+      name: e.openspec_schema ?? Id.SpecSchemaName.make("spec-driven"),
+      source: "package" as const,
+      root: Id.AbsolutePath.make("/fixture/schema"),
+      files: [
+        {
+          path: Id.RelativePath.make("schema.yaml"),
+          hash: Id.ContentHash.make("a".repeat(64)),
+          bytes: 1,
+        },
+      ],
+      hash: Id.ContentHash.make("b".repeat(64)),
+    });
+  assertSchema = (_e: Execution): Effect.Effect<void, CrewError> => Effect.void;
   create = Effect.fn("FakeSpec.create")(
     function* (this: FakeSpec, e: Execution) {
       yield* writePlan(e.worktree_directory!, e.openspec_change);
@@ -308,7 +329,10 @@ export class FakeSpec extends OpenSpec {
         SpecStatusSchema,
         {
           changeName: e.openspec_change,
-          schemaName: "spec-driven",
+          schemaName:
+            e.openspec_schema_binding?.state === "bound"
+              ? e.openspec_schema_binding.name
+              : (e.openspec_schema ?? "spec-driven"),
           isPlanningComplete: this.planned,
           isComplete: this.planned,
           artifacts: [
@@ -316,6 +340,7 @@ export class FakeSpec extends OpenSpec {
               id: "tasks",
               status: this.planned ? ("done" as const) : ("ready" as const),
               outputPath: "tasks.md",
+              requires: [],
             },
           ],
           applyRequires: ["tasks"],
@@ -806,10 +831,16 @@ export const fixture = domainEffect(
     };
   }),
 );
-export function planned(f: Effect.Success<typeof fixture>, id = Id.IssueId.make("abra-1")) {
+type PlanningChoices = Pick<Issue, "openspec_schema" | "require_plan_approval">;
+export function planned(
+  f: Effect.Success<typeof fixture>,
+  id = Id.IssueId.make("abra-1"),
+  choices: PlanningChoices = {},
+) {
   return domainEffect(
     Effect.gen(function* () {
       f.work.add(id);
+      Object.assign(f.work.issues.get(id)!, choices);
       let e = yield* f.controller.start(Id.IssueId.make(id), Id.SessionId.make("ses_supervisor"));
       f.spec.planned = true;
       f.runtime.success(e.explore_session_id!);
@@ -818,10 +849,14 @@ export function planned(f: Effect.Success<typeof fixture>, id = Id.IssueId.make(
     }),
   );
 }
-export function applying(f: Effect.Success<typeof fixture>, id = Id.IssueId.make("abra-1")) {
+export function applying(
+  f: Effect.Success<typeof fixture>,
+  id = Id.IssueId.make("abra-1"),
+  choices: PlanningChoices = {},
+) {
   return domainEffect(
     Effect.gen(function* () {
-      let e = yield* planned(f, id);
+      let e = yield* planned(f, id, choices);
       const pending = (yield* f.controller.approve(
         Id.IssueId.make(id),
         "plan",
@@ -839,10 +874,14 @@ export function applying(f: Effect.Success<typeof fixture>, id = Id.IssueId.make
     }),
   );
 }
-export function delivered(f: Effect.Success<typeof fixture>, id = Id.IssueId.make("abra-1")) {
+export function delivered(
+  f: Effect.Success<typeof fixture>,
+  id = Id.IssueId.make("abra-1"),
+  choices: PlanningChoices = {},
+) {
   return domainEffect(
     Effect.gen(function* () {
-      let e = yield* applying(f, id);
+      let e = yield* applying(f, id, choices);
       f.spec.done = true;
       f.runtime.success(e.apply_session_id!);
       e = yield* f.controller.advance(Id.IssueId.make(id));

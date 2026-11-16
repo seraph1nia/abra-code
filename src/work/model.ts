@@ -1,3 +1,4 @@
+import { SchemaName } from "../openspec/schema-contracts.ts";
 import { DispatchSchema, normalizeDispatch } from "../config/dispatch.ts";
 import { IssueId, RepositoryId, RequestId, ExecutionId } from "../identities.ts";
 
@@ -9,7 +10,12 @@ import { decodeSync } from "../decode.ts";
 
 import { QualityProfile } from "../config/policy.ts";
 
+export const OpenSpecWorkFields = {
+  openspec_schema: Schema.optional(SchemaName),
+  require_plan_approval: Schema.optional(Schema.Literal(true)),
+};
 export const IssueSchema = Schema.Struct({
+  ...OpenSpecWorkFields,
   dispatch: Schema.optional(DispatchSchema),
   quality_profile: Schema.optional(QualityProfile),
   scope: Schema.optional(ScopeDraftSchema),
@@ -27,6 +33,7 @@ export const IssueSchema = Schema.Struct({
 });
 export type Issue = typeof IssueSchema.Type;
 export const WorkInputSchema = Schema.Struct({
+  ...OpenSpecWorkFields,
   dispatch: Schema.optional(DispatchSchema),
   quality_profile: Schema.optional(QualityProfile),
   workflow_policy: Schema.optional(PolicySchema),
@@ -71,6 +78,12 @@ export function normalizeIssue(value: unknown): NewIssue {
     "Describe the requested goal; Explore can resolve implementation details",
   );
   const workflow_policy = Schema.decodeSync(PolicySchema)(input.workflow_policy ?? "full-openspec");
+  ensure(
+    workflow_policy === "full-openspec" ||
+      (input.openspec_schema === undefined && input.require_plan_approval === undefined),
+    "OPENSPEC_WORKFLOW",
+    "OpenSpec schema and human plan requirements require full-openspec work",
+  );
   const scope =
     input.scope === undefined ? undefined : Schema.decodeSync(ScopeDraftSchema)(input.scope);
   const report_reference =
@@ -78,6 +91,10 @@ export function normalizeIssue(value: unknown): NewIssue {
       ? undefined
       : Schema.decodeSync(ReportReferenceSchema)(input.report_reference);
   return {
+    ...(input.openspec_schema === undefined ? {} : { openspec_schema: input.openspec_schema }),
+    ...(input.require_plan_approval === undefined
+      ? {}
+      : { require_plan_approval: input.require_plan_approval }),
     ...(input.quality_profile === undefined ? {} : { quality_profile: input.quality_profile }),
     ...(input.dispatch === undefined ? {} : { dispatch: normalizeDispatch(input.dispatch) }),
     workflow_policy,

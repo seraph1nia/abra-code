@@ -20,8 +20,8 @@
     "src/**/*.ts",
     "scripts/**/*.ts",
     "tests/**/*.ts",
-    "templates/reporter/scripts/**/*.ts",
     ".opencode/plugins/**/*.ts",
-    "vite.config.ts"
+    "vite.config.ts",
+    "apps/report/scripts/**/*.ts"
   ]
 }

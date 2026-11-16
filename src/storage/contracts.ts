@@ -1,3 +1,4 @@
+import { SchemaBinding } from "../openspec/schema-contracts.ts";
 import { ProjectDispatchSchema } from "../config/dispatch.ts";
 import { ConfigurationSnapshotSchema } from "../config/snapshot.ts";
 import { MessageIntentsSchema, validMessageGenerations } from "../workflow/message-contracts.ts";
@@ -35,6 +36,7 @@ import {
   RequestId,
   OperationId,
   ChangeName,
+  SpecSchemaName,
   PullRequestUrl,
   Timestamp,
   Fingerprint,
@@ -76,6 +78,7 @@ import {
   QualityFields,
   QualityProfile,
   QualityReceipt,
+  PlanApprovalSource,
 } from "../config/policy.ts";
 
 export const PolicySnapshotSchema = Schema.Struct({
@@ -84,6 +87,7 @@ export const PolicySnapshotSchema = Schema.Struct({
   verification: VerificationSchema,
   delivery: DeliveryPolicySchema,
   plan_approval: Schema.Boolean,
+  plan_approval_source: Schema.optional(PlanApprovalSource),
   merge_approval: Schema.Boolean,
   merge_method: MergeMethodSchema,
   ci_policy: CIPolicySchema,
@@ -130,6 +134,8 @@ const fields = {
   feedback: Schema.optional(FeedbackSchema),
   provisional: Schema.optional(ProvisionalSchema),
   quality_profile: Schema.optional(QualityProfile),
+  openspec_schema: Schema.optional(SpecSchemaName),
+  openspec_schema_binding: Schema.optional(SchemaBinding),
   rounds: Schema.optional(Schema.Array(RoundSchema)),
   planning_base_commit: Schema.optional(Commit),
   openspec_update_commit: Schema.optional(Commit),

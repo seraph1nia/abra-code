@@ -11,3 +11,9 @@ The database uses WAL, foreign keys, full synchronous commits and a five-second 
 ## Backup
 
 Stop the service before copying the database, or use SQLite’s online backup API for a live copy. A live database may have committed content in its `-wal` file; copying only the main file can lose it. Back up native OpenCode storage and worktrees alongside the work database so execution relationships and filesystem evidence remain consistent. Keep `.abracode` private.
+
+## OpenSpec planning choices
+
+Full-openspec creation accepts an optional kebab-case `openspec_schema` and an affirmative `require_plan_approval: true`. The schema is selected at the owned worktree before Explore; omitting it follows that repository’s default for a new execution. Other workflows reject these choices, and `false` is not an approval override. Single and atomic batch request identities retain both optional fields, so changing/removing a supplied choice requires a new request ID.
+
+Work database version 7 adds nullable schema/approval columns without rewriting historical `request_input` or batch receipt JSON. Existing omitted fields remain omitted, preserving old retry identities. Upgrade is additive; unsupported future versions are refused rather than downgraded. The native execution record captures effective approval policy separately before worker admission.

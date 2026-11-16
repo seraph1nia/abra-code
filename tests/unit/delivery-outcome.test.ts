@@ -1,4 +1,4 @@
-import { section, stateLabel } from "../../src/visibility/presentation.ts";
+import { section, stateLabel } from "../../src/presentation/work-state.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Effect, Schema } from "effect";

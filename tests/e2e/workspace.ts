@@ -1,15 +1,19 @@
+import { DecisionsSchema } from "../../src/web/http-api.ts";
+import { MessagesPageSchema, FeedbackPageSchema } from "../../src/web/wire.ts";
+import { WorkerHistoryPageSchema } from "../../src/web/worker-history.ts";
+import { DocumentArtifactSchema } from "../../src/web/wire.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Disposable native API and Effect HTTP/AG-UI acceptance. */
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { mkdir } from "node:fs/promises";
-import { Effect, Exit, Scope } from "effect";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { Effect, Exit, Scope, Schema } from "effect";
 import { OpenCode } from "@opencode/client";
 import type { Endpoint } from "@opencode/client/effect/service";
-import { AbsolutePath } from "../../src/identities.ts";
+import { AbsolutePath, IssueId, RequestId, ContentHash } from "../../src/identities.ts";
 import { NativeWebBackend } from "../../src/web/backend.ts";
 import { workspaceServer } from "../../src/web/server.ts";
 import { catalogId } from "../../src/web/surfaces.ts";
-import { launchReportBrowser } from "../../templates/reporter/scripts/browser.ts";
+import { launchReportBrowser } from "../../apps/report/scripts/browser.ts";
 
 type Native = ReturnType<typeof OpenCode.make>;
 export async function workspaceJourney(input: {
@@ -18,6 +22,8 @@ export async function workspaceJourney(input: {
   session: string;
   endpoint: Endpoint;
   client: Native;
+  restart: () => Promise<void>;
+  providerCount: () => number;
   readStatus: (id: string) => Promise<any>;
   evidence?: string;
 }) {
@@ -40,8 +46,10 @@ export async function workspaceJourney(input: {
     await page.goto(web.origin);
     await page.getByRole("textbox", { name: "Message Abra" }).waitFor();
     let ordinal = 0;
-    async function command(tool: string, args: Record<string, unknown>) {
-      const text = `AbraCode workspace operation ${JSON.stringify({ tool, args, ordinal: ++ordinal })}`;
+    async function command(tool: string, args: Record<string, unknown>, question?: string) {
+      const text =
+        question ??
+        `AbraCode workspace operation ${JSON.stringify({ tool, args, ordinal: ++ordinal })}`;
       await page.getByRole("textbox", { name: "Message Abra" }).fill(text);
       await page.getByRole("button", { name: "Send message", exact: true }).click();
       const deadline = Date.now() + 30000;
@@ -99,6 +107,46 @@ export async function workspaceJourney(input: {
       request_id: "workspace-intake",
     });
     const issue = created.issue.id as string;
+    const answer = await command("abra_work_list", {}, "What AbraCode work is currently retained?");
+    assert.ok(answer.issues.some((item: { id: string }) => item.id === issue));
+    await page
+      .locator('[data-tool-call-id] [data-presentation="task"]')
+      .filter({ hasText: "Browser implementation acceptance" })
+      .last()
+      .waitFor();
+    const observed = (await Effect.runPromise(backend.snapshot)).messages.find((message) =>
+      message.tools?.some(
+        (tool) =>
+          tool.name === "abra_work_create" &&
+          tool.presentation?.kind === "tasks" &&
+          tool.presentation.tasks.some((task) => task.issue_id === issue),
+      ),
+    );
+    assert.ok(observed, "Native tool result must have a typed task presentation");
+    const observedCall = observed.tools!.find((tool) => tool.name === "abra_work_create")!;
+    const nativeCard = () =>
+      page.locator(
+        `[data-native-message-id="${observed.id}"] [data-tool-call-id="${observedCall.id}"] [data-presentation="task"]`,
+      );
+    await nativeCard().getByRole("button", { name: "Inspect task", exact: true }).waitFor();
+    const userMessages = (await input.client.session.context({ sessionID: input.session })).filter(
+      (message) => message.type === "user",
+    ).length;
+    await nativeCard().getByRole("button", { name: "Inspect task", exact: true }).click();
+    await page.getByRole("tab", { name: "Overview", exact: true }).waitFor();
+    assert.equal(
+      (await input.client.session.context({ sessionID: input.session })).filter(
+        (message) => message.type === "user",
+      ).length,
+      userMessages,
+      "Read-only card inspection must not admit native prompts",
+    );
+    await page.reload();
+    await nativeCard().waitFor();
+    assert.equal(
+      await nativeCard().locator("xpath=ancestor::*[@data-native-renderer='copilotkit']").count(),
+      1,
+    );
     await command("abra_render_ui", {
       surface: {
         version: "1.0",
@@ -113,15 +161,119 @@ export async function workspaceJourney(input: {
         },
       },
     });
-    await page.getByRole("button", { name: /Work views/ }).click();
     await page.getByText("Native workspace coding journey", { exact: true }).waitFor();
+    assert.equal(await page.locator('[data-a2ui-renderer="upstream"]').count(), 1);
+    const widgets = [
+      "WorkTable",
+      "StatusSummary",
+      "Kanban",
+      "DependencyGraph",
+      "Timeline",
+      "DecisionSummary",
+    ];
+    await command("abra_render_ui", {
+      surface: {
+        version: "1.0",
+        createSurface: {
+          surfaceId: "workspace-board",
+          catalogId,
+          components: [
+            {
+              id: "root",
+              component: "Column",
+              children: ["heading", "views", "report", "changes"],
+            },
+            { id: "heading", component: "Text", text: "Revised upstream work view" },
+            { id: "views", component: "Row", children: widgets.map((_, i) => `widget${i}`) },
+            ...widgets.map((component, i) => ({
+              id: `widget${i}`,
+              component,
+              issueIds: [issue],
+              mode: i % 2 ? "snapshot" : "live",
+            })),
+            { id: "report", component: "ReportLink", issueId: issue },
+            {
+              id: "changes",
+              component: "ResourceLink",
+              label: "Inspect execution changes",
+              target: { action: "open_changes", issue_id: issue },
+            },
+          ],
+        },
+      },
+    });
+    await page.getByText("Revised upstream work view", { exact: true }).waitFor();
+    assert.ok(
+      (await Effect.runPromise(backend.snapshot)).surfaces.every((entry) => !("surface" in entry)),
+      "Native workspace feeds carry compact surface references, never layout/data bodies",
+    );
+    await page
+      .locator('[data-surface-reference="workspace-board/1"]')
+      .getByText("Native workspace coding journey", { exact: true })
+      .waitFor();
+    assert.equal(await page.locator(".generated-surface").count(), 2);
+    assert.equal(
+      await page.locator('[data-surface-reference="workspace-board/2"] .surface-widget').count(),
+      8,
+    );
+    await page.reload();
+    await page.getByText("Revised upstream work view", { exact: true }).waitFor();
+    assert.equal(await page.locator(".generated-surface").count(), 2);
+    const beforeNavigation = (
+      await input.client.session.context({ sessionID: input.session })
+    ).filter((message) => message.type === "user").length;
+    await page.getByRole("button", { name: "Inspect execution changes", exact: true }).click();
+    await page.getByRole("tab", { name: "Diff", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Open retained reports ↗", exact: true }).click();
+    await page.getByRole("tab", { name: "Reports", exact: true }).waitFor();
+    assert.equal(
+      (await input.client.session.context({ sessionID: input.session })).filter(
+        (message) => message.type === "user",
+      ).length,
+      beforeNavigation,
+      "Trusted A2UI links must not admit prompts",
+    );
+    await assert.rejects(
+      command("abra_render_ui", {
+        surface: {
+          version: "1.0",
+          createSurface: {
+            surfaceId: "workspace-board",
+            catalogId,
+            components: [
+              {
+                id: "root",
+                component: "ResourceLink",
+                label: "Foreign session",
+                target: { action: "open_session", issue_id: issue, session_id: input.session },
+              },
+            ],
+          },
+        },
+      }),
+      /retained execution|does not own/i,
+    );
+    assert.ok(
+      !("unavailable" in (await Effect.runPromise(backend.surface("workspace-board", 2)))),
+      "Rejected link publication preserves the previous immutable revision",
+    );
     if (input.evidence) {
       await mkdir(input.evidence, { recursive: true });
       await page.screenshot({ path: join(input.evidence, "native-work-view.png"), fullPage: true });
     }
-    await page.getByRole("button", { name: "Conversation", exact: true }).click();
     await command("abra_work_start", { issue_id: issue });
     const approved = new Set<string>();
+    let savedReport: { request_id: string; hash: string; url: string } | undefined;
+    let exportedReport:
+      | {
+          request_id: string;
+          document_hash: string;
+          exporter_hash: string;
+          hash: string;
+          bytes: number;
+        }
+      | undefined;
+    let composedReport: { request_id: string; hash: string } | undefined;
     const deadline = Date.now() + 120000;
     let lastAdvance = 0;
     while (Date.now() < deadline) {
@@ -131,6 +283,124 @@ export async function workspaceJourney(input: {
         assert.equal(status.issue.status, "closed");
         assert.equal(status.outcome.cleanup.state, "retired");
         assert.equal(status.outcome.closure, "closed");
+        assert.ok(savedReport);
+        assert.ok(composedReport);
+        assert.ok(exportedReport);
+        await input.restart();
+        await page.goto(savedReport.url);
+        await page.locator(".frozen-report").waitFor();
+        const restored = Schema.decodeUnknownSync(DocumentArtifactSchema)(
+          await Effect.runPromise(
+            backend.read("artifact-document", {
+              issue_id: issue,
+              request_id: savedReport.request_id,
+              hash: savedReport.hash,
+            }),
+          ),
+        );
+        assert.equal(
+          JSON.parse(restored.json).data.work.find(
+            (work: { issue_id: string }) => work.issue_id === issue,
+          ).phase,
+          "awaiting_plan_approval",
+        );
+        const restoredExport = await Effect.runPromise(
+          backend.readExport({
+            issue_id: IssueId.make(issue),
+            request_id: RequestId.make(exportedReport.request_id),
+            hash: ContentHash.make(exportedReport.document_hash),
+            exporter_hash: ContentHash.make(exportedReport.exporter_hash),
+          }),
+        );
+        assert.equal(restoredExport.hash, exportedReport.hash);
+        assert.equal(restoredExport.bytes, exportedReport.bytes);
+        await page
+          .locator(".report-revision")
+          .filter({ hasText: "Native composed evidence" })
+          .getByRole("button", { name: "Preview", exact: true })
+          .click();
+        await page.locator('[data-report-section="checks"]').waitFor();
+        assert.match(await page.locator('[data-report-section="checks"]').innerText(), /not run/);
+        assert.doesNotMatch(
+          await page.locator('[data-report-section="checks"]').innerText(),
+          /passed/,
+        );
+        const worker = state.apply_session_id as string;
+        assert.ok(worker, "Completed work retains its implementation session identity");
+        const transcript = Schema.decodeUnknownSync(WorkerHistoryPageSchema)(
+          await Effect.runPromise(
+            backend.read("worker-history", { issue_id: issue, session_id: worker }),
+          ),
+        );
+        assert.equal(transcript.session_id, worker);
+        assert.ok(transcript.messages.length > 0, "Retired native worker history remains readable");
+        assert.ok(transcript.messages.length <= 8);
+        if (transcript.older) {
+          const earlier = Schema.decodeUnknownSync(WorkerHistoryPageSchema)(
+            await Effect.runPromise(
+              backend.read("worker-history", {
+                issue_id: issue,
+                session_id: worker,
+                cursor: transcript.older,
+              }),
+            ),
+          );
+          assert.equal(earlier.session_id, worker);
+          assert.ok(
+            !earlier.messages.some((message) =>
+              transcript.messages.some((current) => current.id === message.id),
+            ),
+          );
+        }
+        await assert.rejects(
+          Effect.runPromise(
+            backend.read("worker-history", {
+              issue_id: issue,
+              session_id: worker,
+              cursor: "forged-history-cursor",
+            }),
+          ),
+          /not issued/,
+        );
+        await assert.rejects(
+          Effect.runPromise(
+            backend.read("worker-history", { issue_id: issue, session_id: input.session }),
+          ),
+          /own|selection|resource/i,
+        );
+
+        const inspectionsBefore = input.providerCount();
+        const decisions = Schema.decodeUnknownSync(DecisionsSchema)(
+          await Effect.runPromise(backend.read("decisions", { issue_id: issue })),
+        );
+        const communication = Schema.decodeUnknownSync(MessagesPageSchema)(
+          await Effect.runPromise(backend.read("messages", { issue_id: issue })),
+        );
+        const checks = Schema.decodeUnknownSync(FeedbackPageSchema)(
+          await Effect.runPromise(backend.read("feedback", { issue_id: issue })),
+        );
+        assert.ok(Array.isArray(decisions.decisions));
+        assert.ok(communication.total >= communication.entries.length);
+        assert.ok(checks.finding_total >= checks.findings.length);
+        await page.getByRole("tab", { name: "Activity", exact: true }).click();
+        await page.getByRole("heading", { name: "Worker transcript", exact: true }).waitFor();
+        await page.getByLabel("Read-only worker session", { exact: true }).selectOption(worker);
+        await page.getByRole("tab", { name: "Communication", exact: true }).click();
+        await page.getByRole("navigation", { name: "Communication pages", exact: true }).waitFor();
+        await page.getByRole("tab", { name: "Reviews & checks", exact: true }).click();
+        await page.getByRole("heading", { name: "Reviews & checks", exact: true }).waitFor();
+        await page
+          .getByRole("navigation", { name: "Review and check pages", exact: true })
+          .waitFor();
+        assert.equal(
+          await page.getByRole("textbox", { name: "Message Abra", exact: true }).count(),
+          1,
+        );
+        assert.equal(
+          input.providerCount(),
+          inspectionsBefore,
+          "Owned evidence inspection must not admit a provider turn",
+        );
         if (input.evidence)
           await page.screenshot({
             path: join(input.evidence, "native-completed.png"),
@@ -144,6 +414,18 @@ export async function workspaceJourney(input: {
           commands: ordinal,
           interface: "copilotkit-v2/ag-ui/a2ui-1.0",
           native_session_id: input.session,
+          stale_plan_reply_refused: true,
+          pending_native_form_recreated_after_restart: true,
+          saved_json_report: savedReport,
+          composed_json_report: composedReport,
+          exported_html_report: exportedReport,
+          export_reopened_after_native_restart: true,
+          typed_native_evidence_inspection: {
+            decisions: decisions.decisions.length,
+            communication: communication.total,
+            findings: checks.finding_total,
+            provider_calls: 0,
+          },
         };
       }
       assert.notEqual(
@@ -166,10 +448,185 @@ export async function workspaceJourney(input: {
       if (kind && workersIdle && !approved.has(kind)) {
         const requested = await command("abra_work_approve", { issue_id: issue, kind });
         if (requested.category === "operation_in_progress") continue;
+        if (kind === "plan") {
+          const checkpoint = (await Effect.runPromise(backend.snapshot)).forms.find(
+            (item) => item.checkpoint?.issue_id === issue && item.checkpoint.kind === kind,
+          );
+          assert.ok(checkpoint?.active, "The native plan form is bound to the current checkpoint");
+          const proposal = join(
+            state.worktree_directory,
+            "openspec/changes",
+            state.openspec_change,
+            "proposal.md",
+          );
+          const captured = await readFile(proposal);
+          try {
+            await writeFile(
+              proposal,
+              Buffer.concat([captured, Buffer.from("\nChanged after approval request.\n")]),
+            );
+            await assert.rejects(
+              Effect.runPromise(
+                backend.replyForm({
+                  id: checkpoint.form.id,
+                  binding: checkpoint.binding,
+                  answer: {},
+                }),
+              ),
+              /checkpoint changed/i,
+            );
+            assert.equal(
+              (
+                await input.client.session.form.get({
+                  sessionID: input.session,
+                  formID: checkpoint.form.id,
+                })
+              ).state.status,
+              "pending",
+            );
+          } finally {
+            await writeFile(proposal, captured);
+          }
+          assert.ok(
+            (await Effect.runPromise(backend.snapshot)).forms.find(
+              (item) => item.form.id === checkpoint.form.id,
+            )?.active,
+          );
+          await input.restart();
+          await page.reload();
+          await page.getByRole("textbox", { name: "Message Abra" }).waitFor();
+          await command("abra_work_approve", { issue_id: issue, kind });
+          assert.ok(
+            (await Effect.runPromise(backend.snapshot)).forms.find(
+              (item) => item.form.id === checkpoint.form.id,
+            )?.active,
+            "Recreated native form keeps the current checkpoint identity",
+          );
+          await page.getByRole("tab", { name: "Overview", exact: true }).click();
+          await page
+            .getByRole("button", { name: "Review current plan approval", exact: true })
+            .click();
+          await assert.rejects(
+            Effect.runPromise(
+              backend.saveSurface({
+                issue_id: IssueId.make(issue),
+                request_id: RequestId.make("stale-surface-save"),
+                surface_id: "workspace-board",
+                revision: 1,
+              }),
+            ),
+            /revision changed/i,
+          );
+          const producingView = page.locator('[data-surface-reference="workspace-board/2"]');
+          const beforeSave = (
+            await input.client.session.context({ sessionID: input.session })
+          ).filter((message) => message.type === "user").length;
+          const providerBeforeSave = input.providerCount();
+          const saveResponse = page.waitForResponse(
+            (response) => response.url() === `${web.origin}/api/report/save-surface`,
+          );
+          await producingView.getByRole("button", { name: "Save snapshot", exact: true }).click();
+          const response = await saveResponse;
+          assert.equal(response.status(), 200, await response.text());
+          const artifact = await response.json();
+          assert.equal(artifact.format, "a2ui-snapshot");
+          await producingView
+            .getByRole("button", { name: "Open saved report", exact: true })
+            .click();
+          await page.locator(".frozen-report").waitFor();
+          savedReport = { request_id: artifact.request_id, hash: artifact.hash, url: page.url() };
+          const download = page.getByRole("link", {
+            name: "Download selected JSON ↗",
+            exact: true,
+          });
+          const json = await (
+            await fetch(new URL((await download.getAttribute("href"))!, web.origin))
+          ).json();
+          assert.equal(json.provenance.source_surface.revision, 2);
+          assert.equal(
+            json.data.work.find((work: any) => work.issue_id === issue).phase,
+            "awaiting_plan_approval",
+          );
+          assert.equal(
+            json.data.snapshot_work.find((work: any) => work.issue_id === issue).issue_status,
+            "open",
+          );
+          assert.equal(
+            (await input.client.session.context({ sessionID: input.session })).filter(
+              (message) => message.type === "user",
+            ).length,
+            beforeSave,
+            "Saving/opening a snapshot must not admit a native prompt",
+          );
+          await input.client.session.wait({ sessionID: input.session });
+          assert.equal(
+            input.providerCount(),
+            providerBeforeSave,
+            "Saving/opening a snapshot must not call the provider",
+          );
+          const exportResponse = page.waitForResponse(
+            (response) => response.url() === `${web.origin}/api/report/export`,
+          );
+          await page.getByRole("button", { name: "Export offline HTML", exact: true }).click();
+          const exported = await exportResponse;
+          assert.equal(exported.status(), 200, await exported.text());
+          const exportReceipt = await exported.json();
+          exportedReport = { ...exportReceipt, request_id: artifact.request_id };
+          assert.equal(exportReceipt.document_hash, artifact.hash);
+          const exportDownload = page.getByRole("link", {
+            name: "Download exported HTML ↗",
+            exact: true,
+          });
+          const downloaded = await fetch(
+            new URL((await exportDownload.getAttribute("href"))!, web.origin),
+          );
+          assert.match(downloaded.headers.get("content-disposition") ?? "", /attachment/);
+          const exportedHTML = await downloaded.text();
+          assert.equal(Buffer.byteLength(exportedHTML), exportReceipt.bytes);
+          assert.ok(exportReceipt.bytes < 8 * 1024 * 1024);
+          assert.deepEqual(
+            await Effect.runPromise(
+              backend.exportDocument({
+                issue_id: IssueId.make(issue),
+                request_id: RequestId.make(artifact.request_id),
+                hash: ContentHash.make(artifact.hash),
+              }),
+            ),
+            exportReceipt,
+          );
+          await page.getByRole("button", { name: "Preview exported HTML", exact: true }).click();
+          await page
+            .frameLocator('iframe[title="Offline HTML export"]')
+            .getByRole("heading", { name: json.title, exact: true })
+            .waitFor();
+          await page.getByRole("button", { name: "Close HTML preview", exact: true }).click();
+          assert.equal(
+            input.providerCount(),
+            providerBeforeSave,
+            "Explicit HTML export must not call the provider",
+          );
+          const composed = await command("abra_work_report", {
+            issue_id: issue,
+            action: "generate",
+            request_id: "native-composed-report",
+            title: "Native composed evidence",
+          });
+          assert.equal(composed.format, "a2ui-snapshot");
+          assert.equal(composed.source_attachment, "associated");
+          assert.equal(composed.notify_session, undefined);
+          assert.equal(composed.notices, undefined);
+          composedReport = {
+            request_id: composed.request.request_id,
+            hash: composed.artifact.hash,
+          };
+          await page.reload();
+          await page.locator(".frozen-report").waitFor();
+          await page.getByRole("button", { name: "Close inspector", exact: true }).click();
+        }
         const forms = page
-          .locator("form.attention-card")
+          .locator(".attention-card")
           .filter({ has: page.getByText(new RegExp(`Authorize ${kind} for ${issue}`)) });
-        await forms.getByLabel("Authorize this exact checkpoint").check();
+        await forms.getByRole("checkbox", { name: /Authorize this exact checkpoint/ }).check();
         const submit = forms.getByRole("button", { name: "Submit checkpoint decision" });
         assert.equal(await submit.isEnabled(), true, await forms.innerText());
         try {

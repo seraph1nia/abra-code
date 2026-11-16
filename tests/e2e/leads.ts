@@ -1,3 +1,8 @@
+import * as Id from "../../src/identities.ts";
+import type {
+  LeadEvidenceQuery,
+  LeadEvidencePageSchema,
+} from "../../src/visibility/lead-observation.ts";
 import assert from "node:assert/strict";
 import { repo } from "../fixtures.ts";
 import { run } from "../effects.ts";
@@ -17,6 +22,9 @@ export async function leadJourney(o: {
   releaseResearch: () => void;
   observe: (value: unknown) => void;
   snapshot: () => Promise<WorkSnapshot>;
+  leadEvidence: (
+    query: typeof LeadEvidenceQuery.Type,
+  ) => Promise<typeof LeadEvidencePageSchema.Type>;
 }) {
   const path = await run(repo(o.root, "lead-base"));
   await o.invoke("abra_project_onboard", {
@@ -194,8 +202,37 @@ export async function leadJourney(o: {
     ).length,
     1,
   );
+  const projection = () =>
+    o.leadEvidence({ issue_id: Id.IssueId.make(issue.id), lead_id: Id.LeadId.make(lead.id) });
+  const leadInputs = (await o.client.session.context({ sessionID: lead.session_id })).filter(
+    (message: any) => message.type === "user",
+  ).length;
+  const projected = await projection();
+  assert.equal(projected.detail?.proposals[0]?.accepted, false);
+  assert.equal(
+    projected.detail?.requests[0]?.reply?.body,
+    "Native project-lead correlated findings retained.",
+  );
+  assert.ok(
+    (await o.snapshot()).management?.entries.some(
+      (entry) => entry.lead_id === lead.id && entry.proposals > 0,
+    ),
+  );
+  await assert.rejects(
+    o.leadEvidence({
+      issue_id: Id.IssueId.make(privateIssue.id),
+      lead_id: Id.LeadId.make(lead.id),
+    }),
+  );
+  assert.equal(
+    (await o.client.session.context({ sessionID: lead.session_id })).filter(
+      (message: any) => message.type === "user",
+    ).length,
+    leadInputs,
+  );
   await o.restart();
   const retained = await status();
+  assert.deepEqual((await projection()).detail?.proposals, projected.detail?.proposals);
   assert.equal(retained.session_id, lead.session_id);
   assert.equal(retained.requests[0].request.prompt_id, answered.requests[0].request.prompt_id);
   assert.deepEqual(retained.proposals, answered.proposals);
@@ -394,6 +431,21 @@ export async function leadJourney(o: {
   assert.equal(disabledProjection.state, "disabled");
   assert.equal(disabledProjection.enabled, false);
   assert.ok(disabledProjection.latest_outcome);
+  const disabledEvidence = await projection();
+  assert.equal(disabledEvidence.entries[0]?.enabled, false);
+  assert.ok(disabledEvidence.detail?.requests.some((request) => request.reply));
+  assert.ok(disabledEvidence.detail?.proposals.some((proposal) => proposal.accepted));
+  o.observe({
+    browser_lead_evidence: {
+      source_issue: issue.id,
+      observed_requests: disabledEvidence.detail?.request_total,
+      proposals: disabledEvidence.detail?.proposal_total,
+      state: disabledEvidence.entries[0]?.state,
+      read_after_restart: true,
+      foreign_scope_refused: true,
+    },
+  });
+
   return {
     feature: "persistent-project-leads",
     result: "pass",

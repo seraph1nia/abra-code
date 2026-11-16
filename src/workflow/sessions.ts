@@ -1,3 +1,4 @@
+import type { OpenSpec } from "../openspec/adapter.ts";
 import { WorkerContexts, readWorkerContext } from "./worker-context.ts";
 import { Messages } from "./messages.ts";
 import {
@@ -55,6 +56,7 @@ export class WorkerSessions {
     private coordination: Coordination,
     private queries: Queries,
     private git: Git,
+    private spec: OpenSpec,
     attention: AttentionService,
   ) {
     this.contexts = new WorkerContexts(records, config);
@@ -305,6 +307,7 @@ export class WorkerSessions {
           "Return external branch custody before admitting a native writer or changing its scope",
         );
       yield* this.idle(e);
+      if (e.workflow_policy === "full-openspec") yield* this.spec.assertSchema(e);
       const project = yield* this.project(e);
       if (!(yield* this.capacity.reserve(e, role, project))) return;
       const environment = yield* this.runtime.preflight(e, role).pipe(

@@ -1,7 +1,8 @@
 import { Schema } from "effect";
 import { Count } from "../contracts.ts";
-import { IssueId, RepositoryId, Timestamp } from "../identities.ts";
+import { RepositoryId, Timestamp } from "../identities.ts";
 import { type WorkItem } from "./protocol.ts";
+import { TaskAttentionSchema, taskAttention } from "./attention.ts";
 
 export const fleetStates = [
   "running",
@@ -26,15 +27,19 @@ export const FleetSchema = Schema.Struct({
   native_observed: Count,
   native_total: Count,
   repositories: Schema.Array(
-    Schema.Struct({ repository_id: Schema.optional(RepositoryId), counts }),
+    Schema.Struct({
+      repository_id: Schema.optional(RepositoryId),
+      counts,
+      attention_total: Schema.optional(Count),
+    }),
   ),
   completed_today: Count,
   day_start: Timestamp,
   day_end: Timestamp,
   timezone: Schema.String,
-  attention: Schema.Array(
-    Schema.Struct({ issue_id: IssueId, title: Schema.String, reason: Schema.String }),
-  ),
+  attention: Schema.Array(TaskAttentionSchema).check(Schema.isMaxLength(100)),
+  attention_total: Schema.optional(Count),
+  attention_truncated: Schema.optional(Schema.Boolean),
 });
 
 /** Local calendar boundaries include the host's daylight-saving transitions. */
@@ -128,16 +133,20 @@ export function fleetCounts(work: readonly WorkItem[]) {
   return result;
 }
 export function fleetRepositories(work: readonly WorkItem[]) {
-  const groups = new Map<WorkItem["repository_id"], ReturnType<typeof fleetCounts>>();
+  const groups = new Map<
+    WorkItem["repository_id"],
+    { counts: ReturnType<typeof fleetCounts>; attention_total: number }
+  >();
   for (const item of work) {
-    let counts = groups.get(item.repository_id);
-    if (!counts) {
-      counts = fleetCounts([]);
-      groups.set(item.repository_id, counts);
+    let group = groups.get(item.repository_id);
+    if (!group) {
+      group = { counts: fleetCounts([]), attention_total: 0 };
+      groups.set(item.repository_id, group);
     }
-    counts[fleetState(item)]++;
+    group.counts[fleetState(item)]++;
+    group.attention_total += taskAttention(item).length;
   }
   return [...groups]
     .sort(([a], [b]) => (a ?? "").localeCompare(b ?? ""))
-    .map(([repository_id, counts]) => ({ repository_id, counts }));
+    .map(([repository_id, group]) => ({ repository_id, ...group }));
 }

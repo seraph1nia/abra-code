@@ -50,8 +50,8 @@ export const untrackedDiff = Effect.fn("Visibility.untrackedDiff")(function* (
       continue;
     }
     const patch = structuredPatch(
-      previous ? JSON.stringify(`a/${name}`) : "/dev/null",
-      JSON.stringify(`b/${name}`),
+      previous ? `a/${name}` : "/dev/null",
+      `b/${name}`,
       before,
       content,
       undefined,
@@ -72,7 +72,16 @@ export const untrackedDiff = Effect.fn("Visibility.untrackedDiff")(function* (
     });
     patches.set(
       name,
-      patch.hunks.length ? { patch: formatPatch(patch) } : { message: "Empty file added." },
+      patch.hunks.length
+        ? {
+            patch: formatPatch({
+              ...patch,
+              isGit: true,
+              isCreate: !previous,
+              newMode: stat.mode & 0o111 ? "100755" : "100644",
+            }),
+          }
+        : { message: "Empty file added." },
     );
   }
   return { files: [...files.values()], patches };

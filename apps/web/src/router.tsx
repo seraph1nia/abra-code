@@ -1,10 +1,12 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet } from "@tanstack/react-router";
 import { Application } from "./workspace.tsx";
+import { workspaceSearch } from "./navigation.ts";
 
 const rootRoute = createRootRoute({ component: Outlet });
 const workspaceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
+  validateSearch: workspaceSearch,
   component: Application,
 });
 export const router = createRouter({

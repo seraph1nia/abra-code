@@ -1,3 +1,4 @@
+import { parseDiffPatch } from "../../apps/web/src/diff-patch.ts";
 import * as Id from "../../src/identities.ts";
 import { applyPatch } from "diff";
 import { test } from "vite-plus/test";
@@ -8,7 +9,7 @@ import { run } from "../effects.ts";
 import { fixture, planned } from "../fixtures.ts";
 import { Visibility } from "../../src/visibility/read-model.ts";
 import { visibility, type WorkItem } from "../../src/visibility/protocol.ts";
-import { section } from "../../src/visibility/presentation.ts";
+import { section } from "../../src/presentation/work-state.ts";
 
 test("ticket diff covers commits, staged, unstaged and untracked files without mutating the index", async (t) => {
   const f = await run(fixture);
@@ -32,8 +33,19 @@ test("ticket diff covers commits, staged, unstaged and untracked files without m
   assert.ok(all.files.some((file) => file.path.endsWith("proposal.md")));
   const local = await run(view.diff(e.issue_id, "uncommitted", Id.RelativePath.make("source.txt")));
   assert.match(local.patch!, /-committed\n\+working/);
+  assert.equal(parseDiffPatch(local.patch!).length, 1);
   const added = await run(view.diff(e.issue_id, "all", Id.RelativePath.make("new.ts")));
   assert.match(added.patch!, /\+export const added = true;/);
+  assert.equal(parseDiffPatch(added.patch!).length, 1);
+  const collection = await run(view.diff(e.issue_id, "all"));
+  assert.equal(collection.file, undefined);
+  const rendered = parseDiffPatch(collection.patch!);
+  assert.ok(
+    rendered.some((file) => file.name === "new.ts"),
+    JSON.stringify(rendered.map((file) => file.name)),
+  );
+  assert.ok(rendered.some((file) => file.name === "source.txt"));
+  assert.ok(Buffer.byteLength(collection.patch!) <= 64 * 1024);
   assert.deepEqual(await readFile(index), before);
   assert.ok("value" in (await visibility.methods.diff.output["~standard"].validate(added)));
   assert.equal(
@@ -61,6 +73,16 @@ test("diff handles deletion, binary data, bounded patches and escaping untracked
   const large = await run(view.diff(e.issue_id, "all", Id.RelativePath.make("source.txt")));
   assert.equal(large.patch, undefined);
   assert.match(large.message!, /64 KiB/);
+  await writeFile(join(tree, 'a "quoted" é.ts'), "export const retained = true;\n");
+  const collection = await run(view.diff(e.issue_id, "all"));
+  assert.equal(collection.file, undefined);
+  assert.ok(collection.limited);
+  assert.ok(Buffer.byteLength(collection.patch!) <= 65536);
+  assert.ok(parseDiffPatch(collection.patch!).some((file) => file.name === 'a "quoted" é.ts'));
+  const individual = await run(
+    view.diff(e.issue_id, "all", Id.RelativePath.make('a "quoted" é.ts')),
+  );
+  assert.equal(parseDiffPatch(individual.patch!)[0]?.name, 'a "quoted" é.ts');
   const outside = join(f.root, "private.txt");
   await writeFile(outside, "unrelated-private-data");
   await symlink(outside, join(tree, "outside.md"));
