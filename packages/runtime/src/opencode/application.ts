@@ -1,4 +1,5 @@
 import { ExecutionRecovery } from "../workflow/execution-recovery.ts";
+import { Authorizations, CheckpointEvidence } from "../workflow/authorization.ts";
 import { WorkAdmission } from "../workflow/admission.ts";
 import { Advancement } from "../workflow/advancement.ts";
 import { WorkerContexts } from "../workflow/worker-context.ts";
@@ -64,7 +65,18 @@ export function createWorkflow(
   const scopes = new Scopes(records);
   const corrections = new Corrections(records, git, config);
   const reports = new Reports(config.home, records, git, locks, work, runtime.notify.bind(runtime));
-  const queries = new Queries(config, records, work, spec, git, runtime, (e) => reports.read(e));
+  const checkpoints = new CheckpointEvidence(git);
+  const authorizations = new Authorizations(records, runtime, checkpoints);
+  const queries = new Queries(
+    config,
+    records,
+    work,
+    spec,
+    git,
+    runtime,
+    (e) => reports.read(e),
+    checkpoints,
+  );
   const sessions = new WorkerSessions(
     config,
     records,
@@ -87,7 +99,7 @@ export function createWorkflow(
     (a, s) => advancement.createWorkBatch(a, s),
     (a, s) => advancement.workMessage(a, s),
   );
-  const checks = new CodingChecks(records, git, spec, sessions, coordination, queries);
+  const checks = new CodingChecks(records, git, spec, sessions, coordination, queries, checkpoints);
   const transitions = new ExecutionTransitions(
     records,
     work,
@@ -164,6 +176,8 @@ export function createWorkflow(
   );
   const recovery = new ExecutionRecovery(
     {
+      authorizations,
+      checkpoints,
       config,
       records,
       work,
@@ -190,6 +204,8 @@ export function createWorkflow(
     },
   );
   advancement = new Advancement({
+    authorizations,
+    checkpoints,
     recovery,
     admission,
     records,

@@ -1,6 +1,7 @@
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import { readReportDocument } from "@abracode/contracts/presentation/report-document";
-import { createDiagramRenderer } from "./diagrams.ts";
+import { diagramPreparer } from "./preparation.ts";
+import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
 
 /** Trusted bounded preparation only; no application compilation or captured code. */
 const [input, output] = process.argv.slice(2);
@@ -11,16 +12,17 @@ if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024)
   throw Error("Captured document exceeds its regular-file bound");
 const document = readReportDocument(await readFile(input, "utf8"));
 if (!document.supported) throw Error(document.reason);
-const renderer = await createDiagramRenderer();
-try {
-  const prepared = [];
-  for (const diagram of document.document.data.evidence?.diagrams ?? []) {
-    const svg = await renderer.render(diagram.source);
-    prepared.push({ source: diagram.source, svg });
-    if (Buffer.byteLength(JSON.stringify(prepared)) > 8 * 1024 * 1024)
-      throw Error("Prepared diagrams exceed the portable artifact bound");
-  }
-  await writeFile(output, JSON.stringify(prepared), { flag: "wx", mode: 0o600 });
-} finally {
-  await renderer.close();
-}
+const prepared = await diagramPreparer.prepare(
+  collectDiagrams(
+    document.document.surface.createSurface.components,
+    document.document.data.evidence,
+  ),
+);
+if (!prepared.verified)
+  throw Error(
+    prepared.results
+      .filter((r) => r.status !== "verified")
+      .map((r) => `${r.id}: ${r.status}: ${r.message}`)
+      .join("\n"),
+  );
+await writeFile(output, JSON.stringify(prepared.assets), { flag: "wx", mode: 0o600 });

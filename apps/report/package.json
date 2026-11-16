@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     "./browser": "./scripts/browser.ts",
-    "./diagrams": "./scripts/diagrams.ts"
+    "./diagrams": "./scripts/diagrams.ts",
+    "./preparation": "./scripts/preparation.ts"
   },
   "scripts": {
     "check": "tsc --noEmit"

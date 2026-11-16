@@ -1,3 +1,5 @@
+import { PrepareDiagramSelectionSchema } from "./diagram-actions.ts";
+import { DiagramPreparationSchema } from "../presentation/diagrams.ts";
 import { BindingReadQuery, BindingReadSchema } from "./bindings.ts";
 import { ReportExportSchema } from "../presentation/report-export-contract.ts";
 import { LeadEvidenceQuery, LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
@@ -106,6 +108,11 @@ const documentJSON = Schema.String.pipe(
 export const workspaceApi = HttpApi.make("abra-workspace")
   .add(
     HttpApiGroup.make("workspace").add(
+      HttpApiEndpoint.post("prepareDiagrams", "/api/diagrams/prepare", {
+        payload: PrepareDiagramSelectionSchema,
+        success: DiagramPreparationSchema,
+        error,
+      }),
       HttpApiEndpoint.get("surface", "/api/surface", {
         query: Schema.Struct({
           surface_id: ComponentId,

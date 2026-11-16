@@ -105,6 +105,8 @@ export function rendererManifest(installation: string): Plugin {
         "apps/report/scripts/renderer-manifest.ts",
         "apps/report/scripts/prepare-diagrams.ts",
         "apps/report/scripts/diagrams.ts",
+        "apps/report/scripts/preparation.ts",
+        "packages/contracts/src/presentation/diagrams.ts",
         "apps/report/scripts/mermaid-engine.ts",
         "apps/report/scripts/browser.ts",
         "apps/report/index.html",

@@ -1,3 +1,4 @@
+import { verifyDiagrams } from "./diagrams.ts";
 import { ReportExports } from "./report-exports.ts";
 import { ReactDocumentRenderer } from "./report-export.ts";
 import { IssueId, RequestId } from "../identities.ts";
@@ -103,6 +104,13 @@ export class Reports {
                     );
                 }
               const evidence = yield* decode(ReportEvidenceSchema, a, "Research publication input");
+              if (!e.report_receipt && !e.report_intent)
+                yield* verifyDiagrams(
+                  (evidence.diagrams ?? []).map((d, i) => ({
+                    id: `research-${i}`,
+                    source: d.source,
+                  })),
+                );
               const content = researchMarkdown(e, a.report_id, evidence);
               const bytes = Buffer.byteLength(content);
               if (!(bytes <= 65536))

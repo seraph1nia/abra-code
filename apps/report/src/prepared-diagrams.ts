@@ -6,7 +6,7 @@ function readPrepared(): readonly PreparedReportDiagram[] {
   const parsed: unknown = JSON.parse(json);
   if (
     !Array.isArray(parsed) ||
-    parsed.length > 8 ||
+    parsed.length > 32 ||
     !parsed.every(
       (item) =>
         item &&

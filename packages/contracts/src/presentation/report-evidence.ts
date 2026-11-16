@@ -1,3 +1,4 @@
+import { DiagramCollectionSchema, StoredDiagramCollectionSchema } from "./diagrams.ts";
 import { Schema } from "effect";
 
 const boundedText = (bytes: number) =>
@@ -66,7 +67,7 @@ const check = Schema.Struct({
 );
 
 /** Read-only presentation data. Identifiers and status labels never authorize controller actions. */
-export const ReportSnapshotSchema = Schema.Struct({
+export const LegacyReportSnapshotSchema = Schema.Struct({
   schema_version: Schema.Literal(1),
   issue_id: boundedText(256).check(Schema.isNonEmpty()),
   execution_id: boundedText(256).check(Schema.isNonEmpty()),
@@ -119,12 +120,24 @@ export const ReportSnapshotSchema = Schema.Struct({
       "Report snapshot exceeds 512 KiB",
   ),
 );
+export const ReportSnapshotSchema = Schema.Struct({
+  ...LegacyReportSnapshotSchema.fields,
+  diagrams: Schema.optional(StoredDiagramCollectionSchema),
+}).check(
+  Schema.makeFilter(
+    (value) =>
+      new TextEncoder().encode(JSON.stringify(value)).length <= 524288 ||
+      "Report snapshot exceeds 512 KiB",
+  ),
+);
 export type ReportSnapshot = typeof ReportSnapshotSchema.Type;
 export function validateSnapshot(input: unknown): ReportSnapshot {
-  return Schema.decodeUnknownSync(ReportSnapshotSchema, {
+  const value = Schema.decodeUnknownSync(ReportSnapshotSchema, {
     reportInput: false,
     onExcessProperty: "error",
   })(input);
+  if (value.diagrams) Schema.decodeSync(DiagramCollectionSchema)(value.diagrams);
+  return value;
 }
 /** For inert application/json script bodies, never executable authored code. */
 export function snapshotJSON(input: unknown): string {

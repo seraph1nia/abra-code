@@ -61,3 +61,11 @@ Use a new catalog ID/version and renderer compatibility identity for the compone
 Retain reproducible measurements for a 32-diagram mixed report/dashboard, a dense 100-node flowchart, a 50-message sequence, repeated sources, concurrent batches and over-budget failures. Require all 32 lightweight diagrams to prepare within the 60-second budget on the documented verification machine, no compiler activity on an identical warm request, and no duplicate in-flight compilation. Record elapsed time, peak memory, compiler launches and output bytes; cold compilation and cached viewing are separate observations. Verify app/portable behavior at 375/390 px, in light/dark themes and after restart/relocation, with no external requests or provider admissions.
 
 This does not add diagram editing, automatic factual verification, remote assets, executable Mermaid extensions, arbitrary dashboard code, or a global preference that adds diagrams to every response. Agent instructions should choose diagrams when requested or useful for the requested report/dashboard. Controller gates, independent Review and applicable human checkpoints remain required; this planning request does not admit implementation or authorize delivery.
+
+### Implementation decision: existing chat Markdown
+
+The user explicitly chose to preserve Streamdown's existing chat Markdown Mermaid rendering during Apply. Browser bundle verification therefore excludes the new report/catalog preparation compiler and tooling; it does not remove the pre-existing Markdown renderer's separate optional Mermaid dependency. This keeps the original proposal's boundary (new compiler stays out of app eager assets/portable runtime) without expanding scope to replace chat Markdown behavior.
+
+### Implementation decision: verification concurrency
+
+The new compiler-backed integration and native journeys exposed resource contention at the previous eight-worker test default: Git fixture timeouts and a native inspector stalled in its detail read while the correct approval form stayed active. The identical complete suite passed 694 tests with four workers. Bound the repository default to four workers (or available CPUs when fewer), preserve all assertions/projects and recheck the original standard command. This changes verification scheduling, not product limits or controller gates.

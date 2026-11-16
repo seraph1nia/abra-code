@@ -1,7 +1,7 @@
 {
   "version": 1,
   "distribution": "source clone; dependencies downloaded by the operator from their suppliers",
-  "lock_sha256": "9bf225135c1d5058d9d9f359f772d0988228ab6c1e8bb7c4a28806cc71fd1493",
+  "lock_sha256": "899698f7720a772b6c587c6fc0b22ac984a88a155a707d4bc406c203565aec81",
   "packages": [
     {
       "id": "@0no-co/graphql.web@1.3.4",
@@ -42,7 +42,7 @@
           "sha256": "8c8b5b632d56c4c1658296963c693db5396772a33caaddb9a22593c4155c437a"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "7a87abefcb5e6c26114870634e5b65ecd4cb55df3811ba95ebd73e0a1d7c7af2",
       "disposition": "reviewed: Apache-2.0 supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
     },
@@ -61,7 +61,7 @@
           "sha256": "8c8b5b632d56c4c1658296963c693db5396772a33caaddb9a22593c4155c437a"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "1d9c58eb5169be5ca13874883e5a0123a086634ebcdea465eecf177aafa8344f",
       "disposition": "reviewed: Apache-2.0 supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
     },
@@ -1780,6 +1780,7 @@
         }
       ],
       "uses": [
+        "application-runtime",
         "contributor-build",
         "report-artifact",
         "report-authoring-build",
@@ -1861,7 +1862,7 @@
           "sha256": "07fc1b39d69d14bc7d40482a628f47226258eb01265db68ae684944b916beb2a"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "08724775a4852770865c5de07757069080176cee45527af6bbe61946cd882fd6",
       "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },
@@ -1880,7 +1881,7 @@
           "sha256": "07fc1b39d69d14bc7d40482a628f47226258eb01265db68ae684944b916beb2a"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "3605ffa95095cc817175e4fb5a6fc34a48c6dae8752d966cccc0b828d9da4649",
       "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },
@@ -3252,7 +3253,7 @@
           "sha256": "0e4c9a9b6c71019cbbea3bdc20b01223110a9035700f9c960c8fcbf78c2325ce"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "38233b7e6044b2f6918a6938f7fca3a8b5f4b59c460d115a34f92e49266d68de",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -3273,7 +3274,7 @@
           "sha256": "0e4c9a9b6c71019cbbea3bdc20b01223110a9035700f9c960c8fcbf78c2325ce"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "00c6d3cc335637cc5cda2822542cba6a31c8a7f3e68eae37b8a68404820be37c",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -3294,7 +3295,7 @@
           "sha256": "0e4c9a9b6c71019cbbea3bdc20b01223110a9035700f9c960c8fcbf78c2325ce"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "4c2a7856521f6a0f50cd370cf09d6b83173d838bf9cc815f583c86e5c9c0d2b4",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -3315,7 +3316,7 @@
           "sha256": "0e4c9a9b6c71019cbbea3bdc20b01223110a9035700f9c960c8fcbf78c2325ce"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "4abb68be095bcdd26d0fb295004c80141c2b31f351f2e8f4f78891f4f0a740b5",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -9904,6 +9905,7 @@
         }
       ],
       "uses": [
+        "application-runtime",
         "contributor-build",
         "report-artifact",
         "report-authoring-build",
@@ -11768,7 +11770,7 @@
           "sha256": "de4d1f2d2ad5ad0cfd1657a106476b31cb5db5ef9d1ff842b237c0c81f0c8a23"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "f065152ac126ac2ddfdc3785825c2dc0d27a57432668d50e9690f38c972303e2",
       "disposition": "reviewed: Python-2.0 supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
     },
@@ -12795,7 +12797,7 @@
           "sha256": "0ccbf956cffc8dcf515809433cb5242ee67c94513d46e48c261d68d0880de406"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "dc134be7014c4e982960b0478278ceb013be454fc1955c57a3c3244f3dbec775",
       "disposition": "reviewed: Apache-2.0 supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -12886,7 +12888,7 @@
           "sha256": "9a9edad7baae52622bddf3c15b2ef8a33d2c89f2d25408ad13e8a7481c6b0c97"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "19db8ba7d424ba9c529c04e9df76d7f340a1cf2dc45625aefd00691fc9c85931",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -12982,7 +12984,7 @@
       "repository": "https://github.com/felixge/node-combined-stream",
       "author": {
         "url": "http://debuggable.com/",
-        "name": "Felix Geisendörfer",
+        "name": "Felix Geisend\u00f6rfer",
         "email": "felix@debuggable.com"
       },
       "registry": "https://registry.npmjs.org/combined-stream/1.0.8",
@@ -13399,7 +13401,7 @@
       "license": "MIT",
       "repository": "https://github.com/moxystudio/node-cross-spawn",
       "author": {
-        "name": "André Cruz",
+        "name": "Andr\u00e9 Cruz",
         "email": "andre@moxy.studio"
       },
       "registry": "https://registry.npmjs.org/cross-spawn/7.0.6",
@@ -14526,7 +14528,7 @@
       "repository": "https://github.com/felixge/node-delayed-stream",
       "author": {
         "url": "http://debuggable.com/",
-        "name": "Felix Geisendörfer",
+        "name": "Felix Geisend\u00f6rfer",
         "email": "felix@debuggable.com"
       },
       "registry": "https://registry.npmjs.org/delayed-stream/1.0.0",
@@ -14739,7 +14741,7 @@
           "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "9704fb33c7a0f9ca3a82f66407bc758187030d8226665c356d86fa3c65a754a8",
       "disposition": "reviewed: unmodified DOMPurify under the Apache-2.0 alternative; both supplier license texts retained in inventory and generated web-client notices"
     },
@@ -14930,7 +14932,7 @@
       "license": "EPL-2.0 OR GPL-3.0-or-later",
       "repository": "https://github.com/kieler/elkjs",
       "author": {
-        "name": "Ulf Rüegg",
+        "name": "Ulf R\u00fcegg",
         "email": "uruurumail@gmail.com"
       },
       "registry": "https://registry.npmjs.org/elkjs/0.12.1",
@@ -15093,7 +15095,7 @@
           "sha256": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "44e9ffcbbcfea40ed77359d7c5c734351e2254f9f2a45a0c8080c059bc17edf7",
       "disposition": "reviewed: BSD-2-Clause supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
     },
@@ -15954,7 +15956,7 @@
       "repository": "https://github.com/node-fetch/fetch-blob",
       "author": {
         "url": "https://jimmy.warting.se",
-        "name": "Jimmy Wärting",
+        "name": "Jimmy W\u00e4rting",
         "email": "jimmy@warting.se"
       },
       "registry": "https://registry.npmjs.org/fetch-blob/3.2.0",
@@ -16134,7 +16136,7 @@
       "repository": "https://github.com/form-data/form-data",
       "author": {
         "url": "http://debuggable.com/",
-        "name": "Felix Geisendörfer",
+        "name": "Felix Geisend\u00f6rfer",
         "email": "felix@debuggable.com"
       },
       "registry": "https://registry.npmjs.org/form-data/4.0.6",
@@ -16156,7 +16158,7 @@
       "license": "MIT",
       "repository": "https://github.com/jimmywarting/FormData",
       "author": {
-        "name": "Jimmy Wärting"
+        "name": "Jimmy W\u00e4rting"
       },
       "registry": "https://registry.npmjs.org/formdata-polyfill/4.0.10",
       "integrity": "sha512-buewHzMvYL29jdeQTVILecSaZKnt/RJWjoZCF5OW60Z67/GmSLBkOFM7qh1PI3zFNtJbaZL5eQu1vLfazOwj4g==",
@@ -16651,7 +16653,7 @@
       "license": "MIT",
       "repository": "https://github.com/slicknode/graphql-query-complexity",
       "author": {
-        "name": "Ivo Meißner"
+        "name": "Ivo Mei\u00dfner"
       },
       "registry": "https://registry.npmjs.org/graphql-query-complexity/0.12.0",
       "integrity": "sha512-fWEyuSL6g/+nSiIRgIipfI6UXTI7bAxrpPlCY1c0+V3pAEUo1ybaKmSBgNr1ed2r+agm1plJww8Loig9y6s2dw==",
@@ -17318,7 +17320,7 @@
       "repository": "https://github.com/kornelski/http-cache-semantics",
       "author": {
         "url": "https://kornel.ski/",
-        "name": "Kornel Lesiński",
+        "name": "Kornel Lesi\u0144ski",
         "email": "kornel@geekhood.net"
       },
       "registry": "https://registry.npmjs.org/http-cache-semantics/4.3.0",
@@ -19123,7 +19125,7 @@
           "sha256": "95e3f7f0e81e9b4940cdfaa1956aaff5e4dfd2fb1565041e7c78eb9a606f23e3"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "401e9ac8d9d02780872cf8b7fe4161c13e721baf20426dceaf381a5f445a8097",
       "disposition": "reviewed: MIT supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
     },
@@ -19632,7 +19634,7 @@
           "sha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "b98de0759b453d5e7af137e3f3a471bab228158d000ef3a10249808e514a22d3",
       "disposition": "reviewed: ISC supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },
@@ -19732,7 +19734,7 @@
           "sha256": "792c48c5a849a15fdf9e37e8bcf9e6d1dd13b32b46c642a748a0a46a9919d473"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "0c8773a77df9a48ca1a8479fe0430fb20519dc40f3116a3f97b81d97d166673a",
       "disposition": "reviewed: MIT supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
     },
@@ -20319,7 +20321,7 @@
           "sha256": "6b6a356c4337e2446841f30f3cdf7e7023af8c5260b5e347c0f987b9f6aa2644"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "e2a64d7163040bf0964dc6e78a6bdfaaa0fbc0e9afde3f86be76c722c2b91e2f",
       "disposition": "reviewed: MIT supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
     },
@@ -22224,7 +22226,7 @@
       "license": "MIT",
       "repository": "https://github.com/jimmywarting/node-domexception",
       "author": {
-        "name": "Jimmy Wärting"
+        "name": "Jimmy W\u00e4rting"
       },
       "registry": "https://registry.npmjs.org/node-domexception/1.0.0",
       "integrity": "sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==",
@@ -24183,7 +24185,7 @@
           "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "16470cb553a22732209cbfa7a73dc119a11115d45c9e605843775df62221c0ca",
       "disposition": "reviewed: MIT supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
     },
@@ -25153,7 +25155,7 @@
           "sha256": "e98047a5dee068b33f82e8c4b7a63037b5108c93393198efd4097753004af5dd"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "ef05763981e36753ef6adde3cf313f7a4d88961a784e7c2c32aaf4cec335ae2c",
       "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },
@@ -25209,7 +25211,7 @@
       "repository": "https://github.com/tim-kos/node-retry",
       "author": {
         "url": "http://debuggable.com/",
-        "name": "Tim Koschützki",
+        "name": "Tim Kosch\u00fctzki",
         "email": "tim@debuggable.com"
       },
       "registry": "https://registry.npmjs.org/retry/0.13.1",
@@ -25681,7 +25683,7 @@
       "repository": "https://github.com/kevva/shebang-command",
       "author": {
         "url": "github.com/kevva",
-        "name": "Kevin Mårtensson",
+        "name": "Kevin M\u00e5rtensson",
         "email": "kevinmartensson@gmail.com"
       },
       "registry": "https://registry.npmjs.org/shebang-command/2.0.0",
@@ -26578,7 +26580,7 @@
           "sha256": "d4c70c7ce38cea8778f0aed3fc0bef0a9dbd27f13bd8b6773cbd6d37941971e5"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "3d12f146fe4f7f42ff6eb68e43df5600c5718836e80bae0c91fc9964ebb1ebe3",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -27068,7 +27070,7 @@
       "repository": "https://github.com/MichalLytek/type-graphql",
       "author": {
         "url": "https://github.com/MichalLytek",
-        "name": "Michał Lytek"
+        "name": "Micha\u0142 Lytek"
       },
       "registry": "https://registry.npmjs.org/type-graphql/2.0.0-rc.1",
       "integrity": "sha512-HCu4j3jR0tZvAAoO7DMBT3MRmah0DFRe5APymm9lXUghXA0sbhiMf6SLRafRYfk0R0KiUQYRduuGP3ap1RnF1Q==",
@@ -27148,7 +27150,7 @@
           "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "7e00ebb88491213e524b61f3c19941ca275e1555b8bd69295d067bb705fc200e",
       "disposition": "reviewed: MIT supplier grants; unmodified dependency with full terms and attribution retained in inventory and generated web-client notices"
     },
@@ -27744,7 +27746,7 @@
           "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
         }
       ],
-      "uses": ["contributor-build", "report-artifact", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "5a28af3864ce17ac9c1b5cba302714ddfc01c34c0bda4b6e6b170f8ec31d1ec2",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
@@ -27834,7 +27836,7 @@
       "repository": "https://github.com/dreamyguy/validate-color",
       "author": {
         "url": "http://sidhree.com/",
-        "name": "Wallace Sidhrée",
+        "name": "Wallace Sidhr\u00e9e",
         "email": "i@dreamyguy.com"
       },
       "registry": "https://registry.npmjs.org/validate-color/2.2.4",
@@ -28809,7 +28811,7 @@
     },
     {
       "file": ".agents/skills/openspec-execution/SKILL.md",
-      "sha256": "008d2e0980388eb95c7780a72627632032887481ac58ddd86d53703512023f7b",
+      "sha256": "efc828eac99aee762b3c2bae81cbd2375fb5749588552ee69b9792f556cee019",
       "license": "MIT",
       "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v1.13.2",
       "notice": "licenses/openspec.txt",

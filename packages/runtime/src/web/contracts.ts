@@ -1,3 +1,5 @@
+import type { PrepareDiagramSelection } from "@abracode/contracts/web/diagram-actions";
+import type { DiagramPreparation } from "@abracode/contracts/presentation/diagrams";
 import type { NativeEventEnvelope } from "../opencode/agui/native-state.ts";
 import type { NativeSessionView } from "../opencode/agui/adapter.ts";
 import type { ChangeScope } from "@abracode/contracts/web/changes";
@@ -40,6 +42,7 @@ export type WorkQueries = {
 /** The only browser-facing capability surface. No arbitrary native path or location. */
 export interface WebBackend {
   readonly sessionID: string;
+  prepareDiagrams(input: PrepareDiagramSelection): Effect.Effect<DiagramPreparation, CrewError>;
   readonly agentStatus?: Effect.Effect<{ busy: boolean }, CrewError>;
   readonly snapshot: Effect.Effect<WorkspaceSnapshot, CrewError>;
   observe(scope: ChangeScope): Effect.Effect<WorkspaceSnapshot, CrewError>;

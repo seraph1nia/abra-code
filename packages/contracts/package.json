@@ -53,7 +53,9 @@
     "./web/changes": "./src/web/changes.ts",
     "./web/observation": "./src/web/observation.ts",
     "./presentation/notices": "./src/presentation/notices.ts",
-    "./web/bindings": "./src/web/bindings.ts"
+    "./web/bindings": "./src/web/bindings.ts",
+    "./presentation/diagrams": "./src/presentation/diagrams.ts",
+    "./web/diagram-actions": "./src/web/diagram-actions.ts"
   },
   "scripts": {
     "check": "tsc --noEmit"

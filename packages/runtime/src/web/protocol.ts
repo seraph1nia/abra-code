@@ -1,3 +1,5 @@
+import { PrepareDiagramSelectionSchema } from "@abracode/contracts/web/diagram-actions";
+import { DiagramPreparationSchema } from "@abracode/contracts/presentation/diagrams";
 import { ReportExportSchema } from "../presentation/report-export-contract.ts";
 import { Rpc } from "@opencode/plugin/rpc";
 import { Schema } from "effect";
@@ -32,6 +34,10 @@ export const webGateway = Rpc.define({
   id: "abracode-web",
   events: {},
   methods: {
+    prepareDiagrams: method(
+      Schema.Struct({ session_id: SessionId, selection: PrepareDiagramSelectionSchema }),
+      DiagramPreparationSchema,
+    ),
     surface: method(
       Schema.Struct({
         session_id: SessionId,

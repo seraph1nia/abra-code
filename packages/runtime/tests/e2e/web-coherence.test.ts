@@ -71,7 +71,7 @@ test("exact saved reports use frozen catalog bindings, preserve pending checks a
   );
   add(
     "future-catalog",
-    { ...savedDocument, document_id: "future-catalog", catalog_version: 2 },
+    { ...savedDocument, document_id: "future-catalog", catalog_version: 3 },
     "Future catalog",
   );
   const page = await f.browser.newPage({ viewport: { width: 1600, height: 1000 } });

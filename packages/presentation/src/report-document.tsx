@@ -57,6 +57,12 @@ export function ReportDocumentView({
       <GeneratedSurface
         key={artifact.hash}
         frozen
+        diagramRequest={{
+          kind: "report",
+          issue_id: document.provenance.issue_id,
+          request_id: document.document_id,
+          hash: artifact.hash,
+        }}
         work={document.data.work}
         liveCoverage={document.data.live_coverage}
         inspect={inspect}

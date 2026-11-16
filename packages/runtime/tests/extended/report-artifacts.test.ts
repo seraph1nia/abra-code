@@ -45,7 +45,7 @@ test(
     let active = 0,
       peak = 0;
     const applications: string[] = [];
-    const diagramInputs: string[] = [];
+
     const native = new ProcessRunner();
     const runner: Runner = {
       run: (file, args, cwd, env, options) =>
@@ -54,10 +54,6 @@ test(
             active++;
             peak = Math.max(peak, active);
             if (file.endsWith("/vp") && args[0] === "build") applications.push(args[1]!);
-            else {
-              assert.ok(args[0]?.endsWith("/prepare-diagrams.ts"));
-              diagramInputs.push(args[1]!);
-            }
             assert.equal(options?.deadline_ms, 45000);
             assert.equal(options?.max_output_bytes, 262144);
           }),
@@ -79,16 +75,14 @@ test(
         ),
       ),
     );
-    assert.equal(peak, 2);
-    assert.equal(applications.length, 1, "Distinct exports must reuse one application compilation");
-    assert.equal(diagramInputs.length, 2);
     assert.equal(
-      new Set(diagramInputs).size,
-      2,
-      "Document preparation must retain isolated inputs",
+      peak,
+      1,
+      "Application preparation is coordinated; diagram work is shared by the service owner",
     );
+    assert.equal(applications.length, 1, "Distinct exports must reuse one application compilation");
     assert.notEqual(exported[0]!.document_hash, exported[1]!.document_hash);
-    assert.deepEqual(await readdir(join(f.config.home, ".abracode/reports/.scratch")), []);
+    assert.ok((await readdir(join(f.config.home, ".abracode/reports"))).includes("exports"));
     const browser = await launchReportBrowser();
     t.onTestFinished(() => browser.close());
     const page = await browser.newPage({ viewport: { width: 375, height: 812 }, offline: true });

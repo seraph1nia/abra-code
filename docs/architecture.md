@@ -82,6 +82,19 @@ private implementation. Queries remain a separate read-only owner; observers
 and assignment lookup have no access to command adapters. Setup receives the
 same workspace/delivery owners directly.
 
+`workflow/authorization.ts` owns exact-content checkpoint evidence and durable
+approval form collection. Its read-only `CheckpointEvidence` module shares the
+supplied Git adapter across plan capture, browser observation and verification;
+`Queries.checkpoint` receives no form or write adapter. `Authorizations` retains
+form identity before a native request, commits only owned approval receipts, and
+recollects pending forms after restart. Retained approval status does not prove
+current content: admission and verification recheck the plan, including revision
+identity. Phase changes, schema validation, operation locks, finishing readiness
+and policy-specific controller gates remain with their existing owners. Keeping
+evidence and form collection together avoids repeating content/receipt ordering
+in web and recovery callers; a shared predicate alone would leave that ordering
+with those callers.
+
 `WorkerSessions` owns native worker admission, session-location validation, turn observation, retained admission recovery and native stop confirmation. Explicit checkpoints require a successful turn without resubmitting its prompt, and retain the completed role for role-specific evidence checks. Recovery reuses retained session/prompt IDs; an authorized new turn may reuse the session with a fresh prompt. `WorkAdmission` owns validated intake, atomic claim/capacity admission and
 resumable provisioning. `ExecutionRecovery` owns retained-claim reconciliation,
 uncertain publication/admission recovery, approval/capacity waits and cleanup

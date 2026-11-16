@@ -274,3 +274,5 @@ output, independent pause and valid-state restoration; missing selections still
 require `not_found`. The browser branch journey asserts human plan authorization;
 PR merge authorization remains in the separate real native PR journey. A branch's
 transient finishing phase is not a PR approval gate.
+
+The combined suite caps worker concurrency at four (or available CPUs when fewer). Real diagram preparation and native fixtures run alongside Git/OpenSpec checks; higher concurrency caused repeatable five-second Git timeouts and inspector detail starvation under the diagram-heavy native journey. The cap preserves all projects and assertions. The measured four-worker acceptance run executes 694 tests in approximately 160 seconds on the documented verification host.

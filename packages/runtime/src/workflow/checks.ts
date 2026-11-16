@@ -1,9 +1,7 @@
 import { progress } from "../opencode/progress.ts";
-import { approvedEvidence } from "./evidence.ts";
 import { Executable, ActivityId, timestamp, IssueId, SessionId } from "../identities.ts";
 
-import { fullPlanFingerprint } from "./planning.ts";
-import { scopeIdentity } from "./scopes.ts";
+import type { CheckpointEvidence } from "./authorization.ts";
 import { Clock, Effect } from "effect";
 import { CrewError, type Execution, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
@@ -32,30 +30,14 @@ export class CodingChecks {
     private sessions: WorkerSessions,
     private coordination: Coordination,
     private queries: Queries,
+    private checkpoints: CheckpointEvidence,
   ) {}
   private launch = (e: Execution, role: "review") => this.sessions.launch(e, role);
   private get = (id: IssueId) => this.queries.get(id);
   assertPlan = Effect.fn("CodingChecks.assertPlan")(
     function* (this: CodingChecks, e: Execution, _p: Project) {
       if (e.workflow_policy === "full-openspec") yield* this.spec.assertSchema(e);
-      const fp =
-        e.workflow_policy === "full-openspec"
-          ? yield* fullPlanFingerprint(this.git, e)
-          : e.scope && scopeIdentity(e.scope.revision, e.scope.contract);
-      if (!(fp === e.plan_fingerprint))
-        return yield* new CrewError(
-          "PLAN_CHANGED",
-          "Approved planning artifacts changed; prepare a new approval",
-        );
-      if (e.plan_approval_required !== false) {
-        if (
-          !e.approval_receipts.some(
-            (a) => a.kind === "plan" && a.fingerprint === fp && a.authorized_at,
-          )
-        )
-          return yield* new CrewError("APPROVAL_REQUIRED", "Plan approval is missing or stale");
-      }
-      return yield* approvedEvidence(e);
+      return yield* this.checkpoints.assertPlan(e);
     }.bind(this),
     domainEffect,
   );

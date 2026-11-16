@@ -71,6 +71,7 @@ async function prepare() {
                 ...original.data.evidence!,
                 issue_id: current.issue_id,
                 execution_id: current.execution_id,
+                diagrams: [],
               },
             },
           });
@@ -344,6 +345,7 @@ test("authorized report composition captures structured evidence through the exi
   const request = {
     format: "a2ui-snapshot" as const,
     request_id: RequestId.make("composed-report"),
+    diagrams: [],
   };
   await assert.rejects(
     run(f.controller.visualReport(SessionId.make("ses_foreign"), execution.issue_id, request)),

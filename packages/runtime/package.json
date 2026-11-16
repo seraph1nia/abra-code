@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@abracode/contracts": "workspace:*",
+    "@abracode/report-export": "workspace:*",
     "@ag-ui/client": "1.0.4",
     "@ag-ui/core": "1.0.4",
     "@copilotkit/runtime": "1.88.0",
@@ -43,7 +44,6 @@
   "devDependencies": {
     "@a2ui/web_core": "0.15.0",
     "@abracode/presentation": "workspace:*",
-    "@abracode/report-export": "workspace:*",
     "@abracode/web": "workspace:*",
     "@types/node": "26.6.6",
     "tsx": "4.23.15",

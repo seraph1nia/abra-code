@@ -1,3 +1,4 @@
+import type { PrepareDiagramSelection } from "@abracode/contracts/web/diagram-actions";
 import { NativeSessionReader } from "../opencode/agui/source.ts";
 import { projectNativeMessage } from "../opencode/agui/messages.ts";
 import type { ChangeScope } from "@abracode/contracts/web/changes";
@@ -435,6 +436,13 @@ export class NativeWebBackend implements WebBackend {
   readExport = (input: typeof ReadExportSchema.Type) =>
     this.use((client) =>
       this.gateway(client).readExport({ session_id: this.sessionID, ...input }, this.location()),
+    );
+  prepareDiagrams = (selection: PrepareDiagramSelection) =>
+    this.use((client) =>
+      this.gateway(client).prepareDiagrams(
+        { session_id: this.sessionID, selection },
+        this.location(),
+      ),
     );
   saveSurface = (input: typeof SaveSurfaceSchema.Type) =>
     this.use((client) =>

@@ -137,15 +137,15 @@ export const captureReportSnapshot = (
         provenance: `Controller-owned retained evidence for ${e.execution_id}. Worker findings/report text are attributed claims; check receipts are labelled separately. No checks were rerun for this static presentation.`,
         findings: findings.slice(-64),
         checks,
-        diagrams: [
-          ...(diagrams ?? evidence?.diagrams ?? []),
-          { title: "Observed work relationships", source: relationships },
-          {
-            title: "Authority and evidence ownership",
-            source:
-              "flowchart TD\n  Abra[Abra supervisor] --> Controller[Deterministic controller]\n  Controller --> Graph[SQLite work graph]\n  Controller --> Native[OpenCode sessions and native queues]\n  Native --> Workers[Explore Apply Review Research]\n  Workers --> Evidence[Retained findings and check receipts]\n  Evidence --> Report[Read only report snapshot]\n  Controller --> Git[Git and OpenSpec artifacts]",
-          },
-        ].slice(0, 8),
+        diagrams: diagrams ??
+          evidence?.diagrams ?? [
+            { title: "Observed work relationships", source: relationships },
+            {
+              title: "Authority and evidence ownership",
+              source:
+                "flowchart TD\n  Abra[Abra supervisor] --> Controller[Deterministic controller]\n  Controller --> Graph[SQLite work graph]\n  Controller --> Native[OpenCode sessions and native queues]\n  Native --> Workers[Explore Apply Review Research]\n  Workers --> Evidence[Retained findings and check receipts]\n  Evidence --> Report[Read only report snapshot]\n  Controller --> Git[Git and OpenSpec artifacts]",
+            },
+          ],
         events: history.slice(-32).map((h) => ({
           label: h.kind,
           status: h.kind,

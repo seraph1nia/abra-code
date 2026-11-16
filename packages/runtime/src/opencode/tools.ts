@@ -1,3 +1,4 @@
+import { mermaidVerifierTool } from "./diagram-tool.ts";
 import { workSurfaceTool } from "../web/render-tool.ts";
 import { LeadActionSchema, LeadControlSchema } from "../workflow/lead-contracts.ts";
 import { deliveryAction, deliveryOutcome } from "../workflow/delivery-outcome.ts";
@@ -52,6 +53,7 @@ export function registerTools(
     Effect.gen(function* () {
       const definitions = [
         workSurfaceTool(ctx, c),
+        mermaidVerifierTool(c, central),
         define({
           name: "lead_control",
           description:

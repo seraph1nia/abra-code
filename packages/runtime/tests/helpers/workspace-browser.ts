@@ -237,6 +237,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
       return result.pipe(Effect.flatMap((value) => decode(schema, value, "Fixture work read")));
     };
   const backend: WebBackend = {
+    prepareDiagrams: source.prepareDiagrams,
     sessionID: source.sessionID,
     snapshot: Effect.suspend(() =>
       observationOffline
@@ -313,6 +314,21 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
         };
       }),
   };
+  source.work.artifactDocument = (input) =>
+    Effect.sync(() => {
+      const artifact = documentArtifacts.get(input.request_id);
+      if (
+        !artifact ||
+        artifact.hash !== input.hash ||
+        JSON.parse(artifact.json).provenance?.issue_id !== input.issue_id
+      )
+        throw new CrewError("FIXTURE_READ", "Selected diagram document is unavailable");
+      return {
+        json: artifact.json,
+        hash: artifact.hash as typeof input.hash,
+        bytes: artifact.bytes,
+      };
+    });
   const web = await Effect.runPromise(
     workspaceServer({ port: 0, backend }).pipe(Effect.provideService(Scope.Scope, scope)),
   );

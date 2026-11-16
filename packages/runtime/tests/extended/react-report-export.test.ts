@@ -1,3 +1,5 @@
+import { mixedDiagrams, denseFlowchart } from "../helpers/diagram-fixtures.ts";
+import { validateReportDocument } from "../../src/presentation/report-document.ts";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import assert from "node:assert/strict";
@@ -22,7 +24,33 @@ test(
     await installSource(f.config.home, { buildWeb: false });
     const renderer = new ReactDocumentRenderer(f.config.home, new ProcessRunner());
     const fingerprint = await run(renderer.fingerprint);
-    const html = await run(renderer.render(coveredReportDocument(), fingerprint));
+    const baseline = coveredReportDocument();
+    const fixtures = mixedDiagrams(31);
+    fixtures[30] = { ...fixtures[30]!, source: fixtures[0]!.source };
+    fixtures[29] = { title: "Dense workflow", source: denseFlowchart };
+    const input = validateReportDocument({
+      ...baseline,
+      surface: {
+        ...baseline.surface,
+        createSurface: {
+          ...baseline.surface.createSurface,
+          components: baseline.surface.createSurface.components
+            .map((component) =>
+              component.id === "root"
+                ? {
+                    ...component,
+                    children: [
+                      ...(component.children as string[]),
+                      ...fixtures.map((_, i) => `inline${i}`),
+                    ],
+                  }
+                : component,
+            )
+            .concat(fixtures.map((d, i) => ({ id: `inline${i}`, component: "Mermaid", ...d }))),
+        },
+      },
+    });
+    const html = await run(renderer.render(input, fingerprint));
     assert.ok(Buffer.byteLength(html) < 8 * 1024 * 1024);
 
     const moved = join(f.root, "relocated");
@@ -53,7 +81,32 @@ test(
     await page.goto(pathToFileURL(join(moved, "frame.html")).href);
     const report = page.frameLocator("iframe");
     await report.getByRole("heading", { name: "Saved evidence", exact: true }).waitFor();
-    assert.equal(await report.locator('[data-diagram-state="ready"] svg').count(), 1);
+    assert.equal(await report.locator('[data-diagram-state="ready"] svg').count(), 32);
+    const dense = report.getByRole("img", { name: "Dense workflow", exact: true });
+    assert.equal(
+      await dense.evaluate((element) => element.scrollWidth > element.clientWidth),
+      true,
+    );
+    await dense.focus();
+    await dense.press("ArrowRight");
+    await dense.evaluate(
+      (element) =>
+        new Promise<void>((resolve) => {
+          const check = () => (element.scrollLeft > 0 ? resolve() : requestAnimationFrame(check));
+          check();
+        }),
+    );
+    const expand = report.getByRole("button", { name: "Expand diagram", exact: true }).first();
+    await expand.click();
+    await report.getByRole("button", { name: "Zoom in", exact: true }).click();
+    assert.match(await report.getByRole("dialog").innerText(), /125%/);
+    await report.getByRole("button", { name: "Reset zoom", exact: true }).click();
+    await report.getByRole("dialog").press("Escape");
+    assert.equal(await expand.evaluate((element) => element === document.activeElement), true);
+    const svgIDs = await report
+      .locator("svg [id],svg[id]")
+      .evaluateAll((elements) => elements.map((element) => element.id));
+    assert.equal(new Set(svgIDs).size, svgIDs.length);
     await report.getByText("Frozen task title", { exact: true }).waitFor();
     await report.getByText("Older snapshot task title", { exact: true }).waitFor();
     assert.match(

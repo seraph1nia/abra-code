@@ -1,3 +1,4 @@
+import { DiagramPreparationSchema } from "@abracode/contracts/presentation/diagrams";
 import { BindingReadSchema } from "@abracode/contracts/web/bindings";
 import { LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
 import { WorkerHistoryPageSchema } from "./worker-history.ts";
@@ -62,6 +63,9 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
     );
   const operations = HttpApiBuilder.group(workspaceApi, "workspace", (handlers) =>
     handlers
+      .handle("prepareDiagrams", ({ payload }) =>
+        validated(backend.prepareDiagrams(payload), DiagramPreparationSchema),
+      )
       .handle("surface", ({ query }) =>
         backend.surface(query.surface_id, query.revision).pipe(Effect.mapError(refused)),
       )

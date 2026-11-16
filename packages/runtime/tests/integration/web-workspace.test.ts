@@ -1,3 +1,6 @@
+import { validateSurface } from "../../src/web/surfaces.ts";
+import { catalogId } from "../../src/web/catalog.ts";
+import { presentationHash } from "../../src/presentation/identity.ts";
 import { NativeSessionProjection } from "../../src/opencode/agui/native-state.ts";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { projectNativeMessage } from "../../src/opencode/agui/messages.ts";
@@ -761,3 +764,76 @@ test("HTTP observers reconnect during tool arguments without replay or duplicate
   assert.equal(web.backend.submissions, 0);
   assert.equal(web.backend.stops, 0);
 });
+
+test(
+  "diagram preparation HTTP selects exact retained sources and refuses foreign, stale and executable selectors",
+  { timeout: 60000 },
+  async (t) => {
+    const web = await fixture();
+    t.onTestFinished(web.close);
+    const surface = validateSurface({
+      version: "1.0",
+      createSurface: {
+        surfaceId: "diagram-board",
+        catalogId,
+        components: [
+          { id: "root", component: "Mermaid", title: "Observed", source: "flowchart LR\nA <--> B" },
+        ],
+      },
+    });
+    web.backend.value = {
+      ...web.backend.value,
+      surfaces: [
+        {
+          session_id: web.backend.sessionID,
+          tool_call_id: "fixture",
+          revision: 1,
+          at: web.backend.value.at,
+          surface,
+          snapshot: [],
+        },
+      ],
+    };
+    const selection = {
+      kind: "surface" as const,
+      surface_id: "diagram-board",
+      revision: 1,
+      hash: presentationHash(surface),
+    };
+    const prepared = await Effect.runPromise(
+      web.client.workspace.prepareDiagrams({ payload: selection }),
+    );
+    assert.equal(prepared.verified, true);
+    assert.equal(prepared.assets[0]!.source, surface.createSurface.components[0]!.source);
+    const second = await Effect.runPromise(
+      web.client.workspace.prepareDiagrams({ payload: selection }),
+    );
+    assert.equal(second.metrics?.compilations, 0);
+    for (const altered of [
+      { ...selection, hash: ContentHash.make("a".repeat(64)) },
+      { ...selection, revision: 2 },
+      { ...selection, surface_id: "foreign" },
+    ])
+      assert.equal(
+        (
+          await Effect.runPromise(
+            web.client.workspace.prepareDiagrams({ payload: altered }).pipe(Effect.result),
+          )
+        )._tag,
+        "Failure",
+      );
+    const invalid = await fetch(`${web.origin}/api/diagrams/prepare`, {
+      method: "POST",
+      headers: { origin: web.origin, "content-type": "application/json" },
+      body: JSON.stringify({ ...selection, path: "/etc/passwd" }),
+    });
+    assert.equal(invalid.status, 400);
+    const foreign = await fetch(`${web.origin}/api/diagrams/prepare`, {
+      method: "POST",
+      headers: { origin: "https://foreign.invalid", "content-type": "application/json" },
+      body: JSON.stringify(selection),
+    });
+    assert.equal(foreign.status, 403);
+    assert.equal(web.backend.submissions, 0);
+  },
+);

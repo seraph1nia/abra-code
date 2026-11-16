@@ -49,13 +49,24 @@ export async function createDiagramRenderer(options: { cacheDir?: string } = {})
     await server.listen();
     browser = await launchReportBrowser();
     const page = await browser.newPage();
+    let blocked = false;
+    await page.route("**/*", (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      const origin = new URL(server.resolvedUrls!.local[0]!).origin;
+      if (url.origin === origin && ["document", "script"].includes(request.resourceType()))
+        return route.continue();
+      blocked = true;
+      return route.abort();
+    });
     await page.goto(`${server.resolvedUrls!.local[0]}__diagram-rendering`);
     await page.evaluate(
       'import("/scripts/mermaid-engine.ts").then(module => { globalThis.__abracodeRenderDiagram = module.renderDiagram; })',
     );
     return {
-      render(source: string): Promise<string> {
-        return page.evaluate(
+      async render(source: string): Promise<string> {
+        blocked = false;
+        const svg = await page.evaluate(
           (source) =>
             (
               Reflect.get(globalThis, "__abracodeRenderDiagram") as (
@@ -64,6 +75,8 @@ export async function createDiagramRenderer(options: { cacheDir?: string } = {})
             )(source),
           source,
         );
+        if (blocked) throw new Error("FORBIDDEN: Diagram attempted a resource request");
+        return svg;
       },
       close,
     };

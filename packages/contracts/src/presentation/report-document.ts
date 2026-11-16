@@ -1,3 +1,4 @@
+import { collectDiagrams, diagramBudget } from "./diagrams.ts";
 import { BindingCoverageSchema } from "../web/bindings.ts";
 import { Schema } from "effect";
 import {
@@ -12,13 +13,13 @@ import {
 } from "../identities.ts";
 import { Count, Commit } from "../primitives.ts";
 import { WorkSummarySchema } from "../visibility/work-summary.ts";
-import { ReportSnapshotSchema } from "./report-evidence.ts";
+import { ReportSnapshotSchema, LegacyReportSnapshotSchema } from "./report-evidence.ts";
 import { SurfaceSchema, validateSurface } from "../web/surfaces.ts";
-import { catalogId, ComponentId } from "../web/catalog.ts";
+import { catalogId, previousCatalogId, ComponentId } from "../web/catalog.ts";
 
 export const maximumDocumentBytes = 1024 * 1024;
-export const reportRendererVersion = "abracode-react/v1";
-export const reportCatalogVersion = 1;
+export const reportRendererVersion = "abracode-react/v2";
+export const reportCatalogVersion = 2;
 export const ReportProducerSchema = Schema.Struct({
   session_id: SessionId,
   message_id: MessageId,
@@ -50,9 +51,9 @@ export const ReportDocumentSchema = Schema.Struct({
   revision: positive,
   title: text.check(Schema.isNonEmpty()),
   captured_at: Timestamp,
-  catalog_id: Schema.Literal(catalogId),
-  catalog_version: Schema.Literal(reportCatalogVersion),
-  renderer_compatibility: Schema.Literal(reportRendererVersion),
+  catalog_id: Schema.Literals([catalogId, previousCatalogId]),
+  catalog_version: Schema.Literals([1, 2]),
+  renderer_compatibility: Schema.Literals(["abracode-react/v1", reportRendererVersion]),
   provenance: Schema.Struct({
     issue_id: IssueId,
     execution_id: ExecutionId,
@@ -74,6 +75,23 @@ export const ReportDocumentSchema = Schema.Struct({
   limitations: Schema.Array(text).check(Schema.isMaxLength(64)),
 }).check(
   Schema.makeFilter((document) => {
+    const old = document.catalog_id === previousCatalogId;
+    if (
+      document.catalog_version !== (old ? 1 : 2) ||
+      document.renderer_compatibility !== (old ? "abracode-react/v1" : reportRendererVersion) ||
+      document.surface.createSurface.catalogId !== document.catalog_id
+    )
+      return "Inconsistent report catalog/renderer identity";
+    if (
+      old &&
+      document.data.evidence &&
+      !Schema.is(LegacyReportSnapshotSchema)(document.data.evidence)
+    )
+      return "Historical report evidence exceeds its original contract";
+    const budget = diagramBudget(
+      collectDiagrams(document.surface.createSurface.components, document.data.evidence),
+    );
+    if (budget) return budget;
     if (!withinBytes(document, maximumDocumentBytes)) return "Report document exceeds 1 MiB";
     if (
       document.data.evidence &&
@@ -123,9 +141,14 @@ export function readReportDocument(
       reason: "This report format version is not supported by this viewer.",
     };
   if (
-    raw.catalog_id !== catalogId ||
-    raw.catalog_version !== reportCatalogVersion ||
-    raw.renderer_compatibility !== reportRendererVersion
+    !(
+      (raw.catalog_id === catalogId &&
+        raw.catalog_version === reportCatalogVersion &&
+        raw.renderer_compatibility === reportRendererVersion) ||
+      (raw.catalog_id === previousCatalogId &&
+        raw.catalog_version === 1 &&
+        raw.renderer_compatibility === "abracode-react/v1")
+    )
   )
     return {
       supported: false,

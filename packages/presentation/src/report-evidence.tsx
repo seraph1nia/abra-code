@@ -1,3 +1,6 @@
+import { DiagramView } from "./diagrams.tsx";
+export type { PreparedReportDiagram } from "./diagrams.tsx";
+import type { PreparedReportDiagram } from "./diagrams.tsx";
 import { useId, useState } from "react";
 import type {
   ReportSnapshot,
@@ -8,7 +11,6 @@ import { Card, CardHeader, CardTitle, CardContent } from "./ui/card.tsx";
 import { Badge } from "./ui/badge.tsx";
 import { Input } from "./ui/input.tsx";
 /** Supplied only by the trusted offline build, never by generated props or JSON. */
-export type PreparedReportDiagram = { source: string; svg: string };
 
 function Reference({ reference }: { reference: SourceReference }) {
   return (
@@ -50,8 +52,10 @@ export function ReportEvidence({
   section,
   snapshot,
   preparedDiagrams,
+  diagramMessage,
 }: {
   section: WorkProps<"ReportEvidence">["section"];
+  diagramMessage?: string;
   snapshot?: ReportSnapshot;
   preparedDiagrams?: readonly PreparedReportDiagram[];
 }) {
@@ -213,38 +217,12 @@ export function ReportEvidence({
         <>
           <h3>Captured diagrams</h3>
           {snapshot.diagrams?.map((diagram, index) => (
-            <figure
+            <DiagramView
               key={index}
-              data-diagram-state={
-                preparedDiagrams?.some((prepared) => prepared.source === diagram.source)
-                  ? "ready"
-                  : "source"
-              }
-            >
-              {preparedDiagrams
-                ?.filter((prepared) => prepared.source === diagram.source)
-                .map((prepared) => (
-                  <div
-                    key={prepared.source}
-                    className="diagram-scroll"
-                    role="img"
-                    aria-label={diagram.title}
-                    tabIndex={0}
-                    dangerouslySetInnerHTML={{ __html: prepared.svg }}
-                  />
-                ))}
-              <details>
-                <summary>{diagram.title}</summary>
-                <p>
-                  {preparedDiagrams?.some((prepared) => prepared.source === diagram.source)
-                    ? "Captured Mermaid source used for the prepared rendering."
-                    : "Captured Mermaid source. A prepared rendering is available in an explicit HTML export."}
-                </p>
-                <pre className="report-code" tabIndex={0} aria-label="Diagram source">
-                  <code>{diagram.source}</code>
-                </pre>
-              </details>
-            </figure>
+              {...diagram}
+              prepared={preparedDiagrams?.find((d) => d.source === diagram.source)}
+              message={diagramMessage}
+            />
           ))}
           {!snapshot.diagrams?.length && <p>No diagram evidence was supplied.</p>}
         </>

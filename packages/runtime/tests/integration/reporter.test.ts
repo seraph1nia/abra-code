@@ -18,11 +18,30 @@ test(
       "flowchart LR\n A --> B",
       "sequenceDiagram\n A->>B: Captured evidence",
       "stateDiagram-v2\n [*] --> Observed",
+      "flowchart LR\n A <--> B",
+      'flowchart LR\n A["literal click and href"] --> B',
+      'flowchart LR\n A["literal #quot;quoted#quot; text"] --> B',
+      "flowchart LR\n A[image: ordinary label] --> B",
+      'flowchart LR\n A["url(cache) is a label"] --> B',
+      "sequenceDiagram\n A->>B: Press #59;click to continue",
+      "classDiagram\n Animal <|-- Duck",
+      "erDiagram\n CUSTOMER ||--o{ ORDER : places",
+      "gantt\n dateFormat YYYY-MM-DD\n section Work\n Build :a, 2026-11-16, 1d",
+      "mindmap\n root((Reports))\n  Evidence\n  Findings",
     ]) {
       const svg = await renderer.render(source);
       assert.match(svg, /<svg/);
       assert.doesNotMatch(svg, /<script|<iframe|<image[^>]+https?:/i);
     }
+    for (const unsafe of [
+      "%%{init: {securityLevel: 'loose'}}%%\nflowchart LR\nA --> B",
+      'flowchart LR\nclick A href "https://example.invalid"',
+      'flowchart LR\nA[<img src="https://example.invalid">]',
+      'flowchart LR\nA@{img: "https://example.invalid/image.png"}',
+      "flowchart LR\nstyle A fill:url(https://example.invalid)",
+      'flowchart LR\nA --> B\nclassDef unused background-image:image-set("https://example.invalid/image.png" 1x)',
+    ])
+      await assert.rejects(renderer.render(unsafe), /FORBIDDEN/);
     await assert.rejects(renderer.render("flowchart TD\n A -->"), /Parse error/);
     await assert.rejects(
       renderer.render("flowchart TD\n A@{ shape: nonexistent_shape }"),

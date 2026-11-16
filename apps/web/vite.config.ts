@@ -5,7 +5,7 @@ import { defineConfig } from "vite-plus";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { workCatalogDocument } from "@abracode/contracts/web/catalog";
+import { workCatalogDocument, previousCatalogDocument } from "@abracode/contracts/web/catalog";
 
 const development = developmentConfig();
 
@@ -20,11 +20,36 @@ export default defineConfig({
     tailwindcss(),
     {
       name: "abra-web-notices",
-      generateBundle() {
+      generateBundle(_options, bundle) {
+        const modules = Object.values(bundle).flatMap((output) =>
+          output.type === "chunk" ? Object.keys(output.modules) : [],
+        );
+        const leaked = modules.filter((id) =>
+          /apps\/report\/scripts\/(?:mermaid-engine|diagrams|preparation)\.ts/.test(id),
+        );
+        if (leaked.length)
+          throw new Error(
+            "Report diagram compiler leaked into browser bundle: " + leaked.join(", "),
+          );
+        this.emitFile({
+          type: "asset",
+          fileName: "diagram-boundary.json",
+          source: JSON.stringify({
+            report_compiler: "server-only",
+            inspected_modules: modules.length,
+            leaked,
+            existing_chat_markdown: "preserved",
+          }),
+        });
+        this.emitFile({
+          type: "asset",
+          fileName: "catalog/work-v2.json",
+          source: JSON.stringify(workCatalogDocument, null, 2) + "\n",
+        });
         this.emitFile({
           type: "asset",
           fileName: "catalog/work-v1.json",
-          source: JSON.stringify(workCatalogDocument, null, 2) + "\n",
+          source: JSON.stringify(previousCatalogDocument, null, 2) + "\n",
         });
         const root = fileURLToPath(new URL("../../", import.meta.url));
         const inventory = JSON.parse(

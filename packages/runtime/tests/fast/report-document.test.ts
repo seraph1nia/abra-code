@@ -74,7 +74,7 @@ test("unknown format/catalog/renderer versions remain unmodified and individuall
   const document = reportDocument();
   for (const update of [
     { format_version: 2 },
-    { catalog_version: 2 },
+    { catalog_version: 3 },
     { catalog_id: "https://future.invalid/catalog" },
     { renderer_compatibility: "future-renderer" },
   ]) {
@@ -114,7 +114,7 @@ test("receipt union distinguishes immutable JSON from retained untagged HTML wit
     path: "/fixture/index.json",
   };
   assert.deepEqual(Schema.decodeUnknownSync(ReportArtifactReceiptSchema)(json), json);
-  const future = { ...json, catalog_version: 2, renderer_compatibility: "future-renderer" };
+  const future = { ...json, catalog_version: 3, renderer_compatibility: "future-renderer" };
   assert.deepEqual(Schema.decodeUnknownSync(ReportArtifactReceiptSchema)(future), future);
 });
 

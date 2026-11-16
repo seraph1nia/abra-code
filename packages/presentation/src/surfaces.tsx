@@ -1,5 +1,15 @@
+import { usePreparedDiagrams, type DiagramRequest } from "./diagrams.tsx";
+import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
 import type { BindingCoverage } from "@abracode/contracts/web/bindings";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { WorkWidget } from "./work-widgets.tsx";
 import type { Inspect } from "./cards.tsx";
 import type { ReportSnapshot } from "@abracode/contracts/presentation/report-evidence";
@@ -38,6 +48,8 @@ type WorkViewContext = {
   frozen?: boolean;
   evidence?: ReportSnapshot;
   preparedDiagrams?: readonly PreparedReportDiagram[];
+  diagramMessage?: string;
+  diagramRequest?: DiagramRequest;
 };
 const ViewContext = createContext<WorkViewContext | undefined>(undefined);
 
@@ -109,8 +121,22 @@ export function GeneratedSurface({
   frozen,
   evidence,
   preparedDiagrams,
+  diagramRequest,
   liveCoverage,
 }: WorkViewContext) {
+  const request = useMemo(
+    () =>
+      collectDiagrams(record.surface.createSurface.components, evidence).length
+        ? (diagramRequest ?? {
+            kind: "surface" as const,
+            surface_id: record.surface.createSurface.surfaceId,
+            revision: record.revision,
+            surface: record.surface,
+          })
+        : undefined,
+    [record.surface, record.revision, evidence, diagramRequest],
+  );
+  const diagrams = usePreparedDiagrams(request, preparedDiagrams);
   const [rendered, setRendered] = useState<Rendered>();
   const [error, setError] = useState("");
   const current = useRef<Rendered | undefined>(undefined);
@@ -154,7 +180,8 @@ export function GeneratedSurface({
             inspect,
             frozen,
             evidence,
-            preparedDiagrams,
+            preparedDiagrams: diagrams.assets,
+            diagramMessage: diagrams.message,
             liveCoverage,
           }}
         >
@@ -184,6 +211,7 @@ function BoundWidget({ name, props }: Pick<Parameters<typeof WorkWidget>[0], "na
         frozen: context.frozen,
         evidence: context.evidence,
         preparedDiagrams: context.preparedDiagrams,
+        diagramMessage: context.diagramMessage,
       }}
     />
   );

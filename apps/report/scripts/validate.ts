@@ -1,7 +1,8 @@
+import { diagramPreparer } from "./preparation.ts";
 import { readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createDiagramRenderer, diagramFiles } from "./diagrams.ts";
+import { diagramFiles } from "./diagrams.ts";
 
 const workspace = fileURLToPath(new URL("../", import.meta.url));
 
@@ -18,20 +19,18 @@ async function validate() {
       source: await readFile(path, "utf8"),
     })),
   );
-  const renderer = await createDiagramRenderer();
-  try {
-    for (const { path, source } of sources) {
-      try {
-        await renderer.render(source);
-        console.log(`OK ${path} (parsed and rendered)`);
-      } catch (error) {
-        console.error(`FAIL ${path}\n${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
-      }
+  const prepared = await diagramPreparer.prepare(
+    sources.map((value, index) => ({ id: `file-${index}`, source: value.source })),
+  );
+  for (const [index, result] of prepared.results.entries()) {
+    if (result.status === "verified")
+      console.log(`OK ${sources[index]!.path} (parsed and rendered)`);
+    else {
+      console.error(`FAIL ${sources[index]!.path}\n${result.message}`);
+      process.exitCode = 1;
     }
-  } finally {
-    await renderer.close();
   }
+  if (!prepared.verified) process.exitCode = 1;
 }
 
 void validate().catch((error: unknown) => {

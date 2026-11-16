@@ -1,3 +1,5 @@
+import { mixedDiagrams, denseFlowchart, longSequence } from "../helpers/diagram-fixtures.ts";
+import { sampleFixtureMemory } from "../helpers/process-memory.ts";
 import { HttpAgent } from "@ag-ui/client";
 import { SqliteWorkGraph } from "../../src/work/graph.ts";
 import { ExecutionId, RepositoryId } from "../../src/identities.ts";
@@ -93,6 +95,7 @@ export async function workspaceJourney(input: {
   readStatus: (id: string) => Promise<any>;
   evidence?: string;
 }) {
+  let diagramPerformance: Record<string, unknown> | undefined;
   const scope = await Effect.runPromise(Scope.make());
   const backend = new NativeWebBackend(
     AbsolutePath.make(input.home),
@@ -396,6 +399,51 @@ export async function workspaceJourney(input: {
     });
     await page.getByText("Native workspace coding journey", { exact: true }).waitFor();
     assert.equal(await page.locator('[data-a2ui-renderer="upstream"]').count(), 1);
+    const diagramFixtures = mixedDiagrams();
+    const verifierInput = {
+      diagrams: diagramFixtures.map((d, i) => ({ id: `diagram${i}`, source: d.source })),
+    };
+    const stopMemory = await sampleFixtureMemory();
+    const coldStart = performance.now();
+    let memory;
+    const cold = await command("abra_mermaid_verify", verifierInput).finally(async () => {
+      memory = await stopMemory();
+    });
+    const coldMs = performance.now() - coldStart;
+    assert.equal(cold.verified, true, JSON.stringify(cold));
+    assert.equal(cold.results.length, 32);
+    assert.ok(coldMs < 60000);
+    const warmStart = performance.now();
+    const warm = await command("abra_mermaid_verify", verifierInput);
+    const warmMs = performance.now() - warmStart;
+    assert.equal(warm.metrics.compilations, 0);
+    const larger = await command("abra_mermaid_verify", {
+      diagrams: [
+        { id: "dense", source: denseFlowchart },
+        { id: "sequence", source: longSequence },
+      ],
+    });
+    assert.equal(larger.verified, true, JSON.stringify(larger));
+    await assert.rejects(
+      command("abra_mermaid_verify", {
+        diagrams: [...verifierInput.diagrams, { id: "overflow", source: "flowchart LR\nA --> B" }],
+      }),
+      /32|maxLength/,
+    );
+    diagramPerformance = {
+      node: process.version,
+      package_manager: JSON.parse(await readFile(join(input.home, "package.json"), "utf8"))
+        .packageManager,
+      compiler: cold.compiler,
+      count: 32,
+      cold_ms: coldMs,
+      warm_ms: warmMs,
+      cold: cold.metrics,
+      warm: warm.metrics,
+      memory,
+      dense_nodes: 100,
+      sequence_messages: 50,
+    };
     const widgets = [
       "WorkTable",
       "StatusSummary",
@@ -414,9 +462,16 @@ export async function workspaceJourney(input: {
             {
               id: "root",
               component: "Column",
-              children: ["heading", "views", "report", "changes"],
+              children: [
+                "heading",
+                "views",
+                "report",
+                "changes",
+                ...diagramFixtures.map((_, i) => `diagram${i}`),
+              ],
             },
             { id: "heading", component: "Text", text: "Revised upstream work view" },
+            ...diagramFixtures.map((d, i) => ({ id: `diagram${i}`, component: "Mermaid", ...d })),
             {
               id: "views",
               component: "Row",
@@ -441,6 +496,16 @@ export async function workspaceJourney(input: {
       },
     });
     await page.getByText("Revised upstream work view", { exact: true }).waitFor();
+    await page
+      .locator('[data-surface-reference="workspace-board/2"] [data-diagram-state="ready"]')
+      .nth(31)
+      .waitFor();
+    assert.equal(
+      await page
+        .locator('[data-surface-reference="workspace-board/2"] [data-diagram-state="ready"]')
+        .count(),
+      32,
+    );
     assert.ok(
       (await Effect.runPromise(backend.snapshot)).surfaces.every((entry) => !("surface" in entry)),
       "Native workspace feeds carry compact surface references, never layout/data bodies",
@@ -549,6 +614,23 @@ export async function workspaceJourney(input: {
         const admissionRecovery = await restoreAdmission();
         await page.goto(savedReport.url);
         await page.locator(".frozen-report").waitFor();
+        await page.locator('.frozen-report [data-diagram-state="ready"]').nth(31).waitFor();
+        const concurrent = await Effect.runPromise(
+          Effect.forEach(
+            [0, 1],
+            () =>
+              backend.prepareDiagrams({
+                kind: "report",
+                issue_id: IssueId.make(issue),
+                request_id: RequestId.make(savedReport!.request_id),
+                hash: ContentHash.make(savedReport!.hash),
+              }),
+            { concurrency: 2 },
+          ),
+        );
+        assert.ok(concurrent.every((value) => value.verified && value.metrics?.compilations === 0));
+        if (diagramPerformance)
+          diagramPerformance.concurrent_warm = concurrent.map((value) => value.metrics);
         const restored = Schema.decodeSync(DocumentArtifactSchema)(
           await Effect.runPromise(
             backend.work["artifactDocument"]({
@@ -849,6 +931,12 @@ export async function workspaceJourney(input: {
             await fetch(new URL((await download.getAttribute("href"))!, web.origin))
           ).json();
           assert.equal(json.provenance.source_surface.revision, 2);
+          assert.equal(
+            json.surface.createSurface.components.filter((c: any) => c.component === "Mermaid")
+              .length,
+            32,
+          );
+          await page.locator('.frozen-report [data-diagram-state="ready"]').nth(31).waitFor();
           assert.ok(
             json.data.work.some(
               (row: { issue_id: string }) => row.issue_id === population.offPage.id,
@@ -984,6 +1072,7 @@ export async function workspaceJourney(input: {
         JSON.stringify(
           {
             partialBeforeRelease,
+            diagramPerformance,
             trace: nativeTrace,
             observers: observers.map(({ events, errors }) => ({ events, errors })),
           },

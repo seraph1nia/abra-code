@@ -1,5 +1,8 @@
+import { prepareDiagrams, documentDiagrams } from "../workflow/diagrams.ts";
+import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
+import { readReportDocument } from "../presentation/report-document.ts";
+import { presentationHash } from "../presentation/identity.ts";
 import { committedScope } from "../visibility/invalidations.ts";
-import { observeCheckpoint } from "./checkpoint.ts";
 import { artifactSummary, artifactPage } from "./artifacts.ts";
 import { join } from "node:path";
 import { Effect } from "effect";
@@ -162,6 +165,41 @@ export function registerWebGateway(
     }
     // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native registration declares unknown; handler failures are mapped at the boundary.
     return yield* ctx.rpc.register(webGateway, {
+      prepareDiagrams: ({ session_id, selection }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(
+            Effect.gen(function* () {
+              if (selection.kind === "surface") {
+                const record = yield* surfacePublications.read(
+                  session_id,
+                  selection.surface_id,
+                  selection.revision,
+                );
+                if (presentationHash(record.surface) !== selection.hash)
+                  return yield* new CrewError(
+                    "DIAGRAM_SOURCE",
+                    "Surface source hash does not match its exact revision",
+                  );
+                return yield* prepareDiagrams(
+                  collectDiagrams(record.surface.createSurface.components),
+                );
+              }
+              const artifact = yield* controller.visualDocument(
+                selection.issue_id,
+                selection.request_id,
+                selection.hash,
+              );
+              const decoded = yield* Effect.try({
+                try: () => readReportDocument(artifact.json),
+                catch: CrewError.from,
+              });
+              if (!decoded.supported) return yield* new CrewError("REPORT_FORMAT", decoded.reason);
+              return yield* prepareDiagrams(documentDiagrams(decoded.document));
+            }),
+          ),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
       surface: ({ session_id, surface_id, revision }, { error }) =>
         assertSupervisor(session_id).pipe(
           Effect.andThen(surfacePublications.read(session_id, surface_id, revision)),
@@ -304,7 +342,7 @@ export function registerWebGateway(
         ),
       checkpoint: ({ session_id, form_id }, { error }) =>
         assertSupervisor(session_id).pipe(
-          Effect.andThen(observeCheckpoint(controller.queries, session_id, form_id)),
+          Effect.andThen(controller.queries.checkpoint(session_id, form_id)),
           Effect.mapError((e) => error("refused", e.message, { code: e.code })),
           provide,
         ),

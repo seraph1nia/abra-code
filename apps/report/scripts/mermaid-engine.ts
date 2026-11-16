@@ -1,8 +1,11 @@
+import { diagramSourcePolicy } from "@abracode/contracts/presentation/diagrams";
 import mermaid from "mermaid";
 
 // Authoring/build tooling only: this engine is never imported by the report.
 mermaid.initialize({
   startOnLoad: false,
+  htmlLabels: false,
+  flowchart: { htmlLabels: false },
   securityLevel: "strict",
   suppressErrorRendering: true,
   theme: "base",
@@ -21,7 +24,13 @@ let nextId = 0;
 
 export async function renderDiagram(source: string) {
   // Rendering can fail after parsing, so validation deliberately does both.
-  await mermaid.parse(source);
+  const policy = diagramSourcePolicy(source);
+  if (policy) throw new Error(`FORBIDDEN: ${policy}`);
+  try {
+    await mermaid.parse(source);
+  } catch (error) {
+    throw new Error(`SYNTAX: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const host = document.createElement("div");
   host.style.cssText = "position:absolute;left:-100000px;top:0;width:1080px";
   document.body.append(host);
@@ -33,28 +42,34 @@ export async function renderDiagram(source: string) {
     // Portable SVG cannot load external resources or carry executable nodes.
     const prepared = document.createElement("template");
     prepared.innerHTML = svg;
-    if (prepared.content.querySelector("script,iframe,object,embed,video,audio"))
-      throw new Error("Diagram output contains executable or external content");
+    if (
+      prepared.content.querySelector(
+        "script,iframe,object,embed,video,audio,image,foreignObject,animate,animateMotion,animateTransform,set,a",
+      )
+    )
+      throw new Error("FORBIDDEN: Diagram output contains executable or external content");
     const inlineResource = (value: string) =>
       value.startsWith("#") || /^data:image\/(?:png|jpeg|gif|webp);base64,/i.test(value);
     const safeStyle = (value: string) =>
       !value.includes("\\") &&
-      !/@import\b/i.test(value) &&
+      !/@import\b|expression\s*\(|behavior\s*:|(?:image-set|image|cross-fade)\s*\(|(?:https?|javascript|file|data)\s*:/i.test(
+        value,
+      ) &&
       [...value.matchAll(/url\(\s*["']?([^)'"\s]+)/gi)].every((match) => inlineResource(match[1]!));
     for (const element of prepared.content.querySelectorAll("*")) {
       for (const attribute of element.attributes) {
         if (["href", "src"].includes(attribute.localName) && !inlineResource(attribute.value))
-          throw new Error("Diagram output requires an external resource");
+          throw new Error("FORBIDDEN: Diagram output requires an external resource");
         if (attribute.localName.startsWith("on"))
-          throw new Error("Diagram output contains an event handler");
+          throw new Error("FORBIDDEN: Diagram output contains an event handler");
         if (
           (attribute.localName === "style" || /url\s*\(/i.test(attribute.value)) &&
           !safeStyle(attribute.value)
         )
-          throw new Error("Diagram style requires an external resource");
+          throw new Error("FORBIDDEN: Diagram style requires an external resource");
       }
       if (element.localName === "style" && !safeStyle(element.textContent ?? ""))
-        throw new Error("Diagram stylesheet requires an external resource");
+        throw new Error("FORBIDDEN: Diagram stylesheet requires an external resource");
     }
     host.replaceChildren(prepared.content.cloneNode(true));
     const graphic = host.querySelector("svg");

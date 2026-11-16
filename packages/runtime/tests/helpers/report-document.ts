@@ -24,7 +24,7 @@ export function reportDocument() {
     title: "Saved evidence",
     captured_at: "2026-11-15T10:00:00.000Z",
     catalog_id: catalogId,
-    catalog_version: 1,
+    catalog_version: 2,
     renderer_compatibility: reportRendererVersion,
     provenance: {
       issue_id: "abra-web",

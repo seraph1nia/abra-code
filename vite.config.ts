@@ -37,7 +37,8 @@ export default defineConfig({
     },
   },
   test: {
-    maxWorkers: Math.min(8, availableParallelism()),
+    // Compiler-backed reports and native journeys share CPU/RAM with Git checks.
+    maxWorkers: Math.min(4, availableParallelism()),
     environment: "node",
     globalSetup: ["./packages/runtime/tests/global-setup.ts"],
     projects: [

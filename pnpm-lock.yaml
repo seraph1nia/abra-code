@@ -406,6 +406,9 @@ importers:
       '@abracode/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@abracode/report-export':
+        specifier: workspace:*
+        version: link:../../apps/report
       '@ag-ui/client':
         specifier: 1.0.4
         version: 1.0.4(zod@3.25.76)
@@ -455,9 +458,6 @@ importers:
       '@abracode/presentation':
         specifier: workspace:*
         version: link:../presentation
-      '@abracode/report-export':
-        specifier: workspace:*
-        version: link:../../apps/report
       '@abracode/web':
         specifier: workspace:*
         version: link:../../apps/web

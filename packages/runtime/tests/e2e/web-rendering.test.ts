@@ -93,16 +93,18 @@ test("upstream A2UI renders every work widget, replaces revisions and retains va
           ...workComponentNames.map((component, i) => ({
             id: `widget${i}`,
             component,
-            ...(component === "ReportLink"
-              ? { issueId: "abra-web" }
-              : component === "ResourceLink"
-                ? {
-                    label: "Inspect captured changes",
-                    target: { action: "open_changes", issue_id: "abra-web" },
-                  }
-                : component === "ReportEvidence"
-                  ? { section: "checks" }
-                  : { issueIds: ["abra-web", "abra-first"], mode: "snapshot" }),
+            ...(component === "Mermaid"
+              ? { title: "Diagram", source: "flowchart LR\nA --> B" }
+              : component === "ReportLink"
+                ? { issueId: "abra-web" }
+                : component === "ResourceLink"
+                  ? {
+                      label: "Inspect captured changes",
+                      target: { action: "open_changes", issue_id: "abra-web" },
+                    }
+                  : component === "ReportEvidence"
+                    ? { section: "checks" }
+                    : { issueIds: ["abra-web", "abra-first"], mode: "snapshot" }),
           })),
         ],
       },

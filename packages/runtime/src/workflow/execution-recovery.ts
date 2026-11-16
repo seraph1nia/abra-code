@@ -18,12 +18,14 @@ import type { CodingChecks } from "./checks.ts";
 import { Clock, Effect } from "effect";
 import { CrewError, terminal, type Config, type Execution, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import { IssueId, OperationAction, timestamp } from "../identities.ts";
+import { IssueId, OperationAction } from "../identities.ts";
 import { synchronizeExecution } from "../storage/store.ts";
 import { measureReconcile } from "../observability.ts";
 import { phaseRole } from "./roles.ts";
-import { collectApproval } from "./authorization.ts";
+import type { Authorizations, CheckpointEvidence } from "./authorization.ts";
 interface Dependencies {
+  readonly authorizations: Authorizations;
+  readonly checkpoints: CheckpointEvidence;
   readonly config: Config;
   readonly records: Records;
   readonly work: WorkGraph;
@@ -220,50 +222,22 @@ export class ExecutionRecovery {
           p.delivery === "github-pr" &&
           e.merge_approval_required &&
           e.supervisor_session_id &&
-          !e.approval_receipts.some(
-            (a) => a.kind === "merge" && a.fingerprint === e.delivered_commit && !a.rejected_at,
-          ) &&
+          this.c.checkpoints.status(e, "merge") === "missing" &&
           (yield* this.c.delivery.inspect(p, e))?.state === "OPEN"
         )
-          yield* collectApproval(
-            this.c.runtime,
+          yield* this.c.authorizations.collect(e, "merge", e.supervisor_session_id);
+        const rejected = yield* this.c.authorizations.collectPending(e);
+        if (rejected) {
+          if (rejected === "plan") yield* this.c.transitions.move(e, "planning");
+          return yield* this.c.transitions.fail(
             e,
-            "merge",
-            e.supervisor_session_id,
-            e.delivered_commit!,
-            () => this.c.records.saveOwned(e, ["approval_receipts"]),
+            new CrewError("APPROVAL_REJECTED", "Human rejected this checkpoint"),
           );
-        for (const a of e.approval_receipts.filter(
-          (a) =>
-            !a.authorized_at &&
-            !a.rejected_at &&
-            (e.current_phase === "awaiting_merge"
-              ? a.kind === "merge" && a.fingerprint === e.delivered_commit
-              : a.kind === "plan" && a.fingerprint === e.plan_fingerprint),
-        )) {
-          const { decision } = yield* collectApproval(
-            this.c.runtime,
-            e,
-            a.kind,
-            a.session_id,
-            a.fingerprint,
-            () => this.c.records.saveOwned(e, ["approval_receipts"]),
-          );
-          if (decision === "rejected") {
-            a.rejected_at = yield* timestamp;
-            if (a.kind === "plan") yield* this.c.transitions.move(e, "planning");
-            return yield* this.c.transitions.fail(
-              e,
-              new CrewError("APPROVAL_REJECTED", "Human rejected this checkpoint"),
-            );
-          }
         }
         if (
           e.current_phase === "awaiting_plan_approval" &&
           (e.plan_approval_required === false ||
-            e.approval_receipts.some(
-              (a) => a.kind === "plan" && a.fingerprint === e.plan_fingerprint && a.authorized_at,
-            ))
+            this.c.checkpoints.status(e, "plan") === "approved")
         )
           return yield* this.continueExecution.beginApply(e, p);
         if (e.current_phase === "awaiting_merge") {
@@ -272,9 +246,7 @@ export class ExecutionRecovery {
             p.delivery === "branch" ||
             pr?.state === "MERGED" ||
             e.merge_approval_required === false ||
-            e.approval_receipts.some(
-              (a) => a.kind === "merge" && a.fingerprint === e.delivered_commit && a.authorized_at,
-            )
+            this.c.checkpoints.status(e, "merge") === "approved"
           )
             return yield* this.c.finalization.finish(e, p, assessment);
         }

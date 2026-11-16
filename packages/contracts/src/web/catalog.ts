@@ -1,3 +1,4 @@
+import { DiagramSchema } from "../presentation/diagrams.ts";
 import { Schema } from "effect";
 import { IssueId } from "../identities.ts";
 import { ResourceSelectionSchema } from "./resources.ts";
@@ -9,7 +10,8 @@ import {
   STRICT_VALIDATION,
 } from "@a2ui/web_core/v1_0";
 
-export const catalogId = "https://abracode.local/catalog/work/v1/catalog.json";
+export const previousCatalogId = "https://abracode.local/catalog/work/v1/catalog.json";
+export const catalogId = "https://abracode.local/catalog/work/v2/catalog.json";
 export const legacyCatalogId = "https://abracode.local/catalog/v1";
 export const basicComponentNames = ["Column", "Row", "Text"] as const;
 export const ComponentId = Schema.String.check(
@@ -31,6 +33,11 @@ function component<const N extends string, S extends Schema.Struct<Schema.Struct
 
 /** Owned props are defined once; the SDK's Zod models are derived from the exported JSON. */
 export const workComponents = {
+  Mermaid: component(
+    "Mermaid",
+    DiagramSchema,
+    "A titled literal Mermaid diagram, optionally with description. Up to 32 instances, 32 KiB each and 256 KiB total source. Use abra_mermaid_verify before publishing diagrams; no configuration, HTML, callbacks, links or images.",
+  ),
   WorkTable: component("WorkTable", workProps, "Work items in a selectable table."),
   StatusSummary: component("StatusSummary", workProps, "Work item counts grouped by status."),
   Kanban: component("Kanban", workProps, "Work items grouped into status columns."),
@@ -133,6 +140,24 @@ export const workCatalogDocument = {
       discriminator: { propertyName: "component" },
     },
     anyFunction: { not: {} },
+  },
+};
+/** Retained v1 discovery document excludes the new component. */
+export const previousCatalogDocument = {
+  ...workCatalogDocument,
+  $id: previousCatalogId,
+  catalogId: previousCatalogId,
+  components: Object.fromEntries(
+    Object.entries(workCatalogDocument.components).filter(([name]) => name !== "Mermaid"),
+  ),
+  $defs: {
+    ...workCatalogDocument.$defs,
+    anyComponent: {
+      ...workCatalogDocument.$defs.anyComponent,
+      oneOf: componentNames
+        .filter((name) => name !== "Mermaid")
+        .map((name) => ({ $ref: `#/components/${name}` })),
+    },
   },
 };
 export const catalog = Catalog.fromJson(workCatalogDocument);

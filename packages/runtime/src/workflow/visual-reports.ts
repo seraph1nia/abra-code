@@ -108,9 +108,12 @@ export class VisualReports {
                   revision,
                   title: request.title ?? snapshot.title,
                   captured_at: Timestamp.make(current.observed_at),
-                  catalog_id: catalogId,
-                  catalog_version: 1,
-                  renderer_compatibility: reportRendererVersion,
+                  catalog_id: source.surface.createSurface.catalogId,
+                  catalog_version: source.surface.createSurface.catalogId === catalogId ? 2 : 1,
+                  renderer_compatibility:
+                    source.surface.createSurface.catalogId === catalogId
+                      ? reportRendererVersion
+                      : "abracode-react/v1",
                   provenance: {
                     issue_id: issue,
                     execution_id: e.execution_id,
@@ -461,7 +464,7 @@ export class VisualReports {
                     title: snapshot.title,
                     captured_at: snapshot.observed_at,
                     catalog_id: catalogId,
-                    catalog_version: 1,
+                    catalog_version: 2,
                     renderer_compatibility: reportRendererVersion,
                     provenance: {
                       issue_id: issue,

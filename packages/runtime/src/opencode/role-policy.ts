@@ -22,22 +22,37 @@ const editing = ["edit", "write", "patch"];
 const policies = {
   supervisor: { tools: [...reading, "abra_*"], write_scope: "none" },
   explore: {
-    tools: [...reading, ...reporting, "abra_spec", ...editing, "shell"],
+    tools: [...reading, ...reporting, "abra_mermaid_verify", "abra_spec", ...editing, "shell"],
     write_scope: "assigned-change",
     shell_commands: ["agent-browser", "agent-browser *"],
   },
   apply: {
-    tools: [...reading, ...reporting, "abra_spec", ...editing, "bash", "shell"],
+    tools: [
+      ...reading,
+      ...reporting,
+      "abra_mermaid_verify",
+      "abra_spec",
+      ...editing,
+      "bash",
+      "shell",
+    ],
     write_scope: "owned-worktree",
     shell_commands: ["*"],
   },
   review: {
-    tools: [...reading, ...reporting, "abra_spec", "abra_review_report", "shell"],
+    tools: [
+      ...reading,
+      ...reporting,
+      "abra_mermaid_verify",
+      "abra_spec",
+      "abra_review_report",
+      "shell",
+    ],
     write_scope: "none",
     shell_commands: ["agent-browser", "agent-browser *"],
   },
   research: {
-    tools: [...reading, ...reporting, "abra_research_report", "shell"],
+    tools: [...reading, ...reporting, "abra_mermaid_verify", "abra_research_report", "shell"],
     write_scope: "none",
     shell_commands: ["agent-browser", "agent-browser *"],
   },

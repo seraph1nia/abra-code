@@ -1,3 +1,4 @@
+import { DiagramView } from "./diagrams.tsx";
 import { bindWork, type WorkBinding } from "./work-bindings.ts";
 export { bindWork } from "./work-bindings.ts";
 import type { ReactNode } from "react";
@@ -13,6 +14,7 @@ import type { ReportSnapshot } from "@abracode/contracts/presentation/report-evi
 
 type Binding = WorkBinding & {
   evidence?: ReportSnapshot;
+  diagramMessage?: string;
   preparedDiagrams?: readonly PreparedReportDiagram[];
   inspect?: (target: ResourceSelection) => void;
 };
@@ -31,9 +33,20 @@ export function WorkWidget({
   props: WorkProps<"WorkTable"> &
     Partial<WorkProps<"ReportLink">> &
     Partial<WorkProps<"ResourceLink">> &
-    Partial<WorkProps<"ReportEvidence">>;
+    Partial<WorkProps<"ReportEvidence">> &
+    Partial<WorkProps<"Mermaid">>;
   binding: Binding;
 }) {
+  if (name === "Mermaid")
+    return (
+      <DiagramView
+        title={props.title!}
+        source={props.source!}
+        description={props.description}
+        prepared={binding.preparedDiagrams?.find((d) => d.source === props.source)}
+        message={binding.diagramMessage}
+      />
+    );
   const { selected, total, label, incomplete } = bindWork(props, binding);
   const source = props.mode === "snapshot" ? binding.captured : binding.work;
   const navigate = (target: ResourceSelection, text: ReactNode, className?: string) =>
@@ -61,6 +74,7 @@ export function WorkWidget({
           section={props.section ?? "summary"}
           snapshot={binding.evidence}
           preparedDiagrams={binding.preparedDiagrams}
+          diagramMessage={binding.diagramMessage}
         />
       );
     case "ResourceLink":

@@ -17,7 +17,7 @@ Open a report from its conversation attachment or task Reports section. Chat pre
 
 ## Format and storage
 
-`a2ui-snapshot` format version 1 retains the document/request ID, revision, capture time, issue/execution/control generation, catalog version, renderer compatibility, exact source surface and proven native message/call provenance. Its surface is bounded to 64 KiB, evidence to 512 KiB and complete UTF-8 document to 1 MiB. The catalog rejects callbacks, arbitrary links, approval components, cyclic/excessive layouts and unknown references.
+`a2ui-snapshot` format version 1 retains the document/request ID, revision, capture time, issue/execution/control generation, catalog version, renderer compatibility, exact source surface and proven native message/call provenance. Catalog-v2 surfaces are bounded to 384 KiB (retained v1 surfaces to 64 KiB), evidence to 512 KiB and the complete UTF-8 document to 1 MiB. The catalog rejects callbacks, arbitrary links, approval components, cyclic/excessive layouts and unknown references.
 
 The existing report owner reserves captured input, writes and syncs an exclusive private stage, retains a digest/byte receipt, and atomically links `.abracode/reports/generated/<issue>/<request>/index.json`. It never overwrites occupied output. Reads verify the retained identity, containment, real regular file, byte count and SHA-256. Same-ID retries reconcile bytes without recapture. These files and receipts survive worktree retirement; deleting them makes that revision unavailable. Preserve installation state and report files together when backing up.
 
@@ -32,7 +32,7 @@ Exports are cached by document hash and exporter identity. The
 compiler modules, explicit stylesheet scan inputs, resolved package/tool links,
 Mermaid preparation sources and installed rendering dependency closure, shared
 asset-format ABI and embedded notices. Backend-only changes and unrelated lockfile
-changes do not change that identity. Verified receipt/hash/byte checks protect preview and attachment download. Identical exports reuse existing bytes; an interrupted receipt can reconcile already published HTML. A changed exporter creates a separate destination under `.abracode/reports/exports/<document-hash>/<exporter-hash>/`. Export failures leave canonical JSON usable. The HTML cap is 8 MiB; the exercised React fixture is about 1.2 MB before compression, rather than a size guarantee for every report.
+changes do not change that identity. Verified receipt/hash/byte checks protect preview and attachment download. Identical exports reuse existing bytes; an interrupted receipt can reconcile already published HTML. A changed exporter creates a separate destination under `.abracode/reports/exports/<document-hash>/<exporter-hash>/`. Export failures leave canonical JSON usable. The HTML cap is 8 MiB; verification evidence records actual bytes for each exercised fixture rather than guaranteeing one report size.
 
 Contributors can export an explicitly downloaded JSON document and run an independent foreground preview:
 
@@ -123,3 +123,17 @@ live widgets freeze their separately observed save-time rows. Optional
 Unfiltered limits are explicit partial observations, and missing historical
 coverage remains unknown. App and portable viewers share this pure binding
 adapter and perform no summary reads for frozen documents.
+
+### Diagram collection limits
+
+New catalog-v2 reports support 32 diagram placements, 32 KiB UTF-8 source each and 256 KiB aggregate source across inline Mermaid and displayed captured-evidence sections. Repeated placements count even when preparation is reused. The new surface cap is 384 KiB; captured data/evidence remains bounded to 512 KiB, the canonical document to 1 MiB and the HTML artifact to 8 MiB. Every applicable bound must fit. Historical catalog-v1 documents retain their original eight-diagram and surface limits. Accepted research Markdown retains its enclosing 64 KiB publication bound.
+
+### Shared diagram preparation and verifier
+
+`abra_mermaid_verify` accepts `{ "diagrams": [{ "id": "overview", "source": "flowchart LR\nA --> B" }] }`. It returns overall `verified`, a compiler identity, per-source status/location when available, and preparation counts. Successful verification covers parsing, rendering and safe output; it does not prove factual correctness, visual legibility or repository checks. Malformed syntax, render errors, forbidden features, limit, timeout, busy and unavailable compiler outcomes remain distinct. Only current authorized managed roles and the central Supervisor can invoke it; no shell/file permission is needed.
+
+The plugin, app, CLI and exporter use one bounded preparation interface. The service caches at most 128 results/32 MiB by exact source and compiler/security/theme identity, deduplicates pending sources, permits two active batches/eight queued batches and enforces a 60-second end-to-end deadline. Standalone CLI processes use the same policy with their own cache. Failed or interrupted viewing preserves source/JSON and never changes controller truth. Prepared output is capped at 8 MiB; final HTML must still fit its own 8 MiB bound.
+
+Supported safe syntax includes flowcharts, sequence, state, class, ER, Gantt and mindmaps. Bidirectional arrows and ordinary label punctuation are accepted. Initialization directives/frontmatter, HTML labels, links/callbacks, images and external resources are refused; the compiler uses fixed strict settings and checks output SVG. Source-induced network requests are blocked. Chromium remains a preparation prerequisite (`pnpm report:browser:install` or a compatible `REPORT_CHROMIUM_PATH`); it is absent from exported viewing.
+
+Explicit diagram lists replace defaults, including an empty list. With no override, generation uses retained research diagrams if present or the documented work/authority defaults. Requested collections are never clipped. Inline Mermaid placements and report-evidence diagrams are exported together. The app displays source/loading/failure individually and prepares only exact opened revisions; saved and offline viewers never substitute current work. Upgrade preserves historical JSON, HTML and research Markdown bytes; old readers cannot render catalog-v2 documents and must preserve their download.

@@ -1,3 +1,5 @@
+import { verifyDiagrams } from "../workflow/diagrams.ts";
+import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
 import {
   bindingRequirements,
   selectBindingRows,
@@ -311,6 +313,7 @@ export class SurfacePublications {
               validateSurface(surface, new Set(snapshot.work.map((work) => work.issue_id))),
             catch: () => new CrewError("UI_SURFACE", "Surface references unavailable work"),
           });
+          yield* verifyDiagrams(collectDiagrams(surface.createSurface.components));
           const selected = selectBindingRows(
             bindingRequirements(surface),
             snapshot.work,

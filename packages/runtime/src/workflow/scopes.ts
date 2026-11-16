@@ -1,7 +1,7 @@
 import { externalOwns } from "../validation/contracts.ts";
 import { ObligationKey } from "../identities.ts";
 import { Clock, Effect } from "effect";
-import { ensure, type Execution, type Issue, CrewError } from "../domain.ts";
+import { type Execution, type Issue, CrewError } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { decode, decodeJSON } from "../decode.ts";
 import { ScopeSchema, completeScope, scopeIdentity, type Scope } from "../work/scope.ts";
@@ -117,14 +117,4 @@ export class Scopes {
     }.bind(this),
     domainEffect,
   );
-  assert(e: Execution) {
-    ensure(
-      e.scope &&
-        e.scope.fingerprint === scopeIdentity(e.scope.revision, e.scope.contract) &&
-        e.plan_fingerprint === e.scope.fingerprint,
-      "SCOPE_CHANGED",
-      "Scoped contract changed; explicitly revise and approve it",
-    );
-    return e.scope.fingerprint;
-  }
 }

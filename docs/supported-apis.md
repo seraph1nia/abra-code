@@ -658,3 +658,9 @@ message provenance remain intact; a changed call whose ID collides with earlier
 history uses a full message projection. This avoids the pinned client's global
 incremental lookup rewriting an older tool name or arguments. The real reducer
 regression covers two different tools sharing `call_0`.
+
+### Mermaid diagnostic tool and exact prepared views
+
+Pinned OpenCode 2.3.0 `ToolEditor.add`, strict Standard Schema inputs and the existing `abra` namespace register `abra_mermaid_verify`. Its input is literal identified source data, not paths or compiler configuration. Output contains diagnostic metadata only, never supplied SVG or publication/check authority. The authoritative role policy permits it for Supervisor and current Explore/Apply/Review/Research assignments, preserving captured custom agent selection and generation checks.
+
+`POST /api/diagrams/prepare` uses a closed selection union: `{kind:"surface",surface_id,revision,hash}` or `{kind:"report",issue_id,request_id,hash}`. Surface hashes cover canonical sorted source-surface JSON; report hashes are retained document receipts. The fixed `abracode-web.prepareDiagrams` RPC rechecks central Supervisor ownership and exact source identity before returning bounded trusted assets/results. No generic RPC/path/configuration proxy is exposed, and the existing origin/session middleware remains required. Historical immutable revisions can be prepared by their exact identity; a missing or mismatched selection never resolves to latest. Reads do not admit provider turns.

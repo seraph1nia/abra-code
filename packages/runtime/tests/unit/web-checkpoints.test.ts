@@ -5,10 +5,11 @@ import { test } from "vite-plus/test";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { Effect } from "effect";
+import { CrewError } from "../../src/domain.ts";
 import { fixture, planned, delivered } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import * as Id from "../../src/identities.ts";
-import { observeCheckpoint } from "../../src/web/checkpoint.ts";
 const supervisor = Id.SessionId.make("ses_supervisor");
 
 test("browser plan checkpoint observes current Git bytes and leaves the native approval unconsumed", async (t) => {
@@ -18,20 +19,17 @@ test("browser plan checkpoint observes current Git bytes and leaves the native a
   await run(f.controller.approve(execution.issue_id, "plan", supervisor));
   const retained = (await run(f.records.execution(execution.issue_id)))!;
   const approval = retained.approval_receipts.find((receipt) => receipt.kind === "plan")!;
-  const read = () => run(observeCheckpoint(f.controller.queries, supervisor, approval.form_id));
+  const read = () => run(f.controller.queries.checkpoint(supervisor, approval.form_id));
   const current = await read();
   assert.equal(current.active, true);
   assert.equal("kind" in current && current.kind, "plan");
   assert.equal(
-    (
-      await run(
-        observeCheckpoint(f.controller.queries, Id.SessionId.make("ses_foreign"), approval.form_id),
-      )
-    ).active,
+    (await run(f.controller.queries.checkpoint(Id.SessionId.make("ses_foreign"), approval.form_id)))
+      .active,
     false,
   );
   assert.equal(
-    (await run(observeCheckpoint(f.controller.queries, supervisor, "frm_unknown"))).active,
+    (await run(f.controller.queries.checkpoint(supervisor, "frm_unknown"))).active,
     false,
   );
   const proposal = join(
@@ -50,6 +48,12 @@ test("browser plan checkpoint observes current Git bytes and leaves the native a
   assert.equal((await read()).active, true);
   assert.deepEqual(await run(f.records.execution(execution.issue_id)), retained);
   assert.equal(approval.authorized_at, undefined);
+  const fingerprint = f.git.planFingerprint.bind(f.git);
+  f.git.planFingerprint = () => Effect.fail(new CrewError("GIT_UNAVAILABLE", "Read unavailable"));
+  assert.equal((await read()).active, false, "Observation must use the supplied Git adapter");
+  assert.deepEqual(await run(f.records.execution(execution.issue_id)), retained);
+  f.git.planFingerprint = fingerprint;
+  assert.equal((await read()).active, true);
 });
 
 test("merge checkpoint does not authorize another delivered-content identity", async (t) => {
@@ -60,13 +64,13 @@ test("merge checkpoint does not authorize another delivered-content identity", a
   const retained = (await run(f.records.execution(execution.issue_id)))!;
   const approval = retained.approval_receipts.find((receipt) => receipt.kind === "merge")!;
   assert.equal(
-    (await run(observeCheckpoint(f.controller.queries, supervisor, approval.form_id))).active,
+    (await run(f.controller.queries.checkpoint(supervisor, approval.form_id))).active,
     true,
   );
   retained.delivered_commit = Id.Commit.make("f".repeat(40));
   await run(f.records.save(retained));
   assert.equal(
-    (await run(observeCheckpoint(f.controller.queries, supervisor, approval.form_id))).active,
+    (await run(f.controller.queries.checkpoint(supervisor, approval.form_id))).active,
     false,
   );
   assert.equal(
@@ -101,7 +105,7 @@ test("decision generation and finishing targets remain exact native bindings aft
   const current = retained.decisions!.find((item) => item.key === decision.key)!;
   assert.ok(current.finishing_target);
   assert.ok(current.form_id);
-  const observed = await run(observeCheckpoint(f.controller.queries, supervisor, current.form_id!));
+  const observed = await run(f.controller.queries.checkpoint(supervisor, current.form_id!));
   assert.equal(observed.active, true);
   assert.equal(
     "identity" in observed && observed.identity,
@@ -113,7 +117,7 @@ test("decision generation and finishing targets remain exact native bindings aft
   );
   await run(f.controller.control(execution.issue_id, "pause"));
   assert.equal(
-    (await run(observeCheckpoint(f.controller.queries, supervisor, current.form_id!))).active,
+    (await run(f.controller.queries.checkpoint(supervisor, current.form_id!))).active,
     false,
   );
 });

@@ -1,19 +1,12 @@
+import { prepareDiagrams, documentDiagrams } from "./diagrams.ts";
 import { RendererShell } from "./renderer-shell.ts";
-import { decode } from "../decode.ts";
-import { join, relative } from "node:path";
-import { Effect, Schema } from "effect";
-import { AbsolutePath, ContentHash, Executable } from "../identities.ts";
+import { Effect } from "effect";
+import { AbsolutePath, ContentHash } from "../identities.ts";
 import { CrewError, ensure } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { canonicalJSON } from "../presentation/identity.ts";
 import { validateReportDocument, type ReportDocument } from "../presentation/report-document.ts";
-import {
-  reportHash,
-  reportDirectory,
-  validatePortableHTML,
-  maximumHTMLBytes,
-} from "./report-build.ts";
-import { lstat, realpath, readFile, mkdtemp, writeFile, rm } from "../filesystem.ts";
+import { reportHash, validatePortableHTML } from "./report-build.ts";
 import type { Runner } from "../process.ts";
 
 export interface DocumentRenderer {
@@ -68,8 +61,17 @@ export class ReactDocumentRenderer implements DocumentRenderer {
           "REPORT_DOCUMENT",
           "Captured report exceeds 1 MiB",
         );
-        const sources = document.data.evidence?.diagrams ?? [];
-        const prepared = sources.length ? yield* this.diagrams(document, json) : [];
+        const sources = documentDiagrams(document);
+        const batch = sources.length ? yield* prepareDiagrams(sources) : undefined;
+        ensure(
+          !batch || batch.verified,
+          "REPORT_DIAGRAM",
+          batch?.results
+            .filter((r) => r.status !== "verified")
+            .map((r) => `${r.id}: ${r.status}: ${r.message}`)
+            .join("\n") ?? "Diagram preparation failed",
+        );
+        const prepared = batch?.assets ?? [];
         const escaped = (value: string) =>
           value
             .replaceAll("<", "\\u003c")
@@ -84,79 +86,6 @@ export class ReactDocumentRenderer implements DocumentRenderer {
           "Renderer inputs changed during export; output was not published",
         );
         return output;
-      }),
-    );
-  private diagrams = (document: ReportDocument, json: string) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const parent = yield* reportDirectory(this.home, [".abracode", "reports", ".scratch"]);
-        return yield* Effect.acquireUseRelease(
-          Effect.gen(function* () {
-            const directory = yield* mkdtemp(join(parent, "diagrams-"));
-            return { directory, stat: yield* lstat(directory) };
-          }),
-          ({ directory }) =>
-            domainEffect(
-              Effect.gen({ self: this }, function* () {
-                const input = join(directory, "document.json"),
-                  output = join(directory, "diagrams.json");
-                yield* writeFile(input, json, { flag: "wx", mode: 0o600 });
-                yield* this.runner.run(
-                  Executable.make(join(this.home, "node_modules/.bin/tsx")),
-                  [join(this.home, "apps/report/scripts/prepare-diagrams.ts"), input, output],
-                  this.home,
-                  { NODE_ENV: "production" },
-                  { deadline_ms: 45000, max_output_bytes: 262144 },
-                );
-                const stat = yield* lstat(output);
-                ensure(
-                  stat.isFile() && !stat.isSymbolicLink() && stat.size <= maximumHTMLBytes,
-                  "REPORT_DIAGRAM",
-                  "Prepared diagram output exceeds its regular-file bound",
-                );
-                const value: unknown = JSON.parse(yield* readFile(output, "utf8"));
-                const sources = document.data.evidence?.diagrams ?? [];
-                const prepared = yield* decode(
-                  Schema.Array(Schema.Struct({ source: Schema.String, svg: Schema.String })).check(
-                    Schema.isMaxLength(8),
-                  ),
-                  value,
-                  "Prepared diagrams",
-                );
-                ensure(
-                  prepared.length === sources.length &&
-                    prepared.every(
-                      (item, i) =>
-                        item.source === sources[i]!.source &&
-                        /<svg\b/i.test(item.svg) &&
-                        !/<(?:script|iframe|object|embed)\b|\son[a-z]+\s*=/i.test(item.svg),
-                    ),
-                  "REPORT_DIAGRAM",
-                  "Prepared SVG does not match the captured source",
-                );
-                return prepared;
-              }),
-            ),
-          ({ directory, stat }) =>
-            domainEffect(
-              Effect.gen(function* () {
-                const current = yield* lstat(directory);
-                ensure(
-                  current.isDirectory() &&
-                    !current.isSymbolicLink() &&
-                    current.dev === stat.dev &&
-                    current.ino === stat.ino &&
-                    (yield* realpath(directory)) === directory &&
-                    !relative(parent, directory).startsWith(".."),
-                  "REPORT_SCRATCH",
-                  "Diagram scratch ownership changed",
-                );
-                yield* rm(directory, { recursive: true, force: false });
-              }),
-            ).pipe(
-              Effect.catch((error) => Effect.logWarning("Diagram scratch preserved", error.code)),
-            ),
-        );
       }),
     );
 }

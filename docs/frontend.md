@@ -172,3 +172,7 @@ transport detaches on unmount without stopping native work. Inspector, captured
 reports/generated views and Markdown use retryable React lazy boundaries; hooks
 and tool rendering use CopilotKit's supported headless entry. Final byte-graph,
 deferred-feature, Back/focus and 375/390px acceptance remains pending.
+
+### Versioned diagram data
+
+Work catalog v2 and `abracode-react/v2` add literal Mermaid components and larger bounded collections. Retained v1 surfaces/documents keep their original IDs, byte limits, eight-diagram evidence contract and source safety policy. Readers check catalog, renderer and surface identity together. No upgrade rewrites saved JSON or interprets an unsupported diagram as a partial successful view.

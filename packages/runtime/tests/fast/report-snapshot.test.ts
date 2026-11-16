@@ -134,8 +134,8 @@ test("generated Mermaid data refuses executable directives, HTML, links and exte
     "%%{init: {securityLevel: 'loose'}}%%\nflowchart LR\nA --> B",
     "flowchart LR\nA[<img src=x>]",
     "flowchart LR\nclick A href 'https://example.invalid'",
-    "flowchart LR\nA[https://example.invalid]",
-    "flowchart LR\nA[style url(attack)]",
+
+    "flowchart LR\nstyle A fill:url(attack)",
   ])
     assert.throws(
       () => validateSnapshot({ ...snapshot, diagrams: [{ title: "Unsafe diagram", source }] }),

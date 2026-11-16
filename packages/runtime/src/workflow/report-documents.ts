@@ -1,3 +1,4 @@
+import { verifyDiagrams, documentDiagrams } from "./diagrams.ts";
 import { ReportFile } from "./report-files.ts";
 import { Effect } from "effect";
 import { CrewError, ensure, type Execution } from "../domain.ts";
@@ -189,6 +190,7 @@ export class ReportDocuments {
                     "REPORT_IDENTITY",
                     "Captured document belongs to another request or execution",
                   );
+                  yield* verifyDiagrams(documentDiagrams(document));
                   const hash = reportHash(canonicalJSON(document));
                   build = {
                     request,

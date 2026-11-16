@@ -1,3 +1,4 @@
+import { collectDiagrams, diagramBudget } from "../presentation/diagrams.ts";
 import { Schema } from "effect";
 import { ResourceSelectionSchema } from "./resources.ts";
 import {
@@ -8,6 +9,7 @@ import {
 } from "@a2ui/web_core/v1_0";
 import {
   catalogId,
+  previousCatalogId,
   ComponentId,
   ComponentSchema,
   legacyCatalogId,
@@ -21,7 +23,7 @@ const PublicationSchema = Schema.Struct({
   version: Schema.Literal("1.0"),
   createSurface: Schema.Struct({
     surfaceId: ComponentId,
-    catalogId: Schema.Literal(catalogId),
+    catalogId: Schema.Literals([catalogId, previousCatalogId]),
     components: Schema.Array(ComponentSchema).check(Schema.isMinLength(1), Schema.isMaxLength(100)),
   }),
 }).annotate({ parseOptions: { onExcessProperty: "error" }, reportInput: false });
@@ -40,7 +42,11 @@ export const SurfaceSchema = PublicationSchema.check(
 );
 export type WorkSurface = typeof SurfaceSchema.Type;
 export type WorkComponent = WorkSurface["createSurface"]["components"][number];
-export const toSdkSurface = (surface: WorkSurface) => CreateSurfaceMessageSchema.parse(surface);
+export const toSdkSurface = (surface: WorkSurface) =>
+  CreateSurfaceMessageSchema.parse({
+    ...surface,
+    createSurface: { ...surface.createSurface, catalogId },
+  });
 
 export const surfaceValidation = {
   ...STRICT_VALIDATION,
@@ -71,10 +77,15 @@ export function surfaceResources(surface: WorkSurface) {
 
 /** Validate the complete replacement before committing or changing a displayed revision. */
 export function validateSurface(value: unknown, workIds?: ReadonlySet<string>): WorkSurface {
-  if (new TextEncoder().encode(JSON.stringify(value)).length > 65536)
-    throw new Error("Surface exceeds the 64 KiB limit");
   CreateSurfaceMessageSchema.parse(value);
   const surface = Schema.decodeUnknownSync(PublicationSchema)(value, { onExcessProperty: "error" });
+  const old = surface.createSurface.catalogId === previousCatalogId;
+  if (new TextEncoder().encode(JSON.stringify(value)).length > (old ? 65536 : 384 * 1024))
+    throw new Error(old ? "Surface exceeds the 64 KiB limit" : "Surface exceeds the 384 KiB limit");
+  if (old && surface.createSurface.components.some((c) => c.component === "Mermaid"))
+    throw new Error("Mermaid requires the v2 catalog");
+  const budget = diagramBudget(collectDiagrams(surface.createSurface.components));
+  if (budget) throw new Error(budget);
   const components = new Map<string, WorkComponent>();
   for (const c of surface.createSurface.components) {
     const id = Schema.decodeUnknownSync(ComponentId)(c.id);
@@ -124,6 +135,8 @@ export function normalizeSurface(value: unknown): WorkSurface {
     json.createSurface,
   );
   if (create.catalogId !== legacyCatalogId) return validateSurface(value);
+  if (new TextEncoder().encode(JSON.stringify(value)).length > 65536)
+    throw new Error("Legacy surface exceeds 64 KiB");
   const components = Schema.decodeUnknownSync(
     Schema.Array(Schema.Record(Schema.String, Schema.Json)),
   )(create.components);

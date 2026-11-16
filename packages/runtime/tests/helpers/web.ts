@@ -1,3 +1,7 @@
+import { prepareDiagrams as prepareDiagramBatch } from "../../src/workflow/diagrams.ts";
+import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
+import { readReportDocument } from "../../src/presentation/report-document.ts";
+import { presentationHash } from "../../src/presentation/identity.ts";
 import { selectBindingRows } from "@abracode/contracts/web/bindings";
 import { Effect, Stream } from "effect";
 import { SessionMessage } from "@opencode/schema/session-message";
@@ -61,6 +65,26 @@ export class WorkspaceFixture implements WebBackend {
           unavailable: "This exact generated-view revision is unavailable.",
         },
     );
+  prepareDiagrams = (
+    selection: import("@abracode/contracts/web/diagram-actions").PrepareDiagramSelection,
+  ) =>
+    Effect.gen({ self: this }, function* () {
+      if (selection.kind === "surface") {
+        const record = yield* this.surface(selection.surface_id, selection.revision);
+        if (!("surface" in record) || presentationHash(record.surface) !== selection.hash)
+          return yield* new CrewError("DIAGRAM_SOURCE", "Invalid surface hash");
+        return yield* prepareDiagramBatch(collectDiagrams(record.surface.createSurface.components));
+      }
+      const artifact = yield* this.work.artifactDocument(selection);
+      const decoded = readReportDocument(artifact.json);
+      if (!decoded.supported) return yield* new CrewError("REPORT_FORMAT", decoded.reason);
+      return yield* prepareDiagramBatch(
+        collectDiagrams(
+          decoded.document.surface.createSurface.components,
+          decoded.document.data.evidence,
+        ),
+      );
+    });
   history = () => Effect.succeed({ messages: [] });
   readonly retainedReceipts = new Map<string, SubmissionReceipt>();
   receipt = (requestID: string) =>

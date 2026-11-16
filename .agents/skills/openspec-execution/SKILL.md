@@ -19,6 +19,8 @@ On failed Review, include `scope_status` (`in_scope`, `scope_change`, `uncertain
 
 Review, CI and skills supply evidence and guidance, not permission to revise approved requirements. When they conflict, identify the sources and expected behaviors, preserve the plan and raise a decision. A confirmed implementation defect is fixed within scope. A confirmed obsolete test or instruction may be corrected within scope when the accepted requirements already establish the intended behavior; do not disable gates to obtain a pass. Changed requirements return through Supervisor-controlled replanning and configured approval, or a revised short contract. A decision answer alone never authorizes a new plan or merge.
 
+For Mermaid diagrams in requested reports or dashboards, use `abra_mermaid_verify` on identified literal sources before submission. Read [report guidance](../../../docs/reports.md) for supported syntax, limits and diagnostic meanings. Verification covers renderability and safety; report publication and controller checkpoints remain with their existing owners.
+
 All worker roles can load `abra-browser` for website interaction and application behavior checks. Explore, Review and Research have only the agent-browser shell exception; repository edit scope and controller checkpoints remain unchanged. Apply retains its development shell.
 
 ## Review verification

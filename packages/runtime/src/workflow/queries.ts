@@ -1,4 +1,6 @@
 import { archivedPlans } from "../visibility/archived-plans.ts";
+import { CheckpointEvidence } from "./authorization.ts";
+import { createHash } from "node:crypto";
 import { executionContract } from "../visibility/execution-contract.ts";
 import { executionBlocker } from "./readiness.ts";
 import { localDay } from "../visibility/fleet.ts";
@@ -68,6 +70,7 @@ export class Queries {
     private git: Git,
     private runtime: Runtime,
     private reportReader?: (e: Execution) => Effect.Effect<string, CrewError>,
+    private checkpoints = new CheckpointEvidence(git),
   ) {}
   get settings() {
     return {
@@ -95,6 +98,31 @@ export class Queries {
   recordDiagnostics = () => this.records.diagnostics();
   recordsExport = () => this.records.export();
   supervisor = () => this.records.supervisor();
+  /** Observation never collects a native answer or grants lifecycle authorization. */
+  checkpoint = (session: SessionId, form: string) =>
+    Effect.gen({ self: this }, function* () {
+      for (const e of yield* this.records.executions()) {
+        const approval = yield* this.checkpoints.observe(e, session, form);
+        if (approval) return approval;
+        const decision = e.decisions?.find((d) => d.form_session === session && d.form_id === form);
+        if (decision)
+          return {
+            active: decision.status === "open" && decision.generation === e.control_generation,
+            issue_id: e.issue_id,
+            kind: "decision" as const,
+            identity: `${e.issue_id}:${decision.generation}:${decision.key}`,
+            generation: e.control_generation,
+            ...(decision.finishing_target
+              ? {
+                  finishing_target: createHash("sha256")
+                    .update(JSON.stringify(decision.finishing_target))
+                    .digest("hex"),
+                }
+              : {}),
+          };
+      }
+      return { active: false };
+    });
   private observeLead = (lead: LeadRecord, bundle: ReadBundle) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {

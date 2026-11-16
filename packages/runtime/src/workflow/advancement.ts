@@ -23,7 +23,6 @@ import { admitSynchronization, activeSynchronization } from "./synchronization.t
 import { ExecutionTransitions } from "./transitions.ts";
 import { Records } from "../storage/store.ts";
 
-import { fullPlanFingerprint } from "./planning.ts";
 import { Corrections } from "./corrections.ts";
 import { createHash } from "node:crypto";
 import { Scopes } from "./scopes.ts";
@@ -43,7 +42,11 @@ import { Git } from "../git/repository.ts";
 import { type Delivery } from "../git/delivery.ts";
 import { type Runtime } from "../opencode/runtime.ts";
 
-import { collectApproval, assertApprovalActor } from "./authorization.ts";
+import {
+  type Authorizations,
+  type CheckpointEvidence,
+  assertApprovalActor,
+} from "./authorization.ts";
 import { Queries } from "./queries.ts";
 import { CodingChecks } from "./checks.ts";
 import { specVerificationPassed } from "./review-contracts.ts";
@@ -53,6 +56,8 @@ import { Operations } from "./operations.ts";
 import { type Coordination } from "./coordination.ts";
 
 export interface AdvancementDependencies {
+  readonly authorizations: Authorizations;
+  readonly checkpoints: CheckpointEvidence;
   readonly admission: WorkAdmission;
   readonly recovery: ExecutionRecovery;
   readonly records: Records;
@@ -268,7 +273,7 @@ export class Advancement {
             "--",
             `openspec/changes/${e.openspec_change}`,
           ]);
-          e.plan_fingerprint = yield* fullPlanFingerprint(this.c.git, e);
+          e.plan_fingerprint = yield* this.c.checkpoints.plan(e);
           yield* this.c.transitions.move(e, "awaiting_plan_approval", ["plan_fingerprint"]);
           if (e.plan_approval_required === false) return yield* this.beginApply(e, p);
           yield* this.c.transitions.notice(
@@ -408,13 +413,7 @@ export class Advancement {
             if (
               kind === "merge" &&
               ["cleaning", "completed"].includes(e.current_phase) &&
-              e.approval_receipts.some(
-                (a) =>
-                  a.kind === "merge" &&
-                  a.fingerprint === e.delivered_commit &&
-                  a.authorized_at &&
-                  !a.rejected_at,
-              )
+              this.c.checkpoints.status(e, "merge") === "approved"
             ) {
               // The receipt is already committed; do not touch a retired worktree or create a form.
               return e;
@@ -428,22 +427,7 @@ export class Advancement {
                 "Approval does not match current phase",
               );
             if (kind === "merge" && !(yield* this.c.finishing.prepare(e, p))) return e;
-            const fp =
-              kind === "plan"
-                ? e.workflow_policy === "full-openspec"
-                  ? yield* fullPlanFingerprint(this.c.git, e)
-                  : this.c.scopes.assert(e)
-                : e.delivered_commit!;
-            if (!(fp && (kind !== "plan" || fp === e.plan_fingerprint)))
-              return yield* new CrewError("STALE_CHECKPOINT", "Checkpoint changed");
-            const { decision, receipt } = yield* collectApproval(
-              this.c.runtime,
-              e,
-              kind,
-              supervisor,
-              fp,
-              () => this.c.records.saveOwned(e, ["approval_receipts"]),
-            );
+            const { decision, receipt } = yield* this.c.authorizations.collect(e, kind, supervisor);
             if (decision === "pending")
               return { execution: e, approval_required: true, form_id: receipt.form_id };
             if (decision === "rejected") {

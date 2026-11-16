@@ -20,6 +20,12 @@ test("managed roles preserve distinct authority and scoped native edits", () => 
     assert.ok(!policyAllows(role, "abra_work_finish"));
     assert.ok(!policyAllows(role, "task"));
     assert.ok(policyAllows(role, "shell"));
+    assert.ok(policyAllows(role, "abra_mermaid_verify"));
+    assert.ok(
+      nativePermissions(role).some(
+        (rule) => rule.action === "abra_mermaid_verify" && rule.effect === "allow",
+      ),
+    );
     assert.equal(policyAllows(role, "bash"), role === "apply");
   }
   assert.deepEqual(
