@@ -1,87 +1,50 @@
-# Test selection and budgets
+# Testing strategy
 
 Load [the testing skill](../.agents/skills/testing/SKILL.md) as `$testing` or
-native `abra-testing` for implementation, regression selection and final checks.
-Its command table is the agent workflow; `package.json` owns the executable commands.
+native `abra-testing`.
 
-`pnpm test` retains the fast, unit and integration projects. `pnpm test:all`
-builds the frontend once and runs those projects plus every E2E test. Use
-`test:one <test-file>` for an explicit regression, `test:affected <source-files>`
-for statically imported callers, or `test:fast`, `test:unit`, `test:integration`,
-`test:e2e` and `test:native` for explicit tiers. File-loaded/subprocess inputs
-need explicit test selection. Run full acceptance once on completed work, not
-between small implementation edits.
+| When                                       | Command                                             |
+| ------------------------------------------ | --------------------------------------------------- |
+| Working on one behavior                    | `pnpm test:one <test-file> [-t 'scenario']`         |
+| Finding imported callers of changed source | `pnpm test:affected <source-file>`                  |
+| Checking core behavior                     | `pnpm test:core`                                    |
+| Finishing a change                         | `pnpm check` and `pnpm test:all`                    |
+| Changing a native/install/export boundary  | The relevant extended test, or `pnpm test:extended` |
 
-The budgets are 10 seconds for focused feedback, 60 seconds for core tests and
-120 seconds for all tests including fixture setup and cleanup. They are targets
-until a complete measured passing run proves them. Lower concurrency on smaller
-hosts with `ABRACODE_TEST_WORKERS`; focused runs default to eight file workers, bounded by available CPUs.
-Full acceptance budgets up to twelve workers across its separate runners.
-Fixture compiler pools default to two Rayon threads to bound nested parallelism.
-Pure fast tests use threads. Unit files reuse fork workers after passing
-both normal and shuffled ordering; each test closes its own state. Process-backed
-integration and native files retain fresh fork isolation because their process
-cancellation/runtime seams require it. The multi-workflow `combined-restart`
-scenario lives in integration with the other real Git/restart checks. Within each runner, files are scheduled by measured duration across projects.
-`test:all` reserves separate core/integration/E2E worker budgets (4/3/5 on
-a twelve-CPU host), starting all three partitions together after one web build.
-This prevents native services and compilers from occupying every worker before
-controller tests can begin. Increasing one global pool to twelve workers caused
-more contention and deadline failures. Native waits poll the existing retained
-work query, then fetch complete Git/OpenSpec/native diagnostics for assertions
-after the target phase is reached. The nine independent OpenSpec
-schema cases own private repositories and can overlap their CLI waits.
+Batch related edits, run the relevant regression, and expand only when the change
+or a failure warrants it. Run routine acceptance once on finished work. Do not
+rerun everything after a few small edits. Import-based selection cannot discover
+subprocess entrypoints or file-loaded assets; select those tests explicitly.
 
-The shared Git seed is immutable and owned by the current runner. Its temporary
-root uses the disk-backed test cache so compiler fixtures can use copy-on-write
-suppliers instead of allocating gigabytes on a memory-backed `/tmp`. Each fixture
-copies private working Git metadata and a private bare remote, rebinding origin
-locally. No repository is shared between tests. Setup failures and shutdown
-failures remove their acquired roots; runner teardown removes its seed and any
-unfinished unit fixture directories. Supplier-heavy fixture cleanup uses an owned
-`rm` subprocess to avoid saturating Node’s filesystem worker pool. Tests never push
-to user remotes.
+The routine suite includes fast contracts, controller behavior, integration
+checks, browser behavior and one real native workspace journey. Aim for roughly
+a minute of core feedback and a couple of minutes for routine acceptance.
 
-The lock path also had a production performance cost: each acquisition launched
-Node solely to hold `flock`. The default holder now uses POSIX shell builtins with
-the same kernel descriptor lifetime. Tests retain real shared/exclusive exclusion,
-callback-failure cleanup, cancellation and release after owner SIGKILL. Explicit
-Node overrides remain supported. See [API evidence](supported-apis.md).
+Slow, overlapping native journeys, fresh installation, development/HMR and
+repeated compiler/export checks live in `packages/runtime/tests/extended`.
+They remain available when their boundary changes, without burdening every edit
+or routine CI run. `pnpm test:native` selects all native journeys explicitly.
+Repeated crash/resource soak remains a separate opt-in operational check.
 
-Git fingerprints also batch untracked file hashing through the real Git command,
-retaining attributes/clean filters, symlinks, staged/unstaged distinctions and
-the exact persisted fingerprint bytes. A 100-file probe over five fingerprints
-fell from 500 Git object processes (1.47s) to ten (0.087s).
+Use ordinary Vitest projects and concurrency. The runner uses up to eight file
+workers; pass its standard `--maxWorkers` option to lower that on a smaller host.
+Browser cases share one owned browser, with separate contexts and fixture servers.
+Unit files reuse fork workers; process-backed integration and E2E files retain
+fresh process isolation. There is no custom scheduler or test orchestration script.
 
-The fresh-install test still performs a frozen offline install and its hooks.
-Compiler/HTML fixtures copy only the renderer/compiler dependency closure with
-copy-on-write when supported; unrelated installed CLI suppliers stay immutable
-links. Protocol-only native fixtures link installed external suppliers and
-rebind workspace packages to private writable source; they cannot serve as trusted
-renderer/compiler isolation proof. Both modes preserve private workspace resolution.
-They never run install hooks against shared suppliers. Native journeys live in
-separately schedulable `native-*.test.ts` files; the common fixture is
-`native-fixture.ts`. `test:native` runs all of them. `ABRACODE_TEST_JOURNEY` still
-selects a focused journey through `native.test.ts`. The former native monolith is partitioned into core lifecycle/captured-context,
-research/lightweight and PR-finishing cases, each with its own native state.
-The existing model and communication journeys cover cross-capture/reply contracts;
-the combined stress exercise also retains the original cross-journey comparisons.
-The instrumented soak runner
-sets `ABRACODE_TEST_COMBINED=1` to retain its serialized combined journey receipts.
+Git behavior uses small private repositories and local bare remotes. An immutable
+per-run seed avoids repeating initialization; each fixture has writable Git state
+of its own. Cleanup is registered immediately, including setup and shutdown failure
+paths. Source installations use the frozen offline package store and private
+installed dependencies. Stop owned children before removing owned temporary roots;
+retain only requested small logs/evidence outside them. Tests never push to user
+remotes or remove unowned resources.
 
-Repeated-finding, repair-exhaustion and scope-change matrices now have direct
-controller restart regressions in `unit/corrections.test.ts`. The native compact
-journey retains uncertain-scope pause/restart, automatic correction, stronger human
-gates and real skip/archive behavior. Combined soak still repeats all four native
-failure paths. This avoids three redundant native worker lifecycles. Keep policy and
-fault matrices cheap, and retain real Git, durable SQL, process cancellation,
-browser and native-contract checks at their actual boundaries. Timing-sensitive
-notification assertions wait for delivery before comparing retained state. The work
-finder regression controls the debounce clock: an unchanged initial search must
-not reset a page the reader already selected. Native exact-receipt recovery keeps
-a real admission and restart, but seeds the 101 later records through the public
-native storage SDK in the private fixture plugin rather than running 101 model
-turns. The test-only seed RPC is never installed by production.
+Two straightforward production costs found during investigation were fixed:
+lock acquisition no longer starts Node just to hold `flock`, and fingerprints
+batch Git's untracked-file hashing. Regression coverage preserves kernel-lock
+release and the exact persisted fingerprint bytes, filters and unusual paths.
+See [API evidence](supported-apis.md).
 
 # Acceptance coverage
 
@@ -126,8 +89,8 @@ The real-server test uses a test-only native RPC probe to invoke the actual regi
 The test selects an explicit preserved-branch delivery condition against a disposable bare remote. GitHub merge behavior is tested with fake forge replies; no live GitHub PR or branch protection mutation is part of validation. Real provider/model quality, production forge permissions and a repository's chosen checks still require onboarding verification.
 
 Use the [testing skill](../.agents/skills/testing/SKILL.md) for focused commands
-and [CONTRIBUTING](../CONTRIBUTING.md) for required final acceptance. The runner
-has four projects: fast, unit, integration and E2E. Real boundary tests declare
+and [CONTRIBUTING](../CONTRIBUTING.md) for required final acceptance. The routine runner
+has four projects: fast, unit, integration and E2E, plus the explicit extended suite. Real boundary tests declare
 their own deadlines; a per-test deadline does not establish the suite time budget.
 
 Skill frontmatter is validated with the bundled skill-creator validator (using a temporary `uv` environment for its PyYAML dependency); linked local references and documented scripts are checked separately.
@@ -203,7 +166,7 @@ Set `ABRACODE_TEST_EVIDENCE_DIR` outside disposable roots to retain portable-rep
 
 The canonical provenance fixtures in `pr-feedback.test.ts` keep same-name required/advisory apps and commit statuses distinct and exclude superseded failures. Supplemental logs may be unavailable without changing authority. Shared feedback/external fixtures live in `packages/runtime/tests/helpers/review-evidence.ts`; browser acceptance covers lazy reads, narrow layout, uncertain/unsubmitted action states and preflight/stale evidence. The custom terminal renderer test is retired with its presentation. Existing external validation and coordination fixtures exercise custody, capacity and stop/restart through the owning service rather than an inline lifecycle branch.
 
-The native `packages/runtime/tests/e2e/pr-feedback.ts` scenario runs through the real server and workers with a local recording forge: recoverable permission preflight, completed approval before required actions, two failed jobs sharing one old-attempt rerun, correction, lost reply response, resolution, merge and server restart. `native.test.ts` owns the shared process/worker harness. External preflight failure separately verifies reservation release before launch.
+The native `packages/runtime/tests/e2e/pr-feedback.ts` scenario runs through the real server and workers with a local recording forge: recoverable permission preflight, completed approval before required actions, two failed jobs sharing one old-attempt rerun, correction, lost reply response, resolution, merge and server restart. `native-fixture.ts` owns the shared process/worker harness. External preflight failure separately verifies reservation release before launch.
 
 All fixtures remain temporary and external mutations are recording fakes; no live GitHub write, user remote, model provider or shared no-mistakes runtime is used. Action versions must preserve IDs/forms/markers/history/budget and refuse unsupported or incomplete evidence without inventing a safe retry.
 
@@ -211,7 +174,7 @@ All fixtures remain temporary and external mutations are recording fakes; no liv
 
 `packages/runtime/tests/unit/role-policy.test.ts` covers role authority, native permission scope, additive requirements and forbidden alternatives. `packages/runtime/tests/unit/patch-guards.test.ts` retains symlink/move/control-file checks and direct forbidden/inactive tool calls. `packages/runtime/tests/unit/worker-context.test.ts` covers native-ID skill resolution, unusable content, tool alternatives, immutable capture, pre-session failures, bounded/legacy/malformed diagnostics, read-only inspection with an unresolved question, partial payload publication, stale observations, policy incompatibility and cold-location activation. `packages/runtime/tests/unit/worker-lifecycle.test.ts` changes issue/role sources between uncertain admission attempts and requires the original prompt identity and payload.
 
-The real native test in `packages/runtime/tests/e2e/native.test.ts` also runs `packages/runtime/tests/e2e/worker-context.ts`. It uses copied central role definitions and disposable foreign repositories to verify that a central-only explicit agent is absent at a worker location, a required skill blocks before session creation, and a permitted required tool removed by the test plugin prevents its provider request. Its deterministic provider counts requests carrying the missing-tool assignment. Existing patch-only, denied management, full-spec/lightweight/research, spec-verification Review, protected approval/delivery, restart and retired-resource cases remain in the same suite. The fixtures use local bare remotes only.
+The real native test in `packages/runtime/tests/extended/native.test.ts` also runs `packages/runtime/tests/e2e/worker-context.ts`. It uses copied central role definitions and disposable foreign repositories to verify that a central-only explicit agent is absent at a worker location, a required skill blocks before session creation, and a permitted required tool removed by the test plugin prevents its provider request. Its deterministic provider counts requests carrying the missing-tool assignment. Existing patch-only, denied management, full-spec/lightweight/research, spec-verification Review, protected approval/delivery, restart and retired-resource cases remain in the same suite. The fixtures use local bare remotes only.
 
 | Contract                                                | Verification evidence                                                                                                                     |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |

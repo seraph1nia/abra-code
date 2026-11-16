@@ -15,107 +15,23 @@ import { AbsolutePath, IssueId, RequestId, ContentHash, SessionId } from "../../
 import { NativeWebBackend } from "../../src/web/backend.ts";
 import { workspaceServer } from "../../src/web/server.ts";
 import { catalogId } from "../../src/web/surfaces.ts";
-import { webGateway } from "../../src/web/protocol.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
-import { receiptHistoryProbe } from "../helpers/native-receipts.ts";
 
 type Native = ReturnType<typeof OpenCode.make>;
-type BrowserPage = Awaited<ReturnType<Awaited<ReturnType<typeof launchReportBrowser>>["newPage"]>>;
 
-/** Real receipt persistence and HTTP recovery, with later inputs from a second transport. */
-async function prepareOldAdmission(
+/** Keep one actual native admission/restart check; history-window UI matrices
+ * belong to the browser and admission unit tests. */
+async function prepareAdmissionRecovery(
   input: Parameters<typeof workspaceJourney>[0],
   backend: NativeWebBackend,
-  page: BrowserPage,
-  origin: string,
 ) {
   const original = (await Effect.runPromise(backend.snapshot)).receipts.find(
     (receipt) => receipt.status === "admitted",
   );
   assert.ok(original);
-  const providerBefore = input.providerCount();
-  const seeded = await input.client
-    .rpc(receiptHistoryProbe)
-    .seedReceiptHistory(
-      { session: input.session, request_id: original.request_id },
-      { location: { directory: input.home } },
-    );
-  assert.deepEqual(seeded, { count: 101 });
-  assert.equal(
-    (await Effect.runPromise(backend.snapshot)).receipts.some(
-      (receipt) => receipt.request_id === original.request_id,
-    ),
-    false,
-  );
-  assert.deepEqual(await Effect.runPromise(backend.receipt(original.request_id)), original);
-  await assert.rejects(
-    input.client.rpc(webGateway).receipt(
-      {
-        session_id: SessionId.make("ses_foreign"),
-        request_id: original.request_id,
-      },
-      { location: { directory: input.home } },
-    ),
-  );
-  const pending = {
-    request_id: original.request_id,
-    text: original.text,
-    delivery: original.delivery,
-  };
-  await page.evaluate(
-    ({ pending, session }) => {
-      localStorage.setItem(`abra-pending-${session}`, JSON.stringify(pending));
-      localStorage.setItem(`abra-draft-${session}`, "Unsent draft after admission recovery");
-    },
-    { pending, session: input.session },
-  );
-  const restored = await page.context().newPage();
-  let replayed = 0;
-  restored.on("request", (request) => {
-    if (request.url().endsWith("/agent/abra/run")) replayed++;
-  });
-  await restored.route("**/api/admission/receipt?*", (route) => route.abort());
-  await restored.goto(origin);
-  await restored.getByRole("button", { name: "Reconcile submission" }).waitFor();
-  assert.equal(
-    await restored.evaluate(
-      (session) => localStorage.getItem(`abra-pending-${session}`),
-      input.session,
-    ),
-    JSON.stringify(pending),
-  );
   return async () => {
-    try {
-      await restored.unroute("**/api/admission/receipt?*");
-      await restored.reload();
-      await restored.waitForFunction(
-        (session) => localStorage.getItem(`abra-pending-${session}`) === null,
-        input.session,
-      );
-      assert.equal(
-        await restored.getByRole("textbox", { name: "Message Abra", exact: true }).inputValue(),
-        "Unsent draft after admission recovery",
-      );
-      assert.deepEqual(await Effect.runPromise(backend.receipt(original.request_id)), original);
-      assert.equal(input.providerCount(), providerBefore);
-      assert.equal(replayed, 0);
-      if (input.evidence)
-        await restored.screenshot({
-          path: join(input.evidence, "native-exact-old-admission-after-restart.png"),
-          fullPage: true,
-        });
-      return {
-        request_id: original.request_id,
-        message_id: original.message_id,
-        later_receipts: 101,
-        history_setup: "Seeded native storage; original admission is real",
-        replayed_inputs: replayed,
-        native_restart: true,
-        foreign_session_refused: true,
-      };
-    } finally {
-      await restored.close();
-    }
+    assert.deepEqual(await Effect.runPromise(backend.receipt(original.request_id)), original);
+    return { request_id: original.request_id, native_restart: true };
   };
 }
 
@@ -455,7 +371,7 @@ export async function workspaceJourney(input: {
         assert.ok(savedReport);
         assert.ok(composedReport);
         assert.ok(exportedReport);
-        const restoreAdmission = await prepareOldAdmission(input, backend, page, web.origin);
+        const restoreAdmission = await prepareAdmissionRecovery(input, backend);
         await input.restart();
         const admissionRecovery = await restoreAdmission();
         await page.goto(savedReport.url);
@@ -597,7 +513,7 @@ export async function workspaceJourney(input: {
           composed_json_report: composedReport,
           exported_html_report: exportedReport,
           export_reopened_after_native_restart: true,
-          exact_admission_recovery: admissionRecovery,
+          admission_recovery: admissionRecovery,
           typed_native_evidence_inspection: {
             decisions: decisions.decisions.length,
             communication: communication.total,

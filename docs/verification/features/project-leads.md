@@ -5,7 +5,7 @@ Use [disposable native prerequisites](../README.md). Focused real-server command
 ```sh
 ABRACODE_TEST_JOURNEY=leads \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-project-leads \
-  pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts
+  pnpm test:one packages/runtime/tests/extended/native.test.ts
 ```
 
 `packages/runtime/tests/e2e/leads.ts` proves static hidden native inventory, explicit complete model,

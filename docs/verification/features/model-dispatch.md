@@ -6,7 +6,7 @@ Use the [disposable prerequisites](../README.md) and the existing native fixture
 REPORT_CHROMIUM_PATH=/path/to/compatible/chrome \
 ABRACODE_TEST_JOURNEY=models \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-model-native \
-  pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts
+  pnpm test:one packages/runtime/tests/extended/native.test.ts
 ```
 
 The focused 2026-10-18 run at `/tmp/abra-model-focused2-20261018` passed in

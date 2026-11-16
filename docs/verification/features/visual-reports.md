@@ -7,11 +7,11 @@ Chromium. Focused commands:
 REPORT_CHROMIUM_PATH=/path/to/compatible/chrome \
   pnpm exec vp test run --project unit packages/runtime/tests/unit/report-artifacts.test.ts
 REPORT_CHROMIUM_PATH=/path/to/compatible/chrome \
-  pnpm exec vp test run --project integration packages/runtime/tests/integration/report-artifacts.test.ts
+  pnpm exec vp test run --project integration packages/runtime/tests/extended/report-artifacts.test.ts
 REPORT_CHROMIUM_PATH=/path/to/compatible/chrome \
 ABRACODE_TEST_JOURNEY=reports \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-reports \
-  pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts
+  pnpm test:one packages/runtime/tests/extended/native.test.ts
 ```
 
 The JSON/document unit tests exercise bounded versioned envelopes, exact surface saves,
@@ -22,7 +22,7 @@ and explicit unavailable unfinished builds without invoking a retired compiler.
 Export fixtures prove digest/exporter-keyed reuse, receipt repair and failure
 preservation. Diagnostic tool tests keep read authority separate from generation.
 
-`packages/runtime/tests/integration/report-artifacts.test.ts` builds two real React exports
+`packages/runtime/tests/extended/report-artifacts.test.ts` builds two real React exports
 concurrently using isolated source/config/cache/output roots. The input documents
 are saved JSON, including literal hostile text and captured diagrams. The shared
 catalog renders in an opaque iframe without repository code execution.

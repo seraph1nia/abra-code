@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { installSource, installationRoot, command } from "./install.ts";
+import { installSource, installationRoot, command } from "../e2e/install.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 
 async function unusedPort() {
@@ -58,7 +58,7 @@ test(
       }
     };
     try {
-      await installSource(home, { buildWeb: false, sharedSuppliers: true });
+      await installSource(home, { buildWeb: false });
       await writeFile(
         join(home, "personal.yaml"),
         "version: 1\nmodels: {default: {providerID: example, id: example}}\n",

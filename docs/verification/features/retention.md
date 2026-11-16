@@ -13,7 +13,7 @@ The controller owns delivery and retirement after verification and Review. An ig
 After the [recipe prerequisites](../README.md#prepare-and-check-health), run:
 
 ```sh
-pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts
+pnpm test:one packages/runtime/tests/extended/native.test.ts
 pnpm exec vp test run --project unit packages/runtime/tests/unit/retirement.test.ts packages/runtime/tests/unit/worker-lifecycle.test.ts packages/runtime/tests/unit/engineering-recovery.test.ts
 ```
 

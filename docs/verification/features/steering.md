@@ -24,7 +24,7 @@ the fixture authentication failure and invokes actual `abra_work_control steer`.
 ```sh
 ABRACODE_TEST_JOURNEY=engineering \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-steering-replay-20261018 \
-  pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts \
+  pnpm test:one packages/runtime/tests/extended/native.test.ts \
   > /tmp/abra-steering-replay-20261018/native.log 2>&1
 ```
 

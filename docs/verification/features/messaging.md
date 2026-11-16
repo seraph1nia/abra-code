@@ -11,7 +11,7 @@ Apply's explicit acknowledgement without changing the accepted short scope.
 ```sh
 ABRACODE_TEST_JOURNEY=engineering \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-messaging-forward-20261018 \
-  pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts \
+  pnpm test:one packages/runtime/tests/extended/native.test.ts \
   > /tmp/abra-messaging-forward-20261018/native.log 2>&1
 ```
 
@@ -149,7 +149,7 @@ Run the isolated omitted-response scenario without paid credentials:
 REPORT_CHROMIUM_PATH=/path/to/compatible/chrome \
 ABRACODE_TEST_JOURNEY=reply-recovery \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-reply-recovery \
-pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts
+pnpm test:one packages/runtime/tests/extended/native.test.ts
 ```
 
 The loopback provider deliberately omits two worker responses and one lead

@@ -87,16 +87,6 @@ export function nativeTest(
         evidenceDirectory && process.env.ABRACODE_TEST_METRICS === "1",
         "Crash windows require the opt-in instrumented fixture",
       );
-    const started = performance.now();
-    const phase = (name: string) => {
-      if (process.env.ABRACODE_TEST_PROFILE === "1")
-        console.log(
-          JSON.stringify({
-            native_phase: name,
-            seconds: Math.round(performance.now() - started) / 1000,
-          }),
-        );
-    };
     const root = await installationRoot("abracode-native-");
     let cleanup = async () => {
       await removeFixture(root);
@@ -914,7 +904,7 @@ export function nativeTest(
           path,
           JSON.stringify(
             {
-              fixture: "packages/runtime/tests/e2e/native.test.ts",
+              fixture: "packages/runtime/tests/e2e/native-fixture.ts",
               result: cleanupComplete ? t.task.result?.state : "fail",
               cleanup_complete: cleanupComplete,
               // Assertion messages can embed whole executions and prompts.
@@ -1022,10 +1012,7 @@ export function nativeTest(
       git.run(Id.AbsolutePath.make(projects[1]), ["commit", "-m", "Foreign control files"]),
     );
     await run(git.run(Id.AbsolutePath.make(projects[1]), ["push", "origin", "main"]));
-    const rendersHTML =
-      ["reports", "workspace", "acceptance"].includes(journey ?? "") ||
-      process.env.ABRACODE_TEST_COMBINED === "1";
-    await installSource(home, { buildWeb: journey === "workspace", sharedSuppliers: !rendersHTML });
+    await installSource(home, { buildWeb: journey === "workspace" });
     const configPath = join(home, "opencode.json");
     await writeFile(
       configPath,
@@ -1047,7 +1034,7 @@ export function nativeTest(
       },
     );
     await writeFile(forgeState, JSON.stringify({}));
-    const harnessDir = await installNativeProbe(root, home, journey === "workspace");
+    const harnessDir = await installNativeProbe(root, home);
     await writeFile(
       configPath,
       JSON.stringify({
@@ -1137,7 +1124,7 @@ export function nativeTest(
       });
     };
     await ready();
-    phase("ready");
+
     const api = client.rpc(probe);
     const loc = { location: { directory: home } };
     const observer = client.rpc(visibility);
@@ -1602,7 +1589,6 @@ export function nativeTest(
       assert.ok((await client.agent.list(loc)).data.some((agent) => agent.id === "central-only"));
     };
     const runResearchContracts = async (previous?: { issue: Issue; configDigest: string }) => {
-      phase("research-start");
       const researchPath = await run(repo(root, "research-base"));
       await run(git.run(Id.AbsolutePath.make(researchPath), ["rm", "-r", "openspec"]));
       await run(
@@ -1700,7 +1686,7 @@ export function nativeTest(
         merge_approval: false,
         delivery: "branch",
       });
-      phase("lightweight-start");
+
       const lightweightIssue = (
         await invoke("abra_work_create", {
           repository_id: "research",
@@ -1903,7 +1889,7 @@ export function nativeTest(
           lightweightDone.review_receipt &&
           lightweightDone.delivery_receipt,
       );
-      phase("exhaustion-start");
+
       const exhaustedIssue = (
         await invoke("abra_work_create", {
           repository_id: "research",
@@ -1930,7 +1916,7 @@ export function nativeTest(
         exhausted.decisions.find((d: any) => d.status === "open").question,
         /budget exhausted/,
       );
-      phase("unavailable-start");
+
       const unavailableIssue = (
         await invoke("abra_work_create", {
           repository_id: "worker",
@@ -2005,7 +1991,7 @@ export function nativeTest(
       if (process.env.ABRACODE_TEST_COMBINED === "1") engineeringEvidence.push(await runReports());
       if (process.env.ABRACODE_TEST_COMBINED === "1") engineeringEvidence.push(await runLeads());
       if (process.env.ABRACODE_TEST_COMBINED === "1") engineeringEvidence.push(await runModels());
-      phase("batch-start");
+
       const nativeBatchInput = {
         request_id: "native-batch-intake",
         tasks: [
@@ -2094,7 +2080,6 @@ export function nativeTest(
     const runFinishing = async (
       legacy?: Baseline & Awaited<ReturnType<typeof runResearchContracts>>,
     ) => {
-      phase("finishing-start");
       const feedbackIssue = await prFeedbackLifecycle({
         root,
         forgeState,
@@ -2263,7 +2248,7 @@ export function nativeTest(
       await runFinishing();
       return;
     }
-    phase("core-start");
+
     let managedAPI: any;
     for (let i = 0; i < projects.length; i++) {
       const report = await invoke("abra_project_onboard", {
@@ -3165,7 +3150,7 @@ export function nativeTest(
       return;
     }
     await runFinishing({ issue, nativeAttention, ...research });
-    phase("worker-context-start");
+
     await workerContextCapabilities({
       root,
       git,

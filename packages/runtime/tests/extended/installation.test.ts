@@ -3,8 +3,8 @@ import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { writeFile, readFile, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { installSource, installationRoot, interactiveLaunch, command } from "./install.ts";
-import { webJourney } from "./web.ts";
+import { installSource, installationRoot, interactiveLaunch, command } from "../e2e/install.ts";
+import { webJourney } from "../e2e/web.ts";
 
 test(
   "fresh frozen Linux installation validates offline and reuses its own service and Abra",
@@ -38,7 +38,7 @@ test(
         await removeFixture(root);
       }
     });
-    await installSource(home, { fresh: true });
+    await installSource(home);
     const pluginRoot = join(home, ".opencode/plugins/abracode");
     const plugin = JSON.parse(await readFile(join(pluginRoot, "package.json"), "utf8"));
     assert.equal("./tui" in plugin.exports, false);

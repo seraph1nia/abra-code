@@ -56,10 +56,10 @@ validated retained receipt or `null`. The browser-facing typed GET
 native operation. Lookup never calls native prompt/admission recovery. The
 recent `receipts` operation remains a time/identity-ordered display window of
 100 entries. Unit and HTTP tests cover missing, uncertain, conflicting and
-unsafe identities. The disposable workspace journey now exercises 101 later
-real admissions, lost receipt-read response, two tabs and native restart,
-asserting the original native message ID, zero replay and foreign-session
-refusal. See [refactor evidence](verification/runtime-refactor.md).
+unsafe identities. Browser/admission regressions cover receipts beyond the
+recent-history window, lost receipt reads, two tabs, replay refusal and foreign
+sessions. The disposable native workspace journey keeps one actual admission
+and verifies its exact receipt survives restart. See [refactor evidence](verification/runtime-refactor.md).
 
 The frontend uses CopilotKit 1.88.0's **v2** exports (`@copilotkit/react-core/v2`, `@copilotkit/runtime/v2`) with AG-UI 1.0.4. The custom native-backed `AbstractAgent` and `AgentRunner` implement run/connect/isRunning/stop. No default model runner, thread store, Mastra or additional agent harness is used. The pinned OpenCode interrupt API cannot select an expected run ID; run-specific stop is explicitly refused.
 

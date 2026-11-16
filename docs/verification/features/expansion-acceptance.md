@@ -6,7 +6,7 @@ The existing native provider/forge runs the complete combined scenario:
 REPORT_CHROMIUM_PATH=/path/to/compatible/chrome \
 ABRACODE_TEST_JOURNEY=acceptance \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-expansion-acceptance \
-  pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts
+  pnpm test:one packages/runtime/tests/extended/native.test.ts
 ```
 
 `packages/runtime/tests/e2e/acceptance.ts` records authentication, database investigation and flaky

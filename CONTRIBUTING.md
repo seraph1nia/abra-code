@@ -19,10 +19,14 @@ Read [AGENTS.md](AGENTS.md), [architecture](docs/architecture.md), [API evidence
 For implementation, regression coverage and suite selection, load
 [testing](.agents/skills/testing/SKILL.md) (`$testing` or native `abra-testing`).
 Use `pnpm test:one <test-file>` or `pnpm test:affected <source-files>` while
-implementing, plus relevant package checks. `pnpm test:fast`, `pnpm test:unit`,
+implementing, plus relevant package checks. Use `pnpm test:core` for broad core
+feedback. `pnpm test:fast`, `pnpm test:unit`,
 `pnpm test:integration` and `pnpm test:native` select explicit tiers.
 Run the complete suite once on finished work with `pnpm test:all`; it builds the
-web assets and includes every fast, unit, integration and E2E scenario.
+web assets and runs the routine fast, unit, integration and E2E suites.
+Slow native, installation, HMR and repeated export checks live in
+`packages/runtime/tests/extended`; run the relevant file when changing that
+boundary, or `pnpm test:extended` for the complete extended set.
 A focused pass does not replace final acceptance.
 
 Required final checks:

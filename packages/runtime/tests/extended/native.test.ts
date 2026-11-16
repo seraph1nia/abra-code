@@ -1,4 +1,4 @@
-import { nativeTest } from "./native-fixture.ts";
+import { nativeTest } from "../e2e/native-fixture.ts";
 import { join } from "node:path";
 
 nativeTest(

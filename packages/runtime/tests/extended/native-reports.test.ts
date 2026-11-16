@@ -1,5 +1,5 @@
 import { test } from "vite-plus/test";
-import { nativeTest } from "./native-fixture.ts";
+import { nativeTest } from "../e2e/native-fixture.ts";
 import { join } from "node:path";
 
 if (!process.env.ABRACODE_TEST_JOURNEY && process.env.ABRACODE_TEST_COMBINED !== "1")

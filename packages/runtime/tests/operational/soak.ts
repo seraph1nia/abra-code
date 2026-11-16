@@ -162,8 +162,8 @@ if (values["dry-run"]) {
         "test",
         "run",
         "--project",
-        "e2e",
-        "packages/runtime/tests/e2e/native.test.ts",
+        "extended",
+        "packages/runtime/tests/extended/native.test.ts",
       ],
       {
         env,

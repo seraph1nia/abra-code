@@ -7,7 +7,7 @@ isolates parallel intake/scheduling/restart behavior from the larger coding flow
 REPORT_CHROMIUM_PATH=/path/to/compatible/chrome \
 ABRACODE_TEST_JOURNEY=parallel \
 ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-parallel-native \
-  pnpm exec vp test run --project e2e packages/runtime/tests/e2e/native.test.ts
+  pnpm test:one packages/runtime/tests/extended/native.test.ts
 ```
 
 The scheduler-only focused run at `/tmp/abra-parallel-focused2-20261018` passed
