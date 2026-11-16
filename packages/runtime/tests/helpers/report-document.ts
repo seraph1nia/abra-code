@@ -107,3 +107,45 @@ export function reportDocument() {
     limitations: ["Captured values only; later workflow state is not substituted."],
   });
 }
+
+/** New coverage records exercise partial live values beside legacy unknown snapshots. */
+export function coveredReportDocument() {
+  const document = reportDocument();
+  return validateReportDocument({
+    ...document,
+    surface: {
+      ...document.surface,
+      createSurface: {
+        ...document.surface.createSurface,
+        components: [
+          ...document.surface.createSurface.components.map((component) =>
+            component.id === "root"
+              ? {
+                  ...component,
+                  children: [
+                    ...(Array.isArray(component.children) ? component.children : []),
+                    "counts",
+                  ],
+                }
+              : component.id === "work"
+                ? { id: component.id, component: "WorkTable", mode: "live" }
+                : component,
+          ),
+          { id: "counts", component: "StatusSummary", mode: "live" },
+        ],
+      },
+    },
+    data: {
+      ...document.data,
+      live_coverage: {
+        population: "retained-work",
+        requested_ids: [],
+        returned: 1,
+        total: 102,
+        unavailable_ids: [],
+        truncated: true,
+        status: "observed",
+      },
+    },
+  });
+}

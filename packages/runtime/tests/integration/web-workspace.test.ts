@@ -1,3 +1,7 @@
+import { NativeSessionProjection } from "../../src/opencode/agui/native-state.ts";
+import { SessionMessage } from "@opencode/schema/session-message";
+import { projectNativeMessage } from "../../src/opencode/agui/messages.ts";
+import { HttpAgent } from "@ag-ui/client";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +11,7 @@ import { SessionId, Timestamp, RepositoryId } from "../../src/identities.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { request } from "node:http";
-import { Effect, Exit, Scope } from "effect";
+import { Effect, Exit, Scope, PubSub, Stream, Schema } from "effect";
 import { HttpApiClient } from "effect/http-api";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { workspaceApi } from "../../src/web/http-api.ts";
@@ -15,8 +19,9 @@ import { workspaceServer } from "../../src/web/server.ts";
 import { RequestId, ContentHash } from "../../src/identities.ts";
 import { WorkspaceFixture } from "../helpers/web.ts";
 
-async function fixture(assets?: string) {
+async function fixture(assets?: string, configure?: (backend: WorkspaceFixture) => void) {
   const backend = new WorkspaceFixture();
+  configure?.(backend);
   const scope = await Effect.runPromise(Scope.make());
   const web = await Effect.runPromise(
     workspaceServer({ port: 0, backend, assets }).pipe(Effect.provideService(Scope.Scope, scope)),
@@ -506,4 +511,253 @@ test("hashed public assets cache immutably and use package compression while pri
   const forbidden = await fetch(assetURL, { headers: { origin: "https://foreign.example" } });
   assert.equal(forbidden.status, 403);
   assert.equal(forbidden.headers.get("cache-control"), "no-store");
+});
+
+test("fixed binding HTTP read validates bounded references and never admits input", async (t) => {
+  const web = await fixture();
+  t.onTestFinished(web.close);
+  const id = web.backend.value.work.work[0]!.issue_id;
+  const result = await Effect.runPromise(
+    web.client.work.binding({ query: { issue_ids: [id], include_population: true } }),
+  );
+  assert.equal(result.work[0]!.issue_id, id);
+  assert.equal(result.coverage.total, 1);
+  assert.equal(web.backend.submissions, 0);
+  for (const query of [
+    "issue_ids=../foreign",
+    "issue_ids=abra-web&session_id=ses_foreign",
+    "issue_ids=abra-web&include_population=garbage",
+  ]) {
+    assert.equal((await fetch(`${web.origin}/api/work/binding?${query}`)).status, 400);
+  }
+  const query = new URLSearchParams();
+  for (let i = 0; i < 101; i++) query.append("issue_ids", `abra-${i}`);
+  assert.equal((await fetch(`${web.origin}/api/work/binding?${query}`)).status, 400);
+  assert.equal(web.backend.reads, 0);
+});
+
+test("standard AG-UI client runs, retries and detaches from the hosted native adapter", async (t) => {
+  const web = await fixture();
+  t.onTestFinished(web.close);
+  const run = () =>
+    new HttpAgent({
+      url: `${web.origin}/api/copilotkit/agent/abra/run`,
+      headers: { origin: web.origin },
+      agentId: "abra",
+      threadId: web.backend.sessionID,
+      initialMessages: [{ id: "standard-input", role: "user", content: "Standard consumer input" }],
+    });
+  const first = run();
+  await first.runAgent({
+    tools: [],
+    context: [],
+    forwardedProps: { request_id: "standard-consumer" },
+  });
+  assert.equal(first.messages.filter((message) => message.role === "assistant").length, 1);
+  const retry = run();
+  await retry.runAgent({
+    tools: [],
+    context: [],
+    forwardedProps: { request_id: "standard-consumer" },
+  });
+  assert.equal(web.backend.submissions, 1);
+  const observe = new HttpAgent({
+    url: `${web.origin}/api/copilotkit/agent/abra/connect`,
+    headers: { origin: web.origin },
+    agentId: "abra",
+    threadId: web.backend.sessionID,
+  });
+  let baseline = false;
+  await observe.runAgent(
+    {},
+    {
+      onMessagesSnapshotEvent: () => {
+        baseline = true;
+        void observe.detachActiveRun();
+      },
+    },
+  );
+  assert.equal(baseline, true);
+  assert.equal(web.backend.stops, 0);
+  assert.equal(web.backend.submissions, 1);
+});
+
+test("HTTP observers reconnect during tool arguments without replay or duplicated arguments/results", async (t) => {
+  const signals = await Effect.runPromise(
+    PubSub.unbounded<{
+      transcript: true;
+      native: import("../../src/opencode/agui/native-state.ts").NativeEventEnvelope;
+    }>(),
+  );
+  t.onTestFinished(() => Effect.runPromise(PubSub.shutdown(signals)));
+  const projection = new NativeSessionProjection("ses_webfixture");
+  const user = Schema.decodeSync(SessionMessage.User)({
+    id: "msg_http-stream",
+    type: "user",
+    text: "Observe only",
+    time: { created: 0 },
+  });
+  projection.baseline([user], true, []);
+  let subscriptions = 0;
+  const web = await fixture(undefined, (backend) => {
+    backend.value = { ...backend.value, busy: true, messages: [projectNativeMessage(user)!] };
+    Object.assign(backend, {
+      nativeEvent: (event: import("../../src/opencode/agui/native-state.ts").NativeEventEnvelope) =>
+        projection.apply(event),
+      nativeSnapshot: () => projection.current(),
+      changes: Stream.fromPubSub(signals).pipe(
+        Stream.onStart(
+          Effect.sync(() => {
+            subscriptions++;
+          }),
+        ),
+      ),
+    });
+  });
+  t.onTestFinished(web.close);
+  const observer = () =>
+    new HttpAgent({
+      url: `${web.origin}/api/copilotkit/agent/abra/connect`,
+      headers: { origin: web.origin },
+      agentId: "abra",
+      threadId: web.backend.sessionID,
+    });
+  const wait = <T>(pending: Promise<T>, phase: string) =>
+    new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`HTTP observation stalled at ${phase}`)),
+        5000,
+      );
+      pending.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
+  const first = observer();
+  let baseline!: () => void, fragment!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    baseline = resolve;
+  });
+  const partial = new Promise<void>((resolve) => {
+    fragment = resolve;
+  });
+  let parentSeen!: () => void, callSeen!: () => void;
+  const parentReady = new Promise<void>((resolve) => {
+    parentSeen = resolve;
+  });
+  const callReady = new Promise<void>((resolve) => {
+    callSeen = resolve;
+  });
+  const observing = first.runAgent(
+    {},
+    {
+      onMessagesSnapshotEvent: () => {
+        baseline();
+      },
+      onTextMessageStartEvent: () => {
+        parentSeen();
+      },
+      onToolCallStartEvent: () => {
+        callSeen();
+      },
+      onToolCallArgsEvent: () => {
+        fragment();
+        void first.detachActiveRun();
+      },
+    },
+  );
+  t.onTestFinished(() => first.detachActiveRun());
+  await wait(ready, "ready");
+  let sequence = 0,
+    counter = 0;
+  const push = (type: string, data: object, ephemeral = false) =>
+    Effect.runPromise(
+      PubSub.publish(signals, {
+        transcript: true,
+        native: {
+          id: `evt_http-${++counter}`,
+          type,
+          created: counter,
+          ...(ephemeral
+            ? {}
+            : {
+                durable: {
+                  aggregateID: web.backend.sessionID,
+                  seq: ++sequence,
+                  version: type === "session.tool.success" ? 2 : 1,
+                },
+              }),
+          data: { sessionID: web.backend.sessionID, ...data },
+        },
+      }),
+    );
+  const tool = { assistantMessageID: "msg_http-reply", id: "http-stream-call" };
+  await push("session.step.started", {
+    assistantMessageID: tool.assistantMessageID,
+    agent: "abra",
+    model: { providerID: "fixture", id: "fixture" },
+    started: 1,
+  });
+  await wait(parentReady, "parentReady");
+  await push("session.tool.input.started", { ...tool, name: "read_source" });
+  await wait(callReady, "callReady");
+  await push("session.tool.input.delta", { ...tool, delta: '{"path":' }, true);
+  await wait(partial, "partial");
+  await wait(observing, "observing");
+  const second = observer();
+  let resumed!: () => void, finished!: () => void;
+  const restored = new Promise<void>((resolve) => {
+    resumed = resolve;
+  });
+  const complete = new Promise<void>((resolve) => {
+    finished = resolve;
+  });
+  const connected = second.runAgent(
+    {},
+    {
+      onMessagesSnapshotEvent: ({ event }) => {
+        const messages = event.messages;
+        const result = messages.find((message) => message.role === "tool");
+        const call = messages.find(
+          (message) => message.role === "assistant" && message.toolCalls?.length,
+        );
+        if (call) resumed();
+        if (
+          result &&
+          call?.role === "assistant" &&
+          call.toolCalls?.[0]?.metadata?.abracode_native_status === "completed"
+        ) {
+          finished();
+          void second.detachActiveRun();
+        }
+      },
+    },
+  );
+  t.onTestFinished(() => second.detachActiveRun());
+  await wait(restored, "restored");
+  await push("session.tool.input.delta", { ...tool, delta: '"source.ts"}' }, true);
+  await push("session.tool.input.ended", { ...tool, text: '{"path":"source.ts"}' });
+  await push("session.tool.called", { ...tool, input: { path: "source.ts" }, executed: true });
+  await push("session.tool.success", {
+    ...tool,
+    content: [{ type: "text", text: "HTTP result once" }],
+    executed: true,
+  });
+  await wait(complete, "complete");
+  await wait(connected, "connected");
+  const call = second.messages.find(
+    (message) => message.role === "assistant" && message.toolCalls?.length,
+  );
+  assert.ok(call?.role === "assistant" && call.toolCalls?.[0]);
+  assert.deepEqual(JSON.parse(call.toolCalls[0].function.arguments), { path: "source.ts" });
+  assert.equal(second.messages.filter((message) => message.role === "tool").length, 1);
+  assert.equal(subscriptions, 1);
+  assert.equal(web.backend.submissions, 0);
+  assert.equal(web.backend.stops, 0);
 });

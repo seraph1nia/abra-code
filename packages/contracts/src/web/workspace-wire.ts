@@ -1,3 +1,4 @@
+import { BindingCoverageSchema } from "./bindings.ts";
 import { ObservationSchema } from "./changes.ts";
 import { PresentationPageSchema } from "../presentation/contracts.ts";
 export { PresentationAttachmentSchema, PresentationPageSchema } from "../presentation/contracts.ts";
@@ -48,6 +49,7 @@ export const SurfaceRecordSchema = Schema.Struct({
   at: Schema.String,
   surface: SurfaceSchema,
   snapshot: WorkSnapshotSchema.fields.work.check(Schema.isMaxLength(100)),
+  coverage: Schema.optionalKey(BindingCoverageSchema),
 });
 export const UnavailableSurfaceSchema = Schema.Struct({
   surface_id: Schema.String,

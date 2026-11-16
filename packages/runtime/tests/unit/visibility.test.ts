@@ -313,6 +313,7 @@ test("bounded supervision projection preserves record history and exposes read-o
   assert.ok(item.operation);
   assert.deepEqual(await run(f.records.execution(e.issue_id)), before);
   assert.deepEqual(Object.keys(visibility.methods).sort(), [
+    "binding",
     "detail",
     "diff",
     "document",
@@ -609,4 +610,64 @@ test("selected detail keeps unavailable native activity and malformed retained e
   assert.match(malformed.errors.join(" "), /Unsupported record version/);
   assert.equal((await run(view.detail(healthy))).work.issue_id, healthy);
   assert.deepEqual(await run(f.records.store.get(key)), future);
+});
+
+test("binding summaries resolve off-page retained tasks without fleet, worker or planning reads", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  for (let i = 0; i < 55; i++) {
+    const id = Id.IssueId.make(`abra-closed-${String(i).padStart(2, "0")}`);
+    f.work.add(id);
+    f.work.issues.get(id)!.status = "closed";
+  }
+  const view = new Visibility(f.controller);
+  assert.equal(
+    (await run(view.snapshot())).work.some((row) => row.issue_id === "abra-closed-54"),
+    false,
+  );
+  let unrelated = 0;
+  const forbidden = () => {
+    unrelated++;
+    return Effect.fail(new CrewError("TEST", "Unrelated read"));
+  };
+  f.controller.queries.ready = forbidden;
+  f.controller.queries.supervisionAggregate = forbidden;
+  f.controller.queries.inspectWorker = forbidden;
+  f.controller.queries.planDocuments = forbidden;
+  const id = Id.IssueId.make("abra-closed-54"),
+    missing = Id.IssueId.make("abra-foreign");
+  const result = await run(view.binding({ issue_ids: [id, id, missing] }));
+  assert.deepEqual(
+    result.work.map((row) => row.issue_id),
+    [id],
+  );
+  assert.equal(result.work[0]!.issue_status, "closed");
+  assert.deepEqual(result.coverage.unavailable_ids, [missing]);
+  assert.equal(result.coverage.status, "unavailable");
+  assert.deepEqual(
+    result.results.map((entry) => entry.status),
+    ["available", "missing"],
+  );
+  const all = await run(view.binding({ issue_ids: [id], include_population: true }));
+  assert.equal(all.work.length, 55);
+  assert.equal(all.coverage.total, 55);
+  assert.equal(unrelated, 0);
+  await assert.rejects(
+    run(view.binding({ issue_ids: Array.from({ length: 101 }, () => id) })),
+    /binding read/,
+  );
+  const observe = f.controller.queries.observeTask;
+  const broken = Id.IssueId.make("abra-closed-53");
+  f.controller.queries.observeTask = (id, history) =>
+    id === broken
+      ? Effect.fail(new CrewError("STORAGE", "Unavailable retained evidence"))
+      : observe(id, history);
+  const partial = await run(view.binding({ issue_ids: [id, broken] }));
+  assert.equal(partial.work.length, 1);
+  assert.equal(partial.coverage.status, "unavailable");
+  assert.deepEqual(
+    partial.results.map((entry) => entry.status),
+    ["available", "unavailable"],
+  );
+  assert.equal(f.runtime.prompts, 0);
 });

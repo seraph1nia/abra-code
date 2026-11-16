@@ -7,7 +7,8 @@
   "exports": {
     "./navigation": "./src/navigation.ts",
     "./native-form": "./src/native-form.ts",
-    "./diff-patch": "./src/diff-patch.ts"
+    "./diff-patch": "./src/diff-patch.ts",
+    "./observation-client": "./src/workspace-state/observation-client.ts"
   },
   "scripts": {
     "build": "vp build",

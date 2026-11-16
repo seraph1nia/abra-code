@@ -442,3 +442,22 @@ capture time and applicable execution revision. Outcome closure uses the capture
 issue rather than rereading it after native observation. Semantic failures such as
 a missing issue retain their original classification; only exhausted coherence
 contention/deadlines become temporary observation unavailability.
+
+### Immutable report file ownership
+
+`workflow/report-files.ts` concentrates the physical protocol used by
+`ReportDocuments` and `ReportExports`: owned directory/file containment, bounded
+regular-file reads, digest/size identity, exclusive flushed staging, no-replacement
+publication, occupied-byte reconciliation and verified scratch retirement. Before
+this seam, both owners coordinated these steps and interpreted filesystem evidence.
+They now choose a destination/size policy and provide content identity plus content
+or retained staging. JSON supplies its durable receipt effect as the cleanup barrier;
+the file module does not interpret that receipt or advance execution.
+
+Each physical invariant has one implementation and live-filesystem caller-interface
+coverage in `report-files.test.ts`. Domain tests separately prove interrupted JSON
+receipt recovery, stale-generation refusal and HTML-existing-before-export-receipt
+recovery. Authorization, locks, generation and JSON/export semantic identity remain
+with the publication owners. Matching files are reusable facts; conflicting files
+and changed scratch are preserved. There is no generic workflow engine, new store
+or change to legacy Markdown/HTML publication.

@@ -452,6 +452,9 @@ importers:
       '@a2ui/web_core':
         specifier: 0.15.0
         version: 0.15.0
+      '@abracode/presentation':
+        specifier: workspace:*
+        version: link:../presentation
       '@abracode/report-export':
         specifier: workspace:*
         version: link:../../apps/report

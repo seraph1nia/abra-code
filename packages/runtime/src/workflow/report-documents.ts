@@ -1,7 +1,5 @@
-import { writeReportStaging, linkReportStaging } from "./report-files.ts";
+import { ReportFile } from "./report-files.ts";
 import { Effect } from "effect";
-import { randomUUID } from "node:crypto";
-import { join } from "node:path";
 import { CrewError, ensure, type Execution } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import {
@@ -14,8 +12,7 @@ import {
 } from "../identities.ts";
 import type { Records } from "../storage/store.ts";
 import type { Locks } from "../storage/lock.ts";
-import { lstat, realpath, readFile, pathExists, rm } from "../filesystem.ts";
-import { reportDirectory, reportHash } from "./report-build.ts";
+import { reportHash } from "./report-build.ts";
 import { canonicalJSON } from "../presentation/identity.ts";
 import {
   maximumDocumentBytes,
@@ -41,39 +38,26 @@ export class ReportDocuments {
     private locks: Locks,
   ) {}
 
+  private file(issue: IssueId, request: RequestId) {
+    return new ReportFile(
+      this.home,
+      [".abracode", "reports", "generated", issue, request],
+      "index.json",
+      maximumDocumentBytes,
+    );
+  }
   private content(build: VisualBuild) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
         const a = build.artifact;
         ensure(a?.schema_version === 2, "REPORT_FORMAT", "An immutable JSON receipt is required");
-        const expected = join(
-          yield* realpath(this.home),
-          ".abracode/reports/generated",
-          a.issue_id,
-          a.request_id,
-          "index.json",
-        );
+        const file = yield* this.file(a.issue_id, a.request_id).read(a);
         ensure(
-          a.path === expected,
+          a.path === file.path,
           "REPORT_PATH",
           "JSON artifact path does not match its retained revision",
         );
-        const stat = yield* lstat(a.path);
-        ensure(
-          stat.isFile() &&
-            !stat.isSymbolicLink() &&
-            stat.size <= maximumDocumentBytes &&
-            (yield* realpath(a.path)) === expected,
-          "REPORT_PATH",
-          "JSON artifact must be a bounded owned regular file",
-        );
-        const json = yield* readFile(a.path, "utf8");
-        ensure(
-          reportHash(json) === a.hash && Buffer.byteLength(json) === a.bytes,
-          "REPORT_TAMPERED",
-          "JSON artifact no longer matches its retained digest",
-        );
-        return { json, hash: a.hash, bytes: a.bytes };
+        return { json: file.text, hash: file.hash, bytes: file.bytes };
       }),
     );
   }
@@ -120,62 +104,40 @@ export class ReportDocuments {
           "REPORT_FORMAT",
           "JSON publication receipt required",
         );
-        const directory = yield* reportDirectory(this.home, [
-          ".abracode",
-          "reports",
-          "generated",
-          issue,
-          build.request.request_id,
-        ]);
-        ensure(
-          a.path === join(directory, "index.json"),
-          "REPORT_PATH",
-          "JSON revision destination changed",
+        ensure(build.staging, "REPORT_PATH", "Owned JSON staging file required");
+        const publication = yield* this.file(issue, build.request.request_id).publish(
+          { staging: build.staging, identity: a, expectedPath: a.path },
+          this.records
+            .update(issue, (current) => {
+              ensure(
+                current.execution_id === a.execution_id &&
+                  current.control_generation === build.generation,
+                "REPORT_STALE",
+                "Report publication generation changed",
+              );
+              return {
+                ...current,
+                visual_reports: current.visual_reports?.map((entry) =>
+                  entry.request.request_id === build.request.request_id
+                    ? {
+                        ...entry,
+                        status: "published" as const,
+                        document_input: undefined,
+                        error: undefined,
+                      }
+                    : entry,
+                ),
+              };
+            })
+            .pipe(
+              Effect.map((current) =>
+                current.visual_reports!.find(
+                  (entry) => entry.request.request_id === build.request.request_id,
+                )!,
+              ),
+            ),
         );
-        if (!(yield* pathExists(a.path))) {
-          const staging = build.staging;
-          ensure(
-            staging &&
-              staging.startsWith(directory + "/.stage-") &&
-              !staging.slice(directory.length + 1).includes("/"),
-            "REPORT_PATH",
-            "Owned JSON staging file required",
-          );
-          const stat = yield* lstat(staging);
-          ensure(
-            stat.isFile() &&
-              !stat.isSymbolicLink() &&
-              stat.size <= maximumDocumentBytes &&
-              (yield* realpath(staging)) === staging,
-            "REPORT_PATH",
-            "JSON staging ownership changed",
-          );
-          const json = yield* readFile(staging, "utf8");
-          ensure(
-            reportHash(json) === a.hash && Buffer.byteLength(json) === a.bytes,
-            "REPORT_TAMPERED",
-            "JSON staging digest changed",
-          );
-          yield* linkReportStaging(staging, a.path);
-        }
-        yield* this.content(build);
-        const published = yield* this.update(issue, build.request.request_id, (current) => ({
-          ...current,
-          status: "published",
-          document_input: undefined,
-          error: undefined,
-        }));
-        if (build.staging && (yield* pathExists(build.staging))) {
-          const stat = yield* lstat(build.staging);
-          if (
-            stat.isFile() &&
-            !stat.isSymbolicLink() &&
-            (yield* realpath(build.staging)) === build.staging &&
-            reportHash(yield* readFile(build.staging, "utf8")) === a.hash
-          )
-            yield* rm(build.staging);
-        }
-        return published;
+        return publication.result!;
       }),
     );
   }
@@ -273,21 +235,11 @@ export class ReportDocuments {
                   catch: CrewError.from,
                 });
                 const json = canonicalJSON(document);
-                const directory = yield* reportDirectory(this.home, [
-                  ".abracode",
-                  "reports",
-                  "generated",
-                  issue,
-                  request.request_id,
-                ]);
-                const path = AbsolutePath.make(join(directory, "index.json"));
-                ensure(
-                  !(yield* pathExists(path)),
-                  "REPORT_OCCUPIED",
-                  "Report destination is occupied; preserve it for inspection",
-                );
-                const staging = AbsolutePath.make(join(directory, `.stage-${randomUUID()}.json`));
-                yield* writeReportStaging(staging, json);
+                const file = this.file(issue, request.request_id);
+                const { staging, path } = yield* file.stage(json, {
+                  hash: build.document_hash!,
+                  bytes: Buffer.byteLength(json),
+                });
                 const reserved = build;
                 build = yield* this.update(issue, request.request_id, (current) => ({
                   ...current,

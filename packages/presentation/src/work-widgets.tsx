@@ -1,3 +1,5 @@
+import { bindWork, type WorkBinding } from "./work-bindings.ts";
+export { bindWork } from "./work-bindings.ts";
 import type { ReactNode } from "react";
 import type { WorkSummary } from "@abracode/contracts/visibility/work-summary";
 import type { WorkComponentName, WorkProps } from "@abracode/contracts/web/catalog";
@@ -9,12 +11,7 @@ import { Badge } from "./ui/badge.tsx";
 import { ReportEvidence, type PreparedReportDiagram } from "./report-evidence.tsx";
 import type { ReportSnapshot } from "@abracode/contracts/presentation/report-evidence";
 
-type Binding = {
-  work: readonly WorkSummary[];
-  captured: readonly WorkSummary[];
-  capturedAt: string;
-  /** Both inputs are immutable captured values when frozen. */
-  frozen?: boolean;
+type Binding = WorkBinding & {
   evidence?: ReportSnapshot;
   preparedDiagrams?: readonly PreparedReportDiagram[];
   inspect?: (target: ResourceSelection) => void;
@@ -23,24 +20,6 @@ const statuses = ["open", "in_progress", "blocked", "closed", "unavailable"] as 
 const words = (text: string) => text.replaceAll("_", " ");
 const observedState = (work: WorkSummary) =>
   work.phase ? `${phaseLabel(work.phase)} · ${words(work.issue_status)}` : words(work.issue_status);
-
-/** The binding adapter is shared by app surfaces and immutable document viewers. */
-export function bindWork(props: WorkProps<"WorkTable">, binding: Binding) {
-  const snapshot = props.mode === "snapshot";
-  const source = snapshot ? binding.captured : binding.work;
-  const matching = source.filter(
-    (work) => !props.issueIds || props.issueIds.includes(work.issue_id),
-  );
-  return {
-    selected: matching.slice(0, 100),
-    total: matching.length,
-    label: binding.frozen
-      ? `Saved ${snapshot ? "snapshot" : "live"} binding · ${new Date(binding.capturedAt).toLocaleString()}`
-      : snapshot
-        ? `Snapshot · ${new Date(binding.capturedAt).toLocaleString()}`
-        : "Live work graph",
-  };
-}
 
 /** Presentation has no router, query client, model tool or controller dependency. */
 export function WorkWidget({
@@ -55,7 +34,7 @@ export function WorkWidget({
     Partial<WorkProps<"ReportEvidence">>;
   binding: Binding;
 }) {
-  const { selected, total, label } = bindWork(props, binding);
+  const { selected, total, label, incomplete } = bindWork(props, binding);
   const source = props.mode === "snapshot" ? binding.captured : binding.work;
   const navigate = (target: ResourceSelection, text: ReactNode, className?: string) =>
     binding.inspect ? (
@@ -98,7 +77,11 @@ export function WorkWidget({
           {statuses.map((status) => (
             <div key={status}>
               <dt>{words(status)}</dt>
-              <dd>{selected.filter((work) => work.issue_status === status).length}</dd>
+              <dd>
+                {incomplete && !selected.length
+                  ? "Unavailable"
+                  : `${selected.filter((work) => work.issue_status === status).length}${incomplete ? " (partial)" : ""}`}
+              </dd>
             </div>
           ))}
         </dl>

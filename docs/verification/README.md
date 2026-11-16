@@ -106,3 +106,34 @@ notice identity changes, unrelated backend/lock stability and cache tamper refus
 SVG, offline opaque-frame interactions and browser caching remain in final native/
 browser acceptance. `pnpm build` includes preparation; `pnpm report:prepare` is the
 same explicit source-installation recipe without rebuilding the other applications.
+
+Browser observation sequence proof uses
+`pnpm test:one packages/runtime/tests/fast/web-observation.test.ts`, with a
+controlled transport and clock at the same module interface the React hook uses.
+It covers retired baselines, duplicate/gapped updates, overlapping refresh,
+unavailable recovery, scoped off-page invalidation and disposal while reads and
+timers are pending. After `pnpm web:build`, run `web-coherence.test.ts` and
+`web-rendering.test.ts` for actual browser recovery with retained drafts,
+admissions, history/selection and explicit Stop. Use a fresh external
+`ABRACODE_TEST_EVIDENCE_DIR` for screenshots and logs; fixture cleanup leaves these
+outside its disposable state. This adds no browser polling or native admission.
+
+Native adapter/A2UI proof uses `native-agui-stream.test.ts`,
+`surface-publications.test.ts`, `presentation-associations.test.ts` and
+`web-workspace.test.ts`. These exercise real AG-UI reduction, complete-value
+recovery, exact producing message/call/revision associations and refused generic
+callbacks. The native workspace journey adds 55 disposable closed-history rows
+and one blocked companion as setup data; those rows are not controller delivery
+proof. It checks an unfiltered captured table beside a task-specific link, a live
+reference outside the first closed page, separate saved live/snapshot coverage,
+and two standard HTTP observers across detach/reconnect and native restart.
+The deterministic provider pauses until a standard HTTP observer receives tool
+start, then separately pauses for partial text; client callbacks release each gate.
+This proves observation before provider completion without relying on global busy.
+The pinned server does not publish partial argument deltas; controlled native-event
+fixtures verify that supported mapping and mid-argument recovery separately.
+`native-transport.json` retains the gate observations and event types even on failure.
+Native workflow mutations for the main issue still enter through chat/forms.
+Original revision reads and frozen exports survive main-work retirement without
+provider calls. Generic A2UI action/envelope paths and middleware tool injection
+remain unsupported under the documented custom contract.

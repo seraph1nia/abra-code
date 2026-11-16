@@ -58,6 +58,7 @@ export function ReportDocumentView({
         key={artifact.hash}
         frozen
         work={document.data.work}
+        liveCoverage={document.data.live_coverage}
         inspect={inspect}
         evidence={document.data.evidence}
         preparedDiagrams={preparedDiagrams}
@@ -66,6 +67,7 @@ export function ReportDocumentView({
           snapshot: document.data.snapshot_work ?? document.data.work,
           revision: document.revision,
           at: document.captured_at,
+          coverage: document.data.snapshot_coverage,
         }}
       />
     </article>

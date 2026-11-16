@@ -1,3 +1,4 @@
+import { workspaceBrowserFixture } from "../helpers/workspace-browser.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Shipped browser assets and disposable Effect HTTP fixture. */
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -225,4 +226,169 @@ test("upstream A2UI renders every work widget, replaces revisions and retains va
   await page.close();
   assert.equal(backend.stops, 0);
   assert.equal(backend.submissions, 0);
+});
+
+test("live generated widgets resolve off-page tasks, share queries and label stale or missing data", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const base = f.source.value.work.work[0]!;
+  const rows = Array.from({ length: 60 }, (_, i) => ({
+    ...base,
+    issue_id: IssueId.make(`abra-closed-${String(i).padStart(2, "0")}`),
+    title: `Closed task ${i}`,
+    issue_status: "closed" as const,
+  }));
+  f.setDiscovery(rows);
+  const id = rows[54]!.issue_id;
+  f.source.value = {
+    ...f.source.value,
+    work: { ...f.source.value.work, work: rows.slice(0, 50) },
+    surfaces: [
+      {
+        session_id: f.source.sessionID,
+        tool_call_id: "offpage",
+        revision: 1,
+        at: f.source.value.at,
+        snapshot: [{ ...rows[54]!, title: "Original captured task" }],
+        surface: validateSurface({
+          version: "1.0",
+          createSurface: {
+            surfaceId: "offpage",
+            catalogId,
+            components: [
+              { id: "root", component: "Column", children: ["table", "count", "snapshot"] },
+              { id: "table", component: "WorkTable", issueIds: [id], mode: "live" },
+              { id: "count", component: "StatusSummary", issueIds: [id], mode: "live" },
+              { id: "snapshot", component: "WorkTable", issueIds: [id], mode: "snapshot" },
+            ],
+          },
+        }),
+      },
+    ],
+  };
+  const page = await f.browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  await page.goto(f.origin);
+  await page.getByText("Other retained views (1)", { exact: true }).click();
+  const live = page.locator('[data-work-widget="WorkTable"]').first();
+  await live.getByRole("button", { name: "Closed task 54", exact: true }).waitFor();
+  assert.equal(f.calls.filter((call) => call.name === "binding").length, 1);
+  assert.match(await page.locator(".generated-surface").innerText(), /Original captured task/);
+  const count = page.locator('[data-work-widget="StatusSummary"]');
+  assert.match(await count.innerText(), /Complete selection/);
+  rows[54] = { ...rows[54]!, title: "Refreshed off-page title" };
+  f.setDiscovery(rows);
+  f.source.value = {
+    ...f.source.value,
+    work: { ...f.source.value.work, work_revision: String(f.calls.length) },
+  };
+  await f.changed();
+  await live.getByText("Refreshed off-page title", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Original captured task", exact: true }).waitFor();
+  f.failedReads.add("binding");
+  f.source.value = {
+    ...f.source.value,
+    work: { ...f.source.value.work, work_revision: String(f.calls.length) },
+  };
+  await f.changed();
+  await live.getByText(/Stale data/).waitFor();
+  await live.getByText("Refreshed off-page title", { exact: true }).waitFor();
+  f.failedReads.delete("binding");
+  f.setDiscovery(rows.filter((row) => row.issue_id !== id));
+  f.source.value = {
+    ...f.source.value,
+    work: { ...f.source.value.work, work_revision: String(f.calls.length) },
+  };
+  await f.changed();
+  await live.getByText(/Unavailable requested data/).waitFor();
+  assert.equal(await live.locator("tbody tr").count(), 0);
+  assert.match(await count.innerText(), /Unavailable/);
+  for (const width of [375, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+      false,
+    );
+  }
+  assert.equal(f.source.submissions, 0);
+  const directory = process.env.ABRACODE_TEST_EVIDENCE_DIR;
+  if (directory) {
+    await mkdir(directory, { recursive: true });
+    await page.screenshot({ path: join(directory, "offpage-bindings.png"), fullPage: true });
+  }
+});
+
+test("replaced live selections ignore a late read and show pending counts without false zeroes", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const base = f.source.value.work.work[0]!;
+  const rows = [54, 53].map((i) => ({
+    ...base,
+    issue_id: IssueId.make(`abra-history-${i}`),
+    title: `Live selection ${i}`,
+  }));
+  f.setDiscovery(rows);
+  const record = (revision: number, id: string) => ({
+    session_id: f.source.sessionID,
+    tool_call_id: `selection-${revision}`,
+    revision,
+    at: f.source.value.at,
+    snapshot: rows,
+    surface: validateSurface({
+      version: "1.0",
+      createSurface: {
+        surfaceId: "selection",
+        catalogId,
+        components: [
+          { id: "root", component: "Column", children: ["table", "counts"] },
+          { id: "table", component: "WorkTable", mode: "live", issueIds: [id] },
+          { id: "counts", component: "StatusSummary", mode: "live", issueIds: [id] },
+        ],
+      },
+    }),
+  });
+  f.source.value = { ...f.source.value, surfaces: [record(1, rows[0]!.issue_id)] };
+  const page = await f.browser.newPage();
+  let release!: () => void, started!: () => void, finished!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const pending = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const ended = new Promise<void>((resolve) => {
+    finished = resolve;
+  });
+  t.onTestFinished(() => release());
+  await page.route("**/api/work/binding?*", async (route) => {
+    if (route.request().url().includes("abra-history-54")) {
+      started();
+      await gate;
+      try {
+        if (!page.isClosed()) await route.continue();
+      } catch {
+        /* canceled obsolete read */
+      } finally {
+        finished();
+      }
+    } else await route.continue();
+  });
+  await page.goto(f.origin);
+  await page.getByText("Other retained views (1)", { exact: true }).click();
+  await pending;
+  await page
+    .locator('[data-work-widget="StatusSummary"]')
+    .getByText(/Pending data/)
+    .waitFor();
+  assert.match(await page.locator('[data-work-widget="StatusSummary"]').innerText(), /Unavailable/);
+  f.source.value = { ...f.source.value, surfaces: [record(2, rows[1]!.issue_id)] };
+  await f.changed();
+  const table = page.locator('[data-work-widget="WorkTable"]');
+  await table.getByRole("button", { name: "Live selection 53", exact: true }).waitFor();
+  release();
+  await ended;
+  assert.equal(await table.getByText("Live selection 54", { exact: true }).count(), 0);
+  assert.equal(await table.getByText("Live selection 53", { exact: true }).count(), 1);
+  await page.close();
+  assert.equal(f.source.stops, 0);
+  assert.equal(f.source.submissions, 0);
 });

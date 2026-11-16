@@ -27,7 +27,8 @@
     "./surfaces": "./src/surfaces.tsx",
     "./utils": "./src/utils.ts",
     "./tokens.css": "./src/tokens.css",
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/styles.css",
+    "./work-bindings": "./src/work-bindings.ts"
   },
   "scripts": {
     "check": "tsc --noEmit"

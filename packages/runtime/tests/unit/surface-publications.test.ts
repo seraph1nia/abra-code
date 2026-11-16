@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { test } from "vite-plus/test";
 import { Effect } from "effect";
 import { CrewError } from "../../src/domain.ts";
-import { MessageId, SessionId, StorageKey } from "../../src/identities.ts";
+import { IssueId, MessageId, SessionId, StorageKey } from "../../src/identities.ts";
 import { SurfacePublications } from "../../src/web/surface-publications.ts";
 import { validateSurface, catalogId } from "../../src/web/surfaces.ts";
 import { WorkspaceFixture } from "../helpers/web.ts";
@@ -286,4 +286,48 @@ test("surface integrity and selection failures preserve unrelated publications a
   await assert.rejects(run(f.owner.read(session, "../escape", 1)), /Surface selection/);
   await assert.rejects(run(f.owner.read(session, "other", 0)), /Surface revision/);
   assert.deepEqual([...f.store.values], before);
+});
+
+test("unfiltered snapshot siblings retain all observed work and explicit references under retries", async () => {
+  const f = fixture();
+  const first = f.workspace.value.work.work[0]!;
+  f.workspace.value = {
+    ...f.workspace.value,
+    work: {
+      ...f.workspace.value.work,
+      work: [
+        first,
+        { ...first, issue_id: IssueId.make("abra-second"), title: "Second observed task" },
+      ],
+    },
+  };
+  const mixed = validateSurface({
+    version: "1.0",
+    createSurface: {
+      surfaceId: "mixed",
+      catalogId,
+      components: [
+        { id: "root", component: "Column", children: ["table", "link"] },
+        { id: "table", component: "WorkTable", mode: "snapshot" },
+        { id: "link", component: "ReportLink", issueId: first.issue_id },
+      ],
+    },
+  });
+  const input = { ...source("msg_mixed", ""), surface: mixed };
+  await run(f.owner.publish(input, f.observe));
+  const captured = await run(f.owner.read(session, "mixed", 1));
+  assert.deepEqual(
+    new Set(captured.snapshot.map((row) => row.issue_id)),
+    new Set([first.issue_id, "abra-second"]),
+  );
+  assert.equal(captured.coverage?.returned, 2);
+  f.workspace.value = { ...f.workspace.value, work: { ...f.workspace.value.work, work: [] } };
+  await run(f.owner.publish(input, f.observe));
+  assert.equal(f.reads(), 1);
+  assert.deepEqual(await run(f.owner.read(session, "mixed", 1)), captured);
+  await assert.rejects(
+    run(f.owner.publish({ ...input, message_id: MessageId.make("msg_missing") }, f.observe)),
+    /unavailable work/,
+  );
+  assert.deepEqual(await run(f.owner.read(session, "mixed", 1)), captured);
 });

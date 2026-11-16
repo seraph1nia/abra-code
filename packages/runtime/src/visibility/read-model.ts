@@ -1,3 +1,4 @@
+import { BindingReadQuery, selectBindingRows } from "@abracode/contracts/web/bindings";
 import { executionBlocker } from "../workflow/readiness.ts";
 import { executionContract } from "./execution-contract.ts";
 import { type Config } from "../domain.ts";
@@ -213,6 +214,85 @@ export class Visibility {
           next_offset: page.next_offset,
           fleet: snapshot.fleet,
           observed_at: snapshot.at,
+        };
+      }),
+    );
+  binding = (input: typeof BindingReadQuery.Type) =>
+    domainEffect(
+      Effect.gen({ self: this }, function* () {
+        const query = yield* decode(BindingReadQuery, input, "Work binding read");
+        const explicit = [...new Set(query.issue_ids)];
+        const population = query.include_population ? yield* this.c.bindingPopulation() : undefined;
+        const requested = [...new Set([...explicit, ...(population?.ids ?? [])])].slice(0, 100);
+        const results = yield* Effect.forEach(
+          requested,
+          (id) =>
+            this.c.observeTask(id).pipe(
+              Effect.map((task) => ({
+                issue_id: id,
+                status: task.execution_unavailable
+                  ? ("unavailable" as const)
+                  : ("available" as const),
+                task,
+              })),
+              Effect.catch((error) =>
+                Effect.succeed({
+                  issue_id: id,
+                  status:
+                    error.code === "ISSUE_MISSING"
+                      ? ("missing" as const)
+                      : ("unavailable" as const),
+                  task: undefined,
+                }),
+              ),
+            ),
+          { concurrency: 4 },
+        );
+        const work = results.flatMap(({ task }) =>
+          task
+            ? [
+                bindRetainedWork(
+                  retainedWork(
+                    this.c.settings.supervisionMode,
+                    task.issue,
+                    task.execution,
+                    undefined,
+                    task.closed_at,
+                  ),
+                  task.execution,
+                  task.issue,
+                  Date.parse(task.source.captured_at),
+                ),
+              ]
+            : [],
+        );
+        const selected = selectBindingRows(
+          { ids: explicit, unfiltered: !!query.include_population },
+          work,
+          population?.total,
+        );
+        const unavailable = results.some((entry) => entry.status !== "available");
+        return {
+          work: selected.rows,
+          coverage: {
+            ...selected.coverage,
+            unavailable_ids: [
+              ...new Set([
+                ...selected.coverage.unavailable_ids,
+                ...results
+                  .filter(
+                    (entry) => explicit.includes(entry.issue_id) && entry.status !== "available",
+                  )
+                  .map((entry) => entry.issue_id),
+              ]),
+            ],
+            status: unavailable ? ("unavailable" as const) : selected.coverage.status,
+          },
+          results: results
+            .filter((entry) => explicit.includes(entry.issue_id))
+            .map(({ issue_id, status }) => ({ issue_id, status })),
+          observed_at: yield* timestamp,
+          ...(population ? { work_revision: population.work_revision } : {}),
         };
       }),
     );

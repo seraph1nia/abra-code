@@ -1,3 +1,13 @@
+/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect HTTP atoms own shared generated-binding queries. */
+import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
+import { Option } from "effect";
+import {
+  bindingRequirements,
+  type BindingSelection,
+  type BindingCoverage,
+} from "@abracode/contracts/web/bindings";
+import type { SurfaceRecord } from "@abracode/contracts/web/contracts";
 import type { PresentationAttachmentSchema } from "@abracode/contracts/presentation/contracts";
 import { useState, type ComponentProps } from "react";
 import { deferred } from "../deferred.tsx";
@@ -42,12 +52,10 @@ export function RetainedSurfaces({
             {entry.unavailable}
           </p>
         ) : "surface" in entry ? (
-          <WorkViews
+          <BoundSurface
             key={entry.surface.createSurface.surfaceId}
-            records={[entry]}
-            work={work}
+            record={entry}
             inspect={inspect}
-            actions={(record) => <SaveSurfaceButton record={record} inspect={inspect} />}
           />
         ) : (
           <SurfaceAttachment
@@ -63,7 +71,7 @@ export function RetainedSurfaces({
 }
 export function SurfaceAttachment({
   target,
-  work,
+  work: _work,
   inspect,
 }: {
   target: Extract<Target, { kind: "surface" }>;
@@ -88,17 +96,63 @@ export function SurfaceAttachment({
                   Legacy layout: only the latest retained revision is available.
                 </p>
               )}
-              <WorkViews
-                records={[entry]}
-                work={work}
-                inspect={inspect}
-                actions={(record) => <SaveSurfaceButton record={record} inspect={inspect} />}
-              />
+              <BoundSurface record={entry} inspect={inspect} />
             </>
           )
         }
       </RequestState>
     </div>
+  );
+}
+function BoundSurface({ record, inspect }: { record: SurfaceRecord; inspect: Inspect }) {
+  const selection = bindingRequirements(record.surface, "live");
+  return selection.unfiltered || selection.ids.length ? (
+    <LiveSurface record={record} inspect={inspect} selection={selection} />
+  ) : (
+    <WorkViews
+      records={[record]}
+      work={[]}
+      inspect={inspect}
+      actions={(record) => <SaveSurfaceButton record={record} inspect={inspect} />}
+    />
+  );
+}
+function LiveSurface({
+  record,
+  inspect,
+  selection,
+}: {
+  record: SurfaceRecord;
+  inspect: Inspect;
+  selection: BindingSelection;
+}) {
+  const result = useAtomValue(queries.binding(selection));
+  const value = AsyncResult.value(result);
+  const previous = Option.isSome(value) ? value.value : undefined;
+  const coverage: BindingCoverage = {
+    ...(previous?.coverage ?? {
+      population: "retained-work",
+      requested_ids: [],
+      returned: 0,
+      unavailable_ids: [],
+      truncated: selection.unfiltered,
+    }),
+    status: AsyncResult.isFailure(result)
+      ? previous
+        ? "stale"
+        : "unavailable"
+      : result.waiting && !previous
+        ? "pending"
+        : (previous?.coverage.status ?? "pending"),
+  };
+  return (
+    <WorkViews
+      records={[record]}
+      work={previous?.work ?? []}
+      liveCoverage={coverage}
+      inspect={inspect}
+      actions={(record) => <SaveSurfaceButton record={record} inspect={inspect} />}
+    />
   );
 }
 export function MessageAttachment({

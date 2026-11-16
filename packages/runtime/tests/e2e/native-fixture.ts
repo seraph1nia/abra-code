@@ -156,6 +156,8 @@ export function nativeTest(
       for (const done of acceptanceWaiting.get(key) ?? []) done();
       acceptanceWaiting.delete(key);
     };
+    const streamProof = { tool: false, text: false };
+    const releaseStreamProof: { tool?: () => void; text?: () => void } = {};
     const provider = createServer(async (req, res) => {
       if (req.url?.startsWith("/browser/")) {
         res.writeHead(200, { "Content-Type": "text/html" });
@@ -878,10 +880,55 @@ export function nativeTest(
             },
           ];
       res.writeHead(200, { "Content-Type": "text/event-stream" });
-      for (const chunk of chunks)
+      const send = (chunk: unknown) =>
         res.write(
-          `data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", created: 0, model: "fixture", choices: [{ index: 0, ...chunk }] })}\n\n`,
+          `data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", created: 0, model: "fixture", choices: [{ index: 0, ...(chunk as object) }] })}\n\n`,
         );
+      const controlled =
+        journey === "workspace" &&
+        role === "supervisor" &&
+        user.startsWith("AbraCode workspace operation ");
+      if (controlled && next && streamProof.tool) {
+        streamProof.tool = false;
+        const args = JSON.stringify(next.args),
+          split = Math.max(1, Math.floor(args.length / 2));
+        send({
+          delta: {
+            role: "assistant",
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_workspace_stream",
+                type: "function",
+                function: { name: next.name, arguments: "" },
+              },
+            ],
+          },
+          finish_reason: null,
+        });
+        send({
+          delta: { tool_calls: [{ index: 0, function: { arguments: args.slice(0, split) } }] },
+          finish_reason: null,
+        });
+        await new Promise<void>((resolve) => {
+          releaseStreamProof.tool = resolve;
+        });
+        send({
+          delta: { tool_calls: [{ index: 0, function: { arguments: args.slice(split) } }] },
+          finish_reason: null,
+        });
+        send({ delta: {}, finish_reason: "tool_calls" });
+      } else if (controlled && !next && streamProof.text) {
+        streamProof.text = false;
+        send({
+          delta: { role: "assistant", content: "Streaming native text " },
+          finish_reason: null,
+        });
+        await new Promise<void>((resolve) => {
+          releaseStreamProof.text = resolve;
+        });
+        send({ delta: { content: "completed." }, finish_reason: "stop" });
+      } else for (const chunk of chunks) send(chunk);
       res.end("data: [DONE]\n\n");
     });
     await new Promise<void>((done) => provider.listen(0, "127.0.0.1", done));
@@ -889,6 +936,8 @@ export function nativeTest(
       port: number;
     };
     cleanup = async () => {
+      releaseStreamProof.tool?.();
+      releaseStreamProof.text?.();
       for (const key of ["auth-explore", "db-research", "auth-apply"]) releaseAcceptance(key);
       releaseLeadResearch?.();
       const recordEvidence = async (cleanupComplete: boolean) => {
@@ -1491,6 +1540,13 @@ export function nativeTest(
           session: supervisor.id,
           client,
           providerCount: () => providerRequests.supervisor ?? 0,
+          streaming: {
+            hold: () => {
+              streamProof.tool = true;
+              streamProof.text = true;
+            },
+            release: (kind) => releaseStreamProof[kind]?.(),
+          },
           restart: async () => {
             const owned = child!;
             await new Promise<void>((done) => {

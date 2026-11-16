@@ -1,3 +1,9 @@
+import {
+  bindingRequirements,
+  selectBindingRows,
+  type BindingSelection,
+  type BindingRead,
+} from "@abracode/contracts/web/bindings";
 import { Clock, Effect, Schema } from "effect";
 import { WorkSummarySchema } from "../visibility/work-summary.ts";
 import { ReportDocuments } from "./report-documents.ts";
@@ -11,11 +17,10 @@ import {
   readReportDocument,
   type ReportProducer,
 } from "../presentation/report-document.ts";
-import type { WorkSnapshotSchema } from "../web/wire.ts";
 import { join } from "node:path";
 import { SessionMessage } from "@opencode/client/effect";
 import { type Runtime } from "../opencode/runtime.ts";
-import { IssueId, SessionId, RequestId, LockKey, AbsolutePath } from "../identities.ts";
+import { IssueId, SessionId, RequestId, LockKey, AbsolutePath, Timestamp } from "../identities.ts";
 import { CrewError, ensure, type Execution } from "../domain.ts";
 import { type Records } from "../storage/store.ts";
 import { type Locks } from "../storage/lock.ts";
@@ -53,7 +58,7 @@ export class VisualReports {
     session: SessionId,
     issue: IssueId,
     raw: typeof VisualRenderRequestSchema.Type,
-    observe: Effect.Effect<Pick<typeof WorkSnapshotSchema.Type, "at" | "work">, CrewError>,
+    observe: (selection: BindingSelection) => Effect.Effect<BindingRead, CrewError>,
   ) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
@@ -71,9 +76,26 @@ export class VisualReports {
               this.records.store,
               this.locks,
             ).readCurrent(session, selection.surface_id, selection.revision);
-            const current = yield* observe;
+            const requirements = bindingRequirements(source.surface, "live");
+            const current = yield* observe(requirements);
+            const live = selectBindingRows(requirements, current.work, current.coverage.total);
+            const captured = selectBindingRows(
+              bindingRequirements(source.surface, "snapshot"),
+              source.snapshot,
+              source.coverage?.total,
+            );
+            ensure(
+              !live.coverage.unavailable_ids.length &&
+                !captured.coverage.unavailable_ids.length &&
+                !current.results.some(
+                  (result) =>
+                    requirements.ids.includes(result.issue_id) && result.status !== "available",
+                ),
+              "REPORT_SOURCE",
+              "Required explicit work is unavailable; report was not published",
+            );
             const capturedWork = yield* Schema.decodeEffect(Schema.Array(WorkSummarySchema))(
-              current.work.slice(0, 100),
+              live.rows,
             ).pipe(Effect.mapError(CrewError.from));
             const markdown = e.report_receipt ? yield* this.readReport(e) : undefined;
             const snapshot = yield* captureReportSnapshot(this.work, e, markdown, request.title);
@@ -85,7 +107,7 @@ export class VisualReports {
                   document_id: request.request_id,
                   revision,
                   title: request.title ?? snapshot.title,
-                  captured_at: current.at,
+                  captured_at: Timestamp.make(current.observed_at),
                   catalog_id: catalogId,
                   catalog_version: 1,
                   renderer_compatibility: reportRendererVersion,
@@ -112,13 +134,25 @@ export class VisualReports {
                     },
                   },
                   surface: source.surface,
-                  data: { work: capturedWork, snapshot_work: source.snapshot },
+                  data: {
+                    work: capturedWork,
+                    snapshot_work: source.snapshot,
+                    live_coverage: { ...live.coverage, status: current.coverage.status },
+                    ...(source.coverage ? { snapshot_coverage: source.coverage } : {}),
+                  },
                   limitations: [
                     "Saved live and snapshot bindings are immutable; links inspect separately labeled current app resources.",
                     "The original generated surface had no captured report evidence; report-evidence components remain unavailable.",
-                    ...(current.work.length > 100
-                      ? [`Live work capture includes 100 of ${current.work.length} observed tasks.`]
+                    ...(live.coverage.truncated || current.coverage.status !== "observed"
+                      ? [
+                          `Live work capture is partial: ${live.rows.length} of ${live.coverage.total ?? "unknown"} retained tasks; ${current.coverage.status}.`,
+                        ]
                       : []),
+                    ...(!source.coverage
+                      ? ["Historical snapshot coverage is unknown."]
+                      : source.coverage.truncated
+                        ? ["Original snapshot coverage is partial."]
+                        : []),
                   ],
                 }),
               catch: CrewError.from,
@@ -365,10 +399,7 @@ export class VisualReports {
       );
       if (!retained) {
         if (request.surface)
-          return yield* this.saveSurface(
-            session,
-            issue,
-            request,
+          return yield* this.saveSurface(session, issue, request, () =>
             Effect.fail(
               new CrewError(
                 "REPORT_SOURCE",

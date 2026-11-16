@@ -897,6 +897,22 @@ export class Queries {
         retained_source: bundle.source,
       };
     });
+  /** Bounded identifiers and total only; no fleet readiness or native worker inspection. */
+  bindingPopulation = () =>
+    this.capture((work_revision) =>
+      Effect.gen({ self: this }, function* () {
+        const first = yield* this.work.find({ state: "all", offset: 0, limit: 50 });
+        const second =
+          first.total > 50
+            ? yield* this.work.find({ state: "all", offset: 50, limit: 50 })
+            : undefined;
+        return {
+          ids: [...first.entries, ...(second?.entries ?? [])].map((issue) => issue.id),
+          total: first.total,
+          work_revision,
+        };
+      }),
+    );
   /** One issue and its retained execution; no finder, fleet, lead or admission reads. */
   observeTask = (id: IssueId, includeHistory = false) =>
     this.capture((revision) =>

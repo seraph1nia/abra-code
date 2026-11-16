@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Schema } from "effect";
-import { reportDocument } from "../helpers/report-document.ts";
+import { reportDocument, coveredReportDocument } from "../helpers/report-document.ts";
 import {
   readReportDocument,
   validateReportDocument,
@@ -116,4 +116,19 @@ test("receipt union distinguishes immutable JSON from retained untagged HTML wit
   assert.deepEqual(Schema.decodeUnknownSync(ReportArtifactReceiptSchema)(json), json);
   const future = { ...json, catalog_version: 2, renderer_compatibility: "future-renderer" };
   assert.deepEqual(Schema.decodeUnknownSync(ReportArtifactReceiptSchema)(future), future);
+});
+
+test("additive binding coverage round-trips while old documents keep original bytes and unknown coverage", () => {
+  const original = JSON.stringify(reportDocument());
+  const legacy = readReportDocument(original);
+  assert.equal(legacy.supported, true);
+  if (legacy.supported) {
+    assert.equal(legacy.document.data.live_coverage, undefined);
+    assert.equal(JSON.stringify(legacy.document), original);
+  }
+  const current = coveredReportDocument();
+  const result = readReportDocument(JSON.stringify(current));
+  assert.deepEqual(result, { supported: true, document: current });
+  assert.equal(current.data.live_coverage?.total, 102);
+  assert.equal(current.data.snapshot_coverage, undefined);
 });

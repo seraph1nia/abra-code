@@ -1,3 +1,5 @@
+import { NativeSessionReader } from "../opencode/agui/source.ts";
+import { projectNativeMessage } from "../opencode/agui/messages.ts";
 import type { ChangeScope } from "@abracode/contracts/web/changes";
 import { nativeChangeScope } from "./change-scopes.ts";
 import { checkpointMatchesForm } from "./form-binding.ts";
@@ -9,7 +11,7 @@ import type {
 import { workerHistoryMessage } from "./worker-history.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect native HTTP and event APIs, verified against OpenCode 2.3.0. */
 import { createHash } from "node:crypto";
-import { DateTime, Effect, Result, Schema, Stream } from "effect";
+import { Effect, Result, Schema, Stream } from "effect";
 import type { OpenCodeClient } from "@opencode/client/effect";
 import { Form } from "@opencode/schema/form";
 import { Permission } from "@opencode/schema/permission";
@@ -17,127 +19,39 @@ import type { SessionMessage } from "@opencode/schema/session-message";
 import { type Endpoint } from "@opencode/client/effect/service";
 import { CrewError } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import {
-  AbsolutePath,
-  IssueId,
-  SessionId,
-  RequestId,
-  Timestamp,
-  timestamp,
-} from "../identities.ts";
+import { AbsolutePath, IssueId, SessionId, RequestId, timestamp } from "../identities.ts";
 import { makeClient } from "../opencode/client.ts";
 import { ArtifactSchema, WorkSnapshotSchema } from "./wire.ts";
 import { WorkspaceSnapshotSchema } from "./workspace-wire.ts";
 import { decode } from "../decode.ts";
 import { visibility } from "../visibility/protocol.ts";
 import { webGateway } from "./protocol.ts";
-import type {
-  AttentionForm,
-  TranscriptMessage,
-  WebBackend,
-  WorkQueries,
-  WorkspaceSnapshot,
-} from "./contracts.ts";
+import type { AttentionForm, WebBackend, WorkQueries, WorkspaceSnapshot } from "./contracts.ts";
 import type { ResourceSelection } from "./resources.ts";
 import { toolPresentation } from "./tool-presentation.ts";
-import type { TranscriptTool } from "./presentation-contracts.ts";
 
 const fingerprint = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const time = (at: DateTime.Utc) => DateTime.formatIso(at);
-const jsonText = (value: unknown) =>
-  JSON.stringify(value, (key, v) => (key === "native" ? undefined : v), 2);
-function projectTool(
-  tool: SessionMessage.AssistantTool,
-  observedAt: Timestamp | undefined,
-): TranscriptTool {
-  const state = tool.state;
-  const input = state.status === "streaming" ? state.input : jsonText(state.input);
-  const presentation =
-    state.status === "completed"
-      ? toolPresentation(tool.name, state.input, state.content, observedAt)
-      : undefined;
-  const result =
-    state.status === "error"
-      ? state.error.message
-      : state.status === "completed" && !presentation
-        ? state.content
-            .filter((part) => part.type === "text")
-            .map((part) => part.text)
-            .join("\n")
-        : undefined;
-  return {
-    id: tool.id,
-    name: tool.name,
-    status: state.status,
-    input: input?.slice(0, 4096),
-    result: result?.slice(0, 8192),
-    presentation,
-    limited: (input?.length ?? 0) > 4096 || (result?.length ?? 0) > 8192,
-  };
-}
-/** Explicit projection keeps provider replay/hidden reasoning out of the browser. */
-export function projectMessage(message: SessionMessage.Info): TranscriptMessage | undefined {
-  const base = { id: message.id, at: time(message.time.created) };
-  if (message.type === "user")
-    return {
-      ...base,
-      role: "user",
-      text: message.text,
-      files: message.files?.map(
-        (f) => f.name ?? (f.source.type === "uri" ? f.source.uri : "Attachment"),
-      ),
-    };
-  if (message.type === "assistant") {
-    const tools = message.content
-      .filter((part) => part.type === "tool")
-      .map((part) =>
-        projectTool(
-          part,
-          part.time.completed ? Timestamp.make(time(part.time.completed)) : undefined,
-        ),
-      );
-    return {
-      ...base,
-      role: "assistant",
-      text: message.content
-        .filter((c) => c.type === "text")
-        .map((c) => c.text)
-        .join("\n"),
-      tools,
-      parts: message.content.flatMap((part): NonNullable<TranscriptMessage["parts"]> =>
-        part.type === "text"
-          ? [{ type: "text", text: part.text }]
-          : part.type === "tool"
-            ? [{ type: "tool", tool_id: part.id }]
-            : [],
-      ),
-    };
-  }
-  if (message.type === "system" || message.type === "synthetic")
-    return { ...base, role: "system", text: message.description ?? message.text };
-  if (message.type === "compaction")
-    return { ...base, role: "system", text: `Conversation compaction: ${message.status}` };
-  return undefined;
-}
+export const projectMessage = (message: SessionMessage.Info) =>
+  projectNativeMessage(message, toolPresentation);
 
 export class NativeWebBackend implements WebBackend {
   private lastObservation?: WorkspaceSnapshot;
   private lastValidWork?: WorkspaceSnapshot["work"];
   readonly sessionID: SessionId;
-  private cursors = new Set<string>();
+  private reader: NativeSessionReader;
   private workerCursors = new Set<string>();
-  private rememberCursor(cursor: string | undefined) {
-    if (!cursor) return;
-    this.cursors.add(cursor);
-    if (this.cursors.size > 500) this.cursors.delete(this.cursors.values().next().value!);
-  }
   constructor(
     private home: AbsolutePath,
     sessionID: string,
     private discover: Effect.Effect<Endpoint | undefined, CrewError>,
   ) {
     this.sessionID = SessionId.make(sessionID);
+    this.reader = new NativeSessionReader(
+      this.sessionID,
+      () => this.connection().pipe(domainEffect),
+      toolPresentation,
+    );
   }
   private connection = () =>
     Effect.gen({ self: this }, function* () {
@@ -198,138 +112,118 @@ export class NativeWebBackend implements WebBackend {
   }
   observe = (scope: ChangeScope) =>
     domainEffect(
-      this.connection().pipe(
-        Effect.flatMap(({ client, session }) =>
-          Effect.gen({ self: this }, function* () {
-            const prior = this.lastObservation;
-            const all = !prior || scope.all;
-            const transcript = all || scope.transcript;
-            const attention = all || scope.attention;
-            const workChanged = all || scope.work_all || scope.finder || scope.issues?.length;
+      Effect.suspend(() =>
+        this.reader
+          .read({
+            transcript: !this.lastObservation || scope.all || scope.transcript,
+            inbox: !this.lastObservation || scope.all || scope.admissions || scope.transcript,
+          })
+          .pipe(
+            Effect.flatMap((native) =>
+              Effect.gen({ self: this }, function* () {
+                const { client, session, page, inbox } = native;
+                const prior = this.lastObservation;
+                const all = !prior || scope.all;
+                const transcript = all || scope.transcript;
+                const attention = all || scope.attention;
+                const workChanged = all || scope.work_all || scope.finder || scope.issues?.length;
 
-            const page = transcript
-              ? yield* client.message.list({
-                  sessionID: this.sessionID,
-                  limit: 100,
-                  order: "desc",
-                })
-              : undefined;
-            this.rememberCursor(page?.cursor.next);
-            const forms = attention
-              ? yield* client.session.form.list({ sessionID: this.sessionID })
-              : undefined;
-            const permissions = attention
-              ? yield* client.permission.list({ sessionID: this.sessionID })
-              : undefined;
-            const inbox =
-              all || scope.admissions || transcript
-                ? yield* client.session.inbox.list({ sessionID: this.sessionID })
-                : undefined;
-            const rpc = this.gateway(client),
-              opts = this.location();
-            const observedWork = workChanged
-              ? yield* client
-                  .rpc(visibility)
-                  .snapshot({}, opts)
-                  .pipe(
-                    Effect.flatMap((work) =>
-                      decode(WorkSnapshotSchema, work, "Retained work observation"),
-                    ),
-                    Effect.result,
-                  )
-              : undefined;
-            if (observedWork?._tag === "Success") this.lastValidWork = observedWork.success;
-            const work =
-              observedWork?._tag === "Success"
-                ? observedWork.success
-                : (this.lastValidWork ?? { home: this.home, at: yield* timestamp, work: [] });
-            const value = yield* decode(
-              WorkspaceSnapshotSchema,
-              {
-                session_id: this.sessionID,
-                agent_id: "abra" as const,
-                at: yield* timestamp,
-                busy: Boolean(
-                  session.time.busy &&
-                  (!session.time.idle ||
-                    DateTime.toEpochMillis(session.time.busy) >
-                      DateTime.toEpochMillis(session.time.idle)),
-                ),
-                outcome: session.outcome,
-                model: session.model
-                  ? `${session.model.providerID}/${session.model.id}${session.model.variant ? `#${session.model.variant}` : ""}`
-                  : undefined,
-                messages: page
-                  ? [...page.data].reverse().flatMap((m) => projectMessage(m) ?? [])
-                  : prior!.messages,
-                older: page ? page.cursor.next : prior?.older,
-                forms: forms
-                  ? yield* Effect.forEach(forms, (form) => this.attentionForm(client, form))
-                  : prior!.forms,
-                permissions: permissions
-                  ? permissions.map((request) => ({ request, binding: fingerprint(request) }))
-                  : prior!.permissions,
-                inbox: inbox
-                  ? inbox
-                      .filter((i) => i.type === "user")
-                      .map((i) => ({ id: i.id, text: i.payload.text, delivery: i.delivery }))
-                  : prior!.inbox,
-                work,
-                work_unavailable:
-                  observedWork?._tag === "Failure"
-                    ? "Retained work is temporarily unavailable. Showing the last valid work observation."
-                    : workChanged
-                      ? undefined
-                      : prior?.work_unavailable,
-                receipts:
-                  all || scope.admissions
-                    ? yield* rpc.receipts({ session_id: this.sessionID }, opts)
-                    : prior!.receipts,
-                surfaces:
-                  all || scope.presentations
-                    ? yield* rpc.surfaces({ session_id: this.sessionID }, opts)
-                    : prior!.surfaces,
-                presentations:
-                  all || scope.presentations || transcript
-                    ? yield* rpc.presentations(
-                        {
-                          session_id: this.sessionID,
-                          message_ids:
-                            page?.data.map((message) => message.id) ??
-                            prior!.messages.map((message) => message.id),
-                        },
-                        opts,
+                const forms = attention
+                  ? yield* client.session.form.list({ sessionID: this.sessionID })
+                  : undefined;
+                const permissions = attention
+                  ? yield* client.permission.list({ sessionID: this.sessionID })
+                  : undefined;
+                const rpc = this.gateway(client),
+                  opts = this.location();
+                const observedWork = workChanged
+                  ? yield* client
+                      .rpc(visibility)
+                      .snapshot({}, opts)
+                      .pipe(
+                        Effect.flatMap((work) =>
+                          decode(WorkSnapshotSchema, work, "Retained work observation"),
+                        ),
+                        Effect.result,
                       )
-                    : prior?.presentations,
-                projects:
-                  all || scope.projects
-                    ? yield* rpc.projects({ session_id: this.sessionID }, opts)
-                    : prior!.projects,
-              },
-              "Workspace snapshot",
-            );
-            this.lastObservation = value;
-            return value;
-          }),
-        ),
+                  : undefined;
+                if (observedWork?._tag === "Success") this.lastValidWork = observedWork.success;
+                const work =
+                  observedWork?._tag === "Success"
+                    ? observedWork.success
+                    : (this.lastValidWork ?? { home: this.home, at: yield* timestamp, work: [] });
+                const value = yield* decode(
+                  WorkspaceSnapshotSchema,
+                  {
+                    session_id: this.sessionID,
+                    agent_id: "abra" as const,
+                    at: yield* timestamp,
+                    busy: native.busy,
+                    outcome: session.outcome,
+                    model: native.model,
+                    messages: native.messages ?? prior!.messages,
+                    older: page ? page.cursor.next : prior?.older,
+                    forms: forms
+                      ? yield* Effect.forEach(forms, (form) => this.attentionForm(client, form))
+                      : prior!.forms,
+                    permissions: permissions
+                      ? permissions.map((request) => ({ request, binding: fingerprint(request) }))
+                      : prior!.permissions,
+                    inbox: inbox ?? prior!.inbox,
+                    work,
+                    work_unavailable:
+                      observedWork?._tag === "Failure"
+                        ? "Retained work is temporarily unavailable. Showing the last valid work observation."
+                        : workChanged
+                          ? undefined
+                          : prior?.work_unavailable,
+                    receipts:
+                      all || scope.admissions
+                        ? yield* rpc.receipts({ session_id: this.sessionID }, opts)
+                        : prior!.receipts,
+                    surfaces:
+                      all || scope.presentations
+                        ? yield* rpc.surfaces({ session_id: this.sessionID }, opts)
+                        : prior!.surfaces,
+                    presentations:
+                      all || scope.presentations || transcript
+                        ? yield* rpc.presentations(
+                            {
+                              session_id: this.sessionID,
+                              message_ids:
+                                page?.data.map((message) => message.id) ??
+                                prior!.messages.map((message) => message.id),
+                            },
+                            opts,
+                          )
+                        : prior?.presentations,
+                    projects:
+                      all || scope.projects
+                        ? yield* rpc.projects({ session_id: this.sessionID }, opts)
+                        : prior!.projects,
+                  },
+                  "Workspace snapshot",
+                );
+                this.lastObservation = value;
+                return value;
+              }),
+            ),
+          ),
       ),
     );
+  get agentStatus() {
+    return this.reader.status;
+  }
   snapshot = this.observe({ all: true });
   history = (cursor: string) =>
-    this.use((client) =>
+    domainEffect(
       Effect.gen({ self: this }, function* () {
-        if (!this.cursors.has(cursor))
-          return yield* new CrewError(
-            "WEB_CURSOR",
-            "History cursor was not issued for this Abra session; refresh first",
-          );
-        const page = yield* client.message.list({ sessionID: this.sessionID, cursor, limit: 100 });
-        this.rememberCursor(page.cursor.next);
+        const page = yield* this.reader.history(cursor);
         return {
-          messages: [...page.data].reverse().flatMap((m) => projectMessage(m) ?? []),
-          older: page.cursor.next,
-          presentations: yield* this.gateway(client).presentations(
-            { session_id: this.sessionID, message_ids: page.data.map((message) => message.id) },
+          messages: page.messages,
+          older: page.older,
+          presentations: yield* this.gateway(page.client).presentations(
+            { session_id: this.sessionID, message_ids: page.messageIDs },
             this.location(),
           ),
         };
@@ -363,6 +257,8 @@ export class NativeWebBackend implements WebBackend {
       .pipe(Effect.map((r) => r.interrupted)),
   );
   readonly work: WorkQueries = {
+    binding: (input) =>
+      this.use((client) => client.rpc(visibility).binding(input, this.location())),
     find: (input) =>
       this.use((client) =>
         client.rpc(visibility).find(
@@ -544,6 +440,9 @@ export class NativeWebBackend implements WebBackend {
     this.use((client) =>
       this.gateway(client).saveSurface({ session_id: this.sessionID, ...input }, this.location()),
     );
+  nativeEvent = (event: import("../opencode/agui/native-state.ts").NativeEventEnvelope) =>
+    this.reader.apply(event);
+  nativeSnapshot = () => this.reader.current();
   readonly changes = Stream.unwrap(
     this.client().pipe(
       Effect.map((client) =>
@@ -558,7 +457,18 @@ export class NativeWebBackend implements WebBackend {
                   work.sessions.some((worker) => worker.id === session),
                 )?.issue_id,
             );
-            return scope ? Result.succeed(scope) : Result.fail(undefined);
+            const data = "data" in event ? event.data : undefined;
+            const native =
+              event.type === "server.connected" ||
+              (event.type.startsWith("session.") &&
+                data &&
+                typeof data === "object" &&
+                "sessionID" in data &&
+                data.sessionID === this.sessionID &&
+                (!event.location?.directory || event.location.directory === this.home));
+            return scope || native
+              ? Result.succeed({ ...scope, ...(native ? { native: event } : {}) })
+              : Result.fail(undefined);
           }),
           Stream.mapError(CrewError.from),
         ),

@@ -6,7 +6,14 @@ import { join } from "node:path";
 import { fixture, planned } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { reportDocument } from "../helpers/report-document.ts";
-import { RequestId, SessionId, ContentHash, MessageId } from "../../src/identities.ts";
+import {
+  RequestId,
+  SessionId,
+  ContentHash,
+  MessageId,
+  IssueId,
+  Timestamp,
+} from "../../src/identities.ts";
 import { SurfacePublications } from "../../src/web/surface-publications.ts";
 import { validateSurface, catalogId } from "../../src/web/surfaces.ts";
 import { Visibility } from "../../src/visibility/read-model.ts";
@@ -389,4 +396,121 @@ test("authorized report composition captures structured evidence through the exi
   const after = await run(f.records.execution(execution.issue_id));
   assert.equal(after!.current_phase, before!.current_phase);
   assert.deepEqual(after!.approval_receipts, before!.approval_receipts);
+});
+
+test("valid JSON files cannot commit a stale publication generation", async (t) => {
+  const f = await prepare();
+  t.onTestFinished(() => run(f.f.close()));
+  const set = f.f.records.store.set.bind(f.f.records.store);
+  let interrupt = true;
+  f.f.records.store.set = (key, value) =>
+    set(key, value).pipe(
+      Effect.andThen(
+        Effect.suspend(() => {
+          if (
+            interrupt &&
+            key === `execution/${f.execution.issue_id}` &&
+            JSON.stringify(value).includes('"status":"validated"')
+          ) {
+            interrupt = false;
+            return Effect.fail(new CrewError("STORAGE", "Interrupt before publication"));
+          }
+          return Effect.void;
+        }),
+      ),
+    );
+  await assert.rejects(run(f.save()), /Interrupt before/);
+  await run(f.f.controller.control(f.execution.issue_id, "pause"));
+  await assert.rejects(run(f.save()), /generation changed/);
+  const pending = (await run(f.f.records.execution(f.execution.issue_id)))!.visual_reports![0];
+  assert.equal(pending.status, "validated");
+  assert.ok(pending.staging);
+  assert.equal(
+    await readFile(pending.artifact!.path, "utf8"),
+    await readFile(pending.staging, "utf8"),
+  );
+});
+
+test("mixed saved bindings retain independent snapshot rows and resolve off-page live tasks exactly once", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(planned(f));
+  const session = SessionId.make("ses_mixed-save");
+  await run(f.controller.recordSupervisor(session));
+  for (let i = 0; i < 55; i++) {
+    const id = IssueId.make(`abra-history-${String(i).padStart(2, "0")}`);
+    f.work.add(id);
+    f.work.issues.get(id)!.status = "closed";
+  }
+  const id = IssueId.make("abra-history-54"),
+    originalTitle = f.work.issues.get(id)!.title;
+  const view = new Visibility(f.controller);
+  assert.equal(
+    (await run(view.snapshot())).work.some((row) => row.issue_id === id),
+    false,
+  );
+  const surface = validateSurface({
+    version: "1.0",
+    createSurface: {
+      surfaceId: "mixed-save",
+      catalogId,
+      components: [
+        { id: "root", component: "Column", children: ["all", "current", "link"] },
+        { id: "all", component: "WorkTable", mode: "snapshot" },
+        { id: "current", component: "StatusSummary", mode: "live", issueIds: [id] },
+        { id: "link", component: "ReportLink", issueId: e.issue_id },
+      ],
+    },
+  });
+  const binding = await run(
+    view.binding({ issue_ids: [id, e.issue_id], include_population: true }),
+  );
+  await run(
+    new SurfacePublications(f.records.store, f.locks).publish(
+      {
+        session_id: session,
+        message_id: MessageId.make("msg_mixed-save"),
+        call_id: "mixed-save",
+        surface,
+      },
+      Effect.succeed({
+        at: Timestamp.make(binding.observed_at),
+        work: binding.work,
+        binding_coverage: binding.coverage,
+      }),
+    ),
+  );
+  f.work.issues.get(id)!.title = "Current off-page live title";
+  const request = {
+    request_id: RequestId.make("mixed-save"),
+    surface: { surface_id: "mixed-save", revision: 1 },
+  };
+  const saved = await run(f.controller.saveVisualSurface(session, e.issue_id, request));
+  const read = () =>
+    run(f.controller.visualDocument(e.issue_id, request.request_id, saved.artifact!.hash));
+  const original = await read(),
+    document = JSON.parse(original.json);
+  assert.equal(document.data.work.length, 1);
+  assert.equal(document.data.work[0].title, "Current off-page live title");
+  assert.equal(document.data.snapshot_work.length, 56);
+  assert.equal(
+    document.data.snapshot_work.find((row: { issue_id: string }) => row.issue_id === id).title,
+    originalTitle,
+  );
+  assert.equal(document.data.snapshot_coverage.total, 56);
+  assert.equal(document.data.live_coverage.total, 1);
+  f.work.issues.delete(id);
+  await run(f.controller.saveVisualSurface(session, e.issue_id, request));
+  assert.equal((await read()).json, original.json);
+  await assert.rejects(
+    run(
+      f.controller.saveVisualSurface(session, e.issue_id, {
+        ...request,
+        request_id: RequestId.make("missing-explicit-save"),
+      }),
+    ),
+    /explicit work is unavailable/,
+  );
+  assert.equal((await run(f.records.execution(e.issue_id)))!.visual_reports!.length, 1);
+  assert.equal(f.runtime.prompts, 1);
 });

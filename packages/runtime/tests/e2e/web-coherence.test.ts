@@ -3,7 +3,7 @@ import { feedbackFixture } from "../helpers/review-evidence.ts";
 import { test as baseTest, beforeAll, afterAll } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { reportDocument } from "../helpers/report-document.ts";
+import { reportDocument, coveredReportDocument } from "../helpers/report-document.ts";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Schema } from "effect";
@@ -51,7 +51,7 @@ async function screenshot(page: BrowserPage, name: string) {
 test("exact saved reports use frozen catalog bindings, preserve pending checks and isolate unsupported documents", async (t) => {
   const f = await fixture();
   t.onTestFinished(f.close);
-  const savedDocument = reportDocument();
+  const savedDocument = coveredReportDocument();
   const add = (id: string, value: unknown, title: string) => {
     const json = JSON.stringify(value),
       hash = createHash("sha256").update(json).digest("hex");
@@ -93,6 +93,20 @@ test("exact saved reports use frozen catalog bindings, preserve pending checks a
     ["Earlier event", "Later event", "Untimed evidence"],
   );
   assert.equal(await page.locator(".frozen-report script").count(), 0);
+  assert.match(
+    await page.locator('[data-work-widget="StatusSummary"]').innerText(),
+    /1 \(partial\)/,
+  );
+  assert.match(
+    await page.locator('[data-work-widget="WorkTable"]').first().innerText(),
+    /Partial data/,
+  );
+  assert.match(
+    await page.locator('[data-work-widget="WorkTable"]').last().innerText(),
+    /Coverage unknown/,
+  );
+  assert.equal(f.calls.filter((call) => call.name === "binding").length, 0);
+
   const findings = page.getByLabel("Filter captured findings");
   await findings.fill("no match");
   await page.getByText("0 of 1 findings", { exact: true }).waitFor();

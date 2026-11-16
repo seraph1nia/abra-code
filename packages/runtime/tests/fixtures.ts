@@ -165,7 +165,7 @@ export class FakeWorkGraph implements WorkGraph {
     return domainEffect(
       Effect.sync(() => {
         const i = this.issues.get(id);
-        ensure(i, "MISSING", "Missing issue");
+        ensure(i, "ISSUE_MISSING", "Missing issue");
         return structuredClone(i);
       }),
     );

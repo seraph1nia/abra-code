@@ -1,3 +1,4 @@
+import { BindingCoverageSchema } from "../web/bindings.ts";
 import { Schema } from "effect";
 import {
   IssueId,
@@ -33,6 +34,8 @@ export const FrozenReportDataSchema = Schema.Struct({
   work: Schema.Array(WorkSummarySchema).check(Schema.isMaxLength(100)),
   snapshot_work: Schema.optionalKey(Schema.Array(WorkSummarySchema).check(Schema.isMaxLength(100))),
   evidence: Schema.optionalKey(ReportSnapshotSchema),
+  live_coverage: Schema.optionalKey(BindingCoverageSchema),
+  snapshot_coverage: Schema.optionalKey(BindingCoverageSchema),
 }).check(
   Schema.makeFilter(
     (value) => withinBytes(value, 512 * 1024) || "Captured report data exceeds 512 KiB",

@@ -1,3 +1,8 @@
+import {
+  BindingReadQuery,
+  BindingReadSchema,
+  BindingCoverageSchema,
+} from "@abracode/contracts/web/bindings";
 import { ChangeScopeSchema } from "@abracode/contracts/web/changes";
 import { LeadAttentionSchema } from "./lead-observation.ts";
 import { LeadEvidenceQuery, LeadEvidencePageSchema } from "./lead-observation.ts";
@@ -124,6 +129,7 @@ const snapshot = Schema.Struct({
   supervision: Schema.optional(SupervisionAggregateSchema),
   record_diagnostics: Schema.optional(Schema.Array(RecordDiagnosticSchema)),
   home: AbsolutePath,
+  binding_coverage: Schema.optionalKey(BindingCoverageSchema),
   work: Schema.Array(work),
   at: Timestamp,
   work_revision: Schema.optional(Schema.String),
@@ -185,6 +191,13 @@ export const observerErrors = {
 export const visibility = Rpc.define({
   id: "abracode-visibility",
   methods: {
+    binding: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(BindingReadQuery, {
+        parseOptions: { onExcessProperty: "error", reportInput: false },
+      }),
+      output: Schema.toStandardSchemaV1(BindingReadSchema),
+    },
     find: {
       errors: observerErrors,
       input: Schema.toStandardSchemaV1(WorkDiscoveryQuery, {

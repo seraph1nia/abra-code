@@ -1,14 +1,15 @@
+import { bindingRequirements } from "@abracode/contracts/web/bindings";
 import { Effect, Schema } from "effect";
 import { join } from "node:path";
 import { FileLocks } from "../storage/lock.ts";
 import type { Context } from "@opencode/plugin/effect/plugin";
 import type { Controller } from "../workflow/controller.ts";
 import { NativeStore } from "../storage/store.ts";
-import { AbsolutePath, IssueId } from "../identities.ts";
+import { AbsolutePath, IssueId, Timestamp } from "../identities.ts";
 import { domainEffect } from "../effect.ts";
 import { defineTool } from "../opencode/tool-definition.ts";
 import { Visibility } from "../visibility/read-model.ts";
-import { SurfaceSchema, referencedWorkIds, surfaceResources } from "./surfaces.ts";
+import { SurfaceSchema, surfaceResources } from "./surfaces.ts";
 import { resolveOwnedResource } from "./resource-selection.ts";
 import { renderInstructions } from "./catalog.ts";
 import { SurfacePublicationSchema } from "./presentation-contracts.ts";
@@ -37,15 +38,18 @@ export function workSurfaceTool(ctx: Context, controller: Controller) {
           Effect.gen(function* () {
             for (const target of surfaceResources(input.surface))
               yield* resolveOwnedResource(controller.queries, target);
-            const refs = [...new Set(referencedWorkIds(input.surface))].map((id) =>
-              IssueId.make(id),
-            );
-            const bundle = yield* controller.queries.observe();
-            return yield* new Visibility(controller).snapshot(
-              undefined,
-              bundle,
-              refs.length ? refs : undefined,
-            );
+            const selection = bindingRequirements(input.surface);
+            const binding = yield* new Visibility(controller).binding({
+              issue_ids: selection.ids.map((id) => IssueId.make(id)),
+              include_population: selection.unfiltered,
+            });
+            return {
+              home: controller.queries.settings.home,
+              at: Timestamp.make(binding.observed_at),
+              work: binding.work,
+              binding_coverage: binding.coverage,
+              work_revision: binding.work_revision,
+            };
           }),
         ),
       ),

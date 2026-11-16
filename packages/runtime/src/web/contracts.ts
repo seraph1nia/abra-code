@@ -1,3 +1,5 @@
+import type { NativeEventEnvelope } from "../opencode/agui/native-state.ts";
+import type { NativeSessionView } from "../opencode/agui/adapter.ts";
 import type { ChangeScope } from "@abracode/contracts/web/changes";
 import type { Form } from "@opencode/schema/form";
 import type { Permission } from "@opencode/schema/permission";
@@ -38,6 +40,7 @@ export type WorkQueries = {
 /** The only browser-facing capability surface. No arbitrary native path or location. */
 export interface WebBackend {
   readonly sessionID: string;
+  readonly agentStatus?: Effect.Effect<{ busy: boolean }, CrewError>;
   readonly snapshot: Effect.Effect<WorkspaceSnapshot, CrewError>;
   observe(scope: ChangeScope): Effect.Effect<WorkspaceSnapshot, CrewError>;
   resolve(target: ResourceSelection): Effect.Effect<ResourceSelection, CrewError>;
@@ -90,5 +93,11 @@ export interface WebBackend {
     { readonly html: string; readonly hash: string; readonly bytes: number },
     CrewError
   >;
-  readonly changes: Stream.Stream<ChangeScope | void, CrewError>;
+  completionEvidence?: () => NonNullable<NativeSessionView["completions"]>;
+  nativeEvent?: (event: NativeEventEnvelope) => { view?: NativeSessionView; repair?: boolean };
+  nativeSnapshot?: () => NativeSessionView | undefined;
+  readonly changes: Stream.Stream<
+    (ChangeScope & { native?: NativeEventEnvelope }) | void,
+    CrewError
+  >;
 }

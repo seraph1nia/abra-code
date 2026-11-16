@@ -150,3 +150,95 @@ compression middleware negotiates gzip at level 6 for public asset bodies above
 report response policies with their existing owners. Focused HTTP fixtures verify
 headers, changed asset identities, exact decompressed bytes, meaningful byte
 reduction and same-origin refusal. Browser cache reuse remains final acceptance.
+
+### Generated binding selection
+
+A2UI work widgets keep their own live/snapshot mode and explicit IDs; omitting
+`issueIds` selects the bounded retained-work population, while `issueIds: []`
+selects nothing. Navigation references validate ownership and reserve their
+referenced rows, but never filter an unfiltered sibling. Shared selection reserves
+explicit IDs first, deduplicates and fills remaining capacity deterministically up
+to 100 rows. More than 100 required identities is refused before publication.
+New surface revisions retain returned/total, unavailable and truncation coverage.
+Old revisions keep their original bytes and identities; absent historical coverage
+is unknown, and cannot be repaired by silently inserting current work.
+
+Mounted generated live widgets use an app-owned, selection-keyed shared query;
+the pure renderer receives only rows and coverage. Explicit references are read
+independently of finder pages, affected task invalidations refresh them, and
+snapshot siblings keep their original rows. Pending/missing data is unavailable
+rather than an authoritative zero; failed refreshes retain stale rows. Replaced
+selections unsubscribe from their old query, so late reads cannot replace the
+new view. Frozen report viewing never mounts these queries. The shipped-browser
+regressions exercise off-page rows, shared references, refresh failures, selection
+races and 375/390px layouts without native prompt admission.
+
+### Browser observation lifetime
+
+`workspace-state/observation-client.ts` owns validation, accepted/retired epochs,
+ordering, coalesced baseline recovery, scoped invalidation, freshness, reconnect
+and disposal. Its caller supplies transport, baseline/invalidation adapters and an
+optional controlled clock, then subscribes to current display state, refreshes or
+disposes. The React hook no longer retains sequences, retirement sets, recovery
+flags or competing refresh paths. Both explicit refresh and a gapped update cross
+the same interface. Ordering remains in the shared contracts; complete lifetime
+behavior is tested through the production module rather than a comparator alone.
+
+Retired baselines cannot revive an earlier epoch. Gaps arriving during a pending
+baseline share that read and request a bounded follow-up only if still uncovered.
+An unavailable baseline preserves valid rows; disposal aborts reads and clears
+invalidation/reconnect timers before detaching observation. No browser polling or
+input replay is added. Native server fallback stays with the backend; draft,
+admission, history, navigation and explicit Stop remain separate owners.
+
+### Backend native AG-UI adapter
+
+`opencode/agui/source.ts` owns authorized native session reads, bounded paging and
+cursor custody. `messages.ts` owns visible native projection and receives optional
+app-owned typed tool decoration. `adapter.ts` owns AG-UI validation, admission
+identity, observation projection/cursors and explicit Stop semantics. It accepts a
+small native source and runs without workspace/finder/report data; the web runner
+supplies optional encoded app state and delegates protocol operations.
+
+Previously the web agent interpreted native input, receipts, cancellation and
+message order while the backend reversed pages and retained native cursors. The
+web module now composes application data and hosts CopilotKit; these native rules
+live behind the adapter/source interfaces. The existing scoped workspace feed
+still owns the native event subscription and bounded fallback during extraction;
+no new service, network hop, thread store or execution loop is introduced.
+
+Agent cloning uses the pinned base clone to retain middleware, state and agent
+configuration, then restores the native runner reference. Standard AG-UI client
+proof covers actual HTTP run/retry/connect and detach without native Stop. Connect
+now emits a real `RUN_STARTED` envelope; the old unit test's synthetic envelope
+had hidden its absence. Application snapshots/deltas are composed separately from
+the single owner of native message events.
+
+### Native streaming, completion and reconnect
+
+The existing single scoped event subscription now carries a private native event
+hint to `opencode/agui/native-state.ts` before coalesced application observation.
+Only validated visible native projections leave this seam; raw provider/reasoning
+payloads never enter AG-UI state. New text/tool parts stream immediately under
+native message/call identities. Complete text/input boundaries reconcile fragments;
+argument rewrites and native status/error fields use explicit full projections.
+The one server fallback remains bounded and shared across browser consumers.
+
+Native execution terminal markers group delivered inputs since the preceding idle
+marker, including steer. Each transport run waits for its own admitted message in
+that evidence; unrelated idle and tool failure cannot finish it. Known native
+failure emits a bounded `RUN_ERROR`; absent completion evidence and uncertain
+admission never become successful completion or automatic replay. A new transport
+run ID still reconciles the original durable request/message identity.
+
+Reconnect or gaps preserve valid observations, request a baseline and reset only
+the projection cursor. Existing in-flight text/argument fragments are ambiguous
+across a recovery baseline, so they wait for their complete-value boundary; fresh
+parts can resume incremental output. Routine retained reads preserve a known live
+cursor only when the retained part agrees with its observed prefix; they cannot
+suppress subsequent text until the provider finishes. Duplicate native IDs and older durable sequences are
+ignored. Baseline reads buffer bounded concurrent events; completion/error facts
+remain separate from current busy state. Per-observer cursors close only tool
+streams they actually opened before resetting. Detaching observers never invokes
+native Stop, and closing the server scope releases subscription/fallback work.
+Current-turn Stop remains an explicit operation; historical-run Stop stays refused.

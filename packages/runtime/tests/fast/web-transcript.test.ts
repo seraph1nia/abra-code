@@ -107,4 +107,8 @@ test("unknown native tool payloads are bounded and preserve a concrete truncatio
   assert.equal(message.tools?.[0].result?.length, 8192);
   assert.equal(message.tools?.[0].limited, true);
   assert.equal(message.tools?.[0].presentation, undefined);
+  const call = nativeAguiMessages([message])[0]!;
+  assert.ok(call.role === "assistant" && call.toolCalls?.[0]);
+  assert.deepEqual(JSON.parse(call.toolCalls[0].function.arguments), {});
+  assert.equal(call.toolCalls[0].metadata?.abracode_arguments_unavailable, true);
 });

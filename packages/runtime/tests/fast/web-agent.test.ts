@@ -1,3 +1,7 @@
+import { NativeSessionProjection } from "../../src/opencode/agui/native-state.ts";
+import { projectNativeMessage } from "../../src/opencode/agui/messages.ts";
+import { NativeAgentAdapter } from "../../src/opencode/agui/adapter.ts";
+import { SessionMessage } from "@opencode/schema/session-message";
 import { AbstractAgent } from "@ag-ui/client";
 import { EventType } from "@ag-ui/core";
 import { from, lastValueFrom, toArray } from "rxjs";
@@ -5,7 +9,7 @@ import { IssueId } from "../../src/identities.ts";
 import { WorkspaceStateJson } from "../../src/web/workspace-wire.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { Clock, Deferred, Effect, Exit, Fiber, Scope, Stream, Schema } from "effect";
+import { Clock, Deferred, Effect, Exit, Fiber, Scope, Stream, Schema, PubSub } from "effect";
 import { TestClock } from "effect/testing";
 import { AbraAgent, AbraRunner, WorkspaceFeed } from "../../src/web/agent.ts";
 import { CrewError } from "../../src/domain.ts";
@@ -149,10 +153,12 @@ test("client tool/context injection cannot alter native Abra configuration", asy
     state: {},
     forwardedProps: { request_id: "identity" },
   };
-  const error = await new Promise<unknown>((resolve) =>
-    runner.run({ threadId: backend.sessionID, agent, input }).subscribe({ error: resolve }),
+  const events = await lastValueFrom(
+    runner.run({ threadId: backend.sessionID, agent, input }).pipe(toArray()),
   );
-  assert.match(String(error), /Client tools and context/);
+  const error = events.find((event) => event.type === EventType.RUN_ERROR);
+  assert.ok(error && "message" in error);
+  assert.match(String(error.message), /Client tools and context/);
   assert.equal(backend.submissions, 0);
 });
 
@@ -247,12 +253,7 @@ test("AG-UI consumer applies contiguous deltas and recovers gaps/restarts from f
       return from(events);
     }
     protected override connect() {
-      // The HTTP runtime supplies run envelopes around AgentRunner.connect.
-      return from([
-        { type: EventType.RUN_STARTED, threadId: source.sessionID, runId: "observer" } as const,
-        ...events,
-        { type: EventType.RUN_FINISHED, threadId: source.sessionID, runId: "observer" } as const,
-      ]);
+      return from(events);
     }
   }
   const observer = new Observer({ threadId: source.sessionID });
@@ -265,4 +266,337 @@ test("AG-UI consumer applies contiguous deltas and recovers gaps/restarts from f
   assert.equal(state.workspace.at, "2027-01-01T00:00:00Z");
   assert.equal(source.submissions, 0);
   assert.equal(source.stops, 0);
+});
+
+test("native adapter runs without workspace, finder or report data and cloned hosting retains middleware", async () => {
+  let admissions = 0,
+    stops = 0,
+    middlewareCalls = 0;
+  const view = {
+    completions: [{ inputs: ["msg_native-only"], outcome: "succeeded" as const }],
+    busy: false,
+    messages: [
+      {
+        id: "msg_native-only",
+        role: "user" as const,
+        text: "Native input",
+        at: "2026-11-16T00:00:00Z",
+      },
+    ],
+    inbox: [],
+  };
+  const adapter = new NativeAgentAdapter({
+    sessionID: "ses_native-only",
+    current: Effect.succeed({ busy: false }),
+    receipt: () => Effect.succeed(null),
+    submit: (input) =>
+      Effect.sync(() => {
+        admissions++;
+        return {
+          ...input,
+          message_id: SessionMessage.ID.make("msg_native-only"),
+          at: "2026-11-16T00:00:00Z",
+          status: "admitted" as const,
+        };
+      }),
+    stop: Effect.sync(() => {
+      stops++;
+      return true;
+    }),
+    notifyAdmission: Effect.void,
+    updates: Stream.succeed({ type: "snapshot", native: view }),
+  });
+  const input = {
+    threadId: "ses_native-only",
+    runId: "run-native-only",
+    state: {},
+    tools: [],
+    context: [],
+    messages: [{ id: "input", role: "user" as const, content: "Native input" }],
+    forwardedProps: { request_id: "native-only" },
+  };
+  const events = await lastValueFrom(adapter.run(input.threadId, "abra", input).pipe(toArray()));
+  assert.deepEqual(
+    events.map((event) => event.type),
+    [EventType.RUN_STARTED, EventType.MESSAGES_SNAPSHOT, EventType.RUN_FINISHED],
+  );
+  assert.equal(admissions, 1);
+  assert.equal(stops, 0);
+  const backend = new WorkspaceFixture();
+  const runner = new AbraRunner(backend, {
+    notify: () => Effect.void,
+    updates: Stream.succeed({ type: "snapshot", snapshot: backend.value }),
+  });
+  const agent = new AbraAgent(runner, backend.sessionID);
+  agent.description = "Retained configuration";
+  agent.setState({ retained: true });
+  agent.use((input, next) => {
+    middlewareCalls++;
+    return next.run(input);
+  });
+  const clone = agent.clone();
+  assert.equal(clone.description, "Retained configuration");
+  assert.deepEqual(clone.state, { retained: true });
+  clone.setState({});
+  clone.setMessages([{ id: "clone-user", role: "user", content: "Retained middleware input" }]);
+  await clone.runAgent({ tools: [], context: [], forwardedProps: { request_id: "clone" } });
+  assert.equal(backend.submissions, 1);
+  assert.equal(middlewareCalls, 1);
+});
+
+test("transport completion follows each admitted input across queue, steer, failures and same-ID recovery", async () => {
+  const receipts = new Map<string, import("../../src/web/workspace-wire.ts").SubmissionReceipt>();
+  let prompts = 0;
+  const input = (key: string, runId = key) => ({
+    threadId: "ses_causal",
+    runId,
+    tools: [],
+    context: [],
+    state: {},
+    messages: [{ id: key, role: "user" as const, content: key }],
+    forwardedProps: { request_id: key, delivery: key === "steer" ? "steer" : "queue" },
+  });
+  const messages = ["first", "queued", "steer"].map((key) => ({
+    id: `msg_${key}`,
+    role: "user" as const,
+    text: key,
+    at: "2026-11-16T00:00:00Z",
+  }));
+  const observed = (
+    inputs: string[],
+    outcome: "succeeded" | "failed" = "succeeded",
+    error?: string,
+  ) => ({
+    type: "snapshot" as const,
+    native: {
+      messages,
+      inbox: [],
+      busy: false,
+      completions: [{ inputs, outcome, error }],
+    },
+  });
+  const source = (events: import("../../src/opencode/agui/adapter.ts").NativeObservation[]) => ({
+    sessionID: "ses_causal",
+    current: Effect.succeed({ busy: false }),
+    stop: Effect.succeed(true),
+    notifyAdmission: Effect.void,
+    receipt: (key: string) => Effect.succeed(receipts.get(key) ?? null),
+    submit: (request: { request_id: string; text: string; delivery: "queue" | "steer" }) =>
+      Effect.sync(() => {
+        const previous = receipts.get(request.request_id);
+        if (previous) return previous;
+        prompts++;
+        const receipt = {
+          ...request,
+          message_id: SessionMessage.ID.make(`msg_${request.request_id}`),
+          at: "2026-11-16T00:00:00Z",
+          status: "admitted" as const,
+        };
+        receipts.set(request.request_id, receipt);
+        return receipt;
+      }),
+    updates: Stream.fromIterable(events),
+  });
+  const timeline = [
+    observed(["msg_unrelated"]),
+    observed(["msg_first"]),
+    observed(["msg_queued", "msg_steer"]),
+  ];
+  const adapter = new NativeAgentAdapter(source(timeline));
+  const [first, queued, steered] = await Promise.all(
+    ["first", "queued", "steer"].map(async (key) =>
+      lastValueFrom(adapter.run("ses_causal", "abra", input(key)).pipe(toArray())),
+    ),
+  );
+  assert.equal(first.at(-1)?.type, EventType.RUN_FINISHED);
+  assert.equal(queued.at(-1)?.type, EventType.RUN_FINISHED);
+  assert.equal(steered.at(-1)?.type, EventType.RUN_FINISHED);
+  assert.equal(prompts, 3);
+  // Idle with no matching delivered identity is never sufficient, even if the input is visible.
+  const unrelated = await lastValueFrom(
+    new NativeAgentAdapter(source([observed(["msg_unrelated"])]))
+      .run("ses_causal", "abra", input("queued", "unrelated-run"))
+      .pipe(toArray()),
+  );
+  assert.equal(unrelated.at(-1)?.type, EventType.RUN_ERROR);
+  const failed = await lastValueFrom(
+    new NativeAgentAdapter(
+      source([observed(["msg_queued"], "failed", "Provider failure " + "x".repeat(3000))]),
+    )
+      .run("ses_causal", "abra", input("queued", "failure-run"))
+      .pipe(toArray()),
+  );
+  assert.equal(failed.at(-1)?.type, EventType.RUN_ERROR);
+  assert.ok(String(Reflect.get(failed.at(-1)!, "message")).length <= 1024);
+  const restarted = new NativeAgentAdapter(source([observed(["msg_queued"])]));
+  await lastValueFrom(
+    restarted.run("ses_causal", "abra", input("queued", "recovered-transport-run")).pipe(toArray()),
+  );
+  assert.equal(prompts, 3);
+  assert.equal(receipts.get("queued")!.message_id, "msg_queued");
+});
+
+test("uncertain admission and unsupported state/actions produce bounded run errors without replay", async () => {
+  let nativePrompts = 0;
+  const native = new NativeAgentAdapter({
+    sessionID: "ses_uncertain",
+    current: Effect.succeed({ busy: false }),
+    stop: Effect.succeed(false),
+    receipt: () => Effect.succeed(null),
+    notifyAdmission: Effect.void,
+    submit: (input) =>
+      Effect.sync(() => {
+        nativePrompts++;
+        return {
+          ...input,
+          message_id: SessionMessage.ID.make("msg_uncertain"),
+          at: "2026-11-16T00:00:00Z",
+          status: "uncertain" as const,
+        };
+      }),
+    updates: Stream.never,
+  });
+  const input = {
+    threadId: "ses_uncertain",
+    runId: "uncertain",
+    tools: [],
+    context: [],
+    state: {},
+    messages: [{ id: "input", role: "user" as const, content: "input" }],
+    forwardedProps: { request_id: "same-input" },
+  };
+  const result = await lastValueFrom(native.run(input.threadId, "abra", input).pipe(toArray()));
+  assert.deepEqual(
+    result.map((event) => event.type),
+    [EventType.RUN_STARTED, EventType.RUN_ERROR],
+  );
+  assert.equal(nativePrompts, 1);
+  for (const changed of [
+    { ...input, state: { mutate: true } },
+    { ...input, forwardedProps: { request_id: "same-input", a2uiAction: { action: "approve" } } },
+  ]) {
+    const result = await lastValueFrom(native.run(input.threadId, "abra", changed).pipe(toArray()));
+    assert.equal(result.at(-1)?.type, EventType.RUN_ERROR);
+  }
+  assert.equal(nativePrompts, 1);
+});
+
+test("native streaming shares one subscription/fallback across observers and releases only scoped resources", async () => {
+  const native = new NativeSessionProjection("ses_webfixture");
+  const user = Schema.decodeSync(SessionMessage.User)({
+    id: "msg_shared",
+    type: "user",
+    text: "Shared observation",
+    time: { created: 0 },
+  });
+  native.baseline([user], true, []);
+  const source = new WorkspaceFixture();
+  source.value = { ...source.value, busy: true, messages: [projectNativeMessage(user)!] };
+  let subscriptions = 0,
+    closed = 0,
+    reads = 0;
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const signals = yield* PubSub.unbounded<{
+        transcript: true;
+        native: import("../../src/opencode/agui/native-state.ts").NativeEventEnvelope;
+      }>();
+      const scope = yield* Scope.make();
+      const backend = Object.assign(source, {
+        nativeEvent: (
+          event: import("../../src/opencode/agui/native-state.ts").NativeEventEnvelope,
+        ) => native.apply(event),
+        nativeSnapshot: () => native.current(),
+        observe: () =>
+          Effect.sync(() => {
+            reads++;
+            return source.value;
+          }),
+        changes: Stream.fromPubSub(signals).pipe(
+          Stream.onStart(
+            Effect.sync(() => {
+              subscriptions++;
+            }),
+          ),
+          Stream.ensuring(
+            Effect.sync(() => {
+              closed++;
+            }),
+          ),
+        ),
+      });
+      const feed = yield* WorkspaceFeed.make(backend).pipe(
+        Effect.provideService(Scope.Scope, scope),
+      );
+      const runner = new AbraRunner(backend, feed);
+      const first: import("@ag-ui/core").BaseEvent[] = [],
+        second: import("@ag-ui/core").BaseEvent[] = [];
+      const a = runner
+        .connect({ threadId: backend.sessionID, agentId: "abra" })
+        .subscribe((event) => first.push(event));
+      const b = runner
+        .connect({ threadId: backend.sessionID, agentId: "abra" })
+        .subscribe((event) => second.push(event));
+      yield* TestClock.adjust("0 millis");
+      let seq = 0;
+      const push = (type: string, data: object, ephemeral = false) =>
+        PubSub.publish(signals, {
+          transcript: true,
+          native: {
+            type,
+            id: `evt_shared-${++seq}`,
+            created: seq,
+            ...(ephemeral
+              ? {}
+              : {
+                  durable: {
+                    aggregateID: backend.sessionID,
+                    seq: type === "session.step.started" ? 1 : 2,
+                    version: 1,
+                  },
+                }),
+            data: { sessionID: backend.sessionID, ...data },
+          },
+        }).pipe(Effect.andThen(TestClock.adjust("0 millis")));
+      yield* push("session.step.started", {
+        assistantMessageID: "msg_streaming",
+        agent: "abra",
+        model: { providerID: "fixture", id: "fixture" },
+        started: 1,
+      });
+      yield* push("session.tool.input.started", {
+        assistantMessageID: "msg_streaming",
+        id: "shared-call",
+        name: "read_source",
+      });
+      yield* push(
+        "session.tool.input.delta",
+        { assistantMessageID: "msg_streaming", id: "shared-call", delta: '{"path":' },
+        true,
+      );
+      assert.equal(subscriptions, 1);
+      assert.ok(first.some((event) => event.type === EventType.TOOL_CALL_ARGS));
+      assert.ok(second.some((event) => event.type === EventType.TOOL_CALL_ARGS));
+      a.unsubscribe();
+      yield* TestClock.adjust("0 millis");
+      const count = first.length;
+      yield* push(
+        "session.tool.input.delta",
+        { assistantMessageID: "msg_streaming", id: "shared-call", delta: '"source.ts"}' },
+        true,
+      );
+      assert.equal(first.length, count);
+      assert.ok(second.length > count);
+      b.unsubscribe();
+      yield* TestClock.adjust("0 millis");
+      yield* Scope.close(scope, Exit.void);
+      const before = reads;
+      yield* TestClock.adjust("10 seconds");
+      assert.equal(reads, before);
+      assert.equal(subscriptions, 1);
+      assert.equal(closed, 1);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+  assert.equal(source.stops, 0);
+  assert.equal(source.submissions, 0);
 });

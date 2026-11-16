@@ -52,7 +52,8 @@
     "./workflow/report-contracts": "./src/workflow/report-contracts.ts",
     "./web/changes": "./src/web/changes.ts",
     "./web/observation": "./src/web/observation.ts",
-    "./presentation/notices": "./src/presentation/notices.ts"
+    "./presentation/notices": "./src/presentation/notices.ts",
+    "./web/bindings": "./src/web/bindings.ts"
   },
   "scripts": {
     "check": "tsc --noEmit"

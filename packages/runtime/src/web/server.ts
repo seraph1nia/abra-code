@@ -1,3 +1,4 @@
+import { BindingReadSchema } from "@abracode/contracts/web/bindings";
 import { LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
 import { WorkerHistoryPageSchema } from "./worker-history.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 HTTP server/router/API contracts. */
@@ -99,6 +100,7 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
   );
   const work = HttpApiBuilder.group(workspaceApi, "work", (handlers) =>
     handlers
+      .handle("binding", ({ query }) => validated(backend.work.binding(query), BindingReadSchema))
       .handle("find", ({ query }) => validated(backend.work["find"](query), WorkPageSchema))
       .handle("resolve", ({ payload }) => backend.resolve(payload).pipe(Effect.mapError(refused)))
       .handle("detail", ({ query }) => validated(backend.work["detail"](query), WorkDetailSchema))

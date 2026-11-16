@@ -1,3 +1,4 @@
+import { BindingReadSchema } from "@abracode/contracts/web/bindings";
 import { LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
 import { registerWebGateway } from "../web/gateway.ts";
 import { WorkPageSchema } from "../visibility/discovery-contracts.ts";
@@ -121,6 +122,11 @@ export default Plugin.define({
           decodeJSON(schema, JSON.stringify(value), "Observer response");
       // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
       const registration = yield* ctx.rpc.register(visibility, {
+        binding: (query, { error }) =>
+          observerResult(
+            observer.binding(query).pipe(Effect.flatMap(json(BindingReadSchema))),
+            error,
+          ).pipe(provide),
         find: (query, { error }) =>
           observerResult(
             observer.find(query).pipe(Effect.flatMap(json(WorkPageSchema))),

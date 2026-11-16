@@ -565,3 +565,96 @@ algorithms through actual Git with CRLF attributes, mixed index/worktree edits,
 symlinks, leading hyphens, whitespace, Unicode and newline filenames across a
 batch boundary. The 100-file, five-fingerprint probe changed from 500 object
 processes/1471ms to ten/87ms on the development host.
+
+### Generated work binding summary read
+
+The additive visibility `binding` RPC and typed GET `/api/work/binding` accept
+`issue_ids` (at most 100 validated IDs, deduplicated before reads) and optional
+`include_population`. They return bounded summaries, classified requested results,
+observation time/work revision and explicit returned/total/unavailable/truncation
+coverage. Missing IDs expose no foreign records. Malformed, oversized and excess
+inputs are rejected before the handler. This fixed read cannot choose a session,
+execute a native operation or submit input.
+
+Explicit references use `Queries.observeTask`, independently of the workspace's
+50-row closed-history page. Optional unfiltered population uses two bounded
+50-row WorkGraph finder reads and its total, reserves explicit IDs and reads only
+those selected tasks. It does not call fleet readiness, worker inspection or
+OpenSpec body readers. Publication uses the same read and shared selection rules;
+a sibling navigation link cannot narrow an unfiltered table. Visibility and typed
+HTTP regressions cover these limits and zero unrelated reads/admissions.
+
+The backend-owned adapter lives in `packages/runtime/src/opencode/agui/` and
+continues using the existing CopilotKit v2 AgentRunner HTTP routes. Standard
+`HttpAgent` input supplies the fixed thread, a user text message, empty tools,
+context and state, and `forwardedProps: {request_id, delivery?}`. Run ID is transport
+correlation only; the stable request remains the durable admission identity.
+Unsupported native session selection, tools/context/state and forwarded callback
+properties are refused. Connect begins with a valid `RUN_STARTED` and attaches to
+native observations; canceling/detaching its HTTP stream never invokes native
+interrupt. Current-turn Stop stays explicit; historical run Stop is refused.
+
+Pinned `@ag-ui/client` 1.0.4 `AbstractAgent.clone` preserves middleware and standard
+configuration but does not copy subclass fields. `AbraAgent.clone` retains that
+base behavior and restores its runner reference. The shared native reader uses
+OpenCode 2.3.0 `message.list` with descending first-page order and issued cursors
+for subsequent pages, independently of finder/report queries. HTTP tests use the
+installed standard AG-UI client/reducer and the production endpoint rather than
+synthetic run wrappers.
+
+### Native incremental event evidence (OpenCode 2.3.0)
+
+Installed `@opencode/schema/dist/session-event.js` and `.d.ts` define
+`SessionEvent.Text.Started/Delta/Ended`, `Tool.Input.Started/Delta/Ended`,
+`Tool.Called/Progress/Success/Failed`, `Step.Started` and execution terminal events.
+Text uses `assistantMessageID` plus native ordinal; tools use that message plus
+original `id`. Delta fragments are ephemeral; Text.Ended/Input.Ended carry complete
+values. The pinned [2.3.0 native publisher](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/core/src/session/runner/publish-llm-event.ts)
+provides a delta callback for text but none for tool-input fragments. Consequently
+that server emits tool start and complete input boundaries, with no partial
+argument events. The adapter maps schema-valid input deltas when supplied; it does
+not synthesize missing fragments. The real-native provider gate proves tool start
+and partial text arrive before the provider can finish; controlled event tests
+cover mid-argument delta and recovery behavior. Durable envelopes carry aggregate
+sequence/version; timestamps establish freshness, not causal order. Hidden reasoning and provider-native replay fields
+are excluded from projection.
+
+`SessionMessage.Idle` explicitly groups every step since the preceding idle marker,
+including steered inputs, and records succeeded/failed/interrupted outcomes. Native
+run completion uses delivered input membership in this turn evidence. Global idle,
+transport run ID and a failed tool alone cannot establish that a submission finished.
+A shutdown does not create a completed turn. Uncertain admission stays uncertain.
+
+AG-UI 1.0.4 declarations and the real reducer verify standard text/tool events,
+native call IDs and stable display-segment provenance. Its tool result event has
+no native `ToolMessage.error` field; complete message baselines preserve that
+native failure field and native status metadata after the standard result event.
+Argument rewrites, bounded/unavailable arguments and incompatible structure also
+use complete baselines. Truncated completed arguments are represented by a valid
+empty object with explicit unavailable/limited metadata, never invalid JSON marked
+as complete. Text observations are bounded to 64 Ki characters per native text part
+with an explicit limit marker; tool arguments/results retain 4096/8192 character
+limits. See `native-agui-stream.test.ts`, `web-transcript.test.ts` and the
+[AG-UI event contract](https://docs.ag-ui.com/concepts/events).
+
+### Custom A2UI publication contract
+
+AbraCode supports the fixed native `abra_render_ui` publication tool, complete
+validated A2UI 1.0 revisions and immutable producing message/call associations.
+Live tool results and historical projection retain the exact surface revision;
+reload/restart never substitutes the latest layout for an older reference. Typed
+task/session/decision/changes/artifact navigation remains a read-only owned-resource
+read. Approval and permission actions remain native bound forms.
+
+Generic `a2ui_operations` envelopes, `forwardedProps.a2uiAction`, automatic middleware
+tool injection and arbitrary generated callbacks are unsupported. The adapter
+rejects unsupported forwarded options before admission. Surface validation rejects
+arbitrary action/component props; navigation resolves ownership again when opened.
+The existing runtime stays `a2ui.enabled: false`; its custom catalog renderer and
+native publication owner supply this explicit contract without a second model loop.
+
+Native call IDs may repeat in different assistant messages. Their original IDs and
+message provenance remain intact; a changed call whose ID collides with earlier
+history uses a full message projection. This avoids the pinned client's global
+incremental lookup rewriting an older tool name or arguments. The real reducer
+regression covers two different tools sharing `call_0`.

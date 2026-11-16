@@ -1,3 +1,4 @@
+import type { BindingSelection } from "@abracode/contracts/web/bindings";
 import { workInvalidationKeys, type ChangeScope } from "@abracode/contracts/web/changes";
 import type { LeadEvidenceQuery } from "@abracode/contracts/visibility/lead-observation";
 import type {
@@ -43,6 +44,19 @@ export const surfaceQuery = (id: string, revision: number) =>
     timeToLive: "30 seconds",
   });
 export const queries = {
+  binding: (selection: BindingSelection) =>
+    WorkspaceApi.query("work", "binding", {
+      query: {
+        issue_ids: [...new Set(selection.ids)].sort().map((id) => IssueId.make(id)),
+        include_population: selection.unfiltered,
+      },
+      reactivityKeys: [
+        "work-observed",
+        ...(selection.unfiltered ? ["work-finder"] : []),
+        ...selection.ids.map(workKey),
+      ],
+      timeToLive: "0 seconds",
+    }),
   leads: (query: typeof LeadEvidenceQuery.Type) =>
     WorkspaceApi.query("work", "leads", {
       query,

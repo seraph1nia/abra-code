@@ -1,3 +1,4 @@
+import { BindingReadQuery, BindingReadSchema } from "./bindings.ts";
 import { ReportExportSchema } from "../presentation/report-export-contract.ts";
 import { LeadEvidenceQuery, LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
 import { WorkerHistoryQuery, WorkerHistoryPageSchema } from "./worker-history.ts";
@@ -145,6 +146,11 @@ export const workspaceApi = HttpApi.make("abra-workspace")
       }),
     ),
     HttpApiGroup.make("work").add(
+      HttpApiEndpoint.get("binding", "/api/work/binding", {
+        query: BindingReadQuery,
+        success: BindingReadSchema,
+        error,
+      }),
       HttpApiEndpoint.get("find", "/api/work/find", {
         query: WorkDiscoveryQuery,
         success: WorkPageSchema,
@@ -275,6 +281,7 @@ export const workspaceApi = HttpApi.make("abra-workspace")
 
 /** Fixed retained-work reads. Types follow the HTTP owner, including decoded numeric queries. */
 export type WorkReadName =
+  | "binding"
   | "find"
   | "leads"
   | "detail"

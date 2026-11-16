@@ -1,3 +1,4 @@
+import { selectBindingRows } from "@abracode/contracts/web/bindings";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Disposable browser/HTTP/stream fixtures exercise the shipped frontend. */
 
 import { Effect, Exit, PubSub, Scope, Stream, Schema } from "effect";
@@ -249,6 +250,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
     submit: source.submit,
     receipt: source.receipt,
     stop: source.stop,
+    completionEvidence: source.completionEvidence,
     artifact: source.artifact,
     replyPermission: source.replyPermission,
     exportDocument: (input) => source.exportDocument(input),
@@ -257,6 +259,35 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
       Effect.sync(() => saves.push(input)).pipe(Effect.andThen(() => source.saveSurface(input))),
     changes: Stream.fromPubSub(signals),
     work: {
+      binding: (input) =>
+        Effect.gen(function* () {
+          calls.push({
+            name: "binding",
+            input: {
+              issue_ids: input.issue_ids.join(","),
+              include_population: String(input.include_population ?? false),
+            },
+          });
+          if (failedReads.has("binding"))
+            return yield* new CrewError("FIXTURE_READ", "Binding refresh unavailable");
+          const rows = retained ?? source.value.work.work;
+          const selected = selectBindingRows(
+            { ids: input.issue_ids, unfiltered: !!input.include_population },
+            rows,
+            rows.length,
+          );
+          return {
+            work: selected.rows,
+            coverage: selected.coverage,
+            results: input.issue_ids.map((issue_id) => ({
+              issue_id,
+              status: rows.some((row) => row.issue_id === issue_id)
+                ? ("available" as const)
+                : ("missing" as const),
+            })),
+            observed_at: source.value.at,
+          };
+        }),
       find: operation("find", WorkPageSchema),
       leads: operation("leads", LeadEvidencePageSchema),
       detail: operation("detail", WorkDetailSchema),

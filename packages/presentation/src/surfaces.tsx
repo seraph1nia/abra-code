@@ -1,3 +1,4 @@
+import type { BindingCoverage } from "@abracode/contracts/web/bindings";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { WorkWidget } from "./work-widgets.tsx";
 import type { Inspect } from "./cards.tsx";
@@ -30,8 +31,9 @@ import {
 
 injectBasicCatalogStyles();
 type WorkViewContext = {
-  record: Pick<SurfaceRecord, "surface" | "snapshot" | "revision" | "at">;
+  record: Pick<SurfaceRecord, "surface" | "snapshot" | "revision" | "at" | "coverage">;
   work: readonly WorkItem[];
+  liveCoverage?: BindingCoverage;
   inspect?: Inspect;
   frozen?: boolean;
   evidence?: ReportSnapshot;
@@ -65,10 +67,12 @@ export function WorkViews({
   work,
   inspect,
   actions,
+  liveCoverage,
 }: {
   records: readonly SurfaceEntry[];
   work: readonly WorkItem[];
   inspect: Inspect;
+  liveCoverage?: BindingCoverage;
   actions?: (record: SurfaceRecord) => ReactNode;
 }) {
   return (
@@ -80,7 +84,12 @@ export function WorkViews({
           </p>
         ) : (
           <div key={record.surface.createSurface.surfaceId} className="surface-publication">
-            <GeneratedSurface record={record} work={work} inspect={inspect} />
+            <GeneratedSurface
+              record={record}
+              work={work}
+              liveCoverage={liveCoverage}
+              inspect={inspect}
+            />
             {actions?.(record)}
           </div>
         ),
@@ -100,6 +109,7 @@ export function GeneratedSurface({
   frozen,
   evidence,
   preparedDiagrams,
+  liveCoverage,
 }: WorkViewContext) {
   const [rendered, setRendered] = useState<Rendered>();
   const [error, setError] = useState("");
@@ -111,10 +121,7 @@ export function GeneratedSurface({
       validationConfig: surfaceValidation,
     });
     try {
-      validateSurface(
-        record.surface,
-        new Set([...work, ...record.snapshot].map((w) => w.issue_id)),
-      );
+      validateSurface(record.surface);
       processor.processMessages(toSdkSurface(record.surface));
       const surface = processor.model.getSurface(record.surface.createSurface.surfaceId);
       if (!surface) throw new Error("Surface was not created");
@@ -141,7 +148,15 @@ export function GeneratedSurface({
       )}
       {rendered && (
         <ViewContext.Provider
-          value={{ record: rendered.record, work, inspect, frozen, evidence, preparedDiagrams }}
+          value={{
+            record: rendered.record,
+            work,
+            inspect,
+            frozen,
+            evidence,
+            preparedDiagrams,
+            liveCoverage,
+          }}
         >
           <MarkdownComponentContext.Provider value={PlainText}>
             <A2uiSurface key={rendered.record.revision} surface={rendered.surface} />
@@ -163,6 +178,8 @@ function BoundWidget({ name, props }: Pick<Parameters<typeof WorkWidget>[0], "na
         work: context.work,
         captured: context.record.snapshot,
         capturedAt: context.record.at,
+        capturedCoverage: context.record.coverage,
+        liveCoverage: context.liveCoverage,
         inspect: context.inspect,
         frozen: context.frozen,
         evidence: context.evidence,

@@ -1,3 +1,8 @@
+import {
+  bindingRequirements,
+  selectBindingRows,
+  type BindingCoverage,
+} from "@abracode/contracts/web/bindings";
 import { committedScope } from "../visibility/invalidations.ts";
 import { canonicalJSON as stable, presentationHash as hash } from "../presentation/identity.ts";
 import { PresentationAssociations } from "../presentation/associations.ts";
@@ -18,12 +23,7 @@ import {
 import type { Store } from "../storage/store.ts";
 import type { Locks } from "../storage/lock.ts";
 import { SurfaceRecordSchema, PresentationAttachmentSchema } from "./workspace-wire.ts";
-import {
-  normalizeSurface,
-  referencedWorkIds,
-  validateSurface,
-  type WorkSurface,
-} from "./surfaces.ts";
+import { normalizeSurface, validateSurface, type WorkSurface } from "./surfaces.ts";
 import { ComponentId } from "./catalog.ts";
 import { WorkItemSchema } from "./wire.ts";
 import { loadSurfaceRecord } from "./surface-records.ts";
@@ -238,7 +238,11 @@ export class SurfacePublications {
   publish(
     input: { session_id: SessionId; message_id: MessageId; call_id: string; surface: WorkSurface },
     observe: Effect.Effect<
-      { at: Timestamp; work: readonly (typeof WorkItemSchema.Type)[] },
+      {
+        at: Timestamp;
+        work: readonly (typeof WorkItemSchema.Type)[];
+        binding_coverage?: BindingCoverage;
+      },
       CrewError
     >,
   ) {
@@ -307,12 +311,14 @@ export class SurfacePublications {
               validateSurface(surface, new Set(snapshot.work.map((work) => work.issue_id))),
             catch: () => new CrewError("UI_SURFACE", "Surface references unavailable work"),
           });
-          const referenced = new Set(referencedWorkIds(surface));
+          const selected = selectBindingRows(
+            bindingRequirements(surface),
+            snapshot.work,
+            snapshot.binding_coverage?.total,
+          );
           const captured = yield* decode(
             Schema.Array(WorkItemSchema),
-            referenced.size
-              ? snapshot.work.filter((work) => referenced.has(work.issue_id))
-              : snapshot.work.slice(0, 100),
+            selected.rows,
             "Surface observations",
           );
           const revision = Math.max(head?.next_revision ?? 1, previous ? previous.revision + 1 : 1);
@@ -325,6 +331,10 @@ export class SurfacePublications {
             at: snapshot.at,
             surface,
             snapshot: captured,
+            coverage: {
+              ...selected.coverage,
+              ...(snapshot.binding_coverage ? { status: snapshot.binding_coverage.status } : {}),
+            },
           };
           const publication: Publication = {
             schema_version: 1,

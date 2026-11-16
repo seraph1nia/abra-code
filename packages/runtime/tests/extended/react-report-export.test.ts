@@ -7,7 +7,7 @@ import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import { reportDocument } from "../helpers/report-document.ts";
+import { coveredReportDocument } from "../helpers/report-document.ts";
 import { ReactDocumentRenderer } from "../../src/workflow/report-export.ts";
 import { ProcessRunner } from "../../src/process.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
@@ -22,7 +22,7 @@ test(
     await installSource(f.config.home, { buildWeb: false });
     const renderer = new ReactDocumentRenderer(f.config.home, new ProcessRunner());
     const fingerprint = await run(renderer.fingerprint);
-    const html = await run(renderer.render(reportDocument(), fingerprint));
+    const html = await run(renderer.render(coveredReportDocument(), fingerprint));
     assert.ok(Buffer.byteLength(html) < 8 * 1024 * 1024);
 
     const moved = join(f.root, "relocated");
@@ -54,6 +54,21 @@ test(
     const report = page.frameLocator("iframe");
     await report.getByRole("heading", { name: "Saved evidence", exact: true }).waitFor();
     assert.equal(await report.locator('[data-diagram-state="ready"] svg').count(), 1);
+    await report.getByText("Frozen task title", { exact: true }).waitFor();
+    await report.getByText("Older snapshot task title", { exact: true }).waitFor();
+    assert.match(
+      await report.locator('[data-work-widget="StatusSummary"]').innerText(),
+      /1 \(partial\)/,
+    );
+    assert.match(
+      await report.locator('[data-work-widget="WorkTable"]').first().innerText(),
+      /Partial data/,
+    );
+    assert.match(
+      await report.locator('[data-work-widget="WorkTable"]').last().innerText(),
+      /Coverage unknown/,
+    );
+
     assert.match(await report.locator('[data-report-section="checks"]').innerText(), /pending/);
     assert.equal(await report.locator("script[src],link[rel=stylesheet]").count(), 0);
     assert.equal(

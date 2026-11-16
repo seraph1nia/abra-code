@@ -1,3 +1,4 @@
+import { IssueId } from "../identities.ts";
 import { Effect } from "effect";
 import type {
   ControllerServices,
@@ -47,7 +48,13 @@ export class Controller {
       Parameters<ReportCommands["saveSurface"]>[1],
       Parameters<ReportCommands["saveSurface"]>[2],
     ]
-  ) => this.services.reports.saveSurface(...args, new Visibility(this).snapshot());
+  ) =>
+    this.services.reports.saveSurface(...args, (selection) =>
+      new Visibility(this).binding({
+        issue_ids: selection.ids.map((id) => IssueId.make(id)),
+        include_population: selection.unfiltered,
+      }),
+    );
   reconcileReports = () => this.services.reports.recover();
   visualReport = (...args: Parameters<ReportCommands["generate"]>) =>
     args[2].surface

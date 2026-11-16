@@ -1,3 +1,4 @@
+import { selectBindingRows } from "@abracode/contracts/web/bindings";
 import { Effect, Stream } from "effect";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { CrewError } from "../../src/domain.ts";
@@ -100,6 +101,17 @@ export class WorkspaceFixture implements WebBackend {
       };
       return receipt;
     });
+  completionEvidence = () =>
+    this.value.busy
+      ? []
+      : [
+          {
+            inputs: this.value.receipts
+              .filter((r) => r.status === "admitted")
+              .map((r) => r.message_id),
+            outcome: "succeeded" as const,
+          },
+        ];
   stop = Effect.sync(() => {
     this.stops++;
     return true;
@@ -110,6 +122,25 @@ export class WorkspaceFixture implements WebBackend {
       return Effect.fail(new CrewError("FIXTURE_READ", "No resource configured in this fixture"));
     });
   readonly work: { -readonly [K in keyof WebBackend["work"]]: WebBackend["work"][K] } = {
+    binding: (input) =>
+      Effect.sync(() => {
+        const selected = selectBindingRows(
+          { ids: input.issue_ids, unfiltered: !!input.include_population },
+          this.value.work.work,
+          this.value.work.work.length,
+        );
+        return {
+          work: selected.rows,
+          coverage: selected.coverage,
+          results: input.issue_ids.map((id) => ({
+            issue_id: id,
+            status: this.value.work.work.some((row) => row.issue_id === id)
+              ? ("available" as const)
+              : ("missing" as const),
+          })),
+          observed_at: this.value.at,
+        };
+      }),
     find: this.unavailableRead,
     leads: this.unavailableRead,
     detail: this.unavailableRead,

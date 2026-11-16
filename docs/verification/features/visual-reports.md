@@ -52,3 +52,21 @@ Full integrated checks remain a separate required gate.
 The pinned graphical file renderer's source and opaque sandbox contract are
 recorded in [supported APIs](../../supported-apis.md#report-html-preview).
 No paired graphical GUI click-through is claimed by these service/browser tests.
+
+Binding coverage acceptance uses the shipped app and portable renderer:
+
+```sh
+pnpm web:build
+pnpm test:one packages/runtime/tests/e2e/web-rendering.test.ts
+pnpm test:one packages/runtime/tests/e2e/web-coherence.test.ts -t 'exact saved reports'
+pnpm test:one packages/runtime/tests/extended/react-report-export.test.ts packages/runtime/tests/extended/report-artifacts.test.ts
+```
+
+The app and offline fixtures share frozen rows and coverage: an unfiltered live
+capture reports 1 of 102 rows and partial counts, while an older snapshot states
+unknown coverage. Source changes never supplement either binding. The renderer
+journey relocates HTML into an offline opaque frame and asserts no HTTP requests;
+the app fixture asserts zero binding-summary reads during frozen viewing. New save
+unit coverage resolves off-page live references independently, refuses missing
+explicit values and retries already-published JSON after source loss. Set external
+`ABRACODE_TEST_EVIDENCE_DIR` to retain browser screenshots alongside command logs.

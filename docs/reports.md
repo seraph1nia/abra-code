@@ -85,3 +85,41 @@ non-overwriting link primitives. Their owners retain request binding, current-st
 updates, digest/byte verification, receipt-loss reconciliation and owned scratch
 cleanup. The v2 shell creates separate exporter identities; it does not rewrite
 canonical documents, old published receipts or legacy export destinations.
+
+## Immutable file protocol
+
+`workflow/report-files.ts` owns physical publication for canonical JSON, derived
+HTML and export receipt files. Callers choose the owned destination and byte
+policy, and supply expected digest/size plus content or a retained `.stage-*`
+path. The module checks each directory, refuses symlinks and nonregular files,
+reads through a bounded file handle, stages exclusively, flushes, links without
+replacement and verifies the occupied destination. Identical concurrent writes
+reuse the same bytes; conflicts stay available for inspection.
+
+JSON stages remain retained until the owner's durable publication receipt commits.
+An interrupted receipt resumes from the original stage or matching destination;
+cleanup preserves changed scratch. Export recovery separately validates HTML
+already present before `receipt.json`, then publishes the matching receipt without
+rerendering or recapturing. This is ordered recovery, not a multi-file transaction.
+`report-files.test.ts` exercises success, bounds, path/symlink refusal, concurrent
+matching publication, conflicts, interrupted receipts and changed staging through
+the production interface and live filesystem. Domain suites retain JSON receipt
+loss and HTML-before-receipt recovery coverage.
+
+`ReportDocuments` and `ReportExports` previously coordinated path checks, reads,
+staging, linking, post-link verification and scratch cleanup independently. They
+now select files and call this protocol. They still own locks, document/export
+validation, request identity, execution generation, authorization and receipts;
+verified file bytes alone grant no publication authority. Legacy Markdown and HTML
+publication retain their existing compatibility path and immutable identities.
+
+Saved generated surfaces resolve each required live task through the bounded
+summary read, including closed work outside loaded history. A missing or failed
+explicit live observation refuses a new save before reservation/publication. A
+published same-request retry returns its original document even when source tasks
+later disappear. Snapshot widgets retain their original publication-time rows;
+live widgets freeze their separately observed save-time rows. Optional
+`live_coverage` and `snapshot_coverage` remain with those respective values.
+Unfiltered limits are explicit partial observations, and missing historical
+coverage remains unknown. App and portable viewers share this pure binding
+adapter and perform no summary reads for frozen documents.

@@ -1,3 +1,6 @@
+import { HttpAgent } from "@ag-ui/client";
+import { SqliteWorkGraph } from "../../src/work/graph.ts";
+import { ExecutionId, RepositoryId } from "../../src/identities.ts";
 import { DecisionsSchema } from "../../src/web/http-api.ts";
 import { MessagesPageSchema, FeedbackPageSchema } from "../../src/web/wire.ts";
 import { WorkerHistoryPageSchema } from "../../src/web/worker-history.ts";
@@ -35,6 +38,49 @@ async function prepareAdmissionRecovery(
   };
 }
 
+/** Historical rows are disposable fixture data, not delivery/controller proof. */
+async function bindingPopulation(home: string) {
+  return Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const graph = yield* SqliteWorkGraph.open(
+          AbsolutePath.make(join(home, ".abracode/work.sqlite")),
+        );
+        const closed: { id: IssueId; title: string }[] = [];
+        for (let i = 0; i < 55; i++) {
+          const issue = yield* graph.create({
+            repository_id: RepositoryId.make("workspace"),
+            request_id: RequestId.make(`fixture-history-${i}`),
+            title: `Historical native task ${i}`,
+            description: "Disposable historical row for binding coverage",
+            priority: 4,
+            dependencies: [],
+          });
+          const actor = ExecutionId.make(`fixture-history-${i}`);
+          yield* graph.claim(issue.id, actor);
+          yield* graph.close(issue.id, actor);
+          closed.push({ id: issue.id, title: issue.title });
+        }
+        const companion = yield* graph.create({
+          repository_id: RepositoryId.make("workspace"),
+          request_id: RequestId.make("fixture-companion"),
+          title: "Second observed native task",
+          description: "Disposable bounded binding companion",
+          priority: 4,
+          dependencies: [],
+        });
+        const actor = ExecutionId.make("fixture-companion");
+        yield* graph.claim(companion.id, actor);
+        yield* graph.block(companion.id, actor, "Fixture stays outside automatic execution");
+        return {
+          companion: companion.id,
+          offPage: closed.sort((a, b) => a.id.localeCompare(b.id)).at(-1)!,
+        };
+      }),
+    ),
+  );
+}
+
 export async function workspaceJourney(input: {
   home: string;
   project: string;
@@ -43,6 +89,7 @@ export async function workspaceJourney(input: {
   client: Native;
   restart: () => Promise<void>;
   providerCount: () => number;
+  streaming: { hold: () => void; release: (kind: "tool" | "text") => void };
   readStatus: (id: string) => Promise<any>;
   evidence?: string;
 }) {
@@ -58,6 +105,104 @@ export async function workspaceJourney(input: {
     ),
   );
   const browser = await launchReportBrowser();
+  const nativeTrace: {
+    type: string;
+    id?: string;
+    busy?: boolean;
+    repair?: boolean;
+    sequence?: number;
+  }[] = [];
+  const observeNative = backend.nativeEvent;
+  backend.nativeEvent = (event) => {
+    const result = observeNative(event);
+    nativeTrace.push({
+      type: event.type,
+      id: event.id,
+      busy: result.view?.busy,
+      repair: result.repair,
+      sequence: event.durable?.seq,
+    });
+    return result;
+  };
+  const partialBeforeRelease = { tool: false, text: false };
+  const observers: { agent: HttpAgent; done: Promise<void>; events: string[]; errors: string[] }[] =
+    [];
+  async function attachObserver() {
+    const agent = new HttpAgent({
+      url: `${web.origin}/api/copilotkit/agent/abra/connect`,
+      headers: { origin: web.origin },
+      agentId: "abra",
+      threadId: input.session,
+    });
+    let ready!: () => void;
+    const baseline = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const events: string[] = [],
+      errors: string[] = [];
+    const done = agent
+      .runAgent(
+        {},
+        {
+          onMessagesSnapshotEvent: ({ event }) => {
+            ready();
+            for (const message of event.messages) {
+              if (message.role !== "assistant") continue;
+              if (
+                typeof message.content === "string" &&
+                message.content.includes("Streaming native text") &&
+                !message.content.includes("completed.")
+              ) {
+                partialBeforeRelease.text = true;
+                input.streaming.release("text");
+              }
+              for (const call of message.toolCalls ?? [])
+                if (call.id === "call_workspace_stream") {
+                  partialBeforeRelease.tool = true;
+                  input.streaming.release("tool");
+                }
+            }
+          },
+          onTextMessageContentEvent: ({ event }) => {
+            events.push("text");
+            if (event.delta.includes("Streaming native text")) {
+              partialBeforeRelease.text = true;
+              input.streaming.release("text");
+            }
+          },
+          onToolCallStartEvent: ({ event }) => {
+            if (event.toolCallId === "call_workspace_stream") {
+              partialBeforeRelease.tool = true;
+              input.streaming.release("tool");
+            }
+          },
+          onToolCallArgsEvent: ({ event }) => {
+            events.push("arguments");
+            if (event.toolCallId === "call_workspace_stream" && event.delta) {
+              partialBeforeRelease.tool = true;
+              input.streaming.release("tool");
+            }
+          },
+          onToolCallResultEvent: () => {
+            events.push("result");
+          },
+        },
+      )
+      .then(() => undefined)
+      .catch((error) => {
+        errors.push(String(error));
+      });
+    const observer = { agent, done, events, errors };
+    observers.push(observer);
+    await Promise.race([
+      baseline,
+      done.then(() => {
+        throw new Error(`Native observer ended before baseline: ${errors.join("; ")}`);
+      }),
+    ]);
+    return observer;
+  }
+
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     const page = await context.newPage();
@@ -72,6 +217,9 @@ export async function workspaceJourney(input: {
           cause,
         });
       });
+    await attachObserver();
+    let secondObserver = await attachObserver();
+    input.streaming.hold();
     let ordinal = 0;
     async function command(tool: string, args: Record<string, unknown>, question?: string) {
       const text =
@@ -134,6 +282,7 @@ export async function workspaceJourney(input: {
       request_id: "workspace-intake",
     });
     const issue = created.issue.id as string;
+    const population = await bindingPopulation(input.home);
     const answer = await command("abra_work_list", {}, "What AbraCode work is currently retained?");
     assert.ok(answer.issues.some((item: { id: string }) => item.id === issue));
     await page
@@ -222,6 +371,9 @@ export async function workspaceJourney(input: {
       userMessages,
       "Read-only card inspection must not admit native prompts",
     );
+    await secondObserver.agent.detachActiveRun();
+    await secondObserver.done;
+    secondObserver = await attachObserver();
     await page.reload();
     await nativeCard().waitFor();
     assert.equal(
@@ -265,11 +417,16 @@ export async function workspaceJourney(input: {
               children: ["heading", "views", "report", "changes"],
             },
             { id: "heading", component: "Text", text: "Revised upstream work view" },
-            { id: "views", component: "Row", children: widgets.map((_, i) => `widget${i}`) },
+            {
+              id: "views",
+              component: "Row",
+              children: ["snapshotAll", ...widgets.map((_, i) => `widget${i}`)],
+            },
+            { id: "snapshotAll", component: "WorkTable", mode: "snapshot" },
             ...widgets.map((component, i) => ({
               id: `widget${i}`,
               component,
-              issueIds: [issue],
+              issueIds: component === "WorkTable" ? [population.offPage.id] : [issue],
               mode: i % 2 ? "snapshot" : "live",
             })),
             { id: "report", component: "ReportLink", issueId: issue },
@@ -295,8 +452,24 @@ export async function workspaceJourney(input: {
     assert.equal(await page.locator(".generated-surface").count(), 2);
     assert.equal(
       await page.locator('[data-surface-reference="workspace-board/2"] .surface-widget').count(),
-      8,
+      9,
     );
+    const exact = await Effect.runPromise(backend.surface("workspace-board", 2));
+    assert.ok(!("unavailable" in exact));
+    assert.ok(exact.snapshot.some((row) => row.issue_id === population.companion));
+    assert.equal(exact.snapshot.length, 57);
+    assert.equal(exact.coverage?.total, 57);
+    assert.equal(
+      (await Effect.runPromise(backend.snapshot)).work.work.some(
+        (row) => row.issue_id === population.offPage.id,
+      ),
+      false,
+    );
+    await page
+      .locator('[data-surface-reference="workspace-board/2"] [data-work-widget="WorkTable"]')
+      .filter({ hasText: "Live work graph" })
+      .getByRole("button", { name: population.offPage.title, exact: true })
+      .waitFor();
     await page.reload();
     await page.getByText("Revised upstream work view", { exact: true }).waitFor();
     assert.equal(await page.locator(".generated-surface").count(), 2);
@@ -500,6 +673,28 @@ export async function workspaceJourney(input: {
             fullPage: true,
           });
         assert.deepEqual(errors, []);
+        assert.deepEqual(
+          observers.flatMap((observer) => observer.errors),
+          [],
+        );
+        const streamed = observers.flatMap((observer) => observer.events);
+        assert.ok(
+          streamed.includes("arguments"),
+          "Actual native tool arguments must reach the standard HTTP consumer",
+        );
+        assert.ok(
+          streamed.includes("text"),
+          "Actual native text must reach the standard HTTP consumer",
+        );
+        assert.ok(streamed.includes("result"));
+        assert.deepEqual(partialBeforeRelease, { tool: true, text: true });
+        const historical = await Effect.runPromise(backend.surface("workspace-board", 1));
+        assert.ok(!("unavailable" in historical));
+        assert.equal(
+          historical.surface.createSurface.components[1]!.text,
+          "Native workspace coding journey",
+        );
+
         return {
           issue_id: issue,
           phase: state.current_phase,
@@ -514,6 +709,23 @@ export async function workspaceJourney(input: {
           exported_html_report: exportedReport,
           export_reopened_after_native_restart: true,
           admission_recovery: admissionRecovery,
+          binding_coverage: {
+            population: 57,
+            companion: population.companion,
+            off_page: population.offPage.id,
+            snapshot_retained: true,
+            live_resolved: true,
+          },
+          native_transport: {
+            observers: observers.length,
+            observer_errors: observers.flatMap((observer) => observer.errors),
+            text_events: streamed.filter((type) => type === "text").length,
+            argument_events: streamed.filter((type) => type === "arguments").length,
+            result_events: streamed.filter((type) => type === "result").length,
+            reconnected_without_replay: true,
+            partial_before_provider_release: partialBeforeRelease,
+            trace: nativeTrace.slice(-512),
+          },
           typed_native_evidence_inspection: {
             decisions: decisions.decisions.length,
             communication: communication.total,
@@ -613,6 +825,9 @@ export async function workspaceJourney(input: {
             await input.client.session.context({ sessionID: input.session })
           ).filter((message) => message.type === "user").length;
           const providerBeforeSave = input.providerCount();
+          await producingView
+            .getByLabel("Save snapshot with task", { exact: true })
+            .selectOption(issue);
           const saveResponse = page.waitForResponse(
             (response) => response.url() === `${web.origin}/api/report/save-surface`,
           );
@@ -634,6 +849,19 @@ export async function workspaceJourney(input: {
             await fetch(new URL((await download.getAttribute("href"))!, web.origin))
           ).json();
           assert.equal(json.provenance.source_surface.revision, 2);
+          assert.ok(
+            json.data.work.some(
+              (row: { issue_id: string }) => row.issue_id === population.offPage.id,
+            ),
+          );
+          assert.ok(
+            json.data.snapshot_work.some(
+              (row: { issue_id: string }) => row.issue_id === population.companion,
+            ),
+          );
+          assert.equal(json.data.snapshot_coverage.total, 57);
+          assert.equal(json.data.live_coverage.total, 2);
+
           assert.equal(
             json.data.work.find((work: any) => work.issue_id === issue).phase,
             "awaiting_plan_approval",
@@ -749,6 +977,23 @@ export async function workspaceJourney(input: {
       `Browser coding journey did not complete: ${JSON.stringify(await input.readStatus(issue))}`,
     );
   } finally {
+    if (input.evidence) {
+      await mkdir(input.evidence, { recursive: true });
+      await writeFile(
+        join(input.evidence, "native-transport.json"),
+        JSON.stringify(
+          {
+            partialBeforeRelease,
+            trace: nativeTrace,
+            observers: observers.map(({ events, errors }) => ({ events, errors })),
+          },
+          null,
+          2,
+        ),
+      );
+    }
+    for (const observer of observers) await observer.agent.detachActiveRun();
+    await Promise.all(observers.map((observer) => observer.done));
     await browser.close();
     await Effect.runPromise(Scope.close(scope, Exit.void));
   }
