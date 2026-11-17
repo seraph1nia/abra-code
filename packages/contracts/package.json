@@ -55,7 +55,9 @@
     "./presentation/notices": "./src/presentation/notices.ts",
     "./web/bindings": "./src/web/bindings.ts",
     "./presentation/diagrams": "./src/presentation/diagrams.ts",
-    "./web/diagram-actions": "./src/web/diagram-actions.ts"
+    "./web/diagram-actions": "./src/web/diagram-actions.ts",
+    "./web/reviews": "./src/web/reviews.ts",
+    "./web/review-catalog": "./src/web/review-catalog.ts"
   },
   "scripts": {
     "check": "tsc --noEmit"

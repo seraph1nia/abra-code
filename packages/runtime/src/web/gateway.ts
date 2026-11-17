@@ -1,3 +1,4 @@
+import { nativeReviews } from "./review-tool.ts";
 import { prepareDiagrams, documentDiagrams } from "../workflow/diagrams.ts";
 import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
 import { readReportDocument } from "../presentation/report-document.ts";
@@ -130,6 +131,7 @@ export function registerWebGateway(
     store,
     new FileLocks(AbsolutePath.make(join(config.home, ".abracode/locks"))),
   );
+  const reviews = nativeReviews(ctx,controller);
   let surfaceDiagnostics: { surface_id: string; unavailable: string }[] = [];
   const admissions = new WebAdmissions(
     store,
@@ -152,6 +154,7 @@ export function registerWebGateway(
     if (retained) {
       const recovered = yield* assertSupervisor(retained).pipe(
         Effect.andThen(surfacePublications.recover(retained)),
+        Effect.tap(()=>reviews.recover(retained)),
         Effect.result,
       );
       if (recovered._tag === "Success") surfaceDiagnostics = recovered.success;
@@ -165,6 +168,10 @@ export function registerWebGateway(
     }
     // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native registration declares unknown; handler failures are mapped at the boundary.
     return yield* ctx.rpc.register(webGateway, {
+      reviewList:({session_id,issue_id},{error})=>assertSupervisor(session_id).pipe(Effect.andThen(reviews.list(session_id,issue_id)),Effect.mapError(e=>error("refused",e.message,{code:e.code})),provide),
+      review:({session_id,...selection},{error})=>assertSupervisor(session_id).pipe(Effect.andThen(reviews.read(session_id,selection)),Effect.mapError(e=>error("refused",e.message,{code:e.code})),provide),
+      reviewAsset:({session_id,...selection},{error})=>assertSupervisor(session_id).pipe(Effect.andThen(reviews.asset(session_id,selection)),Effect.mapError(e=>error("refused",e.message,{code:e.code})),provide),
+      reviewSubmit:({session_id,...input},{error})=>assertSupervisor(session_id).pipe(Effect.andThen(reviews.submit(session_id,input,admissions)),Effect.mapError(e=>error("refused",e.message,{code:e.code})),provide),
       prepareDiagrams: ({ session_id, selection }, { error }) =>
         assertSupervisor(session_id).pipe(
           Effect.andThen(

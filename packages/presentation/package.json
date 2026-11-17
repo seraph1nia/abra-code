@@ -39,7 +39,8 @@
     "./tokens.css": "./src/tokens.css",
     "./styles.css": "./src/styles.css",
     "./work-bindings": "./src/work-bindings.ts",
-    "./diagrams": "./src/diagrams.tsx"
+    "./diagrams": "./src/diagrams.tsx",
+    "./reviews": "./src/reviews.tsx"
   },
   "scripts": {
     "check": "tsc --noEmit"

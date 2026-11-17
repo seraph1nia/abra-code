@@ -1,3 +1,4 @@
+import { ReviewAttachment, ReviewsForSource } from "./interactive-reviews.tsx";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect HTTP atoms own shared generated-binding queries. */
 import { useAtomValue } from "@effect/atom-react";
 import { ArrowUpRight } from "@abracode/presentation/icons";
@@ -102,6 +103,9 @@ export function SurfaceAttachment({
   );
 }
 function BoundSurface({ record, inspect }: { record: SurfaceRecord; inspect: Inspect }) {
+  return <><BoundSurfaceContent record={record} inspect={inspect}/><ReviewsForSource source={{kind:"surface",surface_id:record.surface.createSurface.surfaceId,revision:record.revision}}/></>;
+}
+function BoundSurfaceContent({ record, inspect }: { record: SurfaceRecord; inspect: Inspect }) {
   const selection = bindingRequirements(record.surface, "live");
   return selection.unfiltered || selection.ids.length ? (
     <LiveSurface record={record} inspect={inspect} selection={selection} />
@@ -162,6 +166,7 @@ export function MessageAttachment({
   inspect: Inspect;
 }) {
   const target = attachment.target;
+  if (target.kind === "review") return <ReviewAttachment target={target}/>;
   if (target.kind === "surface")
     return <SurfaceAttachment target={target} work={work} inspect={inspect} />;
   return <ArtifactAttachment target={target} inspect={inspect} />;
@@ -223,6 +228,7 @@ function ArtifactAttachment({
                   />
                 ))}
             </details>
+            <ReviewsForSource issue={target.issue_id} source={{kind:"report",request_id:target.request_id,hash:target.hash}}/>
           </div>
         ) : (
           <output>

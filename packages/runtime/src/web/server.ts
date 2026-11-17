@@ -1,3 +1,4 @@
+import { ReviewListSchema, ReviewViewSchema, ReviewAssetDataSchema, ReviewReceiptSchema } from "@abracode/contracts/web/reviews";
 import { DiagramPreparationSchema } from "@abracode/contracts/presentation/diagrams";
 import { BindingReadSchema } from "@abracode/contracts/web/bindings";
 import { LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
@@ -63,6 +64,10 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
     );
   const operations = HttpApiBuilder.group(workspaceApi, "workspace", (handlers) =>
     handlers
+      .handle("reviewList", ({query}) => validated(backend.reviews?.list(query.issue_id) ?? Effect.fail(new CrewError("REVIEW_UNAVAILABLE","Reviews are unavailable")), ReviewListSchema))
+      .handle("review", ({query}) => validated(backend.reviews?.read(query) ?? Effect.fail(new CrewError("REVIEW_UNAVAILABLE","Reviews are unavailable")), ReviewViewSchema))
+      .handle("reviewAsset", ({query}) => validated(backend.reviews?.asset(query) ?? Effect.fail(new CrewError("REVIEW_UNAVAILABLE","Reviews are unavailable")), ReviewAssetDataSchema))
+      .handle("reviewSubmit", ({payload}) => validated(backend.reviews?.submit(payload) ?? Effect.fail(new CrewError("REVIEW_UNAVAILABLE","Reviews are unavailable")), ReviewReceiptSchema).pipe(Effect.tap(()=>feed.notify({presentations:true,admissions:true}))))
       .handle("prepareDiagrams", ({ payload }) =>
         validated(backend.prepareDiagrams(payload), DiagramPreparationSchema),
       )

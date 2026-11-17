@@ -30,7 +30,7 @@ export class PresentationAssociations {
           "Presentation association",
         );
         const slot =
-          value.target.kind === "surface" ? value.target.surface_id : value.target.request_id;
+          value.target.kind === "surface" ? value.target.surface_id : value.target.kind === "review" ? value.target.review_id : value.target.request_id;
         const key = StorageKey.make(
           `web/presentation/${value.session_id}/${hash(value.message_id)}/${hash([value.source, value.tool_call_id, value.target.kind, slot])}`,
         );

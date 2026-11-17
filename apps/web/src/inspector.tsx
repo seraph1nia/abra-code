@@ -1,3 +1,5 @@
+import { RelativePath } from "@abracode/contracts/identities";
+import { ReviewsForSource } from "./presentation/interactive-reviews.tsx";
 import { ExportReport } from "./presentation/export-report.tsx";
 import { X, ArrowLeft, ArrowUpRight } from "@abracode/presentation/icons";
 import { ActivityPanel } from "./presentation/activity.tsx";
@@ -189,7 +191,7 @@ function InspectorPanel({
             <ArrowLeft aria-hidden="true" /> All artifacts
           </Button>
           <RequestState query={queries.document(work.issue_id, file)}>
-            {(document) => <Markdown className="prose" content={document.content} />}
+            {(document) => <><Markdown className="prose" content={document.content}/><ReviewsForSource issue={work.issue_id} source={{kind:"plan",path:RelativePath.make(document.path)}}/></>}
           </RequestState>
         </>
       ) : (
@@ -224,6 +226,7 @@ function InspectorPanel({
                     complete
                   </p>
                 )}
+              <ReviewsForSource issue={work.issue_id} source={{kind:"plan"}}/>
               {detail.documents?.map((path) => (
                 <Button
                   variant="ghost"
@@ -408,6 +411,7 @@ function Reports({ issue, inspect }: { issue: string; inspect: Inspect }) {
   return (
     <>
       <div className="eyebrow">Retained reports</div>
+      {!target&&<ReviewsForSource issue={issue} source={{kind:"report"}}/>}
       <RequestState query={queries.artifacts(issue, route.artifact_offset ?? 0)}>
         {(page) => (
           <>
@@ -541,6 +545,7 @@ function SelectedReport({
                 hash={target.hash}
               />
             )}
+            <ReviewsForSource issue={target.issue_id} source={{kind:"report",request_id:target.request_id,hash:target.hash}}/>
             {selected.format === "a2ui-snapshot" ? (
               <RequestState
                 query={queries.artifactDocument(target.issue_id, target.request_id, target.hash)}
