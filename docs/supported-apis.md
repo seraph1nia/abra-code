@@ -544,6 +544,15 @@ contract starts the runtime probe during the React commit phase and coalesces
 StrictMode calls; hook subscriptions retain their documented unsubscribe owner.
 The application adapter initializes only the existing REST Abra connection and
 render-only hooks. It does not register browser tools or model execution.
+The pinned AG-UI client publicly exposes `HttpAgentConfig.fetch` and
+`HttpAgent.fetch`; the private session proxy inherits that HTTP agent. The web
+observation owner composes that request's SDK signal with its own abort signal,
+restores the prior fetch function on cleanup, and retains the SDK's ordinary
+`detachActiveRun()`. SDK observer detachment alone can leave its HTTP body open
+across development effect replay. Owned request cancellation releases that body
+without calling `abortRun()`, native Stop or any admission endpoint. Focused signal
+tests and the disposable development/HMR journey verify independent fresh setup,
+one settled current-document observer and unchanged pending native forms.
 The [official import-surface reference](https://docs.copilotkit.ai/reference/v2)
 documents the headless hook boundary; installed context/core declarations establish
 the custom-provider and connection details. The pinned UI provider's optional web

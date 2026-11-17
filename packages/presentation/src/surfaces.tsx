@@ -1,4 +1,6 @@
+import { SurfaceOwner } from "./surface-owner.ts";
 import { usePreparedDiagrams, type DiagramRequest } from "./diagrams.tsx";
+import { Button } from "./ui/button.tsx";
 import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
 import type { BindingCoverage } from "@abracode/contracts/web/bindings";
 import {
@@ -6,8 +8,8 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { WorkWidget } from "./work-widgets.tsx";
@@ -114,6 +116,22 @@ type Rendered = {
   surface: SurfaceModel<ReactCatalogComponent>;
   record: WorkViewContext["record"];
 };
+function prepareSurface(record: WorkViewContext["record"]): Rendered {
+  const processor = new MessageProcessor<ReactCatalogComponent>([reactWorkCatalog], undefined, {
+    version: "1.0",
+    validationConfig: surfaceValidation,
+  });
+  try {
+    validateSurface(record.surface);
+    processor.processMessages(toSdkSurface(record.surface));
+    const surface = processor.model.getSurface(record.surface.createSurface.surfaceId);
+    if (!surface) throw new Error("Surface was not created");
+    return { processor, surface, record };
+  } catch (error) {
+    processor.dispose();
+    throw error;
+  }
+}
 export function GeneratedSurface({
   record,
   work,
@@ -137,41 +155,24 @@ export function GeneratedSurface({
     [record.surface, record.revision, evidence, diagramRequest],
   );
   const diagrams = usePreparedDiagrams(request, preparedDiagrams);
-  const [rendered, setRendered] = useState<Rendered>();
-  const [error, setError] = useState("");
-  const current = useRef<Rendered | undefined>(undefined);
-  useEffect(() => {
-    if (current.current?.record.revision === record.revision) return;
-    const processor = new MessageProcessor<ReactCatalogComponent>([reactWorkCatalog], undefined, {
-      version: "1.0",
-      validationConfig: surfaceValidation,
-    });
-    try {
-      validateSurface(record.surface);
-      processor.processMessages(toSdkSurface(record.surface));
-      const surface = processor.model.getSurface(record.surface.createSurface.surfaceId);
-      if (!surface) throw new Error("Surface was not created");
-      const next = { processor, surface, record };
-      current.current = next;
-      setRendered(next);
-      setError("");
-    } catch {
-      processor.dispose();
-      setError("Generated view update unavailable: its catalog or structure is invalid.");
-    }
-  }, [record, work]);
-  // Dispose only after a successfully staged replacement commits, or on unmount.
-  useEffect(() => () => rendered?.processor.dispose(), [rendered]);
+  const [owner] = useState(
+    () => new SurfaceOwner(record, prepareSurface, (view) => view.processor.dispose()),
+  );
+  const view = useSyncExternalStore(owner.subscribe, owner.read, owner.read);
+  useEffect(() => owner.replace(record), [owner, record]);
+  useEffect(() => owner.committed(view), [owner, view]);
+  const { rendered, error } = view;
   return (
     <section className="generated-surface" data-a2ui-renderer="upstream">
       <div className="eyebrow">
         Generated work view <span>rev {rendered?.record.revision ?? record.revision}</span>
       </div>
-      {error && (
-        <p className="error" role="status">
-          {error}
-        </p>
+      {diagrams.retry && (
+        <Button variant="outline" disabled={diagrams.pending} onClick={diagrams.retry}>
+          Retry diagrams
+        </Button>
       )}
+      {error && <output className="error">{error}</output>}
       {rendered && (
         <ViewContext.Provider
           value={{

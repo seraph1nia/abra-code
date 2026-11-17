@@ -1,4 +1,5 @@
 import { ExportReport } from "./presentation/export-report.tsx";
+import { X, ArrowLeft, ArrowUpRight } from "@abracode/presentation/icons";
 import { ActivityPanel } from "./presentation/activity.tsx";
 import { ReportDocumentView } from "@abracode/presentation/report-document";
 import { DecisionsPanel } from "./presentation/obligations.tsx";
@@ -94,7 +95,7 @@ function UnloadedInspector(props: Props) {
       <header className="inspector-header">
         <h2>Selected task</h2>
         <Button variant="ghost" size="icon" onClick={props.close} aria-label="Close inspector">
-          ×
+          <X aria-hidden="true" />
         </Button>
       </header>
       <div className="inspector-content">
@@ -123,7 +124,7 @@ function InspectorContent({
           <h2>{work.title}</h2>
         </div>
         <Button variant="ghost" size="icon" onClick={close} aria-label="Close inspector">
-          ×
+          <X aria-hidden="true" />
         </Button>
       </header>
       <Tabs
@@ -185,7 +186,7 @@ function InspectorPanel({
       return file ? (
         <>
           <Button variant="outline" onClick={() => selectFile("")}>
-            ← All artifacts
+            <ArrowLeft aria-hidden="true" /> All artifacts
           </Button>
           <RequestState query={queries.document(work.issue_id, file)}>
             {(document) => <Markdown className="prose" content={document.content} />}
@@ -208,7 +209,7 @@ function InspectorPanel({
                 </p>
               )}
               {detail.planning?.limited && (
-                <p role="status">Planning document list is limited to 100 entries.</p>
+                <output>Planning document list is limited to 100 entries.</output>
               )}
               {detail.errors.map((error, index) => (
                 <Alert key={index}>
@@ -445,7 +446,8 @@ function Reports({ issue, inspect }: { issue: string; inspect: Inspect }) {
                       }
                       download
                     >
-                      {artifact.format === "a2ui-snapshot" ? "Download JSON ↗" : "Download HTML ↗"}
+                      {artifact.format === "a2ui-snapshot" ? "Download JSON" : "Download HTML"}{" "}
+                      <ArrowUpRight aria-hidden="true" />
                     </a>
                   </div>
                 ) : (
@@ -506,7 +508,7 @@ function SelectedReport({
     <RequestState query={queries.artifactSummary(target.issue_id, target.request_id, target.hash)}>
       {(selected) =>
         selected.hash !== target.hash ? (
-          <p role="status">This exact artifact revision is unavailable.</p>
+          <output>This exact artifact revision is unavailable.</output>
         ) : (
           <>
             <Button
@@ -527,8 +529,9 @@ function SelectedReport({
               download
             >
               {selected.format === "a2ui-snapshot"
-                ? "Download selected JSON ↗"
-                : "Download selected HTML ↗"}
+                ? "Download selected JSON"
+                : "Download selected HTML"}{" "}
+              <ArrowUpRight aria-hidden="true" />
             </a>
             {selected.format === "a2ui-snapshot" && (
               <ExportReport
@@ -546,7 +549,7 @@ function SelectedReport({
                   artifact.hash === target.hash ? (
                     <ReportDocumentView artifact={artifact} inspect={inspect} />
                   ) : (
-                    <p role="status">The document does not match the selected artifact hash.</p>
+                    <output>The document does not match the selected artifact hash.</output>
                   )
                 }
               </RequestState>

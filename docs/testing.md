@@ -1,5 +1,38 @@
 # Testing strategy
 
+Frontend edits run the normal `pnpm check` lint path, including React hook order,
+dependency completeness, render purity, state-to-state effects and mutation
+checks, plus JSX naming/ARIA/label/heading/frame rules. The existing Effect and
+workspace-boundary rules remain enabled. `frontend-lint.test.ts` runs disposable
+invalid hook/dependency/purity/synchronization/unnamed-control examples against
+that actual Vite+ configuration; valid named scroll regions pass. The fixture
+limits lint to its source directory, not linked dependency trees.
+
+Exceptions stay local and explained: initial bootstrap retention synchronizes
+authoritative external state; block skeleton/Alert statuses keep valid block
+semantics; inline SVG diagram canvases cannot be replaced with native images.
+Named scroll regions and `pre` blocks remain keyboard-scrollable. No hook or
+accessibility rule is globally suppressed to accept these cases. Native prose
+statuses use `output`, named table/board regions use `section`, and grouped field
+controls use `fieldset` rather than redundant roles.
+
+Both entries enable development StrictMode. `surface-owner.test.ts` exercises
+staging, failed replacement, independent readers, disposal and repeated setup;
+the real browser catalog cases exercise the actual SDK. The disposable
+development journey checks native form edits, composer draft, an unavailable Plan
+bookmark and one active observer across workspace HMR, then backend reload and
+shutdown. The bookmark check proves retained navigation/error presentation, not
+successful reads of a fabricated task. Lazy form identities live outside the
+refreshed shell. Native installation acceptance independently checks actual forms
+and service lifetime.
+
+`frontend-performance.test.ts`, included by `pnpm test:all`, enforces the complete
+initial gzip script graph and deterministic historical content-render locality.
+Its ceilings, fixed populations, toolchain, evidence and update procedure are in
+[frontend verification](verification/frontend-parity.md). Latency measurements
+remain separate from deterministic assertions. Build assets before browser cases;
+wait for lazy content and painted geometry before recording reading anchors.
+
 Load [the testing skill](../.agents/skills/testing/SKILL.md) as `$testing` or
 native `abra-testing`.
 

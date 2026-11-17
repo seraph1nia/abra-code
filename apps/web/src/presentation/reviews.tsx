@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useDeadline } from "../deadline.ts";
 import { Markdown as DeferredMarkdown } from "../markdown.tsx";
 import type { IssueId } from "@abracode/contracts/identities";
 import type { FeedbackPageSchema } from "@abracode/contracts/web/wire";
@@ -23,6 +24,9 @@ type Page = typeof FeedbackPageSchema.Type;
 function Markdown({ text }: { text: string }) {
   return <DeferredMarkdown key={text} content={text} mode="static" className="prose" />;
 }
+function Deadline({ deadline }: { deadline: number }) {
+  return useDeadline(deadline) ? " · Stale retained observation" : null;
+}
 export function ReviewsPanel({ issue }: { issue: IssueId }) {
   const [page, setPage] = useState(0);
   return (
@@ -45,11 +49,9 @@ export function ReviewsPanel({ issue }: { issue: IssueId }) {
                 </p>
                 <p className="muted">
                   Recheck due {new Date(evidence.observation.next_check_at).toLocaleString()}
-                  {Date.now() > evidence.observation.next_check_at
-                    ? " · Stale retained observation"
-                    : ""}
+                  <Deadline deadline={evidence.observation.next_check_at} />
                 </p>
-                {evidence.observation.error && <p role="status">{evidence.observation.error}</p>}
+                {evidence.observation.error && <output>{evidence.observation.error}</output>}
                 <Evidence>
                   <p>
                     Assessed head <code>{evidence.observation.head}</code> · Target{" "}
@@ -99,14 +101,14 @@ export function ReviewsPanel({ issue }: { issue: IssueId }) {
                         <p>Submission: {words(action.submission.stage)}</p>
                       )}
                       {action.schema_version === 2 && action.preflight && (
-                        <p role="status">
+                        <output>
                           {action.preflight.retryable
                             ? "Preflight retry available"
                             : "Preflight refused"}
                           : {action.preflight.reason}
                           {action.preflight.next_check_at !== undefined &&
                             ` · Recheck due ${new Date(action.preflight.next_check_at).toLocaleString()}`}
-                        </p>
+                        </output>
                       )}
                       <Evidence>
                         {action.result && <Markdown text={action.result} />}
@@ -198,7 +200,7 @@ function ExternalEvidence({
       </CardHeader>
       <CardContent>
         <p>Custody: {words(record.custody)}</p>
-        {record.error && <p role="status">{record.error}</p>}
+        {record.error && <output>{record.error}</output>}
         {observation?.gate && (
           <section>
             <h4>Awaiting approval · {words(observation.gate.step)}</h4>

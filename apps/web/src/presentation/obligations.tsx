@@ -60,7 +60,7 @@ export function DecisionsPanel({
         return (
           <div className="space-y-4">
             {target && !selected.length && (
-              <p role="status">This retained decision generation is unavailable.</p>
+              <output>This retained decision generation is unavailable.</output>
             )}
             {!target && !selected.length && <p>No retained decisions.</p>}
             {selected.map((decision) => (
@@ -119,10 +119,10 @@ function DecisionRow({
               Answer in native form
             </Button>
           ) : (
-            <p role="status">
+            <output>
               The current native answer form is unavailable. Ask Abra to reconcile this existing
               decision.
-            </p>
+            </output>
           ))}
       </DecisionCard>
     </section>
@@ -304,7 +304,7 @@ function EvidenceReferences({
           )}
           {reference.url && (
             <a href={reference.url} target="_blank" rel="noreferrer">
-              Source evidence ↗
+              Source evidence <ArrowUpRight aria-hidden="true" />
             </a>
           )}
         </li>
@@ -312,3 +312,4 @@ function EvidenceReferences({
     </ul>
   ) : null;
 }
+import { ArrowUpRight } from "@abracode/presentation/icons";

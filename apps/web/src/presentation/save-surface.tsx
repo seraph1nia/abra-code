@@ -153,10 +153,10 @@ function SaveAttempt({
         )}
       </div>
       {failed && (
-        <p role="status">
+        <output>
           Save was not confirmed. Retry the same request; a changed layout must be reopened before
           saving.
-        </p>
+        </output>
       )}
       <p className="muted">
         Creates an immutable JSON report without asking Abra or advancing work.

@@ -2,6 +2,86 @@ import { Schema } from "effect";
 import { Form } from "@opencode/schema/form";
 
 export type FormValues = Record<string, Form.Value>;
+export function initialCustomChoices(fields: readonly Form.Field[]) {
+  return Object.fromEntries(
+    fields.flatMap((field) =>
+      field.type === "multiselect" && field.custom
+        ? [
+            [
+              field.key,
+              (field.default ?? [])
+                .filter((value) => !field.options.some((option) => option.value === value))
+                .join("\n"),
+            ],
+          ]
+        : [],
+    ),
+  );
+}
+export function editingValues(
+  fields: readonly Form.Field[],
+  values: FormValues,
+  customText: Record<string, string>,
+) {
+  const result = { ...values };
+  for (const field of fields) {
+    if (field.type !== "multiselect" || !field.custom || customText[field.key] === undefined)
+      continue;
+    const selected = values[field.key];
+    result[field.key] = [
+      ...(Array.isArray(selected)
+        ? selected.filter((value) => field.options.some((option) => option.value === value))
+        : []),
+      ...customText[field.key].split(/\r?\n/),
+    ];
+  }
+  return result;
+}
+
+/** Offset defaults display the same instant locally; raw local edits stay local until submit. */
+export function dateTimeDisplay(value: string) {
+  if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) return value;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const pad = (number: number, length = 2) => String(number).padStart(length, "0");
+  const minute = `${pad(date.getFullYear(), 4)}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return date.getMilliseconds()
+    ? `${minute}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`
+    : date.getSeconds()
+      ? `${minute}:${pad(date.getSeconds())}`
+      : minute;
+}
+
+/** Refuse calendar overflow and DST gaps rather than Date's silent normalization. */
+export function serializeLocalDateTime(value: string): string | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(
+    value,
+  );
+  if (!match) return;
+  const [, year, month, day, hour, minute, second = "0", fraction = "0"] = match;
+  const parts = [
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+    Number(fraction.padEnd(3, "0")),
+  ];
+  const date = new Date(0);
+  date.setFullYear(parts[0], parts[1], parts[2]);
+  date.setHours(parts[3], parts[4], parts[5], parts[6]);
+  const actual = [
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    date.getHours(),
+    date.getMinutes(),
+    date.getSeconds(),
+    date.getMilliseconds(),
+  ];
+  return actual.every((part, index) => part === parts[index]) ? date.toISOString() : undefined;
+}
 export function initialValues(fields: readonly Form.Field[]): FormValues {
   const values: FormValues = {};
   for (const field of fields) {
@@ -38,13 +118,21 @@ export function activeFields(fields: readonly Form.Field[], values: FormValues) 
 export function prepareAnswer(
   fields: readonly Form.Field[],
   values: FormValues,
+  customText?: Record<string, string>,
 ): { answer: Form.Answer; errors: Record<string, string> } {
+  values = customText ? editingValues(fields, values, customText) : { ...values };
+  for (const field of fields) {
+    if (field.type !== "multiselect" || !field.custom) continue;
+    const selected = values[field.key];
+    if (Array.isArray(selected) && selected.every((value) => typeof value === "string"))
+      values[field.key] = [...new Set(selected.map((value) => value.trim()).filter(Boolean))];
+  }
   const answer: FormValues = {};
   const errors: Record<string, string> = {};
   const enabled = activeFields(fields, values);
   for (const field of fields) {
     if (!enabled.has(field.key)) continue;
-    const value = values[field.key];
+    let value = values[field.key];
     const fail = (message: string) => {
       errors[field.key] = message;
     };
@@ -96,6 +184,12 @@ export function prepareAnswer(
           !Number.isFinite(Date.parse(value))
         )
           fail("Enter a valid date");
+        if (field.format === "date-time" && !/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) {
+          const serialized = serializeLocalDateTime(value);
+          if (!serialized)
+            fail("Enter a valid local date and time; this time may not exist in your timezone");
+          else if (value !== field.default) value = serialized;
+        }
         break;
       case "number":
       case "integer":

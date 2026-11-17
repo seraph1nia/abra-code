@@ -1,5 +1,5 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Scoped browser observation and typed HTTP atoms. */
-import { useRef } from "react";
+import { useCallback, useRef } from "react";
 import { useAtomSet } from "@effect/atom-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Exit } from "effect";
@@ -25,21 +25,24 @@ export function useWorkspaceNavigation(
       false
     );
   };
-  function inspect(target: ResourceSelection) {
-    const request = ++selectionRequest.current;
-    const address = window.location.href;
-    const origin = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    void resolve({ payload: target }).then((result) => {
-      if (request !== selectionRequest.current || window.location.href !== address) return;
-      if (Exit.isFailure(result)) setError(requestError(result.cause));
-      else {
-        inspectorOrigin.current = origin;
-        beforeNavigate();
-        void navigate({ search: searchForResource(result.value) });
-        closeFinder();
-      }
-    });
-  }
+  const inspect = useCallback(
+    (target: ResourceSelection) => {
+      const request = ++selectionRequest.current;
+      const address = window.location.href;
+      const origin = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      void resolve({ payload: target }).then((result) => {
+        if (request !== selectionRequest.current || window.location.href !== address) return;
+        if (Exit.isFailure(result)) setError(requestError(result.cause));
+        else {
+          inspectorOrigin.current = origin;
+          beforeNavigate();
+          void navigate({ search: searchForResource(result.value) });
+          closeFinder();
+        }
+      });
+    },
+    [resolve, navigate, setError, beforeNavigate, closeFinder],
+  );
   const selected = resourceFromSearch(route)?.issue_id;
   const tab = route.tab ?? "Overview";
   const setTab = (tab: InspectorTab) => {

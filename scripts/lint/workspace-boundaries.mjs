@@ -65,6 +65,22 @@ export default {
           if (typeof specifier !== "string") return;
           const fail = (reason) =>
             context.report({ node, messageId: "boundary", data: { reason, specifier } });
+          if (specifier.startsWith("#")) {
+            const entry = Object.entries(owner.imports ?? {}).find(([pattern]) =>
+              pattern.endsWith("/*")
+                ? specifier.startsWith(pattern.slice(0, -1))
+                : specifier === pattern,
+            );
+            const target = entry?.[1];
+            if (typeof target !== "string" || !target.startsWith("./")) {
+              fail("Private imports must resolve to declared package-local source");
+              return;
+            }
+            const suffix = entry[0].endsWith("/*") ? specifier.slice(entry[0].length - 1) : "";
+            if (!inside(resolve(owner.directory, target.replace("*", suffix)), owner.directory))
+              fail("Private imports cannot cross package ownership");
+            return;
+          }
           if (specifier.startsWith(".") || isAbsolute(specifier) || specifier.startsWith("@/")) {
             const target = specifier.startsWith("@/")
               ? resolve(owner.directory, "src", specifier.slice(2))

@@ -1,3 +1,5 @@
+import { ReportProducerSchema, ReportRevisionSchema } from "../workflow/report-metadata.ts";
+export { ReportProducerSchema } from "../workflow/report-metadata.ts";
 import { collectDiagrams, diagramBudget } from "./diagrams.ts";
 import { BindingCoverageSchema } from "../web/bindings.ts";
 import { Schema } from "effect";
@@ -7,7 +9,6 @@ import {
   RequestId,
   ReportId,
   SessionId,
-  MessageId,
   ContentHash,
   Timestamp,
 } from "../identities.ts";
@@ -20,14 +21,9 @@ import { catalogId, previousCatalogId, ComponentId } from "../web/catalog.ts";
 export const maximumDocumentBytes = 1024 * 1024;
 export const reportRendererVersion = "abracode-react/v2";
 export const reportCatalogVersion = 2;
-export const ReportProducerSchema = Schema.Struct({
-  session_id: SessionId,
-  message_id: MessageId,
-  tool_call_id: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(512)),
-});
 export type ReportProducer = typeof ReportProducerSchema.Type;
 const text = Schema.String.check(Schema.isMaxLength(16384));
-const positive = Schema.Int.check(Schema.isGreaterThan(0));
+const positive = ReportRevisionSchema;
 const withinBytes = (value: unknown, maximum: number) =>
   new TextEncoder().encode(JSON.stringify(value)).length <= maximum;
 

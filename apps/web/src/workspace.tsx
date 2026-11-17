@@ -1,20 +1,22 @@
-import { Markdown } from "./markdown.tsx";
+import { MessageContent, emptyAttachments, emptyDiagnostics } from "./message-content.tsx";
+import { Composer } from "./composer.tsx";
+import { workspaceDraft } from "./workspace-state/draft.ts";
+import { useSearch } from "@tanstack/react-router";
+import { ArrowUpRight, Sparkles } from "@abracode/presentation/icons";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import { useWorkspaceNavigation } from "./workspace-state/navigation.ts";
 import { useTranscriptViewport } from "./workspace-state/viewport.ts";
-import { MessageAttachment, RetainedSurfaces } from "./presentation/attachments.tsx";
+import { RetainedSurfaces } from "./presentation/attachments.tsx";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Workspace presentation consumes the typed Effect atom layer. */
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { WorkspaceProvider } from "./workspace-provider.tsx";
-import { Textarea } from "@abracode/presentation/ui/textarea";
-import { useAtom, useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { useAtomSet, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
-import { Exit } from "effect";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
-import { bootstrapQuery, stopMutation } from "./data.ts";
+import { bootstrapQuery } from "./data.ts";
 import { useWorkspace } from "./use-workspace.ts";
 import { requestError } from "./request-state.tsx";
-import { NativeForm, NativePermission } from "./attention.tsx";
+import { NativeForm, NativePermission } from "./native-attention.tsx";
 import { deferred } from "./deferred.tsx";
 const WorkFinder = deferred<React.ComponentProps<typeof import("./work-finder.tsx").WorkFinder>>(
   () => import("./work-finder.tsx").then((module) => ({ default: module.WorkFinder })),
@@ -36,8 +38,7 @@ const Inspector = deferred<React.ComponentProps<typeof import("./inspector.tsx")
   "deferred-panel",
 );
 import { workspaceSearch, resourceFromSearch } from "./navigation.ts";
-import { orderedParts } from "@abracode/contracts/web/transcript";
-import { useNativeToolRendering, ToolObservation } from "./presentation/tools.tsx";
+import { useNativeToolRendering } from "./presentation/tools.tsx";
 import { useTheme } from "./theme.tsx";
 import { Button } from "@abracode/presentation/ui/button";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
@@ -47,6 +48,7 @@ export function Application() {
   const retry = useAtomRefresh(bootstrapQuery);
   const [connected, setConnected] = useState<WorkspaceSnapshot>();
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- Retain the first authoritative bootstrap across subsequent resource refreshes.
     if (!connected && AsyncResult.isSuccess(initial)) setConnected(initial.value);
   }, [initial, connected]);
   const snapshot = connected ?? (AsyncResult.isSuccess(initial) ? initial.value : undefined);
@@ -60,9 +62,9 @@ export function Application() {
       <main className="loading">
         <div className="brand-mark">a</div>
         <h1>AbraCode</h1>
-        <p role="status">
+        <output>
           {AsyncResult.isFailure(initial) ? requestError(initial.cause) : "Connecting to Abra…"}
-        </p>
+        </output>
       </main>
     );
   return (
@@ -80,36 +82,43 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
     error,
     setError,
     connectionError,
-    draft,
-    setDraft,
-    pending,
-    admitting,
     refresh,
-    send,
     messages,
     presentations,
     hasHistory,
     loadingHistory,
     loadHistory,
   } = useWorkspace(initial);
-  const [sidebar, setSidebar] = useState(false);
-  const [finderOpened, setFinderOpened] = useState(false);
-  useEffect(() => {
-    if (sidebar) setFinderOpened(true);
-  }, [sidebar]);
+  const [finder, setFinder] = useState({ open: false, opened: false });
+  const sidebar = finder.open;
+  const finderOpened = finder.opened;
+  const setSidebar = useCallback(
+    (open: boolean) => setFinder((previous) => ({ open, opened: previous.opened || open })),
+    [],
+  );
 
   const [attentionOpen, setAttentionOpen] = useState(true);
   const [retainedViews, setRetainedViews] = useState(false);
   const { theme, setTheme } = useTheme();
-  const navigation = useWorkspaceNavigation(
-    () => viewport.rememberPosition(),
-    () => setSidebar(false),
-    setError,
+  const route = useSearch({ from: "/" });
+  const viewport = useTranscriptViewport(
+    messages,
+    loadingHistory,
+    `${resourceFromSearch(route)?.issue_id ?? ""}/${sidebar}`,
   );
+  const closeFinder = useCallback(() => setSidebar(false), [setSidebar]);
+  const navigation = useWorkspaceNavigation(viewport.rememberPosition, closeFinder, setError);
   const { selected, tab, inspect, setTab, closeInspector, returnInspectorFocus } = navigation;
-  const viewport = useTranscriptViewport(messages, loadingHistory, `${selected ?? ""}/${sidebar}`);
   const { scroller, transcript, bottom, rememberPosition } = viewport;
-  const [stopResult, stop] = useAtom(stopMutation, { mode: "promiseExit" });
+  const setDraft = useAtomSet(workspaceDraft(initial.session_id));
+  const attachmentIndex = useMemo(
+    () => groupByMessage(presentations.entries),
+    [presentations.entries],
+  );
+  const diagnosticIndex = useMemo(
+    () => groupByMessage(presentations.diagnostics),
+    [presentations.diagnostics],
+  );
   const managementAttention = workspace.work.management?.entries ?? [];
   const attention =
     workspace.forms.filter((item) => item.active).length + workspace.permissions.length;
@@ -166,9 +175,10 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
   }
   return (
     <div
-      data-copilotkit=""
+      role="presentation"
       className={`workspace ${selected ? "inspecting" : ""} ${sidebar ? "finding" : ""}`}
       onKeyDown={(event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === "f") viewport.onReadingIntent();
         if (event.key === "Escape" && !event.defaultPrevented) {
           rememberPosition();
           setSidebar(false);
@@ -254,7 +264,14 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
             </span>
           </Button>
         </header>
-        <div className="conversation-scroll" ref={scroller} onScroll={viewport.onScroll}>
+        <div
+          className="conversation-scroll"
+          ref={scroller}
+          onScroll={viewport.onScroll}
+          onWheel={viewport.onReadingIntent}
+          onPointerDownCapture={viewport.onReadingIntent}
+          onKeyDownCapture={viewport.onReadingIntent}
+        >
           {(attention > 0 ||
             workAttention.length > 0 ||
             managementAttention.length > 0 ||
@@ -289,28 +306,26 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
                 </div>
               ))}
               {managementAttention.map((entry) => (
-                <details key={`${entry.lead_id}/${entry.repository_id}`} data-management-attention>
-                  <summary>
-                    {entry.lead_id} · {entry.repository_id} · {entry.unanswered} unanswered ·{" "}
-                    {entry.proposals} unaccepted proposals
-                  </summary>
-                  <LazyLeadAttention entry={entry} inspect={inspect} />
-                </details>
+                <LazyLeadAttention
+                  key={`${entry.lead_id}/${entry.repository_id}`}
+                  entry={entry}
+                  inspect={inspect}
+                />
               ))}
               {workspace.work.management?.truncated && (
-                <p role="status">Lead attention coverage is limited to 20 repository/lead pairs.</p>
+                <output>Lead attention coverage is limited to 20 repository/lead pairs.</output>
               )}
               {(workspace.work.management?.diagnostic_count ?? 0) > 0 && (
-                <p role="status">
+                <output>
                   Some retained lead evidence is unavailable. Inspect scoped lead diagnostics before
                   assuming there is no pending work.
-                </p>
+                </output>
               )}
               {workspace.work.fleet?.attention_truncated && (
-                <p role="status" className="muted">
+                <output className="muted">
                   Attention coverage is limited. Additional retained obligations may be available
                   through Work.
-                </p>
+                </output>
               )}
             </section>
           )}
@@ -335,7 +350,9 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
             )}
             {!messages.length && (
               <section className="welcome">
-                <div className="welcome-symbol">✳</div>
+                <div className="welcome-symbol">
+                  <Sparkles aria-hidden="true" />
+                </div>
                 <h2>What would you like to build?</h2>
                 <p>
                   Explore an idea, plan your next change, or check on work in progress. Abra brings
@@ -348,99 +365,27 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
                     "Visualize my work in progress",
                   ].map((text) => (
                     <Button variant="ghost" key={text} onClick={() => ask(text)}>
-                      {text} ↗
+                      {text} <ArrowUpRight aria-hidden="true" />
                     </Button>
                   ))}
                 </div>
               </section>
             )}
             {messages.map((message) => (
-              <article
+              <MessageContent
                 key={message.id}
-                className={`message ${message.role}`}
-                data-native-message-id={message.id}
-              >
-                <div className="message-avatar">
-                  {message.role === "user" ? "You" : message.role === "system" ? "·" : "a"}
-                </div>
-                <div className="message-body">
-                  <header>
-                    <strong>
-                      {message.role === "user"
-                        ? "You"
-                        : message.role === "system"
-                          ? "Session"
-                          : "Abra"}
-                    </strong>
-                    <time dateTime={message.at}>
-                      {new Date(message.at).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </time>
-                  </header>
-                  {message.role === "assistant"
-                    ? orderedParts(message).map((part, index) => {
-                        if (part.type === "text")
-                          return (
-                            <Markdown
-                              key={`text-${index}`}
-                              className="message-text prose"
-                              content={part.text}
-                            />
-                          );
-                        const tool = message.tools?.find((tool) => tool.id === part.tool_id);
-                        return tool ? (
-                          <ToolObservation
-                            key={tool.id}
-                            messageID={message.id}
-                            tool={tool}
-                            inspect={inspect}
-                            work={workspace.work.work}
-                            attachments={presentations.entries.filter(
-                              (attachment) =>
-                                attachment.message_id === message.id &&
-                                attachment.tool_call_id === tool.id,
-                            )}
-                          />
-                        ) : null;
-                      })
-                    : message.text && <div className="message-text">{message.text}</div>}
-                  {message.files?.map((f) => (
-                    <p className="attachment" key={f}>
-                      ▧ {f}
-                    </p>
-                  ))}
-                  {presentations.entries
-                    .filter(
-                      (attachment) =>
-                        attachment.message_id === message.id &&
-                        (!attachment.tool_call_id ||
-                          !message.tools?.some((tool) => tool.id === attachment.tool_call_id)),
-                    )
-                    .map((attachment) => (
-                      <MessageAttachment
-                        key={JSON.stringify(attachment)}
-                        attachment={attachment}
-                        work={workspace.work.work}
-                        inspect={inspect}
-                      />
-                    ))}
-                  {presentations.diagnostics
-                    .filter((diagnostic) => diagnostic.message_id === message.id)
-                    .map((diagnostic) => (
-                      <p key={diagnostic.unavailable} role="status" className="error">
-                        {diagnostic.unavailable}
-                      </p>
-                    ))}
-                </div>
-              </article>
+                message={message}
+                work={workspace.work.work}
+                inspect={inspect}
+                attachments={attachmentIndex.get(message.id) ?? emptyAttachments}
+                diagnostics={diagnosticIndex.get(message.id) ?? emptyDiagnostics}
+              />
             ))}
             {presentations.truncated && (
-              <p className="muted" role="status">
+              <output className="muted">
                 Presentation references exceed this conversation page's coverage. Retained task
                 reports remain available through inspection.
-              </p>
+              </output>
             )}
             {otherViews.length > 0 && (
               <details
@@ -471,104 +416,15 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
             <div ref={bottom} />
           </div>
         </div>
-        <footer className="composer-area">
-          {(error || stateError || connectionError || workspace.work_unavailable) && (
-            <div role="alert" className="error-banner">
-              {error || stateError || connectionError || workspace.work_unavailable}
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setError("");
-                  refresh();
-                }}
-              >
-                Refresh
-              </Button>
-            </div>
-          )}
-          {pending && (
-            <div className="submission-status">
-              <span>
-                {admitting
-                  ? "Submitting with a retained identity…"
-                  : "Submission awaiting confirmation"}
-              </span>
-              {!admitting && (
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    void send(pending);
-                  }}
-                >
-                  Reconcile submission
-                </Button>
-              )}
-            </div>
-          )}
-          <form
-            className="composer"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!pending && !admitting && isReady && draft.trim()) void send();
-            }}
-          >
-            <Textarea
-              aria-label="Message Abra"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !event.shiftKey &&
-                  !event.nativeEvent.isComposing &&
-                  event.keyCode !== 229
-                ) {
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-              placeholder={
-                workspace.busy
-                  ? "Queue a message for Abra…"
-                  : "Ask Abra to explore, plan, or build…"
-              }
-              rows={2}
-              maxLength={32768}
-              disabled={!isReady || admitting || Boolean(pending)}
-            />
-            <div className="composer-controls">
-              <span className="muted">{workspace.model ?? "Using the current model"}</span>
-              <div>
-                {workspace.busy && (
-                  <Button
-                    variant="outline"
-                    type="button"
-                    disabled={stopResult.waiting}
-                    onClick={() => {
-                      void stop({ payload: {} }).then((result) => {
-                        if (Exit.isSuccess(result)) refresh();
-                        else setError(requestError(result.cause));
-                      });
-                    }}
-                  >
-                    ■ Stop current Abra turn
-                  </Button>
-                )}
-                <Button
-                  type="submit"
-                  aria-label="Send message"
-                  className="send-button"
-                  disabled={!isReady || admitting || !draft.trim() || Boolean(pending)}
-                >
-                  <span aria-hidden="true">↑</span>
-                </Button>
-              </div>
-            </div>
-          </form>
-          <p className="composer-caption">
-            Connected to the main Abra thread · Work continues when you close this page
-          </p>
-        </footer>
+        <Composer
+          workspace={workspace}
+          isReady={isReady}
+          refresh={refresh}
+          error={error}
+          setError={setError}
+          stateError={stateError}
+          connectionError={connectionError}
+        />
       </main>
       {selected && (
         <Inspector
@@ -596,17 +452,12 @@ function LazyLeadAttention({
   inspect: (target: ResourceSelection) => void;
 }) {
   const [opened, setOpened] = useState(false);
-  const container = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const details = container.current?.parentElement;
-    if (!details) return;
-    const onToggle = () => setOpened(details.hasAttribute("open"));
-    onToggle();
-    details.addEventListener("toggle", onToggle);
-    return () => details.removeEventListener("toggle", onToggle);
-  }, []);
   return (
-    <div ref={container}>
+    <details data-management-attention onToggle={(event) => setOpened(event.currentTarget.open)}>
+      <summary>
+        {entry.lead_id} · {entry.repository_id} · {entry.unanswered} unanswered · {entry.proposals}{" "}
+        unaccepted proposals
+      </summary>
       {opened && (
         <LeadsPanel
           repository={entry.repository_id}
@@ -614,6 +465,16 @@ function LazyLeadAttention({
           inspect={inspect}
         />
       )}
-    </div>
+    </details>
   );
+}
+
+function groupByMessage<A extends { message_id: string }>(entries: readonly A[]) {
+  const result = new Map<string, A[]>();
+  for (const entry of entries) {
+    const group = result.get(entry.message_id) ?? [];
+    group.push(entry);
+    result.set(entry.message_id, group);
+  }
+  return result;
 }

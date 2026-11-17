@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
-import { useState } from "react";
+import { StrictMode, useState } from "react";
+import { Checkbox } from "@abracode/presentation/ui/checkbox";
 import { ReportDocumentView } from "@abracode/presentation/report-document";
 import { FeedbackForm } from "./feedback.tsx";
 import { preparedDiagrams } from "@report/prepared-diagrams";
@@ -32,12 +33,11 @@ function PortableReport() {
         <strong>AbraCode · Saved report</strong>
         <label>
           Dark theme{" "}
-          <input
-            type="checkbox"
+          <Checkbox
             checked={dark}
-            onChange={(event) => {
-              setDark(event.target.checked);
-              document.documentElement.dataset.theme = event.target.checked ? "dark" : "light";
+            onCheckedChange={(checked) => {
+              setDark(checked);
+              document.documentElement.dataset.theme = checked ? "dark" : "light";
             }}
           />
         </label>
@@ -72,4 +72,8 @@ function PortableReport() {
     </main>
   );
 }
-createRoot(document.getElementById("root")!).render(<PortableReport />);
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <PortableReport />
+  </StrictMode>,
+);

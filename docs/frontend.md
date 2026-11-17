@@ -1,5 +1,99 @@
 # Browser frontend
 
+Shared widget layout, metadata/evidence classes, semantic colors, typography and
+reduced-motion rules live in `packages/presentation/src/{styles,tokens}.css`.
+Web CSS owns the workspace shell. Frozen spans and interactive work cards use
+the same flexible text layout; portable reports must not need a shell override.
+Typography uses the available `ui-sans-serif, system-ui, sans-serif` stack, with
+no remote font. Vendor defaults precede owned base rules and the headless
+workspace does not acquire CopilotKit's visual reset scope. Portals inherit the
+root tokens. Selected tabs follow Base UI's `data-active` state. Status and
+attention accents use semantic light/dark tokens; verified diagram canvases
+deliberately stay light while surrounding controls follow the chosen theme.
+
+The blocking `/assets/theme-init.js` entry resolves a saved light/dark choice or
+the system preference before application presentation. It works under the
+same-origin script CSP without an inline exception. `ThemeProvider` owns mounted
+system/storage listeners and best-effort preference persistence; unavailable
+storage leaves theme controls and edits usable. Its cleanup removes both listeners.
+
+Reusable controls have one shadcn/Base UI owner. From this repository run:
+
+```sh
+mise exec -- pnpm dlx shadcn@4.23.0 add separator --cwd apps/web --dry-run
+# Review first; omit --dry-run to generate. Existing controls need --overwrite.
+```
+
+Web aliases resolve reusable UI/utilities to `@abracode/presentation`; its own
+`components.json` uses package-local `#ui/*` and `#utils` imports. Add an explicit
+public export when introducing a new control, then run presentation and boundary
+checks. Keep upstream notices. Registry output/dependencies/CSS still need review:
+this pinned generator currently imports `cn` in new registry output. The
+disposable `separator --overwrite` exercise wrote only shared presentation files,
+created no web-local UI tree and passed the shared TypeScript check. Its generated
+dependency and token edits were confined to the disposable checkout.
+
+Action icons use declared `@abracode/presentation/icons` exports from Lucide.
+Decorative SVGs have `aria-hidden`; icon-only buttons keep explicit names and
+focus styling. The portable theme preference uses the shared checkbox.
+
+Custom multiselect editors keep raw text (including duplicates, empty lines and
+caret position) in the binding-owned form component. Conditional visibility reads
+those edits without rewriting them. Answer preparation trims/deduplicates and
+validates selections once; a replacement binding starts from its own defaults.
+Date-time inputs show offset defaults in the browser timezone, labeled beside
+the control. Untouched defaults retain their exact original value, including
+supported zone-less local defaults. Edited valid local times serialize to UTC;
+calendar overflow and daylight-saving gaps produce an inline error. Date-only
+values stay date-only. Native definitions and server revalidation still govern replies.
+
+`diagram-resource` is a lightweight presentation interface; it imports no live
+HTTP/atom client. The web adapter supplies exact `data.ts` resource atoms through
+the application registry. Reads start with committed subscribers, same-identity
+placements share pending work, and the final detachment releases it. Selected
+surface/revision/source or report/request/hash keys prevent late replacement.
+Retry diagrams and containing-evidence refresh target those mounted resources;
+they do not submit prompts, recapture evidence, publish reports or Stop work.
+Offline callers supply prepared assets and never connect to the adapter. Export
+pending/failure/results come directly from its exact mutation atom; only preview
+visibility is local, with a new local owner for another report identity.
+
+Composer/admission presentation is separate from the transcript. The composer
+reads the registry/session draft atom; Ask actions acquire its setter only. Draft
+writes preserve the 32,768-character bound and best-effort storage without a
+storage-to-state effect. Observation retains unchanged validated JSON subtrees,
+history/associations are memoized and indexed, and unchanged message contents
+have stable memoized boundaries.
+The reader retains loaded messages and exact presentation associations separately
+from the authoritative recent native window. A window rollover keeps unchanged
+message identities and mounted attachments; new native observations still replace
+the raw workspace projection exactly. This display history survives observation
+cleanup/replay and never supplies admission or workflow authority.
+Local edits/disclosures and native transport
+cleanup keep their existing owners. Historical wrappers use `content-visibility`
+while remaining mounted and reachable to browser find and keyboard navigation;
+the viewport preserves a painted reading anchor across layout changes and yields
+it to explicit reading input. It measures actual geometry before navigation.
+
+Both React entries enable StrictMode's development diagnostics. Generated-view
+models stage outside render, keep the prior valid model during replacement,
+dispose retired models after commit and recreate after the last-reader cleanup.
+The installed CopilotKit context defers its initial connection; its public
+`connect()` already deduplicates repeated setup. Native observation and admission
+effects detach their own transports without stopping native work.
+Observation cleanup also aborts its owned HTTP body through the public AG-UI
+fetch seam; SDK observer detachment alone does not release every pending body.
+The prior fetch function is restored before a fresh owner is mounted. Review age
+labels subscribe to one local deadline timer, disposed with the view, rather than
+reading the clock as a render-time polling mechanism.
+
+Compact report metadata has its own data contract module, shared with full build
+records without importing document-body validation. Native attention UI loads
+when a form/permission is present. Existing report, Markdown and diff lazy
+boundaries retain pending/error/reload handling. The complete initial byte budget
+and long-conversation proof are documented in
+[frontend verification](verification/frontend-parity.md).
+
 The workspace uses React, TanStack Router, Effect HTTP atoms, CopilotKit v2/AG-UI, shadcn components on Base UI, Tailwind CSS 4 and Pierre Diffs. Saved reports share the React/catalog renderer; the custom Solid terminal/report presentation is retired. OpenCode still owns its native CLI.
 
 Shared schemas, branded identities, resource selections, HTTP operations and the

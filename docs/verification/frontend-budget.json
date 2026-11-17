@@ -1,0 +1,9 @@
+{
+  "compression": "node:zlib gzipSync defaults; count every fetched initial JavaScript response including modulepreloads",
+  "toolchain": { "node": "26.13.0", "pnpm": "12.21.0" },
+  "baseline_source": "60a2dec4b5f6e2e4390dcc97abfa1c8335e888b2",
+  "fixtures": {
+    "0": { "baselineGzip": 542534, "ceilingGzip": 536000 },
+    "1000": { "baselineGzip": 754623, "ceilingGzip": 748000 }
+  }
+}

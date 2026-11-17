@@ -109,7 +109,7 @@ export function reportDocument() {
 }
 
 /** New coverage records exercise partial live values beside legacy unknown snapshots. */
-export function coveredReportDocument() {
+export function coveredReportDocument(includeCatalog = false) {
   const document = reportDocument();
   return validateReportDocument({
     ...document,
@@ -125,6 +125,17 @@ export function coveredReportDocument() {
                   children: [
                     ...(Array.isArray(component.children) ? component.children : []),
                     "counts",
+                    ...(includeCatalog
+                      ? [
+                          "board",
+                          "dependencies",
+                          "timeline",
+                          "decisions",
+                          "reports",
+                          "resource",
+                          "catalogDiagram",
+                        ]
+                      : []),
                   ],
                 }
               : component.id === "work"
@@ -132,6 +143,27 @@ export function coveredReportDocument() {
                 : component,
           ),
           { id: "counts", component: "StatusSummary", mode: "live" },
+          ...(includeCatalog
+            ? [
+                { id: "board", component: "Kanban", mode: "snapshot" },
+                { id: "dependencies", component: "DependencyGraph", mode: "snapshot" },
+                { id: "timeline", component: "Timeline", mode: "snapshot" },
+                { id: "decisions", component: "DecisionSummary", mode: "snapshot" },
+                { id: "reports", component: "ReportLink", issueId: "abra-web" },
+                {
+                  id: "catalogDiagram",
+                  component: "Mermaid",
+                  title: "Catalog relationship",
+                  source: "flowchart LR\n  A --> B",
+                },
+                {
+                  id: "resource",
+                  component: "ResourceLink",
+                  label: "Retained task",
+                  target: { action: "open_task", issue_id: "abra-web" },
+                },
+              ]
+            : []),
         ],
       },
     },

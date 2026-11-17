@@ -28,7 +28,7 @@ export function ReportDocumentView({
       };
     }
   }, [artifact]);
-  if (!result.supported) return <p role="status">{result.reason}</p>;
+  if (!result.supported) return <output>{result.reason}</output>;
   const document = result.document;
   return (
     <article className="frozen-report" data-report-document={document.document_id}>

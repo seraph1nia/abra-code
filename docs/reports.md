@@ -1,5 +1,20 @@
 # Saved reports and portable exports
 
+The shared presentation package owns catalog geometry, metadata/evidence styles,
+semantic light/dark tokens and reduced-motion behavior. Portable reports import
+those same styles directly; work cards retain full-width titles even when app
+navigation is replaced with frozen text. Verified SVG canvases stay deliberately
+light, with themed frames and controls, without rewriting captured source.
+
+Legacy retained HTML and explicit HTML export previews use the shared
+`report-preview` reading area: full container width, explicit viewport-relative
+height and no flex shrinking inside the inspector. Scrolling stays local and
+expanded viewing follows the report canvas. Frames retain `sandbox="allow-scripts"`
+without same-origin privileges or parent-document measurement. The small legacy
+HTML in the HTTP/browser fixture proves host sizing/isolation rather than the
+layout of an arbitrary historical report; relocated export acceptance exercises
+the actual offline renderer separately.
+
 A report is an immutable JSON document rendered by the same React/A2UI catalog used in the workspace. Open a generated view and choose **Save snapshot**. The selected task must have a retained execution. Saving uses the observed surface revision, captures its live and snapshot inputs separately, and makes no provider call. If the response is uncertain, use **Retry same save**; **Save another snapshot** creates a new identity and revision.
 
 The portable application imports `@abracode/presentation/report-document`, its

@@ -16,10 +16,43 @@ export default defineConfig({
   },
   lint: {
     extends: [recommended],
+    plugins: ["unicorn", "typescript", "oxc", "react", "jsx-a11y"],
     jsPlugins: ["./scripts/lint/workspace-boundaries.mjs"],
     rules: { "abracode/boundaries": "error" },
     ignorePatterns: [".abracode/**", ".lavish/**", "**/dist/**"],
     overrides: [
+      {
+        files: [
+          "apps/web/src/**/*.{ts,tsx}",
+          "apps/report/src/**/*.{ts,tsx}",
+          "packages/presentation/src/**/*.{ts,tsx}",
+        ],
+        rules: {
+          "react-hooks/rules-of-hooks": "error",
+          "react-hooks/exhaustive-deps": "error",
+          "react/purity": "error",
+          "react/set-state-in-effect": "error",
+          "react/immutability": "error",
+          "react/jsx-key": "error",
+          "jsx-a11y/alt-text": "error",
+          "jsx-a11y/anchor-has-content": "error",
+          "jsx-a11y/aria-props": "error",
+          "jsx-a11y/aria-proptypes": "error",
+          "jsx-a11y/aria-unsupported-elements": "error",
+          "jsx-a11y/control-has-associated-label": "error",
+          "jsx-a11y/heading-has-content": "error",
+          "jsx-a11y/iframe-has-title": "error",
+          "jsx-a11y/label-has-associated-control": "error",
+          "jsx-a11y/no-static-element-interactions": "error",
+          "jsx-a11y/role-has-required-aria-props": "error",
+          "jsx-a11y/tabindex-no-positive": "error",
+          // Named scroll regions, inline diagram canvases and code blocks need keyboard scrolling.
+          "jsx-a11y/no-noninteractive-tabindex": [
+            "error",
+            { roles: ["tabpanel", "region", "img"], tags: ["pre", "section"] },
+          ],
+        },
+      },
       {
         files: [
           "apps/report/src/**/*.{ts,tsx}",

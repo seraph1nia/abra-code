@@ -7,6 +7,7 @@ import { reportDocument, coveredReportDocument } from "../helpers/report-documen
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Schema } from "effect";
+import { CrewError } from "../../src/domain.ts";
 import {
   TranscriptMessageSchema,
   SurfaceRecordSchema,
@@ -40,6 +41,393 @@ afterAll(async () => {
 });
 const fixture = () => workspaceBrowserFixture(browser);
 
+test("export mutation status retries the same document and cannot populate another selection", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const saved = coveredReportDocument();
+  const targets = ["first-export", "second-export"].map((id) => {
+    const json = JSON.stringify({ ...saved, document_id: id });
+    const hash = createHash("sha256").update(json).digest("hex");
+    f.documentArtifacts.set(id, { json, hash, bytes: Buffer.byteLength(json), title: id });
+    return { action: "open_artifact" as const, issue_id: "abra-web", request_id: id, hash };
+  });
+  let fail = true,
+    delay = false,
+    release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  t.onTestFinished(release);
+  const calls: string[] = [];
+  f.source.exportDocument = (input) =>
+    Effect.gen(function* () {
+      calls.push(input.request_id);
+      if (fail) return yield* new CrewError("EXPORT_FIXTURE", "Temporary export failure");
+      if (delay) yield* Effect.promise(() => waiting);
+      return {
+        document_hash: input.hash,
+        exporter_hash: ContentHash.make("e".repeat(64)),
+        hash: ContentHash.make("f".repeat(64)),
+        bytes: 200,
+      };
+    });
+  const page = await f.browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  await page.goto(`${f.origin}/?${new URLSearchParams({ resource: JSON.stringify(targets[0]) })}`);
+  await page.getByRole("button", { name: "Export offline HTML", exact: true }).click();
+  await page.getByText(/HTML export was unavailable/).waitFor();
+  assert.equal(
+    await page.getByRole("link", { name: "Download selected JSON", exact: true }).count(),
+    1,
+  );
+  fail = false;
+  await page.getByRole("button", { name: "Export offline HTML", exact: true }).click();
+  const download = page.getByRole("link", { name: "Download exported HTML", exact: true });
+  await download.waitFor();
+  assert.match((await download.getAttribute("href"))!, /first-export/);
+  await page.getByRole("button", { name: "Preview exported HTML", exact: true }).click();
+  const preview = page.getByTitle("Offline HTML export", { exact: true });
+  assert.equal(await preview.getAttribute("sandbox"), "allow-scripts");
+  assert.ok(await preview.evaluate((element) => element.getBoundingClientRect().height >= 320));
+  await page.getByRole("button", { name: "Close HTML preview", exact: true }).click();
+  assert.equal(await preview.count(), 0);
+  delay = true;
+  await page.getByRole("button", { name: "Verify HTML export", exact: true }).click();
+  await page.getByRole("button", { name: "Exporting HTML…", exact: true }).waitFor();
+  await page
+    .locator(".report-revision")
+    .filter({ hasText: "second-export" })
+    .getByRole("button", { name: "Preview", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Export offline HTML", exact: true }).waitFor();
+  release();
+  assert.equal(await download.count(), 0);
+  assert.equal(await preview.count(), 0);
+  assert.deepEqual(calls, ["first-export", "first-export", "first-export"]);
+  assert.equal(f.source.submissions, 0);
+});
+
+test("mounted review age changes at its deadline without another resource poll", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage();
+  const now = Date.now();
+  const evidence = feedbackFixture(false);
+  f.feedbackPages.set(0, {
+    ...evidence,
+    observation: { ...evidence.observation!, next_check_at: now + 60_000 },
+  });
+  await page.clock.install({ time: now });
+  await page.goto(`${f.origin}/?issue=abra-web&tab=Activity&activity=checks`);
+  await page
+    .getByText(/Recheck due/)
+    .first()
+    .waitFor();
+  assert.equal(await page.getByText(/Stale retained observation/).count(), 0);
+  const reads = f.calls.filter((call) => call.name === "feedback").length;
+  await page.clock.fastForward(61_000);
+  await page.getByText(/Stale retained observation/).waitFor();
+  assert.equal(f.calls.filter((call) => call.name === "feedback").length, reads);
+  await page.getByRole("button", { name: "Close inspector", exact: true }).click();
+  await page.clock.fastForward(61_000);
+  assert.equal(f.calls.filter((call) => call.name === "feedback").length, reads);
+});
+
+test("theme resolves before application loading and follows system changes without losing edits", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage({
+    colorScheme: "light",
+    viewport: { width: 390, height: 844 },
+  });
+  await page.addInitScript(() => localStorage.setItem("abra-theme", "dark"));
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  t.onTestFinished(() => release());
+  await page.route("**/assets/*.js", async (route) => {
+    if (!route.request().url().endsWith("/theme-init.js")) await held;
+    await route.continue().catch(() => {});
+  });
+  await page.goto(f.origin, { waitUntil: "commit" });
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+  assert.equal(await page.locator("#root > *").count(), 0);
+  release();
+  const draft = page.getByRole("textbox", { name: "Message Abra" });
+  await draft.fill("Keep theme edits");
+  await page.getByLabel("Color theme", { exact: true }).selectOption("system");
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+  assert.equal(await draft.inputValue(), "Keep theme edits");
+  await page.getByRole("button", { name: "Toggle work finder" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.waitFor();
+  assert.equal(
+    await dialog.evaluate((element) => getComputedStyle(element).fontFamily),
+    await page.locator("body").evaluate((element) => getComputedStyle(element).fontFamily),
+  );
+  await page.keyboard.press("Escape");
+  assert.equal(await draft.inputValue(), "Keep theme edits");
+  const unavailable = await f.browser.newPage({ colorScheme: "dark" });
+  await unavailable.addInitScript(() => {
+    Storage.prototype.getItem = () => {
+      throw new Error("storage unavailable");
+    };
+    Storage.prototype.setItem = () => {
+      throw new Error("storage unavailable");
+    };
+  });
+  await unavailable.goto(f.origin);
+  await unavailable.getByRole("textbox", { name: "Message Abra" }).fill("Mounted without storage");
+  await unavailable.getByLabel("Color theme", { exact: true }).selectOption("light");
+  await unavailable.waitForFunction(() => document.documentElement.dataset.theme === "light");
+  assert.equal(
+    await unavailable.getByRole("textbox", { name: "Message Abra" }).inputValue(),
+    "Mounted without storage",
+  );
+});
+
+test("legacy report previews fit their host and retain opaque script sandboxing", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const hash = "c".repeat(64);
+  const target = {
+    kind: "artifact" as const,
+    issue_id: IssueId.make("abra-web"),
+    request_id: "legacy-report",
+    hash,
+  };
+  f.documentArtifacts.set(target.request_id, {
+    json: "",
+    hash,
+    bytes: 42,
+    title: "Legacy evidence",
+    legacy: true,
+  });
+  f.source.value = Schema.decodeSync(WorkspaceSnapshotSchema)({
+    ...f.source.value,
+    messages: [
+      { id: "msg_legacy", role: "assistant", text: "Retained attachment", at: f.source.value.at },
+    ],
+    presentations: {
+      entries: [
+        { session_id: f.source.sessionID, source: "notice", message_id: "msg_legacy", target },
+      ],
+      diagnostics: [],
+      truncated: false,
+    },
+  });
+  const page = await f.browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  await page.goto(f.origin);
+  await page.getByText("Preview saved report", { exact: true }).click();
+  const inline = page.locator(".artifact-attachment iframe");
+  await inline.waitFor();
+  const assertFrame = async (selector: string) => {
+    const frame = page.locator(selector);
+    await page.waitForFunction((selector) => {
+      const box = document.querySelector(selector)?.getBoundingClientRect();
+      return box && box.width > 200 && box.height >= 320 && box.right <= innerWidth + 1;
+    }, selector);
+    assert.equal(await frame.getAttribute("sandbox"), "allow-scripts");
+    assert.ok(
+      await frame.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return box.width > 200 && box.height >= 320 && box.right <= innerWidth + 1;
+      }),
+    );
+  };
+  await assertFrame(".artifact-attachment iframe");
+  await page.goto(
+    `${f.origin}/?${new URLSearchParams({ resource: JSON.stringify({ action: "open_artifact", ...target, kind: undefined }) })}`,
+  );
+  await page.locator(".inspector iframe").waitFor();
+  for (const width of [1600, 375, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await assertFrame(".inspector iframe");
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+      false,
+    );
+  }
+  await page.getByRole("button", { name: "Expand report", exact: true }).click();
+  await page.getByRole("dialog", { name: /Report canvas/ }).waitFor();
+  await assertFrame(".inspector iframe");
+  await page.getByRole("button", { name: "Return to inspector", exact: true }).click();
+  assert.equal(await page.locator(".report-canvas").count(), 0);
+  await page.getByRole("button", { name: "Close inspector", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.equal(f.source.submissions, 0);
+  assert.equal(f.source.stops, 0);
+});
+
+test("custom native choices retain raw lines across refresh and normalize only on submit", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  f.source.value = {
+    ...f.source.value,
+    forms: [
+      {
+        active: true,
+        binding: "custom-lines",
+        form: {
+          id: Form.ID.make("frm_custom"),
+          sessionID: f.source.sessionID,
+          title: "Custom choices",
+          fields: [
+            {
+              type: "multiselect",
+              key: "choices",
+              custom: true,
+              options: [{ label: "Predefined", value: "preset" }],
+              default: ["preset"],
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const page = await f.browser.newPage();
+  await page.goto(f.origin);
+  const text = page.getByRole("textbox", { name: "Additional choices, one per line" });
+  await text.pressSequentially("alpha\nbeta");
+  assert.equal(await text.inputValue(), "alpha\nbeta");
+  await text.fill("alpha\n\nbeta\nalpha");
+  await text.press("Home");
+  await text.pressSequentially("middle ");
+  const raw = await text.inputValue();
+  assert.equal(raw, "alpha\n\nbeta\nmiddle alpha");
+  await f.changed();
+  await page.getByRole("button", { name: /^Attention/ }).click();
+  await page.getByRole("button", { name: /^Attention/ }).click();
+  assert.equal(await text.inputValue(), raw);
+  await text.fill("alpha\n\nbeta\nalpha\npreset");
+  await page.getByRole("button", { name: "Submit answer", exact: true }).click();
+  await text.waitFor({ state: "hidden" });
+  assert.deepEqual(f.replies[0].answer, { choices: ["preset", "alpha", "beta"] });
+  f.source.value = {
+    ...f.source.value,
+    forms: [
+      {
+        active: true,
+        binding: "replacement",
+        form: {
+          id: Form.ID.make("frm_custom"),
+          sessionID: f.source.sessionID,
+          title: "Replacement choices",
+          fields: [
+            { type: "multiselect", key: "choices", custom: true, options: [], default: ["reset"] },
+          ],
+        },
+      },
+    ],
+  };
+  await f.changed();
+  await text.waitFor();
+  assert.equal(await text.inputValue(), "reset");
+});
+
+test("native date-time defaults display their instant and round-trip untouched", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  for (const timezoneId of ["UTC", "Europe/Amsterdam"]) {
+    for (const original of [
+      "2026-11-16T10:00:00Z",
+      "2026-11-16T15:30:00+05:30",
+      "2026-11-16T10:00",
+    ]) {
+      f.source.value = {
+        ...f.source.value,
+        forms: [
+          {
+            active: true,
+            binding: timezoneId,
+            form: {
+              id: Form.ID.make("frm_date"),
+              sessionID: f.source.sessionID,
+              title: "Schedule",
+              fields: [
+                {
+                  type: "string",
+                  key: "when",
+                  title: "When",
+                  format: "date-time",
+                  default: original,
+                  required: true,
+                },
+              ],
+            },
+          },
+        ],
+      };
+      const page = await f.browser.newPage({ timezoneId });
+      await page.goto(f.origin);
+      const input = page.getByLabel(/^When/);
+      await input.waitFor();
+      assert.equal(
+        await input.inputValue(),
+        timezoneId === "UTC" || original === "2026-11-16T10:00"
+          ? "2026-11-16T10:00"
+          : "2026-11-16T11:00",
+      );
+      await page.getByText(`Timezone: ${timezoneId}`, { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Submit answer", exact: true }).click();
+      await input.waitFor({ state: "hidden" });
+      assert.deepEqual(f.replies.at(-1)?.answer, { when: original });
+      await page.close();
+    }
+  }
+});
+
+test("native date-time edits refuse Amsterdam's DST gap and serialize valid local edits", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  f.source.value = {
+    ...f.source.value,
+    forms: [
+      {
+        active: true,
+        binding: "dst",
+        form: {
+          id: Form.ID.make("frm_dst"),
+          sessionID: f.source.sessionID,
+          title: "Local schedule",
+          fields: [
+            { type: "string", key: "when", title: "When", format: "date-time", required: true },
+            { type: "string", key: "date", title: "Date", format: "date", default: "2026-03-29" },
+          ],
+        },
+      },
+    ],
+  };
+  const page = await f.browser.newPage({ timezoneId: "Europe/Amsterdam" });
+  await page.goto(f.origin);
+  await page.getByLabel(/^When/).fill("2026-03-29T02:30");
+  await page.getByRole("button", { name: "Submit answer", exact: true }).click();
+  await page.getByText(/this time may not exist/).waitFor();
+  assert.equal(f.replies.length, 0);
+  assert.equal(await page.getByLabel("Date", { exact: true }).inputValue(), "2026-03-29");
+  await page.getByLabel(/^When/).fill("2026-03-29T03:30");
+  await page.getByRole("button", { name: "Submit answer", exact: true }).click();
+  await page.getByLabel(/^When/).waitFor({ state: "hidden" });
+  assert.deepEqual(f.replies[0].answer, { when: "2026-03-29T01:30:00.000Z", date: "2026-03-29" });
+});
+
+test("owned typography survives vendor reset in workspace and inspector", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage();
+  await page.goto(f.origin);
+  await page.locator(".conversation-header h1").waitFor();
+  assert.deepEqual(
+    await page.locator(".conversation-header h1").evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { size: style.fontSize, weight: style.fontWeight };
+    }),
+    { size: "25px", weight: "550" },
+  );
+});
+
 type BrowserPage = Awaited<ReturnType<Awaited<ReturnType<typeof launchReportBrowser>>["newPage"]>>;
 async function screenshot(page: BrowserPage, name: string) {
   const evidence = process.env.ABRACODE_TEST_EVIDENCE_DIR;
@@ -51,7 +439,7 @@ async function screenshot(page: BrowserPage, name: string) {
 test("exact saved reports use frozen catalog bindings, preserve pending checks and isolate unsupported documents", async (t) => {
   const f = await fixture();
   t.onTestFinished(f.close);
-  const savedDocument = coveredReportDocument();
+  const savedDocument = coveredReportDocument(true);
   const add = (id: string, value: unknown, title: string) => {
     const json = JSON.stringify(value),
       hash = createHash("sha256").update(json).digest("hex");
@@ -81,6 +469,7 @@ test("exact saved reports use frozen catalog bindings, preserve pending checks a
   await page
     .locator(".frozen-report")
     .getByRole("button", { name: "Older snapshot task title", exact: true })
+    .first()
     .waitFor();
   await page
     .locator(".frozen-report")
@@ -106,6 +495,23 @@ test("exact saved reports use frozen catalog bindings, preserve pending checks a
     /Coverage unknown/,
   );
   assert.equal(f.calls.filter((call) => call.name === "binding").length, 0);
+  for (const width of [1600, 375, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const theme of ["light", "dark"]) {
+      await page.getByLabel("Color theme", { exact: true }).selectOption(theme);
+      assert.ok(
+        await page
+          .locator(".frozen-report .work-card strong")
+          .first()
+          .evaluate((element) => element.getBoundingClientRect().width > 70),
+      );
+      assert.equal(
+        await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+        false,
+      );
+    }
+  }
+  await page.setViewportSize({ width: 1600, height: 1000 });
 
   const findings = page.getByLabel("Filter captured findings");
   await findings.fill("no match");
@@ -137,7 +543,7 @@ test("exact saved reports use frozen catalog bindings, preserve pending checks a
   const download = page
     .locator(".report-revision")
     .filter({ hasText: "Saved evidence" })
-    .getByRole("link", { name: "Download JSON ↗", exact: true });
+    .getByRole("link", { name: "Download JSON", exact: true });
   const response = await fetch(new URL((await download.getAttribute("href"))!, f.origin));
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-disposition")!, /attachment.*\.json/);
@@ -266,7 +672,7 @@ test("artifact pages keep exact off-page documents reachable without preloading 
   await page.reload();
   await page.locator('[data-report-document="report-page-9"]').waitFor();
   assert.equal(await page.locator(".report-revision").count(), 2);
-  const download = page.getByRole("link", { name: "Download selected JSON ↗", exact: true });
+  const download = page.getByRole("link", { name: "Download selected JSON", exact: true });
   assert.equal(
     await (await fetch(new URL((await download.getAttribute("href"))!, f.origin))).text(),
     exact.json,
@@ -1690,8 +2096,12 @@ test("chat stays mounted while the finder searches retained pages, preserving dr
     element.dataset.mountIdentity = "same-chat";
   });
   assert.equal(await page.getByRole("button", { name: /Work views/ }).count(), 0);
-  await page.locator(".conversation-scroll").evaluate((element) => {
+  await page.getByText(/^Retained message 34\./).waitFor();
+  await page.locator(".conversation-scroll").evaluate(async (element) => {
     element.scrollTop = 600;
+    // Measure a painted reading position, after offscreen estimates become visible content.
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
   });
   const anchor = await page.locator(".conversation-scroll").evaluate((element) => {
     const top = element.getBoundingClientRect().top;

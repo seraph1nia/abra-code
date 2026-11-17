@@ -12,8 +12,8 @@
   "iconLibrary": "lucide",
   "aliases": {
     "components": "@/components",
-    "utils": "@/lib/utils",
-    "ui": "@/components/ui",
+    "utils": "@abracode/presentation/utils",
+    "ui": "@abracode/presentation/ui",
     "lib": "@/lib",
     "hooks": "@/hooks"
   }

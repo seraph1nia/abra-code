@@ -1,5 +1,5 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Scoped browser observation and typed HTTP atoms. */
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { RegistryContext } from "@effect/atom-react";
 import { Effect, Exit } from "effect";
 import { AtomRegistry } from "effect/reactivity";
@@ -10,9 +10,11 @@ import type {
 } from "@abracode/contracts/presentation/contracts";
 import { historyQuery } from "../data.ts";
 import { requestError } from "../request-state.tsx";
+import type { Conversation } from "./conversation.ts";
 export function useWorkspaceHistory(
   workspace: WorkspaceSnapshot,
   setError: (text: string) => void,
+  conversation: Conversation,
 ) {
   const registry = useContext(RegistryContext);
   const mounted = useRef(false);
@@ -59,27 +61,43 @@ export function useWorkspaceHistory(
     }
     historyLoading.current = false;
   }
-  const messages = [
-    ...new Map([...older, ...workspace.messages].map((message) => [message.id, message])).values(),
-  ];
-  const presentations = {
-    entries: [
+  const messages = useMemo(
+    () => [
       ...new Map(
-        [...earlierPresentations, ...(workspace.presentations?.entries ?? [])].map((entry) => [
-          JSON.stringify([entry.message_id, entry.tool_call_id, entry.target]),
-          entry,
-        ]),
+        [...older, ...conversation.messages].map((message) => [message.id, message]),
       ).values(),
     ],
-    truncated: earlierPresentationLimit || Boolean(workspace.presentations?.truncated),
-    diagnostics: [
-      ...new Map(
-        [...earlierPresentationDiagnostics, ...(workspace.presentations?.diagnostics ?? [])].map(
-          (diagnostic) => [JSON.stringify(diagnostic), diagnostic],
-        ),
-      ).values(),
+    [older, conversation.messages],
+  );
+  const presentations = useMemo(
+    () => ({
+      entries: [
+        ...new Map(
+          [...earlierPresentations, ...(conversation.presentations?.entries ?? [])].map((entry) => [
+            JSON.stringify([entry.message_id, entry.tool_call_id, entry.target]),
+            entry,
+          ]),
+        ).values(),
+      ],
+      truncated: earlierPresentationLimit || Boolean(conversation.presentations?.truncated),
+      diagnostics: [
+        ...new Map(
+          [
+            ...earlierPresentationDiagnostics,
+            ...(conversation.presentations?.diagnostics ?? []),
+          ].map((diagnostic) => [JSON.stringify(diagnostic), diagnostic]),
+        ).values(),
+      ],
+    }),
+    [
+      earlierPresentations,
+      conversation.presentations?.entries,
+      earlierPresentationLimit,
+      conversation.presentations?.truncated,
+      earlierPresentationDiagnostics,
+      conversation.presentations?.diagnostics,
     ],
-  };
+  );
   return {
     messages,
     presentations,

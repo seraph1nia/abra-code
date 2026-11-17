@@ -35,11 +35,7 @@ export function deferred<P extends object>(
       <Boundary active={active}>
         <Suspense
           fallback={
-            active ? (
-              <p role="status" className={className}>
-                Loading {label.toLowerCase()}…
-              </p>
-            ) : null
+            active ? <output className={className}>Loading {label.toLowerCase()}…</output> : null
           }
         >
           <Loaded {...props} />

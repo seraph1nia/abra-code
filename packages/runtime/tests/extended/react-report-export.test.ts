@@ -24,10 +24,10 @@ test(
     await installSource(f.config.home, { buildWeb: false });
     const renderer = new ReactDocumentRenderer(f.config.home, new ProcessRunner());
     const fingerprint = await run(renderer.fingerprint);
-    const baseline = coveredReportDocument();
-    const fixtures = mixedDiagrams(31);
-    fixtures[30] = { ...fixtures[30]!, source: fixtures[0]!.source };
-    fixtures[29] = { title: "Dense workflow", source: denseFlowchart };
+    const baseline = coveredReportDocument(true);
+    const fixtures = mixedDiagrams(30);
+    fixtures[29] = { ...fixtures[29]!, source: fixtures[0]!.source };
+    fixtures[28] = { title: "Dense workflow", source: denseFlowchart };
     const input = validateReportDocument({
       ...baseline,
       surface: {
@@ -81,7 +81,10 @@ test(
     await page.goto(pathToFileURL(join(moved, "frame.html")).href);
     const report = page.frameLocator("iframe");
     await report.getByRole("heading", { name: "Saved evidence", exact: true }).waitFor();
-    assert.equal(await report.locator('[data-diagram-state="ready"] svg').count(), 32);
+    assert.equal(
+      await report.locator('[data-diagram-state="ready"] .diagram-scroll svg').count(),
+      32,
+    );
     const dense = report.getByRole("img", { name: "Dense workflow", exact: true });
     assert.equal(
       await dense.evaluate((element) => element.scrollWidth > element.clientWidth),
@@ -108,7 +111,14 @@ test(
       .evaluateAll((elements) => elements.map((element) => element.id));
     assert.equal(new Set(svgIDs).size, svgIDs.length);
     await report.getByText("Frozen task title", { exact: true }).waitFor();
-    await report.getByText("Older snapshot task title", { exact: true }).waitFor();
+    assert.ok(
+      await report
+        .locator(".work-card strong")
+        .first()
+        .evaluate((element) => element.getBoundingClientRect().width > 70),
+      "offline Kanban title must use the available card width",
+    );
+    await report.getByText("Older snapshot task title", { exact: true }).first().waitFor();
     assert.match(
       await report.locator('[data-work-widget="StatusSummary"]').innerText(),
       /1 \(partial\)/,
@@ -162,9 +172,9 @@ test(
       false,
     );
     const evidence = process.env.ABRACODE_TEST_EVIDENCE_DIR;
-    for (const width of [375, 390]) {
+    for (const width of [1440, 375, 390]) {
       await page.setViewportSize({ width, height: 844 });
-      const theme = report.getByLabel("Dark theme", { exact: true });
+      const theme = report.getByRole("checkbox", { name: "Dark theme", exact: true });
       const before = await theme.isChecked();
       await theme.focus();
       assert.equal(await theme.evaluate((element) => element === document.activeElement), true);
@@ -175,13 +185,36 @@ test(
         await frame.evaluate(() => document.documentElement.scrollWidth > innerWidth),
         false,
       );
-      if (evidence) {
-        await mkdir(evidence, { recursive: true });
-        await page.screenshot({
-          path: join(evidence, `portable-react-report-${width}.png`),
-          fullPage: true,
-          animations: "disabled",
-        });
+      for (const dark of [false, true]) {
+        await theme.setChecked(dark);
+        assert.equal(
+          await frame.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+          false,
+        );
+        assert.ok(
+          await report
+            .locator(".work-card strong")
+            .first()
+            .evaluate((element) => element.getBoundingClientRect().width > 70),
+        );
+        assert.equal(
+          await report
+            .locator(".muted")
+            .first()
+            .evaluate(
+              (element) =>
+                getComputedStyle(element).color === getComputedStyle(element.parentElement!).color,
+            ),
+          false,
+        );
+        if (evidence) {
+          await mkdir(evidence, { recursive: true });
+          await page.screenshot({
+            path: join(evidence, `portable-react-report-${width}-${dark ? "dark" : "light"}.png`),
+            fullPage: true,
+            animations: "disabled",
+          });
+        }
       }
     }
     if (evidence)

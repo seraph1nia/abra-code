@@ -64,7 +64,7 @@ export function ReportEvidence({
   if (!snapshot)
     return (
       <section className="report-evidence" data-report-section={section}>
-        <p role="status">Captured report evidence is unavailable for this view.</p>
+        <output>Captured report evidence is unavailable for this view.</output>
       </section>
     );
   const findings = snapshot.findings.filter((finding) =>
@@ -122,12 +122,7 @@ export function ReportEvidence({
       {section === "checks" && (
         <>
           <h3>Check evidence</h3>
-          <div
-            className="work-table-scroll"
-            role="region"
-            aria-label="Captured checks"
-            tabIndex={0}
-          >
+          <section className="work-table-scroll" aria-label="Captured checks" tabIndex={0}>
             <table className="work-table">
               <caption>Observed check results; missing evidence is not success.</caption>
               <thead>
@@ -155,7 +150,7 @@ export function ReportEvidence({
                 ))}
               </tbody>
             </table>
-          </div>
+          </section>
           {!snapshot.checks.length && <p>No captured check evidence.</p>}
         </>
       )}

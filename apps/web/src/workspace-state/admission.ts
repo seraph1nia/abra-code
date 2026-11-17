@@ -102,7 +102,7 @@ export function useWorkspaceAdmission({
     return () => {
       active = false;
     };
-  }, [workspace.receipts, pending, storageKey, lookupReceipt]);
+  }, [workspace.receipts, pending, storageKey, lookupReceipt, setError]);
 
   async function send(input?: Pending) {
     if (!isReady || admittingRef.current || (!input && pending)) return;

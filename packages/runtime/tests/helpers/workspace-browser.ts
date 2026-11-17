@@ -46,7 +46,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
   const leadPages = new Map<string, unknown>();
   const documentArtifacts = new Map<
     string,
-    { json: string; hash: string; bytes: number; title: string }
+    { json: string; hash: string; bytes: number; title: string; legacy?: boolean }
   >();
   let communications: typeof MessagesPageSchema.Type.entries = [];
   let obligations: typeof DecisionsSchema.Type = { decisions: [], waits: [] };
@@ -142,7 +142,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
             title: artifact.title,
             hash: artifact.hash,
             bytes: artifact.bytes,
-            format: "a2ui-snapshot",
+            format: artifact.legacy ? "legacy-html" : "a2ui-snapshot",
             status: "published",
             generation: 2,
           }));
@@ -162,7 +162,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
                 title: artifact.title,
                 hash: artifact.hash,
                 bytes: artifact.bytes,
-                format: "a2ui-snapshot",
+                format: artifact.legacy ? "legacy-html" : "a2ui-snapshot",
                 status: "published",
                 generation: 2,
               }

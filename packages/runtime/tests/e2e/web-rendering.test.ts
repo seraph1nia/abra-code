@@ -117,6 +117,13 @@ test("upstream A2UI renders every work widget, replaces revisions and retains va
   await page.goto(web.origin);
   await page.getByText("Other retained views (1)", { exact: true }).click();
   await page.getByText("Upstream revision 1", { exact: true }).waitFor();
+  assert.deepEqual(
+    await page.locator(".conversation-header h1").evaluate((element) => {
+      const style = getComputedStyle(element);
+      return [style.fontSize, style.fontWeight];
+    }),
+    ["25px", "550"],
+  );
   assert.equal(await page.locator('[data-a2ui-renderer="upstream"]').count(), 1);
   assert.equal(await page.locator(".surface-widget").count(), 8);
   assert.deepEqual(await page.locator(".work-table thead th").allTextContents(), [
@@ -150,27 +157,33 @@ test("upstream A2UI renders every work widget, replaces revisions and retains va
   );
   // Every widget must remain inside the conversation at narrow widths; tables
   // and boards scroll locally, while generated Row layouts wrap.
-  for (const width of [375, 390]) {
+  for (const width of [1440, 375, 390]) {
     await page.setViewportSize({ width, height: 844 });
-    assert.equal(
-      await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
-      false,
-    );
-    assert.equal(
-      await page
-        .locator(".surface-widget")
-        .evaluateAll((nodes) =>
-          nodes.some((node) => node.getBoundingClientRect().right > innerWidth + 1),
-        ),
-      false,
-    );
-    const evidence = process.env.ABRACODE_TEST_EVIDENCE_DIR;
-    if (evidence) {
-      await mkdir(evidence, { recursive: true });
-      await page.screenshot({
-        path: join(evidence, `catalog-widgets-${width}.png`),
-        fullPage: true,
-      });
+    for (const theme of ["light", "dark"]) {
+      await page.getByLabel("Color theme", { exact: true }).selectOption(theme);
+      assert.equal(
+        await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+        false,
+      );
+      assert.equal(
+        await page
+          .locator(".surface-widget")
+          .evaluateAll((nodes) =>
+            nodes.some((node) => node.getBoundingClientRect().right > innerWidth + 1),
+          ),
+        false,
+      );
+      const evidence = process.env.ABRACODE_TEST_EVIDENCE_DIR;
+      if (evidence) {
+        await mkdir(evidence, { recursive: true });
+        // The transcript scrolls independently of the page. Capture the cards
+        // in its visible reading area rather than the introduction above them.
+        await page.locator(".kanban").scrollIntoViewIfNeeded();
+        await page.screenshot({
+          path: join(evidence, `catalog-widgets-${width}-${theme}.png`),
+          fullPage: true,
+        });
+      }
     }
   }
   await page.setViewportSize({ width: 1440, height: 1000 });

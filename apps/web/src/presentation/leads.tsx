@@ -39,9 +39,7 @@ export function LeadsPanel({
           <>
             <p>{page.total} leads with configured scope or retained history for this repository.</p>
             {page.diagnostics.map((diagnostic, index) => (
-              <p role="status" key={index}>
-                {diagnostic}
-              </p>
+              <output key={index}>{diagnostic}</output>
             ))}
             <div className="space-y-3">
               {page.entries.map((lead) => (
@@ -133,7 +131,7 @@ function LeadDetails({
             setProposals={setProposals}
           />
         ) : (
-          <p role="status">Retained lead evidence is unavailable.</p>
+          <output>Retained lead evidence is unavailable.</output>
         )
       }
     </RequestState>
@@ -258,7 +256,7 @@ function LeadHistory({
                     Inspect accepted work
                   </Button>
                 )}
-                {task.limited && <p role="status">Proposal text is excerpted.</p>}
+                {task.limited && <output>Proposal text is excerpted.</output>}
               </details>
             ))}
           </CardContent>
@@ -298,7 +296,7 @@ function LeadHistory({
           </p>
         ))}
         {detail.related_work.length < detail.related_total && (
-          <p role="status">Related-work preview is limited to 50. Use the work finder for more.</p>
+          <output>Related-work preview is limited to 50. Use the work finder for more.</output>
         )}
       </details>
       {detail.retired_sessions.length > 0 && (

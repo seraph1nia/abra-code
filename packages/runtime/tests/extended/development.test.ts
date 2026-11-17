@@ -1,5 +1,6 @@
+/* oxlint-disable effecttsgo/unstable-api-usage -- Discover only the disposable native installation to exercise public development/HMR lifetimes. */
 import { removeFixture } from "../helpers/resources.ts";
-import { test } from "vite-plus/test";
+import { expect, test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -7,6 +8,12 @@ import { join } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { installSource, installationRoot, command } from "../e2e/install.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
+import { Effect } from "effect";
+import { NodeFileSystem } from "@effect/platform-node";
+import { Service } from "@opencode/client/effect/service";
+import { OpenCode } from "@opencode/client";
+import { runtimePaths } from "../../src/config/identity.ts";
+import { AbsolutePath } from "../../src/identities.ts";
 
 async function unusedPort() {
   const server = createServer();
@@ -85,6 +92,29 @@ test(
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       const first = await (await fetch(`${origin}/api/bootstrap`)).json();
+      const endpoint = await Effect.runPromise(
+        Service.discover({
+          file: runtimePaths(AbsolutePath.make(home)).service,
+          version: "2.3.0",
+        }).pipe(Effect.provide(NodeFileSystem.layer)),
+      );
+      assert.ok(endpoint);
+      const native = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+      const nativeForm = await native.session.form.create({
+        sessionID: first.session_id,
+        title: "Development retained edits",
+        metadata: { source: "fixture" },
+        fields: [
+          { type: "string", key: "text", title: "Retained form text", required: true },
+          {
+            type: "multiselect",
+            key: "choices",
+            title: "Retained custom choices",
+            options: [],
+            custom: true,
+          },
+        ],
+      });
       assert.equal(
         (await fetch(`${origin}/api/bootstrap`, { headers: { origin: "http://evil.example" } }))
           .status,
@@ -102,17 +132,42 @@ test(
       );
       const browser = await launchReportBrowser();
       try {
-        const page = await browser.newPage();
+        const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
         const errors: string[] = [];
+        let infoReads = 0;
+        const observers = new Set<object>();
+        // Scope request accounting to the current document; prior deliberate
+        // full navigations retire their entire browser/network owner.
+        page.on("framenavigated", (frame) => {
+          if (frame === page.mainFrame()) observers.clear();
+        });
+        page.on("request", (request) => {
+          if (request.url().endsWith("/api/copilotkit/info")) infoReads++;
+          if (request.url().endsWith("/api/copilotkit/agent/abra/connect")) observers.add(request);
+        });
+        page.on("requestfinished", (request) => observers.delete(request));
+        page.on("requestfailed", (request) => observers.delete(request));
         page.on("pageerror", (error) => errors.push(error.message));
         await page.goto(origin);
         await page.getByRole("textbox", { name: "Message Abra" }).waitFor({ timeout: 30000 });
         await page.goto(`${origin}/unknown-page`);
         await page.getByRole("heading", { name: "Page not found" }).waitFor();
         await page.getByRole("link", { name: "Return to AbraCode" }).click();
+        await page.goto(`${origin}/?issue=development-unavailable&tab=Plan`);
+        await page.getByRole("heading", { name: "Selected task", exact: true }).waitFor();
         await page
           .getByRole("textbox", { name: "Message Abra" })
           .fill("Keep this draft through HMR");
+        await page
+          .getByLabel("Retained form text", { exact: false })
+          .fill("Keep native form edits");
+        await page
+          .getByLabel("Additional choices, one per line", { exact: true })
+          .fill("alpha\n\nbeta");
+        const infoBeforeHmr = infoReads;
+        await page.locator(".workspace").evaluate((element) => {
+          element.dataset.hmrMount = "same";
+        });
         const source = join(home, "apps/web/src/workspace.tsx");
         await writeFile(
           source,
@@ -127,6 +182,25 @@ test(
         assert.equal(
           await page.getByRole("textbox", { name: "Message Abra" }).inputValue(),
           "Keep this draft through HMR",
+        );
+        assert.equal(await page.locator(".workspace").getAttribute("data-hmr-mount"), "same");
+        assert.equal(
+          await page.getByLabel("Retained form text", { exact: false }).inputValue(),
+          "Keep native form edits",
+        );
+        assert.equal(
+          await page.getByLabel("Additional choices, one per line", { exact: true }).inputValue(),
+          "alpha\n\nbeta",
+        );
+        assert.match(page.url(), /issue=development-unavailable/);
+        assert.match(page.url(), /tab=Plan/);
+        assert.ok(infoBeforeHmr > 0);
+        assert.equal(infoReads, infoBeforeHmr, "HMR must not reconnect the SDK info owner");
+        await expect.poll(() => observers.size, { timeout: 5000 }).toBe(1);
+        assert.equal(
+          (await native.session.form.get({ sessionID: first.session_id, formID: nativeForm.id }))
+            .state.status,
+          "pending",
         );
         const backend = join(home, "packages/runtime/src/web/server.ts");
         await writeFile(
@@ -156,6 +230,9 @@ test(
         result = {
           result: "pass",
           frontend_hmr_preserved_draft: true,
+          frontend_hmr_preserved_form: true,
+          frontend_hmr_preserved_selection: "unavailable retained Plan bookmark",
+          development_diagnostics: "StrictMode; one active observer; no native form reply",
           backend_reload_observed: true,
           native_session_preserved: true,
           native_session_id: first.session_id,

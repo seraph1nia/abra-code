@@ -1,5 +1,76 @@
 # Browser parity and terminal presentation retirement
 
+## Frontend performance and rendering acceptance
+
+Run the production browser fixture with the pinned toolchain from `mise.toml`:
+
+```sh
+mise exec -- pnpm web:build
+ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-frontend-final \
+  mise exec -- pnpm test:one packages/runtime/tests/e2e/frontend-performance.test.ts
+```
+
+The fixture opens separate empty and 1,000-assistant-message contexts, waits for
+the composer and populated Markdown, counts every fetched JavaScript asset
+(including eager shared/modulepreload chunks), and compresses each response with
+`node:zlib`'s default `gzipSync`. AG-UI retains an open stream, so network idle is
+not used as a readiness signal. React's DevTools commit hook counts performed
+work on content-bearing boundaries before/after 100 typed characters and one
+streamed message update. Counts and typing latency are separate observations;
+multiple nested content boundaries can contribute to one message's count.
+The actual supported renders remain mounted, rather than replacing Markdown
+with a measurement stub. No typing operation submits a prompt.
+
+Before product edits, run the same command with
+`ABRACODE_FRONTEND_BASELINE=1` to record existing work without enforcing render
+locality. This is a baseline-capture mode, not an acceptance substitute. Evidence
+records Node/pnpm versions, Git source and tracked diff, exact asset paths and
+byte/gzip totals, per-content render counts and timing. Place it outside fixture
+roots; registered teardown closes only owned browser contexts and HTTP scope.
+
+The 2026-11-17 pre-edit baseline used Node 26.13.0/pnpm 12.21.0. Empty chat loaded
+542,534 gzip bytes; populated chat loaded 754,623. The 1,000-message probe counted
+7,000 initial content-boundary renders and 207,000 after typing, taking 6,030.6ms
+on that run. Timing is descriptive, not a portable pass threshold. Retained raw
+evidence is `/tmp/abra-frontend-apply-20261117/baseline-corrected/frontend-performance.json`.
+These baseline results establish neither final acceptance nor native authority.
+
+The commit probe compares fiber identity with the preceding committed tree in
+addition to the performed-work flag; reused unchanged fibers can retain that flag.
+The corrected baseline was recaptured from a disposable archive of the recorded
+source commit, using the same fixture and toolchain. The earlier count-only
+scratch baseline is superseded. Current proof records 3,000 initial content
+boundary renders, the same 3,000 after typing, four additional boundary
+renders for the changed message only, and three for the newly appended message.
+A native recent-window rollover retains 1,001 loaded messages and unchanged
+historical identities. Latency on the final full-suite run was 879.2ms;
+this remains descriptive, not an enforced timing threshold.
+
+[The checked-in budget](frontend-budget.json) caps complete initial gzip JavaScript
+at 536,000 bytes for empty chat and 748,000 for 1,000 messages, both below the
+matched baseline. The final run observed 535,030 and 747,125 bytes. The normal
+E2E project (included by `pnpm test:all`) enforces it and checks that every declared
+script/modulepreload is counted. Update the ceiling only after retaining a new
+complete graph and explaining an intentional capability change; renaming/splitting
+eager chunks or excluding preloads is not a reduction. The metadata split and
+conditional attention UI remove actual eager paths; renderer capabilities remain.
+
+Offscreen containment keeps historical controls mounted and text in the DOM.
+Geometry assertions wait for Markdown and painted content before recording a
+reading position, rather than comparing provisional offscreen size estimates.
+Browser-find, keyboard navigation, history anchors and narrow layouts must remain
+in acceptance; DOM presence alone is not an accessibility proof. Browsers without
+`content-visibility` support retain the ordinary fully rendered transcript.
+
+The new focused pre-edit regressions reproduced the audit on this source:
+`web-coherence.test.ts` observed custom text `alphabeta` instead of two lines,
+an empty ISO date-time default, and a 14px/400 heading; `mermaid-views.test.ts`
+timed out after an evidence refresh left the failed preparation unretried;
+`react-report-export.test.ts` rejected the offline card title's 7px column.
+`web-native-form.test.ts` also rejects normalization until custom empty/repeated
+values are handled before selection constraints. Logs are retained alongside
+the baseline in `/tmp/abra-frontend-red-{forms,dates,rendering,normalization}.log`.
+
 The browser is the work presentation surface. The native CLI still attaches to the retained Abra session; its own UI and transitive terminal dependencies belong to OpenCode. AbraCode no longer registers a custom sidebar, footer, work panel/route or terminal commands. This change preserves native observation/RPC, documents/diffs, classification, invalidations and controller gates.
 
 This map transfers the behavior previously exercised in `tests/tui/sidebar.ts`. Native lifecycle/authority tests remain required alongside browser DOM tests; removing a renderer does not remove its underlying obligations.
@@ -45,3 +116,26 @@ Additional report/PR management shortcuts are not introduced by this parity work
 The required checks passed: `pnpm check`, 560 unit/integration tests in 95 files, 27 end-to-end tests in five files, build, configuration schema, license evidence and strict OpenSpec validation. The fresh frozen installation attaches/reattaches to the native Abra without a custom TUI export and preserves service/session state after frontend shutdown. Native workspace acceptance saves JSON, explicitly exports HTML without a provider call, restarts, reopens the exact export and frozen pending checks, and inspects owned sessions/decisions/communication/checks through typed routes.
 
 Retained proof lives under `/tmp/abra-frontend-coherence-20261115/`: `current-goal-verification.json` maps commands, exits and log digests; `browser-native-acceptance.json` records browser cases and screenshots; `final-acceptance/` retains the full run’s screenshots, portable JSON/HTML and three native journey JSON results, each with cleanup complete. `current-final-e2e-fixed.log` records the complete 27-test pass. Earlier failing footer/selector fixtures remain separate and are superseded by that run. The scoped diff review preserves the original dirty baseline and makes no delivery/archive claim.
+
+## Frontend setup acceptance on 2026-11-17
+
+Node 26.13.0 and pnpm 12.21.0 passed `pnpm check`, `pnpm test:all`
+(713 tests in 124 files), and all three extended installation, development/HMR
+and React report export journeys. License evidence matches 1,374 locked
+components and 31 distributed source files; strict validation of
+`fix-frontend-state-rendering-and-consistency` passes.
+
+Retained evidence lives under `/tmp/abra-frontend-apply-20261117/`.
+`final/frontend-performance.json` records the complete graphs, frontend source
+digest, matched render counts and actual toolchain. `final/` retains browser
+screenshots and the native workspace journey's passing cleanup receipt;
+`final-rendering/` captures the live catalog after scrolling the cards into the
+transcript's reading area. `final-extended/` retains desktop/narrow light/dark
+portable screenshots and JSON proof of offline HTML, an empty external-request
+list, opaque-frame isolation and the development journey's cleanup receipt. That
+journey preserves draft/form edits and selection across HMR, observes one active
+HTTP observer and leaves the native session usable after shutdown.
+`final/verification.json` maps command exits and log digests. Owned generator and
+baseline source copies were removed; measurements and logs remain outside them.
+The failed/interrupted intermediate runs are superseded by these named passing
+runs, rather than being counted as successful acceptance.

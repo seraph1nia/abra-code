@@ -2,10 +2,38 @@ import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Schema } from "effect";
 import { Form } from "@opencode/schema/form";
-import { activeFields, initialValues, prepareAnswer, externalURL } from "@abracode/web/native-form";
+import {
+  activeFields,
+  initialValues,
+  prepareAnswer,
+  externalURL,
+  dateTimeDisplay,
+  serializeLocalDateTime,
+} from "@abracode/web/native-form";
 import { workspaceSearch } from "@abracode/web/navigation";
 
 const fields = (value: unknown) => Schema.decodeUnknownSync(Form.Fields)(value);
+test("date-time edits validate calendar fields and preserve untouched zone-less defaults", () => {
+  const definition = fields([
+    { type: "string", key: "when", format: "date-time", default: "2026-11-16T10:00" },
+  ]);
+  assert.equal(
+    prepareAnswer(definition, { when: "2026-11-16T10:00" }).answer.when,
+    "2026-11-16T10:00",
+  );
+  assert.equal(
+    prepareAnswer(definition, { when: "2026-11-17T10:00" }).answer.when,
+    new Date("2026-11-17T10:00").toISOString(),
+  );
+  assert.equal(serializeLocalDateTime("2026-02-30T10:00"), undefined);
+  assert.equal(serializeLocalDateTime("2026-11-16T25:00"), undefined);
+  assert.equal(dateTimeDisplay("2026-11-16T10:00"), "2026-11-16T10:00");
+  assert.equal(
+    prepareAnswer(fields([{ type: "string", key: "date", format: "date" }]), { date: "2026-11-16" })
+      .answer.date,
+    "2026-11-16",
+  );
+});
 test("native form answers preserve hidden defaults and false/zero while excluding inactive branches", () => {
   const definition = fields([
     { type: "boolean", key: "include", required: true, default: false },
@@ -99,6 +127,15 @@ test("custom multiselect accepts user values and initial arrays are independent"
   assert.notEqual(first.views, second.views);
   assert.deepEqual(prepareAnswer(definition, { views: ["one", "custom"] }), {
     answer: { views: ["one", "custom"] },
+    errors: {},
+  });
+});
+test("custom multiselect answer preparation removes empty and repeated custom values", () => {
+  const definition = fields([
+    { type: "multiselect", key: "views", options: [], custom: true, minItems: 2, maxItems: 2 },
+  ]);
+  assert.deepEqual(prepareAnswer(definition, { views: ["one", "", "two", "one"] }), {
+    answer: { views: ["one", "two"] },
     errors: {},
   });
 });

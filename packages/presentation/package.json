@@ -4,7 +4,17 @@
   "private": true,
   "license": "MIT",
   "type": "module",
+  "imports": {
+    "#ui/*": "./src/ui/*.tsx",
+    "#utils": "./src/utils.ts",
+    "#components/*": "./src/components/*.tsx",
+    "#lib/*": "./src/lib/*.ts",
+    "#hooks/*": "./src/hooks/*.ts"
+  },
   "exports": {
+    "./icons": "./src/icons.ts",
+    "./diagram-resource": "./src/diagram-resource.tsx",
+    "./surface-owner": "./src/surface-owner.ts",
     "./ui/alert": "./src/ui/alert.tsx",
     "./ui/badge": "./src/ui/badge.tsx",
     "./ui/button": "./src/ui/button.tsx",

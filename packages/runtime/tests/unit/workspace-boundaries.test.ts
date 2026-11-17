@@ -24,6 +24,10 @@ test("contributor lint rejects value, type and dynamic workspace escapes and mis
   });
   await json("apps/web/package.json", {
     name: "@abracode/web",
+    imports: {
+      "#local": "./src/local.ts",
+      "#escape": "./../../../packages/contracts/src/private.ts",
+    },
     dependencies: { "@abracode/contracts": "workspace:*" },
     devDependencies: { "build-only": "1.0.0" },
   });
@@ -41,6 +45,7 @@ test("contributor lint rejects value, type and dynamic workspace escapes and mis
     undeclared: 'import "undeclared-package";',
     privateExport: 'import "@abracode/contracts/src/private.ts";',
     buildOnly: 'import "build-only";',
+    privateEscape: 'import "#escape";',
   };
   for (const [name, source] of Object.entries(probes))
     await writeFile(join(root, `apps/web/src/${name}.ts`), source);
@@ -75,6 +80,7 @@ test("contributor lint rejects value, type and dynamic workspace escapes and mis
       'void import("@abracode/contracts/identities");',
       'export type Id = import("@abracode/contracts/identities").IssueId;',
       'import "@/local.ts";',
+      'import "#local";',
     ].join("\n"),
   );
   await command(resolve("node_modules/.bin/oxlint"), ["-c", ".oxlintrc.json", "apps", "packages"], {

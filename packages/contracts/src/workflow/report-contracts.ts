@@ -1,8 +1,19 @@
-import { ReportSnapshotSchema } from "../presentation/report-evidence.ts";
-import { ReportDocumentSchema, ReportProducerSchema } from "../presentation/report-document.ts";
 import {
-  RequestId,
-  Timestamp,
+  EvidenceReferenceSchema,
+  VisualRenderRequestSchema,
+  visualBuildFields,
+} from "./report-metadata.ts";
+export {
+  EvidenceReferenceSchema,
+  VisualRenderRequestSchema,
+  VisualReceiptSchema,
+  ReportDocumentReceiptSchema,
+  ReportArtifactReceiptSchema,
+  VisualBuildSummarySchema,
+} from "./report-metadata.ts";
+import { ReportSnapshotSchema } from "../presentation/report-evidence.ts";
+import { ReportDocumentSchema } from "../presentation/report-document.ts";
+import {
   MessageId,
   ReportId,
   IssueId,
@@ -11,45 +22,11 @@ import {
   Fingerprint,
   ContentHash,
   AbsolutePath,
-  RelativePath,
 } from "../identities.ts";
 import { Schema } from "effect";
 import { NonEmpty, Commit, Count, Positive } from "../primitives.ts";
 const text = NonEmpty.check(Schema.isMaxLength(16384));
 const strings = Schema.Array(text).check(Schema.isMaxLength(64));
-export const EvidenceReferenceSchema = Schema.Struct({
-  base: Schema.optional(Commit),
-  path: Schema.optional(
-    RelativePath.check(
-      Schema.isNonEmpty(),
-      Schema.makeFilter(
-        (p) =>
-          (!p.startsWith("/") &&
-            !p.includes("\\") &&
-            p.split("/").every((s) => s !== ".." && s !== "." && s !== "")) ||
-          "Evidence path must be relative",
-      ),
-    ),
-  ),
-  line: Schema.optional(Positive),
-  url: Schema.optional(NonEmpty.check(Schema.isPattern(/^https?:\/\//))),
-}).check(
-  Schema.makeFilter(
-    (r) => !!r.url || (!!r.path && !!r.base) || "Evidence requires a URL or base/path identity",
-  ),
-);
-export const VisualRenderRequestSchema = Schema.Struct({
-  format: Schema.optional(Schema.Literal("a2ui-snapshot")),
-  diagrams: ReportSnapshotSchema.fields.diagrams,
-  request_id: RequestId,
-  title: Schema.optional(text),
-  surface: Schema.optional(
-    Schema.Struct({
-      surface_id: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,100}$/)),
-      revision: Schema.Int.check(Schema.isGreaterThan(0)),
-    }),
-  ),
-});
 export const ReportEvidenceSchema = Schema.Struct({
   diagrams: ReportSnapshotSchema.fields.diagrams,
   conclusions: text,
@@ -91,48 +68,9 @@ export const ReportIntentSchema = Schema.Struct({
   content: NonEmpty.check(Schema.isMaxLength(65536)),
 });
 
-/** HTML is an optional attachment; Markdown research acceptance stays authoritative. */
-export const VisualReceiptSchema = Schema.Struct({
-  schema_version: Schema.Literal(1),
-  request_id: RequestId,
-  issue_id: IssueId,
-  execution_id: ExecutionId,
-  generation: Count,
-  input_hash: ContentHash,
-  template_hash: ContentHash,
-  hash: ContentHash,
-  bytes: Positive.check(Schema.isLessThanOrEqualTo(8 * 1024 * 1024)),
-  path: AbsolutePath,
-  observed_at: Timestamp,
-  source_report: Schema.optional(Schema.Struct({ report_id: ReportId, hash: ContentHash })),
-});
-/** Existing untagged v1 receipts are retained HTML, never reinterpreted as JSON. */
-export const ReportDocumentReceiptSchema = Schema.Struct({
-  ...VisualReceiptSchema.fields,
-  schema_version: Schema.Literal(2),
-  format: Schema.Literal("a2ui-snapshot"),
-  document_id: RequestId,
-  revision: ReportDocumentSchema.fields.revision,
-  catalog_id: Schema.String.check(Schema.isMaxLength(1024)),
-  catalog_version: Positive,
-  renderer_compatibility: Schema.String.check(Schema.isMaxLength(256)),
-  bytes: Positive.check(Schema.isLessThanOrEqualTo(1024 * 1024)),
-});
-export const ReportArtifactReceiptSchema = Schema.Union([
-  ReportDocumentReceiptSchema,
-  VisualReceiptSchema,
-]);
 export const VisualBuildSchema = Schema.Struct({
-  format: Schema.optional(Schema.Literal("a2ui-snapshot")),
-  document_hash: Schema.optional(ContentHash),
+  ...visualBuildFields,
   document_input: Schema.optional(ReportDocumentSchema),
-  source_attachment: Schema.optional(Schema.Literals(["associated", "unavailable"])),
-  producing_call: Schema.optional(ReportProducerSchema),
-  request: VisualRenderRequestSchema,
-  generation: Count,
-  requested_by: SessionId,
-  notify_session: Schema.optional(SessionId),
-  deadline_at: Schema.optional(Schema.Finite),
   notices: Schema.optional(
     Schema.Array(
       Schema.Struct({
@@ -152,14 +90,8 @@ export const VisualBuildSchema = Schema.Struct({
       ),
     ),
   ),
-  source_report: VisualReceiptSchema.fields.source_report,
   snapshot: ReportSnapshotSchema,
-  input_hash: ContentHash,
-  template_hash: ContentHash,
-  status: Schema.Literals(["pending", "building", "validated", "published", "failed"]),
-  artifact: Schema.optional(ReportArtifactReceiptSchema),
   staging: Schema.optional(AbsolutePath),
-  error: Schema.optional(text),
 }).check(
   Schema.makeFilter(
     (b) =>
@@ -193,15 +125,3 @@ export const WorkReportInputSchema = Schema.Union([
     ...VisualRenderRequestSchema.fields,
   }),
 ]);
-
-const {
-  document_input: _documentInput,
-  snapshot: _snapshot,
-  staging: _staging,
-  notices: _notices,
-  ...visualSummaryFields
-} = VisualBuildSchema.fields;
-export const VisualBuildSummarySchema = Schema.Struct({
-  ...visualSummaryFields,
-  request: Schema.Struct({ request_id: RequestId, title: VisualRenderRequestSchema.fields.title }),
-});

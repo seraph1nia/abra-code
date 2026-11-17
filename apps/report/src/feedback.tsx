@@ -106,7 +106,7 @@ export function FeedbackForm({ sections }: { sections: readonly string[] }) {
       </div>
       {output && (
         <>
-          <p role="status">Prepared locally. Copy the text to share review input.</p>
+          <output>Prepared locally. Copy the text to share review input.</output>
           <div>
             <label htmlFor={`${id}-output`}>Feedback export</label>
             <Textarea id={`${id}-output`} ref={outputRef} readOnly rows={14} value={output} />

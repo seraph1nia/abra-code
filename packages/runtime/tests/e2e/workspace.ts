@@ -543,7 +543,7 @@ export async function workspaceJourney(input: {
     ).filter((message) => message.type === "user").length;
     await page.getByRole("button", { name: "Inspect execution changes", exact: true }).click();
     await page.getByRole("tab", { name: "Diff", exact: true }).waitFor();
-    await page.getByRole("button", { name: "Open retained reports ↗", exact: true }).click();
+    await page.getByRole("button", { name: "Open retained reports", exact: true }).click();
     await page.getByRole("tab", { name: "Reports", exact: true }).waitFor();
     assert.equal(
       (await input.client.session.context({ sessionID: input.session })).filter(
@@ -924,7 +924,7 @@ export async function workspaceJourney(input: {
           await page.locator(".frozen-report").waitFor();
           savedReport = { request_id: artifact.request_id, hash: artifact.hash, url: page.url() };
           const download = page.getByRole("link", {
-            name: "Download selected JSON ↗",
+            name: "Download selected JSON",
             exact: true,
           });
           const json = await (
@@ -981,7 +981,7 @@ export async function workspaceJourney(input: {
           exportedReport = { ...exportReceipt, request_id: artifact.request_id };
           assert.equal(exportReceipt.document_hash, artifact.hash);
           const exportDownload = page.getByRole("link", {
-            name: "Download exported HTML ↗",
+            name: "Download exported HTML",
             exact: true,
           });
           const downloaded = await fetch(

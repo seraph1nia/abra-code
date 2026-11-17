@@ -28891,19 +28891,19 @@
     },
     {
       "file": "packages/presentation/src/ui/checkbox.tsx",
-      "sha256": "073942880dd74348c1181e2cceefd727235ead9b3b67f7033207303e9d722dcd",
+      "sha256": "1a79999832bf379336d7d528f8dd9f9ac0cc3017e675f1c8feb04592786516d6",
       "license": "MIT",
       "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
       "notice": "licenses/shadcn-ui.txt",
-      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors; relocated to shared presentation workspace"
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors; relocated to shared presentation workspace; explicit decorative icon hiding, semantic field grouping and forwarded label association where applicable"
     },
     {
       "file": "packages/presentation/src/ui/field.tsx",
-      "sha256": "292084801cc80914a91f737196ae28aa88dd069fc1047391e56ea829dc82c51b",
+      "sha256": "ce1a5f7346e2d773018d87ece27e60f2d5dfe6924e31861ddc92b6e3b924a495",
       "license": "MIT",
       "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
       "notice": "licenses/shadcn-ui.txt",
-      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors; relocated to shared presentation workspace"
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors; relocated to shared presentation workspace; explicit decorative icon hiding, semantic field grouping and forwarded label association where applicable"
     },
     {
       "file": "packages/presentation/src/ui/input.tsx",
@@ -28915,11 +28915,11 @@
     },
     {
       "file": "packages/presentation/src/ui/label.tsx",
-      "sha256": "fe9fac4e0d00715373cf01ed204e9bdeaecd07d7d250e412973741d13fc224a7",
+      "sha256": "35a607d6fd9e28c485b48f09b45382cd750656177b98c5ab4577db067ce9d908",
       "license": "MIT",
       "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
       "notice": "licenses/shadcn-ui.txt",
-      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors; relocated to shared presentation workspace"
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors; relocated to shared presentation workspace; explicit decorative icon hiding, semantic field grouping and forwarded label association where applicable"
     },
     {
       "file": "packages/presentation/src/ui/native-select.tsx",
@@ -28939,11 +28939,11 @@
     },
     {
       "file": "packages/presentation/src/ui/sheet.tsx",
-      "sha256": "4bcd0e2ea5ed1f54099178348d88684b9816e01654bfef4803230473437bf878",
+      "sha256": "30dd5e54cc06dc34e794e0c44709da636e8629bda996feda7b0a4c0508d76e84",
       "license": "MIT",
       "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
       "notice": "licenses/shadcn-ui.txt",
-      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors; relocated to shared presentation workspace"
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors; relocated to shared presentation workspace; explicit decorative icon hiding, semantic field grouping and forwarded label association where applicable"
     },
     {
       "file": "packages/presentation/src/ui/skeleton.tsx",

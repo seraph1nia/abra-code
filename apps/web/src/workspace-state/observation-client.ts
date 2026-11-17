@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { retainConversation, type Conversation } from "./conversation.ts";
 import { observationDecision } from "@abracode/contracts/web/observation";
 import { mergeChanges, type ChangeScope, type Observation } from "@abracode/contracts/web/changes";
 import {
@@ -11,6 +12,7 @@ export type ObservationState = {
   workspace: WorkspaceSnapshot;
   stateError: string;
   connectionError: string;
+  conversation: Conversation;
 };
 type Cancel = () => void;
 export type ObservationClock = { after: (delay: number, action: () => void) => Cancel };
@@ -39,6 +41,27 @@ const clock: ObservationClock = {
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
+/** Validated snapshots are JSON values. Preserve unchanged subtrees across wire decoding. */
+function retainJSON<A>(previous: A, next: A): A {
+  if (
+    previous === next ||
+    !record(previous) ||
+    !record(next) ||
+    Array.isArray(previous) !== Array.isArray(next)
+  )
+    return next;
+  const keys = Object.keys(next);
+  if (keys.length !== Object.keys(previous).length) return next;
+  let same = true;
+  const result = (Array.isArray(next) ? [...next] : { ...next }) as Record<string, unknown>;
+  for (const key of keys) {
+    if (!Object.hasOwn(previous, key)) return next;
+    result[key] = retainJSON(previous[key], next[key]);
+    if (result[key] !== previous[key]) same = false;
+  }
+  return same ? previous : (result as A);
+}
+
 /** One browser observation lifetime. No drafts, admissions, history, navigation or native Stop. */
 export class WorkspaceObservation {
   private value: ObservationState;
@@ -59,8 +82,14 @@ export class WorkspaceObservation {
   constructor(
     initial: WorkspaceSnapshot,
     private adapters: ObservationAdapters,
+    retained?: Conversation,
   ) {
-    this.value = { workspace: initial, stateError: "", connectionError: "" };
+    this.value = {
+      workspace: initial,
+      stateError: "",
+      connectionError: "",
+      conversation: retainConversation(retained, initial),
+    };
     this.clock = adapters.clock ?? clock;
     this.unsubscribe = adapters.transport.subscribe({
       state: (state) => this.receive(state),
@@ -97,7 +126,10 @@ export class WorkspaceObservation {
       this.retired.add(current.epoch);
       if (this.retired.size > 16) this.retired.delete(this.retired.values().next().value!);
     }
-    this.update({ workspace: next });
+    this.update({
+      workspace: retainJSON(this.value.workspace, next),
+      conversation: retainConversation(this.value.conversation, next),
+    });
     const changes = order?.changes ?? { all: true };
     if (
       changes.all ||

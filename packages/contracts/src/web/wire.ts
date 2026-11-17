@@ -9,7 +9,7 @@ export { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
 export { WorkerInspectionSchema } from "../visibility/worker.ts";
 import { Schema } from "effect";
 import { RelativePath, Timestamp } from "../identities.ts";
-import { VisualBuildSummarySchema, VisualReceiptSchema } from "../workflow/report-contracts.ts";
+import { VisualBuildSummarySchema, VisualReceiptSchema } from "../workflow/report-metadata.ts";
 
 /** Browser projections deliberately contain data only, without controller/adaptor imports. */
 const strings = Schema.Array(Schema.String);

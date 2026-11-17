@@ -9,7 +9,11 @@
     "skipLibCheck": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "paths": { "@/*": ["./src/*"] },
+    "paths": {
+      "@/*": ["./src/*"],
+      "@abracode/presentation/ui": ["../../packages/presentation/src/ui"],
+      "@abracode/presentation/utils": ["../../packages/presentation/src/utils.ts"]
+    },
     "types": ["vite-plus/client"]
   },
   "include": ["src", "vite.config.ts"]

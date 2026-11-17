@@ -140,9 +140,9 @@ function WorkerTranscript({
                   ),
                 )}
                 {message.limited && (
-                  <p role="status">
+                  <output>
                     This message contains bounded excerpts. Omitted content is not reconstructed.
-                  </p>
+                  </output>
                 )}
               </article>
             ))}

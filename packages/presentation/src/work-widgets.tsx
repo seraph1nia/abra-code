@@ -1,4 +1,5 @@
 import { DiagramView } from "./diagrams.tsx";
+import { ArrowUpRight } from "./icons.ts";
 import { bindWork, type WorkBinding } from "./work-bindings.ts";
 export { bindWork } from "./work-bindings.ts";
 import type { ReactNode } from "react";
@@ -103,7 +104,7 @@ export function WorkWidget({
       break;
     case "WorkTable":
       content = (
-        <div className="work-table-scroll" tabIndex={0} role="region" aria-label="Work table">
+        <section className="work-table-scroll" tabIndex={0} aria-label="Work table">
           <table className="work-table">
             <caption>Observed work</caption>
             <thead>
@@ -131,12 +132,12 @@ export function WorkWidget({
               ))}
             </tbody>
           </table>
-        </div>
+        </section>
       );
       break;
     case "Kanban":
       content = (
-        <div className="kanban" role="region" aria-label="Work board" tabIndex={0}>
+        <section className="kanban" aria-label="Work board" tabIndex={0}>
           {statuses.map((status) => (
             <section key={status}>
               <h4>{words(status)}</h4>
@@ -147,7 +148,7 @@ export function WorkWidget({
                 ))}
             </section>
           ))}
-        </div>
+        </section>
       );
       break;
     case "Timeline": {
@@ -181,9 +182,9 @@ export function WorkWidget({
             <p>No timed observations retained.</p>
           )}
           {total > events.length && (
-            <p role="status">
+            <output>
               Showing {events.length} of {total} captured events.
-            </p>
+            </output>
           )}
         </>
       );
@@ -215,9 +216,9 @@ export function WorkWidget({
                       <p>No declared dependencies.</p>
                     )}
                     {(work.dependency_count ?? 0) > work.dependencies.length && (
-                      <p role="status">
+                      <output>
                         Showing {work.dependencies.length} of {work.dependency_count} dependencies.
-                      </p>
+                      </output>
                     )}
                   </>
                 ) : (
@@ -270,7 +271,9 @@ export function WorkWidget({
       content = props.issueId ? (
         navigate(
           { action: "open_task", issue_id: props.issueId, section: "reports" },
-          "Open retained reports ↗",
+          <>
+            Open retained reports <ArrowUpRight aria-hidden="true" />
+          </>,
         )
       ) : (
         <p>Report target unavailable.</p>
@@ -289,9 +292,9 @@ export function WorkWidget({
       </div>
       {content}
       {name !== "ResourceLink" && name !== "ReportLink" && total > selected.length && (
-        <p role="status">
+        <output>
           Showing {selected.length} of {total} matching work observations.
-        </p>
+        </output>
       )}
       {!binding.inspect && (
         <p className="muted">App navigation is unavailable in this document view.</p>

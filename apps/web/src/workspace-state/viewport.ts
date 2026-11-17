@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import type { TranscriptMessage } from "@abracode/contracts/web/contracts";
 export function useTranscriptViewport(
   messages: readonly TranscriptMessage[],
@@ -10,24 +10,41 @@ export function useTranscriptViewport(
   const nearBottom = useRef(true);
   const historyAnchor = useRef<{ height: number; top: number } | undefined>(undefined);
   const viewAnchor = useRef<{ element: HTMLElement; offset: number } | undefined>(undefined);
-  function rememberPosition() {
+  const rememberPosition = useCallback(() => {
     const container = scroller.current;
-    if (!container || nearBottom.current) return;
+    if (!container) return;
+    // Read actual geometry: a programmatic/browser scroll can precede onScroll delivery.
+    nearBottom.current = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+    if (nearBottom.current) return;
+    if (viewAnchor.current?.element.isConnected) return;
     const top = container.getBoundingClientRect().top;
     const element = [...container.querySelectorAll<HTMLElement>("[data-native-message-id]")].find(
       (element) => element.getBoundingClientRect().bottom > top,
     );
     if (element)
       viewAnchor.current = { element, offset: element.getBoundingClientRect().top - top };
+  }, []);
+  function restorePosition() {
+    const container = scroller.current,
+      anchor = viewAnchor.current;
+    if (container && anchor?.element.isConnected && !historyAnchor.current)
+      container.scrollTop +=
+        anchor.element.getBoundingClientRect().top -
+        container.getBoundingClientRect().top -
+        anchor.offset;
   }
   const bottom = useRef<HTMLDivElement>(null);
+  const lastID = messages.at(-1)?.id;
+  const lastTextLength = messages.at(-1)?.text.length;
+  const firstID = messages[0]?.id;
   useEffect(() => {
     if (nearBottom.current && !historyAnchor.current)
       bottom.current?.scrollIntoView({ block: "end" });
-  }, [messages.at(-1)?.id, messages.at(-1)?.text.length]);
+  }, [lastID, lastTextLength]);
   useEffect(() => {
     if (!transcript.current) return;
     const observer = new ResizeObserver(() => {
+      restorePosition();
       if (nearBottom.current && !historyAnchor.current)
         bottom.current?.scrollIntoView({ block: "end" });
     });
@@ -35,14 +52,7 @@ export function useTranscriptViewport(
     return () => observer.disconnect();
   }, []);
   useLayoutEffect(() => {
-    const container = scroller.current,
-      anchor = viewAnchor.current;
-    if (container && anchor?.element.isConnected)
-      container.scrollTop +=
-        anchor.element.getBoundingClientRect().top -
-        container.getBoundingClientRect().top -
-        anchor.offset;
-    viewAnchor.current = undefined;
+    restorePosition();
   }, [layoutKey]);
   useLayoutEffect(() => {
     const container = scroller.current,
@@ -51,18 +61,30 @@ export function useTranscriptViewport(
       container.scrollTop = anchor.top + container.scrollHeight - anchor.height;
       historyAnchor.current = undefined;
     }
-  }, [messages[0]?.id, loadingHistory]);
+  }, [firstID, loadingHistory]);
   const onScroll = () => {
     const element = scroller.current;
     if (element)
       nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
   };
   const beforeHistory = () => {
+    viewAnchor.current = undefined;
     if (scroller.current)
       historyAnchor.current = {
         height: scroller.current.scrollHeight,
         top: scroller.current.scrollTop,
       };
   };
-  return { scroller, transcript, bottom, onScroll, beforeHistory, rememberPosition };
+  const onReadingIntent = () => {
+    viewAnchor.current = undefined;
+  };
+  return {
+    scroller,
+    transcript,
+    bottom,
+    onScroll,
+    beforeHistory,
+    rememberPosition,
+    onReadingIntent,
+  };
 }

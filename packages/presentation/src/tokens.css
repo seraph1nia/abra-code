@@ -27,7 +27,7 @@
 
 @layer base {
   :root {
-    font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+    font-family: ui-sans-serif, system-ui, sans-serif;
     font-synthesis: none;
     --abra-bg: #fafbf8;
     --abra-ink: #242722;
@@ -40,6 +40,12 @@
     --abra-tint: #edf3e7;
     --abra-danger: #b13e30;
     --warning: #82551d;
+    --status-neutral: #626b5b;
+    --status-open: #476c36;
+    --status-progress: #82551d;
+    --status-blocked: #b13e30;
+    --attention-ink: #82551d;
+    --attention-bg: #fff0d2;
     --shadow: 0 8px 28px #1b2f1410;
     color-scheme: light;
   }
@@ -55,6 +61,12 @@
     --abra-tint: #2b3a22;
     --abra-danger: #ef9b8e;
     --warning: #ddb273;
+    --status-neutral: #a2af94;
+    --status-open: #a1c58b;
+    --status-progress: #ddb273;
+    --status-blocked: #ef9b8e;
+    --attention-ink: #efcc93;
+    --attention-bg: #3c3020;
     color-scheme: dark;
   }
   * {

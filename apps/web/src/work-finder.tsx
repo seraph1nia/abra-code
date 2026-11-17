@@ -52,7 +52,7 @@ export function WorkFinder({
       <div className="sidebar-heading">
         <h2>Work</h2>
         <Button variant="ghost" size="icon-sm" onClick={close} aria-label="Close work finder">
-          ×
+          <X aria-hidden="true" />
         </Button>
       </div>
       <Input
@@ -209,7 +209,7 @@ export function WorkFinder({
             ask("Inspect registered projects and help me onboard a project.");
           }}
         >
-          ＋ Add a project
+          <Plus aria-hidden="true" /> Add a project
         </Button>
         <a
           className="muted"
@@ -252,3 +252,4 @@ export function WorkFinder({
     </aside>
   );
 }
+import { X, Plus } from "@abracode/presentation/icons";

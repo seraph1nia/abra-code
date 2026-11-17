@@ -9,6 +9,9 @@ import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { bootstrapQuery, invalidateWork } from "../data.ts";
 import { requestError } from "../request-state.tsx";
 import { WorkspaceObservation, type ObservationState } from "./observation-client.ts";
+import { HttpAgent } from "@ag-ui/client";
+import { ownObservationRequests } from "./observation-transport.ts";
+import { retainConversation } from "./conversation.ts";
 const updates = [UseAgentUpdate.OnStateChanged, UseAgentUpdate.OnMessagesChanged];
 export function useWorkspaceObservation(
   initial: WorkspaceSnapshot,
@@ -25,51 +28,60 @@ export function useWorkspaceObservation(
     workspace: initial,
     stateError: "",
     connectionError: "",
+    conversation: retainConversation(undefined, initial),
   });
   const owner = useRef<WorkspaceObservation | undefined>(undefined);
   const initialRef = useRef(initial);
+  const retained = useRef(state.conversation);
   const invalidate = useAtomSet(invalidateWork, { mode: "promiseExit" });
   useEffect(() => {
     if (!isReady) return;
-    const observation = new WorkspaceObservation(initialRef.current, {
-      transport: {
-        current: () => agent.state,
-        subscribe: (listener) => {
-          const subscription = agent.subscribe({
-            onStateChanged: ({ state }) => listener.state(state),
-            onCustomEvent: ({ event }) => listener.custom(event),
-          });
-          return () => subscription.unsubscribe();
+    const releaseRequests = agent instanceof HttpAgent ? ownObservationRequests(agent) : () => {};
+    const observation = new WorkspaceObservation(
+      initialRef.current,
+      {
+        transport: {
+          current: () => agent.state,
+          subscribe: (listener) => {
+            const subscription = agent.subscribe({
+              onStateChanged: ({ state }) => listener.state(state),
+              onCustomEvent: ({ event }) => listener.custom(event),
+            });
+            return () => subscription.unsubscribe();
+          },
+          connect: () => agent.connectAgent().then(() => undefined),
+          detach: () => {
+            void agent.detachActiveRun();
+          },
+          publish: (workspace) =>
+            agent.setState(Schema.encodeSync(WorkspaceStateJson)({ workspace })),
         },
-        connect: () => agent.connectAgent().then(() => undefined),
-        detach: () => {
-          void agent.detachActiveRun();
+        baseline: async (signal) => {
+          registry.refresh(bootstrapQuery);
+          const result = await Effect.runPromiseExit(
+            AtomRegistry.getResult(registry, bootstrapQuery, { suspendOnWaiting: true }),
+            { signal },
+          );
+          if (Exit.isFailure(result)) throw new Error(requestError(result.cause));
+          return result.value;
         },
-        publish: (workspace) =>
-          agent.setState(Schema.encodeSync(WorkspaceStateJson)({ workspace })),
+        invalidate: async (scope) => {
+          const result = await invalidate(scope);
+          if (Exit.isFailure(result)) throw new Error(requestError(result.cause));
+        },
+        error: setError,
       },
-      baseline: async (signal) => {
-        registry.refresh(bootstrapQuery);
-        const result = await Effect.runPromiseExit(
-          AtomRegistry.getResult(registry, bootstrapQuery, { suspendOnWaiting: true }),
-          { signal },
-        );
-        if (Exit.isFailure(result)) throw new Error(requestError(result.cause));
-        return result.value;
-      },
-      invalidate: async (scope) => {
-        const result = await invalidate(scope);
-        if (Exit.isFailure(result)) throw new Error(requestError(result.cause));
-      },
-      error: setError,
-    });
+      retained.current,
+    );
     owner.current = observation;
     const unsubscribe = observation.subscribe(setState);
     setState(observation.current());
     return () => {
       unsubscribe();
       initialRef.current = observation.current().workspace;
+      retained.current = observation.current().conversation;
       observation.dispose();
+      releaseRequests();
       owner.current = undefined;
     };
   }, [agent, isReady, registry, invalidate, setError]);

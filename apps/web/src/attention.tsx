@@ -1,5 +1,6 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Native form replies use independent typed Effect mutation atoms. */
 import { useRef, useState } from "react";
+import { ArrowUpRight } from "@abracode/presentation/icons";
 import { useAtom } from "@effect/atom-react";
 import { Exit } from "effect";
 import { AsyncResult } from "effect/reactivity";
@@ -9,6 +10,9 @@ import { formReply, permissionReply } from "./data.ts";
 import {
   activeFields,
   initialValues,
+  initialCustomChoices,
+  dateTimeDisplay,
+  editingValues,
   prepareAnswer,
   externalURL,
   type FormValues,
@@ -29,10 +33,11 @@ export function NativeForm(props: { item: AttentionForm; refresh: () => void }) 
 function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => void }) {
   const { form } = item;
   const [values, setValues] = useState(() => initialValues(form.fields));
+  const [customText, setCustomText] = useState(() => initialCustomChoices(form.fields));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [result, reply] = useAtom(formReply(`${form.id}:${item.binding}`), { mode: "promiseExit" });
   const submitting = useRef(false);
-  const enabled = activeFields(form.fields, values);
+  const enabled = activeFields(form.fields, editingValues(form.fields, values, customText));
   function set(key: string, value: Form.Value | undefined) {
     setValues((previous) => {
       const next = { ...previous };
@@ -49,7 +54,7 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting.current || !item.active) return;
-    const prepared = prepareAnswer(form.fields, values);
+    const prepared = prepareAnswer(form.fields, values, customText);
     setErrors(prepared.errors);
     const first = Object.keys(prepared.errors)[0];
     if (first) {
@@ -105,6 +110,15 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
                   id={`${form.id}-${field.key}`}
                   values={values}
                   set={set}
+                  customText={customText[field.key] ?? ""}
+                  setCustomText={(text) => {
+                    setCustomText((previous) => ({ ...previous, [field.key]: text }));
+                    setErrors((previous) => {
+                      const next = { ...previous };
+                      delete next[field.key];
+                      return next;
+                    });
+                  }}
                   error={errors[field.key]}
                 />
               ))}
@@ -137,12 +151,16 @@ function NativeField({
   values,
   set,
   error,
+  customText,
+  setCustomText,
 }: {
   field: Form.Field;
   id: string;
   values: FormValues;
   set: (key: string, value: Form.Value | undefined) => void;
   error?: string;
+  customText: string;
+  setCustomText: (value: string) => void;
 }) {
   const value = values[field.key];
   const title = field.title ?? field.key;
@@ -159,7 +177,7 @@ function NativeField({
         <>
           {href ? (
             <a className="underline" href={href} target="_blank" rel="noopener noreferrer">
-              {title} ↗
+              {title} <ArrowUpRight aria-hidden="true" />
             </a>
           ) : (
             <p>Unsupported external link</p>
@@ -222,9 +240,19 @@ function NativeField({
               pattern={field.pattern}
               placeholder={field.placeholder}
               list={field.options ? `${id}-choices` : undefined}
-              value={typeof value === "string" ? value : ""}
+              step={field.format === "date-time" ? "any" : undefined}
+              value={
+                typeof value === "string"
+                  ? field.format === "date-time"
+                    ? dateTimeDisplay(value)
+                    : value
+                  : ""
+              }
               onChange={(event) => set(field.key, event.target.value)}
             />
+            {field.format === "date-time" && (
+              <p className="muted">Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+            )}
             {field.options && (
               <datalist id={`${id}-choices`}>
                 {field.options.map((option) => (
@@ -257,9 +285,8 @@ function NativeField({
     case "multiselect": {
       const selected = Array.isArray(value) ? value : [];
       content = (
-        <div
+        <fieldset
           id={id}
-          role="group"
           aria-labelledby={`${id}-label`}
           aria-describedby={control["aria-describedby"]}
           tabIndex={-1}
@@ -288,26 +315,18 @@ function NativeField({
             ))}
           </div>
           {field.custom && (
-            <FieldLabel className="mt-3 block">
-              Additional choices, one per line
+            <div className="mt-3">
+              <FieldLabel htmlFor={`${id}-custom`}>Additional choices, one per line</FieldLabel>
               <Textarea
-                value={selected
-                  .filter((item) => !field.options.some((option) => option.value === item))
-                  .join("\n")}
-                onChange={(event) =>
-                  set(field.key, [
-                    ...new Set([
-                      ...selected.filter((item) =>
-                        field.options.some((option) => option.value === item),
-                      ),
-                      ...event.target.value.split("\n").filter(Boolean),
-                    ]),
-                  ])
-                }
+                id={`${id}-custom`}
+                aria-invalid={Boolean(error)}
+                aria-describedby={control["aria-describedby"]}
+                value={customText}
+                onChange={(event) => setCustomText(event.target.value)}
               />
-            </FieldLabel>
+            </div>
           )}
-        </div>
+        </fieldset>
       );
       break;
     }

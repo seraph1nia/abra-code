@@ -8,7 +8,7 @@ import {
   SessionId,
   Timestamp,
 } from "../identities.ts";
-import { EvidenceReferenceSchema } from "./report-contracts.ts";
+import { EvidenceReferenceSchema } from "./report-metadata.ts";
 import { DecisionSummarySchema as DecisionSchema } from "./obligation-summary.ts";
 import { AttentionSchema } from "./attention-contracts.ts";
 const MessageEvidence = Schema.Array(

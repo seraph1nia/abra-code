@@ -20,6 +20,8 @@ import {
   ContentHash,
 } from "@abracode/contracts/identities";
 import type { WorkDiscovery } from "@abracode/contracts/visibility/discovery-contracts";
+import { diagramRequestKey, type DiagramRequest } from "@abracode/presentation/diagram-resource";
+import type { PrepareDiagramSelection } from "@abracode/contracts/web/diagram-actions";
 
 export class WorkspaceApi extends AtomHttpApi.Service<WorkspaceApi>()("WorkspaceApi", {
   api: workspaceApi,
@@ -43,6 +45,37 @@ export const surfaceQuery = (id: string, revision: number) =>
     query: { surface_id: id, revision },
     timeToLive: "30 seconds",
   });
+/** Exact preparation is a read, even though its typed endpoint takes a POST body. */
+export const diagramQuery = Atom.family((key: string) =>
+  WorkspaceApi.runtime
+    .atom(
+      Effect.gen(function* () {
+        const request = JSON.parse(key) as DiagramRequest;
+        let selection: PrepareDiagramSelection;
+        if (request.kind === "surface" && "surface" in request) {
+          const digest = yield* Effect.tryPromise(() =>
+            crypto.subtle.digest(
+              "SHA-256",
+              new TextEncoder().encode(diagramRequestKey(request.surface)),
+            ),
+          );
+          selection = {
+            kind: "surface",
+            surface_id: request.surface_id,
+            revision: request.revision,
+            hash: ContentHash.make(
+              Array.from(new Uint8Array(digest), (value) =>
+                value.toString(16).padStart(2, "0"),
+              ).join(""),
+            ),
+          };
+        } else selection = request;
+        const client = yield* WorkspaceApi;
+        return yield* client.workspace.prepareDiagrams({ payload: selection });
+      }),
+    )
+    .pipe(Atom.setIdleTTL(0)),
+);
 export const queries = {
   binding: (selection: BindingSelection) =>
     WorkspaceApi.query("work", "binding", {

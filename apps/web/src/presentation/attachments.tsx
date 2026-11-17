@@ -1,5 +1,6 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect HTTP atoms own shared generated-binding queries. */
 import { useAtomValue } from "@effect/atom-react";
+import { ArrowUpRight } from "@abracode/presentation/icons";
 import { AsyncResult } from "effect/reactivity";
 import { Option } from "effect";
 import {
@@ -48,9 +49,7 @@ export function RetainedSurfaces({
     <>
       {entries.map((entry) =>
         "unavailable" in entry ? (
-          <p role="status" key={entry.surface_id}>
-            {entry.unavailable}
-          </p>
+          <output key={entry.surface_id}>{entry.unavailable}</output>
         ) : "surface" in entry ? (
           <BoundSurface
             key={entry.surface.createSurface.surfaceId}
@@ -86,9 +85,7 @@ export function SurfaceAttachment({
       <RequestState query={surfaceQuery(target.surface_id, target.revision)}>
         {(entry) =>
           "unavailable" in entry ? (
-            <p role="status" className="error">
-              {entry.unavailable}
-            </p>
+            <output className="error">{entry.unavailable}</output>
           ) : (
             <>
               {entry.history === "latest-only" && (
@@ -191,7 +188,8 @@ function ArtifactAttachment({
               }
               download
             >
-              {artifact.format === "a2ui-snapshot" ? "Download JSON ↗" : "Download HTML ↗"}
+              {artifact.format === "a2ui-snapshot" ? "Download JSON" : "Download HTML"}{" "}
+              <ArrowUpRight aria-hidden="true" />
             </a>
             <details
               className="artifact-inline-preview"
@@ -212,7 +210,7 @@ function ArtifactAttachment({
                       body.hash === target.hash ? (
                         <ReportDocumentView artifact={body} inspect={inspect} />
                       ) : (
-                        <p role="status">The document does not match this attachment.</p>
+                        <output>The document does not match this attachment.</output>
                       )
                     }
                   </RequestState>
@@ -227,9 +225,9 @@ function ArtifactAttachment({
             </details>
           </div>
         ) : (
-          <p role="status">
+          <output>
             This exact report receipt is unavailable. Other task reports remain available.
-          </p>
+          </output>
         );
       }}
     </RequestState>

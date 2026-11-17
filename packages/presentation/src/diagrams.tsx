@@ -1,96 +1,9 @@
-import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { DiagramPreparation } from "@abracode/contracts/presentation/diagrams";
-import type { PrepareDiagramSelection } from "@abracode/contracts/web/diagram-actions";
-import { ContentHash } from "@abracode/contracts/identities";
+import { useId, useMemo, useRef, useState } from "react";
 import { Button } from "./ui/button.tsx";
-
-export type PreparedReportDiagram = { id?: string; source: string; svg: string };
-export const DiagramLoaderContext = createContext<
-  | ((selection: PrepareDiagramSelection, signal: AbortSignal) => Promise<DiagramPreparation>)
-  | undefined
->(undefined);
-export type DiagramRequest =
-  | PrepareDiagramSelection
-  | { kind: "surface"; surface_id: string; revision: number; surface: unknown };
-const stable = (value: unknown) =>
-  JSON.stringify(value, (_key, item) =>
-    item && typeof item === "object" && !Array.isArray(item)
-      ? Object.fromEntries(
-          Object.entries(item)
-            .filter(([, v]) => v !== undefined)
-            .sort(([a], [b]) => a.localeCompare(b)),
-        )
-      : item,
-  );
-
-export function usePreparedDiagrams(
-  request: DiagramRequest | undefined,
-  supplied?: readonly PreparedReportDiagram[],
-) {
-  const load = useContext(DiagramLoaderContext);
-  const key = request ? stable(request) : "";
-  const [state, setState] = useState<{
-    key: string;
-    assets: readonly PreparedReportDiagram[];
-    message?: string;
-  }>();
-  useEffect(() => {
-    if (!load || !request || supplied) return;
-    const controller = new AbortController();
-    let current = true;
-    const prepare = async () => {
-      let selection: PrepareDiagramSelection;
-      if (request.kind === "surface" && "surface" in request) {
-        const digest = await crypto.subtle.digest(
-          "SHA-256",
-          new TextEncoder().encode(stable(request.surface)),
-        );
-        selection = {
-          kind: "surface",
-          surface_id: request.surface_id,
-          revision: request.revision,
-          hash: ContentHash.make(
-            Array.from(new Uint8Array(digest), (v) => v.toString(16).padStart(2, "0")).join(""),
-          ),
-        };
-      } else selection = request;
-      const prepared = await load(selection, controller.signal);
-      if (current)
-        setState({
-          key,
-          assets: prepared.assets,
-          message: prepared.verified
-            ? undefined
-            : prepared.results
-                .filter((r) => r.status !== "verified")
-                .map((r) => `${r.id}: ${r.status}: ${r.message}`)
-                .join("\n"),
-        });
-    };
-    void prepare().catch(() => {
-      if (current)
-        setState({
-          key,
-          assets: [],
-          message: "Diagram rendering is unavailable. Retained source remains readable.",
-        });
-    });
-    return () => {
-      current = false;
-      controller.abort();
-    };
-  }, [key, load, supplied]); // The stable key includes every selected source/revision/hash.
-  return supplied
-    ? { assets: supplied }
-    : state?.key === key
-      ? state
-      : {
-          assets: [],
-          message: load
-            ? "Preparing diagrams…"
-            : "Captured Mermaid source. A prepared rendering is available in an explicit HTML export.",
-        };
-}
+import { Expand, ZoomOut, ZoomIn, RotateCcw, X } from "./icons.ts";
+import type { PreparedReportDiagram } from "./diagram-resource.tsx";
+export { usePreparedDiagrams } from "./diagram-resource.tsx";
+export type { DiagramRequest, PreparedReportDiagram } from "./diagram-resource.tsx";
 
 /** Namespacing changes SVG references only; captured source and visible label text stay exact. */
 function namespaceSVG(svg: string, prefix: string) {
@@ -159,13 +72,14 @@ export function DiagramView({
   message?: string;
 }) {
   const identity = useId().replace(/[^a-zA-Z0-9_-]/g, "_");
+  const sourceSVG = prepared?.svg;
   const svg = useMemo(
-    () => (prepared ? namespaceSVG(prepared.svg, identity) : undefined),
-    [prepared?.svg, identity],
+    () => (sourceSVG ? namespaceSVG(sourceSVG, identity) : undefined),
+    [sourceSVG, identity],
   );
   const expandedSVG = useMemo(
-    () => (prepared ? namespaceSVG(prepared.svg, `${identity}-expanded`) : undefined),
-    [prepared?.svg, identity],
+    () => (sourceSVG ? namespaceSVG(sourceSVG, `${identity}-expanded`) : undefined),
+    [sourceSVG, identity],
   );
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -179,6 +93,7 @@ export function DiagramView({
       {description && <p id={`${identity}-description`}>{description}</p>}
       {svg ? (
         <>
+          {/* oxlint-disable jsx-a11y/prefer-tag-over-role -- Inline verified SVG needs a labeled, keyboard-scrollable canvas rather than a replaced img element. */}
           <div
             className="diagram-scroll"
             role="img"
@@ -187,6 +102,7 @@ export function DiagramView({
             tabIndex={0}
             dangerouslySetInnerHTML={{ __html: svg }}
           />
+          {/* oxlint-enable jsx-a11y/prefer-tag-over-role */}
           <Button
             ref={trigger}
             variant="outline"
@@ -196,7 +112,7 @@ export function DiagramView({
               dialog.current?.showModal();
             }}
           >
-            Expand diagram
+            <Expand aria-hidden="true" /> Expand diagram
           </Button>
           <dialog
             ref={dialog}
@@ -218,7 +134,7 @@ export function DiagramView({
                 disabled={zoom <= 0.25}
                 onClick={() => setZoom((v) => Math.max(0.25, v - 0.25))}
               >
-                −
+                <ZoomOut aria-hidden="true" />
               </Button>
               <output aria-live="polite">{Math.round(zoom * 100)}%</output>
               <Button
@@ -227,13 +143,16 @@ export function DiagramView({
                 disabled={zoom >= 4}
                 onClick={() => setZoom((v) => Math.min(4, v + 0.25))}
               >
-                +
+                <ZoomIn aria-hidden="true" />
               </Button>
               <Button variant="outline" onClick={() => setZoom(1)}>
-                Reset zoom
+                <RotateCcw aria-hidden="true" /> Reset zoom
               </Button>
-              <Button onClick={() => dialog.current?.close()}>Close diagram</Button>
+              <Button onClick={() => dialog.current?.close()}>
+                <X aria-hidden="true" /> Close diagram
+              </Button>
             </div>
+            {/* oxlint-disable jsx-a11y/prefer-tag-over-role -- The expanded inline SVG retains a labeled scroll/zoom canvas. */}
             <div
               className="diagram-scroll diagram-expanded"
               tabIndex={0}
@@ -245,12 +164,13 @@ export function DiagramView({
                 dangerouslySetInnerHTML={{ __html: expanded ? expandedSVG! : "" }}
               />
             </div>
+            {/* oxlint-enable jsx-a11y/prefer-tag-over-role */}
           </dialog>
         </>
       ) : (
-        <p role="status">
+        <output>
           {message ?? "Diagram rendering is unavailable. Retained source remains readable."}
-        </p>
+        </output>
       )}
       <details>
         <summary>Diagram source · {title}</summary>
