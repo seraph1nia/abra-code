@@ -3,7 +3,7 @@ import * as Id from "../identities.ts";
 import { resolve, join } from "node:path";
 import { AbsolutePath, Agent } from "@opencode/client/effect";
 import { Service } from "@opencode/client/effect/service";
-import { Effect, Schedule } from "effect";
+import { Effect } from "effect";
 import { realpath } from "../filesystem.ts";
 import { makeClient } from "../opencode/client.ts";
 import { findSupervisor } from "../opencode/supervisor.ts";
@@ -15,6 +15,7 @@ import { generateHostConfiguration, assertFreshPaths } from "../config/host.ts";
 import { identity } from "../config/identity.ts";
 import { CrewError } from "../domain.ts";
 import { configuration } from "../config/protocol.ts";
+import { awaitPluginActivation } from "./plugin-activation.ts";
 export const bootstrapService = Effect.gen(function* () {
   if (process.platform !== "linux")
     return yield* new CrewError(
@@ -66,23 +67,7 @@ export const bootstrapService = Effect.gen(function* () {
   const client = yield* makeClient(endpoint);
   const location = { directory: AbsolutePath.make(home) };
   yield* client.location.get({ location });
-  yield* client.plugin.list({ location }).pipe(
-    Effect.repeat({
-      schedule: Schedule.spaced(100),
-      until: (plugins) =>
-        plugins.data.some((p) => p.id === "abracode" && p.state?.status === "active"),
-    }),
-    Effect.timeoutOrElse({
-      duration: "15 seconds",
-      orElse: () =>
-        Effect.fail(
-          new CrewError(
-            "PLUGIN_ACTIVATION",
-            "AbraCode plugin did not activate; inspect native plugin diagnostics",
-          ),
-        ),
-    }),
-  );
+  yield* awaitPluginActivation(client, home);
   const supervisor = yield* new FileLocks(Id.AbsolutePath.make(join(home, ".abracode/locks"))).with(
     Id.LockKey.make("supervisor-bootstrap"),
     () =>

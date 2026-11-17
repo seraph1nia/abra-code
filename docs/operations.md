@@ -31,11 +31,15 @@ pnpm service:stop
 
 Restart reactivates the coordinator without an attached UI. Stop retains durable records/history and interrupts native execution; resume through reconciliation and controller tools. `pnpm serve` is an alias for service-only startup; use the same generated configuration and selected personal file for all operator commands.
 
+An explicit native plugin failure stops startup immediately with the native error and diagnostic reference, including import failures before the plugin has an ID. Inspect that reference in native plugin diagnostics for the underlying load error. After correcting it, use `pnpm service:restart`. A failed plugin can be stopped even before Abra exists: recovery verifies the registered live PID, installed executable, service arguments and installation/configuration environment. A different selected personal file or an unrelated process is refused; stop with the configuration used to launch the service. Healthy services still require the retained Abra/configuration controller checks.
+
 A location reload can unload the plugin's monitor; it does not delete sessions or worktrees. The leadership lock is released, and the replacement plugin reconciles existing resources.
 
 ## Local web UI
 
 Use `pnpm dev` for development at `http://127.0.0.1:5173`. Vite provides frontend HMR and `tsx watch` reloads the Effect HTTP backend. `pnpm dev --port 5174 --backend-port 4099` changes the local ports. Native service/work lifetimes are independent of these development servers.
+
+The source installation loads plugin TypeScript directly; rebuilding is unnecessary for native plugin/controller edits. Restart the native service explicitly with `pnpm service:restart` when workers are idle, then continue `pnpm dev`. Dependency or workspace-layout changes require `pnpm install --frozen-lockfile --prod=false` followed by a native-service restart. Restarting `pnpm dev` alone reuses the existing native process and cannot clear its package-resolution state. Development never automatically restarts the native service on source changes.
 
 Run `pnpm web:build` and `pnpm web` from the installation root. This opens the single-session CopilotKit v2 workspace at `http://127.0.0.1:4097`. `pnpm web --port 4098 --no-open` prints another local URL. Provider authentication still uses `pnpm auth` and the frontend uses existing model configuration.
 
