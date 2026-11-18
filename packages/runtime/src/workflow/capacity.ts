@@ -1,6 +1,6 @@
 import { externalOwns } from "../validation/contracts.ts";
 import { admissionWait } from "../observability.ts";
-import { ExecutionId, type RequestId } from "../identities.ts";
+import { ExecutionId, type IssueId, type RepositoryId, type RequestId } from "../identities.ts";
 import { Clock, Effect } from "effect";
 import { domainEffect } from "../effect.ts";
 import {
@@ -16,47 +16,78 @@ import { type Coordination } from "./coordination.ts";
 export const consumesWorker = (e: ManagedExecution) =>
   e.current_phase !== "completed" &&
   (externalOwns(e) || !!e.capacity_reservation || (!!e.active_role && !e.capacity_observed_idle));
-export function capacityBlockers(
+type Owners = ReadonlyMap<ExecutionId, IssueId>;
+export type CapacitySummary = {
+  retained: Owners;
+  active: Owners;
+  retainedByRepository: ReadonlyMap<RepositoryId, Owners>;
+  activeByRepository: ReadonlyMap<RepositoryId, Owners>;
+  byRole: ReadonlyMap<Role, Owners>;
+};
+
+export function summarizeCapacity(executions: readonly ManagedExecution[]): CapacitySummary {
+  const retained = new Map<ExecutionId, IssueId>();
+  const active = new Map<ExecutionId, IssueId>();
+  const retainedByRepository = new Map<RepositoryId, Map<ExecutionId, IssueId>>();
+  const activeByRepository = new Map<RepositoryId, Map<ExecutionId, IssueId>>();
+  const byRole = new Map<Role, Map<ExecutionId, IssueId>>();
+  function add<K>(groups: Map<K, Map<ExecutionId, IssueId>>, key: K, execution: ManagedExecution) {
+    const owners = groups.get(key) ?? new Map<ExecutionId, IssueId>();
+    owners.set(execution.execution_id, execution.issue_id);
+    groups.set(key, owners);
+  }
+  for (const execution of executions) {
+    if (execution.current_phase === "completed") continue;
+    retained.set(execution.execution_id, execution.issue_id);
+    add(retainedByRepository, execution.repository_id, execution);
+    if (!consumesWorker(execution)) continue;
+    active.set(execution.execution_id, execution.issue_id);
+    add(activeByRepository, execution.repository_id, execution);
+    const role = execution.capacity_reservation?.role ?? execution.active_role;
+    if (role) add(byRole, role, execution);
+  }
+  return { retained, active, retainedByRepository, activeByRepository, byRole };
+}
+
+export function capacitySummaryBlockers(
   config: Config,
   project: Project,
-  executions: readonly ManagedExecution[],
+  summary: CapacitySummary,
   role: Role,
   newExecution: boolean,
   own?: ExecutionId,
 ): ReadinessBlocker[] {
-  const retained = executions.filter(
-    (e) => e.current_phase !== "completed" && e.execution_id !== own,
-  );
-  const active = retained.filter(consumesWorker);
   const blockers: ReadinessBlocker[] = [];
   const add = (
     kind: "active" | "retained" | "role",
     label: string,
-    owners: ManagedExecution[],
+    owners: Owners | undefined,
     limit: number,
   ) => {
-    if (owners.length >= limit)
-      blockers.push({
-        code: "capacity",
-        capacity_kind: kind,
-        consuming: owners.map((e) => e.issue_id),
-        message: `${label} capacity reached (${owners.map((e) => e.issue_id).join(", ")})`,
-      });
+    const count = (owners?.size ?? 0) - (own && owners?.has(own) ? 1 : 0);
+    if (count < limit) return;
+    const consuming = [...(owners ?? [])].flatMap(([id, issue]) => (id === own ? [] : [issue]));
+    blockers.push({
+      code: "capacity",
+      capacity_kind: kind,
+      consuming,
+      message: `${label} capacity reached (${consuming.join(", ")})`,
+    });
   };
   if (newExecution) {
-    add("retained", "Global retained execution", retained, config.max_executions);
+    add("retained", "Global retained execution", summary.retained, config.max_executions);
     add(
       "retained",
       "Repository retained execution",
-      retained.filter((e) => e.repository_id === project.id),
+      summary.retainedByRepository.get(project.id),
       project.max_executions,
     );
   }
-  add("active", "Global active worker", active, config.max_workers);
+  add("active", "Global active worker", summary.active, config.max_workers);
   add(
     "active",
     "Repository active worker",
-    active.filter((e) => e.repository_id === project.id),
+    summary.activeByRepository.get(project.id),
     project.max_workers,
   );
   const roleLimit =
@@ -67,13 +98,26 @@ export function capacityBlockers(
         : role === "review"
           ? config.review_capacity
           : config.max_workers;
-  add(
-    "role",
-    `${role} worker`,
-    active.filter((e) => (e.capacity_reservation?.role ?? e.active_role) === role),
-    roleLimit,
-  );
+  add("role", `${role} worker`, summary.byRole.get(role), roleLimit);
   return blockers;
+}
+
+export function capacityBlockers(
+  config: Config,
+  project: Project,
+  executions: readonly ManagedExecution[],
+  role: Role,
+  newExecution: boolean,
+  own?: ExecutionId,
+) {
+  return capacitySummaryBlockers(
+    config,
+    project,
+    summarizeCapacity(executions),
+    role,
+    newExecution,
+    own,
+  );
 }
 /** Native admission reservations are persisted atomically, before resource/session submission. */
 export class Capacity {

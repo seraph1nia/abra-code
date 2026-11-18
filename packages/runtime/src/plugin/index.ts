@@ -1,6 +1,7 @@
 import { BindingReadSchema } from "@abracode/contracts/web/bindings";
 import { LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
 import { registerWebGateway } from "../web/gateway.ts";
+import { nativeReviews } from "../web/review-tool.ts";
 import { WorkPageSchema } from "../visibility/discovery-contracts.ts";
 import { WorkerInspectionSchema } from "../visibility/worker.ts";
 import { configurationReport } from "../config/declarations.ts";
@@ -23,7 +24,7 @@ import {
 } from "../visibility/protocol.ts";
 import { AbsolutePath, LockKey } from "../identities.ts";
 import { Plugin } from "@opencode/plugin/effect";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer, Queue, Schedule, Schema } from "effect";
 import { resolve } from "node:path";
 import { sourceInstallationRoot } from "../installation.ts";
 import { realpath } from "../filesystem.ts";
@@ -53,6 +54,7 @@ export default Plugin.define({
       const c = application.controller;
       const config = application.config;
       const central = (yield* realpath(ctx.location.directory)) === config.home;
+      const reviews = central ? nativeReviews(ctx, c) : undefined;
       if (central)
         yield* new FileLocks(AbsolutePath.make(resolve(config.home, ".abracode/locks"))).acquire(
           LockKey.make("scheduler-leader"),
@@ -68,6 +70,7 @@ export default Plugin.define({
         application.setup,
         provide,
         application.configuration,
+        reviews,
       );
       if (central)
         // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native RPC registration exposes an open handler-error channel.
@@ -114,8 +117,9 @@ export default Plugin.define({
             ),
         });
       // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native RPC registration declares an open handler-error channel; handlers map domain errors to refused.
-      if (central) yield* registerWebGateway(ctx, config, c, provide);
-      const observer = new Visibility(c);
+      if (reviews) yield* registerWebGateway(ctx, config, c, reviews.reviews, provide);
+      const finderRequests = yield* Effect.acquireRelease(Queue.dropping<void>(1), Queue.shutdown);
+      const observer = new Visibility(c, finderRequests);
       const json =
         <S extends Schema.Constraint>(schema: S) =>
         (value: S["Type"]) =>
@@ -211,7 +215,8 @@ export default Plugin.define({
       const invalidations = Context.get(services, Invalidations);
       yield* invalidations.take.pipe(
         Effect.flatMap((scope) =>
-          c.queries.afterCommit().pipe(
+          observer.invalidateFinder(scope).pipe(
+            Effect.andThen(c.queries.afterCommit()),
             Effect.andThen(
               // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native emit declares unknown errors; immediate mapping/ignore isolates publication from commits.
               registration.events.emit("changed", { home: config.home, scope }).pipe(
@@ -222,6 +227,16 @@ export default Plugin.define({
           ),
         ),
         Effect.forever,
+        Effect.forkScoped,
+      );
+      yield* Queue.take(finderRequests).pipe(
+        Effect.andThen(observer.refreshFinder),
+        Effect.forever,
+        provide,
+        Effect.forkScoped,
+      );
+      yield* observer.requestFinderRefresh.pipe(
+        Effect.repeat(Schedule.spaced(config.reconcile_interval_ms)),
         Effect.forkScoped,
       );
       if (central) yield* monitor(ctx, c, application.scheduler).pipe(provide);

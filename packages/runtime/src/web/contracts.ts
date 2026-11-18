@@ -1,4 +1,13 @@
-import type { ReviewListSchema, ReviewView, ReviewSelection, ReviewAssetQuerySchema, ReviewAssetDataSchema, ReviewSubmit, ReviewReceipt } from "@abracode/contracts/web/reviews";
+import type {
+  ReviewListSchema,
+  ReviewView,
+  ReviewSelection,
+  ReviewAssetQuerySchema,
+  ReviewAssetDataSchema,
+  ReviewSubmit,
+  ReviewReceipt,
+  ReviewResponseQuerySchema,
+} from "@abracode/contracts/web/reviews";
 import type { PrepareDiagramSelection } from "@abracode/contracts/web/diagram-actions";
 import type { DiagramPreparation } from "@abracode/contracts/presentation/diagrams";
 import type { NativeEventEnvelope } from "../opencode/agui/native-state.ts";
@@ -44,10 +53,15 @@ export type WorkQueries = {
 export interface WebBackend {
   readonly sessionID: string;
   readonly reviews?: {
-    list(issue?:string): Effect.Effect<typeof ReviewListSchema.Type,CrewError>;
-    read(selection:ReviewSelection): Effect.Effect<ReviewView,CrewError>;
-    asset(selection:typeof ReviewAssetQuerySchema.Type): Effect.Effect<typeof ReviewAssetDataSchema.Type,CrewError>;
-    submit(input:ReviewSubmit): Effect.Effect<ReviewReceipt,CrewError>;
+    receipt(
+      selection: typeof ReviewResponseQuerySchema.Type,
+    ): Effect.Effect<ReviewReceipt | null, CrewError>;
+    list(issue?: string): Effect.Effect<typeof ReviewListSchema.Type, CrewError>;
+    read(selection: ReviewSelection): Effect.Effect<ReviewView, CrewError>;
+    asset(
+      selection: typeof ReviewAssetQuerySchema.Type,
+    ): Effect.Effect<typeof ReviewAssetDataSchema.Type, CrewError>;
+    submit(input: ReviewSubmit): Effect.Effect<ReviewReceipt, CrewError>;
   };
   prepareDiagrams(input: PrepareDiagramSelection): Effect.Effect<DiagramPreparation, CrewError>;
   readonly agentStatus?: Effect.Effect<{ busy: boolean }, CrewError>;

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "vite-plus/test";
+import { test, vi } from "vite-plus/test";
+import { DatabaseSync } from "node:sqlite";
 import { Deferred, Effect, Fiber } from "effect";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -135,6 +136,111 @@ test("continuous graph contention yields bounded unavailable evidence and releas
   assert.equal(f.locks.held, false);
   f.records.projectScan = scan;
   assert.equal((await run(queries.observe())).issues.length, 3);
+});
+
+test("finder projects selected rows and uses only matching retained capacity", async (t) => {
+  const { f, graph, queries } = await observation(t);
+  const dependency = await run(graph.create(goal("dependency")));
+  const item = await run(graph.create({ ...goal("selected-only"), dependencies: [dependency.id] }));
+  await run(graph.create(goal("unrelated")));
+  const expected = (await run(queries.ready())).find(({ issue }) => issue.id === item.id)!;
+  await run(queries.refreshFinderReadiness());
+  const view = new Visibility({ queries });
+  const prepare = vi.spyOn(DatabaseSync.prototype, "prepare");
+  t.onTestFinished(() => prepare.mockRestore());
+  const native = vi.spyOn(f.runtime, "session");
+  t.onTestFinished(() => native.mockRestore());
+  for (const method of ["projectScan", "executionScan", "setupScan"] as const)
+    vi.spyOn(f.records, method).mockImplementation(() => {
+      throw new Error("Finder must not scan whole record populations");
+    });
+  const initial = await run(view.find({ search: "selected-only" }));
+  assert.equal(initial.total, 1);
+  const [row] = initial.entries;
+  assert.equal(row?.issue_id, item.id);
+  assert.equal(row?.eligibility_observed, true);
+  assert.equal(row?.eligible, expected.eligible);
+  assert.deepEqual(row?.blockers, expected.blockers);
+  assert.deepEqual(row?.dependencies, [dependency.id]);
+  assert.equal(native.mock.calls.length, 0);
+  assert.equal(prepare.mock.calls.filter(([sql]) => /SELECT \* FROM issues\b/.test(sql)).length, 1);
+  assert.equal(
+    prepare.mock.calls.some(([sql]) => /SELECT \* FROM issues ORDER BY/.test(sql)),
+    false,
+  );
+  const project = await run(f.records.project(item.repository_id));
+  assert.ok(project);
+  await run(f.records.saveProject(project));
+  const stale = await run(view.find({ search: "selected-only" }));
+  assert.equal(stale.entries[0]?.eligibility_observed, false);
+  assert.equal(stale.entries[0]?.eligible, false);
+  assert.match(stale.entries[0]?.blockers.at(-1) ?? "", /Population readiness evidence/);
+});
+
+test("finder retries an overlapping graph commit and gives a bounded unavailable result", async (t) => {
+  const { f, graph, queries } = await observation(t);
+  await run(graph.create(goal("initial")));
+  const evidence = graph.taskEvidence.bind(graph);
+  let attempts = 0;
+  graph.taskEvidence = (entries) =>
+    evidence(entries).pipe(
+      Effect.tap(() => (++attempts === 1 ? graph.create(goal("follow-up")) : Effect.void)),
+    );
+  const page = await run(queries.observeFinder({ limit: 1 }));
+  assert.equal(attempts, 2);
+  assert.equal(page.total, 2);
+  assert.equal(page.workRevision, await run(graph.revision));
+  graph.taskEvidence = (entries) =>
+    evidence(entries).pipe(Effect.tap(() => graph.create(goal(`contention-${++attempts}`))));
+  await assert.rejects(
+    run(queries.observeFinder({ limit: 1 })),
+    (error: unknown) => error instanceof CrewError && error.code === "OBSERVATION_UNAVAILABLE",
+  );
+  assert.equal(attempts, 5);
+  assert.equal(f.locks.held, false);
+});
+
+test("a suspended fleet refresh cannot delay finder pages and keeps stale totals labeled", async (t) => {
+  const { graph, queries } = await observation(t);
+  const view = new Visibility({ queries });
+  await run(graph.create(goal("before")));
+  const initial = await run(view.find({}));
+  assert.equal(initial.fleet_observation.state, "unavailable");
+  await run(view.refreshFinder);
+  const cached = await run(view.find({}));
+  assert.equal(cached.fleet_observation.state, "current");
+  assert.equal(cached.fleet?.total, 1);
+
+  const added = await run(graph.create(goal("after")));
+  await run(view.invalidateFinder({ finder: true, issues: [added.id] }));
+  const entered = Deferred.makeUnsafe<void>();
+  const release = Deferred.makeUnsafe<void>();
+  const snapshot = view.snapshot.bind(view);
+  vi.spyOn(view, "snapshot").mockImplementation((...args) =>
+    Deferred.succeed(entered, undefined).pipe(
+      Effect.andThen(Deferred.await(release)),
+      Effect.andThen(snapshot(...args)),
+    ),
+  );
+  await run(
+    Effect.gen(function* () {
+      const refresh = yield* view.refreshFinder.pipe(Effect.forkScoped);
+      yield* Deferred.await(entered);
+      const page = yield* view.find({ search: "after" }).pipe(Effect.timeout("1 second"));
+      assert.equal(page.total, 1);
+      assert.equal(page.entries[0]?.issue_id, added.id);
+      assert.equal(page.fleet?.total, 1);
+      assert.equal(page.fleet_observation.state, "stale");
+      assert.notEqual(page.fleet_observation.work_revision, page.work_revision);
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(refresh);
+    }),
+  );
+  const refreshed = await run(view.find({ state: "closed" }));
+  assert.equal(refreshed.total, 0);
+  assert.equal(refreshed.fleet?.total, 2);
+  assert.equal(refreshed.fleet_observation.state, "current");
+  assert.equal(refreshed.fleet_observation.work_revision, refreshed.work_revision);
 });
 
 test("a slow retained scan times out without starving pause or retaining its lock", async (t) => {

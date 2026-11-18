@@ -30,6 +30,7 @@ import type { AttentionForm } from "../../src/web/contracts.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 
 import { workspaceBrowserFixture } from "../helpers/workspace-browser.ts";
+import { fleetCounts } from "../../src/visibility/fleet.ts";
 
 const test = baseTest.concurrent;
 let browser: Awaited<ReturnType<typeof launchReportBrowser>>;
@@ -1748,6 +1749,7 @@ test("owned session bookmarks render paginated tools and refresh queued/unknown 
   assert.equal(await page.getByLabel("Read-only worker session").inputValue(), "ses_past");
   assert.match(page.url(), /ses_past/);
   const message = page.locator('[data-worker-message-id="msg_past"]');
+  await message.locator('[data-tool-call-id="call_retained_check"]').waitFor();
   assert.deepEqual(
     await message
       .locator(".prose, [data-tool-call-id]")
@@ -2117,9 +2119,31 @@ test("chat stays mounted while the finder searches retained pages, preserving dr
   // An unchanged empty search must not send the reader back to page one.
   await page.clock.install();
   await page.clock.pauseAt(Date.now() + 100);
+  f.setFleetObservation({ state: "unavailable" });
   await page.getByRole("button", { name: "Toggle work finder" }).click();
+  await page.getByText("Fleet totals are temporarily unavailable.", { exact: true }).waitFor();
+  f.setFleetObservation({ state: "stale", observed_at: f.source.value.work.at });
+  f.source.value = {
+    ...f.source.value,
+    work: {
+      ...f.source.value.work,
+      fleet: {
+        counts: { ...fleetCounts([]), completed: 56, waiting: 1 },
+        total: 57,
+        native_observed: 0,
+        native_total: 0,
+        completed_today: 0,
+        day_start: f.source.value.work.at,
+        day_end: f.source.value.work.at,
+        timezone: "UTC",
+        attention: [],
+        repositories: [],
+      },
+    },
+  };
   await page.getByRole("button", { name: "Closed", exact: true }).click();
   await page.getByText(/56 matching tasks/).waitFor();
+  await page.getByText("Fleet across all projects · 57 tasks · Stale", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByText("51–56 of 56", { exact: true }).waitFor();
   await page.clock.runFor(250);

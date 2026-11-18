@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   MessageIntentsSchema,
   messageHistoryError,
@@ -89,6 +89,7 @@ export class NativeStore implements Store {
 const executionSchema = ExecutionRecordSchema;
 const setupSchema = SetupRecordSchema;
 const projectSchema = ProjectRecordSchema;
+const observationKey = StorageKey.make("observation/records-revision");
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -162,6 +163,10 @@ export class Records {
     );
   private coordination?: Coordination;
   constructor(public store: Store) {}
+  /** Captured under coordinateRead alongside the records described by this stamp. */
+  readonly observationRevision = Effect.suspend(() => this.store.get(observationKey)).pipe(
+    Effect.flatMap((value) => decode(Schema.UndefinedOr(Schema.String), value, observationKey)),
+  );
   coordinate(locks: Locks) {
     return (this.coordination ??= new Coordination(locks));
   }
@@ -567,6 +572,9 @@ export class Records {
             if ((yield* this.store.get(backup)) === undefined)
               yield* this.store.set(backup, original);
           }
+          // Fence derived readers before writing the record. An interruption
+          // between these writes leaves summaries stale rather than falsely current.
+          yield* this.store.set(observationKey, randomUUID());
           // Preserve additive unknown evidence when updating fields owned by this version.
           yield* this.store.set(key, { ...record, ...decoded });
           yield* committedScope(

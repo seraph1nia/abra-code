@@ -1,7 +1,6 @@
-import { ReviewAttachment, ReviewsForSource } from "./interactive-reviews.tsx";
+import { ReviewAttachment, ReviewsForSource } from "./interactive-review-loader.tsx";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect HTTP atoms own shared generated-binding queries. */
 import { useAtomValue } from "@effect/atom-react";
-import { ArrowUpRight } from "@abracode/presentation/icons";
 import { AsyncResult } from "effect/reactivity";
 import { Option } from "effect";
 import {
@@ -11,18 +10,9 @@ import {
 } from "@abracode/contracts/web/bindings";
 import type { SurfaceRecord } from "@abracode/contracts/web/contracts";
 import type { PresentationAttachmentSchema } from "@abracode/contracts/presentation/contracts";
-import { useState, type ComponentProps } from "react";
+import type { ComponentProps } from "react";
 import { deferred } from "../deferred.tsx";
-const ReportDocumentView = deferred<
-  ComponentProps<typeof import("@abracode/presentation/report-document").ReportDocumentView>
->(
-  () =>
-    import("@abracode/presentation/report-document").then((module) => ({
-      default: module.ReportDocumentView,
-    })),
-  "Saved report",
-);
-import { api } from "../api.ts";
+
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 const WorkViews = deferred<
@@ -33,7 +23,7 @@ const WorkViews = deferred<
 );
 import { surfaceQuery, queries } from "../data.ts";
 import { RequestState } from "../request-state.tsx";
-import { ArtifactCard, type Inspect } from "@abracode/presentation/cards";
+import type { Inspect } from "@abracode/presentation/cards";
 import { SaveSurfaceButton } from "./save-surface.tsx";
 
 type Target = typeof PresentationAttachmentSchema.Type.target;
@@ -103,7 +93,18 @@ export function SurfaceAttachment({
   );
 }
 function BoundSurface({ record, inspect }: { record: SurfaceRecord; inspect: Inspect }) {
-  return <><BoundSurfaceContent record={record} inspect={inspect}/><ReviewsForSource source={{kind:"surface",surface_id:record.surface.createSurface.surfaceId,revision:record.revision}}/></>;
+  return (
+    <>
+      <BoundSurfaceContent record={record} inspect={inspect} />
+      <ReviewsForSource
+        source={{
+          kind: "surface",
+          surface_id: record.surface.createSurface.surfaceId,
+          revision: record.revision,
+        }}
+      />
+    </>
+  );
 }
 function BoundSurfaceContent({ record, inspect }: { record: SurfaceRecord; inspect: Inspect }) {
   const selection = bindingRequirements(record.surface, "live");
@@ -166,76 +167,15 @@ export function MessageAttachment({
   inspect: Inspect;
 }) {
   const target = attachment.target;
-  if (target.kind === "review") return <ReviewAttachment target={target}/>;
+  if (target.kind === "review") return <ReviewAttachment target={target} />;
   if (target.kind === "surface")
     return <SurfaceAttachment target={target} work={work} inspect={inspect} />;
   return <ArtifactAttachment target={target} inspect={inspect} />;
 }
-function ArtifactAttachment({
-  target,
-  inspect,
-}: {
-  target: Extract<Target, { kind: "artifact" }>;
-  inspect: Inspect;
-}) {
-  const [preview, setPreview] = useState(false);
-  return (
-    <RequestState query={queries.artifactSummary(target.issue_id, target.request_id, target.hash)}>
-      {(artifact) => {
-        return artifact.hash === target.hash ? (
-          <div className="artifact-attachment">
-            <ArtifactCard artifact={artifact} issue={target.issue_id} inspect={inspect} />
-            <a
-              href={
-                artifact.format === "a2ui-snapshot"
-                  ? api.documentURL(target.issue_id, target.request_id, target.hash)
-                  : api.reportURL(target.issue_id, target.request_id, true)
-              }
-              download
-            >
-              {artifact.format === "a2ui-snapshot" ? "Download JSON" : "Download HTML"}{" "}
-              <ArrowUpRight aria-hidden="true" />
-            </a>
-            <details
-              className="artifact-inline-preview"
-              open={preview}
-              onToggle={(event) => setPreview(event.currentTarget.open)}
-            >
-              <summary>Preview saved report</summary>
-              {preview &&
-                (artifact.format === "a2ui-snapshot" ? (
-                  <RequestState
-                    query={queries.artifactDocument(
-                      target.issue_id,
-                      target.request_id,
-                      target.hash,
-                    )}
-                  >
-                    {(body) =>
-                      body.hash === target.hash ? (
-                        <ReportDocumentView artifact={body} inspect={inspect} />
-                      ) : (
-                        <output>The document does not match this attachment.</output>
-                      )
-                    }
-                  </RequestState>
-                ) : (
-                  <iframe
-                    title="Isolated retained report preview"
-                    className="report-preview"
-                    sandbox="allow-scripts"
-                    src={api.reportURL(target.issue_id, target.request_id)}
-                  />
-                ))}
-            </details>
-            <ReviewsForSource issue={target.issue_id} source={{kind:"report",request_id:target.request_id,hash:target.hash}}/>
-          </div>
-        ) : (
-          <output>
-            This exact report receipt is unavailable. Other task reports remain available.
-          </output>
-        );
-      }}
-    </RequestState>
-  );
-}
+const ArtifactAttachment = deferred<
+  ComponentProps<typeof import("./artifact-attachment.tsx").ArtifactAttachment>
+>(
+  () =>
+    import("./artifact-attachment.tsx").then((module) => ({ default: module.ArtifactAttachment })),
+  "Report attachment",
+);

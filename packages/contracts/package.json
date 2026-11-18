@@ -57,7 +57,8 @@
     "./presentation/diagrams": "./src/presentation/diagrams.ts",
     "./web/diagram-actions": "./src/web/diagram-actions.ts",
     "./web/reviews": "./src/web/reviews.ts",
-    "./web/review-catalog": "./src/web/review-catalog.ts"
+    "./web/review-catalog": "./src/web/review-catalog.ts",
+    "./web/review-api": "./src/web/review-api.ts"
   },
   "scripts": {
     "check": "tsc --noEmit"

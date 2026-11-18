@@ -675,3 +675,24 @@ regression covers two different tools sharing `call_0`.
 Pinned OpenCode 2.3.0 `ToolEditor.add`, strict Standard Schema inputs and the existing `abra` namespace register `abra_mermaid_verify`. Its input is literal identified source data, not paths or compiler configuration. Output contains diagnostic metadata only, never supplied SVG or publication/check authority. The authoritative role policy permits it for Supervisor and current Explore/Apply/Review/Research assignments, preserving captured custom agent selection and generation checks.
 
 `POST /api/diagrams/prepare` uses a closed selection union: `{kind:"surface",surface_id,revision,hash}` or `{kind:"report",issue_id,request_id,hash}`. Surface hashes cover canonical sorted source-surface JSON; report hashes are retained document receipts. The fixed `abracode-web.prepareDiagrams` RPC rechecks central Supervisor ownership and exact source identity before returning bounded trusted assets/results. No generic RPC/path/configuration proxy is exposed, and the existing origin/session middleware remains required. Historical immutable revisions can be prepared by their exact identity; a missing or mismatched selection never resolves to latest. Reads do not admit provider turns.
+
+## Interactive document reviews
+
+The additive `abracode-web` methods `reviewList`, `review`, `reviewAsset`,
+`reviewSubmit` and `reviewReceipt` share Effect schemas with fixed `/api/reviews`,
+`/api/review`, `/api/review/asset`, `/api/review/submit` and `/api/review/receipt`
+HTTP operations. Existing loopback Host/Origin middleware and central Supervisor
+identity checks apply; no arbitrary native proxy, path or executable callback is
+introduced. Receipt lookup is read-only and verifies the retained response's exact
+review/revision/hash and generated admission text.
+
+`abra_review_ui` uses the existing registered native tool/authorization boundary,
+with `source`, `publish` and `read` actions. It is unavailable to managed worker
+roles. Plan reading uses the existing bounded owned/archive document reader;
+source content hashes and control generation are rechecked before a new response
+reservation. Surface and report selections use their exact immutable owners.
+Raster capture uses bounded Node file handles, realpath containment, no symlinks,
+regular-file checks, content signatures and SHA-256. Retained native storage keeps
+preview bytes independent of worktree retirement. The pinned A2UI 0.15.0 catalog
+loader, MessageProcessor v1.0 and React component implementations render the
+separate review catalog; its controls never enter the saved evidence catalog.

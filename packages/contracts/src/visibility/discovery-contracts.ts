@@ -19,5 +19,13 @@ export const WorkPageSchema = Schema.Struct({
   limit: Count,
   next_offset: Schema.optional(Count),
   fleet: Schema.optional(FleetSchema),
+  fleet_observation: Schema.optional(
+    Schema.Struct({
+      state: Schema.Literals(["current", "stale", "unavailable"]),
+      work_revision: Schema.optional(Schema.String),
+      observed_at: Schema.optional(Timestamp),
+    }),
+  ),
+  work_revision: Schema.optional(Schema.String),
   observed_at: Timestamp,
 });

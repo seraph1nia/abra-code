@@ -22,6 +22,7 @@ import { dirname } from "node:path";
 import { mkdir } from "../filesystem.ts";
 import { CrewError, ensure, identifier, type Config } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
+import { allocateFinderRank, initializeFinderOrder, requireFinderOrder } from "./finder-order.ts";
 
 import {
   IssueSchema,
@@ -58,6 +59,7 @@ export type TaskIssue = {
   dependencies: Array<{ id: IssueId; title?: string; status: Issue["status"] | "unavailable" }>;
   closed_at?: Timestamp;
 };
+export type TaskEvidence = Omit<TaskIssue, "issue"> & { id: IssueId };
 type Row = Record<string, SQLOutputValue>;
 /** All ownership checks and writes are atomic, including across independent processes. */
 export interface WorkGraph {
@@ -65,6 +67,7 @@ export interface WorkGraph {
   createBatch(input: BatchInput): Effect.Effect<typeof BatchResultSchema.Type, CrewError>;
   show(id: IssueId): Effect.Effect<Issue, CrewError>;
   task(id: IssueId): Effect.Effect<TaskIssue, CrewError>;
+  taskEvidence(entries: readonly Issue[]): Effect.Effect<TaskEvidence[], CrewError>;
   readonly list: Effect.Effect<Issue[], CrewError>;
   find(query?: WorkDiscovery): Effect.Effect<IssuePage, CrewError>;
   /** Opaque committed graph revision, observed without writing or acquiring a writer transaction. */
@@ -91,19 +94,9 @@ const decodeIssue = Schema.decodeUnknownSync(IssueSchema);
 
 /** A scoped connection. Transactions contain only synchronous SQL and domain checks. */
 export class SqliteWorkGraph implements WorkGraph {
-  private ordering?: Map<string, number>;
   private constructor(private db: DatabaseSync) {
     // SQLite lower() is ASCII-only; preserve the existing JavaScript Unicode search.
     db.function("abracode_lower", { deterministic: true }, (value) => String(value).toLowerCase());
-    db.function("abracode_finder_rank", { directOnly: true }, (id) => {
-      const rank = this.ordering?.get(String(id));
-      ensure(
-        rank !== undefined,
-        "WORK_QUERY",
-        "Finder ordering is unavailable outside its request",
-      );
-      return rank;
-    });
   }
 
   static open(path: AbsolutePath | ":memory:") {
@@ -128,7 +121,8 @@ export class SqliteWorkGraph implements WorkGraph {
               version === 4 ||
               version === 5 ||
               version === 6 ||
-              version === 7,
+              version === 7 ||
+              version === 8,
             "WORK_DATABASE_VERSION",
             `Unsupported work database version ${String(version)}`,
           );
@@ -193,9 +187,9 @@ export class SqliteWorkGraph implements WorkGraph {
               issue_id TEXT NOT NULL UNIQUE REFERENCES issues(id),
               PRIMARY KEY(batch_request_id, client_key)
             );
-            PRAGMA user_version = 7;
-            COMMIT;
           `);
+          initializeFinderOrder(db, !columns.some((c) => c.name === "finder_rank"));
+          db.exec("PRAGMA user_version = 8; COMMIT");
         } catch (error) {
           db.exec("ROLLBACK");
           throw error;
@@ -287,6 +281,7 @@ export class SqliteWorkGraph implements WorkGraph {
     return sqlEffect(() =>
       this.transaction(() => {
         const query = decodeSync(WorkDiscoveryQuery, input, "Work discovery");
+        requireFinderOrder(this.db);
         const where: string[] = [];
         const values: string[] = [];
         if (query.repository_id) {
@@ -309,39 +304,25 @@ export class SqliteWorkGraph implements WorkGraph {
         const offset = query.offset ?? 0,
           limit = query.limit ?? 50;
         if (!total || offset >= total) return { entries: [], total, offset, limit };
-        // Preserve the former Node localeCompare tie order rather than silently
-        // changing legacy identifiers to SQLite binary/ASCII collation. Only IDs
-        // enter this request-local ordering pass; full rows/dependencies are paged.
-        const ids = this.db
-          .prepare(`SELECT id FROM issues WHERE ${condition}`)
-          .all(...values)
-          .map((row) => String(row.id))
-          .sort((a, b) => a.localeCompare(b));
-        this.ordering = new Map(ids.map((id, index) => [id, index]));
-        try {
-          const rows = this.db
-            .prepare(
-              `SELECT * FROM issues WHERE ${condition} ORDER BY priority, abracode_finder_rank(id) LIMIT ? OFFSET ?`,
-            )
-            .all(...values, limit, offset);
-          const selected = JSON.stringify(rows.map((row) => row.id));
-          return {
-            entries: this.hydrate(
-              rows,
-              this.db
-                .prepare(
-                  "SELECT issue_id, dependency_id FROM dependencies WHERE issue_id IN (SELECT value FROM json_each(?)) ORDER BY issue_id, dependency_id",
-                )
-                .all(selected),
-            ),
-            total,
-            offset,
-            limit,
-            next_offset: offset + limit < total ? offset + limit : undefined,
-          };
-        } finally {
-          this.ordering = undefined;
-        }
+        const rows = this.db
+          .prepare(
+            `SELECT * FROM issues WHERE ${condition} ORDER BY priority, finder_rank LIMIT ? OFFSET ?`,
+          )
+          .all(...values, limit, offset);
+        return {
+          entries: this.hydrate(
+            rows,
+            this.db
+              .prepare(
+                "SELECT issue_id, dependency_id FROM dependencies WHERE issue_id IN (SELECT value FROM json_each(?)) ORDER BY issue_id, dependency_id",
+              )
+              .all(JSON.stringify(rows.map((row) => row.id))),
+          ),
+          total,
+          offset,
+          limit,
+          next_offset: offset + limit < total ? offset + limit : undefined,
+        };
       }, false),
     );
   }
@@ -359,10 +340,11 @@ export class SqliteWorkGraph implements WorkGraph {
   }
 
   private insert(issue: Issue, input: string) {
+    const rank = allocateFinderRank(this.db, issue.id);
     this.db
       .prepare(`INSERT INTO issues
-      (id, repository_id, workflow_policy, request_id, request_input, title, description, priority, status, assignee)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      (id, repository_id, workflow_policy, request_id, request_input, title, description, priority, status, assignee, finder_rank)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(
         issue.id,
         issue.repository_id,
@@ -374,6 +356,7 @@ export class SqliteWorkGraph implements WorkGraph {
         issue.priority,
         issue.status,
         issue.assignee ?? null,
+        rank,
       );
     this.db
       .prepare(
@@ -575,38 +558,54 @@ export class SqliteWorkGraph implements WorkGraph {
   show(id: IssueId) {
     return sqlEffect(() => this.transaction(() => this.issue(id), false));
   }
+  private taskRows(entries: readonly Issue[]): TaskEvidence[] {
+    if (!entries.length) return [];
+    const encoded = JSON.stringify(entries.map((entry) => entry.id));
+    const byID = new Map<IssueId, TaskEvidence>(
+      entries.map(({ id }) => [id, { id, dependencies: [] }]),
+    );
+    const dependencies = this.db
+      .prepare(`
+        SELECT d.issue_id, d.dependency_id AS id, i.title, i.status
+        FROM dependencies d LEFT JOIN issues i ON i.id = d.dependency_id
+        WHERE d.issue_id IN (SELECT value FROM json_each(?))
+        ORDER BY d.issue_id, d.dependency_id
+      `)
+      .all(encoded);
+    for (const row of dependencies) {
+      const status = Schema.decodeUnknownResult(IssueSchema.fields.status)(row.status);
+      byID.get(IssueId.make(String(row.issue_id)))!.dependencies.push({
+        id: IssueId.make(String(row.id)),
+        title: typeof row.title === "string" ? row.title : undefined,
+        status: status._tag === "Success" ? status.success : "unavailable",
+      });
+    }
+    const closed = entries.filter(({ status }) => status === "closed");
+    if (closed.length) {
+      const closures = this.db
+        .prepare(`
+          SELECT i.id, (SELECT at FROM work_events
+            WHERE issue_id = i.id AND kind = 'closed' ORDER BY sequence DESC LIMIT 1) AS closed_at
+          FROM issues i WHERE i.id IN (SELECT value FROM json_each(?))
+        `)
+        .all(JSON.stringify(closed.map(({ id }) => id)));
+      for (const row of closures)
+        if (row.closed_at != null)
+          byID.get(IssueId.make(String(row.id)))!.closed_at = Schema.decodeUnknownSync(Timestamp)(
+            row.closed_at,
+          );
+    }
+    return [...byID.values()];
+  }
+  taskEvidence(entries: readonly Issue[]) {
+    return sqlEffect(() => this.transaction(() => this.taskRows(entries), false));
+  }
   task(id: IssueId) {
     return sqlEffect(() =>
       this.transaction(() => {
         const issue = this.issue(id);
-        const dependencies = this.db
-          .prepare(`
-        SELECT d.dependency_id AS id, i.title, i.status
-        FROM dependencies d LEFT JOIN issues i ON i.id = d.dependency_id
-        WHERE d.issue_id = ? ORDER BY d.dependency_id
-      `)
-          .all(id)
-          .map((row) => {
-            const status = Schema.decodeUnknownResult(IssueSchema.fields.status)(row.status);
-            return {
-              id: IssueId.make(String(row.id)),
-              title: typeof row.title === "string" ? row.title : undefined,
-              status: status._tag === "Success" ? status.success : ("unavailable" as const),
-            };
-          });
-        const closure =
-          issue.status === "closed"
-            ? this.db
-                .prepare(
-                  "SELECT at FROM work_events WHERE issue_id = ? AND kind = 'closed' ORDER BY sequence DESC LIMIT 1",
-                )
-                .get(id)
-            : undefined;
-        return {
-          issue,
-          dependencies,
-          closed_at: closure ? Schema.decodeUnknownSync(Timestamp)(closure.at) : undefined,
-        };
+        const { dependencies, closed_at } = this.taskRows([issue])[0]!;
+        return { issue, dependencies, closed_at };
       }, false),
     );
   }

@@ -147,13 +147,30 @@ export function WorkFinder({
                   Next
                 </Button>
               </div>
+              {page.fleet_observation?.state === "unavailable" && (
+                <output className="muted">Fleet totals are temporarily unavailable.</output>
+              )}
               {page.fleet && (
                 <details
                   className="fleet-summary"
                   open={fleetOpen}
                   onToggle={(event) => setFleetOpen(event.currentTarget.open)}
                 >
-                  <summary>Fleet across all projects · {page.fleet.total} tasks</summary>
+                  <summary>
+                    Fleet across all projects · {page.fleet.total} tasks
+                    {page.fleet_observation?.state === "stale" && " · Stale"}
+                  </summary>
+                  {page.fleet_observation?.state === "stale" && (
+                    <output className="muted">
+                      Showing stale fleet totals while they refresh.
+                    </output>
+                  )}
+                  {page.fleet_observation?.observed_at && (
+                    <p className="muted">
+                      Fleet observed at{" "}
+                      {new Date(page.fleet_observation.observed_at).toLocaleTimeString()}.
+                    </p>
+                  )}
                   <dl>
                     {Object.entries(page.fleet.counts)
                       .filter(([, count]) => count > 0)

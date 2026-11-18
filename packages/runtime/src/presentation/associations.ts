@@ -14,6 +14,19 @@ import type { Locks } from "../storage/lock.ts";
 import { PresentationAttachmentSchema, type PresentationDiagnosticSchema } from "./contracts.ts";
 import { canonicalJSON, presentationHash as hash } from "./identity.ts";
 
+type Attachment = typeof PresentationAttachmentSchema.Type;
+function associationKey(value: Attachment) {
+  const slot =
+    value.target.kind === "surface"
+      ? value.target.surface_id
+      : value.target.kind === "review"
+        ? value.target.review_id
+        : value.target.request_id;
+  return StorageKey.make(
+    `web/presentation/${value.session_id}/${hash(value.message_id)}/${hash([value.source, value.tool_call_id, value.target.kind, slot])}`,
+  );
+}
+
 /** Native presentation owners attach only already-published resources and proven
  * producing message identities. Observation reads never write or replay them. */
 export class PresentationAssociations {
@@ -29,11 +42,7 @@ export class PresentationAssociations {
           attachment,
           "Presentation association",
         );
-        const slot =
-          value.target.kind === "surface" ? value.target.surface_id : value.target.kind === "review" ? value.target.review_id : value.target.request_id;
-        const key = StorageKey.make(
-          `web/presentation/${value.session_id}/${hash(value.message_id)}/${hash([value.source, value.tool_call_id, value.target.kind, slot])}`,
-        );
+        const key = associationKey(value);
         const prior = yield* this.store.get(key);
         if (prior !== undefined) {
           if (canonicalJSON(prior) !== canonicalJSON(value))
@@ -47,6 +56,15 @@ export class PresentationAssociations {
         }
       }),
     );
+  }
+  retained(attachment: Attachment) {
+    return this.store
+      .get(associationKey(attachment))
+      .pipe(
+        Effect.map(
+          (value) => value !== undefined && canonicalJSON(value) === canonicalJSON(attachment),
+        ),
+      );
   }
   read(session: SessionId, messages: readonly MessageId[]) {
     return Effect.gen({ self: this }, function* () {

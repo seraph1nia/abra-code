@@ -8,7 +8,10 @@ import { run } from "../effects.ts";
 import { SqliteWorkGraph, openWorkGraph, type NewIssue } from "../../src/work/graph.ts";
 import { ProcessRunner } from "../../src/process.ts";
 
-import { workDatabase as database } from "../helpers/work-database.ts";
+import {
+  removeFinderIndexForLegacyFixture,
+  workDatabase as database,
+} from "../helpers/work-database.ts";
 
 const goal = (request_id: string, dependencies: string[] = []): NewIssue => ({
   repository_id: Id.RepositoryId.make("api"),
@@ -220,6 +223,56 @@ test("invalid creation, missing dependencies and normalized retries do not chang
   assert.deepEqual(first.dependencies, [a.id, b.id].sort());
 });
 
+test("finder ranks migrate legacy IDs and stay ordered after new writes and reopen", async (t) => {
+  const { path, scope } = await database(t);
+  await run(Scope.close(scope, Exit.void));
+  const legacy = ["aZ", "AZ", "a-Z", "a.Z", "a_Z", "ABRA-x", "abra.x", "abra_x"];
+  const db = new DatabaseSync(path);
+  try {
+    removeFinderIndexForLegacyFixture(db);
+    const insert = db.prepare(`
+      INSERT INTO issues (id, repository_id, workflow_policy, request_id, request_input,
+        title, description, priority, status)
+      VALUES (?, 'api', 'full-openspec', ?, '{}', ?, 'legacy work', 2, 'open')
+    `);
+    for (const id of legacy) insert.run(id, id, `ÉTUDE ${id}`);
+  } finally {
+    db.close();
+  }
+  const created = await run(
+    Effect.gen(function* () {
+      const graph = yield* SqliteWorkGraph.open(path);
+      const ids = yield* graph.find({ search: " étude ", limit: 50 });
+      assert.deepEqual(
+        ids.entries.map((entry) => entry.id),
+        legacy.toSorted((a, b) => a.localeCompare(b)),
+      );
+      return (yield* graph.create(goal("alongside-legacy"))).id;
+    }),
+  );
+  await run(
+    Effect.gen(function* () {
+      const graph = yield* SqliteWorkGraph.open(path);
+      const ids = [];
+      for (let offset = 0; offset < 11; offset += 2) {
+        const page = yield* graph.find({
+          repository_id: Id.RepositoryId.make("api"),
+          limit: 2,
+          offset,
+        });
+        assert.equal(page.total, legacy.length + 1);
+        assert.equal(page.next_offset, offset + 2 < page.total ? offset + 2 : undefined);
+        ids.push(...page.entries.map((entry) => entry.id));
+      }
+      assert.deepEqual(
+        ids,
+        [...legacy, created].sort((a, b) => a.localeCompare(b)),
+      );
+      assert.deepEqual((yield* graph.find({ state: "closed" })).entries, []);
+    }),
+  );
+});
+
 test("early SQLite schema upgrades preserve work, ownership and history", async (t) => {
   const { graph, path, scope } = await database(t);
   const existing = await run(graph.create(goal("existing")));
@@ -245,12 +298,12 @@ test("early SQLite schema upgrades preserve work, ownership and history", async 
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 7);
-    verify.exec("PRAGMA user_version = 8");
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 8);
+    verify.exec("PRAGMA user_version = 9");
   } finally {
     verify.close();
   }
-  await assert.rejects(run(SqliteWorkGraph.open(path)), /Unsupported work database version 8/);
+  await assert.rejects(run(SqliteWorkGraph.open(path)), /Unsupported work database version 9/);
 });
 
 test("workflow/scope/report identities are persisted and cannot rebind a request; legacy full-spec input retries compatibly", async (t) => {
@@ -435,7 +488,7 @@ for (const version of [3, 4, 5])
     );
     const verify = new DatabaseSync(path);
     try {
-      assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 7);
+      assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 8);
       assert.equal(
         verify.prepare("SELECT request_input FROM issues WHERE id = ?").get(issue.id)!
           .request_input,
@@ -537,7 +590,7 @@ test("schema-5 batch receipts keep original mapping while new task dispatch is d
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 7);
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 8);
     assert.equal(
       verify.prepare("SELECT request_input FROM work_batches").get()!.request_input,
       receipt,
@@ -630,7 +683,7 @@ test("version-6 migration preserves old request bytes while new schema/approval 
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 7);
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 8);
     assert.equal(
       verify.prepare("SELECT request_input FROM issues WHERE id = ?").get(old.id)!.request_input,
       original,

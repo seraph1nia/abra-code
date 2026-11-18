@@ -7,7 +7,7 @@ import { deliveryOutcome } from "../workflow/delivery-outcome.ts";
 import { actionable } from "../workflow/feedback-contracts.ts";
 import { RelativePath, IssueId, Timestamp, timestamp } from "../identities.ts";
 
-import { Clock, Effect, Schema } from "effect";
+import { Clock, Effect, Queue, Schema } from "effect";
 import { domainEffect } from "../effect.ts";
 import {
   CrewError,
@@ -28,6 +28,8 @@ import { supervisionSummary } from "./supervision.ts";
 import { messageRequests, requiresResponse } from "../workflow/message-contracts.ts";
 import { WorkDiscoveryQuery, type WorkDiscovery } from "./discovery-contracts.ts";
 import { decode } from "../decode.ts";
+import { committedScope } from "./invalidations.ts";
+import type { ChangeScope } from "@abracode/contracts/web/changes";
 function communication(e?: Execution): NonNullable<WorkItem["communication"]> {
   return {
     total: e?.messages?.length ?? 0,
@@ -190,30 +192,143 @@ function bindRetainedWork(
 /** Read-only projection. Lifecycle actions remain exclusively in the controller tools. */
 export class Visibility {
   private c: Queries;
-  constructor(controller: Pick<Controller, "queries">) {
+  private finderObserved = false;
+  private fleetEpoch = 0;
+  private fleetFailed = false;
+  private fleet?: {
+    data: NonNullable<WorkSnapshot["fleet"]>;
+    at: Timestamp;
+    workRevision: string;
+    recordsRevision?: string;
+    epoch: number;
+  };
+  constructor(
+    controller: Pick<Controller, "queries">,
+    private finderRequests?: Queue.Queue<void>,
+  ) {
     this.c = controller.queries;
   }
+  readonly requestFinderRefresh = Effect.suspend(() =>
+    this.finderObserved && this.finderRequests
+      ? Queue.offer(this.finderRequests, undefined).pipe(Effect.asVoid)
+      : Effect.void,
+  );
+  invalidateFinder = (scope: ChangeScope) =>
+    Effect.suspend(() => {
+      if (!(scope.all || scope.projects || scope.work_all || scope.finder || scope.issues?.length))
+        return Effect.void;
+      this.fleetEpoch++;
+      return this.requestFinderRefresh;
+    });
+  readonly refreshFinder = Effect.gen({ self: this }, function* () {
+    const epoch = this.fleetEpoch;
+    const observation = yield* Effect.gen({ self: this }, function* () {
+      const bundle = yield* this.c.observe();
+      if (yield* this.c.refreshFinderReadiness(bundle)) yield* committedScope({ fleet: true });
+      const snapshot = yield* this.snapshot(undefined, bundle, false);
+      if (!snapshot.fleet)
+        return yield* new CrewError("OBSERVATION_UNAVAILABLE", "Fleet evidence is unavailable");
+      return {
+        data: snapshot.fleet,
+        at: snapshot.at,
+        workRevision: bundle.source.work_revision,
+        recordsRevision: bundle.recordsRevision,
+        epoch,
+      };
+    }).pipe(
+      Effect.timeoutOrElse({
+        duration: "5 seconds",
+        orElse: () =>
+          Effect.fail(new CrewError("OBSERVATION_UNAVAILABLE", "Fleet refresh timed out")),
+      }),
+      Effect.result,
+    );
+    if (observation._tag === "Failure") {
+      const changed = !this.fleetFailed;
+      this.fleetFailed = true;
+      if (changed) yield* committedScope({ fleet: true });
+      return;
+    }
+    const previous = this.fleet;
+    const next = observation.success;
+    const changed =
+      this.fleetFailed ||
+      !previous ||
+      previous.epoch !== next.epoch ||
+      previous.workRevision !== next.workRevision ||
+      previous.recordsRevision !== next.recordsRevision ||
+      JSON.stringify(previous.data) !== JSON.stringify(next.data);
+    this.fleetFailed = false;
+    this.fleet = next;
+    if (changed) yield* committedScope({ fleet: true });
+  });
   feedback = (issue: IssueId, page = 0) => this.c.feedback(issue, page);
   find = (input: WorkDiscovery = {}) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
         const query = yield* decode(WorkDiscoveryQuery, input, "Work discovery");
-        const bundle = yield* this.c.observe(query);
-        const page = bundle.page!;
-        const ids = page.entries.map((issue) => issue.id);
-        const snapshot = yield* this.snapshot(undefined, bundle, ids, { leads: false });
-        const byID = new Map(snapshot.work.map((work) => [work.issue_id, work]));
+        const page = yield* this.c.observeFinder(query);
+        const fleet = this.fleet;
+        const fleetCurrent =
+          fleet &&
+          !this.fleetFailed &&
+          fleet.epoch === this.fleetEpoch &&
+          fleet.workRevision === page.workRevision &&
+          fleet.recordsRevision === page.recordsRevision;
+        const firstRequest = !this.finderObserved;
+        this.finderObserved = true;
+        if (firstRequest || (fleet && !fleetCurrent)) yield* this.requestFinderRefresh;
+        const at = yield* Clock.currentTimeMillis;
+        const entries = yield* Effect.forEach(
+          page.entries,
+          ({ issue, execution, executionUnavailable, readiness, closedAt }) =>
+            Effect.gen({ self: this }, function* () {
+              const retained = retainedWork(
+                this.c.settings.supervisionMode,
+                issue,
+                execution,
+                readiness,
+                closedAt,
+              );
+              const work: WorkItem = executionUnavailable
+                ? {
+                    ...retained,
+                    phase: "recovery_required",
+                    error: executionUnavailable,
+                    eligible: false,
+                    blockers: [...retained.blockers, executionUnavailable],
+                  }
+                : retained;
+              return {
+                ...work,
+                ...bindRetainedWork(work, execution, issue, at),
+                supervision: yield* this.c.supervision(
+                  execution,
+                  work.blocker_details,
+                  issue.status === "closed",
+                ),
+              };
+            }),
+          { concurrency: 4 },
+        );
         return {
-          entries: ids.flatMap((id) => {
-            const work = byID.get(id);
-            return work ? [work] : [];
-          }),
+          entries,
           total: page.total,
           offset: page.offset,
           limit: page.limit,
           next_offset: page.next_offset,
-          fleet: snapshot.fleet,
-          observed_at: snapshot.at,
+          observed_at: page.observedAt,
+          work_revision: page.workRevision,
+          fleet: fleet?.data,
+          fleet_observation: {
+            state: fleetCurrent
+              ? ("current" as const)
+              : fleet
+                ? ("stale" as const)
+                : ("unavailable" as const),
+            work_revision: fleet?.workRevision,
+            observed_at: fleet?.at,
+          },
         };
       }),
     );
@@ -299,28 +414,22 @@ export class Visibility {
   snapshot: (
     closedPage?: number,
     bundle?: ReadBundle,
-    selected?: readonly IssueId[],
-    options?: { leads?: boolean },
+    includeLeads?: boolean,
   ) => Effect.Effect<WorkSnapshot, CrewError> = Effect.fn("Visibility.snapshot")(
-    function* (
-      this: Visibility,
-      closedPage?: number,
-      bundle?: ReadBundle,
-      selected?: readonly IssueId[],
-      options?: { leads?: boolean },
-    ) {
+    function* (this: Visibility, closedPage?: number, bundle?: ReadBundle, includeLeads = true) {
       const observation = bundle ?? (yield* this.c.observe());
       const { executions, issues, diagnostics } = observation;
       const ready = yield* this.c.ready(observation);
+      const executionsByID = new Map(executions.map((e) => [e.issue_id, e]));
+      const issuesByID = new Map(issues.map((issue) => [issue.id, issue]));
       const work: WorkItem[] = ready.map((r) =>
         retainedWork(
           this.c.settings.supervisionMode,
           r.issue,
-          r.execution ?? executions.find((e) => e.issue_id === r.issue.id),
+          r.execution ?? executionsByID.get(r.issue.id),
           r,
         ),
       );
-      const executionsByID = new Map(executions.map((e) => [e.issue_id, e]));
       const conflicts = issues.filter(
         (i) =>
           i.status === "closed" &&
@@ -338,11 +447,9 @@ export class Visibility {
         0,
         Math.min(Math.floor(closedPage ?? 0), Math.max(0, Math.ceil(closed.length / 50) - 1)),
       );
-      const selectedClosed = selected
-        ? closed.filter((issue) => selected.includes(issue.id))
-        : closed.slice(page * 50, (page + 1) * 50);
+      const selectedClosed = closed.slice(page * 50, (page + 1) * 50);
       for (const issue of [...conflicts, ...selectedClosed]) {
-        const e = executions.find((e) => e.issue_id === issue.id);
+        const e = executionsByID.get(issue.id);
         work.push(
           retainedWork(
             this.c.settings.supervisionMode,
@@ -353,9 +460,10 @@ export class Visibility {
           ),
         );
       }
+      const workByID = new Map(work.map((item) => [item.issue_id, item]));
       for (const e of executions.filter(
-        (e) => e.current_phase !== "completed" && !work.some((w) => w.issue_id === e.issue_id),
-      ))
+        (e) => e.current_phase !== "completed" && !workByID.has(e.issue_id),
+      )) {
         work.push({
           issue_id: e.issue_id,
           title: e.issue_id,
@@ -373,10 +481,12 @@ export class Visibility {
           eligible: false,
           blockers: ["Active execution has no open WorkGraph issue; inspect recovery"],
         });
+        workByID.set(e.issue_id, work.at(-1)!);
+      }
       for (const diagnostic of diagnostics.filter((d) => d.key.startsWith("execution/"))) {
         const id = diagnostic.key.slice("execution/".length);
         if (!Schema.is(IssueId)(id)) continue;
-        const item = work.find((w) => w.issue_id === id);
+        const item = workByID.get(id);
         if (item) {
           Object.assign(item, {
             phase: "recovery_required",
@@ -398,14 +508,15 @@ export class Visibility {
           });
       }
       const aggregate = yield* this.c.supervisionAggregate(observation, ready);
-      const leads = options?.leads === false ? undefined : yield* this.c.leadOverview(observation);
+      const leads = includeLeads ? yield* this.c.leadOverview(observation) : undefined;
+      const supervisionByID = new Map(aggregate.tasks.map((task) => [task.issue_id, task]));
       const observedAt = yield* Clock.currentTimeMillis;
       for (const item of work) {
-        const execution = executions.find((e) => e.issue_id === item.issue_id);
-        const issue = issues.find((i) => i.id === item.issue_id);
+        const execution = executionsByID.get(item.issue_id);
+        const issue = issuesByID.get(item.issue_id);
         Object.assign(item, bindRetainedWork(item, execution, issue, observedAt), {
           supervision:
-            aggregate.tasks.find((task) => task.issue_id === item.issue_id) ??
+            supervisionByID.get(item.issue_id) ??
             supervisionSummary({
               execution,
               blockers: item.blocker_details ?? [],

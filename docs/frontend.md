@@ -270,3 +270,13 @@ deferred-feature, Back/focus and 375/390px acceptance remains pending.
 ### Versioned diagram data
 
 Work catalog v2 and `abracode-react/v2` add literal Mermaid components and larger bounded collections. Retained v1 surfaces/documents keep their original IDs, byte limits, eight-diagram evidence contract and source safety policy. Readers check catalog, renderer and surface identity together. No upgrade rewrites saved JSON or interprets an unsupported diagram as a partial successful view.
+
+### Interactive reviews
+
+App-only reviews use a separate A2UI catalog and optional host capabilities;
+shared rendering performs no live reads. Exact source-bound publications are
+associated with their producing native message and discovered beside the matching
+Plan, Reports or generated surface. Drafts are shared by session/review/revision/
+hash and retained in browser storage; pending identity is saved before submission.
+Native response reservation and admission receipts govern reconciliation. See
+[interactive reviews](interactive-reviews.md) for controls, authoring and recovery.

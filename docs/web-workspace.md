@@ -112,8 +112,21 @@ responding, including optional compatibility fields; query parsing rejects exces
 capabilities before invoking the adapter. Adapter observation/receipt timestamps
 use the supplied Effect Clock; native message timestamps retain their provenance.
 For performance probes, selected detail must have zero fleet-readiness, collection
-scan and unrelated native/lead reads. Finder aggregates still describe all work,
-independently of its filter/page; mutation admission always reads current authority.
+scan and unrelated native/lead reads. The finder uses an indexed page and reads
+retained evidence for selected issues, their dependencies and their projects in
+one revision-fenced capture. Exact match counts and later offsets can still
+require SQL scanning. Capacity annotations use a separately refreshed record
+summary. When that summary is unavailable for the captured revision, the row
+identifies readiness as unobserved. Mutation admission always reads current authority.
+
+Fleet totals describe all work independently of finder filters. Once a finder
+is observed, committed work hints and periodic reconciliation refresh fleet
+evidence in a scoped background worker. A page can return while that refresh
+is pending. It carries the last fleet observation time and source revision
+when available, with explicit stale or unavailable status and separate native
+activity coverage. Finder ordering is indexed using the host's locale comparison.
+Supported older databases backfill that derived index without changing issue
+identities or events.
 
 Committed controller notifications now include an optional typed resource scope.
 The native authenticated location envelope is preserved; a matching controller

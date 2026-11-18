@@ -1,24 +1,31 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { Exit, Scope } from "effect";
 
 import { test } from "vite-plus/test";
 import * as Id from "../../src/identities.ts";
 import { CrewError } from "../../src/domain.ts";
 import { run } from "../effects.ts";
-import { workDatabase } from "../helpers/work-database.ts";
+import {
+  removeFinderIndexForLegacyFixture,
+  workDatabase,
+  workGraphAt,
+} from "../helpers/work-database.ts";
 
 import { goal } from "../helpers/work-goal.ts";
 
 test("file-backed legacy identifier ordering and normalized request bytes survive paged queries", async (t) => {
-  const { graph, path } = await workDatabase(t);
+  const { graph: initial, path, scope } = await workDatabase(t);
   const inputs = ["a-A", "a_a", "A", "a", "Z", "z-9"].map(goal);
   const ids = inputs.map((_, index) =>
     Id.IssueId.make(["a-A", "a_a", "A", "a", "Z", "z-9"][index]!),
   );
   const created = [];
-  for (const input of inputs) created.push(await run(graph.create(input)));
+  for (const input of inputs) created.push(await run(initial.create(input)));
+  await run(Scope.close(scope, Exit.void));
   const db = new DatabaseSync(path);
   try {
+    removeFinderIndexForLegacyFixture(db);
     db.exec("BEGIN; PRAGMA defer_foreign_keys = ON");
     for (const [index, issue] of created.entries()) {
       db.prepare("UPDATE issues SET id = ? WHERE id = ?").run(ids[index]!, issue.id);
@@ -28,6 +35,7 @@ test("file-backed legacy identifier ordering and normalized request bytes surviv
       );
     }
     db.exec("COMMIT");
+    const { graph } = await workGraphAt(t, path);
     const requests = db
       .prepare("SELECT request_id, request_input FROM issues ORDER BY request_id")
       .all();

@@ -399,6 +399,60 @@ export async function workspaceJourney(input: {
     });
     await page.getByText("Native workspace coding journey", { exact: true }).waitFor();
     assert.equal(await page.locator('[data-a2ui-renderer="upstream"]').count(), 1);
+    const reviewSource = await command("abra_review_ui", {
+      action: "source",
+      source: { kind: "surface", surface_id: "workspace-board", revision: 1 },
+    });
+    const nativeReview = await command("abra_review_ui", {
+      action: "publish",
+      review: {
+        review_id: "workspace-feedback",
+        title: "Native plan feedback",
+        source: reviewSource.source,
+        fields: [
+          {
+            component: "MultiSelect",
+            id: "features",
+            label: "Native feature selection",
+            required: true,
+            options: [{ value: "focused", label: "Focused first release" }],
+          },
+          { component: "CommentField", id: "comments", label: "Native review comments" },
+        ],
+      },
+    });
+    const reviewPanel = page
+      .locator('[data-review-reference="workspace-feedback/1"] .interactive-review')
+      .first();
+    await reviewPanel.getByRole("checkbox", { name: "Focused first release", exact: true }).check();
+    await reviewPanel
+      .getByRole("textbox", { name: "Native review comments", exact: true })
+      .fill("Keep this release focused.");
+    const reviewAdmission = page.waitForResponse(
+      (response) => response.url() === `${web.origin}/api/review/submit`,
+    );
+    await reviewPanel.getByRole("button", { name: "Send feedback to Abra", exact: true }).click();
+    const reviewResponse = await reviewAdmission;
+    assert.equal(reviewResponse.status(), 200, await reviewResponse.text());
+    const nativeFeedback = await reviewResponse.json();
+    assert.equal(nativeFeedback.status, "admitted");
+    assert.equal(nativeFeedback.review_id, nativeReview.review_id);
+    await input.client.session.wait({ sessionID: input.session });
+    await command("abra_review_ui", {
+      action: "publish",
+      review: {
+        review_id: "workspace-feedback",
+        title: "Revised native plan feedback",
+        source: reviewSource.source,
+        responds_to: nativeFeedback.request_id,
+        fields: [{ component: "CommentField", id: "comments", label: "Native review comments" }],
+      },
+    });
+    await page
+      .getByRole("heading", { name: "Revised native plan feedback", exact: true })
+      .first()
+      .waitFor();
+
     const diagramFixtures = mixedDiagrams();
     const verifierInput = {
       diagrams: diagramFixtures.map((d, i) => ({ id: `diagram${i}`, source: d.source })),
@@ -777,6 +831,20 @@ export async function workspaceJourney(input: {
           "Native workspace coding journey",
         );
 
+        const recoveredReviewReceipt = await Effect.runPromise(
+          backend.reviews!.receipt({
+            review_id: nativeFeedback.review_id,
+            revision: nativeFeedback.revision,
+            hash: nativeFeedback.hash,
+            request_id: nativeFeedback.request_id,
+          }),
+        );
+        assert.deepEqual(
+          recoveredReviewReceipt,
+          nativeFeedback,
+          "Review receipt must survive actual native restart and worktree retirement",
+        );
+
         return {
           issue_id: issue,
           phase: state.current_phase,
@@ -791,6 +859,13 @@ export async function workspaceJourney(input: {
           exported_html_report: exportedReport,
           export_reopened_after_native_restart: true,
           admission_recovery: admissionRecovery,
+          interactive_review: {
+            review_id: nativeFeedback.review_id,
+            revision: nativeFeedback.revision,
+            request_id: nativeFeedback.request_id,
+            receipt_after_restart: true,
+            followup_published: true,
+          },
           binding_coverage: {
             population: 57,
             companion: population.companion,

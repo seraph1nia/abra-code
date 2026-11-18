@@ -1,4 +1,9 @@
-import type { ReviewSelection, ReviewAssetQuerySchema, ReviewSubmit } from "@abracode/contracts/web/reviews";
+import type {
+  ReviewSelection,
+  ReviewAssetQuerySchema,
+  ReviewSubmit,
+  ReviewResponseQuerySchema,
+} from "@abracode/contracts/web/reviews";
 import type { PrepareDiagramSelection } from "@abracode/contracts/web/diagram-actions";
 import { NativeSessionReader } from "../opencode/agui/source.ts";
 import { projectNativeMessage } from "../opencode/agui/messages.ts";
@@ -92,10 +97,38 @@ export class NativeWebBackend implements WebBackend {
     return { location: { directory: this.home } };
   }
   readonly reviews = {
-    list:(issue?:string)=>this.use(client=>this.gateway(client).reviewList({session_id:this.sessionID,...(issue?{issue_id:IssueId.make(issue)}:{})},this.location())),
-    read:(selection:ReviewSelection)=>this.use(client=>this.gateway(client).review({session_id:this.sessionID,...selection},this.location())),
-    asset:(selection:typeof ReviewAssetQuerySchema.Type)=>this.use(client=>this.gateway(client).reviewAsset({session_id:this.sessionID,...selection},this.location())),
-    submit:(input:ReviewSubmit)=>this.use(client=>this.gateway(client).reviewSubmit({session_id:this.sessionID,...input},this.location())),
+    receipt: (selection: typeof ReviewResponseQuerySchema.Type) =>
+      this.use((client) =>
+        this.gateway(client).reviewReceipt(
+          { session_id: this.sessionID, ...selection },
+          this.location(),
+        ),
+      ),
+    list: (issue?: string) =>
+      this.use((client) =>
+        this.gateway(client).reviewList(
+          { session_id: this.sessionID, ...(issue ? { issue_id: IssueId.make(issue) } : {}) },
+          this.location(),
+        ),
+      ),
+    read: (selection: ReviewSelection) =>
+      this.use((client) =>
+        this.gateway(client).review({ session_id: this.sessionID, ...selection }, this.location()),
+      ),
+    asset: (selection: typeof ReviewAssetQuerySchema.Type) =>
+      this.use((client) =>
+        this.gateway(client).reviewAsset(
+          { session_id: this.sessionID, ...selection },
+          this.location(),
+        ),
+      ),
+    submit: (input: ReviewSubmit) =>
+      this.use((client) =>
+        this.gateway(client).reviewSubmit(
+          { session_id: this.sessionID, ...input },
+          this.location(),
+        ),
+      ),
   };
   private checkpoint(client: OpenCodeClient, form: Form.Info) {
     return Effect.gen({ self: this }, function* () {

@@ -101,6 +101,7 @@ export class WorkspaceFeed {
             const changed =
               !latest ||
               !same(semanticWorkspace(latest), semanticWorkspace(value)) ||
+              !!changes.fleet ||
               !!changes.work_all ||
               !!changes.issues?.length;
             if (changed) {

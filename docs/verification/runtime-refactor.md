@@ -648,3 +648,116 @@ Task 10.5 is closed under that acceptance; independent Review submission was
 waived. This records user acceptance, not an independent Review report or a
 controller approval, archive, commit, delivery or issue closure. Product code and
 its retained verification evidence are unchanged.
+
+## Finder pagination and initial browser graph follow-up
+
+The comparison exercises the real SQLite finder before and after indexed locale
+ordering. The base graph implementation is from `9b7990b`. Both runs used
+Node 26.13.0 with the default en-US collation, a fresh synthetic v7 database per
+population, and one warm-up followed by seven measured calls per case. Fixture
+IDs are sequential, priorities rotate across five levels, 10% are closed, two
+repositories alternate, and one quarter of titles use “ÉTUDE example”.
+The later offset is 10% of the unfiltered population. Times are medians in
+milliseconds for SQL ordering, count, offset and page hydration combined.
+Exact counting and later offsets still incur SQL scanning, especially for
+case-insensitive substring matching.
+
+A sortable-key prototype compared 265,980 short supported identifiers. It
+matched en-US in that sample and disagreed with the Czech and Danish locale
+comparators. The shipped index assigns durable order using the actual runtime
+comparison and backfills legacy identifiers on open.
+
+| Population | Active filter | Offset | Limit | Matching | Before ms | Indexed ms |
+| ---------: | ------------- | -----: | ----: | -------: | --------: | ---------: |
+|      1,000 | active        |      0 |     1 |      900 |     0.928 |      0.212 |
+|      1,000 | active        |      0 |    50 |      900 |     1.344 |      0.781 |
+|      1,000 | active        |    100 |     1 |      900 |     0.828 |      0.183 |
+|      1,000 | active        |    100 |    50 |      900 |     1.160 |      0.639 |
+|      1,000 | repository    |      0 |     1 |      400 |     0.490 |      0.158 |
+|      1,000 | repository    |      0 |    50 |      400 |     0.833 |      0.747 |
+|      1,000 | repository    |    100 |     1 |      400 |     0.535 |      0.294 |
+|      1,000 | repository    |    100 |    50 |      400 |     1.035 |      0.818 |
+|      1,000 | substring     |      0 |     1 |      200 |     1.446 |      0.649 |
+|      1,000 | substring     |      0 |    50 |      200 |     1.710 |      1.289 |
+|      1,000 | substring     |    100 |     1 |      200 |     1.667 |      0.879 |
+|      1,000 | substring     |    100 |    50 |      200 |     3.024 |      1.697 |
+|     50,000 | active        |      0 |     1 |   45,000 |    38.846 |      1.851 |
+|     50,000 | active        |      0 |    50 |   45,000 |    39.014 |      2.167 |
+|     50,000 | active        |  5,000 |     1 |   45,000 |    44.989 |      5.279 |
+|     50,000 | active        |  5,000 |    50 |   45,000 |    44.788 |      5.495 |
+|     50,000 | repository    |      0 |     1 |   20,000 |    20.668 |      4.400 |
+|     50,000 | repository    |      0 |    50 |   20,000 |    21.376 |      4.067 |
+|     50,000 | repository    |  5,000 |     1 |   20,000 |    27.255 |      6.055 |
+|     50,000 | repository    |  5,000 |    50 |   20,000 |    28.033 |      7.056 |
+|     50,000 | substring     |      0 |     1 |   10,000 |    63.959 |     35.502 |
+|     50,000 | substring     |      0 |    50 |   10,000 |    63.654 |     30.318 |
+|     50,000 | substring     |  5,000 |     1 |   10,000 |    80.568 |     43.728 |
+|     50,000 | substring     |  5,000 |    50 |   10,000 |    84.096 |     43.570 |
+
+Each run hydrated only the returned issue rows. The old adapter also loaded and
+ranked one application-side ID per match. The indexed adapter does neither.
+The page projection integration test separately observes one page-row query,
+zero population record scans and zero native observations for a queued,
+unassigned result. Selected active worker evidence may add one native
+observation per selected worker. The same suite verifies bounded revision
+retry and that a suspended fleet calculation cannot delay a finder read.
+The browser receives revisioned, independently refreshed fleet totals.
+
+A separate production read-model probe matched the committed base against the
+new finder with no HTTP or browser overhead. It seeded the requested number
+of open issues plus an unrelated retained planning execution, warmed each
+query once, searched for the open issues and took one timed sample. The new
+read ran with the capacity summary warmed separately.
+
+| Matching issues | Page limit | Full issues hydrated, base / new | Page issues hydrated, base / new | Base sample | New sample |
+| --------------: | ---------: | -------------------------------: | -------------------------------: | ----------: | ---------: |
+|           1,000 |          1 |                        1,001 / 0 |                            1 / 1 |      156 ms |       2 ms |
+|           1,000 |         50 |                        1,001 / 0 |                          50 / 50 |      163 ms |      10 ms |
+|          50,000 |          1 |                       50,001 / 0 |                            1 / 1 |   66,758 ms |      16 ms |
+|          50,000 |         50 |                       50,001 / 0 |                          50 / 50 |   57,243 ms |      23 ms |
+
+Each base request scanned all project, execution and setup collections once.
+The new request uses one lookup for the shared project and one execution
+lookup per returned issue, with zero collection scans. No native reads were issued
+for these unassigned page rows or the unrelated retained plan. The probe's
+single latency samples illustrate the eliminated population work. The SQL
+medians above describe the underlying adapter independently.
+
+The production browser performance fixture was run on a disposable archive of
+`9b7990b` and on the working source, both with Node 26.13.0 and pnpm 12.21.0.
+The committed base used the measurement-only option to retain both graph
+measurements. Working source ran the ordinary budget assertions. Review
+controls and the dedicated review HTTP contract are deferred via
+`interactive-review-loader.tsx` and `review-data.ts`. Browser scenarios still
+exercise review, Markdown, diffs and inspection through their normal entries.
+
+| Messages | Base fetched JS gzip bytes | Working fetched JS gzip bytes | Existing ceiling |
+| -------: | -------------------------: | ----------------------------: | ---------------: |
+|        0 |                    539,983 |                       533,400 |          536,000 |
+|    1,000 |                    752,117 |                       745,425 |          748,000 |
+
+The byte counts include script responses requested during startup and every
+declared preload. The production fixture also exercises the retained
+conversation render locality assertions. Its measured external browser graph
+can differ from the sum of the HTML's own script declarations.
+
+### Integrated verification
+
+On 2026-11-18, `pnpm check` passed with zero Effect diagnostics.
+`pnpm test:all` passed 737 tests across 130 files, including the native
+workspace plan-approval journey and the interactive feedback browser journey.
+The focused suites covered legacy database ordering, cross-process record
+ownership, pending review reads and restart, and archive and worktree
+observation failures. The OpenSpec change passed strict validation.
+
+### Follow-ups retained from the audit
+
+- Keep future execution write changes with the Records owner. Migrate one
+  command family to explicit committed values and prove generation, operation,
+  revision and field-ownership checks before expanding to other callers.
+- Review the standalone diagram preparation command with the frozen exporter
+  owner. Check operator callers and the renderer manifest's role in retained
+  fingerprints and pending exports before retiring the script.
+- Narrow remaining workflow read ports and remove private contract forwarding
+  files when a caller moves to its owning interface. Keep shared schemas,
+  package interfaces and stored evidence stable through those changes.

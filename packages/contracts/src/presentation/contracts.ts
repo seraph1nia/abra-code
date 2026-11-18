@@ -13,7 +13,11 @@ export const PresentationAttachmentSchema = Schema.Struct({
   tool_call_id: Schema.optional(Schema.String),
   source: Schema.Literals(["tool", "notice"]),
   target: Schema.Union([
-    Schema.Struct({kind:Schema.Literal("review"),review_id:Identifier,revision:Schema.Int.check(Schema.isGreaterThan(0))}),
+    Schema.Struct({
+      kind: Schema.Literal("review"),
+      review_id: Identifier,
+      revision: Schema.Int.check(Schema.isGreaterThan(0)),
+    }),
     Schema.Struct({
       kind: Schema.Literal("surface"),
       surface_id: Identifier,

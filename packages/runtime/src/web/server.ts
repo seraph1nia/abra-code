@@ -1,4 +1,11 @@
-import { ReviewListSchema, ReviewViewSchema, ReviewAssetDataSchema, ReviewReceiptSchema } from "@abracode/contracts/web/reviews";
+import { reviewGroup } from "@abracode/contracts/web/review-api";
+import {
+  ReviewListSchema,
+  ReviewViewSchema,
+  ReviewAssetDataSchema,
+  ReviewReceiptSchema,
+  ReviewReceiptLookupSchema,
+} from "@abracode/contracts/web/reviews";
 import { DiagramPreparationSchema } from "@abracode/contracts/presentation/diagrams";
 import { BindingReadSchema } from "@abracode/contracts/web/bindings";
 import { LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
@@ -49,11 +56,15 @@ const securityHeaders = {
 const refused = (error: CrewError) =>
   new WorkspaceError({
     code: error.code,
-    message: "Request could not be confirmed. Refresh before retrying.",
+    message:
+      error.code === "REVIEW_STALE" || error.code === "REVIEW_REFUSED"
+        ? error.message
+        : "Request could not be confirmed. Refresh before retrying.",
   });
 const json = (value: unknown, status: number) => HttpServerResponse.jsonUnsafe(value, { status });
 
 function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
+  const api = workspaceApi.add(reviewGroup);
   const validated = <S extends Schema.ConstraintDecoder<unknown>>(
     operation: Effect.Effect<S["Type"], CrewError>,
     schema: S,
@@ -62,12 +73,8 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
       Effect.flatMap((value) => decode(schema, value, "Workspace resource")),
       Effect.mapError(refused),
     );
-  const operations = HttpApiBuilder.group(workspaceApi, "workspace", (handlers) =>
+  const operations = HttpApiBuilder.group(api, "workspace", (handlers) =>
     handlers
-      .handle("reviewList", ({query}) => validated(backend.reviews?.list(query.issue_id) ?? Effect.fail(new CrewError("REVIEW_UNAVAILABLE","Reviews are unavailable")), ReviewListSchema))
-      .handle("review", ({query}) => validated(backend.reviews?.read(query) ?? Effect.fail(new CrewError("REVIEW_UNAVAILABLE","Reviews are unavailable")), ReviewViewSchema))
-      .handle("reviewAsset", ({query}) => validated(backend.reviews?.asset(query) ?? Effect.fail(new CrewError("REVIEW_UNAVAILABLE","Reviews are unavailable")), ReviewAssetDataSchema))
-      .handle("reviewSubmit", ({payload}) => validated(backend.reviews?.submit(payload) ?? Effect.fail(new CrewError("REVIEW_UNAVAILABLE","Reviews are unavailable")), ReviewReceiptSchema).pipe(Effect.tap(()=>feed.notify({presentations:true,admissions:true}))))
       .handle("prepareDiagrams", ({ payload }) =>
         validated(backend.prepareDiagrams(payload), DiagramPreparationSchema),
       )
@@ -107,7 +114,7 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
         ),
       ),
   );
-  const work = HttpApiBuilder.group(workspaceApi, "work", (handlers) =>
+  const work = HttpApiBuilder.group(api, "work", (handlers) =>
     handlers
       .handle("binding", ({ query }) => validated(backend.work.binding(query), BindingReadSchema))
       .handle("find", ({ query }) => validated(backend.work["find"](query), WorkPageSchema))
@@ -205,7 +212,45 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
         validated(backend.work["decisions"](query), DecisionsSchema),
       ),
   );
-  return HttpApiBuilder.layer(workspaceApi).pipe(Layer.provide(Layer.merge(operations, work)));
+  const reviews = HttpApiBuilder.group(api, "reviews", (handlers) =>
+    handlers
+      .handle("reviewReceipt", ({ query }) =>
+        validated(
+          backend.reviews?.receipt(query) ??
+            Effect.fail(new CrewError("REVIEW_UNAVAILABLE", "Reviews are unavailable")),
+          ReviewReceiptLookupSchema,
+        ),
+      )
+      .handle("reviewList", ({ query }) =>
+        validated(
+          backend.reviews?.list(query.issue_id) ??
+            Effect.fail(new CrewError("REVIEW_UNAVAILABLE", "Reviews are unavailable")),
+          ReviewListSchema,
+        ),
+      )
+      .handle("review", ({ query }) =>
+        validated(
+          backend.reviews?.read(query) ??
+            Effect.fail(new CrewError("REVIEW_UNAVAILABLE", "Reviews are unavailable")),
+          ReviewViewSchema,
+        ),
+      )
+      .handle("reviewAsset", ({ query }) =>
+        validated(
+          backend.reviews?.asset(query) ??
+            Effect.fail(new CrewError("REVIEW_UNAVAILABLE", "Reviews are unavailable")),
+          ReviewAssetDataSchema,
+        ),
+      )
+      .handle("reviewSubmit", ({ payload }) =>
+        validated(
+          backend.reviews?.submit(payload) ??
+            Effect.fail(new CrewError("REVIEW_UNAVAILABLE", "Reviews are unavailable")),
+          ReviewReceiptSchema,
+        ).pipe(Effect.tap(() => feed.notify({ presentations: true, admissions: true }))),
+      ),
+  );
+  return HttpApiBuilder.layer(api).pipe(Layer.provide(Layer.mergeAll(operations, work, reviews)));
 }
 
 export interface WorkspaceServerOptions {

@@ -37,6 +37,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
   const scope = await Effect.runPromise(Scope.make());
   const calls: { name: WorkReadName; input: Record<string, string>; title?: string }[] = [];
   let retained: readonly WebWorkItem[] | undefined;
+  let fleetObservation: typeof WorkPageSchema.Type.fleet_observation;
   let observationOffline = false;
   const failedReads = new Set<WorkReadName>();
   const detailOverrides = new Map<string, Record<string, unknown>>();
@@ -82,6 +83,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
             next_offset: offset + limit < matches.length ? offset + limit : undefined,
             observed_at: source.value.work.at,
             fleet: source.value.work.fleet,
+            fleet_observation: fleetObservation,
           };
         }
         case "leads":
@@ -237,6 +239,9 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
       return result.pipe(Effect.flatMap((value) => decode(schema, value, "Fixture work read")));
     };
   const backend: WebBackend = {
+    get reviews() {
+      return source.reviews;
+    },
     prepareDiagrams: source.prepareDiagrams,
     sessionID: source.sessionID,
     snapshot: Effect.suspend(() =>
@@ -374,6 +379,9 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
     },
     setDiscovery: (work: readonly WebWorkItem[]) => {
       retained = work;
+    },
+    setFleetObservation: (observation: typeof WorkPageSchema.Type.fleet_observation) => {
+      fleetObservation = observation;
     },
     browser,
     origin: web.origin,

@@ -1,4 +1,4 @@
-import { nativeReviews } from "./review-tool.ts";
+import type { Reviews } from "./reviews.ts";
 import { prepareDiagrams, documentDiagrams } from "../workflow/diagrams.ts";
 import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
 import { readReportDocument } from "../presentation/report-document.ts";
@@ -124,6 +124,7 @@ export function registerWebGateway(
   ctx: Context,
   config: Config,
   controller: Controller,
+  reviews: Reviews,
   provide: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E>,
 ) {
   const store = new NativeStore(ctx.storage);
@@ -131,7 +132,6 @@ export function registerWebGateway(
     store,
     new FileLocks(AbsolutePath.make(join(config.home, ".abracode/locks"))),
   );
-  const reviews = nativeReviews(ctx,controller);
   let surfaceDiagnostics: { surface_id: string; unavailable: string }[] = [];
   const admissions = new WebAdmissions(
     store,
@@ -152,11 +152,19 @@ export function registerWebGateway(
   return Effect.gen(function* () {
     const retained = yield* controller.queries.supervisor();
     if (retained) {
-      const recovered = yield* assertSupervisor(retained).pipe(
-        Effect.andThen(surfacePublications.recover(retained)),
-        Effect.tap(()=>reviews.recover(retained)),
-        Effect.result,
-      );
+      const authorized = yield* assertSupervisor(retained).pipe(Effect.result);
+      const recovered =
+        authorized._tag === "Failure"
+          ? authorized
+          : yield* surfacePublications.recover(retained).pipe(Effect.result);
+      if (authorized._tag === "Success")
+        yield* reviews
+          .recover(retained)
+          .pipe(
+            Effect.catch((error) =>
+              Effect.logWarning("Interactive review recovery unavailable", error.code),
+            ),
+          );
       if (recovered._tag === "Success") surfaceDiagnostics = recovered.success;
       else
         surfaceDiagnostics = [
@@ -168,10 +176,36 @@ export function registerWebGateway(
     }
     // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native registration declares unknown; handler failures are mapped at the boundary.
     return yield* ctx.rpc.register(webGateway, {
-      reviewList:({session_id,issue_id},{error})=>assertSupervisor(session_id).pipe(Effect.andThen(reviews.list(session_id,issue_id)),Effect.mapError(e=>error("refused",e.message,{code:e.code})),provide),
-      review:({session_id,...selection},{error})=>assertSupervisor(session_id).pipe(Effect.andThen(reviews.read(session_id,selection)),Effect.mapError(e=>error("refused",e.message,{code:e.code})),provide),
-      reviewAsset:({session_id,...selection},{error})=>assertSupervisor(session_id).pipe(Effect.andThen(reviews.asset(session_id,selection)),Effect.mapError(e=>error("refused",e.message,{code:e.code})),provide),
-      reviewSubmit:({session_id,...input},{error})=>assertSupervisor(session_id).pipe(Effect.andThen(reviews.submit(session_id,input,admissions)),Effect.mapError(e=>error("refused",e.message,{code:e.code})),provide),
+      reviewReceipt: ({ session_id, ...selection }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(reviews.receipt(session_id, selection, admissions)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      reviewList: ({ session_id, issue_id }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(reviews.list(session_id, issue_id)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      review: ({ session_id, ...selection }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(reviews.read(session_id, selection)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      reviewAsset: ({ session_id, ...selection }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(reviews.asset(session_id, selection)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      reviewSubmit: ({ session_id, ...input }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(reviews.submit(session_id, input, admissions)),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
       prepareDiagrams: ({ session_id, selection }, { error }) =>
         assertSupervisor(session_id).pipe(
           Effect.andThen(
@@ -219,7 +253,7 @@ export function registerWebGateway(
         ),
       presentations: ({ session_id, message_ids }, { error }) =>
         assertSupervisor(session_id).pipe(
-          Effect.andThen(surfacePublications.associations(session_id, message_ids)),
+          Effect.andThen(reviews.presentations(session_id, message_ids)),
           Effect.mapError((e) => error("refused", e.message, { code: e.code })),
           provide,
         ),

@@ -9,7 +9,7 @@ import {
 import { domainEffect } from "../effect.ts";
 import { CrewError, type ManagedExecution, type Project } from "../domain.ts";
 import { Effect } from "effect";
-import { pathExists, readdir } from "../filesystem.ts";
+import { pathExists, readdirIfPresent } from "../filesystem.ts";
 import { basename, join } from "node:path";
 
 import { type Runtime } from "../opencode/runtime.ts";
@@ -76,15 +76,9 @@ export class Workspaces {
             );
           e.worktree_directory = matches[0];
         } else {
-          const orphans = (yield* readdir(this.root).pipe(
-            Effect.catch(() =>
-              domainEffect(
-                Effect.sync(() => {
-                  return [];
-                }),
-              ),
-            ),
-          )).filter((n) => n.startsWith(e.execution_id));
+          const orphans = (yield* readdirIfPresent(this.root)).filter((n) =>
+            n.startsWith(e.execution_id),
+          );
           if (orphans.length)
             return yield* new CrewError(
               "WORKTREE_AMBIGUOUS",

@@ -77,3 +77,19 @@ export function readdir(
     : platform((fs) => fs.readDirectory(pathname(path)));
 }
 export const exists = (path: PathLike) => access(path).pipe(Effect.isSuccess);
+
+const missing = (error: CrewError) => error.code === "ENOENT";
+/** Classify only genuine absence at a lifecycle gate. An invalid parent is a failure. */
+export const entryExists = (path: PathLike) =>
+  access(path).pipe(
+    Effect.as(true),
+    Effect.catchIf(missing, () =>
+      // An inaccessible symlink target does not make the entry itself absent.
+      lstat(path).pipe(
+        Effect.as(true),
+        Effect.catchIf(missing, () => Effect.succeed(false)),
+      ),
+    ),
+  );
+export const readdirIfPresent = (path: PathLike) =>
+  readdir(path).pipe(Effect.catchIf(missing, () => Effect.succeed([])));

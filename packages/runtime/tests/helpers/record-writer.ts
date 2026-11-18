@@ -16,24 +16,39 @@ if (
 )
   throw new Error("Expected an owned fixture file, locks, barrier, issue and supported field");
 const key = StorageKey.make(`execution/${issue}`);
-const read = Effect.tryPromise({
-  try: async (): Promise<unknown> => JSON.parse(await readFile(file, "utf8")),
-  catch: CrewError.from,
-});
+const observation = StorageKey.make("observation/records-revision");
+const read = (path: string) =>
+  Effect.tryPromise({
+    try: async (): Promise<unknown> => JSON.parse(await readFile(path, "utf8")),
+    catch: CrewError.from,
+  });
+const revisionFile = `${file}.revision`;
 const store: Store = {
-  get: (requested) => (requested === key ? read : Effect.undefined),
+  get: (requested) =>
+    requested === key
+      ? read(file)
+      : requested === observation
+        ? read(revisionFile).pipe(
+            Effect.catchIf(
+              (error) => error.code === "ENOENT",
+              () => Effect.undefined,
+            ),
+          )
+        : Effect.undefined,
   set: (requested, value) =>
     Effect.tryPromise({
       try: async () => {
-        if (requested !== key) throw new Error("Unexpected fixture key");
-        const temporary = `${file}.${process.pid}.tmp`;
+        const target =
+          requested === key ? file : requested === observation ? revisionFile : undefined;
+        if (!target) throw new Error("Unexpected fixture key");
+        const temporary = `${target}.${process.pid}.tmp`;
         await writeFile(temporary, JSON.stringify(value));
-        await rename(temporary, file);
+        await rename(temporary, target);
       },
       catch: CrewError.from,
     }),
   entries: (prefix) =>
-    read.pipe(Effect.map((value) => (key.startsWith(prefix) ? [{ key, value }] : []))),
+    read(file).pipe(Effect.map((value) => (key.startsWith(prefix) ? [{ key, value }] : []))),
 };
 const records = new Records(store);
 records.coordinate(new FileLocks(AbsolutePath.make(locks)));

@@ -1,4 +1,15 @@
-import { ReviewSelectionSchema, ReviewViewSchema, ReviewListQuerySchema, ReviewListSchema, ReviewAssetQuerySchema, ReviewAssetDataSchema, ReviewSubmitSchema, ReviewReceiptSchema } from "@abracode/contracts/web/reviews";
+import {
+  ReviewSelectionSchema,
+  ReviewViewSchema,
+  ReviewListQuerySchema,
+  ReviewListSchema,
+  ReviewAssetQuerySchema,
+  ReviewAssetDataSchema,
+  ReviewSubmitSchema,
+  ReviewReceiptSchema,
+  ReviewResponseQuerySchema,
+  ReviewReceiptLookupSchema,
+} from "@abracode/contracts/web/reviews";
 import { PrepareDiagramSelectionSchema } from "@abracode/contracts/web/diagram-actions";
 import { DiagramPreparationSchema } from "@abracode/contracts/presentation/diagrams";
 import { ReportExportSchema } from "../presentation/report-export-contract.ts";
@@ -35,10 +46,26 @@ export const webGateway = Rpc.define({
   id: "abracode-web",
   events: {},
   methods: {
-    reviewList:method(Schema.Struct({session_id:SessionId,...ReviewListQuerySchema.fields}),ReviewListSchema),
-    review:method(Schema.Struct({session_id:SessionId,...ReviewSelectionSchema.fields}),ReviewViewSchema),
-    reviewAsset:method(Schema.Struct({session_id:SessionId,...ReviewAssetQuerySchema.fields}),ReviewAssetDataSchema),
-    reviewSubmit:method(Schema.Struct({session_id:SessionId,...ReviewSubmitSchema.fields}),ReviewReceiptSchema),
+    reviewReceipt: method(
+      Schema.Struct({ session_id: SessionId, ...ReviewResponseQuerySchema.fields }),
+      ReviewReceiptLookupSchema,
+    ),
+    reviewList: method(
+      Schema.Struct({ session_id: SessionId, ...ReviewListQuerySchema.fields }),
+      ReviewListSchema,
+    ),
+    review: method(
+      Schema.Struct({ session_id: SessionId, ...ReviewSelectionSchema.fields }),
+      ReviewViewSchema,
+    ),
+    reviewAsset: method(
+      Schema.Struct({ session_id: SessionId, ...ReviewAssetQuerySchema.fields }),
+      ReviewAssetDataSchema,
+    ),
+    reviewSubmit: method(
+      Schema.Struct({ session_id: SessionId, ...ReviewSubmitSchema.fields }),
+      ReviewReceiptSchema,
+    ),
     prepareDiagrams: method(
       Schema.Struct({ session_id: SessionId, selection: PrepareDiagramSelectionSchema }),
       DiagramPreparationSchema,

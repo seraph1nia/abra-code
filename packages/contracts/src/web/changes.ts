@@ -10,6 +10,7 @@ export const ChangeScopeSchema = Schema.Struct({
   presentations: Schema.optional(Schema.Boolean),
   projects: Schema.optional(Schema.Boolean),
   finder: Schema.optional(Schema.Boolean),
+  fleet: Schema.optional(Schema.Boolean),
   work_all: Schema.optional(Schema.Boolean),
   issues: Schema.optional(Schema.Array(IssueId).check(Schema.isMaxLength(256))),
 });
@@ -27,6 +28,7 @@ export function mergeChanges(a: ChangeScope, b: ChangeScope): ChangeScope {
     presentations: a.presentations || b.presentations || undefined,
     projects: a.projects || b.projects || undefined,
     finder: a.finder || b.finder || undefined,
+    ...(a.fleet || b.fleet ? { fleet: true } : {}),
     work_all: a.work_all || b.work_all || issues.length > 256 || undefined,
     issues: issues.length > 256 ? undefined : issues,
   };
@@ -43,7 +45,9 @@ export type Observation = typeof ObservationSchema.Type;
 export function workInvalidationKeys(scope: ChangeScope): string[] {
   return [
     ...(scope.all || scope.work_all ? ["work-observed"] : []),
-    ...(scope.all || scope.finder || scope.work_all || scope.projects ? ["work-finder"] : []),
+    ...(scope.all || scope.finder || scope.fleet || scope.work_all || scope.projects
+      ? ["work-finder"]
+      : []),
     ...(scope.issues ?? []).map((issue) => `work:${issue}`),
   ];
 }

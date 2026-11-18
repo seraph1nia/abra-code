@@ -1,4 +1,4 @@
-import { reviewTool } from "../web/review-tool.ts";
+import { nativeReviews, reviewTool, type NativeReviewOwner } from "../web/review-tool.ts";
 import { mermaidVerifierTool } from "./diagram-tool.ts";
 import { workSurfaceTool } from "../web/render-tool.ts";
 import { LeadActionSchema, LeadControlSchema } from "../workflow/lead-contracts.ts";
@@ -49,12 +49,13 @@ export function registerTools(
   setup: ProjectSetup,
   provide: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E> = (effect) => effect,
   configuration?: ConfigApplication,
+  reviews?: NativeReviewOwner,
 ) {
   return domainEffect(
     Effect.gen(function* () {
       const definitions = [
         workSurfaceTool(ctx, c),
-        reviewTool(ctx, c),
+        ...(central ? [reviewTool(reviews ?? nativeReviews(ctx, c))] : []),
         mermaidVerifierTool(c, central),
         define({
           name: "lead_control",

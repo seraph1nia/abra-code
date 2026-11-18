@@ -184,6 +184,10 @@ export class FakeWorkGraph implements WorkGraph {
         }),
       })),
     );
+  taskEvidence = (issues: readonly Issue[]) =>
+    Effect.forEach(issues, ({ id }) =>
+      this.task(id).pipe(Effect.map(({ dependencies }) => ({ id, dependencies }))),
+    );
   create = Effect.fn("FakeWorkGraph.create")(
     function* (this: FakeWorkGraph, input: NewIssue) {
       const encoded = JSON.stringify(input);

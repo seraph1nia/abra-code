@@ -1,4 +1,3 @@
-import type { ReviewSelection, ReviewSubmit } from "@abracode/contracts/web/reviews";
 import type { BindingSelection } from "@abracode/contracts/web/bindings";
 import { workInvalidationKeys, type ChangeScope } from "@abracode/contracts/web/changes";
 import type { LeadEvidenceQuery } from "@abracode/contracts/visibility/lead-observation";
@@ -207,7 +206,16 @@ export const saveSurface = Atom.family((_request: string) =>
   ),
 );
 export const invalidateWork = WorkspaceApi.runtime.fn((scope: ChangeScope) => {
-  const keys = [...workInvalidationKeys(scope),...(scope.all||scope.presentations||scope.admissions||scope.work_all||scope.issues?.length ? ["reviews-observed"]:[])];
+  const keys = [
+    ...workInvalidationKeys(scope),
+    ...(scope.all ||
+    scope.presentations ||
+    scope.admissions ||
+    scope.work_all ||
+    scope.issues?.length
+      ? ["reviews-observed"]
+      : []),
+  ];
   return keys.length ? Reactivity.invalidate(keys) : Effect.void;
 });
 
@@ -216,8 +224,3 @@ export const exportDocument = Atom.family((_identity: string) =>
     Effect.flatMap(WorkspaceApi, (client) => client.work.exportDocument({ payload })),
   ),
 );
-
-export const reviewListQuery = (issue?:string)=>WorkspaceApi.query("workspace","reviewList",{query:issue?{issue_id:IssueId.make(issue)}:{},reactivityKeys:["reviews-observed"],timeToLive:"0 seconds"});
-export const reviewQuery = (selection:ReviewSelection)=>WorkspaceApi.query("workspace","review",{query:selection,reactivityKeys:["reviews-observed"],timeToLive:"0 seconds"});
-export const reviewAssetQuery = (selection:ReviewSelection,hash:ContentHash)=>WorkspaceApi.query("workspace","reviewAsset",{query:{...selection,hash},timeToLive:"30 seconds"});
-export const submitReview = Atom.family((_id:string)=>WorkspaceApi.runtime.fn<ReviewSubmit>()(payload=>Effect.flatMap(WorkspaceApi,client=>client.workspace.reviewSubmit({payload}))));

@@ -1,4 +1,3 @@
-import { ReviewSelectionSchema, ReviewViewSchema, ReviewListQuerySchema, ReviewListSchema, ReviewAssetQuerySchema, ReviewAssetDataSchema, ReviewSubmitSchema, ReviewReceiptSchema } from "./reviews.ts";
 import { PrepareDiagramSelectionSchema } from "./diagram-actions.ts";
 import { DiagramPreparationSchema } from "../presentation/diagrams.ts";
 import { BindingReadQuery, BindingReadSchema } from "./bindings.ts";
@@ -109,10 +108,6 @@ const documentJSON = Schema.String.pipe(
 export const workspaceApi = HttpApi.make("abra-workspace")
   .add(
     HttpApiGroup.make("workspace").add(
-      HttpApiEndpoint.get("reviewList", "/api/reviews", {query:ReviewListQuerySchema,success:ReviewListSchema,error}),
-      HttpApiEndpoint.get("review", "/api/review", {query:ReviewSelectionSchema,success:ReviewViewSchema,error}),
-      HttpApiEndpoint.get("reviewAsset", "/api/review/asset", {query:ReviewAssetQuerySchema,success:ReviewAssetDataSchema,error}),
-      HttpApiEndpoint.post("reviewSubmit", "/api/review/submit", {payload:ReviewSubmitSchema,success:ReviewReceiptSchema,error}),
       HttpApiEndpoint.post("prepareDiagrams", "/api/diagrams/prepare", {
         payload: PrepareDiagramSelectionSchema,
         success: DiagramPreparationSchema,

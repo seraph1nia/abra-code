@@ -10,7 +10,7 @@ import { Executable, ArtifactId, RelativePath, type AbsolutePath } from "../iden
 import { domainEffect } from "../effect.ts";
 import { Effect, Schema } from "effect";
 
-import { access, readdir } from "../filesystem.ts";
+import { access, entryExists, readdir, readdirIfPresent } from "../filesystem.ts";
 import { join } from "node:path";
 import { CrewError, type Execution } from "../domain.ts";
 import { json, type Runner } from "../process.ts";
@@ -287,16 +287,11 @@ export class OpenSpec {
     function* (this: OpenSpec, e: Execution) {
       yield* this.assertSchema(e);
       const root = join(yield* this.cwd(e), "openspec/changes");
-      const matches = (yield* readdir(join(root, "archive")).pipe(
-        Effect.catch(() =>
-          domainEffect(
-            Effect.sync(() => {
-              return [];
-            }),
-          ),
-        ),
-      )).filter((n) => n.endsWith(`-${e.openspec_change}`));
-      const active = yield* access(join(root, e.openspec_change)).pipe(Effect.isSuccess);
+      const matches = (yield* readdirIfPresent(join(root, "archive"))).filter((n) =>
+        n.endsWith(`-${e.openspec_change}`),
+      );
+      const activePath = join(root, e.openspec_change);
+      const active = yield* entryExists(activePath);
       if (!active && matches.length === 1) {
         yield* this.validateCanonical(e);
         return RelativePath.make(join("openspec/changes/archive", matches[0]));
@@ -310,12 +305,7 @@ export class OpenSpec {
       const after = (yield* readdir(join(root, "archive"))).filter((n) =>
         n.endsWith(`-${e.openspec_change}`),
       );
-      if (
-        !(
-          after.length === 1 &&
-          !(yield* access(join(root, e.openspec_change)).pipe(Effect.isSuccess))
-        )
-      )
+      if (after.length !== 1 || (yield* entryExists(activePath)))
         return yield* new CrewError("ARCHIVE_FAILED", "Archive completion could not be verified");
       yield* this.validateCanonical(e);
       return RelativePath.make(join("openspec/changes/archive", after[0]));

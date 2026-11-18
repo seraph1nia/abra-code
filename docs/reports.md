@@ -152,3 +152,11 @@ The plugin, app, CLI and exporter use one bounded preparation interface. The ser
 Supported safe syntax includes flowcharts, sequence, state, class, ER, Gantt and mindmaps. Bidirectional arrows and ordinary label punctuation are accepted. Initialization directives/frontmatter, HTML labels, links/callbacks, images and external resources are refused; the compiler uses fixed strict settings and checks output SVG. Source-induced network requests are blocked. Chromium remains a preparation prerequisite (`pnpm report:browser:install` or a compatible `REPORT_CHROMIUM_PATH`); it is absent from exported viewing.
 
 Explicit diagram lists replace defaults, including an empty list. With no override, generation uses retained research diagrams if present or the documented work/authority defaults. Requested collections are never clipped. Inline Mermaid placements and report-evidence diagrams are exported together. The app displays source/loading/failure individually and prepares only exact opened revisions; saved and offline viewers never substitute current work. Upgrade preserves historical JSON, HTML and research Markdown bytes; old readers cannot render catalog-v2 documents and must preserve their download.
+
+## In-app interactive reviews
+
+Abra can publish a separate [interactive review](interactive-reviews.md) alongside
+an exact saved report. Choices, design previews and comments become an explicit
+revision request to Abra. Review data and response receipts do not modify the
+canonical document, authorize work or appear as new offline controls. Existing
+HTML feedback exports retain their original behavior.

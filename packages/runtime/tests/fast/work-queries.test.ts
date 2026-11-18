@@ -57,6 +57,11 @@ test("real in-memory finder pages preserve search, totals, ordering, dependencie
       returned: actual.entries.length,
     });
     assert.ok(prepare.mock.calls.length <= 6, "Page must use a bounded number of SQL operations");
+    for (const [sql] of prepare.mock.calls) {
+      assert.doesNotMatch(sql, /^SELECT id FROM issues/);
+      if (sql.includes("SELECT * FROM issues"))
+        assert.match(sql, /ORDER BY priority, finder_rank LIMIT \? OFFSET \?/);
+    }
     const state = query.state ?? "active",
       search = query.search?.trim().toLowerCase() ?? "";
     const expected = all

@@ -2,10 +2,9 @@ import { archivedPlans } from "../visibility/archived-plans.ts";
 import { CheckpointEvidence } from "./authorization.ts";
 import { createHash } from "node:crypto";
 import { executionContract } from "../visibility/execution-contract.ts";
-import { executionBlocker } from "./readiness.ts";
+import { retainedReadiness } from "./readiness.ts";
 import { localDay } from "../visibility/fleet.ts";
 import { changeDocument, changeDocuments } from "../visibility/documents.ts";
-import { validateDispatch } from "../config/dispatch.ts";
 import {
   supervisionSummary,
   nativeActivity,
@@ -21,7 +20,6 @@ import { workerProfile } from "../config/snapshot.ts";
 import { WorkerContexts, readWorkerContext } from "./worker-context.ts";
 import { WorkerContextSummarySchema } from "./worker-context-contracts.ts";
 import { decode } from "../decode.ts";
-import { codingPolicy } from "../config/policy.ts";
 import { explainIssues } from "../work/model.ts";
 import {
   ArtifactId,
@@ -37,7 +35,6 @@ import { Clock, Effect, Schedule } from "effect";
 import { domainEffect } from "../effect.ts";
 import {
   CrewError,
-  terminal,
   type Config,
   type Execution,
   type Role,
@@ -49,7 +46,7 @@ import { type OpenSpec } from "../openspec/adapter.ts";
 import { type Git } from "../git/repository.ts";
 import { type Runtime, type PromptAdmission } from "../opencode/runtime.ts";
 import { diagnosticText } from "../opencode/diagnostics.ts";
-import { capacityBlockers } from "./capacity.ts";
+import { summarizeCapacity, type CapacitySummary } from "./capacity.ts";
 import { TicketDiff } from "../visibility/ticket-diff.ts";
 import { type DiffScope } from "../visibility/protocol.ts";
 import { type LeadSummary } from "../visibility/protocol.ts";
@@ -60,8 +57,15 @@ import {
 } from "../visibility/lead-observation.ts";
 import { scanLeads, type LeadRecord } from "./lead-contracts.ts";
 import type { WorkDiscovery } from "@abracode/contracts/visibility/discovery-contracts";
+type FinderCapacity = {
+  revision: string | undefined;
+  capacity: CapacitySummary;
+  recordsUnavailable: boolean;
+  authority?: ReadinessBlocker;
+};
 /** Read-only workflow surface. No adapter or storage mutation is exposed to observers. */
 export class Queries {
+  private finderCapacity?: FinderCapacity;
   constructor(
     private config: Config,
     private records: Records,
@@ -871,6 +875,7 @@ export class Queries {
               projects: this.records.projectScan(),
               executions: this.records.executionScan(),
               setups: this.records.setupScan(),
+              recordsRevision: this.records.observationRevision,
               exported: includeRecords ? this.records.export() : Effect.undefined,
             },
             { concurrency: "unbounded" },
@@ -886,6 +891,7 @@ export class Queries {
             projects: scans.projects.values,
             executions: scans.executions.values,
             setups: scans.setups.values,
+            recordsRevision: scans.recordsRevision,
             diagnostics: [
               ...scans.projects.diagnostics,
               ...scans.executions.diagnostics,
@@ -963,108 +969,174 @@ export class Queries {
         };
       }),
     );
+  /** Refresh off the finder path. The stamp makes a delayed scan safe to discard. */
+  refreshFinderReadiness = (bundle?: ReadBundle) =>
+    Effect.gen({ self: this }, function* () {
+      const retained = bundle
+        ? {
+            revision: bundle.recordsRevision,
+            capacity: summarizeCapacity([...bundle.executions, ...bundle.setups]),
+            recordsUnavailable: bundle.diagnostics.length > 0,
+          }
+        : yield* this.capture(() =>
+            Effect.all(
+              {
+                revision: this.records.observationRevision,
+                projects: this.records.projectScan(),
+                executions: this.records.executionScan(),
+                setups: this.records.setupScan(),
+              },
+              { concurrency: 4 },
+            ).pipe(
+              Effect.map(({ revision, projects, executions, setups }) => ({
+                revision,
+                capacity: summarizeCapacity([...executions.values, ...setups.values]),
+                recordsUnavailable: [projects, executions, setups].some(
+                  ({ diagnostics }) => diagnostics.length > 0,
+                ),
+              })),
+            ),
+          );
+      const authority = this.config.auto_schedule
+        ? (yield* this.automaticAuthority()).blocker
+        : undefined;
+      const before = this.finderCapacity;
+      this.finderCapacity = { ...retained, authority };
+      return (
+        !before ||
+        before.revision !== retained.revision ||
+        before.authority?.message !== authority?.message
+      );
+    });
+
+  private declarations() {
+    return loadConfig(this.config.home).pipe(
+      Effect.match({
+        onSuccess: (config) => ({
+          digests: new Map(config.repositories.map((d) => [d.id, declarationDigest(d)])),
+          error: undefined,
+        }),
+        onFailure: (error) => ({ digests: new Map<RepositoryId, string>(), error: error.message }),
+      }),
+    );
+  }
+
+  observeFinder = (query: WorkDiscovery) =>
+    Effect.gen({ self: this }, function* () {
+      const retained = yield* this.capture((workRevision) =>
+        Effect.gen({ self: this }, function* () {
+          const page = yield* this.work.find(query);
+          const repositories = [...new Set(page.entries.map((issue) => issue.repository_id))];
+          const observed = yield* Effect.all(
+            {
+              related: this.work.taskEvidence(page.entries),
+              recordRevision: this.records.observationRevision,
+              executions: Effect.forEach(
+                page.entries,
+                (issue) => this.records.execution(issue.id).pipe(Effect.result),
+                { concurrency: 4 },
+              ),
+              projects: Effect.forEach(
+                repositories,
+                (id) =>
+                  this.records.project(id).pipe(
+                    Effect.result,
+                    Effect.map((result) => [id, result] as const),
+                  ),
+                { concurrency: 4 },
+              ),
+              observedAt: timestamp,
+            },
+            { concurrency: 4 },
+          );
+          const summary = this.finderCapacity;
+          return {
+            ...observed,
+            page,
+            workRevision,
+            summary: summary?.revision === observed.recordRevision ? summary : undefined,
+          };
+        }),
+      );
+      const declarations = retained.page.entries.some(({ status }) => status !== "closed")
+        ? yield* this.declarations()
+        : undefined;
+      const projects = new Map(retained.projects);
+      return {
+        ...retained.page,
+        entries: retained.page.entries.map((issue, index) => {
+          const result = retained.executions[index]!;
+          const execution = result._tag === "Success" ? result.success : undefined;
+          const project = projects.get(issue.repository_id);
+          const related = retained.related[index]!;
+          const ready =
+            declarations && issue.status !== "closed"
+              ? retainedReadiness(
+                  this.config,
+                  issue,
+                  related.dependencies.filter((d) => d.status !== "closed"),
+                  project?._tag === "Success" ? project.success : undefined,
+                  execution,
+                  {
+                    declarationDigest: declarations.digests.get(issue.repository_id),
+                    declarationError: declarations.error,
+                    capacity: retained.summary?.capacity,
+                    authority: retained.summary?.authority,
+                    recordsUnavailable:
+                      Boolean(retained.summary?.recordsUnavailable) ||
+                      result._tag === "Failure" ||
+                      project?._tag === "Failure",
+                  },
+                )
+              : undefined;
+          return {
+            issue,
+            execution,
+            executionUnavailable:
+              result._tag === "Failure" ? diagnosticText(result.failure.message) : undefined,
+            readiness: ready && { ...ready, eligibility_observed: Boolean(retained.summary) },
+            closedAt:
+              execution && execution.current_phase !== "completed" ? undefined : related.closed_at,
+          };
+        }),
+        workRevision: retained.workRevision,
+        recordsRevision: retained.recordRevision,
+        observedAt: retained.observedAt,
+      };
+    });
+
   ready = (bundle?: ReadBundle) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
         const { explanation, projects, executions, diagnostics, setups } =
           bundle ?? (yield* this.observe());
-        const declarationConfig = yield* loadConfig(this.config.home).pipe(
-          Effect.match({
-            onSuccess: (config) => ({ repositories: config.repositories, error: "" }),
-            onFailure: (error) => ({ repositories: [], error: error.message }),
-          }),
-        );
+        const declarations = yield* this.declarations();
         const authority = this.config.auto_schedule
           ? (yield* this.automaticAuthority()).blocker
           : undefined;
-        const all = [...explanation.ready, ...explanation.blocked];
-        const readyIDs = new Set(explanation.ready.map((i) => i.id));
-        const active = executions.filter((e) => !terminal(e));
-        return all
-          .filter((i) => i.status !== "closed")
-          .map((issue) => {
-            const blockers: string[] = [];
-            const blocker_details: ReadinessBlocker[] = [];
-            const block = (code: ReadinessBlocker["code"], message: string) => {
-              blockers.push(message);
-              blocker_details.push({ code, message });
-            };
-            if (authority) block(authority.code, authority.message);
-            if (diagnostics.length)
-              block(
-                "execution",
-                "Unavailable durable records require inspection before new admission",
-              );
-            const native = explanation.blocked.find((i) => i.id === issue.id);
-            if (!readyIDs.has(issue.id))
-              block(
-                native?.blocked_by?.length ? "dependency" : "status",
-                native?.blocked_by?.length
-                  ? `Dependency blockers: ${native.blocked_by.map((d) => `${d.id} (${d.title}, ${d.status})`).join(", ")}`
-                  : `Issue status/dependencies prevent readiness (${issue.status})`,
-              );
-            const repository = issue.repository_id;
-            const p = projects.find((p) => p.id === repository);
-            const declaration = declarationConfig.repositories.find(
-              (item) => item.id === repository,
-            );
-            if (declarationConfig.error)
-              block("setup", `Configuration unavailable: ${declarationConfig.error}`);
-            else if (!declaration)
-              block(
-                "setup",
-                "Repository is retained but no longer declared; restore the declaration and apply configuration for new work",
-              );
-            else if (p?.declaration_digest !== declarationDigest(declaration))
-              block(
-                "setup",
-                "Repository declaration is pending or changed; use config:apply before new work",
-              );
-            if (!p) block("setup", "Repository is not registered");
-            else {
-              try {
-                codingPolicy(p, issue.workflow_policy, issue.quality_profile);
-                if (!active.some((e) => e.issue_id === issue.id)) {
-                  validateDispatch(this.config, p.dispatch);
-                  validateDispatch(this.config, issue.dispatch);
-                }
-              } catch (error) {
-                block("setup", CrewError.from(error).message);
-              }
-              if (issue.workflow_policy === "full-openspec" && !p.openspec)
-                block("setup", "OpenSpec configuration is missing; use abra_project_setup");
-              if (issue.workflow_policy !== "research-only" && !p.verification.length)
-                block("setup", "Verification commands are missing");
-            }
-            const own = active.find((e) => e.issue_id === issue.id);
-            if (own) block("execution", executionBlocker(own));
-            if (p && (!own || own.capacity_wait))
-              for (const capacity of capacityBlockers(
-                this.config,
-                p,
-                [...executions, ...setups],
-                own?.capacity_wait?.role ??
-                  (issue.workflow_policy === "research-only"
-                    ? "research"
-                    : issue.workflow_policy === "lightweight-fix"
-                      ? "apply"
-                      : "explore"),
-                !own,
-                own?.execution_id,
-              )) {
-                blockers.push(capacity.message);
-                blocker_details.push(capacity);
-              }
-            return {
+        const capacity = summarizeCapacity([...executions, ...setups]);
+        const byID = new Map(executions.map((e) => [e.issue_id, e]));
+        const projectsByID = new Map(projects.map((p) => [p.id, p]));
+        const blocked = new Map(explanation.blocked.map((row) => [row.id, row.blocked_by]));
+        return [...explanation.ready, ...explanation.blocked]
+          .filter((issue) => issue.status !== "closed")
+          .map((issue) => ({
+            ...retainedReadiness(
+              this.config,
               issue,
-              repository_id: repository,
-              eligible: blockers.length === 0,
-              blockers,
-              blocker_details,
-              dependencies: native?.blocked_by ?? issue.dependencies ?? [],
-              execution: active.find((e) => e.issue_id === issue.id),
-            };
-          })
+              blocked.get(issue.id) ?? [],
+              projectsByID.get(issue.repository_id),
+              byID.get(issue.id),
+              {
+                declarationDigest: declarations.digests.get(issue.repository_id),
+                declarationError: declarations.error,
+                authority,
+                capacity,
+                recordsUnavailable: diagnostics.length > 0,
+              },
+            ),
+            dependencies: blocked.get(issue.id) ?? issue.dependencies,
+          }))
           .sort(
             (a, b) => a.issue.priority - b.issue.priority || a.issue.id.localeCompare(b.issue.id),
           );
