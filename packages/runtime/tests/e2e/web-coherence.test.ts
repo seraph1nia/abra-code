@@ -42,6 +42,45 @@ afterAll(async () => {
 });
 const fixture = () => workspaceBrowserFixture(browser);
 
+test("unstarted and unpublished Markdown reports are empty states and refresh into published evidence", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  let report: { unavailable: "not_started" | "not_published" } | { content: string } = {
+    unavailable: "not_started",
+  };
+  const page = await f.browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  await page.route("**/api/work/report?*", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(report) }),
+  );
+  await page.route("**/api/reviews?*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ reviews: [], diagnostics: [] }),
+    }),
+  );
+  await page.goto(`${f.origin}/?issue=abra-web&tab=Reports`);
+  await page
+    .getByRole("status")
+    .filter({ hasText: "No Markdown report is available because this task has not started." })
+    .waitFor();
+  assert.equal(await page.getByRole("alert").count(), 0);
+  report = { unavailable: "not_published" };
+  await f.changed();
+  await page
+    .getByText("No Markdown report has been published for this task.", { exact: true })
+    .waitFor();
+  assert.equal(await page.getByRole("alert").count(), 0);
+  report = { content: "# Newly published report" };
+  await f.changed();
+  await page.getByRole("heading", { name: "Newly published report", exact: true }).waitFor();
+  assert.equal(
+    await page.getByText("No Markdown report has been published for this task.").count(),
+    0,
+  );
+  assert.equal(f.source.submissions, 0);
+});
+
 test("export mutation status retries the same document and cannot populate another selection", async (t) => {
   const f = await fixture();
   t.onTestFinished(f.close);

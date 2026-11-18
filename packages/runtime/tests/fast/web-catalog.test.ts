@@ -85,6 +85,38 @@ test("publication and native tool schemas reject invalid component-specific prop
   }
 });
 
+test("dashboard component IDs have actionable native validation and matching JSON Schema guidance", () => {
+  const ids = ["projects-heading", "abra-project", "common-project", "tickets-heading"];
+  const dashboard = (names: string[]) => ({
+    version: "1.0",
+    createSurface: {
+      surfaceId: "projects-and-tasks-dashboard",
+      catalogId,
+      components: [
+        { id: "root", component: "Column", children: names },
+        ...names.map((id) => ({ id, component: "Text", text: "Dashboard text" })),
+      ],
+    },
+  });
+  const tool = strictInput(Schema.Struct({ surface: SurfaceSchema }));
+  const result = tool["~standard"].validate({ surface: dashboard(ids) });
+  assert.ok("issues" in result && result.issues);
+  for (const index of [1, 2, 3, 4])
+    assert.ok(
+      result.issues.some(
+        (issue) =>
+          JSON.stringify(issue.path) ===
+            JSON.stringify(["surface", "createSurface", "components", index, "id"]) &&
+          /underscores/.test(issue.message),
+      ),
+    );
+  const fixed = dashboard(ids.map((id) => id.replaceAll("-", "_")));
+  assert.doesNotThrow(() => validateSurface(fixed));
+  assert.ok("value" in tool["~standard"].validate({ surface: fixed }));
+  const json = JSON.stringify(tool["~standard"].jsonSchema.input());
+  assert.match(json, /\^\[a-zA-Z\]\[a-zA-Z0-9_\]/);
+});
+
 test("saved legacy surfaces retain their revision and captured work without storage writes", () => {
   const fixture = new WorkspaceFixture();
   const legacy = surface();

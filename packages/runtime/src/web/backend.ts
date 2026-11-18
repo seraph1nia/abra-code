@@ -36,6 +36,7 @@ import { webGateway } from "./protocol.ts";
 import type { AttentionForm, WebBackend, WorkQueries, WorkspaceSnapshot } from "./contracts.ts";
 import type { ResourceSelection } from "./resources.ts";
 import { toolPresentation } from "./tool-presentation.ts";
+import { nativeRpcError, readWorkReport } from "./native-errors.ts";
 
 const fingerprint = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -88,7 +89,7 @@ export class NativeWebBackend implements WebBackend {
     });
   private client = () => this.connection().pipe(Effect.map(({ client }) => client));
   private use<A, E>(fn: (client: OpenCodeClient) => Effect.Effect<A, E>) {
-    return domainEffect(this.client().pipe(Effect.flatMap(fn)));
+    return domainEffect(this.client().pipe(Effect.flatMap(fn), Effect.mapError(nativeRpcError)));
   }
   private gateway(client: OpenCodeClient) {
     return client.rpc(webGateway);
@@ -340,7 +341,11 @@ export class NativeWebBackend implements WebBackend {
       this.use((client) =>
         client.rpc(visibility).feedback({ ...input, page: input.page ?? 0 }, this.location()),
       ),
-    report: (input) => this.use((client) => client.rpc(visibility).report(input, this.location())),
+    report: (input) =>
+      readWorkReport(
+        this.use((client) => client.rpc(visibility).report(input, this.location())),
+        this.work.detail(input),
+      ),
     artifacts: (input) =>
       this.use((client) =>
         this.gateway(client).history(

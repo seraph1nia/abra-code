@@ -174,22 +174,31 @@ export function implementedCatalog<T extends ComponentApi>(entries: readonly T[]
 }
 export const validationCatalog = implementedCatalog([...catalog.components.values()]);
 const validator = new PayloadValidator(validationCatalog, STRICT_VALIDATION);
+const componentIdentifier = Schema.String.check(Schema.isPattern(/^[a-zA-Z][a-zA-Z0-9_]{0,100}$/u));
+const componentIdentifierHelp =
+  "Component IDs must start with a letter and contain only letters, digits or underscores (up to 101 characters); use projects_heading, not projects-heading.";
 
 /** SDK validation remains authoritative for the upstream component definitions. */
 export const ComponentSchema = Schema.Record(Schema.String, Schema.Json).check(
   Schema.makeFilter(
     (value) => {
+      if (!Schema.is(componentIdentifier)(value.id))
+        return { path: ["id"], issue: componentIdentifierHelp };
       try {
         validator.validateComponent(value);
         return true;
-      } catch {
-        return false;
+      } catch (error) {
+        return error instanceof Error ? error.message.slice(0, 2048) : false;
       }
     },
     {
       expected: "A component from the AbraCode work catalog",
       toJsonSchema: () => ({
         ...validationCatalog.validationSchema,
+        $defs: {
+          ...object(validationCatalog.validationSchema.$defs),
+          ComponentId: Schema.toJsonSchemaDocument(componentIdentifier).schema,
+        },
         $id: `${catalogId}/component`,
         $ref: "#/$defs/anyComponent",
       }),
@@ -200,6 +209,7 @@ export const ComponentSchema = Schema.Record(Schema.String, Schema.Json).check(
 export const renderInstructions =
   `Render a complete A2UI 1.0 createSurface revision using catalogId ${catalogId}. ` +
   workCatalogDocument.instructions +
+  ` ${componentIdentifierHelp} Surface IDs may contain hyphens. ` +
   " Column/Row require children (component IDs); Text requires text. " +
   Object.values(workComponents)
     .map(({ name, description }) => `${name}: ${description}`)

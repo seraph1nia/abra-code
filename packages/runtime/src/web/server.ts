@@ -53,13 +53,27 @@ const securityHeaders = {
   "content-security-policy":
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
 };
+const resourceErrors = new Map([
+  [
+    "WEB_NATIVE_UPDATE_REQUIRED",
+    "The running AbraCode service does not support this workspace feature yet. Restart the service to load the updated plugin.",
+  ],
+  ["ISSUE_MISSING", "This task is no longer available. Select another task."],
+  ["EXECUTION_MISSING", "This task has not started, so execution evidence is unavailable."],
+  ["REPORT_UNAVAILABLE", "The retained report is currently unavailable."],
+  ["REPORT_MISSING", "The retained report could not be found."],
+  ["REPORT_IDENTITY", "The retained report does not match this task and cannot be displayed."],
+  ["REPORT_PATH", "The retained report cannot be read from its owned storage."],
+  ["REPORT_TAMPERED", "The retained report failed its integrity check and cannot be displayed."],
+]);
 const refused = (error: CrewError) =>
   new WorkspaceError({
     code: error.code,
     message:
       error.code === "REVIEW_STALE" || error.code === "REVIEW_REFUSED"
         ? error.message
-        : "Request could not be confirmed. Refresh before retrying.",
+        : (resourceErrors.get(error.code) ??
+          "Request could not be confirmed. Refresh before retrying."),
   });
 const json = (value: unknown, status: number) => HttpServerResponse.jsonUnsafe(value, { status });
 

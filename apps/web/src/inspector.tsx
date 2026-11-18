@@ -502,7 +502,17 @@ function Reports({ issue, inspect }: { issue: string; inspect: Inspect }) {
       {target && <SelectedReport target={target} inspect={inspect} />}
       <h3>Markdown report</h3>
       <RequestState query={queries.report(issue)}>
-        {(report) => <Markdown className="prose" content={report.content} />}
+        {(report) =>
+          "content" in report ? (
+            <Markdown className="prose" content={report.content} />
+          ) : (
+            <output className="block">
+              {report.unavailable === "not_started"
+                ? "No Markdown report is available because this task has not started."
+                : "No Markdown report has been published for this task."}
+            </output>
+          )
+        }
       </RequestState>
     </>
   );

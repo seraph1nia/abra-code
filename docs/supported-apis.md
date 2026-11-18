@@ -664,6 +664,8 @@ arbitrary action/component props; navigation resolves ownership again when opene
 The existing runtime stays `a2ui.enabled: false`; its custom catalog renderer and
 native publication owner supply this explicit contract without a second model loop.
 
+OpenCode 2.3.0 RPC method failures expose `type`, `message` and typed `data`; AbraCode's declared observer/gateway failures carry the domain error code in `data.code`. The web adapter decodes those declared failure envelopes before converting to `CrewError`. Expected `REPORT_REQUIRED` becomes a `not_published` Markdown report observation; `EXECUTION_MISSING` becomes `not_started` only after confirming the task still exists. Native report RPC output remains `{content}`. HTTP report output additionally supports these explicit unavailable states. Integrity failures and unknown tasks retain their error codes. The disposable native workspace journey and focused web HTTP/browser tests exercise this boundary.
+
 Native call IDs may repeat in different assistant messages. Their original IDs and
 message provenance remain intact; a changed call whose ID collides with earlier
 history uses a full message projection. This avoids the pinned client's global

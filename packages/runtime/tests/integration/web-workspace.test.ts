@@ -19,8 +19,10 @@ import { HttpApiClient } from "effect/http-api";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { workspaceApi } from "../../src/web/http-api.ts";
 import { workspaceServer } from "../../src/web/server.ts";
-import { RequestId, ContentHash } from "../../src/identities.ts";
+import { RequestId, ContentHash, IssueId } from "../../src/identities.ts";
 import { WorkspaceFixture } from "../helpers/web.ts";
+import { CrewError } from "../../src/domain.ts";
+import { nativeRpcError, readWorkReport } from "../../src/web/native-errors.ts";
 
 async function fixture(assets?: string, configure?: (backend: WorkspaceFixture) => void) {
   const backend = new WorkspaceFixture();
@@ -63,6 +65,57 @@ test("shared HttpApiClient validates workspace reads, payloads and typed failure
   );
   assert.equal(mismatch._tag, "Failure");
   if (mismatch._tag === "Failure") assert.equal(mismatch.failure._tag, "WorkspaceError");
+});
+
+test("report HTTP reads return ordinary absence without hiding native integrity or ownership failures", async (t) => {
+  let code = "REPORT_REQUIRED";
+  let taskExists = true;
+  const web = await fixture(undefined, (backend) => {
+    backend.work.report = () =>
+      readWorkReport(
+        Effect.suspend(() =>
+          code === "published"
+            ? Effect.succeed({ content: "# Published report" })
+            : Effect.fail(
+                nativeRpcError({
+                  type: code === "EXECUTION_MISSING" ? "not_found" : "resource_unavailable",
+                  message: "Native report unavailable",
+                  data: { code },
+                }),
+              ),
+        ),
+        Effect.suspend(() =>
+          taskExists ? Effect.void : Effect.fail(new CrewError("ISSUE_MISSING", "Unknown task")),
+        ),
+      );
+  });
+  t.onTestFinished(web.close);
+  const read = () =>
+    Effect.runPromise(web.client.work.report({ query: { issue_id: IssueId.make("abra-web") } }));
+  assert.deepEqual(await read(), { unavailable: "not_published" });
+  code = "EXECUTION_MISSING";
+  assert.deepEqual(await read(), { unavailable: "not_started" });
+  taskExists = false;
+  await assert.rejects(read(), /This task is no longer available/);
+  taskExists = true;
+  code = "REPORT_TAMPERED";
+  const damaged = await fetch(`${web.origin}/api/work/report?issue_id=abra-web`);
+  assert.equal(damaged.status, 409);
+  assert.deepEqual(await damaged.json(), {
+    _tag: "WorkspaceError",
+    code: "REPORT_TAMPERED",
+    message: "The retained report failed its integrity check and cannot be displayed.",
+  });
+  code = "published";
+  assert.deepEqual(await read(), { content: "# Published report" });
+  web.backend.work.report = () =>
+    Effect.fail(nativeRpcError({ type: "rpc.method_not_found", message: "Unknown RPC method" }));
+  const outdated = await fetch(`${web.origin}/api/work/report?issue_id=abra-web`);
+  assert.equal(outdated.status, 409);
+  const failure = await outdated.json();
+  assert.equal(failure.code, "WEB_NATIVE_UPDATE_REQUIRED");
+  assert.match(failure.message, /Restart the service to load the updated plugin/);
+  assert.equal(web.backend.submissions, 0);
 });
 
 test("typed exact admission reads are independent of recent history and never submit input", async (t) => {

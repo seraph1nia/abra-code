@@ -286,6 +286,16 @@ export async function workspaceJourney(input: {
     });
     const issue = created.issue.id as string;
     const population = await bindingPopulation(input.home);
+    // Real OpenCode RPC error envelopes must reach the HTTP report empty state.
+    for (const issueID of [issue, population.companion]) {
+      const report = await fetch(`${web.origin}/api/work/report?issue_id=${issueID}`);
+      assert.equal(report.status, 200);
+      assert.deepEqual(await report.json(), { unavailable: "not_started" });
+    }
+    assert.equal(
+      (await fetch(`${web.origin}/api/work/report?issue_id=abra-unknown-report`)).status,
+      409,
+    );
     const answer = await command("abra_work_list", {}, "What AbraCode work is currently retained?");
     assert.ok(answer.issues.some((item: { id: string }) => item.id === issue));
     await page
@@ -906,6 +916,9 @@ export async function workspaceJourney(input: {
             worker.busy === false && worker.executing !== true && worker.outcome === "succeeded",
         );
       if (kind && workersIdle && !approved.has(kind)) {
+        const unpublished = await fetch(`${web.origin}/api/work/report?issue_id=${issue}`);
+        assert.equal(unpublished.status, 200);
+        assert.deepEqual(await unpublished.json(), { unavailable: "not_published" });
         const requested = await command("abra_work_approve", { issue_id: issue, kind });
         if (requested.category === "operation_in_progress") continue;
         if (kind === "plan") {

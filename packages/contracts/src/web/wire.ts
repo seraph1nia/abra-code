@@ -67,7 +67,10 @@ export const WorkDiffSchema = Schema.Struct({
   limited: Schema.Boolean,
 });
 export const WorkDocumentSchema = Schema.Struct({ path: Schema.String, content: Schema.String });
-export const WorkReportSchema = Schema.Struct({ content: Schema.String });
+export const WorkReportSchema = Schema.Union([
+  Schema.Struct({ content: Schema.String }),
+  Schema.Struct({ unavailable: Schema.Literals(["not_started", "not_published"]) }),
+]);
 export const ArtifactSummarySchema = Schema.Struct({
   format: Schema.optional(Schema.Literals(["legacy-html", "a2ui-snapshot"])),
   request_id: VisualBuildSummarySchema.fields.request.fields.request_id,
