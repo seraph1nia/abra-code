@@ -218,6 +218,15 @@ export async function workspaceJourney(input: {
     assert.equal(await page.locator(".agent-definition").count(), 6);
     await page.getByLabel("Inspect project-lead", { exact: true }).click();
     await page.getByText("Inline instructions", { exact: true }).waitFor();
+    await page
+      .locator(".agent-instruction-content")
+      .filter({ hasText: "You are a controller-managed project lead." })
+      .waitFor();
+    await page.getByLabel("Inspect explore", { exact: true }).click();
+    await page
+      .locator(".agent-instruction-content")
+      .filter({ hasText: "You are Explore." })
+      .waitFor();
     assert.equal(input.providerCount(), beforeSettings, "Settings must not call the model");
     await page.getByRole("link", { name: "Back to workspace" }).click();
     await page

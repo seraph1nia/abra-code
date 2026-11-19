@@ -1,7 +1,9 @@
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import type { AgentDefinitionView } from "@abracode/contracts/web/agent-settings";
 import { agentsQuery } from "./data.ts";
 import { RequestState } from "./request-state.tsx";
+import { Markdown } from "./markdown.tsx";
 
 function Names({ values, empty = "None declared" }: { values: readonly string[]; empty?: string }) {
   return values.length ? (
@@ -18,8 +20,12 @@ function Names({ values, empty = "None declared" }: { values: readonly string[];
 }
 
 function AgentDetails({ agent }: { agent: AgentDefinitionView }) {
+  const [expanded, setExpanded] = useState(false);
   return (
-    <details className="agent-definition">
+    <details
+      className="agent-definition"
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
       <summary aria-label={`Inspect ${agent.id}`}>
         <span className="agent-summary">
           <span className="agent-title">
@@ -116,28 +122,40 @@ function AgentDetails({ agent }: { agent: AgentDefinitionView }) {
             <Names values={agent.deny} />
           </section>
         )}
-        <section className="agent-instructions">
-          <h3>Instructions</h3>
-          {agent.instructions.length ? (
-            agent.instructions.map((source, index) => (
-              <div key={index} className="agent-instruction">
-                {source.kind === "file" ? (
-                  <>
-                    <span className="muted">Source file</span>
-                    <code>{source.path}</code>
-                  </>
-                ) : (
-                  <>
+        {expanded && (
+          <section className="agent-instructions">
+            <h3>Instructions</h3>
+            {agent.instructions.length ? (
+              agent.instructions.map((source, index) => (
+                <div key={index} className="agent-instruction">
+                  {source.kind === "file" ? (
+                    <>
+                      <span className="muted">Source file</span>
+                      <code>{source.path}</code>
+                    </>
+                  ) : (
                     <span className="muted">Inline instructions</span>
-                    <pre>{source.content}</pre>
-                  </>
-                )}
-              </div>
-            ))
-          ) : (
-            <p className="muted">None declared</p>
-          )}
-        </section>
+                  )}
+                  {source.content !== undefined ? (
+                    <Markdown
+                      key={source.content}
+                      content={source.content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim()}
+                      mode="static"
+                      className="prose agent-instruction-content"
+                    />
+                  ) : (
+                    <p className="muted">
+                      {(source.kind === "file" && source.error) ||
+                        "Instruction content is unavailable. Restart the service to load it."}
+                    </p>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="muted">None declared</p>
+            )}
+          </section>
+        )}
       </div>
     </details>
   );
@@ -186,9 +204,8 @@ export function Settings() {
                   ))}
                 </div>
                 <p className="muted settings-note">
-                  Instruction files are shown as source references. Tools and skills describe
-                  declarations; effective permissions and task context are determined for each
-                  assignment.
+                  Instructions show the authored Markdown. Tools and skills describe declarations;
+                  effective permissions and task context are determined for each assignment.
                 </p>
               </>
             ) : (

@@ -2,6 +2,8 @@
 
 Observed on 2026-11-19 against the running development app at http://127.0.0.1:5173/settings. This is a reproduction of the operator's reported failure, not a mocked response or disposable backend.
 
+**Resolved on 2026-11-19:** the native service was restarted to load the current plugin, and the development preview was restored at the same URL. Agent-browser now observes HTTP 200, all six agent definitions and no visible errors, including after refresh and a full reload. The initial failure evidence below is retained for comparison.
+
 The project-local agent-browser 0.43.0 launched its provisioned Chrome for Testing 158.0.8127.36 in the task-owned session `codex-settings-evidence-806c6c2967b1`. The browser used a 1440 × 1000 viewport and dark color scheme.
 
 ## Finding
@@ -56,3 +58,18 @@ The CLI was already pinned at 0.43.0 in pnpm with its native build allowed. Mise
 ## Validation
 
 `mise run setup` passed, including frozen pnpm installation, Chrome provisioning, frozen APM restoration and configuration-schema generation. `pnpm check` passed. `pnpm test:all` passed all 805 tests across 140 files in 175.87 seconds. The evidence directory also retains `mise-setup.log`, `browser-install.log`, `check.log` and `test-all.log`.
+
+## Resolution evidence
+
+The service was idle before the user-authorized `mise exec -- pnpm service:restart`. Its process changed from PID 570510 to PID 1813296; the retained Abra session stayed `ses_e2049f60effevD0FvGXtji7kf6`. The old development preview closed during that restart, so `mise exec -- pnpm dev` restored ports 5173 and 4098. No source-code fix was needed: the missing endpoint was already implemented in the current plugin.
+
+Agent-browser session `codex-settings-fixed-806c6c2967b1` verified the actual running app, expanded Explore's configuration, refreshed the catalog and fully reloaded the page. All catalog reads returned HTTP 200. Browser assertions found exactly `abra`, `explore`, `apply`, `review`, `research` and `project-lead`, zero visible errors and zero editable fields. Browser error output was empty. The owned evidence browser was closed; the native service and development preview remain running.
+
+Updated evidence is retained under `.abracode/evidence/agent-settings-fixed-PVEDq4/`:
+
+- `agents-loaded.png` and `agent-details.png`: live page and expanded definition screenshots.
+- `01-service-before.json`, `02-service-restart.log` and `04-service-after.json`: restart and preserved-session evidence.
+- `08-agents-snapshot.txt`, `16-details-snapshot.txt` and `22-reloaded-snapshot.txt`: accessible page observations.
+- `13-catalog-check.json`: HTTP 200, six definitions, zero errors and no editable fields.
+- `23-network-after-refresh-reload.txt` and `25-final-assertions.json`: successful reads and assertions after refresh/reload.
+- `24-browser-errors.txt` and `26-close.txt`: no browser errors and completed browser cleanup.

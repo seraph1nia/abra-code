@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { Model } from "@opencode/schema/model";
 
-/** Authored definition metadata only; no executable tools or assignment context. */
+/** Authored definitions and instruction content; no executable tools or assignment context. */
 export const AgentDefinitionViewSchema = Schema.Struct({
   id: Schema.String,
   revision: Schema.String,
@@ -11,7 +11,12 @@ export const AgentDefinitionViewSchema = Schema.Struct({
   model: Schema.optional(Model.Ref),
   instructions: Schema.Array(
     Schema.Union([
-      Schema.Struct({ kind: Schema.Literal("file"), path: Schema.String }),
+      Schema.Struct({
+        kind: Schema.Literal("file"),
+        path: Schema.String,
+        content: Schema.optional(Schema.String),
+        error: Schema.optional(Schema.String),
+      }),
       Schema.Struct({ kind: Schema.Literal("inline"), content: Schema.String }),
     ]),
   ),

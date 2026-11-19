@@ -132,8 +132,18 @@ export interface AgentDefinition<R = never> {
     input: Readonly<Omit<PrepareAgentInput, "captured">>,
   ) => Effect.Effect<readonly Fragment[], AgentDefinitionError, R>;
 }
+export type AgentInstruction =
+  | { readonly kind: "inline"; readonly content: string }
+  | {
+      readonly kind: "file";
+      readonly path: string;
+      readonly content?: string;
+      readonly error?: string;
+    };
 export interface AgentService {
   readonly definition: AgentDefinition;
+  /** Authored sources only; does not prepare context, skills or tools. */
+  readonly readInstructions: Effect.Effect<readonly AgentInstruction[]>;
   readonly resolve: (role: AssignmentRole) => Effect.Effect<StaticProfile, AgentDefinitionError>;
   readonly prepare: (
     input: PrepareAgentInput,
@@ -174,6 +184,31 @@ export const makeAgent = <R>(definition: AgentDefinition<R>) =>
     const sources = Context.get(environment, AgentSources);
     const fail = (code: string, message: string, source?: string) =>
       new AgentDefinitionError({ code, definition: definition.id, message, source });
+    const readInstruction = (source: AgentDefinition["instructions"][number]) => {
+      if ("inline" in source) return Effect.succeed(source.inline);
+      const file = path.resolve(sources.assets, source.file);
+      const relative = path.relative(sources.assets, file);
+      if (path.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${path.sep}`))
+        return Effect.fail(
+          fail("INVALID_SOURCE", "Instruction source escapes package assets", source.file),
+        );
+      return fs
+        .readFileString(file)
+        .pipe(Effect.mapError(() => fail("SOURCE", "Cannot read instruction source", source.file)));
+    };
+    const readInstructions = Effect.forEach(
+      definition.instructions,
+      (source): Effect.Effect<AgentInstruction> => {
+        if ("inline" in source)
+          return Effect.succeed({ kind: "inline" as const, content: source.inline });
+        return readInstruction(source).pipe(
+          Effect.map((content) => ({ kind: "file" as const, path: source.file, content })),
+          Effect.catch((error) =>
+            Effect.succeed({ kind: "file" as const, path: source.file, error: error.message }),
+          ),
+        );
+      },
+    );
     if (
       !Schema.is(Identity)(definition.id) ||
       !definition.revision ||
@@ -249,20 +284,7 @@ export const makeAgent = <R>(definition: AgentDefinition<R>) =>
             "CAPABILITY_POLICY",
             `Custom tool ${tool.id} exceeds ${role} authority`,
           );
-      const instructions = yield* Effect.forEach(definition.instructions, (source) => {
-        if ("inline" in source) return Effect.succeed(source.inline);
-        const file = path.resolve(sources.assets, source.file);
-        const relative = path.relative(sources.assets, file);
-        if (path.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${path.sep}`))
-          return Effect.fail(
-            fail("INVALID_SOURCE", "Instruction source escapes package assets", source.file),
-          );
-        return fs
-          .readFileString(file)
-          .pipe(
-            Effect.mapError(() => fail("SOURCE", "Cannot read instruction source", source.file)),
-          );
-      });
+      const instructions = yield* Effect.forEach(definition.instructions, readInstruction);
       const skills = yield* Effect.forEach(definition.skills ?? [], (ref) =>
         readSkill(sources.skills, ref.name).pipe(
           Effect.provide(environment),
@@ -372,6 +394,7 @@ export const makeAgent = <R>(definition: AgentDefinition<R>) =>
     // The public view does not expose an unbound provider environment.
     return {
       definition: { ...definition, context: undefined },
+      readInstructions,
       resolve,
       prepare,
     } satisfies AgentService;

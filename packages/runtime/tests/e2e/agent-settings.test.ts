@@ -17,8 +17,18 @@ const catalog: AgentCatalog = {
       customTools: [{ id: "inspect-repository", revision: "3" }],
       skills: [{ name: "verification", preload: true }],
       instructions: [
-        { kind: "file", path: "explore.md" },
-        { kind: "inline", content: "Inspect <script> as plain text." },
+        {
+          kind: "file",
+          path: "explore.md",
+          content:
+            "---\nname: fixture\n---\n# Exploration guidance\n\nUse **evidence**.\n\n- Read the repository\n- Report findings\n\n```ts\nconst safe = true;\n```",
+        },
+        { kind: "file", path: "missing.md", error: "Cannot read instruction source" },
+        {
+          kind: "inline",
+          content:
+            "## Inline guidance\n\nInspect `<script>` as plain text.\n\n<script>window.agentInstructionsExecuted = true</script>",
+        },
       ],
       requiredSkills: [],
       requiredTools: [],
@@ -45,11 +55,34 @@ test("workspace links to read-only agent settings, including custom definitions 
   await page.locator("summary").filter({ hasText: "engineering-specialist" }).click();
   await page.getByText("inspect-repository", { exact: true }).waitFor();
   assert.equal(await page.getByText("verification", { exact: true }).isVisible(), true);
-  assert.equal(await page.getByText("explore.md", { exact: true }).isVisible(), true);
+  await page.getByText("explore.md", { exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Exploration guidance", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Inline guidance", exact: true }).waitFor();
+  assert.equal(
+    await page.locator('.agent-instruction-content [data-streamdown="strong"]').textContent(),
+    "evidence",
+  );
+  assert.equal(
+    await page.getByRole("listitem").filter({ hasText: "Report findings" }).isVisible(),
+    true,
+  );
+  assert.equal(
+    await page
+      .locator('.agent-instruction-content [data-streamdown="code-block"] code')
+      .textContent(),
+    "const safe = true;",
+  );
   assert.equal(
     await page.getByText("Inspect <script> as plain text.", { exact: true }).isVisible(),
     true,
   );
+  assert.equal(
+    await page.getByText("Cannot read instruction source", { exact: true }).isVisible(),
+    true,
+  );
+  assert.equal(await page.locator(".agent-instruction-content script").count(), 0);
+  assert.equal(await page.evaluate(() => "agentInstructionsExecuted" in window), false);
+  assert.equal(await page.getByText("name: fixture", { exact: true }).count(), 0);
   assert.equal(
     await page.getByText("Provided dynamically for each assignment", { exact: true }).isVisible(),
     true,
@@ -60,6 +93,7 @@ test("workspace links to read-only agent settings, including custom definitions 
   await page.getByText("1 agent defined", { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator("summary").click();
+  await page.getByRole("heading", { name: "Exploration guidance", exact: true }).waitFor();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await page.getByRole("link", { name: "Back to workspace" }).click();
   await page.getByRole("textbox", { name: "Message Abra" }).waitFor();

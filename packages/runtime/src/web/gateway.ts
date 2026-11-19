@@ -1,4 +1,5 @@
 import type { Reviews } from "./reviews.ts";
+import type { AgentDefinitionError } from "@abracode/agents";
 import type { AgentCatalog } from "@abracode/contracts/web/agent-settings";
 import { prepareDiagrams, documentDiagrams } from "../workflow/diagrams.ts";
 import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
@@ -126,7 +127,7 @@ export function registerWebGateway(
   config: Config,
   controller: Controller,
   reviews: Reviews,
-  agents: Effect.Effect<AgentCatalog>,
+  agents: Effect.Effect<AgentCatalog, AgentDefinitionError>,
   provide: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E>,
 ) {
   const store = new NativeStore(ctx.storage);
