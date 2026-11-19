@@ -11,7 +11,7 @@ import {
   supervisionClasses,
   type SupervisionSummary,
 } from "../visibility/supervision.ts";
-import { historicalWorkers } from "./worker-assignment.ts";
+import { hasWorkerSession, historicalWorkers } from "./worker-assignment.ts";
 import { messageRequests, requiresResponse, MessagesPageSchema } from "./message-contracts.ts";
 import { timestamp } from "../identities.ts";
 import { loadConfig } from "../config/load.ts";
@@ -468,8 +468,7 @@ export class Queries {
     domainEffect(
       Effect.gen({ self: this }, function* () {
         const execution = yield* this.get(issue);
-        const assignment = yield* this.assignment(session);
-        if (!assignment || assignment.issue_id !== issue)
+        if (!hasWorkerSession(execution, session))
           return yield* new CrewError("NOT_FOUND", "Worker is not assigned to this ticket");
         const state = yield* this.runtime
           .session(session)
@@ -673,20 +672,7 @@ export class Queries {
   assignment = (sessionID: SessionId) =>
     this.records
       .executions()
-      .pipe(
-        Effect.map((executions) =>
-          executions.find((e) =>
-            [
-              e.explore_session_id,
-              e.apply_session_id,
-              e.review_session_id,
-              e.research_session_id,
-              e.session_intent?.id,
-              ...historicalWorkers(e).map((s) => s.id),
-            ].includes(sessionID),
-          ),
-        ),
-      );
+      .pipe(Effect.map((executions) => executions.find((e) => hasWorkerSession(e, sessionID))));
   diff = (id: IssueId, scope: DiffScope, file?: RelativePath) =>
     new TicketDiff({
       issue: this.issue,
@@ -706,7 +692,7 @@ export class Queries {
     function* (this: Queries, e: Execution) {
       const p = yield* this.records.project(e.repository_id);
       if (!p) return yield* new CrewError("PROJECT_MISSING", "Repository is no longer registered");
-      if (!(e.delivery_policy === p.delivery))
+      if (e.delivery_policy !== p.delivery)
         return yield* new CrewError(
           "POLICY_DRIFT",
           "Registered delivery policy changed during execution",

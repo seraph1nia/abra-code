@@ -1,3 +1,4 @@
+import { visualReportHistoryError } from "../workflow/report-contracts.ts";
 import { isDeepStrictEqual } from "node:util";
 import { PlanningSchema, planningHistoryError } from "../workflow/planning-contracts.ts";
 import { createHash, randomUUID } from "node:crypto";
@@ -63,7 +64,7 @@ export class NativeStore implements Store {
           try: () => JSON.stringify(value),
           catch: () => new CrewError("INVALID_RECORD", `Cannot encode ${key}`),
         });
-        if (!(encoded !== undefined))
+        if (encoded === undefined)
           return yield* new CrewError("INVALID_RECORD", `Cannot encode ${key}`);
         const json = yield* decodeJSON(Schema.Json, encoded, key);
         yield* this.storage.set(key, json).pipe(Effect.uninterruptible);
@@ -348,10 +349,8 @@ export class Records {
           };
           if (!key.startsWith("project/") && object(prior) && object(value)) {
             if (
-              !(
-                (control ? Number(prior.control_generation) + 1 : prior.control_generation) ===
-                value.control_generation
-              )
+              (control ? Number(prior.control_generation) + 1 : prior.control_generation) !==
+              value.control_generation
             )
               return yield* new CrewError(
                 "STALE_OPERATION",
@@ -400,9 +399,7 @@ export class Records {
               );
           }
           if (!key.startsWith("project/") && object(prior) && object(value) && !control) {
-            if (
-              !(JSON.stringify(prior.effective_policy) === JSON.stringify(value.effective_policy))
-            )
+            if (JSON.stringify(prior.effective_policy) !== JSON.stringify(value.effective_policy))
               return yield* new CrewError(
                 "POLICY_DRIFT",
                 `${key}: Effective execution policy is immutable without an explicit revision`,
@@ -491,70 +488,11 @@ export class Records {
               );
           }
           if (object(prior) && Array.isArray(prior.visual_reports)) {
-            const after = Reflect.get(record, "visual_reports");
-            if (!Array.isArray(after))
-              return yield* new CrewError(
-                "REPORT_HISTORY",
-                "Visual report history cannot be removed",
-              );
-            for (const old of prior.visual_reports) {
-              if (!object(old) || !object(old.request)) continue;
-              const requestID = old.request.request_id;
-              const next = after.find(
-                (n) => object(n) && object(n.request) && n.request.request_id === requestID,
-              );
-              if (
-                !object(next) ||
-                [
-                  "request",
-                  "generation",
-                  "requested_by",
-                  "notify_session",
-                  "source_report",
-                  "snapshot",
-                  "input_hash",
-                  "template_hash",
-                  "format",
-                  "document_hash",
-                  "producing_call",
-                ].some(
-                  (field) =>
-                    !isDeepStrictEqual(
-                      JSON.parse(JSON.stringify(old[field] ?? null)),
-                      JSON.parse(JSON.stringify(next[field] ?? null)),
-                    ),
-                ) ||
-                (old.artifact &&
-                  (!next.artifact ||
-                    !isDeepStrictEqual(
-                      JSON.parse(JSON.stringify(old.artifact)),
-                      JSON.parse(JSON.stringify(next.artifact)),
-                    ))) ||
-                (old.status === "published" && next.status !== "published")
-              )
-                return yield* new CrewError(
-                  "REPORT_HISTORY",
-                  "Captured visual report identity/artifact cannot be rebound or removed",
-                );
-              if (Array.isArray(old.notices))
-                for (const notice of old.notices) {
-                  if (!object(notice)) continue;
-                  const replacement = Array.isArray(next.notices)
-                    ? next.notices.find((n) => object(n) && n.message_id === notice.message_id)
-                    : undefined;
-                  if (
-                    !object(replacement) ||
-                    replacement.text !== notice.text ||
-                    replacement.phase !== notice.phase ||
-                    (notice.delivered && !replacement.delivered) ||
-                    (notice.associated && !replacement.associated)
-                  )
-                    return yield* new CrewError(
-                      "REPORT_HISTORY",
-                      "Retained report result notices cannot be rebound or removed",
-                    );
-                }
-            }
+            const error = visualReportHistoryError(
+              prior.visual_reports,
+              Reflect.get(record, "visual_reports"),
+            );
+            if (error) return yield* new CrewError("REPORT_HISTORY", error);
           }
           if (object(prior) && Schema.is(MessageIntentsSchema)(prior.messages)) {
             const next = yield* decode(

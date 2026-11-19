@@ -11,6 +11,7 @@ import { Scopes } from "../workflow/scopes.ts";
 import { Corrections } from "../workflow/corrections.ts";
 import { Reports } from "../workflow/reports.ts";
 import { Queries } from "../workflow/queries.ts";
+import { SessionInspection } from "../workflow/session-inspection.ts";
 import { WorkerSessions } from "../workflow/sessions.ts";
 import { Leads } from "../workflow/leads.ts";
 import { CodingChecks } from "../workflow/checks.ts";
@@ -65,7 +66,6 @@ export function createWorkflow(
   const sources = new RepositorySources(git, config.repository_root);
   const workspaces = new Workspaces(git, sources, runtime, config.worktree_root);
   let advancement: Advancement;
-  let planning: PlanningBaselines;
   const workerContexts = new WorkerContexts(records, config, assets);
   const coordination = records.coordinate(locks);
   const obligations = new Obligations(records, runtime, work, coordination);
@@ -76,9 +76,17 @@ export function createWorkflow(
   const corrections = new Corrections(records, git, config);
   const reports = new Reports(config.home, records, git, locks, work, runtime.notify.bind(runtime));
   const checkpoints = new CheckpointEvidence(git);
-  const authorizations = new Authorizations(records, runtime, checkpoints, (e) =>
-    planning.assertDelta(e),
-  );
+  const inspection = new SessionInspection(runtime);
+  const planning = new PlanningBaselines({
+    records,
+    git,
+    work,
+    runtime,
+    spec,
+    inspection,
+    obligations,
+  });
+  const authorizations = new Authorizations(records, runtime, checkpoints, planning.assertDelta);
   const queries = new Queries(
     config,
     records,
@@ -99,13 +107,10 @@ export function createWorkflow(
     git,
     spec,
     attention,
+    inspection,
+    planning,
     assets,
-    {
-      beforeAdmission: (e, role) => planning.beforeAdmission(e, role),
-      preparedAdmission: (e, role) => planning.preparedAdmission(e, role),
-    },
   );
-  planning = new PlanningBaselines({ records, git, work, runtime, spec, sessions, obligations });
   const messages = sessions.messages;
   const leads = new Leads(
     config,

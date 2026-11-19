@@ -15,10 +15,7 @@ import { fixture } from "../fixtures.ts";
 import { WorkspaceFixture } from "../helpers/web.ts";
 import { run } from "../effects.ts";
 
-test("fallback, receipt-only and empty refreshes bound supervisor discovery to requested sections", async (t) => {
-  const f = await run(fixture);
-  t.onTestFinished(() => run(f.close()));
-  const workspace = new WorkspaceFixture();
+async function registeredGateway(f: Effect.Success<typeof fixture>, workspace: WorkspaceFixture) {
   const id = workspace.sessionID;
   const handlers: Record<
     string,
@@ -72,9 +69,21 @@ test("fallback, receipt-only and empty refreshes bound supervisor discovery to r
       name,
       (input: unknown) =>
         handlers[name]!(input, {
-          error: (_: string, message: string) => new CrewError("REFUSED", message),
+          error: (kind: string, message: string, data: { code: string }) =>
+            new CrewError(data.code, message, kind),
         }),
     ]),
+  );
+  return { id, dispatch, reviews, sessions, assignments, scans, reads };
+}
+
+test("fallback, receipt-only and empty refreshes bound supervisor discovery to requested sections", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const workspace = new WorkspaceFixture();
+  const { id, dispatch, sessions, assignments, scans, reads } = await registeredGateway(
+    f,
+    workspace,
   );
   const reader = vi.spyOn(NativeSessionReader.prototype, "read").mockReturnValue(
     Effect.succeed({
@@ -159,4 +168,50 @@ test("fallback, receipt-only and empty refreshes bound supervisor discovery to r
   sessions.mockImplementation(() => Effect.fail(new CrewError("STALE", "Session changed")));
   await assert.rejects(run(backend.observe({ admissions: true })), /Session changed/);
   await assert.rejects(run(dispatch.submit!({ session_id: id })), /Session changed/);
+});
+
+test("registered review handlers authorize before calling the owner and preserve RPC refusals", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const { id, dispatch, reviews, sessions } = await registeredGateway(f, new WorkspaceFixture());
+  const input = { session_id: id };
+  assert.deepEqual(await run(dispatch.reviewList!(input)), await run(reviews.list(id)));
+
+  const methods = [
+    ["reviewReceipt", "receipt"],
+    ["reviewList", "list"],
+    ["review", "read"],
+    ["reviewAsset", "asset"],
+    ["reviewSubmit", "submit"],
+  ] as const;
+  const error = new CrewError("REVIEW_REFUSED", "Revision changed");
+  const owners = methods.map(([handler, method]) => ({
+    handler,
+    owner: vi.spyOn(reviews, method).mockReturnValue(Effect.fail(error)),
+  }));
+
+  for (const { handler, owner } of owners) {
+    sessions.mockReturnValueOnce(
+      Effect.succeed({
+        id,
+        agent: AgentId.make("apply"),
+        directory: f.config.home,
+        busy: false,
+      }),
+    );
+    await assert.rejects(run(dispatch[handler]!(input)), {
+      details: "refused",
+      code: "ABRA_REQUIRED",
+      message: "Use the single central Abra session",
+    });
+    assert.equal(owner.mock.calls.length, 0);
+  }
+  for (const { handler, owner } of owners) {
+    await assert.rejects(run(dispatch[handler]!(input)), {
+      details: "refused",
+      code: error.code,
+      message: error.message,
+    });
+    assert.equal(owner.mock.calls.length, 1);
+  }
 });

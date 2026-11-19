@@ -3,7 +3,7 @@ import { CrewError } from "../../src/domain.ts";
 import { run } from "../effects.ts";
 import { domainEffect } from "../../src/effect.ts";
 import { Effect } from "effect";
-import { test } from "vite-plus/test";
+import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { mkdir, rename, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -670,4 +670,64 @@ test("binding summaries resolve off-page retained tasks without fleet, worker or
     ["available", "unavailable"],
   );
   assert.equal(f.runtime.prompts, 0);
+});
+
+test("worker inspection reads only its ticket and admitted native session", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(applying(f));
+  const foreign = Id.SessionId.make("ses_foreign");
+  await run(
+    f.records.create({
+      ...e,
+      issue_id: Id.IssueId.make("other-ticket"),
+      execution_id: Id.ExecutionId.make("exec-other"),
+      apply_session_id: foreign,
+    }),
+  );
+  const current = e.apply_session_id!;
+  const historical = e.explore_session_id!;
+  delete e.explore_session_id;
+  e.rounds = [
+    {
+      schema_version: 1,
+      id: Id.RoundId.make("round-1"),
+      ordinal: 1,
+      generation: e.control_generation,
+      source: "review",
+      starting_head: e.base_commit!,
+      plan_fingerprint: e.plan_fingerprint!,
+      findings: [],
+      instructions: "Apply review feedback",
+      openspec_change: e.openspec_change,
+      approval_receipts: e.approval_receipts,
+      worker_sessions: [{ id: historical, role: "explore" }],
+      created_at: 1,
+    },
+  ];
+  await run(f.records.save(e));
+
+  const read = vi.spyOn(f.records, "execution");
+  const scans = vi.spyOn(f.records.store, "entries");
+  const native = vi.spyOn(f.runtime, "session");
+  const inspect = f.controller.queries.inspectWorker;
+  for (const [id, role] of [
+    [current, "apply"],
+    [historical, "explore"],
+  ] as const) {
+    assert.equal((await run(inspect(e.issue_id, id))).role, role);
+    assert.deepEqual(read.mock.calls, [[e.issue_id]]);
+    assert.deepEqual(native.mock.calls, [[id]]);
+    read.mockClear();
+    native.mockClear();
+  }
+  const missing = Id.IssueId.make("missing-ticket");
+  assert.equal((await run(Effect.flip(inspect(e.issue_id, foreign)))).code, "NOT_FOUND");
+  assert.equal((await run(Effect.flip(inspect(missing, current)))).code, "EXECUTION_MISSING");
+  assert.deepEqual(read.mock.calls, [[e.issue_id], [missing]]);
+  assert.deepEqual(native.mock.calls, []);
+  native.mockReturnValueOnce(Effect.fail(new CrewError("SESSION_MISSING", "Gone")));
+  assert.equal((await run(Effect.flip(inspect(e.issue_id, current)))).code, "WORKER_UNAVAILABLE");
+  assert.deepEqual(native.mock.calls, [[current]]);
+  assert.deepEqual(scans.mock.calls, []);
 });

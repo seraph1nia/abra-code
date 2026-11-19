@@ -147,3 +147,37 @@ test("legacy reads and original-request retries reject altered or redirected byt
   );
   assert.equal(await readFile(external, "utf8"), html);
 });
+
+test("record writes allow report progress and preserve the prior record on history violations", async (t) => {
+  const { f, build } = await prepare("validated");
+  t.onTestFinished(() => run(f.close()));
+  const update = (visual_reports: VisualBuild[] | undefined) =>
+    f.records.update(issue, (e) => ({ ...e, visual_reports }));
+  const notice = {
+    phase: "published" as const,
+    text: "Report ready",
+    message_id: Id.MessageId.make("msg_report"),
+    delivered: false,
+  };
+  await run(update([{ ...build, status: "published", notices: [notice] }]));
+  const delivered = { ...notice, delivered: true, associated: true };
+  const published: VisualBuild = { ...build, status: "published", notices: [delivered] };
+  await run(update([published]));
+  const before = await run(f.records.execution(issue));
+  assert.deepEqual(before?.visual_reports?.[0]?.notices, [delivered]);
+  const violations: (VisualBuild[] | undefined)[] = [
+    undefined,
+    [],
+    [{ ...published, request: { ...build.request, title: "Rebound" } }],
+    [{ ...published, artifact: undefined }],
+    [{ ...published, status: "validated" }],
+    [{ ...published, notices: [] }],
+    [{ ...published, notices: [{ ...delivered, text: "Changed" }] }],
+    [{ ...published, notices: [{ ...delivered, delivered: false }] }],
+    [{ ...published, notices: [{ ...delivered, associated: false }] }],
+  ];
+  for (const reports of violations) {
+    assert.equal((await run(Effect.flip(update(reports)))).code, "REPORT_HISTORY");
+    assert.deepEqual(await run(f.records.execution(issue)), before);
+  }
+});

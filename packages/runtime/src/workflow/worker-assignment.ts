@@ -9,6 +9,17 @@ export const historicalWorkers = (e: Execution) => [
   ...(e.finishing?.synchronization?.flatMap((a) => a.worker_sessions) ?? []),
 ];
 
+export function hasWorkerSession(e: Execution, session: SessionId): boolean {
+  return (
+    e.explore_session_id === session ||
+    e.apply_session_id === session ||
+    e.review_session_id === session ||
+    e.research_session_id === session ||
+    e.session_intent?.id === session ||
+    historicalWorkers(e).some((worker) => worker.id === session)
+  );
+}
+
 /** Evaluate fresh retained state at each entry point; never cache this across asynchronous work. */
 export function isActiveWorker(
   e: Execution | undefined,

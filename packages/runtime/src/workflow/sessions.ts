@@ -1,3 +1,5 @@
+import type { SessionInspection } from "./session-inspection.ts";
+import type { PlanningBaselines } from "./planning.ts";
 import type { OpenSpec } from "../openspec/adapter.ts";
 import { WorkerContexts, readWorkerContext } from "./worker-context.ts";
 import { Messages } from "./messages.ts";
@@ -58,11 +60,9 @@ export class WorkerSessions {
     private git: Git,
     private spec: OpenSpec,
     attention: AttentionService,
+    private inspection: SessionInspection,
+    private planning: Pick<PlanningBaselines, "beforeAdmission" | "preparedAdmission">,
     assets?: string,
-    private planning?: {
-      beforeAdmission: (e: Execution, role: Role) => Effect.Effect<void, CrewError>;
-      preparedAdmission: (e: Execution, role: Role) => Effect.Effect<void, CrewError>;
-    },
   ) {
     this.contexts = new WorkerContexts(records, config, assets);
     this.messages = new Messages(records, runtime, capacity, queries, attention);
@@ -191,7 +191,7 @@ export class WorkerSessions {
     function* (this: WorkerSessions, e: Execution) {
       const turn = yield* this.observe(e);
       if (turn.kind === "absent") return;
-      if (!(turn.kind !== "waiting"))
+      if (turn.kind === "waiting")
         return yield* new CrewError("WRITER_BUSY", "A managed session still runs in this worktree");
       e.capacity_observed_idle = true;
       delete e.capacity_reservation;
@@ -253,7 +253,7 @@ export class WorkerSessions {
       if (turn.kind !== "unadmitted") return turn;
       if (!e.prompt_id)
         return yield* new CrewError("PROMPT_AMBIGUOUS", "No persisted prompt admission ID");
-      yield* this.planning?.beforeAdmission(e, e.active_role!) ?? Effect.void;
+      yield* this.planning.beforeAdmission(e, e.active_role!);
       const selection = yield* this.runtime
         .preflight(e, e.active_role!, e.prompt_id)
         .pipe(Effect.tapError((error) => this.contexts.failure(e, e.active_role!, error)));
@@ -269,41 +269,8 @@ export class WorkerSessions {
     }.bind(this),
     domainEffect,
   );
-  validateLocations = Effect.fn("WorkerSessions.validateLocations")(
-    function* (this: WorkerSessions, e: Execution) {
-      for (const role of ["explore", "apply", "review", "research"] as const) {
-        const id = this.sessionID(e, role);
-        if (id) {
-          if (!((yield* this.runtime.session(id)).directory === e.worktree_directory))
-            return yield* new CrewError(
-              "SESSION_LOCATION",
-              "Managed session moved out of owned worktree",
-            );
-        }
-      }
-    }.bind(this),
-    domainEffect,
-  );
-  idle = Effect.fn("WorkerSessions.idle")(
-    function* (this: WorkerSessions, e: Execution) {
-      if (messageRequests(e.messages).some((m) => m.status === "admission_uncertain"))
-        return yield* new CrewError(
-          "MESSAGE_UNCERTAIN",
-          "Pause and confirm native stop before replacing an uncertain instruction",
-        );
-      for (const role of ["explore", "apply", "review", "research"] as const) {
-        const id = this.sessionID(e, role);
-        if (id) {
-          if ((yield* this.runtime.session(id)).busy)
-            return yield* new CrewError(
-              "WRITER_BUSY",
-              "A managed session still runs in this worktree",
-            );
-        }
-      }
-    }.bind(this),
-    domainEffect,
-  );
+  validateLocations = (e: Execution) => this.inspection.validateLocations(e);
+  idle = (e: Execution) => this.inspection.idle(e);
   launch = (e: Execution, role: Role) => this.admit(e, role);
   notifyCompletion = (
     session: SessionId,
@@ -323,7 +290,7 @@ export class WorkerSessions {
           "Return external branch custody before admitting a native writer or changing its scope",
         );
       yield* this.idle(e);
-      yield* this.planning?.beforeAdmission(e, role) ?? Effect.void;
+      yield* this.planning.beforeAdmission(e, role);
       if (e.workflow_policy === "full-openspec") yield* this.spec.assertSchema(e);
       const project = yield* this.project(e);
       if (!(yield* this.capacity.reserve(e, role, project))) return;
@@ -363,7 +330,7 @@ export class WorkerSessions {
       let id = this.sessionID(e, role);
       if (!id) {
         e.session_intent ??= { role, id: Session.ID.create() };
-        if (!(e.session_intent.role === role))
+        if (e.session_intent.role !== role)
           return yield* new CrewError(
             "SESSION_INTENT",
             "A different role has an unresolved session intent",
@@ -425,7 +392,7 @@ export class WorkerSessions {
         "capacity_reservation",
         "worker_context_id",
       ]);
-      yield* this.planning?.preparedAdmission(e, role) ?? Effect.void;
+      yield* this.planning.preparedAdmission(e, role);
       yield* this.runtime.prompt(id, context.prompt, e.prompt_id);
       const saved = yield* this.records.update(e.issue_id, (current) => {
         ensure(

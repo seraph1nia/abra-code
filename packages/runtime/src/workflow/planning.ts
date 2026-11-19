@@ -10,7 +10,7 @@ import type { Records } from "../storage/store.ts";
 import type { WorkGraph } from "../work/graph.ts";
 import type { Runtime } from "../opencode/runtime.ts";
 import type { OpenSpec } from "../openspec/adapter.ts";
-import type { WorkerSessions } from "./sessions.ts";
+import type { SessionInspection } from "./session-inspection.ts";
 import type { Obligations } from "./obligations.ts";
 import { assertApprovalActor } from "./authorization.ts";
 import { readWorkerContext, compatibleContext } from "./worker-context.ts";
@@ -34,7 +34,7 @@ interface Dependencies {
   work: WorkGraph;
   runtime: Runtime;
   spec: OpenSpec;
-  sessions: WorkerSessions;
+  inspection: SessionInspection;
   obligations: Obligations;
 }
 /** One controller owner for source boundaries. Forms collect evidence; only
@@ -102,7 +102,7 @@ export class PlanningBaselines {
         "WORKTREE_IDENTITY",
         "Planning requires the original worktree directory identity",
       );
-      yield* this.c.sessions.validateLocations(e);
+      yield* this.c.inspection.validateLocations(e);
       yield* this.c.spec.assertSchema(e);
       ensure(
         e.openspec_schema_binding?.state === "bound",
@@ -114,7 +114,7 @@ export class PlanningBaselines {
   );
   private quiescent = Effect.fn("Planning.quiescent")(
     function* (this: PlanningBaselines, e: Execution) {
-      yield* this.c.sessions.idle(e);
+      yield* this.c.inspection.idle(e);
       ensure(
         !e.session_intent &&
           !e.capacity_wait &&
@@ -645,7 +645,7 @@ export class PlanningBaselines {
       );
       yield* this.delta(e, continued, yield* this.observe(e));
       yield* this.c.git.validate(p, e);
-      yield* this.c.sessions.validateLocations(e);
+      yield* this.c.inspection.validateLocations(e);
       yield* this.quiescent(e);
       const issue = yield* this.c.work.show(e.issue_id);
       ensure(

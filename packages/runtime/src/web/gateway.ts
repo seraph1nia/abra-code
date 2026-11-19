@@ -174,6 +174,16 @@ export function registerWebGateway(
       )
         return yield* new CrewError("ABRA_REQUIRED", "Use the single central Abra session");
     });
+  const authorizedReview = <A, E>(
+    id: SessionId,
+    error: (kind: "refused", message: string, data: { code: string }) => E,
+    operation: () => Effect.Effect<A, CrewError>,
+  ) =>
+    assertSupervisor(id).pipe(
+      Effect.andThen(operation),
+      Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+      provide,
+    );
   return Effect.gen(function* () {
     const retained = yield* controller.queries.supervisor();
     if (retained) {
@@ -230,35 +240,17 @@ export function registerWebGateway(
           provide,
         ),
       reviewReceipt: ({ session_id, ...selection }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(reviews.receipt(session_id, selection, admissions)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
+        authorizedReview(session_id, error, () =>
+          reviews.receipt(session_id, selection, admissions),
         ),
       reviewList: ({ session_id, issue_id }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(reviews.list(session_id, issue_id)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
+        authorizedReview(session_id, error, () => reviews.list(session_id, issue_id)),
       review: ({ session_id, ...selection }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(reviews.read(session_id, selection)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
+        authorizedReview(session_id, error, () => reviews.read(session_id, selection)),
       reviewAsset: ({ session_id, ...selection }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(reviews.asset(session_id, selection)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
+        authorizedReview(session_id, error, () => reviews.asset(session_id, selection)),
       reviewSubmit: ({ session_id, ...input }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(reviews.submit(session_id, input, admissions)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
+        authorizedReview(session_id, error, () => reviews.submit(session_id, input, admissions)),
       prepareDiagrams: ({ session_id, selection }, { error }) =>
         assertSupervisor(session_id).pipe(
           Effect.andThen(
