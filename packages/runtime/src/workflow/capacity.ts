@@ -4,13 +4,15 @@ import { ExecutionId, type IssueId, type RepositoryId, type RequestId } from "..
 import { Clock, Effect } from "effect";
 import { domainEffect } from "../effect.ts";
 import {
+  CrewError,
+  type Execution,
   type Config,
   type ManagedExecution,
   type Project,
   type ReadinessBlocker,
   type Role,
 } from "../domain.ts";
-import { type Records } from "../storage/store.ts";
+import { synchronizeExecution, type Records } from "../storage/store.ts";
 import { type Coordination } from "./coordination.ts";
 
 export const consumesWorker = (e: ManagedExecution) =>
@@ -126,6 +128,29 @@ export class Capacity {
     private records: Records,
     private coordination: Coordination,
   ) {}
+  releasePreparation(e: Execution, role: Role) {
+    return this.records.coordinateCommit(() =>
+      Effect.gen({ self: this }, function* () {
+        const current = yield* this.records.execution(e.issue_id);
+        const reservation = current?.capacity_reservation;
+        if (
+          reservation?.status !== "preparing" ||
+          reservation.role !== role ||
+          reservation.generation !== e.control_generation
+        )
+          return yield* new CrewError("STALE_OPERATION", "Preparation reservation was superseded");
+        const released = { ...e, capacity_observed_idle: true };
+        delete released.capacity_reservation;
+        synchronizeExecution(
+          e,
+          yield* this.records.saveOwned(released, [
+            "capacity_reservation",
+            "capacity_observed_idle",
+          ]),
+        );
+      }),
+    );
+  }
   reserve(
     e: ManagedExecution,
     role: Role,

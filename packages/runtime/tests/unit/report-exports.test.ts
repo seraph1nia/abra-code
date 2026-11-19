@@ -20,8 +20,8 @@ test("HTML exports are immutable, keyed by document and exporter and repaired wi
     exporter = reportHash("exporter-one");
   let builds = 0,
     fail = false;
-  const renderer = {
-    fingerprint: Effect.succeed(exporter),
+  const bundle = {
+    fingerprint: exporter,
     render: () =>
       Effect.sync(() => {
         builds++;
@@ -29,6 +29,7 @@ test("HTML exports are immutable, keyed by document and exporter and repaired wi
         return `<!doctype html><div id="abracode-license-notices">Notices</div><script type="application/json" id="abracode-report-document" data-hash="${hash}">${json.replaceAll("<", "\\u003c")}</script>`;
       }),
   };
+  const renderer = { acquire: Effect.succeed(bundle) };
   const owner = () => new ReportExports(f.config.home, f.locks, renderer);
   const [first, retry] = await Promise.all([
     run(owner().create(json, hash)),
@@ -40,6 +41,11 @@ test("HTML exports are immutable, keyed by document and exporter and repaired wi
     path = join(directory, "index.html");
   const inode = (await lstat(path)).ino;
   assert.deepEqual(await run(owner().read(hash, exporter)), first);
+  const unprepared = new ReportExports(f.config.home, f.locks, {
+    acquire: Effect.fail(new CrewError("REPORT_SHELL", "Run pnpm report:prepare")),
+  });
+  await assert.rejects(run(unprepared.create(json, hash)), /report:prepare/);
+  assert.deepEqual(await run(unprepared.read(hash, exporter)), first);
   await rm(join(directory, "receipt.json"));
   assert.deepEqual(await run(owner().create(json, hash)), first);
   assert.equal(builds, 1);
@@ -48,7 +54,7 @@ test("HTML exports are immutable, keyed by document and exporter and repaired wi
   await assert.rejects(run(owner().create(json, hash)), /digest/);
   assert.equal(await readFile(path, "utf8"), "tampered");
   assert.equal(builds, 1);
-  const next = { ...renderer, fingerprint: Effect.succeed(reportHash("exporter-two")) };
+  const next = { acquire: Effect.succeed({ ...bundle, fingerprint: reportHash("exporter-two") }) };
   fail = true;
   await assert.rejects(
     run(new ReportExports(f.config.home, f.locks, next).create(json, hash)),

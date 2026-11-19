@@ -29,7 +29,6 @@ import { decode } from "../decode.ts";
 import { webGateway } from "./protocol.ts";
 
 import { ReceiptSchema, ReceiptQuerySchema, type SubmissionReceipt } from "./workspace-wire.ts";
-import { loadSurfaceRecord, compactSurface } from "./surface-records.ts";
 import { SurfacePublications } from "./surface-publications.ts";
 import { resolveOwnedResource } from "./resource-selection.ts";
 export type { SubmissionReceipt } from "./workspace-wire.ts";
@@ -141,6 +140,29 @@ export function registerWebGateway(
     new NativeRuntime(ctx, config),
     new FileLocks(AbsolutePath.make(join(config.home, ".abracode/locks"))),
   );
+  const receipts = (id: SessionId) =>
+    store.entries(StoragePrefix.make(`web/receipt/${id}/`)).pipe(
+      Effect.flatMap((rows) => Effect.forEach(rows, (r) => decode(ReceiptSchema, r.value, r.key))),
+      Effect.map((rows) =>
+        rows
+          .toSorted((a, b) => {
+            const time = (at: string) => {
+              const parsed = Date.parse(at);
+              return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+            };
+            const left = time(a.at),
+              right = time(b.at);
+            return left === right ? a.request_id.localeCompare(b.request_id) : left - right;
+          })
+          .slice(-100),
+      ),
+    );
+  const surfaces = (id: SessionId) =>
+    surfacePublications.list(id).pipe(Effect.map((rows) => [...rows, ...surfaceDiagnostics]));
+  const projects = () =>
+    controller.queries
+      .projects()
+      .pipe(Effect.map((rows) => rows.map((p) => ({ id: p.id, name: p.id, path: p.path }))));
   const assertSupervisor = (id: SessionId) =>
     Effect.gen(function* () {
       const session = yield* controller.queries.session(id);
@@ -179,6 +201,28 @@ export function registerWebGateway(
     }
     // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native registration declares unknown; handler failures are mapped at the boundary.
     return yield* ctx.rpc.register(webGateway, {
+      observeSections: (input, { error }) =>
+        assertSupervisor(input.session_id).pipe(
+          Effect.andThen(
+            Effect.gen(function* () {
+              return {
+                ...(input.receipts ? { receipts: yield* receipts(input.session_id) } : {}),
+                ...(input.surfaces ? { surfaces: yield* surfaces(input.session_id) } : {}),
+                ...(input.message_ids
+                  ? {
+                      presentations: yield* reviews.presentations(
+                        input.session_id,
+                        input.message_ids,
+                      ),
+                    }
+                  : {}),
+                ...(input.projects ? { projects: yield* projects() } : {}),
+              };
+            }),
+          ),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
       agents: ({ session_id }, { error }) =>
         assertSupervisor(session_id).pipe(
           Effect.andThen(agents),
@@ -286,40 +330,19 @@ export function registerWebGateway(
         ),
       receipts: ({ session_id }, { error }) =>
         assertSupervisor(session_id).pipe(
-          Effect.andThen(store.entries(StoragePrefix.make(`web/receipt/${session_id}/`))),
-          Effect.flatMap((rows) =>
-            Effect.forEach(rows, (r) => decode(ReceiptSchema, r.value, r.key)),
-          ),
-          Effect.map((rows) =>
-            rows
-              .toSorted((a, b) => {
-                const time = (at: string) => {
-                  const parsed = Date.parse(at);
-                  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
-                };
-                const left = time(a.at),
-                  right = time(b.at);
-                return left === right ? a.request_id.localeCompare(b.request_id) : left - right;
-              })
-              .slice(-100),
-          ),
+          Effect.andThen(receipts(session_id)),
           Effect.mapError((e) => error("refused", e.message, { code: e.code })),
           provide,
         ),
       surfaces: ({ session_id }, { error }) =>
         assertSupervisor(session_id).pipe(
-          Effect.andThen(store.entries(StoragePrefix.make(`web/surface/${session_id}/`))),
-          Effect.map((rows) => [
-            ...rows.map((r) => compactSurface(loadSurfaceRecord(r.value, r.key))),
-            ...surfaceDiagnostics,
-          ]),
+          Effect.andThen(surfaces(session_id)),
           Effect.mapError((e) => error("refused", e.message, { code: e.code })),
           provide,
         ),
       projects: ({ session_id }, { error }) =>
         assertSupervisor(session_id).pipe(
-          Effect.andThen(controller.queries.projects()),
-          Effect.map((projects) => projects.map((p) => ({ id: p.id, name: p.id, path: p.path }))),
+          Effect.andThen(projects()),
           Effect.mapError((e) => error("refused", e.message, { code: e.code })),
           provide,
         ),

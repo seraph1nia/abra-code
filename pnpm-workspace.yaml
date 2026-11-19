@@ -19,6 +19,7 @@ allowBuilds:
   "@opencode/cli": true
   agent-browser: true
   esbuild: true
+  fs-ext: true
 
 minimumReleaseAgeExclude:
   - "@voidzero-dev/vite-plus-core@1.6.0"

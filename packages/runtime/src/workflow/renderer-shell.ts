@@ -32,10 +32,14 @@ const Receipt = Schema.Struct({
   abi: Schema.Literal(rendererABI),
   fingerprint: ContentHash,
   html_hash: ContentHash,
+  manifest_hash: ContentHash,
+  engine_hash: ContentHash,
+  host_hash: ContentHash,
   bytes: Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(maximumHTMLBytes)),
 });
 const Pointer = Schema.Struct({ fingerprint: ContentHash });
-type Shell = { fingerprint: ContentHash; html: string };
+export type Shell = { fingerprint: ContentHash; html: string; engine: string; host: string };
+const diagramFileLimit = 16 * 1024 * 1024;
 const io = <A>(read: () => Promise<A>) => Effect.tryPromise({ try: read, catch: CrewError.from });
 
 /** No-follow reads bound cache metadata and bytes before parsing or execution. */
@@ -60,20 +64,20 @@ async function bounded(path: string, maximum: number) {
     await file.close();
   }
 }
-function identity(manifest: typeof Manifest.Type, html: string) {
-  return reportHash(`${rendererABI}\n${canonicalJSON(manifest)}\n${reportHash(html)}`);
+function evidence(manifest: string, html: string, engine: string, host: string) {
+  const assets = {
+    abi: rendererABI,
+    manifest_hash: reportHash(manifest),
+    html_hash: reportHash(html),
+    engine_hash: reportHash(engine),
+    host_hash: reportHash(host),
+    bytes: Buffer.byteLength(html),
+  };
+  return { ...assets, fingerprint: reportHash(canonicalJSON(assets)) };
 }
 
-/** Cross-process preparation is independent of document/artifact publication. */
+/** Preparation owns source discovery. Readers capture immutable assets from one active pointer. */
 export class RendererShell {
-  private verified?: Shell;
-  /** Reuse verified immutable bytes; render still revalidates source/cache before returning. */
-  forDocument(expected: ContentHash): Effect.Effect<Shell, CrewError> {
-    return Effect.suspend(() =>
-      this.verified?.fingerprint === expected ? Effect.succeed(this.verified) : this.prepare,
-    );
-  }
-
   constructor(
     private home: AbsolutePath,
     private runner: Runner,
@@ -82,6 +86,9 @@ export class RendererShell {
     const home = await realpath(this.home);
     let bytes = 0;
     const names = new Set(manifest.inputs.map((input) => input.file));
+    const { rendererStyleInputs } = await import("@abracode/report-export/renderer-styles");
+    if ((await rendererStyleInputs(home)).some((path) => !names.has(RelativePath.make(path))))
+      return false;
     for (const required of [
       "apps/report/src/main.tsx",
       "apps/report/index.html",
@@ -135,39 +142,81 @@ export class RendererShell {
     );
     ensure(
       JSON.stringify((await readdir(directory)).sort()) ===
-        '["index.html","manifest.json","receipt.json"]',
+        '["diagram-engine.js","diagram-host.mjs","index.html","manifest.json","receipt.json"]',
       "REPORT_SHELL",
       "Renderer cache contains unexpected files",
     );
-    const manifest = Schema.decodeUnknownSync(Manifest)(
-      JSON.parse(
-        (await bounded(join(directory, "manifest.json"), 2 * 1024 * 1024)).toString("utf8"),
-      ),
-    );
-    const receipt = Schema.decodeUnknownSync(Receipt)(
-      JSON.parse((await bounded(join(directory, "receipt.json"), 4096)).toString("utf8")),
-    );
-    const html = (await bounded(join(directory, "index.html"), maximumHTMLBytes)).toString("utf8");
+    const read = async (name: string, limit: number) =>
+      (await bounded(join(directory, name), limit)).toString("utf8");
+    const [manifest, html, engine, host, rawReceipt] = await Promise.all([
+      read("manifest.json", 2 * 1024 * 1024),
+      read("index.html", maximumHTMLBytes),
+      read("diagram-engine.js", diagramFileLimit),
+      read("diagram-host.mjs", diagramFileLimit),
+      read("receipt.json", 4096),
+    ]);
+    const decoded = Schema.decodeUnknownResult(Receipt)(JSON.parse(rawReceipt));
     ensure(
-      receipt.fingerprint === fingerprint &&
-        receipt.bytes === Buffer.byteLength(html) &&
-        receipt.html_hash === reportHash(html) &&
-        identity(manifest, html) === fingerprint,
+      decoded._tag === "Success",
       "REPORT_SHELL",
-      "Renderer shell digest does not match its receipt",
+      "Invalid or incompatible prepared renderer receipt. Run pnpm report:prepare or pnpm build.",
+    );
+    const receipt = decoded.success;
+    const expected = evidence(manifest, html, engine, host);
+    ensure(
+      expected.fingerprint === fingerprint && canonicalJSON(receipt) === canonicalJSON(expected),
+      "REPORT_SHELL",
+      "Renderer bundle digest does not match its receipt",
     );
     validatePortableHTML(html);
-    return !sourceCheck || (await this.inputsCurrent(manifest)) ? { fingerprint, html } : undefined;
+    if (
+      sourceCheck &&
+      !(await this.inputsCurrent(Schema.decodeUnknownSync(Manifest)(JSON.parse(manifest))))
+    )
+      return;
+    return { fingerprint, html, engine, host };
   }
-  private async current(root: string) {
+  private async pointer(root: string) {
     const pointer = join(root, "current.json");
-    if (!(await lstat(pointer).catch(() => undefined))) return;
-    const value = Schema.decodeUnknownSync(Pointer)(
-      JSON.parse((await bounded(pointer, 4096)).toString("utf8")),
-    );
-    if (!(await lstat(join(root, value.fingerprint)).catch(() => undefined))) return;
-    return this.retained(root, value.fingerprint, true);
+    try {
+      return Schema.decodeUnknownSync(Pointer)(
+        JSON.parse((await bounded(pointer, 4096)).toString("utf8")),
+      ).fingerprint;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+      throw error;
+    }
   }
+  private async current(root: string, sourceCheck: boolean) {
+    const fingerprint = await this.pointer(root);
+    if (!fingerprint) return;
+    try {
+      return await this.retained(root, fingerprint, sourceCheck);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        const newer = await this.pointer(root);
+        if (newer && newer !== fingerprint) return this.retained(root, newer, sourceCheck);
+        if (sourceCheck) return;
+        throw new CrewError(
+          "REPORT_SHELL",
+          "Prepared renderer is incomplete. Run pnpm report:prepare or pnpm build.",
+        );
+      }
+      throw error;
+    }
+  }
+  acquire = domainEffect(
+    Effect.gen({ self: this }, function* () {
+      const root = yield* reportDirectory(this.home, [".abracode", "reports", "renderers", "v3"]);
+      const selected = yield* io(() => this.current(root, false));
+      ensure(
+        selected,
+        "REPORT_SHELL",
+        "A compatible prepared renderer is required. Run pnpm report:prepare or pnpm build.",
+      );
+      return selected;
+    }),
+  );
   prepare = domainEffect(
     Effect.gen({ self: this }, function* () {
       const lockRoot = yield* reportDirectory(this.home, [".abracode", "locks"]);
@@ -180,9 +229,9 @@ export class RendererShell {
                 ".abracode",
                 "reports",
                 "renderers",
-                "v2",
+                "v3",
               ]);
-              const current = yield* io(() => this.current(root));
+              const current = yield* io(() => this.current(root, true));
               if (current) return current;
               const parent = yield* reportDirectory(this.home, [
                 ".abracode",
@@ -221,7 +270,7 @@ export class RendererShell {
                         const output = join(directory, "dist");
                         ensure(
                           JSON.stringify((await readdir(output)).sort()) ===
-                            '["index.html","renderer-inputs.json"]',
+                            '["diagram-engine.js","diagram-host.mjs","index.html","renderer-inputs.json"]',
                           "REPORT_ASSETS",
                           "Prepared renderer must contain one shell and its input manifest",
                         );
@@ -246,8 +295,51 @@ export class RendererShell {
                           "REPORT_TEMPLATE",
                           "Renderer inputs changed during preparation",
                         );
-                        return { html, manifest, fingerprint: identity(manifest, html) };
+                        const engine = (
+                          await bounded(join(output, "diagram-engine.js"), diagramFileLimit)
+                        ).toString("utf8");
+                        const host = (
+                          await bounded(join(output, "diagram-host.mjs"), diagramFileLimit)
+                        ).toString("utf8");
+                        const manifestText = JSON.stringify(manifest);
+                        const receipt = evidence(manifestText, html, engine, host);
+                        return {
+                          html,
+                          engine,
+                          host,
+                          manifest: manifestText,
+                          receipt,
+                          fingerprint: receipt.fingerprint,
+                        };
                       });
+                      const ready = join(directory, "ready");
+                      yield* mkdir(ready);
+                      yield* writeFile(join(ready, "index.html"), shell.html, {
+                        flag: "wx",
+                        mode: 0o600,
+                      });
+                      yield* writeFile(join(ready, "manifest.json"), shell.manifest, {
+                        flag: "wx",
+                        mode: 0o600,
+                      });
+                      yield* writeFile(join(ready, "receipt.json"), JSON.stringify(shell.receipt), {
+                        flag: "wx",
+                        mode: 0o600,
+                      });
+                      yield* writeFile(join(ready, "diagram-engine.js"), shell.engine, {
+                        flag: "wx",
+                        mode: 0o600,
+                      });
+                      yield* writeFile(join(ready, "diagram-host.mjs"), shell.host, {
+                        flag: "wx",
+                        mode: 0o600,
+                      });
+                      const destination = join(root, shell.fingerprint);
+                      const existing = yield* io(() => lstat(destination).catch(() => undefined));
+                      if (!existing) yield* rename(ready, destination);
+                      yield* io(() => this.retained(root, shell.fingerprint, false));
+
+                      const active = yield* io(() => this.pointer(root));
                       // Retain at most eight complete identities; prior exports contain their own bytes.
                       const entries = yield* io(async () => {
                         const names = (await readdir(root)).filter((name) =>
@@ -261,36 +353,14 @@ export class RendererShell {
                         );
                       });
                       for (const old of entries
+                        .filter(
+                          (entry) => entry.name !== active && entry.name !== shell.fingerprint,
+                        )
                         .sort((a, b) => a.stat.mtimeMs - b.stat.mtimeMs)
-                        .slice(0, Math.max(0, entries.length - 7))) {
+                        .slice(0, Math.max(0, entries.length - 8))) {
                         yield* io(() => this.retained(root, ContentHash.make(old.name), false));
                         yield* rm(join(root, old.name), { recursive: true, force: false });
                       }
-                      const ready = join(directory, "ready");
-                      yield* mkdir(ready);
-                      yield* writeFile(join(ready, "index.html"), shell.html, {
-                        flag: "wx",
-                        mode: 0o600,
-                      });
-                      yield* writeFile(
-                        join(ready, "manifest.json"),
-                        JSON.stringify(shell.manifest),
-                        { flag: "wx", mode: 0o600 },
-                      );
-                      yield* writeFile(
-                        join(ready, "receipt.json"),
-                        JSON.stringify({
-                          abi: rendererABI,
-                          fingerprint: shell.fingerprint,
-                          html_hash: reportHash(shell.html),
-                          bytes: Buffer.byteLength(shell.html),
-                        }),
-                        { flag: "wx", mode: 0o600 },
-                      );
-                      const destination = join(root, shell.fingerprint);
-                      const existing = yield* io(() => lstat(destination).catch(() => undefined));
-                      if (existing) yield* io(() => this.retained(root, shell.fingerprint, true));
-                      else yield* rename(ready, destination);
                       const pointer = join(directory, "current.json");
                       yield* writeFile(
                         pointer,
@@ -298,7 +368,12 @@ export class RendererShell {
                         { flag: "wx", mode: 0o600 },
                       );
                       yield* rename(pointer, join(root, "current.json"));
-                      return { fingerprint: shell.fingerprint, html: shell.html };
+                      return {
+                        fingerprint: shell.fingerprint,
+                        html: shell.html,
+                        engine: shell.engine,
+                        host: shell.host,
+                      };
                     }),
                   ),
                 ({ directory, stat }) =>
@@ -326,11 +401,5 @@ export class RendererShell {
         { waitSeconds: 60 },
       );
     }),
-  ).pipe(
-    Effect.tap((shell) =>
-      Effect.sync(() => {
-        this.verified = shell;
-      }),
-    ),
   );
 }

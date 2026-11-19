@@ -13,5 +13,5 @@ else {
     AbsolutePath.make(sourceInstallationRoot()),
     new ProcessRunner(),
   );
-  console.log(`Portable renderer: ${await Effect.runPromise(renderer.fingerprint)}`);
+  console.log(`Portable renderer: ${await Effect.runPromise(renderer.prepare)}`);
 }

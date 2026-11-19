@@ -17,10 +17,10 @@ import { CrewError } from "../domain.ts";
 import { configuration } from "../config/protocol.ts";
 import { awaitPluginActivation } from "./plugin-activation.ts";
 export const bootstrapService = Effect.gen(function* () {
-  if (process.platform !== "linux")
+  if (process.platform !== "linux" && process.platform !== "darwin")
     return yield* new CrewError(
       "PLATFORM",
-      "AbraCode currently supports Linux only (Git and util-linux flock required).",
+      "AbraCode requires Linux or macOS, Git and the fs-ext native binding.",
     );
   const home = yield* realpath(process.env.ABRACODE_HOME ?? process.cwd());
   const config = yield* loadConfig(home);

@@ -47,6 +47,21 @@ export const webGateway = Rpc.define({
   id: "abracode-web",
   events: {},
   methods: {
+    observeSections: method(
+      Schema.Struct({
+        session_id: SessionId,
+        receipts: Schema.Boolean,
+        surfaces: Schema.Boolean,
+        projects: Schema.Boolean,
+        message_ids: Schema.optionalKey(Schema.Array(MessageId).check(Schema.isMaxLength(100))),
+      }),
+      Schema.Struct({
+        receipts: Schema.optionalKey(Schema.Array(ReceiptSchema).check(Schema.isMaxLength(100))),
+        surfaces: Schema.optionalKey(Schema.Array(SurfaceIndexEntrySchema)),
+        presentations: Schema.optionalKey(PresentationPageSchema),
+        projects: Schema.optionalKey(ProjectsSchema),
+      }),
+    ),
     agents: method(Schema.Struct({ session_id: SessionId }), AgentCatalogSchema),
     reviewReceipt: method(
       Schema.Struct({ session_id: SessionId, ...ReviewResponseQuerySchema.fields }),

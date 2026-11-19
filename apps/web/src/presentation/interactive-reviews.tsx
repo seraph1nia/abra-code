@@ -29,6 +29,17 @@ const ReviewControls = deferred<
   () => import("@abracode/presentation/reviews").then((m) => ({ default: m.ReviewControls })),
   "Interactive review",
 );
+function matchesReceipt(
+  input: typeof ReviewSubmitSchema.Type,
+  receipt: { request_id: string; review_id: string; revision: number; hash: string },
+) {
+  return (
+    receipt.request_id === input.request_id &&
+    receipt.review_id === input.review_id &&
+    receipt.revision === input.revision &&
+    receipt.hash === input.hash
+  );
+}
 export function ReviewAttachment({ target }: { target: ReviewSelection }) {
   const [selection, setSelection] = useState(target);
   return (
@@ -89,7 +100,7 @@ function ReviewPanel({
     }).then((result) => {
       if (!mounted || !Exit.isSuccess(result) || !result.value) return;
       const receipt = result.value;
-      if (receipt.status === "admitted")
+      if (receipt.status === "admitted" && matchesReceipt(pending, receipt))
         update({
           pending: undefined,
           receipt: {
@@ -135,6 +146,14 @@ function ReviewPanel({
       return;
     }
     const result = await send(input);
+    if (Exit.isSuccess(result) && !matchesReceipt(input, result.value)) {
+      update({
+        working: false,
+        error:
+          "Submission identity conflicts with the receipt. Your pending response was preserved.",
+      });
+      return;
+    }
     if (Exit.isSuccess(result))
       update({
         working: false,

@@ -5,6 +5,7 @@
   "license": "MIT",
   "type": "module",
   "exports": {
+    "./renderer-styles": "./scripts/renderer-styles.ts",
     "./browser": "./scripts/browser.ts",
     "./diagrams": "./scripts/diagrams.ts",
     "./preparation": "./scripts/preparation.ts"

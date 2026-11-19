@@ -9,7 +9,11 @@ import { Service } from "@opencode/client/effect/service";
 import { makeClient } from "../opencode/client.ts";
 import { visibility } from "../visibility/protocol.ts";
 import { join } from "node:path";
+import { FileLocks } from "../storage/lock.ts";
+import { LockKey } from "../identities.ts";
 import { modelRoles } from "../config/identity.ts";
+import { mkdtemp, rm } from "../filesystem.ts";
+import { tmpdir } from "node:os";
 await Effect.runPromise(
   Effect.gen(function* () {
     const config = yield* loadConfig(process.env.ABRACODE_HOME ?? process.cwd());
@@ -72,12 +76,32 @@ await Effect.runPromise(
       yield* Console.log(
         "Record inspection and live provider/model/variant readiness unverified: service is not running; no records were rewritten.",
       );
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const root = yield* Effect.acquireRelease(
+          mkdtemp(join(tmpdir(), "abracode-doctor-lock-")),
+          (root) => rm(root, { recursive: true, force: true }).pipe(Effect.orDie),
+        );
+        yield* new FileLocks(root).with(LockKey.make("doctor"), () =>
+          Console.log("fs-ext: native kernel locking available"),
+        );
+      }),
+    ).pipe(
+      Effect.catch((error) =>
+        Console.error(`fs-ext: ${error.message}`).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              process.exitCode = 1;
+            }),
+          ),
+        ),
+      ),
+    );
     for (const [bin, args] of [
       [join(config.home, "node_modules/.bin/opencode"), ["--version"]],
       [browser, ["--version"]],
       [config.commands.openspec, ["--version"]],
       ["git", ["--version"]],
-      ["flock", ["--version"]],
       [config.commands.forge, ["--version"]],
     ] as const) {
       yield* runner

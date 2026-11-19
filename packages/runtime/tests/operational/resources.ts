@@ -88,7 +88,7 @@ export async function idleResources(pid: number, wait: () => Promise<void>) {
       cpu_percent: (cpu * 100) / ms,
       rss_before_kib: before.rss_kib,
       rss_after_kib: after.rss_kib,
-      coverage: "Native service process only; excludes tool/flock/browser child CPU",
+      coverage: "Native service process only; excludes tool/lock-holder/browser child CPU",
     };
   } catch {
     return { status: "unavailable" as const, sample_ms: ms };

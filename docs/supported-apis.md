@@ -1,37 +1,49 @@
 # Supported APIs and environment evidence
 
-Updated on 2026-11-15. AbraCode installs a local pinned runtime rather than upgrading the user's global binary. Dated subsections below retain their original version-specific evidence; the current upgrade is described in [the dependency and adoption report](opencode-update-2026-11-15.md).
+Updated on 2026-11-19. AbraCode installs a local pinned runtime rather than upgrading the user's global binary. Dated subsections below retain their original version-specific evidence; the current upgrade is described in [the dependency and adoption report](opencode-update-2026-11-15.md).
 
-| Component          | Supported version                  | Verified interface                                                                                                                                                                    |
-| ------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenCode CLI       | 2.3.0                              | `serve`, `service`, `--server`, `--session`, `pair`, `api`, `auth login`                                                                                                              |
-| `@opencode/plugin` | 2.3.0                              | Effect `Plugin.define({ id, effect(ctx) })`; scoped transforms, hooks and RPC registrations                                                                                           |
-| `@opencode/client` | 2.3.0                              | Effect `OpenCode.make`, native `Service.ensure/discover/stop/headers`, branded location and form APIs                                                                                 |
-| Work graph         | Node built-in SQLite               | `DatabaseSync`, scoped connections, SQL transactions, WAL, foreign keys, guarded ownership and unique request IDs                                                                     |
-| OpenSpec           | 2.0.0                              | `init --tools none`, `new change --json`, status, instructions, strict validation, JSON archive                                                                                       |
-| Git                | tested 2.56.0                      | `GIT_OPTIONAL_LOCKS=0` and `diff.autoRefreshIndex=false` for observer index refresh, argument-array invocation, detached native worktrees, issue branches, clean retirement, ancestry |
-| Node / flock       | tested 26.13.0 / util-linux 2.42.4 | Runtime and single-host kernel advisory locks                                                                                                                                         |
-| GitHub CLI         | tested CLI 2.102.0                 | PR JSON, CI/review status, merge head guard                                                                                                                                           |
+| Component          | Supported version             | Verified interface                                                                                                                                                                    |
+| ------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenCode CLI       | 2.3.0                         | `serve`, `service`, `--server`, `--session`, `pair`, `api`, `auth login`                                                                                                              |
+| `@opencode/plugin` | 2.3.0                         | Effect `Plugin.define({ id, effect(ctx) })`; scoped transforms, hooks and RPC registrations                                                                                           |
+| `@opencode/client` | 2.3.0                         | Effect `OpenCode.make`, native `Service.ensure/discover/stop/headers`, branded location and form APIs                                                                                 |
+| Work graph         | Node built-in SQLite          | `DatabaseSync`, scoped connections, SQL transactions, WAL, foreign keys, guarded ownership and unique request IDs                                                                     |
+| OpenSpec           | 2.0.0                         | `init --tools none`, `new change --json`, status, instructions, strict validation, JSON archive                                                                                       |
+| Git                | tested 2.56.0                 | `GIT_OPTIONAL_LOCKS=0` and `diff.autoRefreshIndex=false` for observer index refresh, argument-array invocation, detached native worktrees, issue branches, clean retirement, ancestry |
+| Node / fs-ext      | tested 26.13.0 / fs-ext 2.1.1 | Runtime and single-host kernel advisory locks                                                                                                                                         |
+| GitHub CLI         | tested CLI 2.102.0            | PR JSON, CI/review status, merge head guard                                                                                                                                           |
 
 The planning observer uses Git's `rev-parse --verify --end-of-options`, literal-path `ls-tree -r -z` and `cat-file -s/blob` against the retained delivered commit after registered repository validation. Only regular Markdown blobs under the exact retained change archive are admitted; symbolic links and current checkout replacements are excluded. This is a read-only Git projection, not an OpenCode archive API.
 
 ## OpenCode contracts
 
-Kernel lock holders use `flock --no-fork` with POSIX `/bin/sh` builtins: stdout
-announces acquisition, then `read` holds the inherited descriptor until stdin EOF.
-Shared/exclusive flags, conflict exit 75, cancellation and process-death release
-remain unchanged. `ABRACODE_NODE_BINARY`, when explicitly set, retains the previous
-Node holder. Independent-process and owner-SIGKILL regressions exercise this ABI.
-A 100-acquisition local probe measured 2691 ms with the default Node holder and
-303 ms with the shell holder; these are setup costs, not lock-contention latency.
+Kernel locks use [`fs-ext` 2.1.1](https://github.com/baudehlo/node-fs-ext)
+`flockSync(fd, "shnb" | "exnb")` against a scoped Node file descriptor. Both Linux
+and [macOS](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/flock.2.html)
+provide the underlying shared/exclusive kernel locks. Only nonblocking syscalls
+run synchronously; contended acquisition retries with interruptible Effect sleeps
+until the configured deadline. Contention remains `LOCKED`; other native lock
+errors remain `LOCK_ERROR`. Closing the descriptor or process death releases
+ownership without stale-lock recovery. Lock paths are never unlinked.
+Node callers hold the descriptor directly. OpenCode 2.3.0 embeds Bun: a real
+native-workspace contention attempt with an in-host binding failed on the missing
+`node::ErrnoException` symbol. That host therefore runs the binding in a scoped
+Node helper, resolving `node` from PATH or the explicit `ABRACODE_NODE_BINARY`
+override. The helper announces ownership over stdout and retains it until stdin
+EOF or termination; parent death releases ownership without a lease. It uses the
+same nonblocking modes and bounded retries. The util-linux command is unnecessary.
+The binding builds through `node-gyp`; the helper's Node ABI must match that build.
+Compilation and both host paths are regression-tested locally on Linux with Node
+26.13.0; full macOS application acceptance is unverified.
 
-The retained-read boundary also uses util-linux `flock --shared` for bounded
-concurrent captures against the existing exclusive controller lock. Independent
-helper-process tests verify shared coexistence, exclusive writer refusal/release
-and refused in-process read-to-write upgrades. SQLite's committed work-event
-sequence validates graph capture without a writer transaction or schema change;
-native session observations run afterward. This adds no native storage CAS or
-transaction guarantee. See [the refactor evidence](verification/runtime-refactor.md).
+The retained-read boundary uses shared locks for bounded concurrent captures
+against the existing exclusive controller lock. Independent-process tests verify
+shared coexistence, exclusive writer refusal/release, owner SIGKILL recovery,
+bounded waits and cancellation. In-process coordination tests reject read-to-write
+upgrades. SQLite's committed work-event sequence validates graph capture without
+a writer transaction or schema change; native session observations run afterward.
+This adds no native storage CAS or transaction guarantee. See [the refactor
+evidence](verification/runtime-refactor.md) for the earlier command-backed results.
 
 The work finder uses Node's supported [`DatabaseSync.function`](https://nodejs.org/api/sqlite.html#databasefunctionname-options-fn)
 for Unicode lowercase matching and request-local legacy identifier rank, plus
@@ -195,7 +207,7 @@ native acceptance evidence before messaging is enabled.
 
 The code type-checks against installed published declarations. Official [v2 plugin documentation](https://dev.opencode.ai/v2/docs/build/plugins/) and [migration documentation](https://dev.opencode.ai/v2/docs/build/plugins/migrate-v1) describe the public API. Additional behaviors were verified against the [2.0.28 source tag](https://github.com/anomalyco/opencode/tree/v2.0.28).
 
-- `ctx.storage.get/set/remove/scan` stores JSON under the plugin ID. Scans paginate with `next`/`after`. The source [storage namespace implementation](https://github.com/anomalyco/opencode/blob/v2.0.28/packages/core/src/plugin/host.ts) uses the plugin ID, not a repository-specific namespace. There is no public transaction or compare-and-swap method. Linux `flock` supplies a small crash-released controller lock and one coordinator leadership lock.
+- `ctx.storage.get/set/remove/scan` stores JSON under the plugin ID. Scans paginate with `next`/`after`. The source [storage namespace implementation](https://github.com/anomalyco/opencode/blob/v2.0.28/packages/core/src/plugin/host.ts) uses the plugin ID, not a repository-specific namespace. There is no public transaction or compare-and-swap method. `fs-ext` kernel locking supplies a small crash-released controller lock and one coordinator leadership lock on Linux and macOS.
 - `ctx.worktree.create({ projectID, from, branch, directory, name })` selects the target project's canonical configuration. `directory` is a **parent directory**; `name` is the destination name; `branch` is a **starting ref**, including a full commit SHA. The native end-to-end test verifies SHA provisioning from a managed clone after its remote advances. The [bundled Git implementation](https://github.com/anomalyco/opencode/blob/v2.0.28/packages/core/src/git.ts) creates a detached worktree. AbraCode then creates `work/<issue-id>` with Git in that owned worktree. Bare-repository discovery is not part of this verified contract.
 - `ctx.worktree.list({ projectID })` returns an array of saved directories. `remove({ projectID, directory, force:false })` uses the recorded native strategy. AbraCode never substitutes force removal or direct Git deletion in production.
 - The plugin context does **not** expose location discovery or form APIs. The native client supplies `location.get({location:{directory}})` and `session.form.*` to the same server. This is a native client adapter, not an MCP server or another orchestration framework.

@@ -73,7 +73,7 @@ retain only requested small logs/evidence outside them. Tests never push to user
 remotes or remove unowned resources.
 
 Two straightforward production costs found during investigation were fixed:
-lock acquisition no longer starts Node just to hold `flock`, and fingerprints
+lock acquisition uses `fs-ext` directly in Node, with a scoped Node holder for the embedded host, and fingerprints
 batch Git's untracked-file hashing. Regression coverage preserves kernel-lock
 release and the exact persisted fingerprint bytes, filters and unusual paths.
 See [API evidence](supported-apis.md).
@@ -308,3 +308,7 @@ PR merge authorization remains in the separate real native PR journey. A branch'
 transient finishing phase is not a PR approval gate.
 
 The combined suite caps worker concurrency at four (or available CPUs when fewer). Real diagram preparation and native fixtures run alongside Git/OpenSpec checks; higher concurrency caused repeatable five-second Git timeouts and inspector detail starvation under the diagram-heavy native journey. The cap preserves all projects and assertions. The measured four-worker acceptance run executes 694 tests in approximately 160 seconds on the documented verification host.
+
+For tests of retained execution fields, use `retainedExecution` to write a valid execution through the real coordinated Records store. Supply phase evidence only when the assertion depends on it. Checkpoint readers can consume a stored approval and a temporary proposal whose bytes the Git adapter actually fingerprints. The legacy migration cases still create distinct active, form, interrupted and completed executions. The checkpoint reader uses a stored finishing target and control generation. The finishing lifecycle suite still creates the actual residue decision and exercises native authorization.
+
+On the same checkout, one run of `pnpm test:one packages/runtime/tests/unit/{records,web-checkpoints}.test.ts --maxWorkers=1` with the default timeout passed all 21 tests in 11.15 seconds before migration and 4.82 seconds after. Eleven records cases and three checkpoint cases now skip three repository initializations apiece. Thirteen also skip starting an execution through the controller, including the stale-replacement regression. These timings describe a single matched run.

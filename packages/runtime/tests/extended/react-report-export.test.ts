@@ -23,7 +23,8 @@ test(
     t.onTestFinished(() => run(f.close()));
     await installSource(f.config.home, { buildWeb: false });
     const renderer = new ReactDocumentRenderer(f.config.home, new ProcessRunner());
-    const fingerprint = await run(renderer.fingerprint);
+    await run(renderer.prepare);
+    const bundle = await run(renderer.acquire);
     const baseline = coveredReportDocument(true);
     const fixtures = mixedDiagrams(30);
     fixtures[29] = { ...fixtures[29]!, source: fixtures[0]!.source };
@@ -50,7 +51,7 @@ test(
         },
       },
     });
-    const html = await run(renderer.render(input, fingerprint));
+    const html = await run(bundle.render(input));
     assert.ok(Buffer.byteLength(html) < 8 * 1024 * 1024);
 
     const moved = join(f.root, "relocated");
@@ -223,7 +224,7 @@ test(
         JSON.stringify(
           {
             bytes: Buffer.byteLength(html),
-            exporter: fingerprint,
+            exporter: bundle.fingerprint,
             network,
             errors,
             viewports: [375, 390],

@@ -840,8 +840,27 @@ test("an uncertain snapshot save survives reload and retries its original identi
     assert.equal(response.status(), 200);
     return route.abort("failed");
   });
+  await page.addInitScript(() => {
+    const write = Storage.prototype.setItem.bind(localStorage);
+    const sessionWrite = Storage.prototype.setItem.bind(sessionStorage);
+    Storage.prototype.setItem = function (key, value) {
+      const block = sessionStorage.getItem("block-save");
+      if (
+        key.startsWith("abra-report-save-") &&
+        (block === "all" || (block === "result" && JSON.parse(value).result))
+      )
+        throw new DOMException("Storage unavailable", "QuotaExceededError");
+      if (this === localStorage) write(key, value);
+      else sessionWrite(key, value);
+    };
+  });
   await page.goto(f.origin);
   await page.getByText("Other retained views (1)", { exact: true }).click();
+  await page.evaluate(() => sessionStorage.setItem("block-save", "all"));
+  await page.getByRole("button", { name: "Save snapshot", exact: true }).click();
+  await page.getByText(/Enable browser storage before saving/).waitFor();
+  assert.equal(f.saves.length, 0);
+  await page.evaluate(() => sessionStorage.removeItem("block-save"));
   await page.getByRole("button", { name: "Save snapshot", exact: true }).click();
   await page.getByRole("button", { name: "Retry same save", exact: true }).waitFor();
   assert.equal(f.saves.length, 1);
@@ -850,10 +869,21 @@ test("an uncertain snapshot save survives reload and retries its original identi
   await page.getByText("Other retained views (1)", { exact: true }).click();
   await page.getByRole("button", { name: "Retry same save", exact: true }).waitFor();
   assert.equal(f.saves.length, 1, "Reload must not replay an uncertain artifact mutation");
+  await page.evaluate(() => sessionStorage.setItem("block-save", "result"));
+  await page.getByRole("button", { name: "Retry same save", exact: true }).click();
+  await page.getByText(/Enable browser storage before saving/).waitFor();
+  await page.reload();
+  await page.getByText("Other retained views (1)", { exact: true }).click();
+  await page.evaluate(() => sessionStorage.removeItem("block-save"));
   await page.getByRole("button", { name: "Retry same save", exact: true }).click();
   await page.getByRole("button", { name: "Open saved report", exact: true }).waitFor();
-  assert.deepEqual(f.saves, [request, request]);
+  assert.deepEqual(f.saves, [request, request, request]);
   assert.equal(captures, 1);
+  await page.getByRole("button", { name: "Save another snapshot" }).click();
+  await page.getByRole("button", { name: "Save snapshot", exact: true }).click();
+  await page.getByRole("button", { name: "Open saved report" }).waitFor();
+  assert.equal(captures, 2);
+  assert.notDeepEqual(f.saves.at(-1), request);
   await page.getByRole("button", { name: "Open saved report", exact: true }).click();
   await page.locator(".frozen-report").waitFor();
   assert.equal(f.source.submissions, 0);

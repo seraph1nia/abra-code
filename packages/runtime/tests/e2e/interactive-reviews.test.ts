@@ -179,6 +179,23 @@ test("interactive A2UI review shares drafts, enlarges designs, restores feedback
   await inline().getByRole("alert").waitFor();
   assert.equal(fixture.source.submissions, 1);
   await page.unroute("**/api/review/submit");
+  let conflicting = 0;
+  await page.route("**/api/review/receipt?**", async (route) => {
+    const response = await route.fetch();
+    const receipt = await response.json();
+    conflicting++;
+    await route.fulfill({ response, json: { ...receipt, request_id: "other-feedback" } });
+  });
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/review/receipt")),
+    page.reload(),
+  ]);
+  await inline()
+    .getByRole("button", { name: /Reconcile/ })
+    .waitFor();
+  assert.ok(conflicting > 0);
+  assert.equal(fixture.source.submissions, 1);
+  await page.unroute("**/api/review/receipt?**");
   await page.reload();
   await inline()
     .getByText("Received by Abra. A revision will appear when published.", { exact: true })

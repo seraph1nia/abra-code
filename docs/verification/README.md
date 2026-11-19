@@ -22,7 +22,7 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 ```
 
-The native journey requires the frozen supplier cache, Git, util-linux `flock`, and a previously provisioned compatible Chromium for agent-browser. Follow [browser prerequisites](../operations.md#browser-cli); browser installation is an explicit contributor setup step, never a recipe's automatic repair. `pnpm browser:install` provisions the browser if needed. Missing binaries/libraries must fail with the actual command output. Do not start or restart the operator's AbraCode service.
+The native journey requires the frozen supplier cache, Git, the compiled `fs-ext` binding, and a previously provisioned compatible Chromium for agent-browser. Follow [browser prerequisites](../operations.md#browser-cli); browser installation is an explicit contributor setup step, never a recipe's automatic repair. `pnpm browser:install` provisions the browser if needed. Missing binaries/libraries must fail with the actual command output. Do not start or restart the operator's AbraCode service.
 
 The shared harness in [native-fixture.ts](../../packages/runtime/tests/e2e/native-fixture.ts) creates its own installation root using [install.ts](../../packages/runtime/tests/e2e/install.ts), isolated native config/data/cache/state, loopback ports/provider, local repositories and bare remotes. It checks the native server's `server.info()` and activates the central location before driving it. Worker preflight waits for the worker plugin to become active. A process merely listening is not sufficient health evidence.
 
@@ -55,7 +55,7 @@ The [feature map](features/README.md) describes other journeys and their limitat
 `pnpm exec vp test run --project integration packages/runtime/tests/integration/retained-observation.test.ts`
 uses real in-memory SQLite and the existing controller fixture to force an
 intervening graph commit, continuous contention and a stalled record scan.
-It also exercises real independent shared `flock` holders, exclusive commits and
+It also exercises real independent shared `fs-ext` lock owners, exclusive commits and
 refused read-to-write upgrades. It verifies coherent retry, bounded unavailable output, released locks and pause
 availability while a native observation remains pending. It starts no service
 and uses no user repository or remote. Contributor fixtures remain disposable.
@@ -146,3 +146,15 @@ Native workflow mutations for the main issue still enter through chat/forms.
 Original revision reads and frozen exports survive main-work retirement without
 provider calls. Generic A2UI action/envelope paths and middleware tool injection
 remain unsupported under the documented custom contract.
+
+## Workspace publication and runtime simplification
+
+On 2026-11-19, verification used Node 26.13.0 and pnpm 12.21.0 on Linux. The tested working tree was based on `a032c0776225f722464684df34b574a687bf06b9`. Its source digest was `e30d7c1abfea157ab68de5404a02f154cf8fbf17abf08896779a3d52d18fd56b` across 1,232 files. The digest hashes each sorted nonignored source, test, dependency manifest and license path followed by NUL and the SHA-256 of its contents in `.opencode`, `apps`, `packages`, `scripts`, `licenses` and the root package, lock, workspace, TypeScript, Vite and license files.
+
+- `pnpm test:all --maxWorkers=1` passed all 823 tests in 141 files in 769.59 seconds with the existing timeouts. The first four-worker attempt lacked offline pnpm metadata for two disposable installs. A clean frozen install populated it. A subsequent four-worker run hit the native journey deadline and seven unit-test deadlines. The complete one-worker run passed.
+- The registered gateway regression measured four native supervisor lookups and four assignment scans before batching, then one of each for a full refresh, one for receipts alone and zero for an empty refresh. Interrupted first and replacement publications were read at each staged write and recovered under their original native call IDs.
+- The native workspace journey saved the exact selected revision, exported and downloaded 1,889,685 bytes, reopened after service restart and completed fixture cleanup. Two extended portable browser tests passed in 80 seconds. The relocated 1,966,021-byte report rendered in an offline opaque frame at widths 375 and 390 with zero network requests or page errors.
+- The clean-install CLI run rejected an unprepared export, produced byte-identical HTML after an engine edit, activated a new identity on explicit preparation and refused to overwrite an existing destination. The dedicated report tests also covered a damaged or redirected bundle, an interrupted replacement, in-flight eviction and receipt recovery.
+- `pnpm check`, `pnpm build`, `pnpm licenses:check` and `pnpm exec openspec validate simplify-workspace-publication-and-runtime --strict` passed. The native journey used a disposable local provider and local bare Git remotes. Raw logs, timing measurements, screenshots and CLI artifacts for this run are under `/tmp/abra-runtime-acceptance-ovVVBG` on the verification machine.
+
+The [export measurements](../reports.md#measured-export-cost) include bytes read, source opens, application builds and diagram work. The [test fixture measurements](../testing.md) document the matched records and checkpoint runs.

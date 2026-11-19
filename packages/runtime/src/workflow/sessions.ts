@@ -342,26 +342,14 @@ export class WorkerSessions {
         yield* this.contexts
           .prepareAgent(e, role, yield* this.queries.issue(e.issue_id), e.session_intent.prompt)
           .pipe(
-            Effect.onInterrupt(() => {
-              delete e.capacity_reservation;
-              e.capacity_observed_idle = true;
-              return this.records.saveOwned(e, ["capacity_reservation", "capacity_observed_idle"]);
-            }),
+            Effect.onInterrupt(() => this.capacity.releasePreparation(e, role)),
             Effect.tapError((error) => this.contexts.failure(e, role, error)),
-            Effect.tapError(() => {
-              delete e.capacity_reservation;
-              e.capacity_observed_idle = true;
-              return this.records.saveOwned(e, ["capacity_reservation", "capacity_observed_idle"]);
-            }),
+            Effect.tapError(() => this.capacity.releasePreparation(e, role)),
           );
       }
       const environment = yield* this.runtime.preflight(e, role).pipe(
         Effect.tapError((error) => this.contexts.failure(e, role, error)),
-        Effect.tapError(() => {
-          delete e.capacity_reservation;
-          e.capacity_observed_idle = true;
-          return this.records.saveOwned(e, ["capacity_reservation", "capacity_observed_idle"]);
-        }),
+        Effect.tapError(() => this.capacity.releasePreparation(e, role)),
       );
       if (!environment)
         return yield* new CrewError(

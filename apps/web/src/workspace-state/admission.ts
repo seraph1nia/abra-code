@@ -2,22 +2,13 @@
 import { useEffect, useRef, useState } from "react";
 import { HttpAgent } from "@ag-ui/client";
 import { useAtomSet } from "@effect/atom-react";
-import { Exit, Schema } from "effect";
+import { readRetained, writeRetained } from "../retained-input.ts";
+import { Exit } from "effect";
 import { SubmissionSchema } from "@abracode/contracts/web/workspace-wire";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { readReceipt } from "../data.ts";
 import { requestError } from "../request-state.tsx";
 type Pending = typeof SubmissionSchema.Type;
-function readPending(key: string): Pending | undefined {
-  try {
-    const result = Schema.decodeUnknownResult(SubmissionSchema)(
-      JSON.parse(localStorage.getItem(key) ?? "null"),
-    );
-    return result._tag === "Success" ? result.success : undefined;
-  } catch {
-    return undefined;
-  }
-}
 export function useWorkspaceAdmission({
   workspace,
   isReady,
@@ -34,7 +25,7 @@ export function useWorkspaceAdmission({
   setError: (text: string) => void;
 }) {
   const storageKey = `abra-pending-${workspace.session_id}`;
-  const [pending, setPending] = useState(() => readPending(storageKey));
+  const [pending, setPending] = useState(() => readRetained(storageKey, SubmissionSchema));
   const [admitting, setAdmitting] = useState(false);
   const admittingRef = useRef(false);
   const mounted = useRef(false);
@@ -113,9 +104,7 @@ export function useWorkspaceAdmission({
     };
     if (!submission.text) return;
     // Persist before starting network admission; a storage failure leaves the draft intact.
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(submission));
-    } catch {
+    if (!writeRetained(storageKey, submission)) {
       setError(
         "Cannot retain submission identity in browser storage. Enable storage before sending.",
       );

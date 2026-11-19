@@ -10,6 +10,23 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  macos-locking:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7.0.1
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6.1.0
+      - name: Set up Node.js and pnpm cache
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 26.13.0
+          cache: pnpm
+      - name: Install dependencies and compile fs-ext
+        run: pnpm install --frozen-lockfile --prod=false
+      - name: Verify native lock ownership and retained reads
+        run: pnpm test:one packages/runtime/tests/integration/file-locks.test.ts packages/runtime/tests/integration/retained-observation.test.ts
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30

@@ -8,16 +8,18 @@ Each issue has one owned worktree. SQLite owns the work graph, OpenSpec owns pla
 
 ## Requirements
 
-The first release supports **Linux**. The tested environment is Linux x86-64 with glibc, Node **26.13.0**, pnpm **12.21.0**, Git **2.56.0** and util-linux `flock` **2.42.4**. OpenTUI requires Node 26.4 or newer. Other Linux combinations are not covered by that acceptance result; macOS and Windows are unsupported.
+AbraCode targets **Linux and macOS**. The tested environment is Linux x86-64 with glibc, Node **26.13.0**, pnpm **12.21.0**, Git **2.56.0** and `fs-ext` **2.1.1**. OpenTUI requires Node 26.4 or newer. Full macOS acceptance and other Linux combinations remain unverified; Windows is unsupported.
 
-| Capability                    | Requirements                                                                                                       |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Core application              | Linux, supported Node, pinned pnpm, Git, `flock`, an authenticated model provider with tool-capable models         |
-| Commits and repository access | Git user name/email and credentials/access for the selected remotes                                                |
-| GitHub PR delivery            | GitHub CLI (`gh`, tested 2.102.0), `gh auth login`, repository/PR permissions; CI/review permissions as applicable |
-| Browser assignments           | Chrome for Testing via `mise run setup`, or explicit browser setup; Linux browser libraries                        |
-| Managed project checks        | That project's own languages, package managers and verification tools                                              |
-| Optional external validation  | Separately installed/configured no-mistakes v1.84.0; native validation is the default                              |
+| Capability                    | Requirements                                                                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core application              | Linux or macOS, supported Node, pinned pnpm, Git, native build tools for `fs-ext`, an authenticated model provider with tool-capable models |
+| Commits and repository access | Git user name/email and credentials/access for the selected remotes                                                                         |
+| GitHub PR delivery            | GitHub CLI (`gh`, tested 2.102.0), `gh auth login`, repository/PR permissions; CI/review permissions as applicable                          |
+| Browser assignments           | Chrome for Testing via `mise run setup`, or explicit browser setup; Linux browser libraries                                                 |
+| Managed project checks        | That project's own languages, package managers and verification tools                                                                       |
+| Optional external validation  | Separately installed/configured no-mistakes v1.84.0; native validation is the default                                                       |
+
+`fs-ext` builds during dependency installation through `node-gyp`. Install Python and a C/C++ toolchain (`make` and a compiler on Linux; Xcode Command Line Tools on macOS). Node callers lock directly; the embedded OpenCode runtime uses a scoped Node holder for native-addon compatibility. No `flock` executable is required. After changing Node versions, reinstall or rebuild `fs-ext` for the new native ABI.
 
 The frozen install supplies local OpenCode, OpenSpec and agent-browser executables and application skills. No global OpenCode, OpenSpec, Bun, Rust build or author-local agent wrapper is required. This source distribution uses development dependencies at runtime: install with `--prod=false`.
 
@@ -159,7 +161,7 @@ Use the browser Work finder for fleet/project counts, attention, retained tasks 
 
 `mise run setup` provisions the browser as part of installation. With a pnpm-only install, run `pnpm browser:install` as the service user, or select a compatible existing Chrome/Chromium through `AGENT_BROWSER_EXECUTABLE_PATH`. Install required Linux system libraries separately. Routine diagnostics do not provision or launch a browser, and non-browser work does not require Chrome. For interactive UI verification and evidence, use the APM-installed `agent-browser` skill and project-local CLI. See [browser setup](docs/operations.md#browser-cli).
 
-[Saved reports](docs/reports.md) use immutable JSON and the shared React/A2UI catalog. Export offline HTML explicitly from a saved report; browser/build prerequisites are separate from ordinary viewing. Existing native graphical clients may preview linked HTML files.
+[Saved reports](docs/reports.md) use immutable JSON and the shared React/A2UI catalog. Run `pnpm report:prepare` or `pnpm build` before the first offline HTML export and after renderer edits. Then choose **Export offline HTML** on a saved report. Existing native graphical clients may preview linked HTML files.
 
 If work stops progressing, ask Abra to inspect the original issue and retained
 request before retrying. Use the runbooks for

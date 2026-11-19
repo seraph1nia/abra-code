@@ -35,6 +35,7 @@ import type { Store } from "../storage/store.ts";
 import type { Locks } from "../storage/lock.ts";
 import { within } from "../visibility/documents.ts";
 import { canonicalJSON, presentationHash } from "../presentation/identity.ts";
+import { SurfacePublications } from "./surface-publications.ts";
 import { PresentationAssociations } from "../presentation/associations.ts";
 import { committedScope } from "../visibility/invalidations.ts";
 
@@ -495,7 +496,10 @@ export class Reviews {
   }
   presentations(session: SessionId, messages: readonly MessageId[]) {
     return Effect.gen({ self: this }, function* () {
-      const { entries, diagnostics, truncated } = yield* this.associations.read(session, messages);
+      const { entries, diagnostics, truncated } = yield* new SurfacePublications(
+        this.store,
+        this.locks,
+      ).associations(session, messages);
       const visible: typeof entries = [];
       for (const entry of entries) {
         if (entry.target.kind !== "review") {

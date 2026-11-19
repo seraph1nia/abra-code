@@ -155,24 +155,22 @@ test("independent operation owners use kernel exclusion and preserve intent befo
     ),
     /already owns/,
   );
-  const binary = process.env.ABRACODE_NODE_BINARY;
-  try {
-    process.env.ABRACODE_NODE_BINARY = "/missing/abracode-test-node";
-    await assert.rejects(
-      run(
-        deliveryAction(
-          f.controller.queries,
-          e.issue_id,
-          "finish",
-          b.owned(e.issue_id, Id.OperationAction.make("finish"), () => Effect.succeed(e)),
-        ),
+  const failed = new Operations(
+    f.records,
+    { with: () => Effect.fail(new CrewError("LOCK_ERROR", "Native lock failed")) },
+    coordination,
+  );
+  await assert.rejects(
+    run(
+      deliveryAction(
+        f.controller.queries,
+        e.issue_id,
+        "finish",
+        failed.owned(e.issue_id, Id.OperationAction.make("finish"), () => Effect.succeed(e)),
       ),
-      /Lock helper failed/,
-    );
-  } finally {
-    if (binary === undefined) delete process.env.ABRACODE_NODE_BINARY;
-    else process.env.ABRACODE_NODE_BINARY = binary;
-  }
+    ),
+    { code: "LOCK_ERROR" },
+  );
 });
 
 test("operation commits preserve newer independent diagnostic observations", async (t) => {

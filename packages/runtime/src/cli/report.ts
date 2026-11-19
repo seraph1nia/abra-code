@@ -32,8 +32,8 @@ else {
       AbsolutePath.make(sourceInstallationRoot()),
       new ProcessRunner(),
     );
-    const fingerprint = await Effect.runPromise(renderer.fingerprint);
-    const html = await Effect.runPromise(renderer.render(parsed.document, fingerprint));
+    const bundle = await Effect.runPromise(renderer.acquire);
+    const html = await Effect.runPromise(bundle.render(parsed.document));
     await writeFile(resolve(output), html, { flag: "wx", mode: 0o600 });
     console.log(`Exported ${Buffer.byteLength(html)} bytes to ${resolve(output)}`);
   } else {

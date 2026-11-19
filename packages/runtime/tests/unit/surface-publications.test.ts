@@ -172,57 +172,90 @@ for (const phase of [
   "web/surface/",
   "web/presentation/",
 ]) {
-  test(`surface recovery repairs interruption after ${phase} without replay or recapture`, async () => {
-    const f = fixture();
-    const set = f.store.set.bind(f.store);
-    let crash = true;
-    f.store.set = (key, value) =>
-      set(key, value).pipe(
-        Effect.andThen(
-          Effect.suspend(() => {
-            if (crash && key.startsWith(phase)) {
-              crash = false;
-              return Effect.fail(new CrewError("CRASH", "Retained publication response lost"));
-            }
-            return Effect.void;
-          }),
-        ),
+  for (const replacement of [false, true])
+    test(`surface recovery (replacement=${replacement}) repairs interruption after ${phase} without replay or recapture`, async () => {
+      const f = fixture();
+      const prior = source("msg_prior", "Previously committed");
+      if (replacement) await run(f.owner.publish(prior, f.observe));
+      const revision = replacement ? 2 : 1;
+      const set = f.store.set.bind(f.store);
+      let crash = true;
+      f.store.set = (key, value) =>
+        set(key, value).pipe(
+          Effect.andThen(
+            Effect.suspend(() => {
+              if (crash && key.startsWith(phase)) {
+                crash = false;
+                return Effect.fail(new CrewError("CRASH", "Retained publication response lost"));
+              }
+              return Effect.void;
+            }),
+          ),
+        );
+      await assert.rejects(
+        run(f.owner.publish(source("msg_crash", "Captured before interruption"), f.observe)),
+        /response lost/,
       );
-    await assert.rejects(
-      run(f.owner.publish(source("msg_crash", "Captured before interruption"), f.observe)),
-      /response lost/,
-    );
-    f.workspace.value = {
-      ...f.workspace.value,
-      work: {
-        ...f.workspace.value.work,
-        work: [{ ...f.workspace.value.work.work[0], title: "Changed after interruption" }],
-      },
-    };
-    const restarted = new SurfacePublications(f.store, new TestLocks());
-    assert.deepEqual(await run(restarted.recover(session)), []);
-    assert.equal(f.reads(), 1);
-    const captured = await run(restarted.read(session, "board", 1));
-    assert.equal(captured.snapshot[0].title, "Build a single workspace");
-    const associations = await run(restarted.associations(session, [MessageId.make("msg_crash")]));
-    assert.equal(associations.entries.length, 1);
-    assert.equal(associations.entries[0].tool_call_id, "call-observation");
-    assert.equal(
-      (await run(restarted.publish(source("msg_crash", "Captured before interruption"), f.observe)))
-        .revision,
-      1,
-    );
-    await assert.rejects(
-      run(restarted.publish(source("msg_crash", "Changed retry"), f.observe)),
-      /bound to another surface/,
-    );
-    assert.equal(f.reads(), 1);
-    assert.equal(
-      [...f.store.values.keys()].filter((key) => key.startsWith("web/surface-publication/")).length,
-      1,
-    );
-    assert.equal(f.locks.held, false);
-  });
+      await assert.rejects(run(f.owner.read(session, "board", revision)), /not retained|pending/);
+      await assert.rejects(run(f.owner.readCurrent(session, "board", revision)), /changed/);
+      assert.deepEqual(
+        (await run(f.owner.associations(session, [MessageId.make("msg_crash")]))).entries,
+        [],
+      );
+      const visible = await run(f.owner.list(session));
+      assert.deepEqual(
+        visible.map((row) => "revision" in row && row.revision),
+        replacement ? [1] : [],
+      );
+      if (replacement)
+        assert.deepEqual(
+          (await run(f.owner.readCurrent(session, "board", 1))).surface,
+          prior.surface,
+        );
+      f.workspace.value = {
+        ...f.workspace.value,
+        work: {
+          ...f.workspace.value.work,
+          work: [{ ...f.workspace.value.work.work[0], title: "Changed after interruption" }],
+        },
+      };
+      const restarted = new SurfacePublications(f.store, new TestLocks());
+      assert.deepEqual(await run(restarted.recover(session)), []);
+      assert.equal(f.reads(), revision);
+      const captured = await run(restarted.read(session, "board", revision));
+      assert.equal(captured.snapshot[0].title, "Build a single workspace");
+      const associations = await run(
+        restarted.associations(session, [MessageId.make("msg_crash")]),
+      );
+      assert.equal(associations.entries.length, 1);
+      assert.equal(associations.entries[0].tool_call_id, "call-observation");
+      assert.equal(
+        (
+          await run(
+            restarted.publish(source("msg_crash", "Captured before interruption"), f.observe),
+          )
+        ).revision,
+        revision,
+      );
+      await assert.rejects(
+        run(restarted.publish(source("msg_crash", "Changed retry"), f.observe)),
+        /bound to another surface/,
+      );
+      assert.equal(f.reads(), revision);
+      assert.equal(
+        [...f.store.values.keys()].filter((key) => key.startsWith("web/surface-publication/"))
+          .length,
+        revision,
+      );
+      if (replacement) {
+        await run(restarted.publish(prior, f.observe));
+        assert.equal(
+          (await run(restarted.readCurrent(session, "board", revision))).message_id,
+          "msg_crash",
+        );
+      }
+      assert.equal(f.locks.held, false);
+    });
 }
 
 test("legacy latest-only layouts and original request retries do not invent earlier history or provenance", async () => {
@@ -265,6 +298,29 @@ test("legacy latest-only layouts and original request retries do not invent earl
   );
 });
 
+test("older heads expose their proved predecessor and a lost final response leaves the revision committed", async () => {
+  const f = fixture(),
+    key = StorageKey.make(`web/surface-head/${session}/board`);
+  await run(f.owner.publish(source("msg_original", "One"), f.observe));
+  const set = f.store.set.bind(f.store);
+  f.store.set = (path, value) => {
+    if (path !== key) return set(path, value);
+    const head = { ...(value as Record<string, unknown>) };
+    delete head.committed_revision;
+    return set(path, head).pipe(
+      Effect.andThen(Effect.fail(new CrewError("CRASH", "Head written"))),
+    );
+  };
+  const second = source("msg_replacement", "Two");
+  await assert.rejects(run(f.owner.publish(second, f.observe)), /Head written/);
+  assert.equal((await run(f.owner.readCurrent(session, "board", 1))).message_id, "msg_original");
+  await assert.rejects(run(f.owner.read(session, "board", 2)), /pending/);
+  await assert.rejects(run(f.owner.publish(second, f.observe)), /Head written/);
+  assert.equal((await run(f.owner.readCurrent(session, "board", 2))).message_id, "msg_replacement");
+  f.store.set = set;
+  await run(f.owner.publish(second, f.observe));
+  assert.equal(f.reads(), 2);
+});
 test("surface integrity and selection failures preserve unrelated publications and native records", async () => {
   const f = fixture();
   await run(f.owner.publish(source("msg_one", "First"), f.observe));

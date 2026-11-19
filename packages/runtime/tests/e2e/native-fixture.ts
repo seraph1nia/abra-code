@@ -15,7 +15,7 @@ import { modelDispatchJourney } from "./model-dispatch.ts";
 import { parallelJourney } from "./parallel.ts";
 import { parseDocument } from "yaml";
 import { configuration } from "../../src/config/protocol.ts";
-import { installSource, installationRoot } from "./install.ts";
+import { command, installSource, installationRoot } from "./install.ts";
 import { removeFixture } from "../helpers/resources.ts";
 import { browserCalls, browserPage, assertBrowserWorker, browserIsolation } from "./browser.ts";
 import { capturePreSuite, assertPreSuiteAfterRestart } from "./engineering-recovery.ts";
@@ -1116,6 +1116,16 @@ export function nativeTest(
     );
     await run(git.run(Id.AbsolutePath.make(projects[1]), ["push", "origin", "main"]));
     await installSource(home, { buildWeb: journey === "workspace" });
+    if (
+      journey === "workspace" ||
+      journey === "reports" ||
+      process.env.ABRACODE_TEST_COMBINED === "1"
+    )
+      await command("pnpm", ["report:prepare"], {
+        cwd: home,
+        timeout: 90_000,
+        maxBuffer: 2 * 1024 * 1024,
+      });
     if (journey === "engineering") await installSpecialist(home);
     const configPath = join(home, "opencode.json");
     await writeFile(

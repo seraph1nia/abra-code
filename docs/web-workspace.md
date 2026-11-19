@@ -271,3 +271,15 @@ Current-turn Stop remains an explicit operation; historical-run Stop stays refus
 ### Mermaid catalog v2
 
 The v2 work catalog adds `Mermaid` with literal `title`, `source` and optional `description`. Compose it alongside work widgets; use `abra_mermaid_verify` before publication. V1 and legacy readers retain their original component contracts and 64 KiB limit. V2 permits 384 KiB surfaces, 100 components and depth 10. Diagram limits apply across inline placements and captured evidence: 32 instances, 32 KiB UTF-8 per source and 256 KiB aggregate. Unknown SVG, configuration and callback props are refused.
+
+A generated layout becomes current when its revision and originating message
+attachment are durable and its head commits. During replacement the previous
+committed layout can still be opened or saved. Restart or retry finishes the
+original capture. A legacy latest-only record exposes its recorded revision.
+
+The fallback reads recent receipts, generated surfaces, message attachments and
+projects under one request-local supervisor check. Scoped refreshes request
+only their affected sections. Later reads and all guarded actions check current
+authority again.
+
+Save snapshot retains the selected task, surface revision and request ID in browser storage before sending. If storage is unavailable, the view stays open and asks you to enable it. After an uncertain response or a failed local receipt write, reopening the same selection offers **Retry same save** with the original ID. After confirmation, **Save another snapshot** starts a new request.

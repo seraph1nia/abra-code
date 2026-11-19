@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Effect, Exit, Layer, Schema, Deferred, Fiber } from "effect";
 import { NodeFileSystem, NodePath } from "@effect/platform-node";
-import { Agents, makeAgent, makeCatalog, customTool } from "@abracode/agents";
+import { AgentDefinitionError, Agents, makeAgent, makeCatalog, customTool } from "@abracode/agents";
 import { Tool } from "@opencode/schema/tool";
 import { contributionAuthorization } from "../../src/opencode/agent-contributions.ts";
 import { contributionAllows, definitionAllows } from "@abracode/agents/policy";
@@ -11,7 +11,9 @@ import { definitions, sourcesLayer, bundledSkills } from "@abracode/agents/bundl
 import { ConfigurationSnapshotSchema, workerProfile } from "../../src/config/snapshot.ts";
 import { WorkerContextSchema } from "../../src/workflow/worker-context-contracts.ts";
 import { readWorkerContext, WorkerContexts } from "../../src/workflow/worker-context.ts";
-import { fixture } from "../fixtures.ts";
+import { retainedExecution } from "../helpers/retained-execution.ts";
+import { Capacity } from "../../src/workflow/capacity.ts";
+import { fixtureConfig, fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import * as Id from "../../src/identities.ts";
 import { join } from "node:path";
@@ -378,6 +380,74 @@ test("interrupted preparation keeps its receipt unadmitted, releases capacity an
     await run(f.records.store.get(Id.StorageKey.make(`agent-preparation/${originalPrompt}`))),
   );
 });
+
+test("superseded cleanup cannot release a replacement or uncertain admission", async () => {
+  const { execution, records, locks } = await retainedExecution({
+    capacity_reservation: { role: "explore", generation: 0, status: "preparing" },
+  });
+  const capacity = new Capacity(
+    await run(fixtureConfig("/fixture")),
+    records,
+    records.coordinate(locks),
+  );
+  const stale = structuredClone(execution);
+  await run(records.saveControl(execution));
+  await assert.rejects(run(capacity.releasePreparation(stale, "explore")), /superseded/);
+  execution.capacity_reservation = {
+    role: "explore",
+    generation: execution.control_generation,
+    status: "uncertain",
+  };
+  await run(records.saveOwned(execution, ["capacity_reservation"]));
+  await assert.rejects(run(capacity.releasePreparation(execution, "explore")), /superseded/);
+  assert.deepEqual(
+    (await run(records.execution(execution.issue_id)))!.capacity_reservation,
+    execution.capacity_reservation,
+  );
+});
+
+for (const stage of ["provider", "preflight"] as const) {
+  test(`${stage} failure releases only the preparing worker's capacity and preserves independent evidence`, async (t) => {
+    const f = await run(fixture);
+    t.onTestFinished(() => run(f.close()));
+    const issue = Id.IssueId.make("release-capacity");
+    const fail = () =>
+      f.records
+        .update(issue, (e) => ({ ...e, retry_instructions: "Independent evidence" }))
+        .pipe(
+          Effect.andThen(
+            Effect.fail(new CrewError("TEST_FAILURE", "Admission preparation failed")),
+          ),
+        );
+    const agents = await run(
+      catalog(join(f.root, "packages/agents/assets"), () =>
+        stage === "provider"
+          ? fail().pipe(
+              Effect.mapError(
+                (error) =>
+                  new AgentDefinitionError({
+                    definition: "specialist",
+                    code: error.code,
+                    message: error.message,
+                  }),
+              ),
+            )
+          : Effect.succeed([]),
+      ),
+    );
+    if (stage === "preflight") f.runtime.preflight = fail;
+    f.config.workers.explore = { definition: "specialist", model: f.config.models.default };
+    f.work.add(issue);
+    await assert.rejects(
+      run(f.controller.start(issue).pipe(Effect.provideService(Agents, agents))),
+    );
+    const saved = await run(f.controller.get(issue));
+    assert.equal(saved.capacity_reservation, undefined);
+    assert.equal(saved.capacity_observed_idle, true);
+    assert.equal(saved.retry_instructions, "Independent evidence");
+    assert.equal(f.runtime.creates, 0);
+  });
+}
 
 test("concurrent preparation claims one durable receipt and never invokes its provider twice", async (t) => {
   const f = await run(fixture);

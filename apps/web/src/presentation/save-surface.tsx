@@ -1,4 +1,5 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect atoms isolate each explicit artifact request. */
+import { readRetained, writeRetained } from "../retained-input.ts";
 import { useRef, useState } from "react";
 import { useAtom } from "@effect/atom-react";
 import { Exit, Schema } from "effect";
@@ -17,13 +18,6 @@ const RetainedSave = Schema.Struct({
   attempted: Schema.optionalKey(Schema.Boolean),
 });
 type Attempt = typeof RetainedSave.Type;
-function retain(key: string, value: Attempt) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* Mounted identity remains retryable when storage is unavailable. */
-  }
-}
 /** A host artifact action, kept outside the reusable renderer and offline bundle. */
 export function SaveSurfaceButton({
   record,
@@ -75,34 +69,39 @@ function SaveAttempt({
     },
   });
   const [attempt, setAttempt] = useState<Attempt>(() => {
-    try {
-      const prior = Schema.decodeUnknownSync(RetainedSave)(
-        JSON.parse(localStorage.getItem(key) ?? "null"),
-      );
-      if (
-        prior.input.issue_id === issue &&
-        prior.input.surface_id === record.surface.createSurface.surfaceId &&
-        prior.input.revision === record.revision
-      )
-        return prior;
-    } catch {
-      /* A missing/invalid local receipt does not admit a request. */
-    }
+    const prior = readRetained(key, RetainedSave);
+    if (
+      prior &&
+      prior.input.issue_id === issue &&
+      prior.input.surface_id === record.surface.createSurface.surfaceId &&
+      prior.input.revision === record.revision &&
+      (!prior.result || prior.result.request_id === prior.input.request_id)
+    )
+      return prior;
     return makeInput();
   });
   const [state, invoke] = useAtom(saveSurface(attempt.input.request_id), { mode: "promiseExit" });
   const [failed, setFailed] = useState(!!attempt.attempted && !attempt.result);
+  const [storageError, setStorageError] = useState(false);
   const submitting = useRef(false);
   const result = attempt.result;
   async function save() {
     if (submitting.current) return;
+    if (!writeRetained(key, { ...attempt, attempted: true })) {
+      setStorageError(true);
+      return;
+    }
+    setStorageError(false);
     submitting.current = true;
-    retain(key, { ...attempt, attempted: true });
     try {
       const response = await invoke(attempt.input);
-      if (Exit.isSuccess(response)) {
+      if (Exit.isSuccess(response) && response.value.request_id === attempt.input.request_id) {
         const next = { input: attempt.input, result: response.value, attempted: true };
-        retain(key, next);
+        if (!writeRetained(key, next)) {
+          setStorageError(true);
+          setFailed(true);
+          return;
+        }
         setAttempt(next);
         setFailed(false);
       } else setFailed(true);
@@ -132,7 +131,11 @@ function SaveAttempt({
               variant="ghost"
               onClick={() => {
                 const next = makeInput();
-                retain(key, next);
+                if (!writeRetained(key, next)) {
+                  setStorageError(true);
+                  return;
+                }
+                setStorageError(false);
                 setAttempt(next);
                 setFailed(false);
               }}
@@ -152,7 +155,12 @@ function SaveAttempt({
           </Button>
         )}
       </div>
-      {failed && (
+      {storageError && (
+        <output>
+          Enable browser storage before saving this snapshot. Your selection is still open.
+        </output>
+      )}
+      {failed && !storageError && (
         <output>
           Save was not confirmed. Retry the same request; a changed layout must be reopened before
           saving.

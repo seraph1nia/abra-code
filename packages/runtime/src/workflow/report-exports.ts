@@ -61,7 +61,8 @@ export class ReportExports {
           "REPORT_FORMAT",
           "This document version cannot be exported by the installed renderer",
         );
-        const exporter = yield* this.renderer.fingerprint;
+        const bundle = yield* this.renderer.acquire;
+        const exporter = bundle.fingerprint;
         return yield* this.locks.with(
           LockKey.make(`report-export-${reportHash(hash + exporter)}`),
           () =>
@@ -72,9 +73,7 @@ export class ReportExports {
                 const output = this.file(hash, exporter, "index.html");
                 // Reuse validated HTML after a crash before its receipt; no rerender or recapture.
                 const existing = yield* output.existing();
-                const html = existing
-                  ? existing.text
-                  : yield* this.renderer.render(parsed.document, exporter);
+                const html = existing ? existing.text : yield* bundle.render(parsed.document);
                 yield* Effect.try({
                   try: () => validateDocumentHTML(html, parsed.document),
                   catch: CrewError.from,

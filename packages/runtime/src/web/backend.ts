@@ -199,6 +199,25 @@ export class NativeWebBackend implements WebBackend {
                   observedWork?._tag === "Success"
                     ? observedWork.success
                     : (this.lastValidWork ?? { home: this.home, at: yield* timestamp, work: [] });
+                const selection = {
+                  receipts: !!(all || scope.admissions),
+                  surfaces: !!(all || scope.presentations),
+                  projects: !!(all || scope.projects),
+                  ...(all || scope.presentations || transcript
+                    ? {
+                        message_ids:
+                          page?.data.map((message) => message.id) ??
+                          prior!.messages.map((message) => message.id),
+                      }
+                    : {}),
+                };
+                const sections =
+                  selection.receipts ||
+                  selection.surfaces ||
+                  selection.projects ||
+                  selection.message_ids
+                    ? yield* rpc.observeSections({ session_id: this.sessionID, ...selection }, opts)
+                    : undefined;
                 const value = yield* decode(
                   WorkspaceSnapshotSchema,
                   {
@@ -224,30 +243,12 @@ export class NativeWebBackend implements WebBackend {
                         : workChanged
                           ? undefined
                           : prior?.work_unavailable,
-                    receipts:
-                      all || scope.admissions
-                        ? yield* rpc.receipts({ session_id: this.sessionID }, opts)
-                        : prior!.receipts,
-                    surfaces:
-                      all || scope.presentations
-                        ? yield* rpc.surfaces({ session_id: this.sessionID }, opts)
-                        : prior!.surfaces,
-                    presentations:
-                      all || scope.presentations || transcript
-                        ? yield* rpc.presentations(
-                            {
-                              session_id: this.sessionID,
-                              message_ids:
-                                page?.data.map((message) => message.id) ??
-                                prior!.messages.map((message) => message.id),
-                            },
-                            opts,
-                          )
-                        : prior?.presentations,
-                    projects:
-                      all || scope.projects
-                        ? yield* rpc.projects({ session_id: this.sessionID }, opts)
-                        : prior!.projects,
+                    receipts: selection.receipts ? sections?.receipts : prior!.receipts,
+                    surfaces: selection.surfaces ? sections?.surfaces : prior!.surfaces,
+                    presentations: selection.message_ids
+                      ? sections?.presentations
+                      : prior?.presentations,
+                    projects: selection.projects ? sections?.projects : prior!.projects,
                   },
                   "Workspace snapshot",
                 );

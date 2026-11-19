@@ -129,14 +129,21 @@ export function measureApplication(
         }).pipe(Effect.andThen(options?.onProgress?.(progress) ?? Effect.void)),
     });
   };
-  const render = measured("report_build", renderer.render.bind(renderer));
-  renderer.render = (snapshot, fingerprint) =>
-    Effect.sync(() => {
-      appendFileSync(
-        join(output, "report-builds.jsonl"),
-        JSON.stringify({ pid: process.pid, template: fingerprint }) + "\n",
-      );
-    }).pipe(Effect.andThen(render(snapshot, fingerprint)));
+  renderer.acquire = renderer.acquire.pipe(
+    Effect.map((bundle) => {
+      const render = measured("report_build", bundle.render.bind(bundle));
+      return {
+        ...bundle,
+        render: (snapshot) =>
+          Effect.sync(() =>
+            appendFileSync(
+              join(output, "report-builds.jsonl"),
+              JSON.stringify({ pid: process.pid, template: bundle.fingerprint }) + "\n",
+            ),
+          ).pipe(Effect.andThen(render(snapshot))),
+      };
+    }),
+  );
   const native = runtime as NativeRuntime;
   const client = native.client.bind(native);
   native.client = () =>

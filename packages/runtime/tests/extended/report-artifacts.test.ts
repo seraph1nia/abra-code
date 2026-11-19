@@ -66,6 +66,7 @@ test(
     };
     const renderer = new ReactDocumentRenderer(f.config.home, runner),
       owner = new ReportExports(f.config.home, f.locks, renderer);
+    await run(renderer.prepare);
     const exported = await Promise.all(
       docs.map((doc) =>
         run(
@@ -101,7 +102,7 @@ test(
     await report.getByRole("heading", { name: hostile, exact: true }).first().waitFor();
     assert.equal(await report.locator("img").count(), 0);
     assert.equal(
-      await report.locator('[data-diagram-state="ready"] svg').count(),
+      await report.locator('[data-diagram-state="ready"] .diagram-scroll svg').count(),
       docs[0]!.snapshot.diagrams?.length,
     );
     assert.equal(

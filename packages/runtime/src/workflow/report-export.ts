@@ -1,5 +1,8 @@
-import { prepareDiagrams, documentDiagrams } from "./diagrams.ts";
-import { RendererShell } from "./renderer-shell.ts";
+import type { createPreparedDiagrams } from "@abracode/report-export/preparation";
+import { DiagramPreparationSchema } from "@abracode/contracts/presentation/diagrams";
+import { decode } from "../decode.ts";
+import { documentDiagrams } from "./diagrams.ts";
+import { RendererShell, type Shell } from "./renderer-shell.ts";
 import { Effect } from "effect";
 import { AbsolutePath, ContentHash } from "../identities.ts";
 import { CrewError, ensure } from "../domain.ts";
@@ -10,8 +13,13 @@ import { reportHash, validatePortableHTML } from "./report-build.ts";
 import type { Runner } from "../process.ts";
 
 export interface DocumentRenderer {
-  readonly fingerprint: Effect.Effect<ContentHash, CrewError>;
-  render(document: ReportDocument, expected: ContentHash): Effect.Effect<string, CrewError>;
+  acquire: Effect.Effect<
+    {
+      fingerprint: ContentHash;
+      render(document: ReportDocument): Effect.Effect<string, CrewError>;
+    },
+    CrewError
+  >;
 }
 export function validateDocumentHTML(html: string, document: ReportDocument) {
   validatePortableHTML(html);
@@ -34,27 +42,42 @@ export function validateDocumentHTML(html: string, document: ReportDocument) {
 export class ReactDocumentRenderer implements DocumentRenderer {
   private shell: RendererShell;
   constructor(
-    private home: AbsolutePath,
+    home: AbsolutePath,
     private runner: Runner,
   ) {
     this.shell = new RendererShell(home, runner);
   }
-  fingerprint = Effect.suspend(() => this.shell.prepare).pipe(
-    Effect.map((value) => value.fingerprint),
+  prepare = Effect.suspend(() => this.shell.prepare).pipe(Effect.map((value) => value.fingerprint));
+  acquire = Effect.suspend(() => this.shell.acquire).pipe(
+    Effect.map((shell) => ({
+      fingerprint: shell.fingerprint,
+      render: (document: ReportDocument) => this.render(document, shell),
+    })),
   );
-  render = (input: ReportDocument, expected: ContentHash) =>
+  private diagrams?: {
+    fingerprint: ContentHash;
+    service: Promise<ReturnType<typeof createPreparedDiagrams>>;
+  };
+  private diagramService(shell: Shell) {
+    if (this.diagrams?.fingerprint === shell.fingerprint) return this.diagrams.service;
+    const service = Promise.all([
+      import(
+        `data:text/javascript;base64,${Buffer.from(shell.host).toString("base64")}`
+      ) as Promise<{ createPreparedDiagrams: typeof createPreparedDiagrams }>,
+      import("playwright-core"),
+    ]).then(([host, browser]) =>
+      host.createPreparedDiagrams(shell.fingerprint, shell.engine, browser.chromium),
+    );
+    this.diagrams = { fingerprint: shell.fingerprint, service };
+    return service;
+  }
+  private render = (input: ReportDocument, shell: Shell) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
         const document = yield* Effect.try({
           try: () => validateReportDocument(input),
           catch: CrewError.from,
         });
-        const shell = yield* this.shell.forDocument(expected);
-        ensure(
-          shell.fingerprint === expected,
-          "REPORT_TEMPLATE",
-          "Installed exporter changed; explicitly export with its current identity",
-        );
         const json = canonicalJSON(document);
         ensure(
           Buffer.byteLength(json) <= 1024 * 1024,
@@ -62,7 +85,16 @@ export class ReactDocumentRenderer implements DocumentRenderer {
           "Captured report exceeds 1 MiB",
         );
         const sources = documentDiagrams(document);
-        const batch = sources.length ? yield* prepareDiagrams(sources) : undefined;
+        const batch = sources.length
+          ? yield* Effect.tryPromise({
+              try: async () => (await this.diagramService(shell)).prepare(sources),
+              catch: CrewError.from,
+            }).pipe(
+              Effect.flatMap((value) =>
+                decode(DiagramPreparationSchema, value, "Prepared diagram batch"),
+              ),
+            )
+          : undefined;
         ensure(
           !batch || batch.verified,
           "REPORT_DIAGRAM",
@@ -80,11 +112,6 @@ export class ReactDocumentRenderer implements DocumentRenderer {
         const payload = `<script type="application/json" id="abracode-report-document" data-hash="${reportHash(json)}">${escaped(json)}</script><script type="application/json" id="abracode-report-diagrams">${escaped(JSON.stringify(prepared))}</script>`;
         const output = shell.html.replace(/<\/body\s*>/i, () => payload + "</body>");
         validateDocumentHTML(output, document);
-        ensure(
-          (yield* this.shell.prepare).fingerprint === expected,
-          "REPORT_TEMPLATE",
-          "Renderer inputs changed during export; output was not published",
-        );
         return output;
       }),
     );

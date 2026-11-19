@@ -1,3 +1,4 @@
+import { readRetained, writeRetained } from "./retained-input.ts";
 import { useSyncExternalStore } from "react";
 import { Schema } from "effect";
 import {
@@ -18,43 +19,40 @@ type Draft = typeof DraftSchema.Type & {
   error?: string;
   errors?: Record<string, string>;
 };
-function restore(key: string): Draft {
-  try {
-    return Schema.decodeUnknownSync(DraftSchema)(JSON.parse(localStorage.getItem(key) ?? "null"));
-  } catch {
-    return { answers: {} };
+function createEntry(key: string, { review: { review_id }, revision, hash }: ReviewRecord) {
+  function restore(): Draft {
+    const draft = readRetained(key, DraftSchema);
+    const matches = (value: NonNullable<Draft["receipt"] | Draft["pending"]>) =>
+      value.review_id === review_id && value.revision === revision && value.hash === hash;
+    if (
+      !draft ||
+      (draft.pending && !matches(draft.pending)) ||
+      (draft.receipt && !matches(draft.receipt))
+    )
+      return { answers: {} };
+    return draft;
   }
-}
-function createEntry(key: string) {
-  let value = restore(key);
+  let value = restore();
   const listeners = new Set<() => void>();
   const notify = () => {
     for (const listener of listeners) listener();
   };
   const changed = (event: StorageEvent) => {
     if (event.key === key && !value.working) {
-      value = restore(key);
+      value = restore();
       notify();
     }
   };
   function update(next: Partial<Draft>, required = false) {
     const updated = { ...value, ...next };
-    let saved = true;
-    try {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          answers: updated.answers,
-          pending: updated.pending,
-          receipt: updated.receipt,
-        }),
-      );
-    } catch {
-      saved = false;
-      if (required)
-        updated.error =
-          "Cannot retain submission identity in browser storage. Your draft is preserved; enable storage before sending.";
-    }
+    const saved = writeRetained(key, {
+      answers: updated.answers,
+      pending: updated.pending,
+      receipt: updated.receipt,
+    });
+    if (!saved && required)
+      updated.error =
+        "Cannot retain submission identity in browser storage. Your draft is preserved; enable storage before sending.";
     value = updated;
     notify();
     return saved;
@@ -84,7 +82,7 @@ export function useReviewDraft(record: ReviewRecord) {
   const key = `abra-review-${record.session_id}-${record.review.review_id}-${record.revision}-${record.hash}`;
   let store = entries.get(key);
   if (!store) {
-    store = createEntry(key);
+    store = createEntry(key, record);
     entries.set(key, store);
   }
   const state = useSyncExternalStore(store.subscribe, store.read);

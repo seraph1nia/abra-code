@@ -1,9 +1,9 @@
 import { portableRendererABI as rendererABI } from "@abracode/contracts/presentation/report-export-contract";
-import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
-import { lstat, realpath, readFile, readdir } from "node:fs/promises";
+import { lstat, realpath, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import type { Plugin } from "vite-plus";
+import { rendererStyleInputs } from "./renderer-styles.ts";
+import { build, type Plugin } from "vite-plus";
 import { reportNoticeInputs, type NoticeInventory } from "@abracode/contracts/presentation/notices";
 
 export { portableRendererABI as rendererABI } from "@abracode/contracts/presentation/report-export-contract";
@@ -21,7 +21,7 @@ export function rendererManifest(installation: string): Plugin {
     async buildStart() {
       canonical = await realpath(installation);
     },
-    async generateBundle(_options, bundle) {
+    async generateBundle() {
       const files = new Set<string>();
       const links = new Map<string, string>();
       const pathName = (path: string) => relative(canonical, path).split(sep).join("/");
@@ -77,39 +77,68 @@ export function rendererManifest(installation: string): Plugin {
           if (directory === canonical) break;
         }
       }
-      for (const output of Object.values(bundle)) {
-        if (output.type !== "chunk") continue;
-        for (const id of output.moduleIds) {
-          const path = id.split("?")[0]!;
-          await add(path);
-          const target = isAbsolute(path) ? await packageRoot(path) : undefined;
-          if (!target) continue;
-          for (const importer of this.getModuleInfo(id)?.importers ?? [])
-            await resolution(importer.split("?")[0]!, target);
-        }
+      async function moduleInput(id: string, importers: readonly string[]) {
+        const path = id.split("?")[0]!;
+        await add(path);
+        const target = isAbsolute(path) ? await packageRoot(path) : undefined;
+        if (target)
+          for (const importer of importers) await resolution(importer.split("?")[0]!, target);
       }
-      for (const id of this.getModuleIds()) await add(id.split("?")[0]!);
-      // These directories are explicit @source inputs of the report stylesheet.
-      async function styles(directory: string) {
-        for (const entry of await readdir(directory, { withFileTypes: true })) {
-          const path = resolve(directory, entry.name);
-          if (entry.isSymbolicLink())
-            throw Error("Renderer styles cannot redirect through symlinks");
-          if (entry.isDirectory()) await styles(path);
-          else if (/\.(?:ts|tsx|css|html)$/.test(entry.name)) await add(path);
-        }
+      for (const id of this.getModuleIds())
+        await moduleInput(id, this.getModuleInfo(id)?.importers ?? []);
+      // Compile both sides of the diagram worker while the installation is being prepared.
+      // Export receives the resulting bytes and supplies only the Chromium launcher.
+      for (const [entry, format, fileName] of [
+        ["mermaid-engine.ts", "iife", "diagram-engine.js"],
+        ["prepared-diagram-host.ts", "es", "diagram-host.mjs"],
+      ] as const) {
+        const result = await build({
+          root: resolve(canonical, "apps/report"),
+          configFile: false,
+          publicDir: false,
+          logLevel: "error",
+          plugins: [
+            {
+              name: "diagram-renderer-inputs",
+              async generateBundle() {
+                for (const id of this.getModuleIds())
+                  await moduleInput(id, this.getModuleInfo(id)?.importers ?? []);
+              },
+            },
+          ],
+          build: {
+            write: false,
+            target: "esnext",
+            minify: true,
+            lib: {
+              entry: resolve(canonical, "apps/report/scripts", entry),
+              formats: [format],
+              name: "AbraDiagram",
+            },
+            rolldownOptions: { external: ["node:crypto"], output: { codeSplitting: false } },
+          },
+        });
+        const outputs = (Array.isArray(result) ? result : [result]).flatMap((output) =>
+          "output" in output ? output.output : [],
+        );
+        const chunks = outputs.filter((output) => output.type === "chunk");
+        if (chunks.length !== 1 || outputs.some((output) => output.type === "asset"))
+          throw Error("Diagram worker must compile to one self-contained module per entry");
+        this.emitFile({ type: "asset", fileName, source: chunks[0]!.code });
       }
-      await styles(resolve(canonical, "packages/presentation/src"));
-      await styles(resolve(canonical, "apps/report/src"));
+      for (const path of await rendererStyleInputs(canonical)) await add(resolve(canonical, path));
       for (const path of [
         "apps/report/vite.config.ts",
         "apps/report/scripts/notices.ts",
         "packages/contracts/src/presentation/notices.ts",
         "packages/contracts/src/presentation/report-export-contract.ts",
         "apps/report/scripts/renderer-manifest.ts",
+        "apps/report/scripts/renderer-styles.ts",
         "apps/report/scripts/prepare-diagrams.ts",
         "apps/report/scripts/diagrams.ts",
         "apps/report/scripts/preparation.ts",
+        "apps/report/scripts/diagram-batch.ts",
+        "apps/report/scripts/prepared-diagram-host.ts",
         "packages/contracts/src/presentation/diagrams.ts",
         "apps/report/scripts/mermaid-engine.ts",
         "apps/report/scripts/browser.ts",
@@ -131,47 +160,6 @@ export function rendererManifest(installation: string): Plugin {
         links.set(path, pathName(actual));
         await add(resolve(actual, "package.json"));
       }
-      // Mermaid runs in the separate preparation tool. Its installed dependency
-      // closure is a rendering input even when this particular document has no diagram.
-      const diagramPackages = new Set<string>();
-      async function diagramPackage(entry: string) {
-        const target = await packageRoot(entry);
-        if (!target || diagramPackages.has(target.root)) return;
-        diagramPackages.add(target.root);
-        async function sources(directory: string) {
-          for (const item of await readdir(directory, { withFileTypes: true })) {
-            if (["node_modules", "test", "tests", "docs"].includes(item.name)) continue;
-            const path = resolve(directory, item.name);
-            if (item.isDirectory()) await sources(path);
-            else if (/\.(?:m?js|cjs|css|json|wasm)$/.test(item.name)) await add(path);
-          }
-        }
-        await sources(target.root);
-        const manifest = JSON.parse(await readFile(resolve(target.root, "package.json"), "utf8"));
-        const require = createRequire(resolve(target.root, "package.json"));
-        for (const name of Object.keys({
-          ...manifest.dependencies,
-          ...manifest.optionalDependencies,
-          ...manifest.peerDependencies,
-        })) {
-          let path: string;
-          try {
-            path = require.resolve(name);
-          } catch {
-            continue;
-          }
-          const child = await packageRoot(path);
-          if (child) await resolution(entry, child);
-          await diagramPackage(path);
-        }
-      }
-      const diagramEntry = createRequire(resolve(canonical, "apps/report/package.json")).resolve(
-        "mermaid",
-      );
-      const diagramRoot = await packageRoot(diagramEntry);
-      if (!diagramRoot) throw Error("Mermaid dependency is unavailable");
-      await resolution(resolve(canonical, "apps/report/scripts/mermaid-engine.ts"), diagramRoot);
-      await diagramPackage(diagramEntry);
       const notices = reportNoticeInputs(
         JSON.parse(
           await readFile(resolve(canonical, "licenses/inventory.json"), "utf8"),

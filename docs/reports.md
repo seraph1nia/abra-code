@@ -43,7 +43,7 @@ Older applications do not understand the new receipt union or catalog: downgradi
 Choose **Export offline HTML** in an opened report. The explicit export uses only its saved JSON, compatible installed React/catalog components, shared design tokens, prepared SVG diagrams and supplier notices. The file has local filtering/disclosures and Markdown/JSON feedback controls; feedback is review input only. App navigation is unavailable offline. External images, fonts, scripts and framework/diagram downloads are unsupported. Mermaid runs during preparation and is absent from the exported runtime.
 
 Exports are cached by document hash and exporter identity. The
-`abracode-portable-renderer-v2` identity covers the prepared shell bytes, actual
+`abracode-portable-renderer-v3` identity covers the prepared shell bytes, actual
 compiler modules, explicit stylesheet scan inputs, resolved package/tool links,
 Mermaid preparation sources and installed rendering dependency closure, shared
 asset-format ABI and embedded notices. Backend-only changes and unrelated lockfile
@@ -69,37 +69,31 @@ See [frontend contracts](frontend.md), [API evidence](supported-apis.md#report-h
 
 ## Reusable renderer preparation
 
-`pnpm build` prepares the renderer after the plugin/web builds. `pnpm report:prepare`
-explicitly prepares or verifies/reuses it; source installations can also prepare
-lazily on the first requested export. Distinct documents use the same application
-code/styles instead of running an application compilation per document. A kernel
-lock coordinates preparation across processes. Input manifests, package-link
-resolution, regular-file bounds, exact bytes and digests are verified before reuse.
-Only complete metadata/shell directories publish atomically; incomplete owned
-scratch is cleaned after failure. A missing cache identity can rebuild. A damaged
-complete cache is refused and preserved rather than used as executable code.
+`pnpm build` prepares the exporter after the plugin and web builds. On a source installation, use `pnpm report:prepare` directly. Both commands inspect the renderer inputs and resolved dependencies, build the React shell and diagram worker when needed, verify their bytes and atomically select the complete bundle. An interrupted preparation leaves the prior selection available.
 
-The derived cache is `.abracode/reports/renderers/v2/<identity>/`, with at most
-eight verified complete identities. Evicting an old renderer does not remove any
-canonical document or published HTML export. Renderer input inspection is bounded
-to 8192 files/128 MiB and a 2 MiB manifest; these are source-cache bounds, distinct
-from the unchanged 1 MiB document and 8 MiB HTML limits. Required notice projection
-is shared by the build and verifier; unrelated supplier inventory metadata is not
-an input. The separately prepared Mermaid dependency closure remains relevant
-even for a document that currently contains no diagrams.
+CLI and workspace exports load the selected bundle into memory before rendering. Source edits take effect after the next successful preparation. Each export verifies the prepared HTML (including styles and notices), diagram host, browser engine and integrity metadata. Mermaid documents use the runtime’s Playwright driver and require a compatible Chromium installation. Export reads no renderer source files and runs no application compiler. Missing bundles report the preparation command. Damaged bytes remain available for inspection.
+
+The cache is `.abracode/reports/renderers/v3/<identity>/` and retains up to eight complete identities. An in-flight export can finish using its captured bytes after another preparation activates or evicts a bundle. Published HTML and historical export receipts remain independently readable under their original hashes. Source verification during preparation is bounded to 8192 files, 128 MiB and a 2 MiB manifest. Saved JSON and exported HTML retain their 1 MiB and 8 MiB limits.
 
 Each export injects escaped canonical JSON and separately prepared SVG as inert
 JSON script data. Captured content never becomes source code, a Vite config or a
-module import. Mermaid preparation uses its existing strict/sanitized engine and
-bounded scratch/process lifetime. The portable runtime contains no diagram compiler,
-live app imports or sibling resources. Final SVG/opaque-frame/browser acceptance is
-tracked with the integrated verification journeys.
+module import. The prepared diagram worker uses the strict Mermaid engine, bounded queue, cache and deadline. The portable runtime embeds its rendering assets and remains usable offline.
 
 JSON and HTML publication share the exclusive, private, flushed staging write and
 non-overwriting link primitives. Their owners retain request binding, current-state
-updates, digest/byte verification, receipt-loss reconciliation and owned scratch
-cleanup. The v2 shell creates separate exporter identities; it does not rewrite
-canonical documents, old published receipts or legacy export destinations.
+updates, digest/byte verification, receipt-loss reconciliation and owned scratch cleanup.
+
+### Measured export cost
+
+A matched local run on 2026-11-19 used Node 26.13.0, pnpm 12.21.0 and the saved document fixture in `tests/helpers/report-document.ts`. Each row measures one acquisition and render in the same process per version. The first row removes diagram evidence, the second renders one Mermaid source, and the third repeats it.
+
+| Export           | Previous v2 | Prepared v3 | Browser launches / SVG compilations / cache hits (both) |
+| ---------------- | ----------: | ----------: | ------------------------------------------------------- |
+| Text only        |      769 ms |       22 ms | 0 / 0 / 0                                               |
+| First diagram    |    2,516 ms |    1,324 ms | 1 / 1 / 0                                               |
+| Repeated diagram |      819 ms |       24 ms | 0 / 0 / 1                                               |
+
+Each v2 export opened 7,435 distinct source inputs twice and read 5,176,016 bytes of prepared files and metadata. Each v3 export opened zero source inputs and verified 7,496,522 prepared bytes including metadata. Neither version invoked an application compiler in these measurements because both installations had already been prepared. V3 preparation recorded 4,480 inputs. The CLI source-edit check produced identical HTML before re-preparation and a new exporter identity and HTML digest afterwards.
 
 ## Immutable file protocol
 

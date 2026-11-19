@@ -22,7 +22,7 @@ Configure a real provider/model before starting paid work. The deterministic mod
 
 The controller invokes the pinned OpenSpec CLI by absolute paths under `<home>/node_modules/.bin`, including when their working directory is a managed repository or worktree. `pnpm service:start` checks the configured workflow executables before starting/discovering the service; `pnpm run doctor` checks the same configuration. CLI overrides in `abracode.yaml` take precedence; prefer absolute paths, since bare names still depend on the server's PATH. The Supervisor uses controller tools for issue mutations, preserving lifecycle gates.
 
-Mise prepares Node/pnpm and the launch environment; no interactive shell needs to remain active. Without shell activation, launch with `mise exec -- pnpm start`. The server inherits that environment once, so later activation in an attached client cannot repair an already running server. After adopting these defaults, reload the central plugin or restart when workers are idle, then use `abra_work_reconcile` and the appropriate controller resume/retry action for preserved work. Git, flock, forge and repository verification tools still need to be available in the server environment.
+Mise prepares Node/pnpm and the launch environment; no interactive shell needs to remain active. Without shell activation, launch with `mise exec -- pnpm start`. The server inherits that environment once, so later activation in an attached client cannot repair an already running server. After adopting these defaults, reload the central plugin or restart when workers are idle, then use `abra_work_reconcile` and the appropriate controller resume/retry action for preserved work. Git, forge and repository verification tools still need to be available in the server environment.
 
 ```sh
 pnpm service:restart
@@ -608,3 +608,7 @@ and their native receipts together. The reusable `reports/renderers/v2` director
 is derived code/style cache and can be reconstructed by `pnpm report:prepare` for
 the installed renderer. Removing it does not migrate or rewrite old report receipts;
 retain published export bytes if an older renderer identity must remain readable.
+
+## Native lock binding
+
+Cross-process locks use `fs-ext` 2.1.1 on Linux and macOS. Dependency installation compiles the binding with `node-gyp`, requiring Python and a C/C++ toolchain (`make` and a compiler on Linux, Xcode Command Line Tools on macOS). The frozen pnpm workspace explicitly allows the `fs-ext` build. Rebuild with `pnpm rebuild fs-ext` after a Node ABI change; `pnpm doctor` exercises a real native lock. No util-linux `flock` executable is used. Node callers lock directly. The embedded OpenCode runtime uses a scoped Node holder because its Bun runtime cannot execute the binding's NAN error path. It resolves `node` from the server PATH; `ABRACODE_NODE_BINARY` can select the matching Node executable explicitly. The Node executable must match the ABI used to compile `fs-ext`. Full application acceptance is currently retained for Linux only.

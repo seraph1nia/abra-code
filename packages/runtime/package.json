@@ -38,6 +38,8 @@
     "@toon-format/toon": "4.4.0",
     "diff": "9.0.0",
     "effect": "4.1.4",
+    "fs-ext": "2.1.1",
+    "playwright-core": "1.65.1",
     "rxjs": "7.8.2",
     "yaml": "2.9.1",
     "zod": "3.25.76"
@@ -46,6 +48,7 @@
     "@a2ui/web_core": "0.15.0",
     "@abracode/presentation": "workspace:*",
     "@abracode/web": "workspace:*",
+    "@types/fs-ext": "2.0.3",
     "@types/node": "26.6.6",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
