@@ -6,11 +6,7 @@ import { test } from "vite-plus/test";
 import * as Id from "../../src/identities.ts";
 import { CrewError } from "../../src/domain.ts";
 import { run } from "../effects.ts";
-import {
-  removeFinderIndexForLegacyFixture,
-  workDatabase,
-  workGraphAt,
-} from "../helpers/work-database.ts";
+import { workDatabase, workGraphAt } from "../helpers/work-database.ts";
 
 import { goal } from "../helpers/work-goal.ts";
 
@@ -25,7 +21,7 @@ test("file-backed legacy identifier ordering and normalized request bytes surviv
   await run(Scope.close(scope, Exit.void));
   const db = new DatabaseSync(path);
   try {
-    removeFinderIndexForLegacyFixture(db);
+    db.exec("DROP INDEX issues_repository_priority; PRAGMA user_version = 7");
     db.exec("BEGIN; PRAGMA defer_foreign_keys = ON");
     for (const [index, issue] of created.entries()) {
       db.prepare("UPDATE issues SET id = ? WHERE id = ?").run(ids[index]!, issue.id);
@@ -39,7 +35,7 @@ test("file-backed legacy identifier ordering and normalized request bytes surviv
     const requests = db
       .prepare("SELECT request_id, request_input FROM issues ORDER BY request_id")
       .all();
-    const expected = [...ids].sort((a, b) => a.localeCompare(b));
+    const expected = [...ids].sort();
     const observed = [];
     for (let offset = 0; offset < ids.length; offset += 2) {
       const page = await run(graph.find({ state: "all", limit: 2, offset }));

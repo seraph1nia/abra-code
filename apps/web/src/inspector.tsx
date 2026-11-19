@@ -15,7 +15,7 @@ import { Option } from "effect";
 import { IssueId } from "@abracode/contracts/identities";
 import { artifactPageSize } from "@abracode/contracts/web/wire";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import type { WebWorkItem as WorkItem, WorkDetailSchema } from "@abracode/contracts/web/wire";
+import type { WebWorkItem as WorkItem, WorkOverviewSchema } from "@abracode/contracts/web/wire";
 import { Markdown as DeferredMarkdown } from "./markdown.tsx";
 import { api } from "./api.ts";
 import { phaseLabel } from "@abracode/contracts/presentation/work-state";
@@ -88,7 +88,7 @@ export function Inspector(props: Props) {
   );
 }
 function UnloadedInspector(props: Props) {
-  const query = queries.detail(props.issue);
+  const query = queries.overview(props.issue);
   const result = useAtomValue(query);
   const detail = AsyncResult.value(result);
   if (Option.isSome(detail)) return <InspectorContent {...props} work={detail.value.work} />;
@@ -175,7 +175,7 @@ function InspectorPanel({
   switch (tab) {
     case "Overview":
       return (
-        <RequestState query={queries.detail(work.issue_id)}>
+        <RequestState query={queries.overview(work.issue_id)}>
           {(detail) => (
             <>
               <Overview detail={detail} ask={ask} forms={forms} focusForm={focusForm} />
@@ -274,7 +274,7 @@ function Overview({
   forms,
   focusForm,
 }: {
-  detail: typeof WorkDetailSchema.Type;
+  detail: typeof WorkOverviewSchema.Type;
   ask: (text: string) => void;
   forms: readonly AttentionForm[];
   focusForm: (id: string) => void;

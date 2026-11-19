@@ -72,7 +72,9 @@ const result = await Effect.runPromise(
     const saved = yield* (
       mode === "replace"
         ? records.save(e)
-        : records.saveOwned(e, [field as "retry_instructions" | "error_or_recovery_reason"])
+        : field === "retry_instructions"
+          ? records.patchOwned(e, { retry_instructions: field })
+          : records.saveOwned(e, ["error_or_recovery_reason"])
     ).pipe(Effect.result);
     return saved._tag === "Success"
       ? { status: "committed", revision: saved.success.revision }

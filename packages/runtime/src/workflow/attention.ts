@@ -173,10 +173,8 @@ export class AttentionService {
   );
   observe = Effect.fn("Attention.observe")(
     function* (this: AttentionService, session: SessionId) {
-      const assigned = (yield* this.records.executions()).find(
-        (e) => workerSessionID(e) === session,
-      );
-      if (!assigned || paused(assigned)) return;
+      const assigned = yield* this.records.workerAssignment(session);
+      if (!assigned || workerSessionID(assigned) !== session || paused(assigned)) return;
       const state = yield* this.runtime.session(session);
       if (!state.activity || state.activity.at < (assigned.worker_started_at ?? 0)) return;
       const activity = state.activity;

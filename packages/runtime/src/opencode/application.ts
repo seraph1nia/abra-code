@@ -322,6 +322,7 @@ export const applicationLayer = (ctx: PluginContext, home: string, catalogLayer 
       const location = yield* realpath(ctx.location.directory);
       const central = location === config.home;
       const executions = yield* records.executions();
+      for (const execution of executions) records.rememberWorkers(execution);
       const owned =
         central || executions.some((execution) => execution.worktree_directory === location);
       const profiles: StaticProfile[] = [];

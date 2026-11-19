@@ -1,4 +1,5 @@
 import { createWorkflow } from "../../src/opencode/application.ts";
+import { Effect } from "effect";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
@@ -29,6 +30,27 @@ const conflict: SpecVerification = {
     },
   ],
 };
+
+test("superseded verification cannot commit its receipt or launch Review", async (t) => {
+  const f = await newFixture();
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(applying(f));
+  f.spec.done = true;
+  f.runtime.success(e.apply_session_id!);
+  const patch = f.records.patchOwned.bind(f.records);
+  f.records.patchOwned = (owner, fields) =>
+    Effect.gen(function* () {
+      const current = (yield* f.records.execution(owner.issue_id))!;
+      yield* f.records.saveControl(current);
+      return yield* patch(owner, fields);
+    });
+  const creates = f.runtime.creates;
+  await assert.rejects(run(f.controller.advance(e.issue_id)), /superseded/);
+  const saved = await run(f.controller.get(e.issue_id));
+  assert.equal(saved.verification_receipt, undefined);
+  assert.equal(saved.review_session_id, undefined);
+  assert.equal(f.runtime.creates, creates);
+});
 
 test("full-spec Review requires complete nonblank verification evidence", async (t) => {
   const f = await newFixture();

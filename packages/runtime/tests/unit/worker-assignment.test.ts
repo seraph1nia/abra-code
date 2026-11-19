@@ -1,4 +1,6 @@
-import { test } from "vite-plus/test";
+import { retainedExecution } from "../helpers/retained-execution.ts";
+import { Records } from "../../src/storage/store.ts";
+import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
@@ -45,4 +47,26 @@ test("all worker entry points share current role, phase, stop and generation sem
     const wrongPhase = role === "explore" ? "applying" : "exploring";
     assert.equal(isActiveWorker({ ...e, current_phase: wrongPhase }, session, expected), false);
   }
+});
+
+test("assignment hints recover preexisting records, stale candidates and peer commits", async () => {
+  const a = SessionId.make("ses_first"),
+    b = SessionId.make("ses_peer");
+  const { execution, records } = await retainedExecution({ apply_session_id: a });
+  const restarted = new Records(records.store);
+  for (const e of await run(restarted.executions())) restarted.rememberWorkers(e);
+  const scans = vi.spyOn(restarted, "executions");
+  assert.equal((await run(restarted.workerAssignment(a)))?.issue_id, execution.issue_id);
+  assert.equal(scans.mock.calls.length, 0);
+  assert.equal(await run(restarted.workerAssignment(b)), undefined);
+  await run(records.patchOwned(execution, { apply_session_id: b }));
+  assert.equal((await run(restarted.workerAssignment(b)))?.issue_id, execution.issue_id);
+  assert.equal(scans.mock.calls.length, 2);
+  await assert.rejects(
+    run(records.patchOwned(execution, { apply_session_id: a, rounds: [{} as never] })),
+  );
+  assert.equal(await run(restarted.workerAssignment(a)), undefined);
+  assert.equal(scans.mock.calls.length, 3);
+  assert.equal((await run(restarted.workerAssignment(b)))?.apply_session_id, b);
+  assert.equal(scans.mock.calls.length, 3);
 });

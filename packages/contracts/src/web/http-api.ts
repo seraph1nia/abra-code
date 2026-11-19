@@ -13,6 +13,7 @@ import { Permission } from "@opencode/schema/permission";
 import { ResourceSelectionSchema } from "./resources.ts";
 import { WorkDiscoveryQuery, WorkPageSchema } from "../visibility/discovery-contracts.ts";
 import {
+  WorkOverviewSchema,
   WorkDetailSchema,
   WorkDiffSchema,
   WorkDocumentSchema,
@@ -173,6 +174,11 @@ export const workspaceApi = HttpApi.make("abra-workspace")
         success: ResourceSelectionSchema,
         error,
       }),
+      HttpApiEndpoint.get("overview", "/api/work/overview", {
+        query: WorkQuery,
+        success: WorkOverviewSchema,
+        error,
+      }),
       HttpApiEndpoint.get("detail", "/api/work/detail", {
         query: WorkQuery,
         success: WorkDetailSchema,
@@ -296,6 +302,7 @@ export type WorkReadName =
   | "binding"
   | "find"
   | "leads"
+  | "overview"
   | "detail"
   | "document"
   | "diff"

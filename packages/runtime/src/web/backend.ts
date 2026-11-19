@@ -331,6 +331,8 @@ export class NativeWebBackend implements WebBackend {
           this.location(),
         ),
       ),
+    overview: (input) =>
+      this.use((client) => client.rpc(visibility).overview(input, this.location())),
     detail: (input) => this.use((client) => client.rpc(visibility).detail(input, this.location())),
     document: (input) =>
       this.use((client) => client.rpc(visibility).document(input, this.location())),

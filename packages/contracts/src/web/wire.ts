@@ -32,9 +32,13 @@ export const WorkSnapshotSchema = Schema.Struct({
   closed_total: Schema.optional(Count),
   closed_page: Schema.optional(Count),
 });
-export const WorkDetailSchema = Schema.Struct({
+export const WorkOverviewSchema = Schema.Struct({
   work: WorkItemSchema,
   description: Schema.String,
+  errors: strings,
+});
+export const WorkDetailSchema = Schema.Struct({
+  ...WorkOverviewSchema.fields,
   change: Schema.optional(Schema.String),
   archive: Schema.optional(RelativePath),
   artifacts: Schema.Array(
@@ -43,7 +47,6 @@ export const WorkDetailSchema = Schema.Struct({
   proposal: Schema.optional(Schema.String),
   documents: Schema.optional(Schema.Array(RelativePath)),
   planning: Schema.optional(PlanningObservationSchema),
-  errors: strings,
   progress: Schema.optional(Schema.Struct({ total: Count, complete: Count, remaining: Count })),
 });
 export const WorkDiffSchema = Schema.Struct({

@@ -266,8 +266,18 @@ test(
       join(directory, "specs/revision-proof/spec.md"),
       "## Purpose\n\nPreserve the selected native schema through corrective revision creation and recovery.\n\n## ADDED Requirements\n\n### Requirement: Revision retention\nThe system SHALL preserve schema selection.\n\n#### Scenario: A revision starts\n- **WHEN** a revision starts\n- **THEN** the original schema remains selected\n",
     );
+    const apply = p.spec.apply.bind(p.spec);
+    let observations = 0;
+    p.spec.apply = (execution) => {
+      observations++;
+      return apply(execution);
+    };
+    await writeFile(join(directory, "tasks.md"), "# Tasks\n\n- [ ] 1.1 Prove retention.\n");
+    await assert.rejects(run(p.spec.implemented(e)), /unfinished/);
+    assert.equal(observations, 1);
     await writeFile(join(directory, "tasks.md"), "# Tasks\n\n- [x] 1.1 Prove retention.\n");
     await run(p.spec.implemented(e));
+    assert.equal(observations, 2);
     const archive = await run(p.spec.archive(e)),
       metadata = join(e.worktree_directory!, archive, ".openspec.yaml"),
       original = await readFile(metadata, "utf8"),

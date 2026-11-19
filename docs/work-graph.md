@@ -6,13 +6,7 @@ one issue/dependency lookup per row. Finder search, total count and bounded
 only its selected rows' dependencies. Search retains JavaScript Unicode
 lowercasing and literal substring semantics, including `%` and `_`.
 
-Legacy finder ties use Node's `localeCompare`, which differs from SQLite binary
-and ASCII collation for supported identifiers. A request-local pass over matching
-IDs assigns that order; SQL then selects at most 50 complete rows using those
-ranks. This preserves existing page order without reading every matching issue
-body or keeping an authority cache. Metadata sorting remains O(N log N) in the
-matching ID population; the number of SQL operations is constant. List/readiness
-retain their existing priority/ID order.
+Format v9 orders finder pages by ascending priority and then by ascending issue ID using SQLite's binary collation. An uppercase ASCII letter precedes its lowercase counterpart across runtime locales. Existing issue links retain their targets. An offset into a set of tied issues can return different rows after the upgrade. Search still uses Unicode lowercasing.
 
 Closure timestamps are batched by latest event sequence. Completion totals,
 closure metadata, finder pages and issue/record collections participate in the
@@ -21,10 +15,7 @@ hydrate dependencies in batches inside their original write transactions;
 missing legacy dependencies remain refused. Normalized request bytes, request
 identity, event ordering and batch/claim atomicity are unchanged.
 
-The additive `issues_priority`, `issues_repository_status` and `issues_status`
-indexes support list/filter/count paths. Database format version 7 remains
-compatible with existing readers; no issue/request bytes are rewritten, and
-unsupported future database versions are still refused.
+The priority/ID index and its repository, status and repository/status variants support bounded pages. Startup replaces the v8 rank indexes and removes its rank column and locale metadata in the existing transaction. The service refuses a database from a newer format.
 
 AbraCode stores issues in `work_database`, defaulting to `<home>/.abracode/work.sqlite`. Node’s built-in SQLite module provides persistence; Effect owns scoped connections and typed failures. No separate database process or issue CLI is required. Manage work through the Supervisor’s `abra_work_*` tools.
 
@@ -36,7 +27,9 @@ The database uses WAL, foreign keys, full synchronous commits and a five-second 
 
 ## Backup
 
-Stop the service before copying the database, or use SQLite’s online backup API for a live copy. A live database may have committed content in its `-wal` file; copying only the main file can lose it. Back up native OpenCode storage and worktrees alongside the work database so execution relationships and filesystem evidence remain consistent. Keep `.abracode` private.
+Before upgrading, stop all old service processes and writers that share the database. Make a consistent pre-upgrade backup with SQLite's backup API or the SQLite CLI `.backup` command. Preserve the matching binary, native OpenCode storage and worktrees alongside it. A live WAL can contain committed changes, so copying only the main database file is insufficient.
+
+To roll back, stop all new writers, preserve the current state separately, and restore the consistent backup in a clean location with its matching binary and related storage. Keep the database and its WAL files from the same snapshot. Keep `.abracode` private.
 
 ## OpenSpec planning choices
 

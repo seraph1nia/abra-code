@@ -1,3 +1,4 @@
+import { workerSessionIDs, hasWorkerSession } from "../workflow/worker-assignment.ts";
 import { visualReportHistoryError } from "../workflow/report-contracts.ts";
 import { isDeepStrictEqual } from "node:util";
 import { PlanningSchema, planningHistoryError } from "../workflow/planning-contracts.ts";
@@ -116,6 +117,12 @@ export type ExecutionOwnedField = Exclude<
   | "openspec_schema"
   | "setup"
 >;
+export const removeOwnedField = Symbol("remove owned execution field");
+type ExecutionPatch = {
+  [K in ExecutionOwnedField]?:
+    | Exclude<Execution[K], undefined>
+    | (undefined extends Execution[K] ? typeof removeOwnedField : never);
+};
 export class Records {
   feedback = (id: IssueId, page = 0): Effect.Effect<FeedbackPage, CrewError> =>
     domainEffect(
@@ -298,6 +305,39 @@ export class Records {
   executions() {
     return this.executionScan().pipe(Effect.map((s) => s.values));
   }
+  private workerTickets = new Map<SessionId, IssueId>();
+  rememberWorkers(execution: Execution) {
+    for (const session of workerSessionIDs(execution))
+      if (session) this.workerTickets.set(session, execution.issue_id);
+  }
+  workerAssignment = Effect.fn("Records.workerAssignment")(
+    function* (this: Records, session: SessionId) {
+      const ticket = this.workerTickets.get(session);
+      if (ticket) {
+        const current = yield* this.execution(ticket).pipe(Effect.result);
+        if (
+          current._tag === "Success" &&
+          current.success &&
+          hasWorkerSession(current.success, session)
+        )
+          return current.success;
+        if (
+          current._tag === "Failure" &&
+          ![
+            "INVALID_DATA",
+            "INVALID_RECORD",
+            "UNSUPPORTED_RECORD_VERSION",
+            "RECORD_IDENTITY",
+          ].includes(current.failure.code)
+        )
+          return yield* current.failure;
+        this.workerTickets.delete(session);
+      }
+      const found = (yield* this.executions()).find((e) => hasWorkerSession(e, session));
+      if (found) this.rememberWorkers(found);
+      return found;
+    }.bind(this),
+  );
   execution(id: IssueId): Effect.Effect<SavedExecution | undefined, CrewError> {
     return this.read(StorageKey.make(`execution/${id}`), executionSchema);
   }
@@ -555,11 +595,7 @@ export class Records {
       ),
     );
   }
-  private owned<E extends ManagedExecution>(
-    e: ManagedExecution,
-    current: E,
-    fields: readonly ExecutionOwnedField[],
-  ): E {
+  private assertOwner(e: ManagedExecution, current: ManagedExecution) {
     ensure(
       current.execution_id === e.execution_id &&
         current.control_generation === e.control_generation &&
@@ -569,6 +605,13 @@ export class Records {
       "STALE_OPERATION",
       "Owned aggregate update was superseded",
     );
+  }
+  private owned<E extends ManagedExecution>(
+    e: ManagedExecution,
+    current: E,
+    fields: readonly ExecutionOwnedField[],
+  ): E {
+    this.assertOwner(e, current);
     const next = { ...current };
     for (const field of fields) {
       if (field in e) Object.assign(next, { [field]: e[field] });
@@ -582,6 +625,22 @@ export class Records {
       Effect.tap((saved) => Effect.sync(() => synchronizeExecution(e, saved))),
       Effect.as(e),
     );
+  }
+  patchOwned(e: Execution, patch: ExecutionPatch) {
+    return this.update(e.issue_id, (current) => {
+      this.assertOwner(e, current);
+      const next = { ...current };
+      for (const [field, value] of Object.entries(patch)) {
+        ensure(
+          value !== undefined,
+          "INVALID_PATCH",
+          "Use explicit removal to clear an owned field",
+        );
+        if (value === removeOwnedField) Reflect.deleteProperty(next, field);
+        else Reflect.set(next, field, value);
+      }
+      return next;
+    });
   }
   /** Setup uses the same field ownership contract without becoming a graph execution. */
   saveSetupOwned(e: SetupExecution, fields: readonly ExecutionOwnedField[]) {
@@ -627,7 +686,7 @@ export class Records {
               ? yield* this.setup(e.repository_id)
               : yield* this.execution(e.issue_id);
           ensure(current, "EXECUTION_MISSING", "No retained execution for operation");
-          this.owned(e, current, []);
+          this.assertOwner(e, current);
           ensure(
             operation.status === "prepared" && operation.generation === current.control_generation,
             "STALE_OPERATION",
@@ -722,6 +781,7 @@ export class Records {
         updated_at: yield* timestamp,
       });
       synchronizeExecution(e, saved);
+      if (!e.setup) this.rememberWorkers(e);
       return e;
     }.bind(this),
     domainEffect,

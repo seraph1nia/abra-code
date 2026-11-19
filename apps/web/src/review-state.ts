@@ -20,7 +20,7 @@ type Draft = typeof DraftSchema.Type & {
   errors?: Record<string, string>;
 };
 function createEntry(key: string, { review: { review_id }, revision, hash }: ReviewRecord) {
-  function restore(): Draft {
+  function restore(): Draft | undefined {
     const draft = readRetained(key, DraftSchema);
     const matches = (value: NonNullable<Draft["receipt"] | Draft["pending"]>) =>
       value.review_id === review_id && value.revision === revision && value.hash === hash;
@@ -29,27 +29,40 @@ function createEntry(key: string, { review: { review_id }, revision, hash }: Rev
       (draft.pending && !matches(draft.pending)) ||
       (draft.receipt && !matches(draft.receipt))
     )
-      return { answers: {} };
+      return undefined;
     return draft;
   }
-  let value = restore();
+  const initial = restore();
+  let value: Draft = initial ?? { answers: {} };
+  let persisted = JSON.stringify(initial);
+  let unsaved = false;
   const listeners = new Set<() => void>();
   const notify = () => {
     for (const listener of listeners) listener();
   };
+  function refresh() {
+    if (value.working) return;
+    const stored = restore();
+    if (!stored) return;
+    const serialized = JSON.stringify(stored);
+    if (serialized === persisted) return;
+    persisted = serialized;
+    value = unsaved ? { ...stored, answers: value.answers } : stored;
+    notify();
+  }
   const changed = (event: StorageEvent) => {
-    if (event.key === key && !value.working) {
-      value = restore();
-      notify();
-    }
+    if (event.key === key) refresh();
   };
   function update(next: Partial<Draft>, required = false) {
     const updated = { ...value, ...next };
-    const saved = writeRetained(key, {
+    const retained = {
       answers: updated.answers,
       pending: updated.pending,
       receipt: updated.receipt,
-    });
+    };
+    const saved = writeRetained(key, retained);
+    if (saved) persisted = JSON.stringify(retained);
+    unsaved = !saved;
     if (!saved && required)
       updated.error =
         "Cannot retain submission identity in browser storage. Your draft is preserved; enable storage before sending.";
@@ -60,8 +73,12 @@ function createEntry(key: string, { review: { review_id }, revision, hash }: Rev
   return {
     read: () => value,
     subscribe: (listener: () => void) => {
-      if (!listeners.size) window.addEventListener("storage", changed);
+      const first = listeners.size === 0;
       listeners.add(listener);
+      if (first) {
+        window.addEventListener("storage", changed);
+        refresh();
+      }
       return () => {
         listeners.delete(listener);
         if (!listeners.size) window.removeEventListener("storage", changed);

@@ -155,6 +155,11 @@ test("interactive A2UI review shares drafts, enlarges designs, restores feedback
     .getByText("Give feedback: Choose the first release", { exact: true })
     .click();
   const inspected = page.locator(".inspector .interactive-review");
+  const inlineComments = inline().getByRole("textbox", { name: "Comments", exact: true });
+  const inspectedComments = inspected.getByRole("textbox", { name: "Comments", exact: true });
+  await inspectedComments.fill("Shared inspection edit");
+  assert.equal(await inlineComments.inputValue(), "Shared inspection edit");
+  await inspectedComments.fill("Use B with A's navigation. Keep it simple.");
   assert.equal(
     await inspected.getByRole("textbox", { name: "Comments", exact: true }).inputValue(),
     "Use B with A's navigation. Keep it simple.",

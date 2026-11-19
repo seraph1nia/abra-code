@@ -283,7 +283,9 @@ export async function communicationCrashJourney(o: {
     });
     return rows.find(
       (b: any) =>
-        b.request.request_id === "operational-report-publication" && b.status === "published",
+        b.request.request_id === "operational-report-publication" &&
+        b.status === "published" &&
+        b.source_attachment === "associated",
     );
   }, 90000);
   assert.equal(report.artifact.hash, linked.hash);

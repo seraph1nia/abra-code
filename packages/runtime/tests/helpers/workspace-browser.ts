@@ -8,6 +8,7 @@ import { LeadEvidencePageSchema } from "../../src/visibility/lead-observation.ts
 import { WorkerHistoryPageSchema } from "../../src/web/worker-history.ts";
 import { decode } from "../../src/decode.ts";
 import {
+  WorkOverviewSchema,
   WorkDetailSchema,
   WorkDocumentSchema,
   WorkDiffSchema,
@@ -100,6 +101,13 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
               diagnostics: [],
             }
           );
+        case "overview":
+          return {
+            work,
+            description: `Details for ${work.title}`,
+            errors: [],
+            ...detailOverrides.get(input.issue_id),
+          };
         case "detail":
           return {
             work,
@@ -297,6 +305,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
         }),
       find: operation("find", WorkPageSchema),
       leads: operation("leads", LeadEvidencePageSchema),
+      overview: operation("overview", WorkOverviewSchema),
       detail: operation("detail", WorkDetailSchema),
       document: operation("document", WorkDocumentSchema),
       diff: operation("diff", WorkDiffSchema),

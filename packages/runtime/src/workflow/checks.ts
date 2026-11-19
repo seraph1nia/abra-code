@@ -5,7 +5,7 @@ import type { CheckpointEvidence } from "./authorization.ts";
 import { Clock, Effect } from "effect";
 import { CrewError, type Execution, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import { type Records } from "../storage/store.ts";
+import { removeOwnedField, synchronizeExecution, type Records } from "../storage/store.ts";
 import { type Git } from "../git/repository.ts";
 import { type OpenSpec } from "../openspec/adapter.ts";
 import { verificationCommand } from "../config/contracts.ts";
@@ -158,13 +158,15 @@ export class CodingChecks {
           ),
         };
       if (synchronization) yield* this.records.saveFinishing(e, ["synchronization"]);
-      e.verification_receipt = {
-        fingerprint: before,
-        commands: p.verification,
-        at: yield* timestamp,
-      };
-      delete e.review_receipt;
-      yield* this.records.saveOwned(e, ["verification_receipt", "review_receipt"]);
+      const verified = yield* this.records.patchOwned(e, {
+        verification_receipt: {
+          fingerprint: before,
+          commands: p.verification,
+          at: yield* timestamp,
+        },
+        review_receipt: removeOwnedField,
+      });
+      synchronizeExecution(e, verified);
       yield* this.launch(e, "review");
       return e;
     }.bind(this),
@@ -179,10 +181,8 @@ export class CodingChecks {
       scope_status?: typeof import("./correction-contracts.ts").ScopeDispositionSchema.Type,
       spec_verification?: SpecVerification,
     ) {
-      const assigned = (yield* this.records.executions()).find(
-        (e) => e.review_session_id === session,
-      );
-      if (!assigned?.worktree_directory)
+      const assigned = yield* this.records.workerAssignment(session);
+      if (!assigned?.worktree_directory || assigned.review_session_id !== session)
         return yield* new CrewError("REVIEW_ROLE", "Assigned Review session required");
       const fingerprint = yield* this.git.fingerprint(assigned.worktree_directory);
       return yield* this.coordination.with(() =>

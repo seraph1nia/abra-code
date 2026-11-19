@@ -255,8 +255,7 @@ export class OpenSpec {
   );
   implemented = Effect.fn("OpenSpec.implemented")(
     function* (this: OpenSpec, e: Execution) {
-      yield* this.plan(e);
-      const a = yield* this.apply(e);
+      const { apply: a } = yield* this.plan(e);
       if (
         !(
           a.state === "all_done" &&

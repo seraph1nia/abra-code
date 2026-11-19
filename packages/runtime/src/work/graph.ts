@@ -22,7 +22,6 @@ import { dirname } from "node:path";
 import { mkdir } from "../filesystem.ts";
 import { CrewError, ensure, identifier, type Config } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import { allocateFinderRank, initializeFinderOrder, requireFinderOrder } from "./finder-order.ts";
 
 import {
   IssueSchema,
@@ -122,7 +121,8 @@ export class SqliteWorkGraph implements WorkGraph {
               version === 5 ||
               version === 6 ||
               version === 7 ||
-              version === 8,
+              version === 8 ||
+              version === 9,
             "WORK_DATABASE_VERSION",
             `Unsupported work database version ${String(version)}`,
           );
@@ -159,6 +159,7 @@ export class SqliteWorkGraph implements WorkGraph {
           db.exec(`
             CREATE INDEX IF NOT EXISTS issues_priority ON issues(priority, id);
             CREATE INDEX IF NOT EXISTS issues_repository_status ON issues(repository_id, status, priority, id);
+            CREATE INDEX IF NOT EXISTS issues_repository_priority ON issues(repository_id, priority, id);
             CREATE INDEX IF NOT EXISTS issues_status ON issues(status, priority, id);
           `);
           const columns = db.prepare("PRAGMA table_info(issues)").all();
@@ -188,8 +189,18 @@ export class SqliteWorkGraph implements WorkGraph {
               PRIMARY KEY(batch_request_id, client_key)
             );
           `);
-          initializeFinderOrder(db, !columns.some((c) => c.name === "finder_rank"));
-          db.exec("PRAGMA user_version = 8; COMMIT");
+          if (columns.some((c) => c.name === "finder_rank")) {
+            db.exec(`
+              DROP INDEX IF EXISTS issues_finder_rank;
+              DROP INDEX IF EXISTS issues_finder_priority;
+              DROP INDEX IF EXISTS issues_finder_repository;
+              DROP INDEX IF EXISTS issues_finder_status;
+              DROP INDEX IF EXISTS issues_finder_repository_status;
+              DROP TABLE IF EXISTS finder_order;
+              ALTER TABLE issues DROP COLUMN finder_rank;
+            `);
+          }
+          db.exec("PRAGMA user_version = 9; COMMIT");
         } catch (error) {
           db.exec("ROLLBACK");
           throw error;
@@ -281,7 +292,6 @@ export class SqliteWorkGraph implements WorkGraph {
     return sqlEffect(() =>
       this.transaction(() => {
         const query = decodeSync(WorkDiscoveryQuery, input, "Work discovery");
-        requireFinderOrder(this.db);
         const where: string[] = [];
         const values: string[] = [];
         if (query.repository_id) {
@@ -305,9 +315,7 @@ export class SqliteWorkGraph implements WorkGraph {
           limit = query.limit ?? 50;
         if (!total || offset >= total) return { entries: [], total, offset, limit };
         const rows = this.db
-          .prepare(
-            `SELECT * FROM issues WHERE ${condition} ORDER BY priority, finder_rank LIMIT ? OFFSET ?`,
-          )
+          .prepare(`SELECT * FROM issues WHERE ${condition} ORDER BY priority, id LIMIT ? OFFSET ?`)
           .all(...values, limit, offset);
         return {
           entries: this.hydrate(
@@ -340,11 +348,10 @@ export class SqliteWorkGraph implements WorkGraph {
   }
 
   private insert(issue: Issue, input: string) {
-    const rank = allocateFinderRank(this.db, issue.id);
     this.db
       .prepare(`INSERT INTO issues
-      (id, repository_id, workflow_policy, request_id, request_input, title, description, priority, status, assignee, finder_rank)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      (id, repository_id, workflow_policy, request_id, request_input, title, description, priority, status, assignee)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(
         issue.id,
         issue.repository_id,
@@ -356,7 +363,6 @@ export class SqliteWorkGraph implements WorkGraph {
         issue.priority,
         issue.status,
         issue.assignee ?? null,
-        rank,
       );
     this.db
       .prepare(

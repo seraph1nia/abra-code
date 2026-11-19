@@ -30,6 +30,7 @@ import { CopilotRuntime, createCopilotRuntimeHandler } from "@copilotkit/runtime
 import { CrewError } from "../domain.ts";
 import { decode } from "../decode.ts";
 import {
+  WorkOverviewSchema,
   WorkDetailSchema,
   WorkDiffSchema,
   WorkDocumentSchema,
@@ -135,6 +136,9 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
       .handle("binding", ({ query }) => validated(backend.work.binding(query), BindingReadSchema))
       .handle("find", ({ query }) => validated(backend.work["find"](query), WorkPageSchema))
       .handle("resolve", ({ payload }) => backend.resolve(payload).pipe(Effect.mapError(refused)))
+      .handle("overview", ({ query }) =>
+        validated(backend.work.overview(query), WorkOverviewSchema),
+      )
       .handle("detail", ({ query }) => validated(backend.work["detail"](query), WorkDetailSchema))
       .handle("document", ({ query }) =>
         validated(backend.work["document"](query), WorkDocumentSchema),

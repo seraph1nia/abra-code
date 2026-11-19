@@ -6,7 +6,7 @@ import { test, vi } from "vite-plus/test";
 import * as Id from "../../src/identities.ts";
 import type { WorkDiscovery } from "@abracode/contracts/visibility/discovery-contracts";
 import { run } from "../effects.ts";
-import { workGraphAt } from "../helpers/work-database.ts";
+import { workGraphAt, workDatabase } from "../helpers/work-database.ts";
 import { goal } from "../helpers/work-goal.ts";
 
 test("real in-memory finder pages preserve search, totals, ordering, dependencies and complete-population readiness with constant SQL calls", async (t) => {
@@ -60,7 +60,7 @@ test("real in-memory finder pages preserve search, totals, ordering, dependencie
     for (const [sql] of prepare.mock.calls) {
       assert.doesNotMatch(sql, /^SELECT id FROM issues/);
       if (sql.includes("SELECT * FROM issues"))
-        assert.match(sql, /ORDER BY priority, finder_rank LIMIT \? OFFSET \?/);
+        assert.match(sql, /ORDER BY priority, id LIMIT \? OFFSET \?/);
     }
     const state = query.state ?? "active",
       search = query.search?.trim().toLowerCase() ?? "";
@@ -74,7 +74,7 @@ test("real in-memory finder pages preserve search, totals, ordering, dependencie
             issue.title.toLowerCase().includes(search) ||
             issue.id.toLowerCase().includes(search)),
       )
-      .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+      .sort((a, b) => a.priority - b.priority || (a.id < b.id ? -1 : Number(a.id > b.id)));
     const offset = query.offset ?? 0,
       limit = query.limit ?? 50;
     assert.equal(actual.total, expected.length);
@@ -92,5 +92,40 @@ test("real in-memory finder pages preserve search, totals, ordering, dependencie
   if (evidence) {
     await mkdir(evidence, { recursive: true });
     await writeFile(join(evidence, "sql-query-counts.json"), JSON.stringify(counts, null, 2));
+  }
+});
+
+test("1,000 inserts use no rank allocator and each finder page uses an ordering index", async (t) => {
+  const { graph, path } = await workDatabase(t);
+  const db = new DatabaseSync(path);
+  t.onTestFinished(() => db.close());
+  const prepare = vi.spyOn(DatabaseSync.prototype, "prepare");
+  t.onTestFinished(() => {
+    prepare.mockRestore();
+  });
+  for (let i = 0; i < 1000; i++) await run(graph.create(goal(`indexed-${i}`)));
+  assert.equal(
+    prepare.mock.calls.filter(([sql]) => /finder_rank|finder_order/.test(sql)).length,
+    0,
+  );
+  const closed = (await run(graph.find({ limit: 1 }))).entries[0]!;
+  const owner = Id.ExecutionId.make("index-owner");
+  await run(graph.claim(closed.id, owner));
+  await run(graph.close(closed.id, owner));
+  for (const [query, index] of [
+    [{ state: "all" }, "issues_priority"],
+    [{ state: "closed" }, "issues_status"],
+    [{ state: "active", repository_id: Id.RepositoryId.make("api") }, "issues_repository_priority"],
+    [{ state: "closed", repository_id: Id.RepositoryId.make("api") }, "issues_repository_status"],
+  ] as const) {
+    prepare.mockClear();
+    await run(graph.find(query));
+    const sql = prepare.mock.calls.find(([sql]) => sql.includes("SELECT * FROM issues"))![0];
+    const plan = db
+      .prepare("EXPLAIN QUERY PLAN " + sql)
+      .all(...("repository_id" in query ? [query.repository_id] : []), 5, 0);
+    const detail = plan.map((row) => String(row.detail)).join(" ");
+    assert.match(detail, new RegExp(index));
+    assert.doesNotMatch(detail, /TEMP B-TREE/);
   }
 });

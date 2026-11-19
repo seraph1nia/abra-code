@@ -1368,6 +1368,25 @@ export function nativeTest(
         controllerCalls[tool] = metric;
       });
     };
+    const restart = async (forceAfterMs?: number) => {
+      const owned = child!;
+      if (owned.exitCode === null && owned.signalCode === null) {
+        await new Promise<void>((done) => {
+          const force =
+            forceAfterMs === undefined
+              ? undefined
+              : setTimeout(() => owned.kill("SIGKILL"), forceAfterMs);
+          owned.once("exit", () => {
+            clearTimeout(force);
+            done();
+          });
+          owned.kill("SIGTERM");
+        });
+      }
+      start();
+      await ready();
+      await client.location.get({ location: { directory: home } });
+    };
     const runParallel = () =>
       parallelJourney({
         supervisor: Id.SessionId.make(supervisor.id),
@@ -1385,13 +1404,7 @@ export function nativeTest(
         eventually,
         seen: parallelSeen,
         release: releaseParallel,
-        restart: async () => {
-          child!.kill("SIGTERM");
-          await new Promise<void>((done) => child!.once("exit", () => done()));
-          start();
-          await ready();
-          await client.location.get({ location: { directory: home } });
-        },
+        restart,
       });
     const runModels = () =>
       modelDispatchJourney({
@@ -1399,13 +1412,7 @@ export function nativeTest(
         home,
         invoke,
         eventually,
-        restart: async () => {
-          child!.kill("SIGTERM");
-          await new Promise<void>((done) => child!.once("exit", () => done()));
-          start();
-          await ready();
-          await client.location.get({ location: { directory: home } });
-        },
+        restart,
         hold: () => {
           holdModelWorker = true;
           modelWorkerHeld = false;
@@ -1432,13 +1439,7 @@ export function nativeTest(
         releaseResearch: () => releaseLeadResearch?.(),
         leadTool: async (session, tool, args) =>
           ((await api.invoke({ tool, args, session }, loc)) as any).result,
-        restart: async () => {
-          child!.kill("SIGTERM");
-          await new Promise<void>((done) => child!.once("exit", () => done()));
-          start();
-          await ready();
-          await client.location.get({ location: { directory: home } });
-        },
+        restart,
       });
     const runReports = () =>
       reportJourney({
@@ -1460,13 +1461,7 @@ export function nativeTest(
         eventually,
         workerTool: async (session, tool, args) =>
           ((await api.invoke({ tool, args, session }, loc)) as any).result,
-        restart: async () => {
-          child!.kill("SIGTERM");
-          await new Promise<void>((done) => child!.once("exit", () => done()));
-          start();
-          await ready();
-          await client.location.get({ location: { directory: home } });
-        },
+        restart,
       });
     const runAcceptance = () => {
       failFirstExplore = false;
@@ -1518,13 +1513,7 @@ export function nativeTest(
               Object.values(initial).reduce((a, b) => a + b, 0),
           };
         },
-        restart: async () => {
-          child!.kill("SIGTERM");
-          await new Promise<void>((done) => child!.once("exit", () => done()));
-          start();
-          await ready();
-          await client.location.get({ location: { directory: home } });
-        },
+        restart,
       });
     };
     const runReplyRecovery = () => {
@@ -1542,13 +1531,7 @@ export function nativeTest(
         held: () => exploreHeld,
         releaseExplore: () => releaseExplore?.(),
         observe: (value) => engineeringEvidence.push(value),
-        restart: async () => {
-          child!.kill("SIGTERM");
-          await new Promise<void>((done) => child!.once("exit", () => done()));
-          start();
-          await ready();
-          await client.location.get({ location: { directory: home } });
-        },
+        restart,
       });
     };
     if (journey === "planning-recovery") {
@@ -1570,13 +1553,7 @@ export function nativeTest(
             holdExplore = false;
             releaseExplore?.();
           },
-          restart: async () => {
-            child!.kill("SIGTERM");
-            await new Promise<void>((done) => child!.once("exit", () => done()));
-            start();
-            await ready();
-            await client.location.get({ location: { directory: home } });
-          },
+          restart,
         }),
       );
       return;
@@ -1594,13 +1571,7 @@ export function nativeTest(
           eventually,
           work: observeWork,
           observe: (value) => engineeringEvidence.push(value),
-          restart: async () => {
-            child!.kill("SIGTERM");
-            await new Promise<void>((done) => child!.once("exit", () => done()));
-            start();
-            await ready();
-            await client.location.get({ location: { directory: home } });
-          },
+          restart,
         }),
       );
       return;
@@ -1622,20 +1593,7 @@ export function nativeTest(
           },
           held: () => exploreHeld,
           releaseExplore: () => releaseExplore?.(),
-          restart: async () => {
-            const owned = child!;
-            await new Promise<void>((done) => {
-              const force = setTimeout(() => owned.kill("SIGKILL"), 5000);
-              owned.once("exit", () => {
-                clearTimeout(force);
-                done();
-              });
-              owned.kill("SIGTERM");
-            });
-            start();
-            await ready();
-            await client.location.get({ location: { directory: home } });
-          },
+          restart: () => restart(5000),
         }),
       );
       return;
@@ -1660,16 +1618,7 @@ export function nativeTest(
             },
             release: (kind) => releaseStreamProof[kind]?.(),
           },
-          restart: async () => {
-            const owned = child!;
-            await new Promise<void>((done) => {
-              owned.once("exit", () => done());
-              owned.kill("SIGTERM");
-            });
-            start();
-            await ready();
-            await client.location.get({ location: { directory: home } });
-          },
+          restart,
           endpoint: {
             url: `http://127.0.0.1:${port}`,
             auth: { type: "basic", username: "opencode", password },

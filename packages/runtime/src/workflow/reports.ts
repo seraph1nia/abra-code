@@ -62,10 +62,8 @@ export class Reports {
   submit = Effect.fn("Reports.submit")(
     function* (this: Reports, session: SessionId, input: typeof ReportInputSchema.Type) {
       const a = yield* decode(ReportInputSchema, input, "research report");
-      const assigned = (yield* this.records.executions()).find(
-        (e) => e.research_session_id === session,
-      );
-      if (!assigned)
+      const assigned = yield* this.records.workerAssignment(session);
+      if (!assigned || assigned.research_session_id !== session)
         return yield* new CrewError("RESEARCH_ROLE", "Assigned Research session required");
       return yield* this.locks.with(
         LockKey.make(`report-${digest(assigned.execution_id).slice(0, 40)}`),

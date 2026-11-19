@@ -130,4 +130,7 @@ export function stateLabel(work: WorkItem) {
 }
 export const needsAttention = (work: WorkItem) => section(work) === "attention";
 export const ordered = (work: readonly WorkItem[]) =>
-  [...work].sort((a, b) => a.priority - b.priority || a.issue_id.localeCompare(b.issue_id));
+  [...work].sort(
+    (a, b) =>
+      a.priority - b.priority || (a.issue_id < b.issue_id ? -1 : Number(a.issue_id > b.issue_id)),
+  );

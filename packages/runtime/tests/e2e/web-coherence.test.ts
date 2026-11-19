@@ -1,3 +1,4 @@
+import { reviewDefinition } from "../helpers/interactive-reviews.ts";
 import { feedbackFixture } from "../helpers/review-evidence.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Disposable browser/HTTP/stream fixtures exercise the shipped frontend. */
 import { test as baseTest, beforeAll, afterAll } from "vite-plus/test";
@@ -41,6 +42,117 @@ afterAll(async () => {
   await browser?.close();
 });
 const fixture = () => workspaceBrowserFixture(browser);
+
+test("reopening a review reconciles the exact draft edited while all local views were closed", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage();
+  const context = page.context();
+  const peer = await context.newPage();
+  const review = reviewDefinition();
+  const reference = { ...review, revision: 1, hash: "a".repeat(64) };
+  const record = {
+    review,
+    revision: 1,
+    hash: reference.hash,
+    session_id: f.source.sessionID,
+    message_id: "msg_review",
+    at: f.source.value.at,
+    schema_version: 1,
+    assets: [],
+    source_text: "Plan",
+    call_id: "publish",
+  };
+  await context.route("**/api/reviews?*", (route) =>
+    route.fulfill({ json: { reviews: [reference], diagnostics: [] } }),
+  );
+  await context.route("**/api/review?*", (route) =>
+    route.fulfill({ json: { record, current_revision: 1, revisions: [] } }),
+  );
+  const summary = (p: typeof page) =>
+    p.getByText("Give feedback: Choose the first release", { exact: true });
+  const comments = (p: typeof page) => p.getByRole("textbox", { name: "Comments", exact: true });
+  for (const p of [page, peer]) {
+    await p.goto(f.origin + "/?issue=abra-web&tab=Plan&file=proposal.md");
+    await summary(p).click();
+    await comments(p).waitFor();
+  }
+  await comments(page).fill("First answer");
+  await summary(page).click();
+  await comments(page).waitFor({ state: "detached" });
+  await comments(peer).fill("Changed in the other tab");
+  await summary(page).click();
+  assert.equal(await comments(page).inputValue(), "Changed in the other tab");
+  const key = `abra-review-${record.session_id}-${review.review_id}-1-${record.hash}`;
+  const pending = {
+    review_id: review.review_id,
+    revision: 1,
+    hash: record.hash,
+    request_id: "review-original",
+    answers: { comments: "Submitted elsewhere" },
+  };
+  const receipt = {
+    ...pending,
+    message_id: "msg_feedback",
+    text: "Feedback",
+    delivery: "queue",
+    status: "admitted",
+    at: record.at,
+  };
+  const close = async () => {
+    await summary(page).click();
+    await comments(page).waitFor({ state: "detached" });
+  };
+  await close();
+  await peer.evaluate(
+    ({ key, pending }) =>
+      localStorage.setItem(
+        key,
+        JSON.stringify({ answers: {}, pending: { ...pending, revision: 2 } }),
+      ),
+    { key, pending },
+  );
+  await summary(page).click();
+  assert.equal(await comments(page).inputValue(), "Changed in the other tab");
+  const requests: string[] = [];
+  await context.route("**/api/review/receipt?*", (route) => {
+    requests.push(new URL(route.request().url()).searchParams.get("request_id")!);
+    return route.fulfill({ json: receipt });
+  });
+  await close();
+  await peer.evaluate(
+    ({ key, pending }) =>
+      localStorage.setItem(key, JSON.stringify({ answers: pending.answers, pending })),
+    { key, pending },
+  );
+  await summary(page).click();
+  const received = page.getByText(/Received by Abra/);
+  await received.waitFor();
+  assert.deepEqual(requests, [pending.request_id]);
+  await close();
+  await summary(page).click();
+  await received.waitFor();
+  assert.deepEqual(requests, [pending.request_id]);
+  await page.getByRole("button", { name: "Write another response" }).click();
+  await page.evaluate(() => {
+    Storage.prototype.setItem = () => {
+      throw new Error("storage unavailable");
+    };
+  });
+  await comments(page).fill("Unsaved local answer");
+  await close();
+  await summary(page).click();
+  assert.equal(await comments(page).inputValue(), "Unsaved local answer");
+  await close();
+  await peer.evaluate(
+    ({ key, receipt }) => localStorage.setItem(key, JSON.stringify({ answers: {}, receipt })),
+    { key, receipt },
+  );
+  await summary(page).click();
+  await received.waitFor();
+  assert.equal(await comments(page).inputValue(), "Unsaved local answer");
+  assert.equal(f.source.submissions, 0);
+});
 
 test("unstarted and unpublished Markdown reports are empty states and refresh into published evidence", async (t) => {
   const f = await fixture();
@@ -1132,10 +1244,11 @@ test("late inspector responses cannot replace a new selection and live updates i
   const request = page.waitForRequest(
     (request) => request.url().includes("/api/work/detail") && request.url().includes("abra-slow"),
   );
-  await page.goto(`${f.origin}/?issue=abra-slow&tab=Overview`);
+  await page.goto(`${f.origin}/?issue=abra-slow&tab=Plan`);
   await request;
   await page.getByRole("button", { name: "Toggle work finder" }).click();
   await page.getByRole("button", { name: /Another issue/ }).click();
+  await page.getByRole("tab", { name: "Overview", exact: true }).click();
   await page.getByText("Details for Another issue", { exact: true }).waitFor();
   await page.waitForTimeout(700);
   assert.equal(await page.getByText("Details for Slow issue", { exact: true }).count(), 0);
@@ -1152,8 +1265,8 @@ test("late inspector responses cannot replace a new selection and live updates i
     .waitFor({ timeout: 3000 });
   await page.getByText("Details for Updated issue", { exact: true }).waitFor();
   assert.ok(
-    f.calls.filter((call) => call.name === "detail" && call.input.issue_id === "abra-web").length >=
-      2,
+    f.calls.filter((call) => call.name === "overview" && call.input.issue_id === "abra-web")
+      .length >= 2,
   );
   assert.equal(f.source.submissions, 0);
 });
@@ -2111,12 +2224,13 @@ test("selected off-page tasks refresh without bootstrap membership or a second p
     false,
   );
   assert.equal(bootstrapReads, 1);
-  f.failedReads.add("detail");
+  assert.equal(f.calls.filter((c) => c.name === "detail").length, 0);
+  f.failedReads.add("overview");
   await f.changed();
   await page.getByRole("alert").filter({ hasText: "Request could not be confirmed" }).waitFor();
   await page.getByText("Showing the last successful observation.", { exact: true }).waitFor();
   await page.getByText("Details for Updated off-page task", { exact: true }).waitFor();
-  f.failedReads.delete("detail");
+  f.failedReads.delete("overview");
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await page.getByRole("alert").waitFor({ state: "hidden" });
   assert.equal(f.source.submissions, 0);

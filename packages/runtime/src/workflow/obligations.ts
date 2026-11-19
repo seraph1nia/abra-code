@@ -8,7 +8,7 @@ import { synchronizeExecution, type Records } from "../storage/store.ts";
 import { type Runtime } from "../opencode/runtime.ts";
 import { type WorkGraph } from "../work/graph.ts";
 import { type Coordination } from "./coordination.ts";
-import { historicalWorkers, isActiveWorker, workerSessionID } from "./worker-assignment.ts";
+import { isActiveWorker } from "./worker-assignment.ts";
 import { decode } from "../decode.ts";
 import { createHash } from "node:crypto";
 import {
@@ -161,7 +161,7 @@ export class Obligations {
   );
   private assigned = Effect.fn("Obligations.assigned")(
     function* (this: Obligations, session: SessionId, generation: number) {
-      const e = (yield* this.records.executions()).find((e) => workerSessionID(e) === session);
+      const e = yield* this.records.workerAssignment(session);
       if (!e || !isActiveWorker(e, session, { generation }))
         return yield* new CrewError(
           "WORKER_ASSIGNMENT",
@@ -312,18 +312,7 @@ export class Obligations {
     ) {
       let e = yield* this.records.execution(id);
       if (!e) return yield* new CrewError("EXECUTION_MISSING", "Execution missing");
-      if (
-        (yield* this.records.executions()).some((e) =>
-          [
-            e.explore_session_id,
-            e.apply_session_id,
-            e.review_session_id,
-            e.research_session_id,
-            e.session_intent?.id,
-            ...historicalWorkers(e).map((worker) => worker.id),
-          ].includes(session),
-        )
-      )
+      if (yield* this.records.workerAssignment(session))
         return yield* new CrewError("WORKER_FORBIDDEN", "Workers cannot resolve decisions");
       let d = e.decisions?.find((d) => d.key === key && d.generation === generation);
       if (!(d && e.control_generation === generation))

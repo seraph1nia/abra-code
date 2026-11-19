@@ -9,7 +9,7 @@ import { run } from "../effects.ts";
 
 const execute = promisify(execFile);
 
-test("independent processes preserve disjoint owned writes and refuse stale replacements", async (t) => {
+test("independent processes preserve disjoint patched and owned writes and refuse stale replacements", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const e = await run(planned(f));

@@ -136,9 +136,9 @@ const snapshot = Schema.Struct({
   closed_total: Schema.optional(Count),
   closed_page: Schema.optional(Count),
 });
+const overview = Schema.Struct({ work, description: Schema.String, errors: strings });
 const detail = Schema.Struct({
-  work,
-  description: Schema.String,
+  ...overview.fields,
   change: Schema.optional(ChangeName),
   archive: Schema.optional(RelativePath),
   artifacts: Schema.Array(
@@ -148,7 +148,6 @@ const detail = Schema.Struct({
   proposal: Schema.optional(Schema.String),
   documents: Schema.optional(Schema.Array(RelativePath)),
   planning: Schema.optional(PlanningObservationSchema),
-  errors: strings,
 });
 const diff = Schema.Struct({
   base: Schema.optional(Commit),
@@ -257,6 +256,11 @@ export const visibility = Rpc.define({
       input: Schema.toStandardSchemaV1(Schema.Struct({ issue_id: IssueId, path: RelativePath })),
       output: Schema.toStandardSchemaV1(document),
     },
+    overview: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(Schema.Struct({ issue_id: IssueId })),
+      output: Schema.toStandardSchemaV1(overview),
+    },
     detail: {
       errors: observerErrors,
       input: Schema.toStandardSchemaV1(Schema.Struct({ issue_id: IssueId })),
@@ -274,6 +278,7 @@ export const visibility = Rpc.define({
 
 export {
   snapshot as WorkSnapshotSchema,
+  overview as WorkOverviewSchema,
   detail as WorkDetailSchema,
   diff as WorkDiffSchema,
   document as WorkDocumentSchema,

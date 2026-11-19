@@ -45,6 +45,13 @@ test("shared HttpApiClient validates workspace reads, payloads and typed failure
   const web = await fixture();
   t.onTestFinished(web.close);
   const snapshot = await Effect.runPromise(web.client.workspace.bootstrap());
+  const work = snapshot.work.work[0];
+  web.backend.work.overview = () =>
+    Effect.succeed({ work, description: "Selected work", errors: [] });
+  assert.deepEqual(
+    await Effect.runPromise(web.client.work.overview({ query: { issue_id: work.issue_id } })),
+    { work, description: "Selected work", errors: [] },
+  );
   assert.equal(snapshot.session_id, web.backend.sessionID);
   assert.equal(snapshot.work.work[0].title, "Build a single workspace");
   assert.deepEqual(await Effect.runPromise(web.client.workspace.stop({ payload: {} })), {

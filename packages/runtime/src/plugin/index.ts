@@ -16,6 +16,7 @@ import { observerResult } from "../visibility/errors.ts";
 import { decodeJSON } from "../decode.ts";
 import {
   WorkSnapshotSchema,
+  WorkOverviewSchema,
   WorkDetailSchema,
   WorkDiffSchema,
   WorkDocumentSchema,
@@ -213,6 +214,15 @@ export const createPlugin = (
               observerRequest("document").pipe(
                 Effect.andThen(
                   observer.document(issue_id, path).pipe(Effect.flatMap(json(WorkDocumentSchema))),
+                ),
+              ),
+              error,
+            ).pipe(provide),
+          overview: ({ issue_id }, { error }) =>
+            observerResult(
+              observerRequest("overview").pipe(
+                Effect.andThen(
+                  observer.overview(issue_id).pipe(Effect.flatMap(json(WorkOverviewSchema))),
                 ),
               ),
               error,

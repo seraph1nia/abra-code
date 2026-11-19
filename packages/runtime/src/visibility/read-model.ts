@@ -593,7 +593,7 @@ export class Visibility {
         (a, b) =>
           Number(!a.phase) - Number(!b.phase) ||
           a.priority - b.priority ||
-          a.issue_id.localeCompare(b.issue_id),
+          (a.issue_id < b.issue_id ? -1 : Number(a.issue_id > b.issue_id)),
       );
       return {
         fleet,
@@ -623,9 +623,7 @@ export class Visibility {
         return { path, content: yield* this.c.planDocument(e, path) };
       }),
     );
-  detail: (issueID: IssueId) => Effect.Effect<WorkDetail, CrewError> = Effect.fn(
-    "Visibility.detail",
-  )(
+  private observeOverview = Effect.fn("Visibility.observeOverview")(
     function* (this: Visibility, issueID: IssueId) {
       identifier(issueID);
       const task = yield* this.c.observeTask(issueID);
@@ -675,17 +673,33 @@ export class Visibility {
           ? { phase: "recovery_required" as const, error: task.execution_unavailable }
           : {}),
       };
+      return {
+        execution: e,
+        overview: {
+          work,
+          description: issue.description ?? "",
+          errors: task.execution_unavailable ? [task.execution_unavailable] : [],
+        },
+      };
+    }.bind(this),
+    domainEffect,
+  );
+  overview = (issueID: IssueId) =>
+    this.observeOverview(issueID).pipe(Effect.map((observed) => observed.overview));
+  detail: (issueID: IssueId) => Effect.Effect<WorkDetail, CrewError> = Effect.fn(
+    "Visibility.detail",
+  )(
+    function* (this: Visibility, issueID: IssueId) {
+      const { execution: e, overview } = yield* this.observeOverview(issueID);
       const result: {
         -readonly [K in keyof WorkDetail]: WorkDetail[K];
       } & {
         errors: string[];
       } = {
-        work,
-        description: issue.description ?? "",
+        ...overview,
         change: e?.openspec_change,
         archive: e?.archive_path,
         artifacts: [],
-        errors: task.execution_unavailable ? [task.execution_unavailable] : [],
       };
       if (e && e.workflow_policy !== "full-openspec") {
         result.change = undefined;

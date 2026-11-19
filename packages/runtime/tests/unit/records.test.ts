@@ -4,7 +4,7 @@ import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { run } from "../effects.ts";
 import { applying, delivered, fixture, planned, MemoryStore, TestLocks } from "../fixtures.ts";
-import { Records } from "../../src/storage/store.ts";
+import { Records, removeOwnedField } from "../../src/storage/store.ts";
 import { Visibility } from "../../src/visibility/read-model.ts";
 
 const originalOperation = {
@@ -162,6 +162,28 @@ test("owned updates retain independent field deletion and future additive eviden
   const raw = (await run(f.records.store.get(key))) as Record<string, unknown>;
   assert.equal("retry_instructions" in raw, false);
   assert.deepEqual(raw.future_additive_evidence, { retained: true });
+});
+
+test("owned patches preserve extensions and refuse stale or invalid writes without changing the caller", async () => {
+  const { records, execution: e } = await retainedExecution({ operation: originalOperation });
+  const key = Id.StorageKey.make(`execution/${e.issue_id}`);
+  const original = structuredClone(e);
+  await run(records.store.set(key, { ...e, retry_instructions: "clear me", future_field: 42 }));
+  const saved = await run(
+    records.patchOwned(e, {
+      retry_instructions: removeOwnedField,
+      error_or_recovery_reason: "owned",
+    }),
+  );
+  assert.equal(saved.retry_instructions, undefined);
+  assert.equal(saved.error_or_recovery_reason, "owned");
+  assert.equal(Reflect.get((await run(records.store.get(key))) as object, "future_field"), 42);
+  await run(records.saveControl(saved));
+  const before = await run(records.store.get(key));
+  await assert.rejects(run(records.patchOwned(e, { retry_instructions: "stale" })), /superseded/);
+  await assert.rejects(run(records.patchOwned(saved, { rounds: [{} as never] })));
+  assert.deepEqual(await run(records.store.get(key)), before);
+  assert.deepEqual(e, original);
 });
 
 test("independent repository instances commit disjoint owned fields from current state", async () => {

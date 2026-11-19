@@ -72,16 +72,12 @@ export class WorkerSessions {
       return yield* this.coordination.with(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
-            const e = (yield* this.records.executions()).find((entry) =>
-              (["explore", "apply", "review", "research"] as const).some(
-                (role) => this.sessionID(entry, role) === sessionID,
-              ),
-            );
+            const e = yield* this.records.workerAssignment(sessionID);
             if (!e || e.current_phase === "completed") return;
             const role = (["explore", "apply", "review", "research"] as const).find(
               (r) => this.sessionID(e, r) === sessionID,
             );
-            if (role !== e.active_role) return;
+            if (!role || role !== e.active_role) return;
             // Native failure events carry no prompt ID and may arrive after
             // reconciliation has already stopped this turn with exact evidence.
             // Preserve that stronger observation rather than erasing its binding.

@@ -149,7 +149,7 @@ export class FakeWorkGraph implements WorkGraph {
                 issue.title.toLowerCase().includes(search) ||
                 issue.id.toLowerCase().includes(search)),
           )
-          .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+          .sort((a, b) => a.priority - b.priority || (a.id < b.id ? -1 : Number(a.id > b.id)));
         const offset = query.offset ?? 0,
           limit = query.limit ?? 50;
         return {

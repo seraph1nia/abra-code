@@ -13,6 +13,8 @@ Updated on 2026-11-19. AbraCode installs a local pinned runtime rather than upgr
 | Node / fs-ext      | tested 26.13.0 / fs-ext 2.1.1 | Runtime and single-host kernel advisory locks                                                                                                                                         |
 | GitHub CLI         | tested CLI 2.102.0            | PR JSON, CI/review status, merge head guard                                                                                                                                           |
 
+The pinned visibility RPC exposes `overview({ issue_id })` for ticket status, description, supervision, blockers and outcomes. Its HTTP counterpart is `GET /api/work/overview`. The existing `detail` method also reads planning evidence.
+
 The planning observer uses Git's `rev-parse --verify --end-of-options`, literal-path `ls-tree -r -z` and `cat-file -s/blob` against the retained delivered commit after registered repository validation. Only regular Markdown blobs under the exact retained change archive are admitted; symbolic links and current checkout replacements are excluded. This is a read-only Git projection, not an OpenCode archive API.
 
 ## OpenCode contracts
@@ -46,7 +48,7 @@ This adds no native storage CAS or transaction guarantee. See [the refactor
 evidence](verification/runtime-refactor.md) for the earlier command-backed results.
 
 The work finder uses Node's supported [`DatabaseSync.function`](https://nodejs.org/api/sqlite.html#databasefunctionname-options-fn)
-for Unicode lowercase matching and request-local legacy identifier rank, plus
+for Unicode lowercase matching, plus
 SQLite `json_each` for parameterized dependency/request batches. Bounded row
 selection and counts remain SQL operations inside the read transaction. No
 extension loading or arbitrary SQL endpoint is added.

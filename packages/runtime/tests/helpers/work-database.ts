@@ -23,15 +23,17 @@ export async function workDatabase(t: Cleanup) {
   return { root, path, ...(await workGraphAt(t, path)) };
 }
 
-export function removeFinderIndexForLegacyFixture(db: DatabaseSync) {
+export function restoreV8FinderFixture(db: DatabaseSync) {
   db.exec(`
-    DROP INDEX issues_finder_rank;
-    DROP INDEX issues_finder_priority;
-    DROP INDEX issues_finder_repository;
-    DROP INDEX issues_finder_status;
-    DROP INDEX issues_finder_repository_status;
-    DROP TABLE finder_order;
-    ALTER TABLE issues DROP COLUMN finder_rank;
-    PRAGMA user_version = 7;
+    DROP INDEX issues_repository_priority;
+    ALTER TABLE issues ADD COLUMN finder_rank INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE finder_order(singleton INTEGER PRIMARY KEY, collation TEXT NOT NULL);
+    INSERT INTO finder_order VALUES(1, 'previous runtime locale');
+    CREATE INDEX issues_finder_rank ON issues(finder_rank);
+    CREATE INDEX issues_finder_priority ON issues(priority,finder_rank);
+    CREATE INDEX issues_finder_repository ON issues(repository_id,priority,finder_rank);
+    CREATE INDEX issues_finder_status ON issues(status,priority,finder_rank);
+    CREATE INDEX issues_finder_repository_status ON issues(repository_id,status,priority,finder_rank);
+    PRAGMA user_version = 8;
   `);
 }

@@ -669,10 +669,7 @@ export class Queries {
     }.bind(this),
     domainEffect,
   );
-  assignment = (sessionID: SessionId) =>
-    this.records
-      .executions()
-      .pipe(Effect.map((executions) => executions.find((e) => hasWorkerSession(e, sessionID))));
+  assignment = (sessionID: SessionId) => this.records.workerAssignment(sessionID);
   diff = (id: IssueId, scope: DiffScope, file?: RelativePath) =>
     new TicketDiff({
       issue: this.issue,

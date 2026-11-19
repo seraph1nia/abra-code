@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { mkdir, rename, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fixture, planned, applying } from "../fixtures.ts";
+import * as documents from "../../src/visibility/documents.ts";
 import { Visibility } from "../../src/visibility/read-model.ts";
 import { visibility } from "../../src/visibility/protocol.ts";
 test("observer joins WorkGraph, blockers and role sessions without advancing a waiting plan", async (t) => {
@@ -31,6 +32,57 @@ test("observer joins WorkGraph, blockers and role sessions without advancing a w
   assert.equal(f.runtime.forms.size, 0);
   assert.ok("value" in (await visibility.methods.snapshot.output["~standard"].validate(snapshot)));
   assert.ok("value" in (await visibility.methods.detail.output["~standard"].validate(detail)));
+});
+test("overview observes one ticket without reading planning evidence, even with a missing worktree", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(planned(f)),
+    view = new Visibility(f.controller);
+  const status = f.spec.status.bind(f.spec);
+  f.spec.status = (execution) =>
+    status(execution).pipe(
+      Effect.map((s) => ({
+        ...s,
+        artifacts: [
+          {
+            id: Id.ArtifactId.make("proposal"),
+            status: "done" as const,
+            outputPath: Id.RelativePath.make("proposal.md"),
+          },
+        ],
+      })),
+    );
+  const task = vi.spyOn(f.controller.queries, "observeTask");
+  const planning = [
+    vi.spyOn(f.controller.queries, "specStatus"),
+    vi.spyOn(f.controller.queries, "specApply"),
+    vi.spyOn(f.controller.queries, "planDocuments"),
+    vi.spyOn(documents, "changeDocument"),
+  ];
+  t.onTestFinished(() => {
+    for (const spy of planning) spy.mockRestore();
+  });
+  const overview = await run(view.overview(e.issue_id));
+  assert.deepEqual(Object.keys(overview).sort(), ["description", "errors", "work"]);
+  assert.ok("value" in (await visibility.methods.overview.output["~standard"].validate(overview)));
+  assert.equal(task.mock.calls.length, 1);
+  assert.deepEqual(
+    planning.map((spy) => spy.mock.calls.length),
+    [0, 0, 0, 0],
+  );
+  const full = await run(view.detail(e.issue_id));
+  assert.equal(task.mock.calls.length, 2);
+  assert.equal(full.description, overview.description);
+  assert.deepEqual(
+    planning.map((spy) => spy.mock.calls.length),
+    [1, 1, 1, 1],
+  );
+  await rename(e.worktree_directory!, e.worktree_directory! + "-unavailable");
+  assert.deepEqual((await run(view.overview(e.issue_id))).errors, []);
+  assert.deepEqual(
+    planning.map((spy) => spy.mock.calls.length),
+    [1, 1, 1, 1],
+  );
 });
 test("proposal reads the owned worktree and schema artifact path, rejecting escaping symlinks", async (t) => {
   const f = await run(fixture);
@@ -321,6 +373,7 @@ test("bounded supervision projection preserves record history and exposes read-o
     "find",
     "leads",
     "messages",
+    "overview",
     "report",
     "snapshot",
     "worker",

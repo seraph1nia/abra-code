@@ -21,7 +21,7 @@ test("a delayed inspector read completes during live work observations", async (
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   let aborted = 0;
   page.on("requestfailed", (request) => {
-    if (request.url().includes("/api/work/detail")) aborted++;
+    if (request.url().includes("/api/work/overview")) aborted++;
   });
   await page.goto(`${f.origin}/?issue=abra-slow&tab=Overview`);
   let revision = 0;
@@ -50,7 +50,7 @@ test("a delayed inspector read completes during live work observations", async (
   assert.equal(f.source.submissions, 0);
 });
 
-test("an observation arriving in flight retains a dirty detail refresh and explicit refresh still works", async (t) => {
+test("an observation arriving in flight retains a pending Overview refresh and explicit refresh still works", async (t) => {
   const browser = await launchReportBrowser();
   t.onTestFinished(() => browser.close());
   const f = await workspaceBrowserFixture(browser);
@@ -64,7 +64,7 @@ test("an observation arriving in flight retains a dirty detail refresh and expli
   let firstReady!: () => void;
   const ready = new Promise<void>((resolve, reject) => {
     const timer = setTimeout(
-      () => reject(new Error("Initial detail response was not captured")),
+      () => reject(new Error("Initial Overview response was not captured")),
       3000,
     );
     t.onTestFinished(() => clearTimeout(timer));
@@ -74,7 +74,7 @@ test("an observation arriving in flight retains a dirty detail refresh and expli
     };
   });
   let requests = 0;
-  await page.route("**/api/work/detail?*", async (route) => {
+  await page.route("**/api/work/overview?*", async (route) => {
     const ordinal = ++requests;
     const response = await route.fetch();
     if (ordinal === 1) {
@@ -96,8 +96,8 @@ test("an observation arriving in flight retains a dirty detail refresh and expli
       })),
     },
   };
-  await f.changed();
-  // The new live work state must reach the browser while the old detail is held.
+  for (let index = 0; index < 3; index++) await f.changed();
+  // The new live work state must reach the browser while the old Overview is held.
   await page.getByRole("heading", { name: "Observed in-flight work", exact: true }).waitFor({
     timeout: 3000,
   });
@@ -105,12 +105,13 @@ test("an observation arriving in flight retains a dirty detail refresh and expli
   await page.getByText("Fresh after in-flight observation", { exact: true }).waitFor({
     timeout: 3000,
   });
+  assert.equal(f.calls.filter((call) => call.name === "detail").length, 0);
   assert.ok(requests >= 2, "An in-flight invalidation must produce a later fresh read");
   f.detailOverrides.set("abra-web", { description: "Fresh after explicit user refresh" });
   await page
     .getByRole("complementary", { name: "Work inspector" })
     .getByRole("button", { name: "Refresh retained evidence", exact: true })
-    .first() // The outer detail query precedes its nested review-evidence query.
+    .first() // The outer Overview query precedes its nested review-evidence query.
     .click();
   await page.getByText("Fresh after explicit user refresh", { exact: true }).waitFor({
     timeout: 3000,

@@ -78,36 +78,39 @@ export const diagramQuery = Atom.family((key: string) =>
     .pipe(Atom.setIdleTTL(0)),
 );
 const workReactivity = WorkspaceApi.runtime.atom(Reactivity.Reactivity);
-const detailQuery = Atom.family((issue: string) => {
-  const query = WorkspaceApi.query("work", "detail", {
-    query: { issue_id: IssueId.make(issue) },
-    timeToLive: "30 seconds",
+const ticketQuery = <A, E>(
+  read: (options: {
+    query: { issue_id: IssueId };
+    timeToLive: "30 seconds";
+  }) => Atom.Atom<AsyncResult.AsyncResult<A, E>>,
+) =>
+  Atom.family((issue: string) => {
+    const query = read({ query: { issue_id: IssueId.make(issue) }, timeToLive: "30 seconds" });
+    return Atom.transform(
+      query,
+      (get) => {
+        const reactivity = AsyncResult.getOrThrow(get(workReactivity));
+        let dirty = false;
+        get.addFinalizer(
+          reactivity.registerUnsafe(queryOptions(issue).reactivityKeys, () => {
+            // Live observations must not cancel a slower in-flight detail read.
+            // Retain one dirty refresh; explicit user refresh still delegates to query.
+            if (get.once(query).waiting) dirty = true;
+            else get.refresh(query);
+          }),
+        );
+        get.subscribe(query, (value) => {
+          get.setSelf(value);
+          if (!value.waiting && dirty) {
+            dirty = false;
+            get.refresh(query);
+          }
+        });
+        return get.once(query);
+      },
+      { initialValueTarget: query },
+    );
   });
-  return Atom.transform(
-    query,
-    (get) => {
-      const reactivity = AsyncResult.getOrThrow(get(workReactivity));
-      let dirty = false;
-      get.addFinalizer(
-        reactivity.registerUnsafe(queryOptions(issue).reactivityKeys, () => {
-          // Live observations must not cancel a slower in-flight detail read.
-          // Retain one dirty refresh; explicit user refresh still delegates to query.
-          if (get.once(query).waiting) dirty = true;
-          else get.refresh(query);
-        }),
-      );
-      get.subscribe(query, (value) => {
-        get.setSelf(value);
-        if (!value.waiting && dirty) {
-          dirty = false;
-          get.refresh(query);
-        }
-      });
-      return get.once(query);
-    },
-    { initialValueTarget: query },
-  );
-});
 export const queries = {
   binding: (selection: BindingSelection) =>
     WorkspaceApi.query("work", "binding", {
@@ -133,7 +136,8 @@ export const queries = {
       reactivityKeys: ["work-finder"],
       timeToLive: "30 seconds",
     }),
-  detail: detailQuery,
+  overview: ticketQuery((options) => WorkspaceApi.query("work", "overview", options)),
+  detail: ticketQuery((options) => WorkspaceApi.query("work", "detail", options)),
   document: (issue: string, path: string) =>
     WorkspaceApi.query("work", "document", {
       query: { issue_id: IssueId.make(issue), path: RelativePath.make(path) },

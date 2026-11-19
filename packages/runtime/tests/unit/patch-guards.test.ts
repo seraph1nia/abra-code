@@ -1,7 +1,7 @@
 import * as Id from "../../src/identities.ts";
 import { Effect, Exit } from "effect";
 import { run } from "../effects.ts";
-import { test, type TestContext } from "vite-plus/test";
+import { test, vi, type TestContext } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { symlink } from "node:fs/promises";
@@ -119,4 +119,33 @@ test("Apply can edit repository instructions while control paths and worktree co
     run(edit("write", join(e.worktree_directory!, "../AGENTS.md"))),
     /write root/,
   );
+});
+
+test("known worker hook and progress read only the selected execution among 100", async (t) => {
+  const { f, e, invoke } = await guard(t);
+  for (let i = 1; i < 100; i++)
+    await run(
+      f.records.create({
+        ...e,
+        issue_id: Id.IssueId.make(`other-${i}`),
+        execution_id: Id.ExecutionId.make(`exec-${i}`),
+        explore_session_id: Id.SessionId.make(`ses_other-${i}`),
+        session_intent: undefined,
+      }),
+    );
+  const entries = vi.spyOn(f.records.store, "entries");
+  const get = vi.spyOn(f.records.store, "get");
+  const executionReads = () => get.mock.calls.filter(([key]) => key.startsWith("execution/"));
+  const executionScans = () => entries.mock.calls.filter(([prefix]) => prefix === "execution/");
+  const ticket = Id.StorageKey.make(`execution/${e.issue_id}`);
+  const native = vi.spyOn(f.runtime, "session");
+  await run(invoke("read"));
+  assert.deepEqual(executionReads(), [[ticket]]);
+  get.mockClear();
+  await run(f.controller.observeWorker(e.explore_session_id!));
+  assert.deepEqual(executionReads(), [[ticket]]);
+  assert.deepEqual(native.mock.calls, [[e.explore_session_id]]);
+  assert.equal(executionScans().length, 0);
+  assert.equal(await run(f.records.workerAssignment(Id.SessionId.make("ses_unknown"))), undefined);
+  assert.equal(executionScans().length, 1);
 });
