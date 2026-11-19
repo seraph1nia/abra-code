@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { PlanningSchema, planningHistoryError } from "../workflow/planning-contracts.ts";
 import { createHash, randomUUID } from "node:crypto";
 import {
   MessageIntentsSchema,
@@ -563,6 +564,15 @@ export class Records {
             );
             const error = messageHistoryError(prior.messages, next);
             if (error) return yield* new CrewError("MESSAGE_HISTORY", error);
+          }
+          if (object(prior) && Schema.is(PlanningSchema)(prior.planning)) {
+            const next = yield* decode(
+              PlanningSchema,
+              Reflect.get(record, "planning"),
+              "Planning history",
+            );
+            const error = planningHistoryError(prior.planning, next);
+            if (error) return yield* new CrewError("PLANNING_HISTORY", error);
           }
           const decoded = yield* decode(schema, record, key);
           if (!object(decoded))

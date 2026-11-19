@@ -1,18 +1,24 @@
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { Effect } from "effect";
 import { Skill } from "@opencode/schema/skill";
+import { Agent } from "@opencode/schema/agent";
+import { Model } from "@opencode/schema/model";
+import { Provider } from "@opencode/schema/provider";
 import { type Context } from "@opencode/plugin/effect/plugin";
 import { AbsolutePath } from "../../src/identities.ts";
-import { registerSkills } from "../../src/opencode/skills.ts";
+import { registerSkills } from "@abracode/agents/native";
+import { bundledSkills } from "@abracode/agents/bundled";
+import { platformLayer } from "../../src/platform.ts";
 import { capabilityRequirements } from "../../src/opencode/role-policy.ts";
 import { engineeringGuidance } from "../../src/opencode/engineering-skills.ts";
-import { resolveSkills } from "../../src/opencode/worker-environment.ts";
+import { resolveSkills, resolveCapturedSkills } from "../../src/opencode/worker-environment.ts";
 import { workerPrompt } from "../../src/workflow/prompts.ts";
 import { fixture } from "../fixtures.ts";
 import { IssueId } from "../../src/identities.ts";
-import { readFile } from "node:fs/promises";
+import { access, cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import { run } from "../effects.ts";
 
 const expected = {
@@ -22,7 +28,12 @@ const expected = {
   research: [],
 };
 
-test("portable registration preserves local skills centrally and at foreign locations", async () => {
+test("portable registration preserves local skills without a developer skill directory", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "abra-runtime-skills-"));
+  t.onTestFinished(() => rm(root, { recursive: true, force: true }));
+  const skills = join(root, "packages/agents/assets/skills");
+  await cp(bundledSkills, skills, { recursive: true });
+  await assert.rejects(access(join(root, ".agents")), /ENOENT/);
   for (const central of [false, true]) {
     const local = { id: Skill.ID.make("local-fixture"), content: "Local instructions" };
     const inventory = new Map<string, Pick<Skill.Info, "id" | "content">>([[local.id, local]]);
@@ -38,7 +49,7 @@ test("portable registration preserves local skills centrally and at foreign loca
           ),
       },
     } as unknown as Context;
-    await run(registerSkills(ctx, AbsolutePath.make(resolve(".")), central));
+    await run(registerSkills(ctx, skills, central).pipe(Effect.provide(platformLayer)));
     assert.equal(inventory.get(local.id), local);
     for (const name of expected.apply) {
       const skill = inventory.get(`abra-${name}`);
@@ -48,8 +59,45 @@ test("portable registration preserves local skills centrally and at foreign loca
     }
     assert.equal(inventory.has("abra-orchestration"), central);
     assert.ok(inventory.has("abra-openspec-execution"));
-    assert.ok(inventory.has("abra-testing"));
+    assert.ok(!inventory.has("abra-testing"));
+    assert.equal(inventory.size, central ? 11 : 8);
   }
+});
+
+test("retained testing requirements block explicitly while relocated skill observations stay immutable", async () => {
+  const id = Skill.ID.make("abra-testing");
+  const prior = {
+    id,
+    name: Skill.Name.make(id),
+    path: AbsolutePath.make("/old/.agents/skills/testing/SKILL.md"),
+    content: "Previously registered contributor testing guidance",
+  };
+  const resolved = await run(
+    resolveSkills("research", "research-only", { required_skills: [id] }, [prior], "/worker"),
+  );
+  const environment = {
+    ...resolved,
+    agent: Agent.ID.make("research"),
+    model: {
+      providerID: Provider.ID.make("fixture"),
+      id: Model.ID.make("fixture"),
+    },
+  };
+  const before = structuredClone(environment);
+  await assert.rejects(
+    run(resolveCapturedSkills("research", environment, [], "/worker")),
+    /required skill abra-testing.*missing, ambiguous or unusable/,
+  );
+  const observed = await run(
+    resolveCapturedSkills(
+      "research",
+      environment,
+      [{ ...prior, path: AbsolutePath.make("/relocated/skill.md") }],
+      "/worker",
+    ),
+  );
+  assert.deepEqual(observed, resolved);
+  assert.deepEqual(environment, before);
 });
 
 test("new admissions select the role matrix additively and load only relevant procedures", async () => {
@@ -100,14 +148,14 @@ test("conditional prompts and role leaves retain policy-specific assignments", a
   for (const role of ["explore", "apply", "review", "research"] as const) {
     const workflow = role === "research" ? "research-only" : "full-openspec";
     const prompt = workerPrompt({ ...e, workflow_policy: workflow }, issue, role);
-    const leaf = await readFile(resolve(`.opencode/agents/${role}.md`), "utf8");
+    const leaf = await readFile(resolve(`packages/agents/assets/${role}.md`), "utf8");
     for (const name of expected[role]) {
       assert.ok(prompt.includes(`abra-${name}`));
       assert.ok(leaf.includes(`abra-${name}`));
     }
     if (role === "explore") {
       const procedure = await readFile(
-        resolve(".agents/skills/openspec-execution/SKILL.md"),
+        resolve("packages/agents/assets/skills/openspec-execution/SKILL.md"),
         "utf8",
       );
       assert.match(prompt, /abra-openspec-execution/);

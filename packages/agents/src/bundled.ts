@@ -1,0 +1,99 @@
+import { Context, Effect, Layer } from "effect";
+import {
+  Agent,
+  Agents,
+  AgentSources,
+  agentLayer,
+  makeCatalog,
+  type AgentDefinition,
+  type AgentService,
+} from "./index.ts";
+import { engineeringSkills } from "./engineering-skills.ts";
+import { fileURLToPath } from "node:url";
+import { rolePolicy } from "./policy.ts";
+export const bundledAssets = fileURLToPath(new URL("../assets", import.meta.url));
+export const bundledSkills = fileURLToPath(new URL("../assets/skills", import.meta.url));
+const worker = (
+  id: "explore" | "apply" | "review" | "research",
+  description: string,
+): AgentDefinition => ({
+  id,
+  revision: "1",
+  description,
+  mode: "subagent",
+  roles: [id],
+  instructions: [{ file: `${id}.md` }],
+  tools: rolePolicy(id).tools,
+  skills: [
+    { name: "openspec-execution" },
+    { name: "browser" },
+    ...engineeringSkills.map(({ name }) => ({ name })),
+  ],
+});
+export const definitions: readonly AgentDefinition[] = [
+  {
+    id: "abra",
+    revision: "1",
+    description: "Abra, your AbraCode supervisor",
+    mode: "primary",
+    roles: ["supervisor"],
+    instructions: [{ file: "abra.md" }],
+    tools: rolePolicy("supervisor").tools,
+    skills: [
+      "orchestration",
+      "project-onboarding",
+      "recovery",
+      "openspec-execution",
+      "browser",
+    ].map((name) => ({ name })),
+  },
+  worker("explore", "Investigate one issue and prepare its repository-local OpenSpec plan"),
+  worker(
+    "apply",
+    "Implement one approved full-spec or lightweight change in its existing issue worktree",
+  ),
+  worker("review", "Independently review implementation against the approved specification"),
+  worker(
+    "research",
+    "Investigate a scoped question read-only and submit an independently retained report",
+  ),
+  {
+    id: "project-lead",
+    revision: "1",
+    description: "Scoped AbraCode project lead",
+    mode: "subagent",
+    roles: ["project-lead"],
+    instructions: [
+      {
+        inline:
+          "You are a controller-managed project lead. Use only abra_lead_action at the retained registration revision. Propose scoped tasks and report evidence. Never approve, start workers, modify code or deliver work.",
+      },
+    ],
+    tools: ["abra_lead_action"],
+  },
+];
+export const AbraLive = agentLayer(definitions[0]);
+export const ExploreLive = agentLayer(definitions[1]);
+export const ApplyLive = agentLayer(definitions[2]);
+export const ReviewLive = agentLayer(definitions[3]);
+export const ResearchLive = agentLayer(definitions[4]);
+export const ProjectLeadLive = agentLayer(definitions[5]);
+export const bundledCatalog = Effect.gen(function* () {
+  const values: AgentService[] = [];
+  // Each implementation publishes the same tag into its OWN Context.
+  for (const live of [
+    AbraLive,
+    ExploreLive,
+    ApplyLive,
+    ReviewLive,
+    ResearchLive,
+    ProjectLeadLive,
+  ]) {
+    const context = yield* Layer.build(live);
+    values.push(Context.get(context, Agent));
+  }
+  return yield* makeCatalog(values);
+});
+export const AgentsLive = Layer.effect(Agents, bundledCatalog);
+export const sourcesLayer = (skills = bundledSkills, assets = bundledAssets) =>
+  Layer.succeed(AgentSources, { assets, skills });

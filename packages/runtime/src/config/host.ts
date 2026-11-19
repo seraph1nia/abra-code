@@ -9,22 +9,6 @@ export const hostConfiguration = (config: Config) => ({
   $schema: "https://opencode.ai/config.json",
   plugins: [join(config.home, ".opencode/plugins/abracode")],
   default_agent: identity.agent,
-  agent: {
-    "project-lead": {
-      description: "Scoped AbraCode project lead",
-      mode: "subagent",
-      hidden: true,
-      prompt:
-        "You are a controller-managed project lead. Use only abra_lead_action at the retained registration revision. Propose scoped tasks and report evidence. Never approve, start workers, modify code or deliver work.",
-    },
-    [identity.agent]: {
-      description: "Abra, your AbraCode supervisor",
-      mode: "primary",
-      model: `${config.supervisor_model.providerID}/${config.supervisor_model.id}`,
-      ...(config.supervisor_model.variant ? { variant: config.supervisor_model.variant } : {}),
-      prompt: `{file:${join(config.home, ".opencode/agents/abra.md")}}`,
-    },
-  },
 });
 
 /** Resolve existing ancestors too: a not-yet-created file can live under a legacy symlink. */

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fixture, applying } from "../fixtures.ts";
 import { verifiedSpec } from "../helpers/spec-review.ts";
 import { run } from "../effects.ts";
-import { RepositoryId, SessionId } from "../../src/identities.ts";
+import { RepositoryId, SessionId, RequestId } from "../../src/identities.ts";
 import { type SpecVerification } from "../../src/workflow/review-contracts.ts";
 
 const newFixture = () => run(fixture);
@@ -233,7 +233,12 @@ test("changed requirements invalidate previous approval and need a new plan chec
       "collect",
     ),
   );
-  e = await run(f.controller.control(e.issue_id, "replan", "Revise the accepted behavior"));
+  e = await run(
+    f.controller.control(e.issue_id, "replan", "Revise the accepted behavior", {
+      id: RequestId.make("requirements-replan"),
+      sender: SessionId.make("ses_supervisor"),
+    }),
+  );
   assert.equal(e.plan_fingerprint, undefined);
   const path = join(e.worktree_directory!, "openspec/changes", e.openspec_change, "proposal.md");
   await writeFile(path, `${await readFile(path, "utf8")}\nRevised behavior: reject requests.\n`);

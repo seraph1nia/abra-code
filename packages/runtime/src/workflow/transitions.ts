@@ -32,6 +32,7 @@ export class ExecutionTransitions {
         "capacity_observed_idle",
         "capacity_reservation",
         "active_role",
+        "session_intent",
       ]);
     }.bind(this),
     domainEffect,

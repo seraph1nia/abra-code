@@ -94,6 +94,11 @@ export class NativeWebBackend implements WebBackend {
   private gateway(client: OpenCodeClient) {
     return client.rpc(webGateway);
   }
+  readonly agents = Effect.suspend(() =>
+    this.use((client) =>
+      this.gateway(client).agents({ session_id: this.sessionID }, this.location()),
+    ),
+  );
   private location() {
     return { location: { directory: this.home } };
   }

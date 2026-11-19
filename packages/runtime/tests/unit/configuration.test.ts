@@ -9,6 +9,29 @@ import { hostConfiguration } from "../../src/config/host.ts";
 import { run } from "../effects.ts";
 const base = "version: 1\nmodels:\n  default: { providerID: example, id: basic, variant: high }\n";
 
+test("definition selection defaults by role and stays independent from the native override during offline inspection", async () => {
+  const config = await run(
+    resolveConfig(
+      "/installation",
+      "/installation/abracode.yaml",
+      base + "workers:\n  apply: {definition: specialist, agent: external}\n",
+    ),
+  );
+  assert.equal(config.workers.apply?.definition, "specialist");
+  assert.equal(config.workers.apply?.agent, "external");
+  assert.equal(config.workers.review?.definition, "review");
+  assert.equal(config.workers.review?.agent, undefined);
+  await assert.rejects(
+    run(
+      resolveConfig(
+        "/installation",
+        "/installation/abracode.yaml",
+        base + "workers:\n  apply: {definition: 'invalid identity'}\n",
+      ),
+    ),
+  );
+});
+
 test("model overrides replace the whole selection without inheriting another model's variant", async () => {
   const config = await run(
     resolveConfig(
@@ -25,7 +48,7 @@ test("model overrides replace the whole selection without inheriting another mod
   assert.equal(presentConfig(config).models.apply.source, "models.overrides.apply");
   const host = hostConfiguration(config);
   assert.equal(host.default_agent, "abra");
-  assert.equal(host.agent.abra.model, "example/basic");
+  assert.ok(!("agent" in host), "native registration owns instructions and profile fields");
 });
 
 test("configuration rejects typos, duplicate keys, missing models, unknown versions and duplicate identities", async () => {
@@ -93,7 +116,7 @@ test("tracked example, isolated ignore rules and generated host files share the 
     const host = JSON.parse(await readFile(generated, "utf8"));
     assert.equal(host.default_agent, "abra");
     assert.deepEqual(host.plugins, [join(home, ".opencode/plugins/abracode")]);
-    assert.match(host.agent.abra.prompt, new RegExp(name + "/.opencode/agents/abra.md"));
+    assert.ok(!("agent" in host), "bootstrap does not duplicate native instructions");
     await mkdir(join(home, ".opencrew"));
     const { assertFreshPaths } = await import("../../src/config/host.ts");
     await mkdir(join(home, ".opencrew/state"));

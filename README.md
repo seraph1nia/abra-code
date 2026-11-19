@@ -15,7 +15,7 @@ The first release supports **Linux**. The tested environment is Linux x86-64 wit
 | Core application              | Linux, supported Node, pinned pnpm, Git, `flock`, an authenticated model provider with tool-capable models         |
 | Commits and repository access | Git user name/email and credentials/access for the selected remotes                                                |
 | GitHub PR delivery            | GitHub CLI (`gh`, tested 2.102.0), `gh auth login`, repository/PR permissions; CI/review permissions as applicable |
-| Browser assignments           | Explicit Chrome/Chromium setup and Linux browser libraries                                                         |
+| Browser assignments           | Chrome for Testing via `mise run setup`, or explicit browser setup; Linux browser libraries                        |
 | Managed project checks        | That project's own languages, package managers and verification tools                                              |
 | Optional external validation  | Separately installed/configured no-mistakes v1.84.0; native validation is the default                              |
 
@@ -44,7 +44,8 @@ For browser access, run `pnpm web:build` and `pnpm web`. The CopilotKit v2 works
 
 [mise](https://mise.jdx.dev/walkthrough.html) installs the pinned Node, pnpm and
 [Agent Package Manager (APM)](https://github.com/microsoft/apm) versions: run
-`mise trust` and `mise run setup`. Setup also restores the upstream A2UI,
+`mise trust` and `mise run setup`. Setup installs the pnpm-pinned agent-browser
+CLI and its Chrome for Testing binary, then restores the upstream agent-browser, A2UI,
 AG-UI A2UI integration, CopilotKit, React best practices, web design guidelines,
 frontend design and Matt Pocock's retro, architecture and codebase design skills
 into `.agents/skills/`, shared by Codex and OpenCode. The required
@@ -120,7 +121,7 @@ Full OpenSpec work follows Explore, plan approval, Apply, verification, independ
 
 Workers operate behind Abra. Inspect their activity, model, recent evidence and reports in **Workers**; they have no conversational entry point in AbraCode. Managed worker prompts require a matching retained controller intent. Ask questions and give instructions through Abra; required approvals still use native human forms.
 
-Full OpenSpec is the shipped default. Explicit `research-only` retains findings without implementation; explicit `lightweight-fix` uses a short accepted scope with verification and independent Review. Automatic scheduling and automatic repair are disabled by default. See [work policies](docs/architecture.md), [configuration](docs/configuration.md) and the shipped [operational skills](.agents/skills/orchestration/SKILL.md).
+Full OpenSpec is the shipped default. Explicit `research-only` retains findings without implementation; explicit `lightweight-fix` uses a short accepted scope with verification and independent Review. Automatic scheduling and automatic repair are disabled by default. See [work policies](docs/architecture.md), [configuration](docs/configuration.md) and the shipped [operational skills](packages/agents/assets/skills/orchestration/SKILL.md).
 
 Set `supervision_mode` in the personal YAML to `manual`, `attended-automatic` or
 `unattended`, then restart the dedicated service while workers are idle. Abra can
@@ -156,7 +157,7 @@ when requested. Browser use, project leads and visual reporting are optional.
 
 Use the browser Work finder for fleet/project counts, attention, retained tasks and scoped leads. The inspector shows Overview, Plan, Diff, Activity and Reports. Session/communication/review evidence remains read-only; conversational work requests return to Abra and approvals use current native forms. `pnpm attach` still opens the native Abra conversation using OpenCode’s own terminal UI.
 
-For browser assignments, explicitly run `pnpm browser:install` as the service user, or select a compatible existing Chrome/Chromium through `AGENT_BROWSER_EXECUTABLE_PATH`. Install required Linux system libraries separately. Routine diagnostics do not provision or launch a browser, and non-browser work does not require Chrome. See [browser setup](docs/operations.md#browser-cli).
+`mise run setup` provisions the browser as part of installation. With a pnpm-only install, run `pnpm browser:install` as the service user, or select a compatible existing Chrome/Chromium through `AGENT_BROWSER_EXECUTABLE_PATH`. Install required Linux system libraries separately. Routine diagnostics do not provision or launch a browser, and non-browser work does not require Chrome. For interactive UI verification and evidence, use the APM-installed `agent-browser` skill and project-local CLI. See [browser setup](docs/operations.md#browser-cli).
 
 [Saved reports](docs/reports.md) use immutable JSON and the shared React/A2UI catalog. Export offline HTML explicitly from a saved report; browser/build prerequisites are separate from ordinary viewing. Existing native graphical clients may preview linked HTML files.
 

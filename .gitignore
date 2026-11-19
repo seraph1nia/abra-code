@@ -2,6 +2,7 @@ node_modules/
 
 # APM dependencies and generated shared skills (restored from apm.lock.yaml)
 apm_modules/
+/.agents/skills/agent-browser/
 /.agents/skills/a2ui/
 /.agents/skills/ag-ui-a2ui-integration/
 /.agents/skills/copilotkit/

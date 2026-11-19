@@ -189,9 +189,17 @@ for (const admitted of [true, false]) {
       const state = f.runtime.sessions.get(e.explore_session_id!)!;
       state.busy = false;
       state.outcome = "succeeded";
-      await assert.rejects(run(restarted.control(e.issue_id, "replan")), {
-        code: "MESSAGE_UNCERTAIN",
-      });
+      await assert.rejects(
+        run(
+          restarted.control(e.issue_id, "replan", undefined, {
+            id: Id.RequestId.make("uncertain-replan"),
+            sender: Id.SessionId.make("ses_supervisor"),
+          }),
+        ),
+        {
+          code: "MESSAGE_UNCERTAIN",
+        },
+      );
       assert.equal((await run(restarted.get(e.issue_id))).prompt_id, e.prompt_id);
       assert.equal(f.runtime.prompts, count);
     }

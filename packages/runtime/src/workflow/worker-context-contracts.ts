@@ -16,12 +16,19 @@ import {
   ToolObservationSchema,
   digestText,
 } from "../opencode/worker-environment.ts";
+import { PreparedAgent, canonicalJson, digest } from "@abracode/agents/contracts";
+export const contextDigest = (value: object) =>
+  digest(
+    canonicalJson(
+      Object.fromEntries(Object.entries(value).filter(([key]) => key !== "capture_digest")),
+    ),
+  );
 
 const reference = Schema.Struct({
   path: Schema.String,
   status: Schema.Literals(["discovered", "declared", "unavailable"]),
 });
-export const WorkerContextSchema = Schema.Struct({
+const WorkerContextV1 = Schema.Struct({
   schema_version: Schema.Literal(1),
   issue_id: IssueId,
   execution_id: ExecutionId,
@@ -65,6 +72,25 @@ export const ContextStatusSchema = Schema.Struct({
   observation: Schema.optional(ToolObservationSchema),
   at: Timestamp,
 });
+const WorkerContextV2 = Schema.Struct({
+  ...WorkerContextV1.fields,
+  schema_version: Schema.Literal(2),
+  guidance: Schema.Struct({ digest: Schema.String, content: Schema.String }),
+  prepared: PreparedAgent,
+  capture_digest: Schema.String,
+}).check(
+  Schema.makeFilter(
+    (context) =>
+      (context.guidance.digest === digestText(context.guidance.content) &&
+        context.guidance.content === context.prepared.profile.system &&
+        context.prepared.profile.role === context.role &&
+        context.environment.agent === context.prepared.native_agent &&
+        canonicalJson(context.environment.model) === canonicalJson(context.prepared.model) &&
+        context.capture_digest === contextDigest(context)) ||
+      "Prepared context identity or guidance does not match captured assignment",
+  ),
+);
+export const WorkerContextSchema = Schema.Union([WorkerContextV1, WorkerContextV2]);
 export const WorkerContextSummarySchema = Schema.Struct({
   role: RoleSchema,
   provenance: Schema.Literals(["captured", "legacy_unavailable", "invalid"]),
@@ -72,6 +98,8 @@ export const WorkerContextSummarySchema = Schema.Struct({
   captured_at: Schema.optional(Timestamp),
   generation: Schema.optional(Count),
   policy: Schema.optional(Schema.String),
+  definition: Schema.optional(Schema.String),
+  profile_revision: Schema.optional(Schema.String),
   directory: Schema.optional(AbsolutePath),
   scope_reference: Schema.optional(Schema.String),
   scope_fingerprint: Schema.optional(Fingerprint),

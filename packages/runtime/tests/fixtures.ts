@@ -7,6 +7,7 @@ import {
   type BatchResult,
 } from "../src/work/batch.ts";
 import { capabilityRequirements } from "../src/opencode/role-policy.ts";
+import { workerProfile } from "../src/config/snapshot.ts";
 import { type WorkerEnvironment } from "../src/opencode/worker-environment.ts";
 import { Agent } from "@opencode/schema/agent";
 import { verifiedSpec } from "./helpers/spec-review.ts";
@@ -504,7 +505,7 @@ export class FakeRuntime implements Runtime {
     _promptID?: Id.MessageId,
   ): Effect.Effect<WorkerEnvironment | void, CrewError> {
     if (_promptID && this.admissions.has(_promptID)) return Effect.void;
-    const profile = _e.configuration_snapshot?.workers[_role] ?? this.profiles[_role];
+    const profile = workerProfile(_e, _role, { workers: this.profiles });
     const req = capabilityRequirements(_role, _e.workflow_policy, profile);
     return Effect.succeed({
       agent: profile?.agent ?? Agent.ID.make("build"),
@@ -810,11 +811,11 @@ export const fixture = domainEffect(
       join(process.env.ABRACODE_TEST_REPOSITORY_SEED ?? tmpdir(), "abracode-unit-"),
     );
     return yield* Effect.gen(function* () {
-      yield* mkdir(join(root, ".opencode/agents"), { recursive: true });
+      yield* mkdir(join(root, "packages/agents/assets"), { recursive: true });
       for (const role of ["explore", "apply", "review", "research"])
         yield* writeFile(
-          join(root, ".opencode/agents", `${role}.md`),
-          yield* readFile(join(process.cwd(), ".opencode/agents", `${role}.md`), "utf8"),
+          join(root, "packages/agents/assets", `${role}.md`),
+          yield* readFile(join(process.cwd(), "packages/agents/assets", `${role}.md`), "utf8"),
         );
       const runner = new ProcessRunner();
       const git = new Git(runner);
@@ -892,6 +893,7 @@ export const fixture = domainEffect(
         runtime,
         delivery,
         locks,
+        join(root, "packages/agents/assets"),
       );
       return {
         root,

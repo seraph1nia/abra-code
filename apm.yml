@@ -5,6 +5,7 @@ targets:
   - codex
 dependencies:
   apm:
+    - vercel-labs/agent-browser/skills/agent-browser#1cc19526f3641c8543d55aa6700e7c55b37ac356
     - a2ui-project/a2ui/skills/a2ui#57f961f143da23f4212313e432a64b5843d978f9
     - ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration#2330368a2a74573902858867072406638ba3073d
     - CopilotKit/CopilotKit/skills/copilotkit#7b88608455528bd2dd62752a01cc25b8c917d35c

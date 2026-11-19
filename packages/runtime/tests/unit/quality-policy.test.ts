@@ -199,7 +199,10 @@ test("a captured task requirement survives registry changes, restart and replan 
   assert.equal(waiting.current_phase, "awaiting_plan_approval");
   assert.equal(waiting.apply_session_id, undefined);
   const revised = await run(
-    restarted.control(issue.id, "replan", "Clarify the same accepted scope"),
+    restarted.control(issue.id, "replan", "Clarify the same accepted scope", {
+      id: Id.RequestId.make("stronger-replan"),
+      sender: parent,
+    }),
   );
   assert.equal(revised.plan_approval_required, true);
   assert.equal(revised.effective_policy.plan_approval_source, "task_requirement");

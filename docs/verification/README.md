@@ -1,5 +1,12 @@
 # AbraCode verification recipe
 
+The focused controlled-replanning recipe is
+`ABRACODE_TEST_JOURNEY=planning-recovery ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-planning-recovery pnpm test:one packages/runtime/tests/extended/native.test.ts`.
+Use a fresh evidence directory outside the disposable installation. It reuses
+the preparation, health checks and teardown below, exercising actual baseline,
+restart, source rejection, adoption, fresh plan and independent Review gates.
+See [the feature journey](features/full-spec.md#controlled-replanning-and-prospective-recovery).
+
 Use the existing disposable source-installation and native-server harness. It drives the controller through native sessions and tools with a deterministic loopback model provider and a local recording forge. This proves integration and permission behavior, not autonomous model judgment or a live GitHub delivery.
 
 For bounded repeated cycles, explicit fault profiles, native timing/resource
@@ -55,7 +62,7 @@ and uses no user repository or remote. Contributor fixtures remain disposable.
 
 `pnpm exec vp test run --project e2e packages/runtime/tests/e2e/web-coherence.test.ts` exercises the built frontend against a disposable typed HTTP/AG-UI fixture: Pierre split diff/search without a separate file list, URL history, desktop/mobile themes, policy-specific planning, exact decision/communication navigation, response recovery and pagination, off-page refreshes with retained data after errors, focus restoration, form binding resets, simultaneous native reply state, one startup bootstrap and explicit same-ID recovery after reload. Set `ABRACODE_TEST_EVIDENCE_DIR` outside the fixture for retained screenshots. Build the web assets first with `pnpm web:build`. This fixture proves frontend behavior; the installation journey below proves real native contracts.
 
-`pnpm test:one packages/runtime/tests/extended/installation.test.ts` builds and starts the shipped CopilotKit v2 workspace against its disposable installation. Chromium opens the retained Abra without credentials, answers native conditional/default/hidden/string/number/integer/choice/multiselect/external fields, rejects an unbound controller checkpoint, reloads and reconnects after native service restart. Frontend shutdown must leave the native service and session usable. With `ABRACODE_TEST_EVIDENCE_DIR` set outside the fixture root, desktop and narrow screenshots survive teardown. It uses the existing report Chromium prerequisite and never touches the operator service.
+`pnpm test:one packages/runtime/tests/extended/installation.test.ts` builds and starts the shipped CopilotKit v2 workspace against its disposable installation. Runtime instructions and skills come from `packages/agents/assets`; the source-installation fixture omits the contributor `.agents` directory. Chromium opens the retained Abra without credentials, answers native conditional/default/hidden/string/number/integer/choice/multiselect/external fields, rejects an unbound controller checkpoint, reloads and reconnects after native service restart. Frontend shutdown must leave the native service and session usable. With `ABRACODE_TEST_EVIDENCE_DIR` set outside the fixture root, desktop and narrow screenshots survive teardown. It uses the existing report Chromium prerequisite and never touches the operator service.
 
 `pnpm exec vp test run --project integration packages/runtime/tests/integration/web-workspace.test.ts` exercises Effect HTTP plus shared `HttpApiClient`: response/payload/query validation, typed failures, exact host/origin checks, encoded-path rejection, raw native-route exclusion, CopilotKit v2 Fetch/AG-UI identity and retry behavior, and report sandbox/download headers. Unit tests in `web-admissions.test.ts` and `web-agent.test.ts` prove durable-before-admission identity binding, simultaneous tabs, response loss, interruptible observations and explicit native stop semantics. The retired general proxy/WebSocket/form-projection contract is removed.
 

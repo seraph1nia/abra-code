@@ -20,18 +20,31 @@ by hand. The formatter excludes exactly these six generated files so a format
 pass cannot create drift that the next refresh reverses. Other skills and role
 profiles remain formatted and checked.
 
-AbraCode's controller rules live in its own skills: `orchestration`,
-`openspec-execution`, `project-onboarding`, `recovery`, `browser` and the
-engineering procedures. `openspec-execution` is an AbraCode procedure, distinct
-from the generated workflow names. The plugin registers its unchanged native ID
-`abra-openspec-execution` from the installed source. Its path, body and captured
-worker requirements remain stable during this migration.
+AbraCode's runtime skills live in `packages/agents/assets/skills/`:
+`orchestration`, `openspec-execution`, `project-onboarding`, `recovery`, `browser`
+and the five engineering procedures. They ship alongside role instructions and
+are loaded by the agents package for both preparation and native registration.
+Their `abra-*` native IDs remain unchanged. `openspec-execution` is an AbraCode
+procedure, distinct from the generated workflow names.
 
-Keep custom checkpoint and role guidance in these project-owned files and
-`.opencode/agents`. Repository instructions require registered work to go through
-Abra. Native permissions and controller checks continue to enforce writer scope,
-plan/merge approval, task completion, independent Review, delivery and recovery.
-A generated skill is guidance, not approval or delivery authority.
+Contributor skills stay in `.agents/skills/`: the six generated workflows,
+AbraCode's repository-specific `testing` skill and the developer dependencies
+installed from `apm.yml`. The root `AGENTS.md` describes developing this app.
+Runtime workers discover each managed repository's own testing instructions;
+`abra-testing` is no longer registered by default.
+
+Keep runtime checkpoint and role guidance in the package's skills, role assets
+and inline Project Lead definition. Native permissions and controller checks
+continue to enforce writer scope, plan/merge approval, task completion,
+independent Review, delivery and recovery. A generated skill is guidance, not
+approval or delivery authority.
+
+Captured profiles, prompts and skill observations remain immutable after the
+move. New profiles use the current skill selection and existing content-based
+revisioning. Retained requirements for an unavailable skill, including explicitly
+required `abra-testing`, produce the existing capability blocker; repair the
+requirement through an explicit fresh assignment using controller recovery.
+Do not rewrite captures or silently load contributor assets as a fallback.
 
 ## Refresh and migration verification
 

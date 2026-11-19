@@ -26,7 +26,11 @@ export function rendererManifest(installation: string): Plugin {
       const links = new Map<string, string>();
       const pathName = (path: string) => relative(canonical, path).split(sep).join("/");
       async function add(path: string) {
-        if (!isAbsolute(path) || !inside(canonical, path) || path.includes(`${sep}.abracode${sep}`))
+        if (
+          !isAbsolute(path) ||
+          !inside(canonical, path) ||
+          relative(canonical, path).split(sep).includes(".abracode")
+        )
           return;
         const info = await lstat(path).catch(() => undefined);
         if (!info?.isFile()) return;

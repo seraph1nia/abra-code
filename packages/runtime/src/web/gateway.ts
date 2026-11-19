@@ -1,4 +1,5 @@
 import type { Reviews } from "./reviews.ts";
+import type { AgentCatalog } from "@abracode/contracts/web/agent-settings";
 import { prepareDiagrams, documentDiagrams } from "../workflow/diagrams.ts";
 import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
 import { readReportDocument } from "../presentation/report-document.ts";
@@ -125,6 +126,7 @@ export function registerWebGateway(
   config: Config,
   controller: Controller,
   reviews: Reviews,
+  agents: Effect.Effect<AgentCatalog>,
   provide: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E>,
 ) {
   const store = new NativeStore(ctx.storage);
@@ -176,6 +178,12 @@ export function registerWebGateway(
     }
     // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native registration declares unknown; handler failures are mapped at the boundary.
     return yield* ctx.rpc.register(webGateway, {
+      agents: ({ session_id }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(agents),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
       reviewReceipt: ({ session_id, ...selection }, { error }) =>
         assertSupervisor(session_id).pipe(
           Effect.andThen(reviews.receipt(session_id, selection, admissions)),

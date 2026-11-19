@@ -78,6 +78,7 @@ export const bootstrapService = Effect.gen(function* () {
           (yield* client.session.create({
             title: "Abra",
             agent: Agent.ID.make(identity.agent),
+            model: config.supervisor_model,
             location,
             metadata: { abracode_supervisor_home: home },
           }))

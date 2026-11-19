@@ -1,3 +1,4 @@
+import type { AgentCatalog } from "@abracode/contracts/web/agent-settings";
 import type {
   ReviewListSchema,
   ReviewView,
@@ -65,6 +66,7 @@ export interface WebBackend {
   };
   prepareDiagrams(input: PrepareDiagramSelection): Effect.Effect<DiagramPreparation, CrewError>;
   readonly agentStatus?: Effect.Effect<{ busy: boolean }, CrewError>;
+  readonly agents: Effect.Effect<AgentCatalog, CrewError>;
   readonly snapshot: Effect.Effect<WorkspaceSnapshot, CrewError>;
   observe(scope: ChangeScope): Effect.Effect<WorkspaceSnapshot, CrewError>;
   resolve(target: ResourceSelection): Effect.Effect<ResourceSelection, CrewError>;

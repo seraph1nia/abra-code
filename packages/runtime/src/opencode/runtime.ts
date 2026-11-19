@@ -6,7 +6,7 @@ import {
   awaitWorkerPlugin,
   type WorkerEnvironment,
 } from "./worker-environment.ts";
-import { nativePermissions } from "./role-policy.ts";
+import { nativePermissions, leadPermissions } from "./role-policy.ts";
 import { workerBrowser } from "./browser.ts";
 import { provisionedEvidence } from "../workflow/evidence.ts";
 import {
@@ -205,7 +205,13 @@ export class NativeRuntime implements Runtime {
       target: FinishingTarget,
     ) {
       const forms = (yield* this.client()).session.form;
-      const fingerprint = createHash("sha256").update(JSON.stringify(target)).digest("hex");
+      const fingerprint = createHash("sha256")
+        .update(
+          target.kind === "planning_baseline_adoption"
+            ? canonicalJSON(target)
+            : JSON.stringify(target),
+        )
+        .digest("hex");
       const existing = yield* forms
         .get({ sessionID, formID: id })
         .pipe(Effect.catchTag("FormNotFoundError", () => Effect.void));
@@ -221,6 +227,7 @@ export class NativeRuntime implements Runtime {
         return existing.id;
       }
       const residue = target.kind === "residue" ? target : undefined;
+      const planning = target.kind === "planning_baseline_adoption";
       return (yield* forms.create({
         sessionID,
         id,
@@ -239,9 +246,12 @@ export class NativeRuntime implements Runtime {
             custom: false,
             default: "defer",
             title: "Choose how to handle this work",
-            description: residue
-              ? "Generated directories: authorize disposal of generated contents in the selected exact directories after delivery is preserved. Include: send selected files through scope assessment, checks and Review. Preserve: move selected items elsewhere, then automatic inspection must confirm absence. Defer: keep everything and wait."
-              : "Authorize assessment of this exact retained content only; this grants no repair, merge or arbitrary deletion permission.",
+            description: planning
+              ? "Adopt this exact current Git-defined source as a NEW baseline, not historical reconstruction. This grants no implementation, publication, merge or cleanup authority. Fresh plan approval, checks and independent Review remain required. Exact offer: " +
+                JSON.stringify(target)
+              : residue
+                ? "Generated directories: authorize disposal of generated contents in the selected exact directories after delivery is preserved. Include: send selected files through scope assessment, checks and Review. Preserve: move selected items elsewhere, then automatic inspection must confirm absence. Defer: keep everything and wait."
+                : "Authorize assessment of this exact retained content only; this grants no repair, merge or arbitrary deletion permission.",
             options: [
               ...(residue
                 ? [
@@ -253,7 +263,15 @@ export class NativeRuntime implements Runtime {
                       : []),
                     { value: "preserve", label: "I will preserve selected items elsewhere" },
                   ]
-                : [{ value: "authorize", label: "Authorize this exact assessment" }]),
+                : [
+                    {
+                      value: "authorize",
+                      label: planning
+                        ? "Adopt this exact new planning baseline"
+                        : "Authorize this exact assessment",
+                    },
+                    ...(planning ? [{ value: "reject", label: "Reject this baseline" }] : []),
+                  ]),
               { value: "defer", label: "Defer and preserve everything" },
             ],
           },
@@ -299,7 +317,13 @@ export class NativeRuntime implements Runtime {
       target: FinishingTarget,
     ) {
       const form = yield* (yield* this.client()).session.form.get({ sessionID, formID });
-      const fingerprint = createHash("sha256").update(JSON.stringify(target)).digest("hex");
+      const fingerprint = createHash("sha256")
+        .update(
+          target.kind === "planning_baseline_adoption"
+            ? canonicalJSON(target)
+            : JSON.stringify(target),
+        )
+        .digest("hex");
       if (
         form.metadata?.decision_identity !== identity ||
         form.metadata?.finishing_target !== fingerprint
@@ -409,10 +433,15 @@ export class NativeRuntime implements Runtime {
   private permissions = Effect.fn("NativeRuntime.permissions")(
     function* (this: NativeRuntime, e: ManagedExecution, role: Role, id: SessionId) {
       const projects = yield* new Records(new NativeStore(this.ctx.storage)).projects();
-      return nativePermissions(role, e.openspec_change, [
-        ...projects.map((p) => p.path),
-        workerBrowser(this.config.home, id).directory,
-      ]);
+      return [
+        ...nativePermissions(role, e.openspec_change, [
+          ...projects.map((p) => p.path),
+          workerBrowser(this.config.home, id).directory,
+        ]),
+        ...(e.configuration_snapshot?.definitions?.[role]?.permissions
+          .slice(1)
+          .filter((p) => p.effect === "deny") ?? []),
+      ];
     }.bind(this),
     domainEffect,
   );
@@ -472,10 +501,7 @@ export class NativeRuntime implements Runtime {
           model,
           location,
           metadata: { abracode_lead: lead },
-          permissions: [
-            { action: "*", resource: "*", effect: "deny" },
-            { action: "abra_lead_action", resource: "*", effect: "allow" },
-          ],
+          permissions: leadPermissions(),
         }));
       if (
         session.location.directory !== this.config.home ||
@@ -486,10 +512,7 @@ export class NativeRuntime implements Runtime {
         session.model?.id !== model.id ||
         (session.model?.variant ?? "default") !== (model.variant ?? "default") ||
         JSON.stringify(session.permissions?.map((p) => [p.action, p.resource, p.effect])) !==
-          JSON.stringify([
-            ["*", "*", "deny"],
-            ["abra_lead_action", "*", "allow"],
-          ])
+          JSON.stringify(leadPermissions().map((p) => [p.action, p.resource, p.effect]))
       )
         return yield* new CrewError(
           "LEAD_SESSION",
@@ -745,12 +768,38 @@ export class NativeRuntime implements Runtime {
           prompt_id: promptID,
         });
       }
-      const profile = captured
+      let profile = captured
         ? {
             agent: captured.environment.agent,
             model: captured.environment.model,
           }
         : workerProfile(e, role, this.config);
+      if (!captured && !e.configuration_snapshot && sessionID) {
+        // Missing historical snapshots cannot adopt current worker configuration.
+        // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Pinned native API declares unknown; normalize at the adapter boundary.
+        const historical = yield* this.ctx.session
+          .get({ sessionID })
+          .pipe(Effect.mapError(CrewError.from));
+        profile = {
+          agent: historical.agent ?? Agent.ID.make("build"),
+          model: e.worker_model ?? historical.model,
+        };
+      }
+      const requirements =
+        captured?.schema_version === 2
+          ? captured.prepared.profile.requirements
+          : e.configuration_snapshot?.definitions?.[role]?.requirements;
+      const effectiveProfile = {
+        ...profile,
+        required_skills: [
+          ...(requirements?.required_skills ?? []),
+          ...(profile?.required_skills ?? []),
+        ],
+        required_tools: [
+          ...(requirements?.required_tools ?? []),
+          ...(profile?.required_tools ?? []),
+        ],
+      };
       const location = { directory: e.worktree_directory };
       yield* awaitWorkerPlugin(
         client.plugin.list({ location }).pipe(
@@ -791,7 +840,13 @@ export class NativeRuntime implements Runtime {
         ...selected,
         ...(yield* captured
           ? resolveCapturedSkills(role, captured.environment, skills.data, e.worktree_directory)
-          : resolveSkills(role, e.workflow_policy, profile, skills.data, e.worktree_directory)),
+          : resolveSkills(
+              role,
+              e.workflow_policy,
+              effectiveProfile,
+              skills.data,
+              e.worktree_directory,
+            )),
       };
     }.bind(this),
     domainEffect,
@@ -1117,3 +1172,4 @@ export const checkWorkerInventory = (
       );
     return { agent: agentID, model: selected };
   });
+import { canonicalJSON } from "../presentation/identity.ts";

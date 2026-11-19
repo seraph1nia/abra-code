@@ -11,6 +11,7 @@ import {
   ReviewReceiptLookupSchema,
 } from "@abracode/contracts/web/reviews";
 import { PrepareDiagramSelectionSchema } from "@abracode/contracts/web/diagram-actions";
+import { AgentCatalogSchema } from "@abracode/contracts/web/agent-settings";
 import { DiagramPreparationSchema } from "@abracode/contracts/presentation/diagrams";
 import { ReportExportSchema } from "../presentation/report-export-contract.ts";
 import { Rpc } from "@opencode/plugin/rpc";
@@ -46,6 +47,7 @@ export const webGateway = Rpc.define({
   id: "abracode-web",
   events: {},
   methods: {
+    agents: method(Schema.Struct({ session_id: SessionId }), AgentCatalogSchema),
     reviewReceipt: method(
       Schema.Struct({ session_id: SessionId, ...ReviewResponseQuerySchema.fields }),
       ReviewReceiptLookupSchema,

@@ -88,14 +88,20 @@ export default defineConfig({
         test: {
           name: "unit",
           isolate: false,
-          include: ["packages/runtime/tests/unit/**/*.test.ts"],
+          include: [
+            "packages/runtime/tests/unit/**/*.test.ts",
+            "packages/agents/tests/unit/**/*.test.ts",
+          ],
         },
       },
       {
         extends: true,
         test: {
           name: "integration",
-          include: ["packages/runtime/tests/integration/**/*.test.ts"],
+          include: [
+            "packages/runtime/tests/integration/**/*.test.ts",
+            "packages/agents/tests/integration/**/*.test.ts",
+          ],
           testTimeout: 30_000,
         },
       },

@@ -1,5 +1,55 @@
 # Recovery runbook
 
+## Controlled planning baselines
+
+The source baseline is the Git-defined content retained before one controlled
+Explore attempt. Attribution ties it to a previously completed, authorized Apply
+assignment. An idle session or replan request supplies no attribution. The
+controller pins separate index/candidate trees under
+`refs/abracode/planning/<execution>/<attempt>/`, with HEAD, fingerprint and
+worktree/schema/generation/request bindings. Capture leaves source, HEAD and real
+index bytes untouched. Source deltas are checked at planning completion, plan
+collection and Apply admission.
+
+Baselines and proven violations survive retries, pause and restart. Repeat the
+same request after response loss; another key cannot conceal a source violation.
+Explicit resume after confirmed pause continues the same baseline. Missing
+objects, ownership drift or uncertain admission remain blockers. Initial Explore
+and publication synchronization retain their own boundaries.
+
+Use `abra_work_control` action `recover_planning` for stranded, quiescent full-spec
+planning before archival/publication. Reuse only a complete verified historical
+baseline with its original binding. A digest, formatter candidate or incomplete
+diff cannot reconstruct one. Otherwise the controller offers exact current
+index/candidate trees through a native `planning_baseline_adoption` decision.
+Authorize, reject or defer through that form; generic answers and old plan
+receipts grant no authority. After collection, repeat the same recovery request
+to consume its matching answer. Changed content needs a new explicit offer/form.
+Lost unpersisted native answers require reauthorization on the retained identity.
+
+Adoption establishes a **new** boundary, not reconstructed history. It preserves
+old errors and approvals and admits planning only. Fresh plan approval, configured
+checks and independent Review still follow. The original agent-package incident
+was an old-base false positive: all formatter hunks, including the example comma,
+were inside `design.md`; legitimate Apply source already existed. Preserve that
+error without treating it as proven worker misconduct. Separate real
+outside-source violations remain rejected.
+
+Capture retains existing Git semantics: staged and candidate views, nonignored
+untracked files, Git modes/links and both move endpoints, with literal
+NUL-delimited paths. It does not attest raw clean-filter, ignored/cache or
+assume-unchanged filesystem state. Native role/path guards remain required.
+
+Activation is an operator step after the exact candidate is tested and reviewed.
+Identify the running installation/plugin, selected config, service and retained
+central session; quiesce writers/admissions through supported controls. Preserve
+native record exports, session/worktree inventory, reports, Git objects/refs and
+a consistent SQLite online backup using the procedure below. Prove restoration
+in a disposable environment. Source edits alone do not update the running
+controller. Preserve unrelated pauses, forms and policy. Do not run an old writer
+against active new-format attempts or restore a backup that would discard later
+work/effects; reconcile forward with a compatible runtime instead.
+
 The additive `finishing` evidence used by `complete-work-reliably` distinguishes deliverable content from ignored residue. A clean Git status does not prove cleanup readiness: preflight inspects ignored/untracked paths and generated-directory safety without deleting output. Its bounded name sample and fingerprint describe inventory, not file ownership or content-based disposal authorization. Incomplete or unavailable inventory cannot establish readiness. Recheck resource identity, publication/content, authorization revision and the full inventory before relying on an observation; a saved successful preflight alone is insufficient. Missing finishing evidence on an older record means unobserved, never ready, and does not authorize resuming historical unsafe recovery.
 
 Start with `pnpm start` (or `pnpm service:restart`), then `abra_work_status`, `abra_work_diagnostics` and `abra_work_reconcile`. Record the exact issue, execution, worktree, branch and session IDs before any repair. Never delete an execution record to make a red indicator disappear.

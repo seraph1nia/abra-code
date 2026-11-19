@@ -166,6 +166,21 @@ dependencies:
       .agents/skills/writing-for-agents/SKILL.md: sha256:551adca942227b44192edba88acd4e8db911f0121ce58ad16944ccf6a896a74a
       .agents/skills/writing-for-agents/agents/openai.yaml: sha256:eacb24b2a618cfb81dacb0416f4fdd75ddf3a8060f8ddb99aae1b1e301907e4b
     content_hash: sha256:8365ebe1d0c343d3d46970526f30fcf7c5e0c5e49fd39a3c882977024626ff3c
+  - repo_url: vercel-labs/agent-browser
+    name: agent-browser
+    host: github.com
+    resolved_commit: 1cc19526f3641c8543d55aa6700e7c55b37ac356
+    resolved_ref: 1cc19526f3641c8543d55aa6700e7c55b37ac356
+    version: unknown
+    virtual_path: skills/agent-browser
+    is_virtual: true
+    package_type: claude_skill
+    deployed_files:
+      - .agents/skills/agent-browser
+      - .agents/skills/agent-browser/SKILL.md
+    deployed_file_hashes:
+      .agents/skills/agent-browser/SKILL.md: sha256:60b28db5b700320c51d2b9f69f101631b753156fccee99f57af7c3a37aeaf9f8
+    content_hash: sha256:7454e6d3ddba8b5e8936a884a34dd0885bd6cafe10b06de4f7e096262a8275e9
   - repo_url: vercel-labs/agent-skills
     name: vercel-react-best-practices
     host: github.com
@@ -419,6 +434,24 @@ deployments:
       - ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
     active_owner: ag-ui-protocol/ag-ui/skills/ag-ui-a2ui-integration
     content_hash: sha256:7de76b2ff18181b507963c7fe29d92994d30dd09ea6c990e9a1c9bb6b1b54de6
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/agent-browser
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-browser/skills/agent-browser
+    active_owner: vercel-labs/agent-browser/skills/agent-browser
+    content_hash: null
+  - kind: project-relative
+    target: codex
+    value: .agents/skills/agent-browser/SKILL.md
+    runtime: null
+    scope: project
+    owners:
+      - vercel-labs/agent-browser/skills/agent-browser
+    active_owner: vercel-labs/agent-browser/skills/agent-browser
+    content_hash: sha256:60b28db5b700320c51d2b9f69f101631b753156fccee99f57af7c3a37aeaf9f8
   - kind: project-relative
     target: codex
     value: .agents/skills/copilotkit

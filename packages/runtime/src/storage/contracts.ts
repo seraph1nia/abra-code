@@ -66,6 +66,7 @@ import {
   CleanupBlockerSchema,
 } from "../git/retirement-contracts.ts";
 import { Schema } from "effect";
+import { PlanningSchema, validPlanningGenerations } from "../workflow/planning-contracts.ts";
 import { FinishingSchema, validFinishingGenerations } from "../workflow/finishing-contracts.ts";
 
 import { ForgeObservationSchema } from "../git/readiness-contracts.ts";
@@ -127,6 +128,7 @@ export const ProjectRecordSchema = Schema.Struct({
   delivery: DeliveryPolicySchema,
 });
 const fields = {
+  planning: Schema.optional(PlanningSchema),
   finishing: Schema.optional(FinishingSchema),
   configuration_snapshot: Schema.optional(ConfigurationSnapshotSchema),
   worker_context_id: Schema.optional(MessageId),
@@ -222,7 +224,14 @@ const fields = {
   archived_tree: Schema.optional(GitTree),
   retry_instructions: Schema.optional(Schema.String),
   active_role: Schema.optional(RoleSchema),
-  session_intent: Schema.optional(Schema.Struct({ role: RoleSchema, id: SessionId })),
+  session_intent: Schema.optional(
+    Schema.Struct({
+      role: RoleSchema,
+      id: SessionId,
+      prompt: Schema.optional(MessageId),
+      native_started: Schema.optional(Schema.Literal(true)),
+    }),
+  ),
   prompt_id: Schema.optional(MessageId),
   messages: Schema.optional(MessageIntentsSchema),
   supervisor_session_id: Schema.optional(SessionId),
@@ -264,7 +273,11 @@ export const executionRecordFields = fields;
 export const ExecutionStateSchema = Schema.Struct({
   ...fields,
   setup: Schema.optional(Schema.Boolean),
-}).check(Schema.makeFilter(validFinishingGenerations), Schema.makeFilter(validMessageGenerations));
+}).check(
+  Schema.makeFilter(validFinishingGenerations),
+  Schema.makeFilter(validMessageGenerations),
+  Schema.makeFilter(validPlanningGenerations),
+);
 const provisioned = {
   worktree_directory: AbsolutePath,
   base_commit: Commit,
@@ -353,6 +366,8 @@ export const ExecutionRecordSchema = Schema.Union([
   }),
 ]).check(
   Schema.makeFilter((e) => {
+    const planning = validPlanningGenerations(e);
+    if (planning !== true) return planning;
     const finishing = validFinishingGenerations(e);
     if (finishing !== true) return finishing;
     const messages = validMessageGenerations(e);

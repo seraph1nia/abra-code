@@ -270,12 +270,6 @@ test("legacy report previews fit their host and retain opaque script sandboxing"
       return box && box.width > 200 && box.height >= 320 && box.right <= innerWidth + 1;
     }, selector);
     assert.equal(await frame.getAttribute("sandbox"), "allow-scripts");
-    assert.ok(
-      await frame.evaluate((element) => {
-        const box = element.getBoundingClientRect();
-        return box.width > 200 && box.height >= 320 && box.right <= innerWidth + 1;
-      }),
-    );
   };
   await assertFrame(".artifact-attachment iframe");
   await page.goto(

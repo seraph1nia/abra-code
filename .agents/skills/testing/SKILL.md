@@ -6,8 +6,9 @@ description: Choose AbraCode tests during implementation, add focused regression
 # AbraCode testing
 
 Read the assigned repository's instructions first. These commands apply to
-AbraCode; other repositories keep their own checks. Invoke as `$testing` or
-native `abra-testing`.
+AbraCode; other repositories keep their own checks. Invoke as `$testing`.
+This contributor skill is discovered from this repository, not bundled into
+the app's runtime worker inventory.
 
 | Situation                                    | Command                                                                         |
 | -------------------------------------------- | ------------------------------------------------------------------------------- |

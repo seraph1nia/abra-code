@@ -208,7 +208,7 @@ The code type-checks against installed published declarations. Official [v2 plug
 - The native editor tool is `patch` with `{patchText}`, not `apply_patch`. The [pinned patch implementation](https://github.com/anomalyco/opencode/blob/v2.0.28/packages/core/src/tool/plugin/patch.ts) removes `edit`/`write` for GPT-family models and retains `patch`. AbraCode uses the same pinned `@opencode/util/patch` parser to preflight every affected path and move destination through role, realpath and control-file guards. The native test uses a GPT-family fixture and verifies both scoped planning patches and rejected source edits. Diagnostics retain the post-filter tool names at each worker request.
 - Worker events are `session.execution.succeeded`, `.failed`, `.interrupted`, and `session.idle`, with `data.sessionID`. Form replies use `form.replied`. Session `outcome` is execution outcome, not proof of implementation completion.
 - The [native form service](https://github.com/anomalyco/opencode/blob/v2.0.28/packages/core/src/form.ts) is in-memory. A pending form is recreated on restart with its recorded ID and fingerprint. The plugin persists accepted authorization receipts. A reply lost before receipt persistence must be authorized again.
-- Agent registry transforms can update/remove existing agents but cannot add one. Central `.opencode/agents/` defines the roles; cross-repository workers use the native `build` agent by default, with role instructions injected by their location's session hook and session-scoped permissions. No agent files are copied over project configuration. The portable OpenSpec workflow is registered through `ctx.skill.transform` at worker locations; registered repository roots are permitted for relevant reads, with edits confined to the owned worktree.
+- In pinned **2.3.0**, `ctx.agent.transform` **can create an absent ID** through `editor.update`. `packages/runtime/tests/integration/native-agent-registration.test.ts` exercises the package adapter against a disposable real service: absent revisioned ID insertion, `system`/description/model/mode/hidden/permissions, no session creation, unrelated-entry preservation and scope disposal. Native appends its browser-deny rules. Native profiles use `system`; legacy host configuration uses `prompt` (not interchangeable fields). Package-owned definitions now register stable central Abra/lead and hidden revisioned workers at worker locations. Session-scoped permissions and runtime guards remain necessary. Legacy captured explicit profiles or implicit `build` selection are not relabeled. Skills use `ctx.skill.transform`; no agent files are copied over repository configuration.
 
 ## Terminal observer contracts
 
@@ -380,11 +380,10 @@ parallel test and the retained interrupted-turn diagnostics.
 OpenCode 2.0.28 installed `@opencode/schema/dist/config/agent.js` exposes agent
 model/system/mode/hidden/permissions, and the Effect client SessionCreateInput
 accepts explicit ID, parentID, agent, complete model, location, metadata and native
-permission rules. AbraCode generates a static hidden `project-lead` definition in
-its existing host `agent`/`prompt` configuration format; the real native lead
-journey verifies these legacy aliases are still accepted by the pinned loader.
-`installRoleProfiles` updates this existing definition's deny-by-default rules;
-it does not dynamically add an agent through registry transforms. Session creation
+permission rules. The agents package registers the stable hidden `project-lead`
+definition through the pinned agent transform, with its existing inline guidance
+and deny-by-default one-tool policy. The bounded 2.3.0 registration regression
+above proves insertion; the lead journey remains the lifecycle proof. Session creation
 adds the same explicit session-level rules. The actual provider-visible tool set
 contains only the scoped lead endpoint. A known restricted session cannot become
 Abra by changing its agent label.

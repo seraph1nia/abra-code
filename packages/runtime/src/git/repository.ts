@@ -113,7 +113,7 @@ export class Git {
     );
   }
   /** Project current deliverable content into a private index before admitting a mutation. */
-  candidateTree = Effect.fn("Git.candidateTree")(
+  sourceTrees = Effect.fn("Git.sourceTrees")(
     function* (this: Git, root: AbsolutePath, include: readonly RelativePath[] = []) {
       return yield* Effect.acquireUseRelease(
         mkdtemp(join(tmpdir(), "abracode-index-")),
@@ -131,14 +131,96 @@ export class Git {
                   GIT_INDEX_FILE: index,
                   GIT_OPTIONAL_LOCKS: "0",
                 });
+              const staged = yield* decode(GitTree, yield* run(["write-tree"]), "Index Git tree");
               yield* run(["add", "--all"]);
               for (const path of include)
                 yield* run(["--literal-pathspecs", "add", "--force", "--", path]);
-              return yield* decode(GitTree, yield* run(["write-tree"]), "Candidate Git tree");
+              const candidate = yield* decode(
+                GitTree,
+                yield* run(["write-tree"]),
+                "Candidate Git tree",
+              );
+              return { index: staged, candidate };
             }),
           ),
         (directory) => rm(directory, { recursive: true }).pipe(Effect.ignore),
       );
+    }.bind(this),
+    domainEffect,
+  );
+  candidateTree(root: AbsolutePath, include: readonly RelativePath[] = []) {
+    return this.sourceTrees(root, include).pipe(Effect.map((trees) => trees.candidate));
+  }
+  /** Retaining refs are journaled by the caller before this idempotent pin. */
+  pinTree = Effect.fn("Git.pinTree")(
+    function* (this: Git, root: AbsolutePath, ref: string, tree: GitTree) {
+      yield* this.run(root, ["cat-file", "-e", `${tree}^{tree}`]);
+      yield* this.run(root, ["check-ref-format", ref]);
+      const prior = yield* this.run(root, ["for-each-ref", "--format=%(objectname)", "--", ref]);
+      if (prior && prior !== tree)
+        return yield* new CrewError(
+          "PLANNING_REF",
+          "Retained planning ref conflicts with its journal",
+        );
+      if (!prior) yield* this.run(root, ["update-ref", ref, tree, "0".repeat(tree.length)]);
+    }.bind(this),
+    domainEffect,
+  );
+  assertPinnedTree = Effect.fn("Git.assertPinnedTree")(
+    function* (this: Git, root: AbsolutePath, ref: string, tree: GitTree) {
+      if ((yield* this.run(root, ["show-ref", "--verify", "--hash", ref])) !== tree)
+        return yield* new CrewError("PLANNING_REF", "Retained planning ref changed");
+      yield* this.run(root, ["cat-file", "-e", `${tree}^{tree}`]);
+    }.bind(this),
+    domainEffect,
+  );
+  /** No rename collapsing: both endpoints, modes and index-only changes remain visible. */
+  planningDelta = Effect.fn("Git.planningDelta")(
+    function* (
+      this: Git,
+      root: AbsolutePath,
+      before: GitTree | Commit,
+      after: GitTree,
+      change: ChangeName,
+    ) {
+      const names = (yield* this.run(
+        root,
+        ["diff", "--no-renames", "--name-only", "-z", before, after, "--"],
+        { trim: false },
+      ))
+        .split("\0")
+        .filter(Boolean);
+      const prefix = `openspec/changes/${change}/`;
+      if (names.some((name) => !name.startsWith(prefix)))
+        return yield* new CrewError(
+          "EXPLORE_SOURCE_EDIT",
+          "Explore modified files outside assigned OpenSpec change",
+        );
+      for (const name of names) {
+        // Deleted planning artifacts have no current entry. All surviving entries
+        // must be regular blobs; literal pathspecs cannot interpret file names.
+        const entry = yield* this.run(
+          root,
+          ["--literal-pathspecs", "ls-tree", "-z", after, "--", name],
+          { trim: false },
+        );
+        if (entry && !/^100644 blob [a-f0-9]+\t/.test(entry))
+          return yield* new CrewError(
+            "SPEC_SYMLINK",
+            "Planning artifacts must be nonexecutable regular files",
+          );
+        const parts = name.split("/");
+        let current = root;
+        for (const part of parts.slice(0, -1)) {
+          current = AbsolutePath.make(join(current, part));
+          const stat = yield* lstat(current);
+          if (!stat.isDirectory() || stat.isSymbolicLink())
+            return yield* new CrewError(
+              "SPEC_SYMLINK",
+              "Planning artifact ancestor is not a real directory",
+            );
+        }
+      }
     }.bind(this),
     domainEffect,
   );

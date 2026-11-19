@@ -75,7 +75,7 @@ See [browser workspace](web-workspace.md), [saved reports](reports.md), and the 
 | `abra_work_start`        | `issue_id`; claim/create or recover the existing execution                                                                |
 | `abra_work_diagnostics`  | Issue ID and optional role; native errors, worker models, bounded recent messages and tool failures                       |
 | `abra_work_status`       | `issue_id`; Issue status/history, OpenSpec, Git and session outcomes                                                      |
-| `abra_work_control`      | `issue_id`, `action`, optional `text`/`request_id`; steer/pause/interrupt/resume/retry/replan/advance                     |
+| `abra_work_control`      | `issue_id`, `action`, optional `text`/`request_id`; steer/pause/interrupt/resume/retry/replan/recover_planning/advance    |
 | `abra_work_approve`      | `issue_id`, `kind: plan` or `merge`; native form or accepted receipt                                                      |
 | `abra_work_finish`       | Verify preservation, authorized merge, native cleanup and issue closure                                                   |
 | `abra_work_reconcile`    | Optional `issue_id`; reconcile one or all incomplete records                                                              |
@@ -94,6 +94,22 @@ For a full coding issue:
 8. Verified target ancestry or explicit remote-branch preservation permits non-force native cleanup. The issue is closed only after directory retirement is confirmed.
 
 Use `replan` while idle before archival if scope needs revision; pause an active writer first. Failed review `retry` returns findings to the same Apply session. A rejected plan `retry` returns to the same Explore session. Automatic scheduling only runs when configured, without repeatedly waking the Supervisor model.
+
+Controlled replanning captures attributable Apply content before Explore starts.
+Use a stable `request_id` and reuse its exact input after response loss. The
+controller pins separate Git index/candidate trees without changing source, HEAD
+or the real index. Only the assigned planning directory may change. Retries
+cannot replace the baseline, and a new attempt needs fresh plan approval even
+when artifact bytes are unchanged.
+
+For stranded pre-delivery planning, use explicit `recover_planning`. It reuses a
+complete verified historical baseline when available; otherwise it offers exact
+current content through a native `planning_baseline_adoption` decision. Collect
+that decision with `abra_work_decision`, then repeat the same recovery request to
+consume a matching human authorization. Collection alone does not resume work.
+Rejection, defer or changed content keeps recovery stopped. Adoption establishes
+a new baseline; fresh plan approval, checks and independent Review still follow.
+See [planning recovery](recovery.md#controlled-planning-baselines).
 
 `auto_schedule` remains `false` by default, including upgrades. When enabled,
 the existing scheduler requires a retained Abra session in the central checkout.
@@ -140,7 +156,7 @@ or unavailable evidence keeps the instruction unresolved and capacity held. It
 does not issue a replacement ID. Pause withdraws all owned queued inputs before
 interrupting and confirming stop; consumed instructions remain historical.
 
-Review, skills and CI provide evidence rather than permission to change approved requirements. Fix clear implementation defects within scope. Correct demonstrably obsolete tests or instructions only when accepted requirements already establish the intended behavior, retaining meaningful checks. Record advisory preferences as suggestions. Unresolved contradictions retain both sources and a durable decision; even an `in_scope` label cannot admit automatic repair when a full-spec report lists conflicts. Failed Review with an open scope decision cannot retry into Apply. Resolve the decision first: unchanged behavior can receive explicit correction, while changed requirements use `replan` and configured plan approval (or `abra_work_scope` for lightweight work). A decision answer does not grant plan or merge authorization. See [Review verification](../.agents/skills/openspec-execution/SKILL.md#review-verification) for assessment and conflict reporting.
+Review, skills and CI provide evidence rather than permission to change approved requirements. Fix clear implementation defects within scope. Correct demonstrably obsolete tests or instructions only when accepted requirements already establish the intended behavior, retaining meaningful checks. Record advisory preferences as suggestions. Unresolved contradictions retain both sources and a durable decision; even an `in_scope` label cannot admit automatic repair when a full-spec report lists conflicts. Failed Review with an open scope decision cannot retry into Apply. Resolve the decision first: unchanged behavior can receive explicit correction, while changed requirements use `replan` and configured plan approval (or `abra_work_scope` for lightweight work). A decision answer does not grant plan or merge authorization. See [Review verification](../packages/agents/assets/skills/openspec-execution/SKILL.md#review-verification) for assessment and conflict reporting.
 
 ## Batch intake
 
@@ -412,12 +428,14 @@ A diagnostic read does not resume work, answer a question or authorize a checkpo
 
 ## Browser CLI
 
-Install the central dependencies, then provision a browser explicitly as the user running the service:
+`mise run setup` installs the central pnpm dependencies, provisions Chrome for Testing through `pnpm browser:install`, and restores the pinned upstream `agent-browser` skill through APM for Codex and OpenCode. Linux system libraries remain a host prerequisite. For a pnpm-only installation, run these commands as the user running the service:
 
 ```sh
 pnpm install --frozen-lockfile --prod=false
 pnpm browser:install
 ```
+
+For interactive contributor browser verification and retained evidence, prefer this project-local CLI and the APM-installed `.agents/skills/agent-browser/SKILL.md`. Load `pnpm exec agent-browser skills get core` first, use a task-owned named session, retain the reproduction steps and snapshots with requested screenshots, and close that session afterward. Existing automated browser regressions continue to use the test suite.
 
 On Ubuntu, `pnpm browser:install --with-deps` also installs browser libraries and can require sudo. The upstream dependency helper supports apt/dnf/yum, **not pacman**. On CachyOS/Arch, the operator can install distribution Chromium and its dependencies with `sudo pacman -S chromium`, then set `AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium` in the service launch environment. Alternatively download Chrome with the script and supply its required libraries using the distribution packages. Workers do not install host packages. Restart the service while workers are idle after environment changes.
 

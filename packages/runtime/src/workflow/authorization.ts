@@ -11,6 +11,7 @@ import type { Git } from "../git/repository.ts";
 import type { Records } from "../storage/store.ts";
 import { scopeIdentity } from "../work/scope.ts";
 import { approvedEvidence } from "./evidence.ts";
+import { currentPlanning } from "./planning-contracts.ts";
 
 type Kind = "plan" | "merge";
 const retainedIdentity = (e: Execution, kind: Kind) =>
@@ -29,16 +30,24 @@ export class CheckpointEvidence {
       return Effect.succeed(e.scope && scopeIdentity(e.scope.revision, e.scope.contract));
     return this.git.planFingerprint(e.worktree_directory!, e.openspec_change).pipe(
       Effect.map((content) =>
-        // Identical artifact bytes in a new revision still require fresh authorization.
-        e.planning_base_commit
+        currentPlanning(e)
           ? Fingerprint.make(
               createHash("sha256")
-                .update(e.openspec_change)
-                .update(e.rounds?.at(-1)?.id ?? "revision")
+                .update("abracode-controlled-plan-v1")
+                .update(currentPlanning(e)!.id)
                 .update(content)
                 .digest("hex"),
             )
-          : content,
+          : // Identical artifact bytes in a new revision still require fresh authorization.
+            e.planning_base_commit
+            ? Fingerprint.make(
+                createHash("sha256")
+                  .update(e.openspec_change)
+                  .update(e.rounds?.at(-1)?.id ?? "revision")
+                  .update(content)
+                  .digest("hex"),
+              )
+            : content,
       ),
     );
   }
@@ -116,11 +125,14 @@ export class Authorizations {
     private records: Records,
     private runtime: Runtime,
     private evidence: CheckpointEvidence,
+    private validatePlanning?: (e: Execution) => Effect.Effect<void, CrewError>,
   ) {}
 
   collect = Effect.fn("Authorizations.collect")(
     function* (this: Authorizations, e: Execution, kind: Kind, supervisor: SessionId) {
       yield* assertApprovalActor(e, supervisor);
+      if (kind === "plan" && e.workflow_policy === "full-openspec")
+        yield* this.validatePlanning?.(e) ?? Effect.void;
       const fingerprint = kind === "plan" ? yield* this.evidence.plan(e) : e.delivered_commit;
       if (
         kind === "plan" &&
@@ -186,6 +198,8 @@ export class Authorizations {
         fingerprint,
       );
       const decision = yield* this.runtime.approval(receipt.session_id, receipt.form_id);
+      if (decision === "approved" && kind === "plan" && e.workflow_policy === "full-openspec")
+        yield* this.validatePlanning?.(e) ?? Effect.void;
       if (decision === "approved") receipt.authorized_at = yield* timestamp;
       if (decision === "rejected") receipt.rejected_at = yield* timestamp;
       if (decision !== "pending") yield* this.records.saveOwned(e, ["approval_receipts"]);

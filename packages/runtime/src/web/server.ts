@@ -1,4 +1,5 @@
 import { reviewGroup } from "@abracode/contracts/web/review-api";
+import { AgentCatalogSchema } from "@abracode/contracts/web/agent-settings";
 import {
   ReviewListSchema,
   ReviewViewSchema,
@@ -89,6 +90,7 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
     );
   const operations = HttpApiBuilder.group(api, "workspace", (handlers) =>
     handlers
+      .handle("agents", () => validated(backend.agents, AgentCatalogSchema))
       .handle("prepareDiagrams", ({ payload }) =>
         validated(backend.prepareDiagrams(payload), DiagramPreparationSchema),
       )
@@ -338,6 +340,13 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
       });
       return HttpServerResponse.fromWeb(response);
     });
+    const frontend = HttpServerResponse.file(join(assets, "index.html"), {
+      contentType: "text/html; charset=utf-8",
+    }).pipe(
+      Effect.orElseSucceed(() =>
+        json({ error: "Frontend build missing. Run pnpm web:build." }, 503),
+      ),
+    );
     const routes = Layer.mergeAll(
       workspaceHandlers(options.backend, feed),
       HttpRouter.add(
@@ -351,17 +360,8 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
       HttpRouter.add("POST", "/api/copilotkit/info", copilotRoute),
       HttpRouter.add("POST", "/api/copilotkit/agent/abra/run", copilotRoute),
       HttpRouter.add("POST", "/api/copilotkit/agent/abra/connect", copilotRoute),
-      HttpRouter.add(
-        "GET",
-        "/",
-        HttpServerResponse.file(join(assets, "index.html"), {
-          contentType: "text/html; charset=utf-8",
-        }).pipe(
-          Effect.orElseSucceed(() =>
-            json({ error: "Frontend build missing. Run pnpm web:build." }, 503),
-          ),
-        ),
-      ),
+      HttpRouter.add("GET", "/", frontend),
+      HttpRouter.add("GET", "/settings", frontend),
       HttpRouter.add(
         "GET",
         "/assets/:file",

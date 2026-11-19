@@ -24,6 +24,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@abracode/agents": "workspace:*",
     "@abracode/contracts": "workspace:*",
     "@abracode/report-export": "workspace:*",
     "@ag-ui/client": "1.0.4",

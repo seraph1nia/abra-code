@@ -391,6 +391,17 @@
                         }
                       ]
                     },
+                    "definition": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "agent": {
                       "anyOf": [
                         {
@@ -452,6 +463,17 @@
                             "additionalProperties": false
                           },
                           "maxItems": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "definition": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
                         },
                         {
                           "type": "null"
@@ -525,6 +547,17 @@
                         }
                       ]
                     },
+                    "definition": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "agent": {
                       "anyOf": [
                         {
@@ -586,6 +619,17 @@
                             "additionalProperties": false
                           },
                           "maxItems": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "definition": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
                         },
                         {
                           "type": "null"

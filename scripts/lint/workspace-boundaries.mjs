@@ -117,11 +117,19 @@ export default {
           }
           if (
             browser &&
-            /^(?:@abracode\/runtime|@opencode\/(?:client|plugin|cli|util)|@effect\/platform-node|@copilotkit\/runtime)$/.test(
+            /^(?:@abracode\/(?:runtime|agents)|@opencode\/(?:client|plugin|cli|util)|@effect\/platform-node|@copilotkit\/runtime)$/.test(
               name,
             )
           )
             fail("Browser source cannot import controller or native-registration capabilities");
+          if (
+            owner.name === "@abracode/agents" &&
+            (name === "@abracode/runtime" ||
+              name === "@abracode/web" ||
+              name === "@abracode/presentation" ||
+              name === "@abracode/report-export")
+          )
+            fail("Agents cannot depend on runtime or browser implementations");
           if (
             offline &&
             /^(?:@abracode\/web|@ag-ui\/client|@copilotkit\/|@tanstack\/react-router|@effect\/atom-react)/.test(

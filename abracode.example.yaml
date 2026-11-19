@@ -33,5 +33,7 @@ repositories: []
 # Omit target_branch to follow the remote default branch.
 # workers:
 #   apply:
+#     definition: apply # Bundled definition; programmatic catalogs may supply specialists.
 #     agent: build
+#     # agent is an independent native override, not a definition or model profile.
 #     required_skills: [project-conventions]

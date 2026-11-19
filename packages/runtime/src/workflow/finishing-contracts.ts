@@ -1,4 +1,5 @@
 import { CleanupPreflightSchema } from "./finishing-observation.ts";
+import { PlanningAdoptionTargetSchema } from "./planning-contracts.ts";
 export { CleanupPreflightSchema } from "./finishing-observation.ts";
 import { Schema } from "effect";
 import { join } from "node:path";
@@ -42,6 +43,7 @@ const directoryBinding = (value: {
 
 /** A fingerprint identifies the complete input; sampled names are never content authority. */
 export const FinishingTargetSchema = Schema.Union([
+  PlanningAdoptionTargetSchema,
   Schema.Struct({
     ...identity,
     kind: Schema.Literal("residue"),
@@ -236,19 +238,24 @@ export const FinishingSchema = Schema.Struct({
 export type FinishingTarget = typeof FinishingTargetSchema.Type;
 
 export const FinishingAnswerSchema = Schema.Struct({
-  action: Schema.Literals(["generated", "include", "preserve", "authorize", "defer"]),
+  action: Schema.Literals(["generated", "include", "preserve", "authorize", "defer", "reject"]),
   paths: Schema.Array(CleanupPathSchema).check(Schema.isMaxLength(64)),
 }).check(
   Schema.makeFilter(
     (a) =>
       (new Set(a.paths).size === a.paths.length &&
-        (a.action === "defer" || a.action === "authorize" || a.paths.length > 0)) ||
+        (a.action === "defer" ||
+          a.action === "authorize" ||
+          a.action === "reject" ||
+          a.paths.length > 0)) ||
       "Choose unique exact paths for the disposition",
   ),
 );
 export type FinishingAnswer = typeof FinishingAnswerSchema.Type;
 
 export function validFinishingAnswer(target: FinishingTarget, answer: FinishingAnswer) {
+  if (answer.action === "reject")
+    return target.kind === "planning_baseline_adoption" && answer.paths.length === 0;
   if (answer.action === "defer") return answer.paths.length === 0;
   if (target.kind === "residue") {
     const available =

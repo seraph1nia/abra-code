@@ -11,7 +11,7 @@ console.log('sample consumer observed sample');
 `;
 
 /** Deterministic provider sequence; real tools and controller checks supply the observations. */
-export function engineeringCalls(user: string, role: string) {
+export function engineeringCalls(user: string, role: string, specialist = false) {
   if (!user.includes("engineering-acceptance") || !["explore", "apply", "review"].includes(role))
     return [];
   const workflow = user.includes("Approved short scope:") ? "lightweight-fix" : "full-openspec";
@@ -19,6 +19,8 @@ export function engineeringCalls(user: string, role: string) {
     role as Role,
     workflow,
   ).map(({ name }) => ({ name: "skill", args: { id: `abra-${name}` } }));
+  if (specialist && role === "explore")
+    calls.push({ name: "inspect-specialist", args: { task: /for issue ([^: ]+)/.exec(user)![1] } });
   if (role === "apply" && !user.includes("Approved short scope:"))
     calls.push(
       { name: "read", args: { path: "README.md" } },
@@ -60,10 +62,64 @@ export async function assertEngineeringWorker(
   sessionID: SessionId,
   role: "explore" | "apply" | "review",
 ) {
+  const session = await client.session.get({ sessionID });
+  const external = session.agent === "external-apply";
+  if (!external)
+    assert.match(
+      session.agent ?? "",
+      new RegExp(
+        `^abra-${role === "explore" ? "(?:explore|engineering-specialist)" : role}-[a-f0-9]{64}$`,
+      ),
+    );
+  const inventory = (await client.agent.list({ location: session.location })).data;
+  for (const bundledRole of ["explore", "apply", "review", "research"]) {
+    const bundled = inventory.find(
+      (agent) => agent.name === bundledRole && agent.id.startsWith(`abra-${bundledRole}-`),
+    );
+    assert.ok(bundled?.hidden && bundled.mode === "subagent");
+    assert.ok(
+      bundled.system?.startsWith(`You are ${bundledRole[0].toUpperCase()}${bundledRole.slice(1)}.`),
+    );
+    assert.equal(
+      bundled.permissions.some((rule) => rule.action === "edit" && rule.effect === "allow"),
+      bundledRole === "explore" || bundledRole === "apply",
+    );
+  }
+  const profile = inventory.find((agent) => agent.id === session.agent);
+  assert.ok(profile?.hidden);
+  assert.ok(
+    profile.system?.startsWith(
+      external
+        ? "External native override guidance marker."
+        : `You are ${role[0].toUpperCase()}${role.slice(1)}.`,
+    ),
+  );
+  assert.ok(!inventory.some((agent) => agent.id === "abra" && !agent.hidden));
   const messages = await client.session.context({ sessionID });
   const calls = messages.flatMap((m) =>
     m.type === "assistant" ? m.content.filter((p) => p.type === "tool") : [],
   );
+  if (session.agent?.startsWith("abra-engineering-specialist-")) {
+    const inspection = calls.find((p) => p.type === "tool" && p.name === "inspect-specialist");
+    assert.ok(
+      inspection?.type === "tool" && inspection.state.status === "completed",
+      JSON.stringify(inspection),
+    );
+    const result = JSON.parse(
+      inspection.state.content
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join(""),
+    );
+    assert.ok(Number.isInteger(result.prepared) && result.prepared >= 1);
+    assert.ok(profile.system?.includes("Fixture preload instructions."));
+    assert.ok(!profile.system?.includes("Specialist captured "));
+    const skills = (await client.skill.list({ location: session.location })).data;
+    const available = skills.find((skill) => skill.id === "abra-browser")!;
+    const preload = skills.find((skill) => skill.id === "abra-preload-fixture")!;
+    assert.ok(!profile.system?.includes(available.content.trim()));
+    assert.ok(profile.system?.includes(preload.content.trim()));
+  }
   for (const { name } of roleEngineeringSkills(role, "full-openspec")) {
     const call = calls.find(
       (p) =>
@@ -127,6 +183,9 @@ export async function assertEngineeringWorker(
   return {
     role,
     session_id: sessionID,
+    native_profile: session.agent,
+    profile_revision: external ? undefined : session.agent?.slice(-64),
+    instruction_owner: external ? "external-native-plus-managed-hook" : "native-profile",
     skills: roleEngineeringSkills(role, "full-openspec").map((s) => `abra-${s.name}`),
     calls: calls.map((p) =>
       p.type === "tool"

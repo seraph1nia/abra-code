@@ -52,7 +52,15 @@ export interface ExecutionCommands {
   reviewReport: CodingChecks["reviewReport"];
   control(
     id: IssueId,
-    action: "pause" | "interrupt" | "resume" | "retry" | "steer" | "advance" | "replan",
+    action:
+      | "pause"
+      | "interrupt"
+      | "resume"
+      | "retry"
+      | "steer"
+      | "advance"
+      | "replan"
+      | "recover_planning",
     text?: string,
     request?: { id: import("../identities.ts").RequestId; sender: SessionId },
   ): Result<Execution>;

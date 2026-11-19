@@ -8,7 +8,7 @@ import type {
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4 HTTP atoms are the browser query boundary. */
 import { Effect } from "effect";
 import { FetchHttpClient } from "effect/http";
-import { Atom, AtomHttpApi, Reactivity } from "effect/reactivity";
+import { AsyncResult, Atom, AtomHttpApi, Reactivity } from "effect/reactivity";
 import { Form } from "@opencode/schema/form";
 import { Permission } from "@opencode/schema/permission";
 import { workspaceApi } from "@abracode/contracts/web/http-api";
@@ -34,6 +34,7 @@ const queryOptions = (issue: string) => ({
   timeToLive: "30 seconds" as const,
 });
 export const bootstrapQuery = WorkspaceApi.query("workspace", "bootstrap", {});
+export const agentsQuery = WorkspaceApi.query("workspace", "agents", { timeToLive: "30 seconds" });
 /** An uncached exact read; missing admission evidence must be checked afresh. */
 export const readReceipt = WorkspaceApi.runtime.fn((request_id: string) =>
   Effect.flatMap(WorkspaceApi, (client) => client.workspace.receipt({ query: { request_id } })),
@@ -76,6 +77,37 @@ export const diagramQuery = Atom.family((key: string) =>
     )
     .pipe(Atom.setIdleTTL(0)),
 );
+const workReactivity = WorkspaceApi.runtime.atom(Reactivity.Reactivity);
+const detailQuery = Atom.family((issue: string) => {
+  const query = WorkspaceApi.query("work", "detail", {
+    query: { issue_id: IssueId.make(issue) },
+    timeToLive: "30 seconds",
+  });
+  return Atom.transform(
+    query,
+    (get) => {
+      const reactivity = AsyncResult.getOrThrow(get(workReactivity));
+      let dirty = false;
+      get.addFinalizer(
+        reactivity.registerUnsafe(queryOptions(issue).reactivityKeys, () => {
+          // Live observations must not cancel a slower in-flight detail read.
+          // Retain one dirty refresh; explicit user refresh still delegates to query.
+          if (get.once(query).waiting) dirty = true;
+          else get.refresh(query);
+        }),
+      );
+      get.subscribe(query, (value) => {
+        get.setSelf(value);
+        if (!value.waiting && dirty) {
+          dirty = false;
+          get.refresh(query);
+        }
+      });
+      return get.once(query);
+    },
+    { initialValueTarget: query },
+  );
+});
 export const queries = {
   binding: (selection: BindingSelection) =>
     WorkspaceApi.query("work", "binding", {
@@ -101,11 +133,7 @@ export const queries = {
       reactivityKeys: ["work-finder"],
       timeToLive: "30 seconds",
     }),
-  detail: (issue: string) =>
-    WorkspaceApi.query("work", "detail", {
-      query: { issue_id: IssueId.make(issue) },
-      ...queryOptions(issue),
-    }),
+  detail: detailQuery,
   document: (issue: string, path: string) =>
     WorkspaceApi.query("work", "document", {
       query: { issue_id: IssueId.make(issue), path: RelativePath.make(path) },

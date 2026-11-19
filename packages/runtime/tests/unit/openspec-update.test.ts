@@ -65,9 +65,16 @@ test("controller refreshes instructions before Explore and retains its baseline 
   assert.equal((await run(restarted.advance(issue))).current_phase, "awaiting_plan_approval");
   // Controller-generated instructions are allowed; subsequent worker source edits still fail.
   await writeFile(join(e.worktree_directory!, "source.txt"), "Unauthorized Explore edit\n");
-  await run(restarted.control(issue, "replan"));
-  f.runtime.success(e.explore_session_id!);
-  await assert.rejects(run(restarted.advance(issue)), /outside assigned OpenSpec change/);
+  await assert.rejects(
+    run(
+      restarted.control(issue, "replan", undefined, {
+        id: Id.RequestId.make("refreshed-replan"),
+        sender: Id.SessionId.make("ses_supervisor"),
+      }),
+    ),
+    { code: "PLANNING_ATTRIBUTION" },
+  );
+  assert.equal((await run(restarted.get(issue))).current_phase, "awaiting_plan_approval");
 });
 
 test("failed refresh retains provisioning and blocks all workers until explicit retry succeeds", async (t) => {

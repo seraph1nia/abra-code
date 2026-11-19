@@ -155,7 +155,12 @@ test(
     const prompts = p.f.runtime.prompts,
       creates = p.f.runtime.creates;
     await assert.rejects(
-      run(p.controller.control(e.issue_id, "replan", "Retry the same planning contract")),
+      run(
+        p.controller.control(e.issue_id, "replan", "Retry the same planning contract", {
+          id: Id.RequestId.make("schema-drift-replan"),
+          sender: p.parent,
+        }),
+      ),
       /changed/,
     );
     assert.equal(p.f.runtime.prompts, prompts);

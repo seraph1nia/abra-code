@@ -1,4 +1,5 @@
 import { PrepareDiagramSelectionSchema } from "./diagram-actions.ts";
+import { AgentCatalogSchema } from "./agent-settings.ts";
 import { DiagramPreparationSchema } from "../presentation/diagrams.ts";
 import { BindingReadQuery, BindingReadSchema } from "./bindings.ts";
 import { ReportExportSchema } from "../presentation/report-export-contract.ts";
@@ -108,6 +109,10 @@ const documentJSON = Schema.String.pipe(
 export const workspaceApi = HttpApi.make("abra-workspace")
   .add(
     HttpApiGroup.make("workspace").add(
+      HttpApiEndpoint.get("agents", "/api/settings/agents", {
+        success: AgentCatalogSchema,
+        error,
+      }),
       HttpApiEndpoint.post("prepareDiagrams", "/api/diagrams/prepare", {
         payload: PrepareDiagramSelectionSchema,
         success: DiagramPreparationSchema,

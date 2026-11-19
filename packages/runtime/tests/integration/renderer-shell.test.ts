@@ -1,10 +1,10 @@
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { appendFile, readFile, writeFile, mkdir, readdir } from "node:fs/promises";
+import { appendFile, readFile, writeFile, mkdir, readdir, symlink, rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { Effect } from "effect";
 import { CrewError } from "../../src/domain.ts";
-import { RequestId } from "../../src/identities.ts";
+import { RequestId, AbsolutePath } from "../../src/identities.ts";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { installSource } from "../e2e/install.ts";
@@ -19,7 +19,15 @@ test(
   async (t) => {
     const f = await run(fixture);
     t.onTestFinished(() => run(f.close()));
-    await installSource(f.config.home, { buildWeb: false });
+    const home = AbsolutePath.make(join(f.config.home, ".abracode/worktrees/renderer-install"));
+    await mkdir(home, { recursive: true });
+    await installSource(home, { buildWeb: false });
+    const visible = "packages/presentation/src/.abracode-other/visible.ts";
+    const metadata = "packages/presentation/src/.abracode/metadata.ts";
+    for (const file of [visible, metadata]) {
+      await mkdir(dirname(join(home, file)), { recursive: true });
+      await writeFile(join(home, file), "export const fixture = true;\n");
+    }
     let builds = 0;
     let interrupt = true;
     const actual = new ProcessRunner();
@@ -43,13 +51,18 @@ test(
         return actual.run(file, args, cwd, env, options);
       },
     };
-    const a = new ReactDocumentRenderer(f.config.home, runner),
-      b = new ReactDocumentRenderer(f.config.home, runner);
+    const a = new ReactDocumentRenderer(home, runner),
+      b = new ReactDocumentRenderer(home, runner);
     await assert.rejects(run(a.fingerprint), /Interrupted renderer preparation/);
-    assert.deepEqual(await readdir(join(f.config.home, ".abracode/reports/renderers/v2")), []);
-    assert.deepEqual(await readdir(join(f.config.home, ".abracode/reports/.scratch")), []);
+    assert.deepEqual(await readdir(join(home, ".abracode/reports/renderers/v2")), []);
+    assert.deepEqual(await readdir(join(home, ".abracode/reports/.scratch")), []);
     const [first, parallel] = await Promise.all([run(a.fingerprint), run(b.fingerprint)]);
     assert.equal(first, parallel);
+    const manifest = JSON.parse(
+      await readFile(join(home, ".abracode/reports/renderers/v2", first, "manifest.json"), "utf8"),
+    );
+    assert.ok(manifest.inputs.some((i: { file: string }) => i.file === visible));
+    assert.ok(!manifest.inputs.some((i: { file: string }) => i.file === metadata));
     assert.equal(builds, 1);
     const captured = reportDocument();
     const one = {
@@ -75,14 +88,14 @@ test(
     assert.notEqual(htmlOne, htmlTwo);
     assert.ok(!htmlTwo.includes("<script>globalThis.executed=true</script>"));
     await appendFile(
-      join(f.config.home, "packages/runtime/src/workflow/advancement.ts"),
+      join(home, "packages/runtime/src/workflow/advancement.ts"),
       "\n// Unrelated backend change\n",
     );
-    await appendFile(join(f.config.home, "pnpm-lock.yaml"), "\n# Unrelated lock metadata\n");
-    assert.equal(await run(new ReactDocumentRenderer(f.config.home, runner).fingerprint), first);
+    await appendFile(join(home, "pnpm-lock.yaml"), "\n# Unrelated lock metadata\n");
+    assert.equal(await run(new ReactDocumentRenderer(home, runner).fingerprint), first);
     assert.equal(builds, 1);
     await appendFile(
-      join(f.config.home, "packages/presentation/src/report-evidence.tsx"),
+      join(home, "packages/presentation/src/report-evidence.tsx"),
       "\n// Renderer input changed\n",
     );
     await assert.rejects(run(a.render(one, first)), /inputs changed during export/);
@@ -90,19 +103,20 @@ test(
     assert.notEqual(changed, first);
     assert.equal(builds, 2);
     await assert.rejects(run(a.render(one, first)), /exporter changed/);
-    await appendFile(join(f.config.home, "LICENSE"), "\nChanged required notice input.\n");
+    await appendFile(join(home, "LICENSE"), "\nChanged required notice input.\n");
     const noticeChanged = await run(a.fingerprint);
     assert.notEqual(noticeChanged, changed);
     assert.equal(builds, 3);
-    const cache = join(
-      f.config.home,
-      ".abracode/reports/renderers/v2",
-      noticeChanged,
-      "index.html",
-    );
+    const cache = join(home, ".abracode/reports/renderers/v2", noticeChanged, "index.html");
     await writeFile(cache, "tampered");
     await assert.rejects(run(a.fingerprint), /digest/);
     await assert.rejects(run(a.render(one, noticeChanged)), /digest/);
     assert.equal(await readFile(cache, "utf8"), "tampered");
+    const outside = join(f.root, "outside-renderer.ts");
+    await writeFile(outside, "preserved outside source");
+    await symlink(outside, join(home, "packages/presentation/src/escape.ts"));
+    await rm(join(home, ".abracode/reports/renderers/v2"), { recursive: true });
+    await assert.rejects(run(a.fingerprint), /symlinks|escapes/);
+    assert.equal(await readFile(outside, "utf8"), "preserved outside source");
   },
 );

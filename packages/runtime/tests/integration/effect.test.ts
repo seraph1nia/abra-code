@@ -1,7 +1,7 @@
 import * as Id from "../../src/identities.ts";
 import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -97,14 +97,35 @@ test("application database stays open for callbacks until the host plugin scope 
   t.onTestFinished(() => rm(home, { recursive: true, force: true }));
   const scope = Scope.makeUnsafe();
   t.onTestFinished(() => run(Scope.close(scope, Exit.void)));
-  const context = { storage: {} } as unknown as Context;
+  await cp(".agents", join(home, ".agents"), { recursive: true });
+  let registrations = 0;
+  const register = () =>
+    Effect.acquireRelease(
+      Effect.sync(() => {
+        registrations++;
+        return { dispose: Effect.void };
+      }),
+      () =>
+        Effect.sync(() => {
+          registrations--;
+        }),
+    );
+  const context = {
+    location: { directory: home },
+    storage: { scan: () => Effect.succeed({ entries: [] }) },
+    agent: { transform: register },
+    skill: { transform: register },
+    tool: { list: () => Effect.succeed([]), transform: register, hook: register },
+  } as unknown as Context;
   const services = await run(
     Layer.build(applicationLayer(context, home)).pipe(Effect.provideService(Scope.Scope, scope)),
   );
   const work = EffectContext.get(services, Crew).controller.queries;
   assert.deepEqual(await run(work.issues()), []);
+  assert.ok(registrations > 0);
   await run(Scope.close(scope, Exit.void));
   await assert.rejects(run(work.issues()), /database is not open/);
+  assert.equal(registrations, 0);
 });
 
 test("interruption preserves provisioning intent and releases the controller lock for recovery", async (t) => {

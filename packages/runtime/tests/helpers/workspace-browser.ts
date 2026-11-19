@@ -239,6 +239,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
       return result.pipe(Effect.flatMap((value) => decode(schema, value, "Fixture work read")));
     };
   const backend: WebBackend = {
+    agents: Effect.suspend(() => source.agents),
     get reviews() {
       return source.reviews;
     },

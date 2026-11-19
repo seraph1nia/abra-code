@@ -12,7 +12,7 @@ import { ProcessRunner } from "../../src/process.ts";
 
 async function instructionFiles(root: string) {
   const files = new Map<string, string>();
-  for (const directory of [".agents", ".opencode", "openspec"]) {
+  for (const directory of [".agents", ".opencode", "packages/agents/assets", "openspec"]) {
     for (const entry of await readdir(join(root, directory), {
       recursive: true,
       withFileTypes: true,
@@ -44,9 +44,11 @@ test("installed OpenSpec refreshes outdated instructions in the issue worktree b
   };
   const bin = Id.Executable.make(resolve("node_modules/.bin/openspec"));
   const p = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
-  const guidance = ".agents/skills/openspec-execution/SKILL.md";
+  const guidance = "packages/agents/assets/skills/openspec-execution/SKILL.md";
   const controllerGuidance = await readFile(resolve(guidance), "utf8");
-  await mkdir(join(p.path, ".agents/skills/openspec-execution"), { recursive: true });
+  await mkdir(join(p.path, "packages/agents/assets/skills/openspec-execution"), {
+    recursive: true,
+  });
   await writeFile(join(p.path, guidance), controllerGuidance);
   await run(runner.run(bin, ["init", "--tools", "opencode", "--no-animation"], p.path));
   const generated = ".agents/skills/openspec-propose/SKILL.md";
@@ -76,8 +78,15 @@ test("OpenSpec 2 refresh is idempotent and preserves all project-owned guidance"
   t.onTestFinished(() => rm(root, { recursive: true, force: true }));
   const project = join(root, "project");
   await mkdir(join(project, "openspec"), { recursive: true });
+  await mkdir(join(project, ".opencode"));
+  await writeFile(
+    join(project, ".opencode/local-fixture.md"),
+    "Unrelated native project guidance.\n",
+  );
   await cp(resolve(".agents"), join(project, ".agents"), { recursive: true });
-  await cp(resolve(".opencode/agents"), join(project, ".opencode/agents"), { recursive: true });
+  await cp(resolve("packages/agents/assets"), join(project, "packages/agents/assets"), {
+    recursive: true,
+  });
   await cp(resolve("openspec/config.yaml"), join(project, "openspec/config.yaml"));
   await cp(resolve("openspec/schemas"), join(project, "openspec/schemas"), { recursive: true });
   await mkdir(join(project, "openspec/changes/existing-detailed"), { recursive: true });

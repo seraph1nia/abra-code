@@ -3,12 +3,15 @@ import { Schema } from "effect";
 import { WorkerModelSchema, NonEmpty } from "../contracts.ts";
 import { ConfigSchema } from "./contracts.ts";
 import { type Config, type ManagedExecution, type Role } from "../domain.ts";
+import { CapturedProfile } from "@abracode/agents/contracts";
 
 export const ConfigurationSnapshotSchema = Schema.Struct({
   digest: NonEmpty,
   supervisor: WorkerModelSchema,
   workers: ConfigSchema.fields.workers,
   dispatch_sources: Schema.optional(DispatchSourcesSchema),
+  agent_selection_version: Schema.optional(Schema.Literal(1)),
+  definitions: Schema.optional(Schema.Record(Schema.String, CapturedProfile)),
 });
 export const captureConfiguration = (config: Config, repository?: Dispatch, task?: Dispatch) => {
   const resolved = Object.fromEntries(
@@ -31,5 +34,17 @@ export const captureConfiguration = (config: Config, repository?: Dispatch, task
     ) as typeof DispatchSourcesSchema.Type,
   };
 };
-export const workerProfile = (execution: ManagedExecution, role: Role, config: Config) =>
-  execution.configuration_snapshot?.workers[role] ?? config.workers[role];
+export const workerProfile = (
+  execution: ManagedExecution,
+  role: Role,
+  _config: Pick<Config, "workers">,
+) => {
+  const selected =
+    execution.configuration_snapshot?.workers[role] ??
+    (execution.worker_model ? { model: execution.worker_model } : undefined);
+  const definition = execution.configuration_snapshot?.definitions?.[role];
+  if (execution.configuration_snapshot?.agent_selection_version === 1 && definition)
+    return { ...selected, agent: selected?.agent ?? definition.id };
+  // Missing snapshots are historical selection, never an implicit package default.
+  return selected;
+};

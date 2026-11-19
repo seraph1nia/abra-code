@@ -40,8 +40,16 @@ import { ProjectSetup } from "../config/setup.ts";
 import { RepositorySources } from "../git/source.ts";
 import { Workspaces } from "../git/workspaces.ts";
 import { Controller } from "../workflow/controller.ts";
+import { PlanningBaselines } from "../workflow/planning.ts";
 import { type Config } from "../domain.ts";
 import { platformLayer } from "../platform.ts";
+import { Agents } from "@abracode/agents";
+import { AgentsLive, sourcesLayer, bundledAssets, bundledSkills } from "@abracode/agents/bundled";
+import { OpenCodeAgentsLive } from "@abracode/agents/native";
+import { StaticProfile } from "@abracode/agents/contracts";
+import { readWorkerContext } from "../workflow/worker-context.ts";
+import { contributionAuthorization } from "./agent-contributions.ts";
+import { realpath } from "../filesystem.ts";
 
 export function createWorkflow(
   config: Config,
@@ -52,11 +60,13 @@ export function createWorkflow(
   runtime: Runtime,
   delivery: Delivery,
   locks: Locks,
+  assets: string = bundledAssets,
 ) {
   const sources = new RepositorySources(git, config.repository_root);
   const workspaces = new Workspaces(git, sources, runtime, config.worktree_root);
   let advancement: Advancement;
-  const workerContexts = new WorkerContexts(records, config);
+  let planning: PlanningBaselines;
+  const workerContexts = new WorkerContexts(records, config, assets);
   const coordination = records.coordinate(locks);
   const obligations = new Obligations(records, runtime, work, coordination);
   const attention = new AttentionService(config, records, runtime, coordination, locks);
@@ -66,7 +76,9 @@ export function createWorkflow(
   const corrections = new Corrections(records, git, config);
   const reports = new Reports(config.home, records, git, locks, work, runtime.notify.bind(runtime));
   const checkpoints = new CheckpointEvidence(git);
-  const authorizations = new Authorizations(records, runtime, checkpoints);
+  const authorizations = new Authorizations(records, runtime, checkpoints, (e) =>
+    planning.assertDelta(e),
+  );
   const queries = new Queries(
     config,
     records,
@@ -87,7 +99,13 @@ export function createWorkflow(
     git,
     spec,
     attention,
+    assets,
+    {
+      beforeAdmission: (e, role) => planning.beforeAdmission(e, role),
+      preparedAdmission: (e, role) => planning.preparedAdmission(e, role),
+    },
   );
+  planning = new PlanningBaselines({ records, git, work, runtime, spec, sessions, obligations });
   const messages = sessions.messages;
   const leads = new Leads(
     config,
@@ -204,6 +222,7 @@ export function createWorkflow(
     },
   );
   advancement = new Advancement({
+    planning,
     authorizations,
     checkpoints,
     recovery,
@@ -274,7 +293,7 @@ export class Crew extends Context.Service<Crew, ReturnType<typeof createWorkflow
   "abracode/Crew",
 ) {}
 /** The application entrypoint owns the live adapters; tests supply the same interfaces. */
-export const applicationLayer = (ctx: PluginContext, home: string) =>
+export const applicationLayer = (ctx: PluginContext, home: string, catalogLayer = AgentsLive) =>
   Layer.effect(
     Crew,
     Effect.gen(function* () {
@@ -282,17 +301,60 @@ export const applicationLayer = (ctx: PluginContext, home: string) =>
       const runner = new ProcessRunner();
       const git = new Git(runner);
       const work = yield* openWorkGraph(config);
+      const catalog = yield* Agents;
+      const records = new Records(new NativeStore(ctx.storage));
+      const nativeRuntime = new NativeRuntime(ctx, config);
       const application = createWorkflow(
         config,
-        new Records(new NativeStore(ctx.storage)),
+        records,
         work,
         new OpenSpec(runner, config.commands.openspec),
         git,
-        new NativeRuntime(ctx, config),
+        nativeRuntime,
         new GitHubDelivery(git, runner, config.commands.forge),
         new FileLocks(AbsolutePath.make(join(config.home, ".abracode/locks"))),
+      );
+      const location = yield* realpath(ctx.location.directory);
+      const central = location === config.home;
+      const executions = yield* records.executions();
+      const owned =
+        central || executions.some((execution) => execution.worktree_directory === location);
+      const profiles: StaticProfile[] = [];
+      for (const definition of owned ? yield* catalog.list : []) {
+        const agent = yield* catalog.get(definition.id);
+        for (const role of definition.roles) {
+          if (!central && (role === "supervisor" || role === "project-lead")) continue;
+          profiles.push(yield* agent.resolve(role));
+        }
+      }
+      // Exact retained static profiles must exist before a worker inventory can be exposed.
+      for (const execution of executions) {
+        if (execution.worktree_directory !== location) continue;
+        profiles.push(...Object.values(execution.configuration_snapshot?.definitions ?? {}));
+        if (execution.worker_context_id) {
+          const context = yield* readWorkerContext(records.store, execution.worker_context_id);
+          if (context.schema_version === 2) profiles.push(context.prepared.profile);
+        }
+      }
+      yield* Layer.build(
+        OpenCodeAgentsLive(ctx, {
+          central,
+          skills: bundledSkills,
+          profiles,
+          supervisorModel: config.supervisor_model,
+          authorize: contributionAuthorization(
+            (session) => application.controller.queries.assignment(session),
+            records.store,
+            (session, message) => nativeRuntime.promptOrigin(session, message),
+          ),
+        }).pipe(Layer.provide(Layer.succeed(Agents, catalog))),
       );
       yield* Effect.addFinalizer(() => application.controller.close());
       return application;
     }),
-  ).pipe(Layer.provideMerge(Layer.merge(platformLayer, invalidationsLayer)));
+  ).pipe(
+    Layer.provideMerge(
+      catalogLayer.pipe(Layer.provideMerge(sourcesLayer()), Layer.provideMerge(platformLayer)),
+    ),
+    Layer.provideMerge(invalidationsLayer),
+  );

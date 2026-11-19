@@ -1,7 +1,7 @@
 import { MessageContent, emptyAttachments, emptyDiagnostics } from "./message-content.tsx";
 import { Composer } from "./composer.tsx";
 import { workspaceDraft } from "./workspace-state/draft.ts";
-import { useSearch } from "@tanstack/react-router";
+import { Link, useSearch } from "@tanstack/react-router";
 import { ArrowUpRight, Sparkles } from "@abracode/presentation/icons";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import { useWorkspaceNavigation } from "./workspace-state/navigation.ts";
@@ -205,6 +205,9 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
           <span className="muted">Workspace</span>
         </div>
         <div className="topbar-end">
+          <Link to="/settings" className="settings-link">
+            Settings
+          </Link>
           <span className="connection">
             <span
               className={`status-dot ${connectionError ? "blocked" : workspace.busy ? "in_progress" : "open"}`}

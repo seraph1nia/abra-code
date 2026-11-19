@@ -77,11 +77,13 @@ export const ProjectInputFields = {
 export const ProjectInputSchema = Schema.Struct(ProjectInputFields);
 export const WorkerSchema = Schema.Struct({
   ...CapabilityFields,
+  definition: Schema.optional(NonEmpty.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,63}$/))),
   agent: Schema.optional(AgentId),
   model: Schema.optional(WorkerModelSchema),
 });
 export const WorkerInputSchema = Schema.Struct({
   ...CapabilityFields,
+  definition: Schema.optional(NonEmpty.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,63}$/))),
   agent: Schema.optional(AgentId),
 });
 export const ModelOverridesSchema = Schema.Struct({

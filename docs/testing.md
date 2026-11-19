@@ -33,8 +33,7 @@ Its ceilings, fixed populations, toolchain, evidence and update procedure are in
 remain separate from deterministic assertions. Build assets before browser cases;
 wait for lazy content and painted geometry before recording reading anchors.
 
-Load [the testing skill](../.agents/skills/testing/SKILL.md) as `$testing` or
-native `abra-testing`.
+Load [the testing skill](../.agents/skills/testing/SKILL.md) as `$testing`. This skill documents development of AbraCode and is not registered in foreign runtime worker locations.
 
 | When                                       | Command                                             |
 | ------------------------------------------ | --------------------------------------------------- |

@@ -10,7 +10,7 @@ export async function installationRoot(prefix: string) {
   return mkdtemp(join(parent, prefix));
 }
 
-/** Prepare a disposable source installation with the frozen offline package store. */
+/** Prepare a disposable source installation without contributor skills, using the frozen offline store. */
 export async function installSource(home: string, options: { buildWeb?: boolean } = {}) {
   for (const path of [
     "package.json",
@@ -30,7 +30,6 @@ export async function installSource(home: string, options: { buildWeb?: boolean 
     "licenses",
     "scripts",
     ".opencode",
-    ".agents",
     "apps",
     "packages",
   ])
@@ -114,7 +113,11 @@ export async function installSource(home: string, options: { buildWeb?: boolean 
 }
 
 /** Exercise the normal interactive entry point through util-linux's disposable PTY. */
-export async function interactiveLaunch(home: string, env: NodeJS.ProcessEnv) {
+export async function interactiveLaunch(
+  home: string,
+  env: NodeJS.ProcessEnv,
+  expectedSelection: RegExp,
+) {
   const { spawn } = await import("node:child_process");
   const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
   const child = spawn(
@@ -143,7 +146,7 @@ export async function interactiveLaunch(home: string, env: NodeJS.ProcessEnv) {
     const deadline = Date.now() + 30_000;
     // Verify the native host's agent/model line, which cannot match bootstrap output.
     // AbraCode no longer provides a custom terminal footer.
-    while (!/Abra\s*·[\s\S]{0,100}?OpenCode/.test(stripVTControlCharacters(output))) {
+    while (!expectedSelection.test(stripVTControlCharacters(output))) {
       if (child.exitCode !== null || Date.now() >= deadline)
         throw new Error(
           `Interactive Abra launch did not render the native conversation: ${output.slice(-3000)}`,

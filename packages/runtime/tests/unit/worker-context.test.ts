@@ -71,7 +71,9 @@ test("captured context is immutable, survives source edits and diagnostics are r
   const e = await run(f.controller.start(issue));
   assert.ok(e.worker_context_id);
   const original = await run(readWorkerContext(f.records.store, e.worker_context_id));
-  await run(writeFile(join(f.config.home, ".opencode/agents/explore.md"), "Changed role guidance"));
+  await run(
+    writeFile(join(f.config.home, "packages/agents/assets/explore.md"), "Changed role guidance"),
+  );
   f.work.issues.get(issue)!.description = "Changed issue request";
   assert.deepEqual(await run(readWorkerContext(f.records.store, e.worker_context_id)), original);
   assert.ok(!original.guidance.content.startsWith("---"));
@@ -111,9 +113,9 @@ test("captured context is immutable, survives source edits and diagnostics are r
     /already has/,
   );
   assert.ok(
-    (await run(readFile(join(f.config.home, ".opencode/agents/explore.md"), "utf8"))).includes(
-      "Changed",
-    ),
+    (
+      await run(readFile(join(f.config.home, "packages/agents/assets/explore.md"), "utf8"))
+    ).includes("Changed"),
   );
 });
 

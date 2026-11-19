@@ -1,0 +1,33 @@
+{
+  "name": "@abracode/agents",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./bundled": "./src/bundled.ts",
+    "./policy": "./src/policy.ts",
+    "./skills": "./src/skills.ts",
+    "./native": "./src/native.ts",
+    "./contracts": "./src/contracts.ts",
+    "./engineering-skills": "./src/engineering-skills.ts",
+    "./capabilities": "./src/capabilities.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@abracode/contracts": "workspace:*",
+    "@opencode/plugin": "2.3.0",
+    "@opencode/schema": "2.3.0",
+    "effect": "4.1.4",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "4.1.4",
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2",
+    "vite-plus": "1.6.0"
+  }
+}

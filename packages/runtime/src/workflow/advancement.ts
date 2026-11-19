@@ -1,4 +1,5 @@
 import type { ExecutionRecovery } from "./execution-recovery.ts";
+import type { PlanningBaselines } from "./planning.ts";
 import type { WorkAdmission } from "./admission.ts";
 
 import { type Messages } from "./messages.ts";
@@ -56,6 +57,7 @@ import { Operations } from "./operations.ts";
 import { type Coordination } from "./coordination.ts";
 
 export interface AdvancementDependencies {
+  readonly planning: PlanningBaselines;
   readonly authorizations: Authorizations;
   readonly checkpoints: CheckpointEvidence;
   readonly admission: WorkAdmission;
@@ -195,9 +197,12 @@ export class Advancement {
             return yield* this.checkpointExecution(e).pipe(
               Effect.catch((error) =>
                 Effect.gen({ self: this }, function* () {
+                  // Refusing an explicit checkpoint while its worker is busy
+                  // must not revoke that worker's valid active assignment.
+                  if (error.code === "WRITER_BUSY") return yield* error;
                   const corrected = yield* this.correctFailure(e, error);
                   if (corrected) return corrected;
-                  if (!["APPROVAL_REQUIRED", "MERGE_APPROVAL"].includes(error.code))
+                  if (!["APPROVAL_REQUIRED", "MERGE_APPROVAL", "WRITER_BUSY"].includes(error.code))
                     yield* this.c.transitions.fail(e, error);
                   return yield* error;
                 }),
@@ -243,36 +248,13 @@ export class Advancement {
             return e;
           }
           yield* this.c.spec.plan(e);
-          // Ensure Explore left only planning files, including no source commits.
-          const changed = yield* this.c.git.run(e.worktree_directory!, [
-            "diff",
-            "--name-only",
-            activeSynchronization(e)?.planning_base_tree ??
-              e.planning_base_commit ??
-              e.openspec_update_commit ??
-              e.base_commit!,
-          ]);
-          const untracked = yield* this.c.git.run(e.worktree_directory!, [
-            "ls-files",
-            "--others",
-            "--exclude-standard",
-          ]);
-          if (
-            ![changed, untracked]
-              .join("\n")
-              .split("\n")
-              .filter(Boolean)
-              .every((n) => n.startsWith(`openspec/changes/${e.openspec_change}/`))
-          )
-            return yield* new CrewError(
-              "EXPLORE_SOURCE_EDIT",
-              "Explore modified files outside assigned OpenSpec change",
-            );
+          yield* this.c.planning.assertDelta(e);
           yield* this.c.git.run(e.worktree_directory!, [
             "add",
             "--",
             `openspec/changes/${e.openspec_change}`,
           ]);
+          yield* this.c.planning.planned(e);
           e.plan_fingerprint = yield* this.c.checkpoints.plan(e);
           yield* this.c.transitions.move(e, "awaiting_plan_approval", ["plan_fingerprint"]);
           if (e.plan_approval_required === false) return yield* this.beginApply(e, p);
@@ -489,7 +471,15 @@ export class Advancement {
     function* (
       this: Advancement,
       id: IssueId,
-      action: "pause" | "interrupt" | "resume" | "retry" | "steer" | "advance" | "replan",
+      action:
+        | "pause"
+        | "interrupt"
+        | "resume"
+        | "retry"
+        | "steer"
+        | "advance"
+        | "replan"
+        | "recover_planning",
       text?: string,
       request?: { id: RequestId; sender: SessionId },
     ) {
@@ -517,7 +507,7 @@ export class Advancement {
                 "EXTERNAL_CUSTODY",
                 "Abort and return external custody before invalidating the plan",
               );
-            if (action === "replan") {
+            if (action === "replan" || action === "recover_planning") {
               if (!(!e.stop_status && e.current_phase !== "interrupted"))
                 return yield* new CrewError(
                   "CONTROL_PAUSED",
@@ -530,7 +520,7 @@ export class Advancement {
                 "Use abra_work_scope with the complete revised contract",
               );
             }
-            if (action === "replan") {
+            if (action === "replan" || action === "recover_planning") {
               if (
                 ["archiving", "delivering", "awaiting_merge", "cleaning", "completed"].includes(
                   e.current_phase,
@@ -540,7 +530,19 @@ export class Advancement {
                   "REPLAN_PHASE",
                   "Replan must precede archival/delivery",
                 );
-              yield* this.idle(e);
+              if (!request)
+                return yield* new CrewError(
+                  "MESSAGE_ID",
+                  "Planning control requires a stable request identity and trusted sender",
+                );
+              const prepared = yield* this.c.planning.prepare(
+                e,
+                yield* this.project(e),
+                action,
+                request,
+                text,
+              );
+              if (!prepared.ready) return e;
               const issue = yield* this.c.work.show(e.issue_id);
               if (issue.status === "blocked") yield* this.c.work.resume(e.issue_id, e.execution_id);
               delete e.active_role;
@@ -567,6 +569,8 @@ export class Advancement {
                 "STOP_PENDING",
                 "Wait for owned operation and native worker termination before replacing a writer",
               );
+            if (e.stop_status === "confirmed")
+              yield* this.c.planning.continue(e, yield* this.project(e));
             delete e.stop_status;
             let phase = e.resume_phase;
             if (

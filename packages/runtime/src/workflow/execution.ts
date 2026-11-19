@@ -1,6 +1,6 @@
 import { type Dispatch } from "../config/dispatch.ts";
 import { captureConfiguration } from "../config/snapshot.ts";
-import { type Config } from "../domain.ts";
+import { type Config, CrewError } from "../domain.ts";
 import {
   type Execution,
   type ManagedExecution,
@@ -10,7 +10,9 @@ import {
 import { automation, planPolicy, type QualityProfile } from "../config/policy.ts";
 import { timestamp, type ChangeName, type SpecSchemaName } from "../identities.ts";
 import { verificationCommand } from "../config/contracts.ts";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
+import { Agents } from "@abracode/agents";
+import { workerRoles } from "../config/dispatch.ts";
 
 type NewExecution = {
   quality_profile?: QualityProfile;
@@ -34,12 +36,12 @@ export function createExecution(
   project: Project,
   input: NewExecution & { setup: true; openspec_change: ChangeName | "" },
   config?: Config,
-): Effect.Effect<SetupExecution>;
+): Effect.Effect<SetupExecution, CrewError>;
 export function createExecution(
   project: Project,
   input: NewExecution & { setup?: false; openspec_change: ChangeName },
   config?: Config,
-): Effect.Effect<Execution>;
+): Effect.Effect<Execution, CrewError>;
 export function createExecution(
   project: Project,
   input: NewExecution &
@@ -48,7 +50,7 @@ export function createExecution(
       | { setup?: false; openspec_change: ChangeName }
     ),
   config?: Config,
-): Effect.Effect<ManagedExecution> {
+): Effect.Effect<ManagedExecution, CrewError> {
   const coding = input.setup
     ? undefined
     : planPolicy(
@@ -72,11 +74,37 @@ export function createExecution(
     repair_rounds: project.repair_rounds,
   } as const;
   const { dispatch, require_plan_approval: _required, ...executionInput } = input;
-  return timestamp.pipe(
-    Effect.map((at) => ({
+  return Effect.gen(function* () {
+    const at = yield* timestamp;
+    const catalog = yield* Effect.serviceOption(Agents);
+    const snapshot = config ? captureConfiguration(config, project.dispatch, dispatch) : undefined;
+    const definitions =
+      config && Option.isSome(catalog)
+        ? yield* Effect.forEach(workerRoles, (role) =>
+            catalog.value.get(config.workers[role]?.definition ?? role).pipe(
+              Effect.flatMap((agent) => agent.resolve(role)),
+              Effect.map((profile) => [role, profile] as const),
+              Effect.mapError(
+                (error) =>
+                  new CrewError(error.code, `workers.${role}.definition: ${error.message}`),
+              ),
+            ),
+          )
+        : undefined;
+    return {
       ...executionInput,
-      ...(config
-        ? { configuration_snapshot: captureConfiguration(config, project.dispatch, dispatch) }
+      ...(snapshot
+        ? {
+            configuration_snapshot: {
+              ...snapshot,
+              ...(definitions
+                ? {
+                    agent_selection_version: 1 as const,
+                    definitions: Object.fromEntries(definitions),
+                  }
+                : {}),
+            },
+          }
         : {}),
       ...(input.setup || input.workflow_policy !== "full-openspec"
         ? {}
@@ -98,6 +126,6 @@ export function createExecution(
       plan_approval_required: policy.plan_approval,
       merge_approval_required: policy.merge_approval,
       delivery_policy: policy.delivery,
-    })),
-  );
+    };
+  });
 }

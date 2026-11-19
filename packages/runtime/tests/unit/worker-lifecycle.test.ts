@@ -11,15 +11,46 @@ import { consumesWorker } from "../../src/workflow/capacity.ts";
 import { applying, fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 
-test("explicit completion observes a busy worker without admitting another prompt", async (t) => {
-  const f = await run(fixture);
-  t.onTestFinished(() => run(f.close()));
-  const e = await run(applying(f));
-  const prompts = f.runtime.prompts;
-  await assert.rejects(run(f.controller.advance(e.issue_id)), { code: "WRITER_BUSY" });
-  assert.equal(f.runtime.prompts, prompts);
-  assert.equal((await run(f.controller.get(e.issue_id))).prompt_id, e.prompt_id);
-});
+for (const completionPending of [false, true])
+  test(`explicit completion observes a busy worker without admitting another prompt${completionPending ? " with completion pending" : ""}`, async (t) => {
+    const f = await run(fixture);
+    t.onTestFinished(() => run(f.close()));
+    const e = await run(applying(f));
+    if (completionPending) {
+      const session = f.runtime.sessions.get(e.apply_session_id!)!;
+      session.busy = false;
+      session.completion_pending = true;
+    }
+    const prompts = f.runtime.prompts;
+    const creates = f.runtime.creates;
+    const sessions = structuredClone(f.runtime.sessions);
+    const issue = structuredClone(f.work.issues.get(e.issue_id));
+    await assert.rejects(run(f.controller.advance(e.issue_id)), {
+      code: "WRITER_BUSY",
+      message: "A managed session still runs in this worktree",
+    });
+    assert.equal(f.runtime.prompts, prompts);
+    assert.equal(f.runtime.creates, creates);
+    assert.deepEqual(f.runtime.sessions, sessions);
+    const saved = await run(f.controller.get(e.issue_id));
+    assert.equal(
+      saved.current_phase,
+      e.current_phase,
+      "A rejected explicit advance must not revoke the busy worker's active phase",
+    );
+    for (const key of [
+      "prompt_id",
+      "apply_session_id",
+      "control_generation",
+      "active_role",
+      "worker_context_id",
+      "session_intent",
+      "resume_phase",
+      "error_or_recovery_reason",
+    ] as const)
+      assert.deepEqual(saved[key], e[key], `Busy refusal preserves ${key}`);
+    assert.deepEqual(f.work.issues.get(e.issue_id), issue);
+  });
 
 for (const outcome of [undefined, "interrupted", "future-outcome"]) {
   test(`explicit completion rejects ${outcome ?? "unknown"} outcome without recovering admission`, async (t) => {
@@ -35,6 +66,7 @@ for (const outcome of [undefined, "interrupted", "future-outcome"]) {
       message: `Worker outcome is ${outcome ?? "unknown"}`,
     });
     const saved = await run(f.controller.get(e.issue_id));
+    assert.equal(saved.current_phase, "blocked", "Unconfirmed outcomes still block advancement");
     assert.equal(saved.worker_failure, undefined);
     assert.equal(saved.prompt_id, e.prompt_id);
     assert.equal(f.runtime.prompts, 2);
@@ -137,7 +169,10 @@ for (const admitted of [false, true]) {
     const saved = await run(f.controller.get(Id.IssueId.make("abra-1")));
     assert.equal(saved.capacity_reservation!.status, "uncertain");
     await run(
-      writeFile(join(f.config.home, ".opencode/agents/explore.md"), "Changed Explore guidance"),
+      writeFile(
+        join(f.config.home, "packages/agents/assets/explore.md"),
+        "Changed Explore guidance",
+      ),
     );
     f.work.issues.get(saved.issue_id)!.description = "Changed request after interrupted admission";
     f.runtime.prompt = (id, text, messageID) => {

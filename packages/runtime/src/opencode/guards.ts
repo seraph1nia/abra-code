@@ -1,4 +1,13 @@
-import { permittedTools, policyAllows, rolePolicy, protectedControlPath } from "./role-policy.ts";
+import {
+  permittedTools,
+  policyAllows,
+  rolePolicy,
+  protectedControlPath,
+  contributionAllows,
+  definitionAllows,
+  leadAllows,
+} from "./role-policy.ts";
+import { bundledAssets } from "@abracode/agents/bundled";
 import { externalOwns } from "../validation/contracts.ts";
 import { decode } from "../decode.ts";
 import { AbsolutePath, ToolName, SessionId } from "../identities.ts";
@@ -217,7 +226,7 @@ export function installGuards(
                   "Lead must use its captured model selection",
                 );
               for (const name of Object.keys(event.tools))
-                if (name !== "abra_lead_action") delete event.tools[name];
+                if (!leadAllows(name)) delete event.tools[name];
               return;
             }
             const e = yield* workerFor(controller, event.sessionID);
@@ -225,7 +234,16 @@ export function installGuards(
               const role = roleFor(e, event.sessionID);
               const allow = permittedTools(role);
               for (const key of Object.keys(event.tools))
-                if (!allow.has(ToolName.make(key))) delete event.tools[key];
+                if (
+                  (!allow.has(ToolName.make(key)) &&
+                    !contributionAllows(
+                      e.configuration_snapshot?.definitions?.[role],
+                      role,
+                      key,
+                    )) ||
+                  !definitionAllows(e.configuration_snapshot?.definitions?.[role], key)
+                )
+                  delete event.tools[key];
               yield* controller.recordWorkerTools(
                 event.sessionID,
                 event.model,
@@ -244,12 +262,7 @@ export function installGuards(
               );
               event.system.push({
                 type: "text",
-                text:
-                  guidance ??
-                  (yield* readFile(
-                    resolve(controller.queries.settings.home, ".opencode/agents", `${role}.md`),
-                    "utf8",
-                  )),
+                text: guidance ?? (yield* readFile(resolve(bundledAssets, `${role}.md`), "utf8")),
               });
             } else if (event.agent === "abra") {
               for (const key of Object.keys(event.tools))
@@ -288,7 +301,7 @@ export function installGuards(
                 lead.stop_pending ||
                 lead.session_id !== event.sessionID ||
                 event.agent !== "project-lead" ||
-                event.tool !== "abra_lead_action"
+                !leadAllows(event.tool)
               )
                 return yield* new CrewError(
                   "LEAD_FORBIDDEN",
@@ -303,7 +316,15 @@ export function installGuards(
               return;
             }
             const role = roleFor(e, event.sessionID);
-            if (!permittedTools(role).has(ToolName.make(event.tool)))
+            if (
+              (!permittedTools(role).has(ToolName.make(event.tool)) &&
+                !contributionAllows(
+                  e.configuration_snapshot?.definitions?.[role],
+                  role,
+                  event.tool,
+                )) ||
+              !definitionAllows(e.configuration_snapshot?.definitions?.[role], event.tool)
+            )
               return yield* new CrewError("WORKER_TOOL", `${role} cannot use ${event.tool}`);
             if (!isActiveWorker(e, event.sessionID, { role }))
               return yield* new CrewError(

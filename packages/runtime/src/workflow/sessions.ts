@@ -58,8 +58,13 @@ export class WorkerSessions {
     private git: Git,
     private spec: OpenSpec,
     attention: AttentionService,
+    assets?: string,
+    private planning?: {
+      beforeAdmission: (e: Execution, role: Role) => Effect.Effect<void, CrewError>;
+      preparedAdmission: (e: Execution, role: Role) => Effect.Effect<void, CrewError>;
+    },
   ) {
-    this.contexts = new WorkerContexts(records, config);
+    this.contexts = new WorkerContexts(records, config, assets);
     this.messages = new Messages(records, runtime, capacity, queries, attention);
   }
   recordFailure = Effect.fn("WorkerSessions.recordFailure")(
@@ -248,6 +253,7 @@ export class WorkerSessions {
       if (turn.kind !== "unadmitted") return turn;
       if (!e.prompt_id)
         return yield* new CrewError("PROMPT_AMBIGUOUS", "No persisted prompt admission ID");
+      yield* this.planning?.beforeAdmission(e, e.active_role!) ?? Effect.void;
       const selection = yield* this.runtime
         .preflight(e, e.active_role!, e.prompt_id)
         .pipe(Effect.tapError((error) => this.contexts.failure(e, e.active_role!, error)));
@@ -317,9 +323,38 @@ export class WorkerSessions {
           "Return external branch custody before admitting a native writer or changing its scope",
         );
       yield* this.idle(e);
+      yield* this.planning?.beforeAdmission(e, role) ?? Effect.void;
       if (e.workflow_policy === "full-openspec") yield* this.spec.assertSchema(e);
       const project = yield* this.project(e);
       if (!(yield* this.capacity.reserve(e, role, project))) return;
+      if (e.configuration_snapshot?.agent_selection_version === 1) {
+        e.session_intent ??= {
+          role,
+          id: this.sessionID(e, role) ?? Session.ID.create(),
+          prompt: SessionMessage.ID.create(),
+        };
+        if (e.session_intent.role !== role || !e.session_intent.prompt)
+          return yield* new CrewError(
+            "PREPARATION_INTENT",
+            "Retained preparation identity conflicts with the assigned role",
+          );
+        yield* this.records.saveOwned(e, ["session_intent"]);
+        yield* this.contexts
+          .prepareAgent(e, role, yield* this.queries.issue(e.issue_id), e.session_intent.prompt)
+          .pipe(
+            Effect.onInterrupt(() => {
+              delete e.capacity_reservation;
+              e.capacity_observed_idle = true;
+              return this.records.saveOwned(e, ["capacity_reservation", "capacity_observed_idle"]);
+            }),
+            Effect.tapError((error) => this.contexts.failure(e, role, error)),
+            Effect.tapError(() => {
+              delete e.capacity_reservation;
+              e.capacity_observed_idle = true;
+              return this.records.saveOwned(e, ["capacity_reservation", "capacity_observed_idle"]);
+            }),
+          );
+      }
       const environment = yield* this.runtime.preflight(e, role).pipe(
         Effect.tapError((error) => this.contexts.failure(e, role, error)),
         Effect.tapError(() => {
@@ -333,6 +368,10 @@ export class WorkerSessions {
           "CONTEXT_SELECTION",
           "New worker admission requires resolved environment",
         );
+      if (e.session_intent?.prompt) {
+        e.session_intent = { ...e.session_intent, native_started: true };
+        yield* this.records.saveOwned(e, ["session_intent"]);
+      }
       let id = this.sessionID(e, role);
       if (!id) {
         e.session_intent ??= { role, id: Session.ID.create() };
@@ -345,14 +384,13 @@ export class WorkerSessions {
         // Native create accepts a client-generated ID. A missing-response retry cannot create a second session.
         id = yield* this.runtime.createSession(e, role, e.session_intent.id);
         e[`${role}_session_id`] = id;
-        delete e.session_intent;
       } else yield* this.runtime.refreshPermissions(e, role, id);
       e.active_role = role;
       yield* this.runtime.switchAgent(id, environment.agent);
       const model = environment.model;
       if (model) yield* this.runtime.switchModel(id, model);
       delete e.resume_after_decision;
-      e.prompt_id = SessionMessage.ID.create();
+      e.prompt_id = e.session_intent?.prompt ?? SessionMessage.ID.create();
       e.messages = e.messages?.map((m) =>
         m.type !== "finding" && needsDisposition(m) ? { ...m, status: "superseded" as const } : m,
       );
@@ -386,6 +424,7 @@ export class WorkerSessions {
         artifacts,
       );
       e.worker_context_id = context.prompt_id;
+      delete e.session_intent;
       yield* this.records.saveOwned(e, [
         `${role}_session_id`,
         "session_intent",
@@ -398,6 +437,7 @@ export class WorkerSessions {
         "capacity_reservation",
         "worker_context_id",
       ]);
+      yield* this.planning?.preparedAdmission(e, role) ?? Effect.void;
       yield* this.runtime.prompt(id, context.prompt, e.prompt_id);
       const saved = yield* this.records.update(e.issue_id, (current) => {
         ensure(
@@ -423,7 +463,7 @@ export class WorkerSessions {
   /** Called under exclusive execution ownership, outside shared coordination. */
   confirmStopped = Effect.fn("WorkerSessions.confirmStopped")(
     function* (this: WorkerSessions, e: Execution) {
-      if (e.session_intent) {
+      if (e.session_intent && (!e.session_intent.prompt || e.session_intent.native_started)) {
         const state = yield* this.runtime.session(e.session_intent.id);
         yield* this.runtime.interrupt(state.id, e.prompt_id);
       }
@@ -440,6 +480,7 @@ export class WorkerSessions {
       e.capacity_observed_idle = true;
       delete e.capacity_reservation;
       delete e.active_role;
+      if (e.session_intent?.prompt && !e.session_intent.native_started) delete e.session_intent;
     }.bind(this),
     domainEffect,
   );

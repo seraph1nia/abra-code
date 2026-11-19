@@ -1,4 +1,11 @@
-import { createRootRoute, createRoute, createRouter, Link, Outlet } from "@tanstack/react-router";
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  lazyRouteComponent,
+  Link,
+  Outlet,
+} from "@tanstack/react-router";
 import { Application } from "./workspace.tsx";
 import { workspaceSearch } from "./navigation.ts";
 
@@ -9,8 +16,13 @@ const workspaceRoute = createRoute({
   validateSearch: workspaceSearch,
   component: Application,
 });
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  component: lazyRouteComponent(() => import("./settings.tsx"), "Settings"),
+});
 export const router = createRouter({
-  routeTree: rootRoute.addChildren([workspaceRoute]),
+  routeTree: rootRoute.addChildren([workspaceRoute, settingsRoute]),
   defaultNotFoundComponent: () => (
     <main className="loading">
       <h1>Page not found</h1>

@@ -84,7 +84,14 @@ export class Obligations {
   );
   openFinishing = Effect.fn("Obligations.openFinishing")(
     function* (this: Obligations, e: Execution, target: FinishingTarget, question: string) {
-      const digest = createHash("sha256").update(JSON.stringify(target)).digest("hex").slice(0, 40);
+      const digest = createHash("sha256")
+        .update(
+          target.kind === "planning_baseline_adoption"
+            ? canonicalJSON(target)
+            : JSON.stringify(target),
+        )
+        .digest("hex")
+        .slice(0, 40);
       const key = ObligationKey.make(`finishing-${digest}`);
       const now = yield* Clock.currentTimeMillis;
       const saved = yield* this.records.update(e.issue_id, (current) => {
@@ -116,7 +123,10 @@ export class Obligations {
               schema_version: 1,
               key,
               generation: target.generation,
-              scope: "Finishing existing work",
+              scope:
+                target.kind === "planning_baseline_adoption"
+                  ? "Prospective planning baseline adoption"
+                  : "Finishing existing work",
               question: question.slice(0, 8192),
               owner: "user",
               session_id: "controller",
@@ -691,3 +701,4 @@ export class Obligations {
     domainEffect,
   );
 }
+import { canonicalJSON } from "../presentation/identity.ts";

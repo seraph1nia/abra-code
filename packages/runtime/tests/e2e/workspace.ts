@@ -1,3 +1,4 @@
+import { advanceAfterIdle, NativeWorkspaceCommandError } from "../helpers/workspace-advance.ts";
 import { mixedDiagrams, denseFlowchart, longSequence } from "../helpers/diagram-fixtures.ts";
 import { sampleFixtureMemory } from "../helpers/process-memory.ts";
 import { HttpAgent } from "@ag-ui/client";
@@ -211,7 +212,14 @@ export async function workspaceJourney(input: {
     const page = await context.newPage();
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    await page.goto(web.origin);
+    const beforeSettings = input.providerCount();
+    await page.goto(`${web.origin}/settings`);
+    await page.getByText("6 agents defined", { exact: true }).waitFor();
+    assert.equal(await page.locator(".agent-definition").count(), 6);
+    await page.getByLabel("Inspect project-lead", { exact: true }).click();
+    await page.getByText("Inline instructions", { exact: true }).waitFor();
+    assert.equal(input.providerCount(), beforeSettings, "Settings must not call the model");
+    await page.getByRole("link", { name: "Back to workspace" }).click();
     await page
       .getByRole("textbox", { name: "Message Abra" })
       .waitFor({ timeout: 10000 })
@@ -247,7 +255,7 @@ export async function workspaceJourney(input: {
             await input.client.session.wait({ sessionID: input.session });
             if (call.state.error.message.startsWith("LOCKED:"))
               return { category: "operation_in_progress" };
-            throw new Error(`${tool}: ${JSON.stringify(call.state.error)}`);
+            throw new NativeWorkspaceCommandError(tool, call.state.error.message);
           }
           if (call?.type === "tool" && call.state.status === "completed") {
             const content = call.state.content.find((c) => c.type === "text");
@@ -1140,10 +1148,16 @@ export async function workspaceJourney(input: {
         await command("abra_work_approve", { issue_id: issue, kind });
         approved.add(kind);
       } else if (workersIdle && Date.now() - lastAdvance > 2000) {
-        await command("abra_work_control", {
-          issue_id: issue,
-          action: "advance",
-          request_id: `workspace-advance-${ordinal}`,
+        await advanceAfterIdle({
+          before: status,
+          advance: () =>
+            command("abra_work_control", {
+              issue_id: issue,
+              action: "advance",
+              request_id: `workspace-advance-${ordinal}`,
+            }),
+          readStatus: () => input.readStatus(issue),
+          context: (sessionID) => input.client.session.context({ sessionID }),
         });
         lastAdvance = Date.now();
       }

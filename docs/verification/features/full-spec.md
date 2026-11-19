@@ -1,5 +1,26 @@
 # Full-spec approval and behavioral proof
 
+## Controlled replanning and prospective recovery
+
+Run `ABRACODE_TEST_JOURNEY=planning-recovery` with the native test command and
+a fresh external `ABRACODE_TEST_EVIDENCE_DIR`. The disposable journey retains
+dirty/untracked Apply content across formatting-only replanning, reuses an exact
+request after response loss, restarts at the fresh plan gate, then verifies
+configured checks and independent Review before branch preservation.
+
+A separate issue receives a real outside-source mutation after baseline capture.
+It remains rejected across a differently keyed replan. Native adoption forms
+exercise rejection, stale answered content, and explicit prospective acceptance
+followed by a distinct fresh plan form, checks and Review. An unrelated paused
+companion stays paused across restart. Retained JSON records baseline/adoption/
+plan identities and check/Review receipts; the existing harness records cleanup.
+
+The provider scripts fixture decisions; this proves native enforcement rather
+than autonomous judgment or authorization for real retained work. Legacy
+missing-baseline/false-positive cases, index-only/mode/link/path mutations,
+pause continuation and interrupted capture use real Git controller regressions in
+`unit/planning-baselines.test.ts`.
+
 ## Sub-features
 
 Portable offline skills, role permissions, plan approval, scoped diagnosis, configured controller checks, independent Review, branch preservation and dependent-work readiness.
@@ -15,6 +36,41 @@ Run `pnpm test:one packages/runtime/tests/extended/native.test.ts` with `ABRACOD
 Apply writes `sample-proof.mjs`, observes its consumer fail against `original`, changes the scoped source to `sample`, and reruns the original consumer successfully. Configured controller checks include that proof. Review reads `source.txt` and the untracked proof; the test records unstaged/untracked status before Review and matching check/review receipts. The expected final state is completed/closed with a preserved local branch and no registered native worktree. No skill invocation alone can establish that state.
 
 The separate unavailable-evidence issue loads verification guidance, cannot read runtime evidence, reports correctness `not_verified` and uncertain scope, and retains an open decision without delivery. Accepted planning stays unchanged; no automatic recipe or host installation is performed. Existing local skills and foreign control files remain intact (the main issue's explicitly requested AGENTS navigation edit is checked separately).
+
+### Programmable profiles and captured preparation
+
+The engineering variant supplies a seventh definition through the public
+`createPlugin`/catalog seam in the disposable installation, without a new workflow
+role or production fixture flag. Explore uses that specialist's typed read-only
+`inspect-specialist` tool, an available-only browser skill, preloaded fixture
+guidance and an injected preparation counter. Actual model-shaped requests must
+include the custom tool, omit management/delegation tools, and contain the static
+role instructions exactly once. Native skill reads prove availability; native
+profile reads distinguish the preload body from the available-only body.
+
+Before the pending plan approval restart, the harness edits only its installed
+Explore asset. Restart must expose both the distinct current-source revision and
+the exact original captured profile, retaining prompt/context IDs and unchanged
+provider counts. The counter may increase for deliberately new assignments;
+repeated requests and registration/restart must not increase it for a capture.
+The count RPC is registered through the same native PluginContext that writes
+the counter; the unrelated harness namespace must not contain it. Direct native
+handler calls prove a currently eligible read succeeds while an explicitly
+denied contribution, an old message in the same session and a wrong-role caller
+are refused. Apply additionally uses an explicit external native profile: its
+own system survives alongside exactly one captured managed guidance body, even
+after the installed Apply source changes before that later phase.
+`native-engineering.json` retains `agent_requests` and `agent_capture_restart`
+observations, native IDs/revisions, count equality and unchanged admission IDs.
+
+The bounded real-server regression
+`packages/runtime/tests/integration/native-agent-registration.test.ts` separately
+proves absent-ID insertion, native field mapping, restoration after a static
+source edit, unrelated-agent preservation, scope disposal and zero session
+creation. Public package and prepared-context tests cover malformed definitions,
+injected services, interrupted preparation, role ceilings and direct/stale
+contribution invocation. These complement, rather than replace, the human
+approval and independent Review assertions in the full journey.
 
 ## Gotchas
 

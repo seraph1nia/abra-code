@@ -13,6 +13,7 @@ import type { ResourceSelection } from "../../src/web/resources.ts";
 
 /** Deterministic transport fixture; native authority is covered separately by E2E. */
 export class WorkspaceFixture implements WebBackend {
+  agents: WebBackend["agents"] = Effect.succeed({ agents: [] });
   reviews?: NonNullable<WebBackend["reviews"]>;
   readonly sessionID = SessionId.make("ses_webfixture");
   readonly changes = Stream.never;

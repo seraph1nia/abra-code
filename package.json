@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "check": "pnpm format:check && pnpm lint:effect && pnpm check:packages && pnpm typecheck && pnpm check:lsp",
+    "check": "pnpm format:check && pnpm lint:effect && pnpm check:packages && pnpm typecheck && pnpm check:lsp && pnpm check:lsp:agents",
     "contracts:check": "pnpm --filter @abracode/contracts check",
     "presentation:check": "pnpm --filter @abracode/presentation check",
     "test": "vp test run --project fast --project unit --project integration",
@@ -30,6 +30,7 @@
     "prepare": "effect-tsgo patch --typescript --oxlint",
     "lint:effect": "vp lint --type-aware --deny-warnings",
     "check:lsp": "effect-tsgo diagnostics --project packages/runtime/tsconfig.json --format json --strict --lspconfig '{\"diagnostics\":true,\"diagnosticSeverity\":{\"unstableApiUsage\":\"off\"}}'",
+    "check:lsp:agents": "effect-tsgo diagnostics --project packages/agents/tsconfig.json --format json --strict --lspconfig '{\"diagnostics\":true,\"diagnosticSeverity\":{\"unstableApiUsage\":\"off\"}}'",
     "report:check": "pnpm --filter @abracode/report-export check",
     "report:preview": "tsx scripts/report.ts preview",
     "report:validate": "tsx apps/report/scripts/validate.ts",

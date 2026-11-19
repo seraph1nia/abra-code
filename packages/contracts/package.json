@@ -5,6 +5,7 @@
   "license": "MIT",
   "type": "module",
   "exports": {
+    "./web/agent-settings": "./src/web/agent-settings.ts",
     "./config/dispatch": "./src/config/dispatch.ts",
     "./config/paths": "./src/config/paths.ts",
     "./config/policy": "./src/config/policy.ts",

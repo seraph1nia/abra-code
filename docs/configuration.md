@@ -243,6 +243,27 @@ AbraCode always excludes external `rebase,push,pr,ci` stages and suppresses publ
 
 ## Required worker capabilities
 
+`workers.<role>.definition` selects a catalog definition, defaulting to the bundled
+role (`explore`, `apply`, `review`, `research`) for **new executions**.
+`workers.<role>.agent` independently overrides the native execution profile;
+it does not name a definition or model dispatch profile. Both may be supplied.
+Definition guidance/requirements and the enforced assignment-role ceiling still
+apply to an external native override. Programmatic callers can supply a catalog
+to `applicationLayer`; there is no YAML module loader or UI for executable code.
+
+Offline configuration/schema inspection checks selector shape without invoking
+providers or accessing the native registry. Catalog-dependent unknown/incompatible
+selections fail at execution creation with the configuration field. Static
+definition material is captured before assignment; providers run once for the
+retained prospective prompt, before native admission, not during inspection or
+request hooks. Legacy snapshots/no-snapshot executions keep historical native
+selection (including implicit `build`) until a deliberate new execution.
+
+Task/repository/model-profile/role/default model precedence is unchanged. Normal
+configuration always has a required default; definition model preference is only
+a fallback for an unconfigured programmatic caller. Native sessions explicitly
+select the complete model. No active-work hot reload is performed.
+
 Worker profiles accept `required_skills` (up to 32 exact native skill IDs) and `required_tools` (up to 32 groups of up to 16 alternatives). Every group requires at least one available tool. Declarations add prerequisites to the role defaults; they never grant permissions, remove defaults, install skills or change the assigned role.
 
 ```yaml

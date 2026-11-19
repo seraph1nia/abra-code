@@ -1,5 +1,7 @@
 import { diagnosticText } from "../opencode/diagnostics.ts";
-import { Effect } from "effect";
+import { Effect, Option, Schema } from "effect";
+import { Agents, PreparedAgent } from "@abracode/agents";
+import { bundledAssets } from "@abracode/agents/bundled";
 import { join } from "node:path";
 import {
   type Config,
@@ -27,6 +29,7 @@ import {
   WorkerContextSchema,
   type WorkerContext,
   WorkerContextSummarySchema,
+  contextDigest,
 } from "./worker-context-contracts.ts";
 import { workerPrompt } from "./prompts.ts";
 import { isActiveWorker } from "./worker-assignment.ts";
@@ -75,7 +78,96 @@ export class WorkerContexts {
   constructor(
     private records: Records,
     private config: Config,
+    private assets: string = bundledAssets,
   ) {}
+  prepareAgent = Effect.fn("WorkerContexts.prepareAgent")(
+    function* (this: WorkerContexts, e: Execution, role: Role, issue: Issue, prompt: MessageId) {
+      const captured = e.configuration_snapshot?.definitions?.[role];
+      if (e.configuration_snapshot?.agent_selection_version !== 1 || !captured) return;
+      const session = e.session_intent?.id ?? e[`${role}_session_id`];
+      if (!session)
+        return yield* new CrewError(
+          "PREPARATION_ID",
+          "Preparation requires a retained prospective session",
+        );
+      const key = StorageKey.make(`agent-preparation/${prompt}`);
+      const binding = {
+        execution: e.execution_id,
+        generation: e.control_generation,
+        role,
+        session,
+        prompt,
+      };
+      const receipt = yield* this.records.coordinateCommit(() =>
+        this.records.store
+          .get(key)
+          .pipe(
+            Effect.tap((existing) =>
+              existing === undefined
+                ? this.records.store.set(key, { ...binding, stage: "started" })
+                : Effect.void,
+            ),
+          ),
+      );
+      if (receipt !== undefined) {
+        const decoded = yield* decode(
+          Schema.Struct({
+            execution: Schema.String,
+            generation: Schema.Finite,
+            role: Schema.String,
+            session: Schema.String,
+            prompt: Schema.String,
+            stage: Schema.Literals(["started", "complete"]),
+            prepared: Schema.optional(PreparedAgent),
+          }),
+          receipt,
+          key,
+        );
+        if (
+          decoded.execution !== e.execution_id ||
+          decoded.generation !== e.control_generation ||
+          decoded.role !== role ||
+          decoded.session !== session ||
+          decoded.prompt !== prompt ||
+          (decoded.prepared && decoded.prepared.profile.revision !== captured.revision)
+        )
+          return yield* new CrewError(
+            "PREPARATION_ASSIGNMENT",
+            "Preparation receipt conflicts with the retained assignment",
+          );
+        if (decoded.stage === "complete" && decoded.prepared) return decoded.prepared;
+        return yield* new CrewError(
+          "PREPARATION_UNCERTAIN",
+          "Definition preparation started without a complete capture; preserve this unadmitted identity and request an explicit fresh assignment",
+        );
+      }
+      const catalog = yield* Effect.serviceOption(Agents);
+      if (Option.isNone(catalog))
+        return yield* new CrewError(
+          "AGENTS_UNAVAILABLE",
+          "Prepared assignment requires the application catalog",
+        );
+      const selected = e.configuration_snapshot!.workers[role];
+      const prepared = yield* catalog.value
+        .prepare(captured.definition, {
+          role,
+          workflow: e.workflow_policy,
+          captured,
+          task: { id: issue.id, title: issue.title, description: issue.description },
+          repository: {
+            id: e.repository_id,
+            directory: e.worktree_directory!,
+            base: e.base_commit!,
+          },
+          configuredModel: selected?.model,
+          nativeOverride: selected?.agent,
+        })
+        .pipe(Effect.mapError((error) => new CrewError(error.code, error.message)));
+      yield* this.records.store.set(key, { ...binding, stage: "complete", prepared });
+      return prepared;
+    }.bind(this),
+    domainEffect,
+  );
   prepare = Effect.fn("WorkerContexts.prepare")(
     function* (
       this: WorkerContexts,
@@ -92,54 +184,59 @@ export class WorkerContexts {
           "CONTEXT_LOCATION",
           "Worker context requires its owned worktree and retained base",
         );
-      const path = AbsolutePath.make(join(this.config.home, ".opencode/agents", `${role}.md`));
-      const source = yield* readFile(path, "utf8");
-      const content = source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
+      const prepared = yield* this.prepareAgent(e, role, issue, prompt);
+      const path = AbsolutePath.make(join(this.assets, `${role}.md`));
+      const source = prepared?.profile.system ?? (yield* readFile(path, "utf8"));
+      const content = prepared
+        ? source
+        : source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
       if (!content)
         return yield* new CrewError("CONTEXT_GUIDANCE", `Role guidance is empty: ${path}`);
       const instructions = join(e.worktree_directory, "AGENTS.md");
       const browser = workerBrowser(this.config.home, session);
+      const material = {
+        schema_version: prepared ? 2 : 1,
+        ...(prepared ? { prepared } : {}),
+        issue_id: e.issue_id,
+        execution_id: e.execution_id,
+        repository_id: e.repository_id,
+        generation: e.control_generation,
+        role,
+        session_id: session,
+        prompt_id: prompt,
+        workflow: e.workflow_policy,
+        directory: e.worktree_directory,
+        base: e.base_commit,
+        policy: policyIdentity(role),
+        environment,
+        guidance: { ...(prepared ? {} : { path }), content, digest: digestText(content) },
+        prompt:
+          workerPrompt(e, issue, role) +
+          `\nRequired skills (load through the native skill tool when relevant): ${environment.skills.map((skill) => skill.id).join(", ") || "none"}. Skill availability does not grant tools.\n` +
+          `When website interaction or application behavior checks are needed, load abra-browser and use agent-browser through the native shell tool. If browser guidance, shell or browser prerequisites are unavailable, report the blocker for browser-dependent work; ordinary work does not require them. Browser session: ${browser.name}. Screenshot directory: ${browser.directory}/. Use --session ${browser.name} on every invocation; close only that named browser when finished. Browser checks supplement required repository verification.\n`,
+        scope_fingerprint:
+          e.workflow_policy === "full-openspec" ? e.plan_fingerprint : e.scope?.fingerprint,
+        approvals: e.approval_receipts,
+        scope_reference:
+          e.workflow_policy === "full-openspec"
+            ? `openspec/changes/${e.openspec_change}`
+            : `execution:${e.execution_id}/scope:${e.scope?.revision ?? "retained"}`,
+        references: [
+          {
+            path: instructions,
+            status: (yield* pathExists(instructions)) ? "discovered" : "unavailable",
+          },
+          ...artifacts.map((artifact) => ({ path: artifact, status: "declared" })),
+        ],
+        decisions: (e.decisions ?? []).map((decision) => ({
+          key: decision.key,
+          status: decision.status,
+        })),
+        at: yield* timestamp,
+      };
       const context = yield* decode(
         WorkerContextSchema,
-        {
-          schema_version: 1,
-          issue_id: e.issue_id,
-          execution_id: e.execution_id,
-          repository_id: e.repository_id,
-          generation: e.control_generation,
-          role,
-          session_id: session,
-          prompt_id: prompt,
-          workflow: e.workflow_policy,
-          directory: e.worktree_directory,
-          base: e.base_commit,
-          policy: policyIdentity(role),
-          environment,
-          guidance: { path, content, digest: digestText(content) },
-          prompt:
-            workerPrompt(e, issue, role) +
-            `\nRequired skills (load through the native skill tool when relevant): ${environment.skills.map((skill) => skill.id).join(", ") || "none"}. Skill availability does not grant tools.\n` +
-            `When website interaction or application behavior checks are needed, load abra-browser and use agent-browser through the native shell tool. If browser guidance, shell or browser prerequisites are unavailable, report the blocker for browser-dependent work; ordinary work does not require them. Browser session: ${browser.name}. Screenshot directory: ${browser.directory}/. Use --session ${browser.name} on every invocation; close only that named browser when finished. Browser checks supplement required repository verification.\n`,
-          scope_fingerprint:
-            e.workflow_policy === "full-openspec" ? e.plan_fingerprint : e.scope?.fingerprint,
-          approvals: e.approval_receipts,
-          scope_reference:
-            e.workflow_policy === "full-openspec"
-              ? `openspec/changes/${e.openspec_change}`
-              : `execution:${e.execution_id}/scope:${e.scope?.revision ?? "retained"}`,
-          references: [
-            {
-              path: instructions,
-              status: (yield* pathExists(instructions)) ? "discovered" : "unavailable",
-            },
-            ...artifacts.map((artifact) => ({ path: artifact, status: "declared" })),
-          ],
-          decisions: (e.decisions ?? []).map((decision) => ({
-            key: decision.key,
-            status: decision.status,
-          })),
-          at: yield* timestamp,
-        },
+        { ...material, ...(prepared ? { capture_digest: contextDigest(material) } : {}) },
         "Worker context",
       );
       const existing = yield* this.records.store.get(contextKey(prompt));
@@ -312,7 +409,12 @@ export class WorkerContexts {
       };
       yield* this.observe(e, context, observation, blocked);
       if (blocked) return yield* blocked;
-      return context.guidance.content;
+      return context.schema_version === 1
+        ? context.guidance.content
+        : [
+            ...(context.prepared.delivery === "external" ? [context.guidance.content] : []),
+            ...context.prepared.fragments.map((fragment) => fragment.content),
+          ].join("\n\n");
     }.bind(this),
     domainEffect,
   );
@@ -339,6 +441,9 @@ export class WorkerContexts {
         captured_at: context?.at,
         generation: context?.generation,
         policy: context?.policy,
+        definition: context?.schema_version === 2 ? context.prepared.profile.definition : undefined,
+        profile_revision:
+          context?.schema_version === 2 ? context.prepared.profile.revision : undefined,
         directory: context?.directory ?? status?.directory,
         scope_reference: context?.scope_reference,
         scope_fingerprint: context?.scope_fingerprint,

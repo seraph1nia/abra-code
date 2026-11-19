@@ -69,6 +69,7 @@ export function resolveConfig(
             role,
             {
               ...input.workers?.[role],
+              definition: input.workers?.[role]?.definition ?? role,
               model: input.models.overrides?.[role] ?? input.models.default,
             },
           ]),

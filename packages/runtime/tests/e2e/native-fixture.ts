@@ -1,6 +1,10 @@
 import { nativeObservation } from "../helpers/native-observation.ts";
 import { installNativeProbe } from "../helpers/native-probe.ts";
 import { simplifyCalls, simplifyLoopJourney } from "./simplify-loop.ts";
+import {
+  planningCalls as planningWorkerCalls,
+  planningRecoveryJourney,
+} from "./planning-recovery.ts";
 import { workspaceJourney } from "./workspace.ts";
 import { acceptanceJourney } from "./acceptance.ts";
 import { reportJourney } from "./reports.ts";
@@ -16,8 +20,10 @@ import { removeFixture } from "../helpers/resources.ts";
 import { browserCalls, browserPage, assertBrowserWorker, browserIsolation } from "./browser.ts";
 import { capturePreSuite, assertPreSuiteAfterRestart } from "./engineering-recovery.ts";
 import { engineeringCalls, assertEngineeringWorker } from "./engineering.ts";
+import { installSpecialist, assertSpecialistRequest, agentFixture } from "./agents.ts";
 import { engineeringSkills } from "../../src/opencode/engineering-skills.ts";
 import { workerContextCapabilities } from "./worker-context.ts";
+import { WorkerContextSummarySchema } from "../../src/workflow/worker-context-contracts.ts";
 import { prFeedbackLifecycle } from "./pr-feedback.ts";
 import * as Id from "../../src/identities.ts";
 import { run } from "../effects.ts";
@@ -30,6 +36,7 @@ import { mkdir, writeFile, rename, readFile, access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { OpenCode } from "@opencode/client";
 import { Rpc } from "@opencode/plugin";
+import { Schema } from "effect";
 import { ProcessRunner } from "../../src/process.ts";
 import { Git } from "../../src/git/repository.ts";
 import { repo } from "../fixtures.ts";
@@ -117,6 +124,7 @@ export function nativeTest(
     let child: ChildProcess | undefined;
     let logs = "";
     const engineeringEvidence: unknown[] = [];
+    const agentRequests: unknown[] = [];
     const providerRequests: Record<string, number> = {};
     const controllerCalls: Record<string, { count: number; total_ms: number; max_ms: number }> = {};
     let retainedState: Awaited<ReturnType<typeof retainedBytes>> | undefined;
@@ -202,6 +210,30 @@ export function nativeTest(
             : user.includes("AbraCode review")
               ? "review"
               : "supervisor";
+      if (
+        user.includes("engineering-acceptance") &&
+        ["explore", "apply", "review"].includes(role)
+      ) {
+        const system = JSON.stringify(messages.filter((message: any) => message.role === "system"));
+        const marker = `You are ${role[0].toUpperCase()}${role.slice(1)}.`;
+        const count = system.split(marker).length - 1;
+        assert.equal(count, 1, `${role} static instructions must be supplied exactly once`);
+        const toolNames = (input.tools ?? []).map((tool: any) => tool.function?.name ?? tool.name);
+        if (journey === "engineering") assertSpecialistRequest(role, system, toolNames);
+        if (
+          journey === "engineering" &&
+          role === "apply" &&
+          !user.includes("Approved short scope:")
+        ) {
+          assert.ok(system.includes("External native override guidance marker."));
+          assert.ok(!system.includes("Native later role source changed after snapshot."));
+        }
+        agentRequests.push({
+          role,
+          static_instruction_count: count,
+          tools: toolNames,
+        });
+      }
       providerRequests[role] = (providerRequests[role] ?? 0) + 1;
       const acceptanceKey = user.includes("final-acceptance-authentication")
         ? role === "explore"
@@ -320,7 +352,9 @@ export function nativeTest(
         return;
       }
       const scopedMessages =
-        user.startsWith("AbraCode workspace operation ") || user.includes("simplify-loop:")
+        user.startsWith("AbraCode workspace operation ") ||
+        user.includes("simplify-loop:") ||
+        user.includes("planning-recovery:")
           ? messages.slice(
               messages.findLastIndex((m: any) => m.role === "user" && m.content === user),
             )
@@ -790,8 +824,9 @@ export function nativeTest(
         };
       }
       await simplifyCalls(user, role, calls);
+      planningWorkerCalls(user, role, calls);
       calls.unshift(...browserCalls(user, role, `http://127.0.0.1:${address.port}`, messages));
-      calls.unshift(...engineeringCalls(user, role));
+      calls.unshift(...engineeringCalls(user, role, journey === "engineering"));
       if (
         role === "apply" &&
         user.includes("engineering-acceptance") &&
@@ -970,6 +1005,7 @@ export function nativeTest(
               isolation:
                 "Disposable service/data/config, loopback provider and local bare remotes; no operator service or user remote",
               observations: safeEvidence(engineeringEvidence),
+              agent_requests: safeEvidence(agentRequests),
               metrics: {
                 provider_requests: providerRequests,
                 controller_calls: controllerCalls,
@@ -984,6 +1020,24 @@ export function nativeTest(
             2,
           ) + "\n",
         );
+        if (cleanupComplete && journey === "engineering")
+          console.info(
+            "agent-verification " +
+              JSON.stringify({
+                evidence: path,
+                result: t.task.result?.state,
+                cleanup_complete: true,
+                requests: agentRequests.length,
+                observations: engineeringEvidence.filter(
+                  (value) =>
+                    typeof value === "object" &&
+                    value !== null &&
+                    ("agent_capture_restart" in value ||
+                      "native_contribution_direct" in value ||
+                      "native_contribution_wrong_role" in value),
+                ),
+              }),
+          );
         await access(path);
       };
       try {
@@ -1062,6 +1116,7 @@ export function nativeTest(
     );
     await run(git.run(Id.AbsolutePath.make(projects[1]), ["push", "origin", "main"]));
     await installSource(home, { buildWeb: journey === "workspace" });
+    if (journey === "engineering") await installSpecialist(home);
     const configPath = join(home, "opencode.json");
     await writeFile(
       configPath,
@@ -1089,6 +1144,18 @@ export function nativeTest(
       JSON.stringify({
         plugins: [join(home, ".opencode/plugins/abracode"), harnessDir],
         model: "fixture/fallback",
+        ...(journey === "engineering"
+          ? {
+              agent: {
+                "external-apply": {
+                  description: "External native profile fixture",
+                  mode: "subagent",
+                  hidden: true,
+                  prompt: "External native override guidance marker.",
+                },
+              },
+            }
+          : {}),
       }),
     );
     const port = await new Promise<number>((done) => {
@@ -1106,6 +1173,12 @@ export function nativeTest(
       join(home, "abracode.yaml"),
       `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture${journey === "research" ? ", variant: default" : ""} } }\nprofiles:\n  native-investigator: { role: research, model: { providerID: fixture, id: gpt-specialist } }\nworktree_root: ${root}/trees\nserver_url: http://127.0.0.1:${port}\nreconcile_interval_ms: 1000\n${journey === "finishing" ? "progress_timeout_ms: { explore: 500, apply: 1800000, review: 900000, research: 900000, operation: 300000 }\n" : ""}${journey === "simplify-loop" ? "supervision_mode: attended-automatic\n" : ""}max_executions: 8\ncommands:\n  forge: ${fakeForge}\n`,
     );
+    if (journey === "engineering")
+      await writeFile(
+        join(home, "abracode.yaml"),
+        (await readFile(join(home, "abracode.yaml"), "utf8")) +
+          "workers:\n  explore: {definition: engineering-specialist}\n  apply: {agent: external-apply}\n",
+      );
     const password = "abracode-disposable-test-password";
     const globalPlugins = join(root, "config/opencode/plugins");
     await mkdir(globalPlugins, { recursive: true });
@@ -1468,6 +1541,36 @@ export function nativeTest(
         },
       });
     };
+    if (journey === "planning-recovery") {
+      failFirstExplore = false;
+      engineeringEvidence.push(
+        await planningRecoveryJourney({
+          root,
+          supervisor: supervisor.id,
+          client,
+          invoke,
+          eventually,
+          work: observeWork,
+          holdExplore: () => {
+            holdExplore = true;
+            exploreHeld = false;
+          },
+          held: () => exploreHeld,
+          releaseExplore: () => {
+            holdExplore = false;
+            releaseExplore?.();
+          },
+          restart: async () => {
+            child!.kill("SIGTERM");
+            await new Promise<void>((done) => child!.once("exit", () => done()));
+            start();
+            await ready();
+            await client.location.get({ location: { directory: home } });
+          },
+        }),
+      );
+      return;
+    }
     if (journey === "simplify-loop") {
       failFirstExplore = false;
       engineeringEvidence.push(
@@ -1594,16 +1697,21 @@ export function nativeTest(
         ? (await invoke("abra_work_diagnostics", { issue_id: baseline.issue.id, role: "explore" }))
             .contexts[0]
         : undefined;
+      await mkdir(join(home, ".opencode/agents"), { recursive: true });
       await writeFile(
         join(home, ".opencode/agents/central-only.md"),
         "---\ndescription: Only registered in the central test project\nmode: subagent\n---\nCentral fixture profile.\n",
       );
       const configBeforeRestart = await readFile(join(home, "abracode.yaml"), "utf8");
-      await writeFile(
-        join(home, "abracode.yaml"),
-        configBeforeRestart +
-          "workers:\n  explore: {agent: central-only}\n  research: {required_skills: [missing-worker-skill]}\n",
+      const restartConfiguration = parseDocument(configBeforeRestart);
+      restartConfiguration.set(
+        "workers",
+        restartConfiguration.createNode({
+          explore: { agent: "central-only" },
+          research: { required_skills: ["missing-worker-skill"] },
+        }),
       );
+      await writeFile(join(home, "abracode.yaml"), restartConfiguration.toString());
       child!.kill("SIGTERM");
       await new Promise<void>((done) => child!.once("exit", () => done()));
       start();
@@ -2534,6 +2642,54 @@ export function nativeTest(
     assert.equal(retry.configuration_snapshot.workers.explore.model.id, "gpt-fixture");
     await eventually(async () => (exploreHeld ? true : undefined));
     try {
+      if (journey === "engineering") {
+        const workerLocation = { location: { directory: retry.worktree_directory! } };
+        const direct = Schema.decodeUnknownSync(Schema.Struct({ prepared: Schema.Finite }))(
+          await api.invoke(
+            {
+              tool: "inspect-specialist",
+              args: { task: issue.id },
+              session: retry.explore_session_id!,
+              message: retry.prompt_id,
+            },
+            workerLocation,
+          ),
+        );
+        assert.ok(direct.prepared >= 1);
+        await assert.rejects(
+          api.invoke(
+            {
+              tool: "inspect-denied",
+              args: {},
+              session: retry.explore_session_id!,
+              message: retry.prompt_id,
+            },
+            workerLocation,
+          ),
+          (error: any) => error.type === "action_failed" && error.data.code === "AGENT_TOOL",
+        );
+        await assert.rejects(
+          api.invoke(
+            {
+              tool: "inspect-specialist",
+              args: { task: issue.id },
+              session: retry.explore_session_id!,
+              message: e.prompt_id,
+            },
+            workerLocation,
+          ),
+          (error: any) => error.type === "action_failed" && error.data.code === "AGENT_TOOL",
+        );
+        engineeringEvidence.push({
+          native_contribution_direct: {
+            allowed_current_call: true,
+            explicit_denial: true,
+            stale_message_denial: true,
+            current_prompt: retry.prompt_id,
+            stale_prompt: e.prompt_id,
+          },
+        });
+      }
       const replay = await client.session.prompt({
         sessionID: retry.explore_session_id!,
         id: retry.prompt_id!,
@@ -2945,7 +3101,39 @@ export function nativeTest(
     assert.ok(capabilities.sessions[0].available_tools.names.includes("patch"));
     assert.ok(!capabilities.sessions[0].available_tools.names.includes("write"));
     assert.equal(capabilities.contexts[0].provenance, "captured");
-    assert.equal(capabilities.contexts[0].selection.agent, "build");
+    const capturedExplore = Schema.decodeUnknownSync(WorkerContextSummarySchema)(
+      capabilities.contexts[0],
+    );
+    assert.equal(capturedExplore.context_id, e.worker_context_id);
+    assert.equal(capturedExplore.role, "explore");
+    assert.equal(
+      capturedExplore.definition,
+      journey === "engineering" ? "engineering-specialist" : "explore",
+    );
+    assert.ok(capturedExplore.profile_revision);
+    assert.match(capturedExplore.profile_revision, /^[a-f0-9]{64}$/);
+    assert.ok(capturedExplore.selection);
+    assert.equal(
+      capturedExplore.selection.agent,
+      `abra-${capturedExplore.definition}-${capturedExplore.profile_revision}`,
+    );
+    const selectedExplore = await client.session.get({ sessionID: e.explore_session_id! });
+    assert.equal(selectedExplore.agent, capturedExplore.selection.agent);
+    const selectedProfile = (
+      await client.agent.list({ location: selectedExplore.location })
+    ).data.find((agent) => agent.id === capturedExplore.selection!.agent);
+    assert.ok(selectedProfile);
+    engineeringEvidence.push({
+      captured_native_selection: {
+        context_id: capturedExplore.context_id,
+        session_id: selectedExplore.id,
+        definition: capturedExplore.definition,
+        native_profile: capturedExplore.selection.agent,
+        profile_revision: capturedExplore.profile_revision,
+        diagnostics_and_native_session_match: true,
+        exact_captured_profile_registered: true,
+      },
+    });
     assert.equal(capabilities.contexts[0].skills[0].loading, "unobserved");
     assert.ok(capabilities.contexts[0].status.observation.names.includes("patch"));
     const supervisorProfile = (await client.agent.list(loc)).data.find(
@@ -3074,6 +3262,36 @@ export function nativeTest(
       (await invoke("abra_work_status", { issue_id: issue.id })).execution,
       home,
     );
+    const retainedAgent = await client.session.get({ sessionID: e.explore_session_id! });
+    const retainedProfile = (
+      await client.agent.list({ location: retainedAgent.location })
+    ).data.find((agent) => agent.id === retainedAgent.agent)!;
+    const counterValue = Schema.decodeUnknownSync(
+      Schema.Struct({ counts: Schema.Record(Schema.String, Schema.Finite) }),
+    );
+    const preparationCounts =
+      journey === "engineering"
+        ? counterValue(await client.rpc(agentFixture).counts({}, loc)).counts
+        : undefined;
+    const retainedPrompt = (await invoke("abra_work_status", { issue_id: issue.id })).execution
+      .prompt_id;
+    if (journey === "engineering") {
+      assert.ok(preparationCounts![issue.id] >= 1);
+      Schema.decodeUnknownSync(Schema.Struct({ value: Schema.Null }))(
+        await api.storage({ key: "specialist-preparations" }, loc),
+      );
+      const sourcePath = join(home, "packages/agents/assets/explore.md");
+      await writeFile(
+        sourcePath,
+        (await readFile(sourcePath, "utf8")) + "\nNative static source changed after capture.\n",
+      );
+      const laterSourcePath = join(home, "packages/agents/assets/apply.md");
+      await writeFile(
+        laterSourcePath,
+        (await readFile(laterSourcePath, "utf8")) +
+          "\nNative later role source changed after snapshot.\n",
+      );
+    }
     child!.kill("SIGTERM");
     await new Promise<void>((done) => child!.once("exit", () => done()));
     start();
@@ -3090,6 +3308,38 @@ export function nativeTest(
         password,
       ),
     );
+    if (journey === "engineering") {
+      const inventory = (await client.agent.list({ location: retainedAgent.location })).data;
+      assert.equal(
+        inventory.find((agent) => agent.id === retainedAgent.agent)?.system,
+        retainedProfile.system,
+      );
+      assert.ok(
+        inventory.some(
+          (agent) =>
+            agent.id !== retainedAgent.agent &&
+            agent.id.startsWith("abra-engineering-specialist-") &&
+            agent.system?.includes("Native static source changed after capture."),
+        ),
+      );
+      const afterCounts = counterValue(await client.rpc(agentFixture).counts({}, loc)).counts;
+      assert.deepEqual(afterCounts, preparationCounts);
+      assert.equal(recovered.execution.prompt_id, retainedPrompt);
+      assert.equal(recovered.execution.worker_context_id, retainedPrompt);
+      engineeringEvidence.push({
+        agent_capture_restart: {
+          native_id: retainedAgent.agent,
+          definition: "engineering-specialist",
+          profile_revision: retainedAgent.agent?.slice(-64),
+          prompt_id: retainedPrompt,
+          provider_counts_before: preparationCounts,
+          provider_counts_after: afterCounts,
+          static_profile_unchanged: true,
+          current_source_revision_distinct: true,
+          no_duplicate_admission: true,
+        },
+      });
+    }
     assert.equal(recovered.execution.worktree_directory, e.worktree_directory);
     assert.equal(recovered.execution.explore_session_id, e.explore_session_id);
     assert.equal(
@@ -3107,11 +3357,45 @@ export function nativeTest(
       true,
     );
     await invoke("abra_work_approve", { issue_id: issue.id, kind: "plan" });
+    if (journey === "engineering") {
+      holdApply = true;
+      applyHeld = false;
+    }
     await client.session.form.reply({
       sessionID: supervisor.id,
       formID: pending.form_id,
       answer: { authorize: true },
     });
+    if (journey === "engineering") {
+      await eventually(async () => (applyHeld ? true : undefined));
+      try {
+        const applying = (await invoke("abra_work_status", { issue_id: issue.id })).execution;
+        assert.equal(applying.active_role, "apply");
+        await assert.rejects(
+          api.invoke(
+            {
+              tool: "inspect-specialist",
+              args: { task: issue.id },
+              session: applying.apply_session_id,
+              message: applying.prompt_id,
+            },
+            { location: { directory: applying.worktree_directory } },
+          ),
+          (error: any) => error.type === "action_failed" && error.data.code === "AGENT_TOOL",
+        );
+        engineeringEvidence.push({
+          native_contribution_wrong_role: {
+            role: "apply",
+            denied: true,
+            prompt_id: applying.prompt_id,
+          },
+        });
+      } finally {
+        releaseApply?.();
+        releaseApply = undefined;
+        applyHeld = false;
+      }
+    }
     const done = (await eventually(async () => {
       if (!(await atPhase(issue.id, "completed"))) return undefined;
       const s = await invoke("abra_work_status", { issue_id: issue.id });

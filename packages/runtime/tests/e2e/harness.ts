@@ -54,6 +54,7 @@ export default Plugin.define({
           tool: string;
           args: unknown;
           session: string;
+          message?: string;
         };
         const tool = (await ctx.tool.list()).find((t) => t.id === a.tool);
         if (!tool) throw Error("Tool missing");
@@ -64,9 +65,11 @@ export default Plugin.define({
             sessionID: a.session,
             agent: (await ctx.session.get({ sessionID: a.session as any })).agent ?? "abra",
             messageID:
+              a.message ??
               (await ctx.session.context({ sessionID: a.session as any })).find(
                 (m) => m.type === "assistant",
-              )?.id ?? "test",
+              )?.id ??
+              "test",
             id: "test",
             signal: new AbortController().signal,
             progress: async (update: unknown) => {

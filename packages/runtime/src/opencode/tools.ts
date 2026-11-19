@@ -548,6 +548,7 @@ export function registerTools(
               "steer",
               "advance",
               "replan",
+              "recover_planning",
             ]),
             text: Schema.optional(NonEmpty),
             request_id: Schema.optional(RequestId),

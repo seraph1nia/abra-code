@@ -17,7 +17,7 @@ Use the Linux Node and pnpm versions pinned in `mise.toml`. Install with `pnpm i
 Read [AGENTS.md](AGENTS.md), [architecture](docs/architecture.md), [API evidence](docs/supported-apis.md), [testing](docs/testing.md) and the relevant OpenSpec change before editing. Preserve controller-owned approvals, execution identity and native resource ownership. Contributor fixes do not authorize production delivery or resource deletion.
 
 For implementation, regression coverage and suite selection, load
-[testing](.agents/skills/testing/SKILL.md) (`$testing` or native `abra-testing`).
+[testing](.agents/skills/testing/SKILL.md) (`$testing`).
 Use `pnpm test:one <test-file>` or `pnpm test:affected <source-files>` while
 implementing, plus relevant package checks. Use `pnpm test:core` for broad core
 feedback. `pnpm test:fast`, `pnpm test:unit`,

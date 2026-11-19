@@ -23,6 +23,12 @@ The workspace keeps Abra chat and its composer mounted. Work opens a collapsible
 
 See [the frontend architecture](frontend.md) for state ownership, shared components, CSS, native forms and Pierre diff rendering.
 
+## Agent settings
+
+Open **Settings** from the workspace header, or visit `/settings`, to inspect the installation's agent definitions. The read-only list includes bundled and custom agents from the injected `Agents` Effect service. Expand a definition to see its revision, native mode, roles, model reference, declared tools and custom tools, skills and preloads, capability requirements, additional denials, instruction source references and inline instructions. File contents and assignment-specific context are not loaded by this view.
+
+The lazy-loaded page reads `GET /api/settings/agents` through the authenticated `abracode-web.agents` RPC. The gateway validates the retained central Abra session and projects only definition metadata: it never resolves instruction files, prepares agents, executes tools or invokes context providers. There is no settings mutation endpoint. Refresh reads the catalog again; an older native plugin reports the existing service-restart guidance instead of substituting bundled defaults.
+
 ## State and transport
 
 `apps/web` uses the CopilotKit **v2** React API. `packages/runtime/src/web/agent.ts` implements its custom `AbstractAgent` and `AgentRunner`; `packages/runtime/src/web/server.ts` preserves CopilotKit's v2 Fetch handler and AG-UI wire protocol. The only advertised runtime agent is `abra`; its thread is the installation's retained native supervisor ID. Run input contributes one text message, never a replayed transcript or client-supplied model, tools, role or location.

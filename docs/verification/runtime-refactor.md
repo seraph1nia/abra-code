@@ -112,8 +112,8 @@ the source-copy recipes in `tests/e2e/install.ts` and report integration tests,
 licensing source/use classification, TypeScript include paths, CSS scanning and
 development watcher roots.
 
-Procedure ownership is role identity/permissions in `.opencode/agents`, reusable
-procedures in project-owned `.agents/skills`, task facts in worker assignment
+Procedure ownership is role identity/permissions in `packages/agents`, reusable
+runtime procedures in `packages/agents/assets/skills`, task facts in worker assignment
 prompts, planning artifacts in schema templates, and enforced lifecycle gates in
 the controller. Research's retired Solid guidance and duplicated execution,
 verification/report procedures migrate under task 9.1; supplier-generated
