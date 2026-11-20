@@ -233,7 +233,12 @@ export const visibility = Rpc.define({
     feedback: {
       errors: observerErrors,
       input: Schema.toStandardSchemaV1(
-        Schema.Struct({ issue_id: IssueId, page: Schema.optional(Count) }),
+        Schema.Struct({
+          issue_id: IssueId,
+          page: Schema.optional(Count),
+          finding_id: Schema.optionalKey(Schema.String),
+          revision: Schema.optionalKey(Schema.String),
+        }),
       ),
       output: Schema.toStandardSchemaV1(FeedbackPageSchema),
     },

@@ -17,7 +17,7 @@ import {
   externalURL,
   type FormValues,
 } from "./native-form.ts";
-import { requestError } from "./request-state.tsx";
+import { requestError } from "./request-error.ts";
 import { Alert, AlertDescription } from "@abracode/presentation/ui/alert";
 import { Button } from "@abracode/presentation/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@abracode/presentation/ui/card";
@@ -369,7 +369,7 @@ function PermissionContent({ item, refresh }: { item: AttentionPermission; refre
     }
   }
   return (
-    <Card className="attention-card">
+    <Card className="attention-card" data-native-permission tabIndex={-1}>
       <CardHeader>
         <div className="eyebrow">Native permission</div>
         <CardTitle>

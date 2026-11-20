@@ -35,6 +35,7 @@
     "./web/http-api": "./src/web/http-api.ts",
     "./web/presentation-contracts": "./src/web/presentation-contracts.ts",
     "./web/report-actions": "./src/web/report-actions.ts",
+    "./web/surface-destination": "./src/web/surface-destination.ts",
     "./web/resources": "./src/web/resources.ts",
     "./web/surfaces": "./src/web/surfaces.ts",
     "./web/transcript": "./src/web/transcript.ts",

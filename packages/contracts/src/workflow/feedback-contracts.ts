@@ -81,6 +81,14 @@ export const FeedbackSchema = Schema.Struct({
   }),
 );
 export type Feedback = typeof FeedbackSchema.Type;
+export function retainedFinding(
+  feedback: Pick<Feedback, "findings" | "history"> | undefined,
+  id: string,
+  revision: string,
+) {
+  const matches = (finding: Finding) => finding.id === id && finding.revision === revision;
+  return feedback?.findings.find(matches) ?? feedback?.history.find(matches);
+}
 export const FeedbackInput = Schema.Struct({
   issue_id: IssueId,
   generation: Count,

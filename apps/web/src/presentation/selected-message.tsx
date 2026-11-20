@@ -1,3 +1,4 @@
+import { selectionLabel } from "@abracode/contracts/web/resources";
 import { useMemo, useState } from "react";
 import type { TranscriptMessage } from "@abracode/contracts/web/contracts";
 import { selectedQuestion } from "@abracode/contracts/web/workspace-wire";
@@ -16,9 +17,7 @@ export default function SelectedMessage({ message }: { message: TranscriptMessag
       <div className="message-text">{source.text}</div>
       <details onToggle={(e) => setOpen(e.currentTarget.open)}>
         <summary>
-          {source.selection.issue_id} ·{" "}
-          {source.selection.kind === "region" ? source.selection.request_id : source.selection.file}{" "}
-          · Captured selection
+          {source.selection.issue_id} · {selectionLabel(source.selection)} · Captured selection
         </summary>
         {open && (
           <RequestState query={selectedReceiptQuery(source.request_id, source.selection.issue_id)}>

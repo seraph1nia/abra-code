@@ -1,5 +1,11 @@
+import { createContext } from "react";
+import { SurfaceDestinationSchema } from "@abracode/contracts/web/surface-destination";
 import { Schema } from "effect";
 import { ResourceSelectionSchema, type ResourceSelection } from "@abracode/contracts/web/resources";
+
+export const OpenSurface = createContext<(surface: typeof SurfaceDestinationSchema.Type) => void>(
+  () => {},
+);
 
 export const inspectorTabs = [
   "Overview",
@@ -13,6 +19,7 @@ export type InspectorTab = (typeof inspectorTabs)[number];
 export const activitySections = ["sessions", "communication", "checks", "leads"] as const;
 export type ActivitySection = (typeof activitySections)[number];
 export type WorkspaceSearch = {
+  surface?: typeof SurfaceDestinationSchema.Type;
   issue?: string;
   tab?: InspectorTab;
   activity?: ActivitySection;
@@ -23,6 +30,10 @@ export type WorkspaceSearch = {
   artifact_offset?: number;
 };
 export function workspaceSearch(value: Record<string, unknown>): WorkspaceSearch {
+  if (value.surface !== undefined) {
+    const surface = Schema.decodeUnknownOption(SurfaceDestinationSchema)(value.surface);
+    if (surface._tag === "Some") return { surface: surface.value };
+  }
   const legacy = {
     Workers: "sessions",
     Communication: "communication",
@@ -121,6 +132,10 @@ export function searchForResource(resource: ResourceSelection): WorkspaceSearch 
         scope: resource.scope,
         resource,
       };
+    case "open_finding":
+      return { issue: resource.issue_id, tab: "Activity", activity: "checks", resource };
+    case "open_passage":
+      return { issue: resource.issue_id, tab: "Plan", file: resource.file, resource };
     case "open_session":
       return { issue: resource.issue_id, tab: "Activity", activity: "sessions", resource };
     case "open_decision":

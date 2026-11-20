@@ -393,7 +393,10 @@ export async function workspaceJourney(input: {
       (message) => message.type === "user",
     ).length;
     await nativeCard().getByRole("button", { name: "Inspect task", exact: true }).click();
-    await page.getByRole("tab", { name: "Overview", exact: true }).waitFor();
+    await page
+      .locator('select[aria-label="Work details"] option:checked')
+      .filter({ hasText: "Overview" })
+      .waitFor({ state: "attached" });
     assert.equal(
       (await input.client.session.context({ sessionID: input.session })).filter(
         (message) => message.type === "user",
@@ -425,7 +428,20 @@ export async function workspaceJourney(input: {
       },
     });
     await page.getByText("Native workspace coding journey", { exact: true }).waitFor();
+    const openLayout = async (revision: number) => {
+      await page
+        .locator(`.transcript [data-surface-reference="workspace-board/${revision}"]`)
+        .getByRole("button", { name: /Open board|Open comparison/ })
+        .click();
+      await page
+        .locator(
+          `.inspector [data-surface-reference="workspace-board/${revision}"] [data-a2ui-renderer="upstream"]`,
+        )
+        .waitFor();
+    };
+    await openLayout(1);
     assert.equal(await page.locator('[data-a2ui-renderer="upstream"]').count(), 1);
+    await page.getByRole("button", { name: "Close inspector" }).click();
     const reviewSource = await command("abra_review_ui", {
       action: "source",
       source: { kind: "surface", surface_id: "workspace-board", revision: 1 },
@@ -576,7 +592,11 @@ export async function workspaceJourney(input: {
         },
       },
     });
-    await page.getByText("Revised upstream work view", { exact: true }).waitFor();
+    await page
+      .locator(".transcript")
+      .getByText("Revised upstream work view", { exact: true })
+      .waitFor();
+    await openLayout(2);
     await page
       .locator('[data-surface-reference="workspace-board/2"] [data-diagram-state="ready"]')
       .nth(31)
@@ -595,7 +615,7 @@ export async function workspaceJourney(input: {
       .locator('[data-surface-reference="workspace-board/1"]')
       .getByText("Native workspace coding journey", { exact: true })
       .waitFor();
-    assert.equal(await page.locator(".generated-surface").count(), 2);
+    assert.equal(await page.locator(".generated-surface").count(), 1);
     assert.equal(
       await page.locator('[data-surface-reference="workspace-board/2"] .surface-widget').count(),
       9,
@@ -617,15 +637,26 @@ export async function workspaceJourney(input: {
       .getByRole("button", { name: population.offPage.title, exact: true })
       .waitFor();
     await page.reload();
-    await page.getByText("Revised upstream work view", { exact: true }).waitFor();
-    assert.equal(await page.locator(".generated-surface").count(), 2);
+    await page
+      .locator(".transcript")
+      .getByText("Revised upstream work view", { exact: true })
+      .waitFor();
+    await page.locator(".inspector .generated-surface").waitFor();
+    assert.equal(await page.locator(".generated-surface").count(), 1);
     const beforeNavigation = (
       await input.client.session.context({ sessionID: input.session })
     ).filter((message) => message.type === "user").length;
     await page.getByRole("button", { name: "Inspect execution changes", exact: true }).click();
-    await page.getByRole("tab", { name: "Diff", exact: true }).waitFor();
+    await page
+      .locator('select[aria-label="Work details"] option:checked')
+      .filter({ hasText: "Diff" })
+      .waitFor({ state: "attached" });
+    await page.goBack();
     await page.getByRole("button", { name: "Open retained reports", exact: true }).click();
-    await page.getByRole("tab", { name: "Reports", exact: true }).waitFor();
+    await page
+      .locator('select[aria-label="Work details"] option:checked')
+      .filter({ hasText: "Reports" })
+      .waitFor({ state: "attached" });
     assert.equal(
       (await input.client.session.context({ sessionID: input.session })).filter(
         (message) => message.type === "user",
@@ -737,6 +768,7 @@ export async function workspaceJourney(input: {
         );
         assert.equal(restoredExport.hash, exportedReport.hash);
         assert.equal(restoredExport.bytes, exportedReport.bytes);
+        await page.getByRole("button", { name: "Other reports", exact: true }).click();
         await page
           .locator(".report-revision")
           .filter({ hasText: "Native composed evidence" })
@@ -811,7 +843,7 @@ export async function workspaceJourney(input: {
         assert.ok(Array.isArray(decisions.decisions));
         assert.ok(communication.total >= communication.entries.length);
         assert.ok(checks.finding_total >= checks.findings.length);
-        await page.getByRole("tab", { name: "Activity", exact: true }).click();
+        await page.getByLabel("Work details", { exact: true }).selectOption("Activity");
         await page.getByRole("heading", { name: "Worker transcript", exact: true }).waitFor();
         await page.getByLabel("Read-only worker session", { exact: true }).selectOption(worker);
         await page.getByRole("tab", { name: "Communication", exact: true }).click();
@@ -992,7 +1024,7 @@ export async function workspaceJourney(input: {
             )?.active,
             "Recreated native form keeps the current checkpoint identity",
           );
-          await page.getByRole("tab", { name: "Overview", exact: true }).click();
+          await page.getByLabel("Work details", { exact: true }).selectOption("Overview");
           await page
             .getByRole("button", { name: "Review current plan approval", exact: true })
             .click();
@@ -1007,7 +1039,10 @@ export async function workspaceJourney(input: {
             ),
             /revision changed/i,
           );
-          const producingView = page.locator('[data-surface-reference="workspace-board/2"]');
+          await openLayout(2);
+          const producingView = page.locator(
+            '.inspector [data-surface-reference="workspace-board/2"]',
+          );
           const beforeSave = (
             await input.client.session.context({ sessionID: input.session })
           ).filter((message) => message.type === "user").length;
@@ -1135,6 +1170,8 @@ export async function workspaceJourney(input: {
           await page.locator(".frozen-report").waitFor();
           await page.getByRole("button", { name: "Close inspector", exact: true }).click();
         }
+        const dock = page.getByRole("button", { name: /^Attention/ });
+        if ((await dock.getAttribute("aria-expanded")) === "false") await dock.click();
         const forms = page
           .locator(".attention-card")
           .filter({ has: page.getByText(new RegExp(`Authorize ${kind} for ${issue}`)) });

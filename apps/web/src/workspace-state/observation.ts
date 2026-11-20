@@ -7,7 +7,7 @@ import { AtomRegistry } from "effect/reactivity";
 import { WorkspaceStateJson } from "@abracode/contracts/web/workspace-wire";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { bootstrapQuery, invalidateWork } from "../data.ts";
-import { requestError } from "../request-state.tsx";
+import { requestError } from "../request-error.ts";
 import { WorkspaceObservation, type ObservationState } from "./observation-client.ts";
 import { HttpAgent } from "@ag-ui/client";
 import { ownObservationRequests } from "./observation-transport.ts";

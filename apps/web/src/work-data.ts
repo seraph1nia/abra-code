@@ -98,9 +98,13 @@ export const queries = {
       query: { issue_id: IssueId.make(issue), offset },
       ...queryOptions(issue),
     }),
-  feedback: (issue: string, page = 0) =>
+  feedback: (issue: string, page = 0, finding_id?: string, revision?: string) =>
     WorkspaceApi.query("work", "feedback", {
-      query: { issue_id: IssueId.make(issue), page },
+      query: {
+        issue_id: IssueId.make(issue),
+        page,
+        ...(finding_id && revision ? { finding_id, revision } : {}),
+      },
       ...queryOptions(issue),
     }),
   report: (issue: string) =>

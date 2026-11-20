@@ -118,7 +118,7 @@ test("upstream A2UI renders every work widget, replaces revisions and retains va
   await page.getByText("Other retained views (1)", { exact: true }).click();
   await page.getByText("Upstream revision 1", { exact: true }).waitFor();
   assert.deepEqual(
-    await page.locator(".conversation-header h1").evaluate((element) => {
+    await page.locator(".topbar h1").evaluate((element) => {
       const style = getComputedStyle(element);
       return [style.fontSize, style.fontWeight];
     }),

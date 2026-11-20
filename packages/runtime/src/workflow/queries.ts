@@ -129,7 +129,8 @@ export class Queries {
         ...(e.plan_fingerprint && { plan: e.plan_fingerprint }),
       };
     });
-  feedback = (id: IssueId, page = 0) => this.records.feedback(id, page);
+  feedback = (id: IssueId, page = 0, finding_id?: string, revision?: string) =>
+    this.records.feedback(id, page, finding_id, revision);
   projects = () => this.records.projects();
   project = (id: RepositoryId) => this.records.project(id);
   executions = () => this.records.executions();

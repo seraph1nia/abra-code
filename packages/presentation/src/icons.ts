@@ -9,6 +9,8 @@ export {
   Paperclip,
   Square,
   Sparkles,
+  Settings,
+  SunMoon,
   Expand,
   ZoomIn,
   ZoomOut,

@@ -98,7 +98,12 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
         validated(backend.prepareDiagrams(payload), DiagramPreparationSchema),
       )
       .handle("surface", ({ query }) =>
-        backend.surface(query.surface_id, query.revision).pipe(Effect.mapError(refused)),
+        query.session_id !== undefined && query.session_id !== backend.sessionID
+          ? Effect.succeed({
+              surface_id: query.surface_id,
+              unavailable: "This view belongs to another Abra conversation.",
+            })
+          : backend.surface(query.surface_id, query.revision).pipe(Effect.mapError(refused)),
       )
       .handle("bootstrap", () => feed.baseline.pipe(Effect.mapError(refused)))
       .handle("history", ({ query }) =>

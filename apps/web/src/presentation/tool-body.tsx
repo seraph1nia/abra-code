@@ -1,5 +1,6 @@
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
-import { useContext } from "react";
+import { actionable } from "@abracode/contracts/workflow/feedback-contracts";
+import { useContext, useState, type ReactNode } from "react";
 import type { ToolPresentation } from "@abracode/contracts/web/presentation-contracts";
 import { SurfaceAttachment, MessageAttachment } from "./attachments.tsx";
 import {
@@ -12,6 +13,49 @@ import {
   type Inspect,
 } from "@abracode/presentation/cards";
 import { ObservationContext } from "./tool-context.ts";
+function ResultList<T>({
+  items,
+  total,
+  noun,
+  priority,
+  render,
+}: {
+  items: readonly T[];
+  total: number;
+  noun: string;
+  priority?: (item: T) => boolean;
+  render: (item: T) => ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (!items.length)
+    return total ? (
+      <small>
+        Showing 0 of {total} {noun}.
+      </small>
+    ) : (
+      <p>No {noun} in this observation.</p>
+    );
+  const index = priority ? Math.max(0, items.findIndex(priority)) : 0;
+  return (
+    <>
+      {render(items[index]!)}
+      {items.length > 1 && (
+        <details onToggle={(event) => setExpanded(event.currentTarget.open)}>
+          <summary>
+            {items.length - 1} more {items.length === 2 ? noun.replace(/s$/, "") : noun}
+          </summary>
+          {expanded && items.filter((_, i) => i !== index).map(render)}
+        </details>
+      )}
+      {items.length < total && (
+        <small>
+          Showing {items.length} of {total} {noun}.
+        </small>
+      )}
+    </>
+  );
+}
+
 function Presentation({
   value,
   inspect,
@@ -25,19 +69,21 @@ function Presentation({
     case "tasks":
       return (
         <>
-          {value.tasks.map((task) => (
-            <TaskCard
-              key={task.issue_id}
-              task={task}
-              current={work.find((w) => w.issue_id === task.issue_id)}
-              inspect={inspect}
-            />
-          ))}
-          {value.limited && (
-            <p className="muted">
-              Showing {value.tasks.length} of {value.total} tasks. Search Work for the rest.
-            </p>
-          )}
+          <ResultList
+            items={value.tasks}
+            total={value.total}
+            noun="tasks"
+            priority={(task) => task.issue_status === "blocked" || !!task.outcome?.next_action}
+            render={(task) => (
+              <TaskCard
+                key={task.issue_id}
+                task={task}
+                current={work.find((w) => w.issue_id === task.issue_id)}
+                inspect={inspect}
+              />
+            )}
+          />
+          {value.limited && <small>Search Work for full coverage.</small>}
         </>
       );
     case "decision":
@@ -45,14 +91,20 @@ function Presentation({
     case "communication":
       return (
         <>
-          {value.entries.map((entry) => (
-            <CommunicationCard
-              key={entry.request_id}
-              entry={entry}
-              issue={value.issue_id}
-              inspect={inspect}
-            />
-          ))}
+          <ResultList
+            items={value.entries}
+            total={value.total}
+            noun="communications"
+            priority={(entry) => !entry.reply && entry.response === "answer"}
+            render={(entry) => (
+              <CommunicationCard
+                key={entry.request_id}
+                entry={entry}
+                issue={value.issue_id}
+                inspect={inspect}
+              />
+            )}
+          />
           <p className="muted">
             {value.outstanding} unanswered · {value.total} retained
             {value.limited ? " · Excerpts shown; inspect full evidence" : ""}
@@ -62,49 +114,59 @@ function Presentation({
     case "sessions":
       return (
         <>
-          {value.sessions.map((session) => (
-            <SessionCard
-              key={session.id}
-              session={session}
-              issue={value.issue_id}
-              inspect={inspect}
-            />
-          ))}
-          {value.sessions.length < value.total && (
-            <p className="muted">
-              Showing {value.sessions.length} of {value.total} sessions.
-            </p>
-          )}
+          <ResultList
+            items={value.sessions}
+            total={value.total}
+            noun="sessions"
+            priority={(session) => !!session.outcome}
+            render={(session) => (
+              <SessionCard
+                key={session.id}
+                session={session}
+                issue={value.issue_id}
+                inspect={inspect}
+              />
+            )}
+          />
         </>
       );
     case "findings":
       return (
         <>
-          {value.findings.map((finding) => (
-            <FindingCard
-              key={finding.id}
-              finding={finding}
-              issue={value.issue_id}
-              inspect={inspect}
-            />
-          ))}
-          <p className="muted">
-            Showing {value.findings.length} of {value.total} findings
-            {value.limited ? " · Excerpts shown" : ""}
-          </p>
+          <ResultList
+            items={value.findings}
+            total={value.total}
+            noun="findings"
+            priority={(finding) => actionable(finding, finding.head)}
+            render={(finding) => (
+              <FindingCard
+                key={finding.id}
+                finding={finding}
+                issue={value.issue_id}
+                inspect={inspect}
+              />
+            )}
+          />
+          {value.limited && <small>Finding text is excerpted.</small>}
         </>
       );
     case "artifacts":
       return (
         <>
-          {value.artifacts.map((artifact) => (
-            <ArtifactCard
-              key={artifact.request_id}
-              artifact={artifact}
-              issue={value.issue_id}
-              inspect={inspect}
-            />
-          ))}
+          <ResultList
+            items={value.artifacts}
+            total={value.total}
+            noun="reports"
+            priority={(artifact) => artifact.status === "failed"}
+            render={(artifact) => (
+              <ArtifactCard
+                key={artifact.request_id}
+                artifact={artifact}
+                issue={value.issue_id}
+                inspect={inspect}
+              />
+            )}
+          />
         </>
       );
     case "surface":
@@ -141,7 +203,9 @@ export function ObservedTool({ toolCallId }: { toolCallId: string }) {
       data-tool-call-id={tool.id}
       data-tool-state={tool.status}
     >
-      {tool.presentation ? (
+      {surface ? (
+        tool.status === "error" && <small>Publication response unavailable · retained view</small>
+      ) : tool.presentation ? (
         <div className="inline-presentations">
           <Presentation value={tool.presentation} work={observation.work} inspect={inspect} />
         </div>

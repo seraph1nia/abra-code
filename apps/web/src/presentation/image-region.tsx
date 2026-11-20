@@ -1,8 +1,8 @@
-import { useContext, useRef, useState } from "react";
+import { Input } from "@abracode/presentation/ui/input";
+import { useRef, useState } from "react";
 import { withinImage, type RegionSelection } from "@abracode/contracts/web/resources";
 import type { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
-import { Button } from "@abracode/presentation/ui/button";
-import { AttachSelection } from "../workspace-state/draft.ts";
+import { AskAbra } from "./ask-abra.tsx";
 import { RequestState } from "../request-state.tsx";
 import { queries } from "../work-data.ts";
 
@@ -121,7 +121,6 @@ function RegionEditor({
     height,
   });
   const [selecting, setSelecting] = useState(false);
-  const attach = useContext(AttachSelection);
   return (
     <>
       <ImageOverlay
@@ -137,7 +136,7 @@ function RegionEditor({
         {(["x", "y", "width", "height"] as const).map((key) => (
           <label key={key}>
             Region {key}{" "}
-            <input
+            <Input
               type="number"
               min={key === "x" || key === "y" ? 0 : 1}
               max={key === "x" || key === "width" ? width : height}
@@ -146,13 +145,11 @@ function RegionEditor({
             />
           </label>
         ))}
-        <Button
-          variant="outline"
+        <AskAbra
+          selection={region}
+          excerpt={receipt.description}
           disabled={!withinImage(region, width, height)}
-          onClick={() => attach({ selection: region, excerpt: receipt.description })}
-        >
-          Ask Abra about region
-        </Button>
+        />
       </details>
     </>
   );

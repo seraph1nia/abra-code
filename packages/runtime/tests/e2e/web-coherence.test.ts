@@ -17,6 +17,7 @@ import {
 
 import { catalogId } from "../../src/web/catalog.ts";
 import { WorkItemSchema } from "../../src/web/wire.ts";
+import { Permission } from "@opencode/schema/permission";
 import { Form } from "@opencode/schema/form";
 
 import {
@@ -245,6 +246,7 @@ test("export mutation status retries the same document and cannot populate anoth
   delay = true;
   await page.getByRole("button", { name: "Verify HTML export", exact: true }).click();
   await page.getByRole("button", { name: "Exporting HTML…", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Other reports" }).click();
   await page
     .locator(".report-revision")
     .filter({ hasText: "second-export" })
@@ -435,6 +437,7 @@ test("custom native choices retain raw lines across refresh and normalize only o
   };
   const page = await f.browser.newPage();
   await page.goto(f.origin);
+  await page.getByRole("button", { name: "Review next" }).click();
   const text = page.getByRole("textbox", { name: "Additional choices, one per line" });
   await text.pressSequentially("alpha\nbeta");
   assert.equal(await text.inputValue(), "alpha\nbeta");
@@ -508,6 +511,7 @@ test("native date-time defaults display their instant and round-trip untouched",
       };
       const page = await f.browser.newPage({ timezoneId });
       await page.goto(f.origin);
+      await page.getByRole("button", { name: "Review next" }).click();
       const input = page.getByLabel(/^When/);
       await input.waitFor();
       assert.equal(
@@ -548,6 +552,7 @@ test("native date-time edits refuse Amsterdam's DST gap and serialize valid loca
   };
   const page = await f.browser.newPage({ timezoneId: "Europe/Amsterdam" });
   await page.goto(f.origin);
+  await page.getByRole("button", { name: "Review next" }).click();
   await page.getByLabel(/^When/).fill("2026-03-29T02:30");
   await page.getByRole("button", { name: "Submit answer", exact: true }).click();
   await page.getByText(/this time may not exist/).waitFor();
@@ -564,9 +569,9 @@ test("owned typography survives vendor reset in workspace and inspector", async 
   t.onTestFinished(f.close);
   const page = await f.browser.newPage();
   await page.goto(f.origin);
-  await page.locator(".conversation-header h1").waitFor();
+  await page.locator(".topbar h1").waitFor();
   assert.deepEqual(
-    await page.locator(".conversation-header h1").evaluate((element) => {
+    await page.locator(".topbar h1").evaluate((element) => {
       const style = getComputedStyle(element);
       return { size: style.fontSize, weight: style.fontWeight };
     }),
@@ -686,10 +691,7 @@ test("exact saved reports use frozen catalog bindings, preserve pending checks a
     await page.locator(".frozen-report").getByText("New live title", { exact: true }).count(),
     0,
   );
-  const download = page
-    .locator(".report-revision")
-    .filter({ hasText: "Saved evidence" })
-    .getByRole("link", { name: "Download JSON", exact: true });
+  const download = page.getByRole("link", { name: "Download selected JSON", exact: true });
   const response = await fetch(new URL((await download.getAttribute("href"))!, f.origin));
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-disposition")!, /attachment.*\.json/);
@@ -739,6 +741,7 @@ test("exact saved reports use frozen catalog bindings, preserve pending checks a
     );
     await screenshot(page, `frozen-report-${width}.png`);
   }
+  await page.getByRole("button", { name: "Other reports" }).click();
   await page
     .locator(".report-revision")
     .filter({ hasText: "Future evidence" })
@@ -751,6 +754,7 @@ test("exact saved reports use frozen catalog bindings, preserve pending checks a
   await page.locator(".frozen-report").waitFor();
   await page.reload();
   await page.locator(".frozen-report").waitFor();
+  await page.getByRole("button", { name: "Other reports" }).click();
   await page
     .locator(".report-revision")
     .filter({ hasText: "Future catalog" })
@@ -761,6 +765,7 @@ test("exact saved reports use frozen catalog bindings, preserve pending checks a
     .waitFor();
   await page.goBack();
   await page.locator(".frozen-report").waitFor();
+  await page.getByRole("button", { name: "Other reports" }).click();
   await page
     .locator(".report-revision")
     .filter({ hasText: "Broken evidence" })
@@ -807,6 +812,7 @@ test("artifact pages keep exact off-page documents reachable without preloading 
   const page = await f.browser.newPage({ viewport: { width: 1600, height: 1000 } });
   await page.goto(`${f.origin}/?${new URLSearchParams({ resource: JSON.stringify(target) })}`);
   await page.locator('[data-report-document="report-page-9"]').waitFor();
+  await page.getByRole("button", { name: "Other reports" }).click();
   assert.equal(await page.locator(".report-revision").count(), 8);
   assert.equal(
     await page.locator(".report-revision").filter({ hasText: "Captured report 9" }).count(),
@@ -817,6 +823,7 @@ test("artifact pages keep exact off-page documents reachable without preloading 
   assert.equal(await page.locator(".report-revision").count(), 2);
   await page.reload();
   await page.locator('[data-report-document="report-page-9"]').waitFor();
+  await page.getByRole("button", { name: "Other reports" }).click();
   assert.equal(await page.locator(".report-revision").count(), 2);
   const download = page.getByRole("link", { name: "Download selected JSON", exact: true });
   assert.equal(
@@ -1050,7 +1057,7 @@ test("typed inspector URLs render Pierre, preserve navigation and theme across r
     () => document.querySelectorAll("[data-diff-renderer] diffs-container").length === 1,
   );
   assert.equal(await page.getByRole("button", { name: /second.ts/ }).count(), 0);
-  await page.getByRole("tab", { name: "Plan", exact: true }).click();
+  await page.getByLabel("Work details", { exact: true }).selectOption("Plan");
   await page.getByRole("button", { name: "proposal.md", exact: true }).click();
   await page.getByRole("heading", { name: "Retained proposal", exact: true }).waitFor();
   await page.goBack();
@@ -1088,6 +1095,66 @@ test("typed inspector URLs render Pierre, preserve navigation and theme across r
   assert.deepEqual(errors, []);
 });
 
+test("a finding from chat opens its exact file, survives Back and reload, and never sends", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage({ viewport: { width: 1600, height: 900 } });
+  const issue = f.source.value.work.work[0].issue_id;
+  const feedback = feedbackFixture(false);
+  const finding = {
+    ...feedback.findings[0],
+    head: "f".repeat(40),
+    original_head: "f".repeat(40),
+    path: "source.ts",
+  };
+  f.feedbackPages.set(0, { ...feedback, issue_id: issue, findings: [finding] });
+  f.source.value = {
+    ...f.source.value,
+    messages: [
+      Schema.decodeSync(TranscriptMessageSchema)({
+        id: "msg_evidence",
+        at: f.source.value.at,
+        role: "assistant",
+        text: "",
+        tools: [
+          {
+            id: "call_evidence",
+            name: "abra_work_feedback_status",
+            status: "completed",
+            presentation: {
+              kind: "findings",
+              issue_id: issue,
+              findings: [
+                { ...finding, id: "info", blocking: false, text: "A second observation" },
+                finding,
+              ],
+              total: 4,
+              limited: false,
+            },
+          },
+        ],
+        parts: [{ type: "tool", tool_id: "call_evidence" }],
+      }),
+    ],
+  };
+  await page.goto(f.origin);
+  const result = page.locator('[data-tool-call-id="call_evidence"]');
+  await result.getByText("Showing 2 of 4 findings.").waitFor();
+  assert.equal(await result.locator('[data-presentation="finding"]').count(), 1);
+  await result.getByText("1 more finding").click();
+  await result.getByText("A second observation").waitFor();
+  await result.getByText("1 more finding").click();
+  await page.getByRole("button", { name: "Inspect finding" }).click();
+  const canvas = page.getByLabel("Work inspector", { exact: true });
+  await canvas.getByRole("button", { name: "Open source.ts in diff" }).click();
+  await canvas.getByRole("region", { name: "source.ts", exact: true }).waitFor();
+  await page.goBack();
+  await page.reload();
+  await canvas.getByRole("heading", { name: "Finding · " + finding.id }).waitFor();
+  await canvas.getByRole("button", { name: "Open source.ts in diff" }).waitFor();
+  assert.equal(f.source.submissions, 0);
+});
+
 test("form bindings reset values and concurrent native replies retain their own results", async (t) => {
   const f = await fixture();
   t.onTestFinished(f.close);
@@ -1111,11 +1178,28 @@ test("form bindings reset values and concurrent native replies retain their own 
   });
   f.source.value = {
     ...f.source.value,
+    permissions: [
+      {
+        binding: "review-permission",
+        request: {
+          id: Permission.ID.create(),
+          sessionID: f.source.sessionID,
+          action: "Read fixture",
+          resources: ["fixture"],
+        },
+      },
+    ],
     forms: [form("frm_slow", "first", "old"), form("frm_fast", "fast", "fast")],
   };
   const page = await f.browser.newPage({ viewport: { width: 1440, height: 1000 } });
   await page.goto(f.origin);
+  await page.getByRole("button", { name: "Review next" }).click();
   await page.getByLabel("Name frm_slow").fill("unsaved");
+  const attention = page.getByRole("button", { name: /^Attention/ });
+  await attention.press("Enter");
+  await page.getByText("Since your last inspection", { exact: false }).first().click();
+  await page.getByRole("button", { name: "Review next" }).press("Enter");
+  assert.equal(await page.getByLabel("Name frm_slow").inputValue(), "unsaved");
   f.source.value = {
     ...f.source.value,
     forms: [form("frm_slow", "replacement", "new"), form("frm_fast", "fast", "fast")],
@@ -1136,6 +1220,9 @@ test("form bindings reset values and concurrent native replies retain their own 
     .click();
   await page.getByLabel("Name frm_fast").waitFor({ state: "hidden" });
   await page.getByLabel("Name frm_slow").waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: /^Attention/ }).press("Enter");
+  await page.getByRole("button", { name: "Review next" }).press("Enter");
+  await page.waitForFunction(() => document.activeElement?.hasAttribute("data-native-permission"));
   assert.equal(f.replies.length, 2);
   assert.deepEqual(
     f.replies.find((reply) => reply.id === "frm_slow"),
@@ -1248,7 +1335,8 @@ test("late inspector responses cannot replace a new selection and live updates i
   await request;
   await page.getByRole("button", { name: "Toggle work finder" }).click();
   await page.getByRole("button", { name: /Another issue/ }).click();
-  await page.getByRole("tab", { name: "Overview", exact: true }).click();
+  await page.waitForURL((url) => url.searchParams.get("issue") === "abra-web");
+  await page.getByLabel("Work details", { exact: true }).selectOption("Overview");
   await page.getByText("Details for Another issue", { exact: true }).waitFor();
   await page.waitForTimeout(700);
   assert.equal(await page.getByText("Details for Slow issue", { exact: true }).count(), 0);
@@ -1558,9 +1646,9 @@ test("Activity consolidates legacy routes and preserves disabled lead request/pr
   ]);
   const page = await f.browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.goto(`${f.origin}/?issue=abra-web&tab=Workers`);
-  await page.getByRole("tablist", { name: "Work details" }).getByRole("tab").first().waitFor();
+  await page.getByLabel("Work details", { exact: true }).waitFor();
   assert.deepEqual(
-    await page.getByRole("tablist", { name: "Work details" }).getByRole("tab").allTextContents(),
+    await page.getByLabel("Work details", { exact: true }).locator("option").allTextContents(),
     ["Overview", "Plan", "Diff", "Verification", "Activity", "Reports"],
   );
   const composer = page.locator('[aria-label="Message Abra"]');
@@ -1659,6 +1747,7 @@ test("lead proposal attention is lazy and accessible without creating a task", a
   });
   const page = await f.browser.newPage({ viewport: { width: 1440, height: 1000 } });
   await page.goto(f.origin);
+  await page.getByRole("button", { name: /^Attention/ }).click();
   await page.locator("[data-management-attention]").waitFor();
   assert.equal(f.calls.filter((call) => call.name === "leads").length, 0);
   await page.locator("[data-management-attention] > summary").click();
@@ -1793,6 +1882,27 @@ test("native observation outages retain data and the server fallback recovers mi
   const f = await fixture();
   t.onTestFinished(f.close);
   const page = await f.browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  f.source.value = {
+    ...f.source.value,
+    forms: [
+      {
+        active: true,
+        binding: "review",
+        form: {
+          id: Form.ID.make("frm_theme"),
+          sessionID: f.source.sessionID,
+          title: "Review",
+          fields: [{ type: "string", key: "answer", title: "Pending answer" }],
+        },
+      },
+    ],
+    messages: Array.from({ length: 30 }, (_, index) => ({
+      id: `msg_theme_${index}`,
+      role: "assistant",
+      text: `Observation ${index}`,
+      at: f.source.value.at,
+    })),
+  };
   let bootstrapReads = 0;
   page.on("request", (request) => {
     if (new URL(request.url()).pathname === "/api/bootstrap") bootstrapReads++;
@@ -1801,6 +1911,31 @@ test("native observation outages retain data and the server fallback recovers mi
   const composer = page.getByRole("textbox", { name: "Message Abra" });
   await composer.fill("Preserve my draft through native reconnect");
   await page.getByText("Details for Build a single workspace", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Review next" }).click();
+  const answer = page.getByLabel("Pending answer");
+  await answer.fill("Unsubmitted");
+  const scroll = page.locator(".conversation-scroll");
+  await scroll.dispatchEvent("wheel");
+  await scroll.evaluate(async (element) => {
+    element.scrollTop = 400;
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  });
+  const readingAnchor = () =>
+    scroll.evaluate(
+      (element) =>
+        [...element.querySelectorAll<HTMLElement>("[data-native-message-id]")].find(
+          (message) => message.getBoundingClientRect().bottom > element.getBoundingClientRect().top,
+        )?.dataset.nativeMessageId,
+    );
+  const position = await readingAnchor();
+  assert.ok(position);
+  const appearance = page.getByLabel("Color theme");
+  await appearance.focus();
+  await appearance.selectOption("dark");
+  assert.equal(await appearance.evaluate((element) => element === document.activeElement), true);
+  assert.equal(await readingAnchor(), position);
+  assert.match(page.url(), /issue=abra-web/);
   f.setObservationOffline(true);
   await f.changed();
   await page
@@ -1835,6 +1970,7 @@ test("native observation outages retain data and the server fallback recovers mi
   // Sequence, rather than wall time, orders this fresh observation.
   await page.getByRole("heading", { name: "Old observation", exact: true }).waitFor();
   assert.equal(await page.getByRole("alert").count(), 0);
+  assert.equal(await answer.inputValue(), "Unsubmitted");
   assert.equal(bootstrapReads, 1);
   assert.equal(f.source.submissions, 0);
   assert.equal(await composer.inputValue(), "Preserve my draft through native reconnect");
@@ -2174,7 +2310,7 @@ test("policy-specific planning and independent outcomes remain usable when a doc
   await page.getByText("One retained document is unavailable", { exact: true }).waitFor();
   await page.getByRole("button", { name: "proposal.md", exact: true }).click();
   await page.getByRole("heading", { name: "Retained proposal", exact: true }).waitFor();
-  await page.getByRole("tab", { name: "Overview", exact: true }).click();
+  await page.getByLabel("Work details", { exact: true }).selectOption("Overview");
   await page.getByRole("region", { name: "Independent work outcomes" }).waitFor();
   assert.deepEqual(
     await page
@@ -2192,7 +2328,7 @@ test("policy-specific planning and independent outcomes remain usable when a doc
     assert.equal(await page.getByText(/implementation tasks complete/).count(), 0);
     assert.equal(await page.getByRole("button", { name: "proposal.md", exact: true }).count(), 0);
   }
-  await page.getByRole("tab", { name: "Reports", exact: true }).click();
+  await page.getByLabel("Work details", { exact: true }).selectOption("Reports");
   await page.getByRole("heading", { name: "Retained report", exact: true }).waitFor();
   assert.equal(f.source.submissions, 0);
 });
@@ -2490,6 +2626,30 @@ test("historical generated cards reopen exact revisions and repair-response atta
     await page.locator('[data-surface-reference="retained-board/1"]').innerText(),
     /Live work changed/,
   );
+  const preview = (revision: number) =>
+    page.locator(`.transcript [data-surface-reference="retained-board/${revision}"]`);
+  assert.equal(await preview(1).getByRole("button", { name: "Open comparison" }).count(), 1);
+  await preview(1).getByRole("button", { name: "Open comparison" }).click();
+  const canvas = page.getByLabel("Work inspector", { exact: true });
+  await canvas.getByText("Original generated layout", { exact: true }).waitFor();
+  await preview(2).getByRole("button", { name: "Open comparison" }).click();
+  await canvas.getByText("Revised generated layout", { exact: true }).waitFor();
+  await page.goBack();
+  await canvas.getByText("Original generated layout", { exact: true }).waitFor();
+  await page.reload();
+  await canvas.getByText("Original generated layout", { exact: true }).waitFor();
+  for (const [session_id, revision] of [
+    [f.source.sessionID, 99],
+    ["ses_someone_else", 1],
+  ] as const) {
+    const params = new URLSearchParams({
+      surface: JSON.stringify({ session_id, revision, surface_id: "retained-board" }),
+    });
+    await page.goto(f.origin + "/?" + params);
+    await canvas.getByText(/unavailable|another Abra conversation/).waitFor();
+    assert.equal(await canvas.locator(".generated-surface").count(), 0);
+  }
+  await page.getByRole("button", { name: "Close inspector" }).click();
   await screenshot(page, "chat-primary-exact-revisions.png");
   await page.reload();
   await page.getByText("Revised generated layout", { exact: true }).waitFor();
@@ -2571,6 +2731,7 @@ test("fleet and project totals distinguish native queue, capacity and dependency
   ]);
   const page = await f.browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.goto(f.origin);
+  await page.getByRole("button", { name: /^Attention/ }).click();
   await page
     .getByRole("button", { name: /Build a single workspace.*Plan approval required/ })
     .waitFor();

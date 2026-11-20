@@ -8,7 +8,7 @@ import {
   messageHistoryError,
   needsDisposition,
 } from "../workflow/message-contracts.ts";
-import { type FeedbackPage } from "../workflow/feedback-contracts.ts";
+import { retainedFinding, type FeedbackPage } from "../workflow/feedback-contracts.ts";
 import { providerFailure } from "../observability.ts";
 import { ExecutionStateSchema } from "./contracts.ts";
 import { committedScope } from "../visibility/invalidations.ts";
@@ -133,7 +133,12 @@ function applyPatch<E extends ManagedExecution>(current: E, patch: ExecutionPatc
   return next;
 }
 export class Records {
-  feedback = (id: IssueId, page = 0): Effect.Effect<FeedbackPage, CrewError> =>
+  feedback = (
+    id: IssueId,
+    page = 0,
+    finding_id?: string,
+    revision?: string,
+  ): Effect.Effect<FeedbackPage, CrewError> =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
         ensure(
@@ -145,6 +150,13 @@ export class Records {
         ensure(e, "EXECUTION_MISSING", "No retained execution for feedback history");
         const f = e.feedback,
           offset = page * 20;
+        const exact = finding_id && revision ? retainedFinding(f, finding_id, revision) : undefined;
+        if (finding_id !== undefined || revision !== undefined)
+          ensure(
+            exact,
+            "INVALID_SELECTION",
+            "The requested finding revision is unavailable for this task",
+          );
         return {
           issue_id: id,
           generation: e.control_generation,
@@ -170,8 +182,16 @@ export class Records {
                 error: f.error,
               }
             : undefined,
-          findings: f?.findings.slice(offset, offset + 20) ?? [],
-          history: f?.history.slice(offset, offset + 20) ?? [],
+          findings: exact
+            ? f?.findings.includes(exact)
+              ? [exact]
+              : []
+            : (f?.findings.slice(offset, offset + 20) ?? []),
+          history: exact
+            ? f?.history.includes(exact)
+              ? [exact]
+              : []
+            : (f?.history.slice(offset, offset + 20) ?? []),
           actions: f?.actions.slice(offset, offset + 20) ?? [],
           finding_total: f?.findings.length ?? 0,
           history_total: f?.history.length ?? 0,

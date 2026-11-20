@@ -1,3 +1,7 @@
+import { RefreshCanvas, CanvasRefreshProvider, useCanvasRead } from "./canvas-refresh.tsx";
+import { ExactSurface } from "./presentation/attachments.tsx";
+import type { WorkspaceSearch } from "./navigation.ts";
+import { SelectedFinding } from "./presentation/finding.tsx";
 import { PlanPassage } from "./presentation/plan-passage.tsx";
 import { VerificationPanel } from "./presentation/verification.tsx";
 import { RelativePath } from "@abracode/contracts/identities";
@@ -10,7 +14,7 @@ import { DecisionsPanel } from "./presentation/obligations.tsx";
 import type { AttentionForm } from "@abracode/contracts/web/contracts";
 import type { Inspect } from "@abracode/presentation/cards";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4 HTTP atoms provide scoped inspector reads. */
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { Option } from "effect";
@@ -32,7 +36,7 @@ import { Button } from "@abracode/presentation/ui/button";
 import { Badge } from "@abracode/presentation/ui/badge";
 import { Alert, AlertDescription } from "@abracode/presentation/ui/alert";
 import { Skeleton } from "@abracode/presentation/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@abracode/presentation/ui/tabs";
+import { NativeSelect } from "@abracode/presentation/ui/native-select";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@abracode/presentation/ui/sheet";
 
 const DiffRenderer = lazy(() => import("./diff-renderer.tsx"));
@@ -54,16 +58,31 @@ type Props = {
   ask: (text: string) => void;
 };
 type ContentProps = Omit<Props, "work" | "issue"> & { work: WorkItem };
-export function Inspector(props: Props) {
+export function Inspector(
+  props: Omit<Props, "issue"> & { issue?: IssueId; surface?: WorkspaceSearch["surface"] },
+) {
   const route = useSearch({ from: "/" });
   const canvas = route.canvas === true;
   const overlay = useMediaQuery("(max-width: 1250px)") || canvas;
-  const content = props.work ? (
+  const content = props.surface ? (
+    <aside className="inspector" aria-label="Work inspector">
+      <header className="inspector-header">
+        <div className="canvas-heading">
+          <h2>{props.surface.surface_id}</h2>
+          <small>Conversation view · revision {props.surface.revision}</small>
+        </div>
+        <CanvasControls {...props} />
+      </header>
+      <div className="inspector-content">
+        <ExactSurface target={props.surface} inspect={props.inspect} />
+      </div>
+    </aside>
+  ) : !props.issue ? null : props.work ? (
     <InspectorContent {...props} work={props.work} />
   ) : (
-    <UnloadedInspector {...props} />
+    <UnloadedInspector {...props} issue={props.issue} />
   );
-  if (!overlay) return content;
+  if (!overlay) return <CanvasRefreshProvider>{content}</CanvasRefreshProvider>;
   return (
     <Sheet
       open
@@ -81,18 +100,40 @@ export function Inspector(props: Props) {
         }
       >
         <SheetTitle className="sr-only">
-          {canvas ? "Report canvas" : "Work inspector"}: {props.work?.title ?? "Selected task"}
+          {canvas ? "Report canvas" : "Work inspector"}:{" "}
+          {props.surface?.surface_id ?? props.work?.title ?? "Selected task"}
         </SheetTitle>
         <SheetDescription className="sr-only">
           Read-only work details. Instructions go to Abra.
         </SheetDescription>
-        {content}
+        <CanvasRefreshProvider>{content}</CanvasRefreshProvider>
       </SheetContent>
     </Sheet>
   );
 }
+function CanvasControls({ width, resize, close }: Pick<Props, "width" | "resize" | "close">) {
+  return (
+    <>
+      <input
+        className="canvas-size"
+        aria-label="Canvas width"
+        aria-valuetext={width + " percent"}
+        type="range"
+        min={30}
+        max={55}
+        value={width}
+        onChange={(event) => resize(event.currentTarget.valueAsNumber)}
+      />
+      <RefreshCanvas />
+      <Button variant="ghost" size="icon" onClick={close} aria-label="Close inspector">
+        <X aria-hidden="true" />
+      </Button>
+    </>
+  );
+}
 function UnloadedInspector(props: Props) {
   const query = queries.overview(props.issue);
+  useCanvasRead(query);
   const result = useAtomValue(query);
   const detail = AsyncResult.value(result);
   if (Option.isSome(detail)) return <InspectorContent {...props} work={detail.value.work} />;
@@ -100,6 +141,7 @@ function UnloadedInspector(props: Props) {
     <aside className="inspector" aria-label="Work inspector">
       <header className="inspector-header">
         <h2>Selected task</h2>
+        <RefreshCanvas />
         <Button variant="ghost" size="icon" onClick={props.close} aria-label="Close inspector">
           <X aria-hidden="true" />
         </Button>
@@ -122,55 +164,57 @@ function InspectorContent({
   focusForm,
   inspect,
 }: ContentProps) {
+  const route = useSearch({ from: "/" });
+  const target = route.resource;
+  const title =
+    target?.action === "open_finding"
+      ? `Finding · ${target.finding_id}`
+      : target?.action === "open_passage"
+        ? `${target.file} · lines ${target.start}–${target.end}`
+        : target?.action === "open_artifact"
+          ? target.request_id
+          : target?.action === "open_decision"
+            ? target.key
+            : target?.action === "open_session"
+              ? target.session_id
+              : (route.file ?? (tab === "Overview" ? work.title : tab));
+  const exact =
+    route.file || (target && target.action !== "open_task" && target.action !== "open_changes");
   return (
     <aside className="inspector" aria-label="Work inspector">
       <header className="inspector-header">
-        <div>
-          <div className="eyebrow">
-            {work.repository_id ?? "Work"} · {work.issue_id}
-          </div>
-          <h2>{work.title}</h2>
+        <div className="canvas-heading">
+          <h2>{title}</h2>
+          <small title={work.issue_id}>
+            {title === work.title ? (work.repository_id ?? "Work") : work.title} · {work.issue_id}
+          </small>
         </div>
-        <input
-          className="canvas-size"
-          aria-label="Canvas width"
-          aria-valuetext={width + " percent"}
-          type="range"
-          min={30}
-          max={55}
-          value={width}
-          onChange={(event) => resize(event.currentTarget.valueAsNumber)}
-        />
-        <Button variant="ghost" size="icon" onClick={close} aria-label="Close inspector">
-          <X aria-hidden="true" />
-        </Button>
-      </header>
-      <Tabs
-        value={tab}
-        onValueChange={(value) => {
-          const next = inspectorTabs.find((tab) => tab === value);
-          if (next) setTab(next);
-        }}
-        className="inspector-tabs"
-      >
-        <TabsList variant="line" className="tabs" aria-label="Work details">
+        <NativeSelect
+          aria-label="Work details"
+          size="sm"
+          value={exact ? "selection" : tab}
+          onChange={(event) => {
+            const next = inspectorTabs.find((name) => name === event.currentTarget.value);
+            if (next) setTab(next);
+          }}
+        >
+          {exact && <option value="selection">Selected {tab.toLowerCase()} item</option>}
           {inspectorTabs.map((name) => (
-            <TabsTrigger key={name} value={name}>
-              {name}
-            </TabsTrigger>
+            <option key={name}>{name}</option>
           ))}
-        </TabsList>
-        <TabsContent value={tab} className="inspector-content" key={`${work.issue_id}:${tab}`}>
-          <InspectorPanel
-            work={work}
-            tab={tab}
-            ask={ask}
-            forms={forms}
-            focusForm={focusForm}
-            inspect={inspect}
-          />
-        </TabsContent>
-      </Tabs>
+        </NativeSelect>
+        <CanvasControls width={width} resize={resize} close={close} />
+      </header>
+      <div className="inspector-content" key={JSON.stringify([work.issue_id, tab, target])}>
+        <InspectorPanel
+          work={work}
+          tab={tab}
+          ask={ask}
+          forms={forms}
+          focusForm={focusForm}
+          inspect={inspect}
+        />
+      </div>
     </aside>
   );
 }
@@ -188,11 +232,52 @@ function InspectorPanel({
   const selectFile = (file: string) => {
     void navigate({ search: (previous) => ({ ...previous, file: file || undefined }) });
   };
+  const target = search.resource;
+  if (target?.action === "open_finding")
+    return <SelectedFinding target={target} inspect={inspect} />;
+
+  if (target?.action === "open_decision")
+    return <DecisionsPanel issue={work.issue_id} forms={forms} focusForm={focusForm} />;
+  if (target?.action === "open_passage")
+    return (
+      <RequestState query={queries.document(target.issue_id, target.file)}>
+        {(document) =>
+          target.generation === document.generation &&
+          target.hash === document.hash &&
+          target.file === document.path &&
+          target.end <= document.content.split("\n").length ? (
+            <>
+              <pre>
+                {document.content
+                  .split("\n")
+                  .slice(target.start - 1, target.end)
+                  .join("\n")}
+              </pre>
+              <PlanPassage issue={work.issue_id} document={document} initial={target} />
+            </>
+          ) : (
+            <output>This exact plan passage is unavailable.</output>
+          )
+        }
+      </RequestState>
+    );
   switch (tab) {
     case "Verification":
       return (
         <>
-          <VerificationPanel work={work} inspect={inspect} />
+          <VerificationPanel
+            work={work}
+            inspect={inspect}
+            decision={
+              forms.find(
+                (item) =>
+                  item.active &&
+                  item.checkpoint?.active &&
+                  item.checkpoint.issue_id === work.issue_id,
+              )?.form.id
+            }
+            focusForm={focusForm}
+          />
           <DecisionsPanel issue={work.issue_id} forms={forms} focusForm={focusForm} />
         </>
       );
@@ -426,13 +511,20 @@ function DiffPanel({ issue }: { issue: string }) {
   const { resolved } = useTheme();
   return (
     <RequestState query={queries.diff(issue, "", search.scope ?? "all")} showRefresh={false}>
-      {(diff) => (
-        <Suspense
-          fallback={<Skeleton className="h-40 w-full" aria-label="Loading diff renderer" />}
-        >
-          <DiffRenderer issue={issue} diff={diff} theme={resolved} />
-        </Suspense>
-      )}
+      {(diff) =>
+        search.resource?.action === "open_changes" &&
+        search.resource.head &&
+        (diff.head !== search.resource.head ||
+          !diff.files.some((file) => file.path === search.file)) ? (
+          <output>This file is unavailable at the reported revision.</output>
+        ) : (
+          <Suspense
+            fallback={<Skeleton className="h-40 w-full" aria-label="Loading diff renderer" />}
+          >
+            <DiffRenderer issue={issue} diff={diff} theme={resolved} />
+          </Suspense>
+        )
+      }
     </RequestState>
   );
 }
@@ -440,104 +532,121 @@ function Reports({ issue, inspect }: { issue: string; inspect: Inspect }) {
   const route = useSearch({ from: "/" });
   const navigate = useNavigate({ from: "/" });
   const target = route.resource?.action === "open_artifact" ? route.resource : undefined;
+  const [otherReports, setOtherReports] = useState(false);
   return (
     <>
-      <div className="eyebrow">Retained reports</div>
-      {!target && <ReviewsForSource issue={issue} source={{ kind: "report" }} />}
-      <RequestState query={queries.artifacts(issue, route.artifact_offset ?? 0)}>
-        {(page) => (
-          <>
-            <p>
-              {page.total !== undefined
-                ? `${page.total} retained reports`
-                : `${page.artifacts.length} reports in this observation`}
-            </p>
-            {page.artifacts.map((artifact) => (
-              <section key={artifact.request_id} className="report-revision">
-                <strong>{artifact.title ?? artifact.request_id}</strong>
-                <p className="muted">
-                  {artifact.format === "a2ui-snapshot" ? "JSON snapshot" : "Retained HTML"} ·{" "}
-                  {artifact.status}
+      {target && (
+        <>
+          <SelectedReport target={target} inspect={inspect} />
+          <Button
+            variant="outline"
+            aria-expanded={otherReports}
+            onClick={() => setOtherReports(!otherReports)}
+          >
+            Other reports
+          </Button>
+        </>
+      )}
+      {(!target || otherReports) && (
+        <>
+          <div className="eyebrow">Retained reports</div>
+          {!target && <ReviewsForSource issue={issue} source={{ kind: "report" }} />}
+          <RequestState query={queries.artifacts(issue, route.artifact_offset ?? 0)}>
+            {(page) => (
+              <>
+                <p>
+                  {page.total !== undefined
+                    ? `${page.total} retained reports`
+                    : `${page.artifacts.length} reports in this observation`}
                 </p>
-                {artifact.status === "published" && artifact.hash ? (
-                  <div className="button-row">
-                    <Button
-                      variant="outline"
-                      onClick={() =>
-                        inspect({
-                          action: "open_artifact",
-                          issue_id: IssueId.make(issue),
-                          request_id: artifact.request_id,
-                          hash: artifact.hash!,
-                        })
-                      }
-                    >
-                      Preview
-                    </Button>
-                    <a
-                      href={
-                        artifact.format === "a2ui-snapshot"
-                          ? api.documentURL(issue, artifact.request_id, artifact.hash)
-                          : api.reportURL(issue, artifact.request_id, true)
-                      }
-                      download
-                    >
-                      {artifact.format === "a2ui-snapshot" ? "Download JSON" : "Download HTML"}{" "}
-                      <ArrowUpRight aria-hidden="true" />
-                    </a>
-                  </div>
-                ) : (
-                  <p>{artifact.error ?? "Report is not published yet."}</p>
-                )}
-              </section>
-            ))}
-            <nav aria-label="Report pages" className="button-row">
-              <Button
-                variant="outline"
-                disabled={!(page.offset ?? 0)}
-                onClick={() => {
-                  void navigate({
-                    search: {
-                      ...route,
-                      artifact_offset: Math.max(
-                        0,
-                        (page.offset ?? 0) - (page.limit ?? artifactPageSize),
-                      ),
-                    },
-                  });
-                }}
-              >
-                Previous reports
-              </Button>
-              <Button
-                variant="outline"
-                disabled={page.next_offset === undefined}
-                onClick={() => {
-                  if (page.next_offset !== undefined)
-                    void navigate({ search: { ...route, artifact_offset: page.next_offset } });
-                }}
-              >
-                Next reports
-              </Button>
-            </nav>
-          </>
-        )}
-      </RequestState>
-      {target && <SelectedReport target={target} inspect={inspect} />}
-      <h3>Markdown report</h3>
-      <RequestState query={queries.report(issue)}>
-        {(report) =>
-          "content" in report ? (
-            <Markdown className="prose" content={report.content} />
-          ) : (
-            <output className="block">
-              {report.unavailable === "not_started"
-                ? "No Markdown report is available because this task has not started."
-                : "No Markdown report has been published for this task."}
-            </output>
-          )
-        }
-      </RequestState>
+                {page.artifacts.map((artifact) => (
+                  <section key={artifact.request_id} className="report-revision">
+                    <strong>{artifact.title ?? artifact.request_id}</strong>
+                    <p className="muted">
+                      {artifact.format === "a2ui-snapshot" ? "JSON snapshot" : "Retained HTML"} ·{" "}
+                      {artifact.status}
+                    </p>
+                    {artifact.status === "published" && artifact.hash ? (
+                      <div className="button-row">
+                        <Button
+                          variant="outline"
+                          onClick={() =>
+                            inspect({
+                              action: "open_artifact",
+                              issue_id: IssueId.make(issue),
+                              request_id: artifact.request_id,
+                              hash: artifact.hash!,
+                            })
+                          }
+                        >
+                          Preview
+                        </Button>
+                        <a
+                          href={
+                            artifact.format === "a2ui-snapshot"
+                              ? api.documentURL(issue, artifact.request_id, artifact.hash)
+                              : api.reportURL(issue, artifact.request_id, true)
+                          }
+                          download
+                        >
+                          {artifact.format === "a2ui-snapshot" ? "Download JSON" : "Download HTML"}{" "}
+                          <ArrowUpRight aria-hidden="true" />
+                        </a>
+                      </div>
+                    ) : (
+                      <p>{artifact.error ?? "Report is not published yet."}</p>
+                    )}
+                  </section>
+                ))}
+                <nav aria-label="Report pages" className="button-row">
+                  <Button
+                    variant="outline"
+                    disabled={!(page.offset ?? 0)}
+                    onClick={() => {
+                      void navigate({
+                        search: {
+                          ...route,
+                          artifact_offset: Math.max(
+                            0,
+                            (page.offset ?? 0) - (page.limit ?? artifactPageSize),
+                          ),
+                        },
+                      });
+                    }}
+                  >
+                    Previous reports
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={page.next_offset === undefined}
+                    onClick={() => {
+                      if (page.next_offset !== undefined)
+                        void navigate({ search: { ...route, artifact_offset: page.next_offset } });
+                    }}
+                  >
+                    Next reports
+                  </Button>
+                </nav>
+              </>
+            )}
+          </RequestState>
+
+          <h3>Markdown report</h3>
+          <RequestState query={queries.report(issue)}>
+            {(report) =>
+              "content" in report ? (
+                <Markdown className="prose" content={report.content} />
+              ) : (
+                <output className="block">
+                  {report.unavailable === "not_started"
+                    ? "No Markdown report is available because this task has not started."
+                    : "No Markdown report has been published for this task."}
+                </output>
+              )
+            }
+          </RequestState>
+        </>
+      )}
     </>
   );
 }
@@ -593,6 +702,7 @@ function SelectedReport({
             />
             {selected.format === "a2ui-snapshot" ? (
               <RequestState
+                live={false}
                 query={queries.artifactDocument(target.issue_id, target.request_id, target.hash)}
               >
                 {(artifact) =>

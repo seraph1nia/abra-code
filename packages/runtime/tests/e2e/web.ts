@@ -147,6 +147,7 @@ export async function webJourney(
           },
         ],
       });
+      await page.getByRole("button", { name: "Review next" }).click();
       await page.getByRole("heading", { name: "Workspace field types" }).waitFor();
       await page.getByLabel("Work label").fill("Planning");
       assert.equal(await page.getByLabel("Additional details").count(), 0);

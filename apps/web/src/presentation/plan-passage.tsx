@@ -1,19 +1,21 @@
-import { useContext, useState } from "react";
+import { NativeSelect } from "@abracode/presentation/ui/native-select";
+import { Input } from "@abracode/presentation/ui/input";
+import { useState } from "react";
 import { RelativePath, type IssueId } from "@abracode/contracts/identities";
 import type { WorkDocumentSchema } from "@abracode/contracts/web/wire";
-import { Button } from "@abracode/presentation/ui/button";
-import { AttachSelection } from "../workspace-state/draft.ts";
+import { AskAbra } from "./ask-abra.tsx";
 
 export function PlanPassage({
   issue,
   document,
+  initial,
 }: {
+  initial?: { start: number; end: number };
   issue: IssueId;
   document: typeof WorkDocumentSchema.Type;
 }) {
-  const attach = useContext(AttachSelection);
-  const [start, setStart] = useState(1),
-    [end, setEnd] = useState(1);
+  const [start, setStart] = useState(initial?.start ?? 1),
+    [end, setEnd] = useState(initial?.end ?? 1);
   const { hash, generation, path, content } = document;
   if (!hash || generation === undefined) return null;
   const lines = content.split("\n");
@@ -33,7 +35,7 @@ export function PlanPassage({
       {criteria.length > 0 && (
         <label>
           Plan criterion{" "}
-          <select
+          <NativeSelect
             value={start === end && criteria.some((c) => c.line === start) ? start : ""}
             onChange={(e) => {
               if (e.target.value) {
@@ -49,12 +51,12 @@ export function PlanPassage({
                 {criterion.line} · {criterion.text}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </label>
       )}
       <label>
         First plan line{" "}
-        <input
+        <Input
           type="number"
           min={1}
           max={lines.length}
@@ -67,7 +69,7 @@ export function PlanPassage({
       </label>
       <label>
         Last plan line{" "}
-        <input
+        <Input
           type="number"
           min={start}
           max={lines.length}
@@ -76,26 +78,19 @@ export function PlanPassage({
         />
       </label>
       <pre>{excerpt}</pre>
-      <Button
-        variant="outline"
+      <AskAbra
+        selection={{
+          kind: "plan",
+          issue_id: issue,
+          file: RelativePath.make(path),
+          generation,
+          hash,
+          start,
+          end,
+        }}
+        excerpt={excerpt}
         disabled={!valid || !excerpt.trim() || excerpt.length > 8192}
-        onClick={() =>
-          attach({
-            selection: {
-              kind: "plan",
-              issue_id: issue,
-              file: RelativePath.make(path),
-              generation,
-              hash,
-              start,
-              end,
-            },
-            excerpt,
-          })
-        }
-      >
-        Ask Abra about passage
-      </Button>
+      />
     </details>
   );
 }

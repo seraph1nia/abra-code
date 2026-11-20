@@ -1,9 +1,9 @@
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { NativeSelect } from "@abracode/presentation/ui/native-select";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { SelectedLineRange, FileDiffMetadata } from "@pierre/diffs";
 import { IssueId } from "@abracode/contracts/identities";
-import { AttachSelection } from "./workspace-state/draft.ts";
-import { Button } from "@abracode/presentation/ui/button";
+import { AskAbra } from "./presentation/ask-abra.tsx";
 import { FileDiff } from "@pierre/diffs/react";
 import type { WorkDiffSchema } from "@abracode/contracts/web/wire";
 import { parseDiffPatch } from "./diff-patch.ts";
@@ -35,7 +35,7 @@ export default function DiffRenderer({
   const matches = diff.files.filter((file) => file.path.toLocaleLowerCase().includes(needle));
   const exact =
     diff.files.find((file) => file.path === filter)?.path ??
-    (needle && matches.length === 1 ? matches[0]?.path : undefined);
+    (filter !== search.file && needle && matches.length === 1 ? matches[0]?.path : undefined);
   function changeFilter(text: string) {
     setEdit({ routeKey, text });
     clearTimeout(timer.current);
@@ -54,7 +54,12 @@ export default function DiffRenderer({
         search: (previous: WorkspaceSearch) => {
           const resource =
             previous.resource?.action === "open_changes"
-              ? { ...previous.resource, file: selected }
+              ? {
+                  action: "open_changes" as const,
+                  issue_id: previous.resource.issue_id,
+                  scope: previous.resource.scope,
+                  file: selected,
+                }
               : previous.resource;
           return { ...previous, file: selected, resource };
         },
@@ -70,17 +75,25 @@ export default function DiffRenderer({
         value={filter}
         onChange={(event) => changeFilter(event.target.value)}
       />
-      {exact ? (
+      {search.file && filter === search.file && !exact ? (
+        <output>This changed file is unavailable.</output>
+      ) : exact ? (
         <RequestState query={queries.diff(issue, exact, search.scope ?? "all")} showRefresh={false}>
-          {(selected) => (
-            <DiffFiles
-              issue={issue}
-              scope={search.scope ?? "all"}
-              diff={selected}
-              filter=""
-              theme={theme}
-            />
-          )}
+          {(selected) =>
+            search.resource?.action === "open_changes" &&
+            search.resource.head &&
+            selected.head !== search.resource.head ? (
+              <output>This file is unavailable at the reported revision.</output>
+            ) : (
+              <DiffFiles
+                issue={issue}
+                scope={search.scope ?? "all"}
+                diff={selected}
+                filter=""
+                theme={theme}
+              />
+            )
+          }
         </RequestState>
       ) : (
         <DiffFiles
@@ -189,7 +202,6 @@ function SelectableFile({
   scope: "all" | "uncommitted";
   options: NonNullable<React.ComponentProps<typeof FileDiff>["options"]>;
 }) {
-  const attach = useContext(AttachSelection);
   const [range, setRange] = useState<SelectedLineRange | null>(null);
   const side = range?.side ?? (entry.additions ? "additions" : "deletions");
   const initial =
@@ -215,22 +227,6 @@ function SelectableFile({
           .replace(/\n$/, "");
   const valid =
     (!range?.endSide || range.endSide === side) && excerpt !== undefined && excerpt.length <= 8192;
-  const onAsk = () => {
-    if (valid)
-      attach({
-        selection: {
-          kind: "diff",
-          issue_id: IssueId.make(issue),
-          file: entry.path,
-          patch_id: patchId,
-          scope,
-          start,
-          end,
-          side,
-        },
-        excerpt,
-      });
-  };
   return (
     <section aria-label={file.name}>
       <FileDiff
@@ -241,7 +237,7 @@ function SelectableFile({
         <summary>Select lines in {file.name}</summary>
         <label>
           Side{" "}
-          <select
+          <NativeSelect
             value={side}
             onChange={(e) =>
               setRange({
@@ -253,11 +249,11 @@ function SelectableFile({
           >
             <option value="additions">New</option>
             <option value="deletions">Old</option>
-          </select>
+          </NativeSelect>
         </label>
         <label>
           First line{" "}
-          <input
+          <Input
             type="number"
             min="1"
             value={Number.isNaN(range?.start) ? "" : (range?.start ?? initial)}
@@ -272,7 +268,7 @@ function SelectableFile({
         </label>
         <label>
           Last line{" "}
-          <input
+          <Input
             type="number"
             min="1"
             value={Number.isNaN(range?.end) ? "" : (range?.end ?? initial)}
@@ -285,9 +281,20 @@ function SelectableFile({
             }
           />
         </label>
-        <Button type="button" variant="outline" disabled={!valid} onClick={onAsk}>
-          Ask Abra about selection
-        </Button>
+        <AskAbra
+          selection={{
+            kind: "diff",
+            issue_id: IssueId.make(issue),
+            file: entry.path,
+            patch_id: patchId,
+            scope,
+            start,
+            end,
+            side,
+          }}
+          excerpt={excerpt ?? ""}
+          disabled={!valid}
+        />
       </details>
     </section>
   );

@@ -355,15 +355,19 @@ export function FindingCard({
           variant="outline"
           size="sm"
           onClick={() =>
-            inspect({
-              action: "open_task",
-              issue_id: issue,
-              section: "activity",
-              activity: "checks",
-            })
+            inspect(
+              finding.revision
+                ? {
+                    action: "open_finding",
+                    issue_id: issue,
+                    finding_id: finding.id,
+                    revision: finding.revision,
+                  }
+                : { action: "open_task", issue_id: issue, section: "activity", activity: "checks" },
+            )
           }
         >
-          Inspect reviews & checks
+          {finding.revision ? "Inspect finding" : "Inspect reviews & checks"}
         </Button>
       )}
       {children}

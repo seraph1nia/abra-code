@@ -1,6 +1,7 @@
 import { Schema } from "effect";
-import { Count, Positive } from "../primitives.ts";
+import { Commit, NonEmpty, Count, Positive } from "../primitives.ts";
 import {
+  FindingId,
   IssueId,
   SessionId,
   ObligationKey,
@@ -120,8 +121,26 @@ export const ResourceSelectionSchema = Schema.Union([
     action: Schema.Literal("open_changes"),
     issue_id: IssueId,
     file: Schema.optionalKey(ResourcePathSchema),
+    head: Schema.optionalKey(Commit),
     scope: Schema.optionalKey(Schema.Literals(["all", "uncommitted"])),
   }).annotate(exact),
+  Schema.Struct({
+    action: Schema.Literal("open_finding"),
+    issue_id: IssueId,
+    finding_id: FindingId,
+    revision: NonEmpty,
+  }).annotate(exact),
+  Schema.Struct({
+    action: Schema.Literal("open_passage"),
+    issue_id: IssueId,
+    file: ResourcePathSchema,
+    generation: Count,
+    hash: ContentHash,
+    start: Positive,
+    end: Positive,
+  })
+    .check(Schema.makeFilter((s) => s.end >= s.start || "Invalid passage range"))
+    .annotate(exact),
   Schema.Struct({
     action: Schema.Literal("open_artifact"),
     issue_id: IssueId,

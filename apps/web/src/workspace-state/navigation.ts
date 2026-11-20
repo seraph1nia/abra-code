@@ -5,8 +5,13 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Exit } from "effect";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import { resolveResource } from "../data.ts";
-import { requestError } from "../request-state.tsx";
-import { resourceFromSearch, searchForResource, type InspectorTab } from "../navigation.ts";
+import { requestError } from "../request-error.ts";
+import {
+  resourceFromSearch,
+  searchForResource,
+  type InspectorTab,
+  type WorkspaceSearch,
+} from "../navigation.ts";
 export function useWorkspaceNavigation(
   beforeNavigate: () => void,
   closeFinder: () => void,
@@ -43,12 +48,24 @@ export function useWorkspaceNavigation(
     },
     [resolve, navigate, setError, beforeNavigate, closeFinder],
   );
+  const openSurface = useCallback(
+    (surface: NonNullable<WorkspaceSearch["surface"]>) => {
+      selectionRequest.current++;
+      inspectorOrigin.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      beforeNavigate();
+      void navigate({ search: { surface } });
+      closeFinder();
+    },
+    [beforeNavigate, navigate, closeFinder],
+  );
   const selected = resourceFromSearch(route)?.issue_id;
   const tab = route.tab ?? "Overview";
   const setTab = (tab: InspectorTab) => {
     void navigate({ search: { issue: selected, tab } });
   };
-  const closeInspector = () => {
+  const closeInspector = (focus?: HTMLElement | null) => {
+    if (focus) inspectorOrigin.current = focus;
     selectionRequest.current++;
     beforeNavigate();
     void navigate({ search: {} }).then(() => {
@@ -70,5 +87,14 @@ export function useWorkspaceNavigation(
       }),
     );
   };
-  return { selected, tab, inspect, setTab, closeInspector, returnInspectorFocus, focusForm };
+  return {
+    selected,
+    tab,
+    openSurface,
+    inspect,
+    setTab,
+    closeInspector,
+    returnInspectorFocus,
+    focusForm,
+  };
 }

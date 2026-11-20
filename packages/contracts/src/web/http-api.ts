@@ -123,6 +123,7 @@ export const workspaceApi = HttpApi.make("abra-workspace")
       }),
       HttpApiEndpoint.get("surface", "/api/surface", {
         query: Schema.Struct({
+          session_id: Schema.optionalKey(SessionId),
           surface_id: ComponentId,
           revision: Schema.Int.check(Schema.isGreaterThan(0)),
         }),
@@ -237,6 +238,8 @@ export const workspaceApi = HttpApi.make("abra-workspace")
         query: Schema.Struct({
           issue_id: IssueId,
           page: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+          finding_id: Schema.optionalKey(Schema.String),
+          revision: Schema.optionalKey(Schema.String),
         }).annotate(exact),
         success: FeedbackPageSchema,
         error,

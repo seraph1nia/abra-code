@@ -1,7 +1,7 @@
 import { ReviewAttachment, ReviewsForSource } from "./interactive-review-loader.tsx";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect HTTP atoms own shared generated-binding queries. */
-import { useAtomValue } from "@effect/atom-react";
-import { AsyncResult } from "effect/reactivity";
+import { RegistryContext } from "@effect/atom-react";
+import { AsyncResult, type AtomRegistry, type Atom } from "effect/reactivity";
 import { Option } from "effect";
 import {
   bindingRequirements,
@@ -10,7 +10,11 @@ import {
 } from "@abracode/contracts/web/bindings";
 import type { SurfaceRecord } from "@abracode/contracts/web/contracts";
 import type { PresentationAttachmentSchema } from "@abracode/contracts/presentation/contracts";
-import type { ComponentProps } from "react";
+import { useContext, useMemo, useSyncExternalStore, type ComponentProps } from "react";
+import { SessionId } from "@abracode/contracts/identities";
+import { useCanvasRead } from "../canvas-refresh.tsx";
+import { OpenSurface, type WorkspaceSearch } from "../navigation.ts";
+import { Button } from "@abracode/presentation/ui/button";
 import { deferred } from "../deferred.tsx";
 
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
@@ -54,6 +58,7 @@ export function RetainedSurfaces({
           />
         ) : (
           <SurfaceAttachment
+            expanded
             key={`${entry.surface_id}/${entry.revision}`}
             target={{ kind: "surface", surface_id: entry.surface_id, revision: entry.revision }}
             work={work}
@@ -67,9 +72,11 @@ export function RetainedSurfaces({
 export function SurfaceAttachment({
   target,
   work: _work,
+  expanded = false,
   inspect,
 }: {
   target: Extract<Target, { kind: "surface" }>;
+  expanded?: boolean;
   work: readonly WebWorkItem[];
   inspect: Inspect;
 }) {
@@ -89,10 +96,88 @@ export function SurfaceAttachment({
                   Legacy layout: only the latest retained revision is available.
                 </p>
               )}
-              <BoundSurface record={entry} inspect={inspect} />
+              {expanded ? (
+                <BoundSurface record={entry} inspect={inspect} />
+              ) : (
+                <SurfacePreview record={entry} inspect={inspect} />
+              )}
             </>
           )
         }
+      </RequestState>
+    </div>
+  );
+}
+function SurfacePreview({ record, inspect }: { record: SurfaceRecord; inspect: Inspect }) {
+  const open = useContext(OpenSurface);
+  const { components, surfaceId } = record.surface.createSurface;
+  const rich =
+    components.some((c) =>
+      ["WorkTable", "Kanban", "Mermaid", "DependencyGraph", "Timeline"].some(
+        (name) => name === c.component,
+      ),
+    ) || components.length > 5;
+  const heading = components.find(
+    (c) => c.component === "Text" && typeof c.text === "string",
+  )?.text;
+  return (
+    <div className="surface-preview">
+      {rich ? (
+        <p>{typeof heading === "string" ? heading.slice(0, 180) : "Generated work view"}</p>
+      ) : (
+        <BoundSurface record={record} inspect={inspect} />
+      )}
+      <Button
+        variant="outline"
+        onClick={() =>
+          open({
+            session_id: SessionId.make(record.session_id),
+            surface_id: surfaceId,
+            revision: record.revision,
+          })
+        }
+      >
+        Open{" "}
+        {components.some((c) => c.component === "WorkTable")
+          ? "comparison"
+          : components.some((c) => c.component === "Kanban")
+            ? "board"
+            : "view"}
+      </Button>
+    </div>
+  );
+}
+
+export function ExactSurface({
+  target,
+  inspect,
+}: {
+  target: NonNullable<WorkspaceSearch["surface"]>;
+  inspect: Inspect;
+}) {
+  return (
+    <div data-surface-reference={target.surface_id + "/" + target.revision}>
+      <RequestState query={surfaceQuery(target.surface_id, target.revision, target.session_id)}>
+        {(entry) => {
+          if ("unavailable" in entry) return <output>{entry.unavailable}</output>;
+          if (
+            entry.session_id !== target.session_id ||
+            entry.revision !== target.revision ||
+            entry.surface.createSurface.surfaceId !== target.surface_id
+          )
+            return <output>This exact layout is unavailable.</output>;
+          const live = bindingRequirements(entry.surface, "live");
+          return (
+            <>
+              <p className="muted">
+                {live.unfiltered || live.ids.length
+                  ? "Live widgets show current work. Snapshot widgets show captured values."
+                  : "Captured layout and values."}
+              </p>
+              <BoundSurface record={entry} inspect={inspect} />
+            </>
+          );
+        }}
       </RequestState>
     </div>
   );
@@ -124,6 +209,27 @@ function BoundSurfaceContent({ record, inspect }: { record: SurfaceRecord; inspe
     />
   );
 }
+function liveBindingStore(
+  registry: AtomRegistry.AtomRegistry,
+  query: ReturnType<typeof bindingQuery>,
+) {
+  // A lazy layout can render several times before it commits. Start its live
+  // binding only when React subscribes so discarded renders never issue reads.
+  let mounted = false;
+  const pending: Atom.Type<typeof query> = AsyncResult.initial();
+  return {
+    subscribe: (notify: () => void) => {
+      mounted = true;
+      const release = registry.subscribe(query, notify);
+      return () => {
+        mounted = false;
+        release();
+      };
+    },
+    read: () => (mounted ? registry.get(query) : pending),
+  };
+}
+
 function LiveSurface({
   record,
   inspect,
@@ -133,7 +239,11 @@ function LiveSurface({
   inspect: Inspect;
   selection: BindingSelection;
 }) {
-  const result = useAtomValue(bindingQuery(selection));
+  const query = bindingQuery(selection);
+  const { refresh } = useCanvasRead(query);
+  const registry = useContext(RegistryContext);
+  const reader = useMemo(() => liveBindingStore(registry, query), [registry, query]);
+  const result = useSyncExternalStore(reader.subscribe, reader.read);
   const value = AsyncResult.value(result);
   const previous = Option.isSome(value) ? value.value : undefined;
   const coverage: BindingCoverage = {
@@ -153,13 +263,23 @@ function LiveSurface({
         : (previous?.coverage.status ?? "pending"),
   };
   return (
-    <WorkViews
-      records={[record]}
-      work={previous?.work ?? []}
-      liveCoverage={coverage}
-      inspect={inspect}
-      actions={(record) => <SaveSurfaceButton record={record} inspect={inspect} />}
-    />
+    <>
+      {AsyncResult.isFailure(result) && (
+        <div role="alert">
+          {previous ? "Showing the last successful binding." : "Live data unavailable."}{" "}
+          <Button variant="outline" onClick={refresh}>
+            Retry
+          </Button>
+        </div>
+      )}
+      <WorkViews
+        records={[record]}
+        work={previous?.work ?? []}
+        liveCoverage={coverage}
+        inspect={inspect}
+        actions={(record) => <SaveSurfaceButton record={record} inspect={inspect} />}
+      />
+    </>
   );
 }
 export function MessageAttachment({

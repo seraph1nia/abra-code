@@ -96,6 +96,7 @@ export const SessionCardSchema = Schema.Struct({
 });
 export const FindingCardSchema = Schema.Struct({
   id: finding.id,
+  revision: Schema.optionalKey(finding.revision),
   head: finding.head,
   kind: finding.kind,
   text: finding.text,

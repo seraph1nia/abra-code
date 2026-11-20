@@ -137,7 +137,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
             at: Timestamp.make("2026-11-15T10:00:00Z"),
             historical: false,
             base: "abcdef012345",
-            head: "fedcba987654",
+            head: "f".repeat(40),
             limited: false,
             file: input.file || undefined,
             files: ["source.ts", "second.ts"].map((path) => ({

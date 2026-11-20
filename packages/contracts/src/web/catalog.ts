@@ -14,9 +14,7 @@ export const previousCatalogId = "https://abracode.local/catalog/work/v1/catalog
 export const catalogId = "https://abracode.local/catalog/work/v2/catalog.json";
 export const legacyCatalogId = "https://abracode.local/catalog/v1";
 export const basicComponentNames = ["Column", "Row", "Text"] as const;
-export const ComponentId = Schema.String.check(
-  Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,100}$/),
-);
+export { ComponentId } from "./surface-destination.ts";
 const issueIds = Schema.Array(IssueId).check(Schema.isMaxLength(100));
 const workFields = {
   issueIds: Schema.optionalKey(issueIds),

@@ -7,7 +7,7 @@ import { Exit } from "effect";
 import { SubmissionSchema } from "@abracode/contracts/web/workspace-wire";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { readReceipt } from "../data.ts";
-import { requestError } from "../request-state.tsx";
+import { requestError } from "../request-error.ts";
 type Pending = typeof SubmissionSchema.Type;
 export function useWorkspaceAdmission({
   workspace,

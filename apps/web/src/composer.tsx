@@ -7,9 +7,10 @@ import { Exit } from "effect";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { ArrowUp, Square } from "@abracode/presentation/icons";
 import { Button } from "@abracode/presentation/ui/button";
+import { NativeSelect } from "@abracode/presentation/ui/native-select";
 import { Textarea } from "@abracode/presentation/ui/textarea";
 import { stopMutation } from "./data.ts";
-import { requestError } from "./request-state.tsx";
+import { requestError } from "./request-error.ts";
 import { useWorkspaceDraft } from "./workspace-state/draft.ts";
 import { useWorkspaceAdmission } from "./workspace-state/admission.ts";
 export function Composer({
@@ -131,7 +132,8 @@ export function Composer({
           <span className="muted">{workspace.model ?? "Using the current model"}</span>
           <div>
             {workspace.busy && (
-              <select
+              <NativeSelect
+                size="sm"
                 aria-label="Message delivery"
                 disabled={admitting || !!pending}
                 value={pending?.delivery ?? delivery}
@@ -141,7 +143,7 @@ export function Composer({
               >
                 <option value="queue">Queue for Abra</option>
                 <option value="steer">Steer current Abra turn</option>
-              </select>
+              </NativeSelect>
             )}
             {workspace.busy && (
               <Button

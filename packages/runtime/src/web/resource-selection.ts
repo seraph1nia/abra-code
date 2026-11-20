@@ -1,3 +1,5 @@
+import { retainedFinding } from "../workflow/feedback-contracts.ts";
+import { presentationHash } from "../presentation/identity.ts";
 import { Effect, Schema } from "effect";
 import { CrewError } from "../domain.ts";
 import type { Queries } from "../workflow/queries.ts";
@@ -6,7 +8,7 @@ import { ResourceSelectionSchema } from "./resources.ts";
 
 /** Ownership is checked before transcript, document or artifact bytes are requested. */
 export function resolveOwnedResource(
-  queries: Pick<Queries, "issue" | "execution">,
+  queries: Pick<Queries, "issue" | "execution" | "planDocument" | "diff">,
   input: unknown,
 ) {
   return Effect.gen(function* () {
@@ -17,6 +19,14 @@ export function resolveOwnedResource(
       Effect.mapError(() => new CrewError("INVALID_DATA", "Resource selection is invalid")),
     );
     yield* queries.issue(target.issue_id);
+    if (target.action === "open_changes" && target.head) {
+      const diff = yield* queries.diff(target.issue_id, target.scope ?? "all", target.file);
+      if (diff.head !== target.head || !diff.files.some((entry) => entry.path === target.file))
+        return yield* new CrewError(
+          "INVALID_SELECTION",
+          "The selected file is unavailable at the reported revision",
+        );
+    }
     if (target.action === "open_task" || target.action === "open_changes") return target;
     const execution = yield* queries.execution(target.issue_id);
     if (!execution)
@@ -26,6 +36,16 @@ export function resolveOwnedResource(
       );
     let owned = false;
     switch (target.action) {
+      case "open_finding":
+        owned = !!retainedFinding(execution.feedback, target.finding_id, target.revision);
+        break;
+      case "open_passage": {
+        if (target.generation !== execution.control_generation) break;
+        const content = yield* queries.planDocument(execution, target.file);
+        owned =
+          presentationHash(content) === target.hash && target.end <= content.split("\n").length;
+        break;
+      }
       case "open_session":
         owned = [
           execution.explore_session_id,

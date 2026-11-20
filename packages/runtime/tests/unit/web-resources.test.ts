@@ -1,3 +1,6 @@
+import { presentationHash } from "../../src/presentation/identity.ts";
+import { FindingId } from "../../src/identities.ts";
+import { feedbackFixture } from "../helpers/review-evidence.ts";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Effect, Schema } from "effect";
@@ -49,6 +52,8 @@ test("invalid resource capabilities are rejected before any ownership read", asy
         reads++;
       }).pipe(Effect.andThen(f.controller.queries.issue(id))),
     execution: f.controller.queries.execution,
+    planDocument: f.controller.queries.planDocument,
+    diff: f.controller.queries.diff,
   };
   for (const target of [
     { action: "run_tool", issue_id: "task-one" },
@@ -142,4 +147,79 @@ test("full report canvas bookmarks require an exact read-only artifact selection
     undefined,
   );
   assert.equal(workspaceSearch({ resource: artifact, canvas: "true" }).canvas, undefined);
+});
+
+test("scoped resources resolve findings beyond the first page and refuse changed evidence", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(planned(f));
+  const seed = feedbackFixture(false);
+  const findings = Array.from({ length: 24 }, (_, index) => ({
+    ...seed.findings[0],
+    id: FindingId.make("finding-" + index),
+  }));
+  const history = [{ ...findings[23], revision: "older" }];
+  const feedback = {
+    schema_version: 1 as const,
+    ...seed.observation!,
+    digest: "fixture",
+    attempts: 1,
+    actions: [],
+    findings,
+    history,
+  };
+  const owned = await run(f.controller.queries.get(e.issue_id));
+  await run(f.records.save({ ...owned, feedback }));
+  const queries = {
+    issue: f.controller.queries.issue,
+    execution: f.controller.queries.execution,
+    diff: f.controller.queries.diff,
+    planDocument: () => Effect.succeed("original\npassage"),
+  };
+  for (const finding of [findings[23], history[0]]) {
+    const target = {
+      action: "open_finding",
+      issue_id: e.issue_id,
+      finding_id: finding.id,
+      revision: finding.revision,
+    };
+    assert.deepEqual(await run(resolveOwnedResource(queries, target)), target);
+    const exact = await run(
+      f.controller.queries.feedback(e.issue_id, 0, finding.id, finding.revision),
+    );
+    assert.deepEqual([...exact.findings, ...exact.history], [finding]);
+    await assert.rejects(
+      run(resolveOwnedResource(queries, { ...target, revision: "wrong" })),
+      /does not own/,
+    );
+    await assert.rejects(
+      run(resolveOwnedResource(queries, { ...target, issue_id: "foreign-task" })),
+    );
+  }
+  const passage = {
+    action: "open_passage",
+    issue_id: e.issue_id,
+    file: "proposal.md",
+    generation: e.control_generation,
+    hash: presentationHash("original\npassage"),
+    start: 2,
+    end: 2,
+  };
+  assert.deepEqual(await run(resolveOwnedResource(queries, passage)), passage);
+  await assert.rejects(
+    run(
+      resolveOwnedResource({ ...queries, planDocument: () => Effect.succeed("changed") }, passage),
+    ),
+    /does not own/,
+  );
+  await assert.rejects(
+    run(
+      resolveOwnedResource(queries, {
+        action: "open_changes",
+        issue_id: e.issue_id,
+        file: "absent.ts",
+        head: seed.head,
+      }),
+    ),
+  );
 });

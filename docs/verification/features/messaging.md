@@ -174,3 +174,5 @@ For a selected-work request, use the ticket diff, web admissions, messages and i
 Open Verification, inspect a prior pass after editing, then expand the worker's retained screenshot after removing the scratch file. Confirm its generation and source session are visible, and its revision is labeled unverified.
 
 Check duplicate plan criteria by selecting the second occurrence and editing the first after capture. Verify the original passage after reload. On a retained screenshot, choose a region by keyboard, reopen the captured question at a narrow width, and compare the overlay with the original bytes. Run the worker-evidence integration test for a repository-generated Playwright trace, missing historical locations and versioned documentation.
+
+In the cockpit journey, select lines on A and choose **Ask Abra**, inspect B, then reload before sending. The composer keeps A’s file, side and range. Open the captured selection on the sent question to read the original lines after the working file changes.

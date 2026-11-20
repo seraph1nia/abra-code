@@ -9,7 +9,7 @@ import type {
   PresentationDiagnosticSchema,
 } from "@abracode/contracts/presentation/contracts";
 import { historyQuery } from "../data.ts";
-import { requestError } from "../request-state.tsx";
+import { requestError } from "../request-error.ts";
 import type { Conversation } from "./conversation.ts";
 export function useWorkspaceHistory(
   workspace: WorkspaceSnapshot,

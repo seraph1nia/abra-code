@@ -3,56 +3,46 @@ import type { ReactNode } from "react";
 import { RefreshCw } from "@abracode/presentation/icons";
 import { PresentationRefreshContext } from "@abracode/presentation/diagram-resource";
 import { useMemo } from "react";
-import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { Cause, Option } from "effect";
+import { createRefreshGroup, useCanvasRead } from "./canvas-refresh.tsx";
+import { useAtomValue } from "@effect/atom-react";
+import { requestError } from "./request-error.ts";
+import { Option } from "effect";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import { Alert, AlertDescription } from "@abracode/presentation/ui/alert";
 import { Button } from "@abracode/presentation/ui/button";
 import { Skeleton } from "@abracode/presentation/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@abracode/presentation/ui/tooltip";
 
-export function requestError(cause: Cause.Cause<unknown>) {
-  const error = Cause.findErrorOption(cause);
-  if (
-    Option.isSome(error) &&
-    error.value &&
-    typeof error.value === "object" &&
-    "message" in error.value
-  ) {
-    const code = "code" in error.value ? `${String(error.value.code)}: ` : "";
-    return `${code}${String(error.value.message)}`;
-  }
-  return "Request unavailable. Refresh to try again.";
-}
-
 export function RequestState<A, E>({
   query,
   children,
   showRefresh = true,
+  live = true,
+  unavailable,
 }: {
   query: Atom.Atom<AsyncResult.AsyncResult<A, E>>;
   children: (value: A) => ReactNode;
   showRefresh?: boolean;
+  live?: boolean;
+  unavailable?: ReactNode;
 }) {
   const result = useAtomValue(query);
-  const refresh = useAtomRefresh(query);
+  const { group, refresh } = useCanvasRead(query, live);
   const value = AsyncResult.value(result);
   const derived = useMemo(() => {
-    const readers = new Map<() => void, number>();
+    const local = createRefreshGroup();
     return {
       subscribe: (retry: () => void) => {
-        readers.set(retry, (readers.get(retry) ?? 0) + 1);
+        const removeLocal = local.register(retry, retry);
+        const removeCanvas = live ? group?.register(retry, retry) : undefined;
         return () => {
-          const count = readers.get(retry) ?? 0;
-          if (count <= 1) readers.delete(retry);
-          else readers.set(retry, count - 1);
+          removeLocal();
+          removeCanvas?.();
         };
       },
-      refresh: () => {
-        for (const retry of readers.keys()) retry();
-      },
+      refresh: local.refresh,
     };
-  }, []);
+  }, [group, live]);
   const refreshEvidence = () => {
     refresh();
     derived.refresh();
@@ -63,7 +53,7 @@ export function RequestState<A, E>({
         {result.waiting && Option.isSome(value) && (
           <output className="inline-status">Updating…</output>
         )}
-        {showRefresh && (
+        {!group && showRefresh && (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -92,6 +82,7 @@ export function RequestState<A, E>({
           </AlertDescription>
         </Alert>
       )}
+      {AsyncResult.isFailure(result) && Option.isNone(value) && unavailable}
       {Option.isSome(value)
         ? children(value.value)
         : !AsyncResult.isFailure(result) && (

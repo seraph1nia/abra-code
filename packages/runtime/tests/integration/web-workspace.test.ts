@@ -854,6 +854,25 @@ test(
         },
       ],
     };
+    for (const [owner, revision, available] of [
+      [web.backend.sessionID, 1, true],
+      ["ses_foreign", 1, false],
+      [web.backend.sessionID, 2, false],
+    ] as const) {
+      const response = await fetch(
+        web.origin +
+          "/api/surface?" +
+          new URLSearchParams({
+            session_id: owner,
+            revision: String(revision),
+            surface_id: "diagram-board",
+          }),
+      );
+      assert.equal(response.status, 200);
+      const entry = await response.json();
+      assert.equal("surface" in entry, available);
+      if (available) assert.equal(entry.revision, revision);
+    }
     const selection = {
       kind: "surface" as const,
       surface_id: "diagram-board",

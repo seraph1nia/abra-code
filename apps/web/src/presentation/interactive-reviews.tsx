@@ -19,7 +19,8 @@ import {
   submitReview,
   readReviewReceipt,
 } from "../review-data.ts";
-import { RequestState, requestError } from "../request-state.tsx";
+import { RequestState } from "../request-state.tsx";
+import { requestError } from "../request-error.ts";
 import { useReviewDraft } from "../review-state.ts";
 import { deferred } from "../deferred.tsx";
 

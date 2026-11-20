@@ -167,7 +167,8 @@ export const createPlugin = (
           ),
           feedback: read(
             FeedbackPageSchema,
-            ({ issue_id, page }) => observer.feedback(issue_id, page),
+            ({ issue_id, page, finding_id, revision }) =>
+              observer.feedback(issue_id, page, finding_id, revision),
             "feedback",
           ),
           report: read(WorkReportSchema, ({ issue_id }) => observer.report(issue_id), "report"),

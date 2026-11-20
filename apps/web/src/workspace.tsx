@@ -3,10 +3,10 @@ import { MessageContent, emptyAttachments, emptyDiagnostics } from "./message-co
 import { Composer } from "./composer.tsx";
 import { workspaceDraft, AttachSelection, type DraftAttachment } from "./workspace-state/draft.ts";
 import { Link, useSearch } from "@tanstack/react-router";
-import { ArrowUpRight, Sparkles } from "@abracode/presentation/icons";
+import { ArrowUpRight, Sparkles, Settings, SunMoon } from "@abracode/presentation/icons";
 import { useWorkspaceNavigation } from "./workspace-state/navigation.ts";
 import { useTranscriptViewport } from "./workspace-state/viewport.ts";
-import { RetainedSurfaces } from "./presentation/attachments.tsx";
+
 /* oxlint-disable effecttsgo/unstable-api-usage -- Workspace presentation consumes the typed Effect atom layer. */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { WorkspaceProvider } from "./workspace-provider.tsx";
@@ -15,8 +15,17 @@ import { AsyncResult } from "effect/reactivity";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { bootstrapQuery } from "./data.ts";
 import { useWorkspace } from "./use-workspace.ts";
-import { requestError } from "./request-state.tsx";
+import { requestError } from "./request-error.ts";
 import { deferred } from "./deferred.tsx";
+const RetainedSurfaces = deferred<
+  React.ComponentProps<typeof import("./presentation/attachments.tsx").RetainedSurfaces>
+>(
+  () =>
+    import("./presentation/attachments.tsx").then((module) => ({
+      default: module.RetainedSurfaces,
+    })),
+  "Retained presentation",
+);
 const WorkFinder = deferred<React.ComponentProps<typeof import("./work-finder.tsx").WorkFinder>>(
   () => import("./work-finder.tsx").then((module) => ({ default: module.WorkFinder })),
   "Work finder",
@@ -37,10 +46,11 @@ const Inspector = deferred<React.ComponentProps<typeof import("./inspector.tsx")
   "Work inspection",
   "deferred-panel",
 );
-import { workspaceSearch, resourceFromSearch } from "./navigation.ts";
+import { OpenSurface, workspaceSearch, resourceFromSearch } from "./navigation.ts";
 import { useNativeToolRendering } from "./presentation/tools.tsx";
 import { useTheme } from "./theme.tsx";
 import { Button } from "@abracode/presentation/ui/button";
+import { Badge } from "@abracode/presentation/ui/badge";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
 
 export function Application() {
@@ -98,7 +108,7 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
   );
 
   const [canvasWidth, setCanvasWidth] = useState(39);
-  const [attentionOpen, setAttentionOpen] = useState(true);
+  const [attentionOpen, setAttentionOpen] = useState(false);
   const [retainedViews, setRetainedViews] = useState(false);
   const { theme, setTheme } = useTheme();
   const route = useSearch({ from: "/" });
@@ -170,7 +180,11 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
 
   function attach(attachment: DraftAttachment) {
     setDraft({ attachment });
-    if (document.querySelector('[role="dialog"] .inspector')) closeInspector();
+    const composer = document.querySelector<HTMLTextAreaElement>('[aria-label="Message Abra"]');
+    if (document.querySelector('[role="dialog"] .inspector')) {
+      closeInspector(composer);
+      return;
+    }
     requestAnimationFrame(() =>
       document.querySelector<HTMLTextAreaElement>('[aria-label="Message Abra"]')?.focus(),
     );
@@ -183,117 +197,109 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
     );
   }
   return (
-    <div
-      role="presentation"
-      style={{ "--canvas-width": canvasWidth + "%" } as React.CSSProperties}
-      className={`workspace ${selected ? "inspecting" : ""} ${sidebar ? "finding" : ""}`}
-      onKeyDown={(event) => {
-        if ((event.ctrlKey || event.metaKey) && event.key === "f") viewport.onReadingIntent();
-        if (event.key === "Escape" && !event.defaultPrevented) {
-          rememberPosition();
-          setSidebar(false);
-          if (!sidebar) closeInspector();
-        }
-      }}
-    >
-      <header className="topbar">
-        <div className="brand">
-          <Button
-            variant="ghost"
-            aria-label="Toggle work finder"
-            aria-expanded={sidebar}
-            onClick={() => {
-              rememberPosition();
-              setSidebar(!sidebar);
-            }}
-          >
-            Work
-          </Button>
-          <div className="brand-mark">a</div>
-          <strong>AbraCode</strong>
-          <span className="topbar-divider" />
-          <span className="muted">Workspace</span>
-        </div>
-        <div className="topbar-end">
-          <Link to="/settings" className="settings-link">
-            Settings
-          </Link>
-          <span className="connection">
-            <span
-              className={`status-dot ${connectionError ? "blocked" : workspace.busy ? "in_progress" : "open"}`}
-            />
-            <span className="connection-label">
-              {connectionError
-                ? "Reconnecting"
-                : workspace.busy
-                  ? "Abra is working"
-                  : "Abra is ready"}
-            </span>
-          </span>
-          <NativeSelect
-            aria-label="Color theme"
-            className="theme-select"
-            value={theme}
-            onChange={(e) =>
-              setTheme(
-                e.target.value === "light" || e.target.value === "dark" ? e.target.value : "system",
-              )
-            }
-          >
-            <option value="system">System theme</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </NativeSelect>
-        </div>
-      </header>
-      {(sidebar || finderOpened) && (
-        <WorkFinder
-          shown={sidebar}
-          close={() => setSidebar(false)}
-          workspace={workspace}
-          open={open}
-          ask={ask}
-        />
-      )}
-      <main className="main-pane">
-        <header className="conversation-header">
-          <div>
-            <div className="eyebrow">Your main agent</div>
-            <h1>
-              Abra <span className="session-label">One shared session</span>
-            </h1>
+    <OpenSurface.Provider value={navigation.openSurface}>
+      <div
+        role="presentation"
+        style={{ "--canvas-width": canvasWidth + "%" } as React.CSSProperties}
+        className={`workspace ${selected || route.surface ? "inspecting" : ""} ${sidebar ? "finding" : ""}`}
+        onKeyDown={(event) => {
+          if ((event.ctrlKey || event.metaKey) && event.key === "f") viewport.onReadingIntent();
+          if (event.key === "Escape" && !event.defaultPrevented) {
+            rememberPosition();
+            setSidebar(false);
+            if (!sidebar) closeInspector();
+          }
+        }}
+      >
+        <header className="topbar">
+          <div className="brand">
+            <Button
+              variant="ghost"
+              aria-label="Toggle work finder"
+              aria-expanded={sidebar}
+              onClick={() => {
+                rememberPosition();
+                setSidebar(!sidebar);
+              }}
+            >
+              Work
+            </Button>
+            <h1>Abra</h1>
           </div>
-          <Button
-            variant="outline"
-            aria-expanded={attentionOpen}
-            onClick={() => setAttentionOpen(!attentionOpen)}
-          >
-            Attention{" "}
-            <span className="count">
-              {attention + workAttention.length + managementAttention.length}
-              {workspace.work.fleet?.attention_truncated || workspace.work.management?.truncated
-                ? "+"
-                : ""}
-            </span>
-          </Button>
+          <div className="topbar-end">
+            <output className="connection">
+              <span
+                className={`status-dot ${connectionError ? "blocked" : workspace.busy ? "in_progress" : "open"}`}
+              />
+              <span className="connection-label">
+                {connectionError
+                  ? "Reconnecting"
+                  : workspace.busy
+                    ? "Abra is working"
+                    : "Abra is ready"}
+              </span>
+            </output>
+            <Button
+              variant="outline"
+              aria-expanded={attentionOpen}
+              onClick={() => setAttentionOpen(!attentionOpen)}
+            >
+              Attention{" "}
+              <Badge variant="secondary">
+                {attention + workAttention.length + managementAttention.length}
+                {workspace.work.fleet?.attention_truncated || workspace.work.management?.truncated
+                  ? "+"
+                  : ""}
+              </Badge>
+            </Button>
+            <Link
+              to="/settings"
+              className="settings-link header-icon"
+              aria-label="Settings"
+              title="Settings"
+            >
+              <Settings aria-hidden="true" />
+            </Link>
+            <div className="header-icon appearance" title="Color theme">
+              <SunMoon aria-hidden="true" />
+              <NativeSelect
+                aria-label="Color theme"
+                className="theme-select"
+                value={theme}
+                onChange={(e) =>
+                  setTheme(
+                    e.target.value === "light" || e.target.value === "dark"
+                      ? e.target.value
+                      : "system",
+                  )
+                }
+              >
+                <option value="system">System theme</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </NativeSelect>
+            </div>
+          </div>
         </header>
-        <Recap
-          key={workspace.session_id}
-          session={workspace.session_id}
-          work={workspace.work.work}
-          selected={selected}
-          tab={tab}
-          view={JSON.stringify(route)}
-          open={open}
-        />
-        <div
-          className="conversation-scroll"
-          ref={scroller}
-          onScroll={viewport.onScroll}
-          onWheel={viewport.onReadingIntent}
-          onPointerDownCapture={viewport.onReadingIntent}
-          onKeyDownCapture={viewport.onReadingIntent}
-        >
+        {(sidebar || finderOpened) && (
+          <WorkFinder
+            shown={sidebar}
+            close={() => setSidebar(false)}
+            workspace={workspace}
+            open={open}
+            ask={ask}
+          />
+        )}
+        <main className="main-pane">
+          <Recap
+            key={workspace.session_id}
+            session={workspace.session_id}
+            work={workspace.work.work}
+            selected={selected}
+            tab={tab}
+            view={JSON.stringify(route)}
+            open={open}
+          />
           {(attention > 0 ||
             workAttention.length > 0 ||
             managementAttention.length > 0 ||
@@ -304,127 +310,138 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
               workAttention={workAttention}
               attention={attention}
               attentionOpen={attentionOpen}
+              reviewNext={() => setAttentionOpen(true)}
               refresh={refresh}
               open={open}
               inspect={inspect}
             />
           )}
           <div
-            className="transcript"
-            ref={transcript}
-            role="log"
-            aria-label="Conversation with Abra"
+            className="conversation-scroll"
+            ref={scroller}
+            onScroll={viewport.onScroll}
+            onWheel={viewport.onReadingIntent}
+            onPointerDownCapture={viewport.onReadingIntent}
+            onKeyDownCapture={viewport.onReadingIntent}
           >
-            {hasHistory && (
-              <Button
-                variant="ghost"
-                className="load-history"
-                disabled={loadingHistory}
-                onClick={() => {
-                  viewport.beforeHistory();
-                  void loadHistory();
-                }}
-              >
-                {loadingHistory ? "Loading…" : "Load earlier messages"}
-              </Button>
-            )}
-            {!messages.length && (
-              <section className="welcome">
-                <div className="welcome-symbol">
-                  <Sparkles aria-hidden="true" />
+            <div
+              className="transcript"
+              ref={transcript}
+              role="log"
+              aria-label="Conversation with Abra"
+            >
+              {hasHistory && (
+                <Button
+                  variant="ghost"
+                  className="load-history"
+                  disabled={loadingHistory}
+                  onClick={() => {
+                    viewport.beforeHistory();
+                    void loadHistory();
+                  }}
+                >
+                  {loadingHistory ? "Loading…" : "Load earlier messages"}
+                </Button>
+              )}
+              {!messages.length && (
+                <section className="welcome">
+                  <div className="welcome-symbol">
+                    <Sparkles aria-hidden="true" />
+                  </div>
+                  <h2>What would you like to build?</h2>
+                  <p>
+                    Explore an idea, plan your next change, or check on work in progress. Abra
+                    brings it all together.
+                  </p>
+                  <div className="suggestions">
+                    {[
+                      "Show me what needs attention",
+                      "Help me onboard a project",
+                      "Visualize my work in progress",
+                    ].map((text) => (
+                      <Button variant="ghost" key={text} onClick={() => ask(text)}>
+                        {text} <ArrowUpRight aria-hidden="true" />
+                      </Button>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {messages.map((message) => (
+                <MessageContent
+                  key={message.id}
+                  message={message}
+                  work={workspace.work.work}
+                  inspect={inspect}
+                  attachments={attachmentIndex.get(message.id) ?? emptyAttachments}
+                  diagnostics={diagnosticIndex.get(message.id) ?? emptyDiagnostics}
+                />
+              ))}
+              {presentations.truncated && (
+                <output className="muted">
+                  Presentation references exceed this conversation page's coverage. Retained task
+                  reports remain available through inspection.
+                </output>
+              )}
+              {otherViews.length > 0 && (
+                <details
+                  className="retained-views"
+                  open={retainedViews}
+                  onToggle={(event) => setRetainedViews(event.currentTarget.open)}
+                >
+                  <summary>Other retained views ({otherViews.length})</summary>
+                  <p className="muted">
+                    These layouts are outside the loaded message associations. Legacy layouts retain
+                    only the latest known revision and may lack producing-message provenance.
+                  </p>
+                  {retainedViews && (
+                    <RetainedSurfaces
+                      entries={otherViews}
+                      work={workspace.work.work}
+                      inspect={inspect}
+                    />
+                  )}
+                </details>
+              )}
+              {workspace.inbox.map((item) => (
+                <div className="queued-message" key={item.id}>
+                  <span className="pill">Queued · {item.delivery}</span>
+                  <p>{item.text}</p>
                 </div>
-                <h2>What would you like to build?</h2>
-                <p>
-                  Explore an idea, plan your next change, or check on work in progress. Abra brings
-                  it all together.
-                </p>
-                <div className="suggestions">
-                  {[
-                    "Show me what needs attention",
-                    "Help me onboard a project",
-                    "Visualize my work in progress",
-                  ].map((text) => (
-                    <Button variant="ghost" key={text} onClick={() => ask(text)}>
-                      {text} <ArrowUpRight aria-hidden="true" />
-                    </Button>
-                  ))}
-                </div>
-              </section>
-            )}
-            {messages.map((message) => (
-              <MessageContent
-                key={message.id}
-                message={message}
-                work={workspace.work.work}
-                inspect={inspect}
-                attachments={attachmentIndex.get(message.id) ?? emptyAttachments}
-                diagnostics={diagnosticIndex.get(message.id) ?? emptyDiagnostics}
-              />
-            ))}
-            {presentations.truncated && (
-              <output className="muted">
-                Presentation references exceed this conversation page's coverage. Retained task
-                reports remain available through inspection.
-              </output>
-            )}
-            {otherViews.length > 0 && (
-              <details
-                className="retained-views"
-                open={retainedViews}
-                onToggle={(event) => setRetainedViews(event.currentTarget.open)}
-              >
-                <summary>Other retained views ({otherViews.length})</summary>
-                <p className="muted">
-                  These layouts are outside the loaded message associations. Legacy layouts retain
-                  only the latest known revision and may lack producing-message provenance.
-                </p>
-                {retainedViews && (
-                  <RetainedSurfaces
-                    entries={otherViews}
-                    work={workspace.work.work}
-                    inspect={inspect}
-                  />
-                )}
-              </details>
-            )}
-            {workspace.inbox.map((item) => (
-              <div className="queued-message" key={item.id}>
-                <span className="pill">Queued · {item.delivery}</span>
-                <p>{item.text}</p>
-              </div>
-            ))}
-            <div ref={bottom} />
+              ))}
+              <div ref={bottom} />
+            </div>
           </div>
-        </div>
-        <Composer
-          workspace={workspace}
-          isReady={isReady}
-          refresh={refresh}
-          error={error}
-          setError={setError}
-          stateError={stateError}
-          connectionError={connectionError}
-        />
-      </main>
-      {selected && (
-        <AttachSelection.Provider value={attach}>
-          <Inspector
-            width={canvasWidth}
-            resize={setCanvasWidth}
-            issue={selected}
-            work={work}
-            tab={tab}
-            setTab={setTab}
-            close={() => closeInspector()}
-            returnFocus={returnInspectorFocus}
-            forms={workspace.forms}
-            focusForm={focusForm}
-            inspect={inspect}
-            ask={ask}
+          <Composer
+            workspace={workspace}
+            isReady={isReady}
+            refresh={refresh}
+            error={error}
+            setError={setError}
+            stateError={stateError}
+            connectionError={connectionError}
           />
-        </AttachSelection.Provider>
-      )}
-    </div>
+        </main>
+        {(selected || route.surface) && (
+          <AttachSelection.Provider value={attach}>
+            <Inspector
+              width={canvasWidth}
+              resize={setCanvasWidth}
+              issue={selected}
+              surface={route.surface}
+              work={work}
+              tab={tab}
+              setTab={setTab}
+              close={() => closeInspector()}
+              returnFocus={returnInspectorFocus}
+              forms={workspace.forms}
+              focusForm={focusForm}
+              inspect={inspect}
+              ask={ask}
+            />
+          </AttachSelection.Provider>
+        )}
+      </div>
+    </OpenSurface.Provider>
   );
 }
 

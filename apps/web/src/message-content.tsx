@@ -12,7 +12,16 @@ import { Paperclip } from "@abracode/presentation/icons";
 import { orderedParts } from "@abracode/contracts/web/transcript";
 import { Markdown } from "./markdown.tsx";
 import { ToolObservation } from "./presentation/tools.tsx";
-import { MessageAttachment } from "./presentation/attachments.tsx";
+
+const MessageAttachment = deferred<
+  React.ComponentProps<typeof import("./presentation/attachments.tsx").MessageAttachment>
+>(
+  () =>
+    import("./presentation/attachments.tsx").then((module) => ({
+      default: module.MessageAttachment,
+    })),
+  "Retained presentation",
+);
 const SelectedMessage = deferred<{ message: TranscriptMessage }>(
   () => import("./presentation/selected-message.tsx"),
   "Captured selection",
@@ -44,9 +53,6 @@ export const MessageContent = memo(function MessageContent({
   }, [attachments]);
   return (
     <article className={`message ${message.role}`} data-native-message-id={message.id}>
-      <div className="message-avatar">
-        {message.role === "user" ? "You" : message.role === "system" ? "·" : "a"}
-      </div>
       <div className="message-body">
         <header>
           <strong>

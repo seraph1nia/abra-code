@@ -70,6 +70,13 @@ export async function cockpitJourney(input: {
     question: "Which behavior should B keep?",
     owner: "user",
   });
+  const decision = await invoke("abra_work_decision", {
+    action: "collect",
+    issue_id: b,
+    key: "fixture-choice",
+    generation: other.control_generation,
+  });
+  assert.ok(decision.form_id);
   input.holdWorker();
   await start(c);
   await eventually(async () => input.held() || undefined);
@@ -106,11 +113,16 @@ export async function cockpitJourney(input: {
     await page.goto(web.origin + "/?issue=" + a + "&tab=Diff");
     const resource = page.getByRole("region", { name: "cockpit.txt", exact: true });
     await resource.getByText("Select lines in cockpit.txt").click();
-    await resource.getByRole("button", { name: "Ask Abra about selection" }).click();
+    await resource.getByRole("button", { name: "Ask Abra", exact: true }).click();
     await page.getByLabel("Message Abra").fill("Why this deadline?");
     await page.goto(web.origin + "/?issue=" + b + "&tab=Overview");
     await page.getByText("Which behavior should B keep?", { exact: true }).first().waitFor();
     assert.match(await page.locator(".selection-chip summary").innerText(), new RegExp(a));
+    await page.reload();
+    const form = page.getByRole("button", { name: "Answer in native form" });
+    await form.click();
+    await page.locator(`[data-native-form-id="${decision.form_id}"]:focus`).waitFor();
+    assert.equal(await page.getByLabel("Message Abra").inputValue(), "Why this deadline?");
     await input.holdAbra();
     const queued = await Effect.runPromise(
       backend.submit({
@@ -135,7 +147,7 @@ export async function cockpitJourney(input: {
     });
     await page.goto(web.origin + "/?issue=" + c + "&tab=Overview");
     await page.reload();
-    await page.getByText(/cockpit.txt · Captured selection/).click();
+    await page.getByText(/cockpit.txt · additions 1–1 · Captured selection/).click();
     await page.getByText("The original deadline is 50ms.", { exact: true }).waitFor();
     await page.getByText(/Abra answered · The captured deadline was 50ms/).waitFor();
     const scoped = await Effect.runPromise(backend.receipt(admitted.request_id));
@@ -148,7 +160,12 @@ export async function cockpitJourney(input: {
     );
     await page.goto(web.origin + "/?issue=" + a + "&tab=Verification");
     await page.getByRole("button", { name: "Inspect changes" }).waitFor();
-    await page.getByText(/cockpit.txt · Captured selection/).click();
+    const failure = page.locator(".inspector").getByRole("alert");
+    await failure.getByRole("button", { name: "Retry" }).waitFor();
+    await page.unroute("**/api/work/verification?*");
+    await failure.getByRole("button", { name: "Retry" }).click();
+    await page.getByRole("heading", { name: "Controller checks" }).waitFor();
+    await page.getByText(/cockpit.txt · additions 1–1 · Captured selection/).click();
     await page.getByText("The original deadline is 50ms.", { exact: true }).waitFor();
     if (input.evidence) {
       await mkdir(input.evidence, { recursive: true });
@@ -164,7 +181,7 @@ export async function cockpitJourney(input: {
         await ab("open", web.origin + "/?issue=" + a + "&tab=Verification");
         await ab("set", "viewport", "1550", "940");
         await ab("wait", "--text", "Inspect changes");
-        await ab("find", "text", "cockpit.txt · Captured selection", "click");
+        await ab("find", "text", "cockpit.txt · additions 1–1 · Captured selection", "click");
         await ab("wait", "--text", "The captured deadline was 50ms.");
         await ab("screenshot", join(input.evidence, "desktop.png"));
         await writeFile(join(input.evidence, "desktop.txt"), (await ab("snapshot")).stdout);
@@ -173,7 +190,7 @@ export async function cockpitJourney(input: {
         await writeFile(join(input.evidence, "narrow.txt"), (await ab("snapshot")).stdout);
         await writeFile(
           join(input.evidence, "steps.md"),
-          "1. Attach the original deadline on A.\n2. Inspect the user-owned decision on B.\n3. Steer the held Abra turn with A still attached. Drop the first response after native admission.\n4. Change the worktree, record the linked answer, reload while C is running, and reopen the original excerpt.\n5. Fail an issue-specific verification read and keep the question accessible.\n6. Open the verified route in the named agent-browser session at desktop and narrow widths.\n",
+          "1. Attach the original deadline on A.\n2. Inspect the user-owned decision on B, reload, open its bound native form, and check the draft.\n3. Steer the held Abra turn with A still attached. Drop the first response after native admission.\n4. Change the worktree, record the linked answer, reload while C is running, and reopen the original excerpt.\n5. Fail an issue-specific verification read, recover with its local Retry, and keep the question accessible.\n6. Open the verified route in the named agent-browser session at desktop and narrow widths.\n",
         );
       } finally {
         await ab("close");

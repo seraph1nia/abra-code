@@ -35,9 +35,13 @@ export const selectedReceiptQuery = (request_id: string, issue: string) =>
   WorkspaceApi.query("workspace", "receipt", { query: { request_id }, ...queryOptions(issue) });
 export const historyQuery = (cursor: string) =>
   WorkspaceApi.query("workspace", "history", { query: { cursor }, timeToLive: "30 seconds" });
-export const surfaceQuery = (id: string, revision: number) =>
+export const surfaceQuery = (
+  id: string,
+  revision: number,
+  session?: import("@abracode/contracts/identities").SessionId,
+) =>
   WorkspaceApi.query("workspace", "surface", {
-    query: { surface_id: id, revision },
+    query: { surface_id: id, revision, ...(session ? { session_id: session } : {}) },
     timeToLive: "30 seconds",
   });
 /** Exact preparation is a read, even though its typed endpoint takes a POST body. */

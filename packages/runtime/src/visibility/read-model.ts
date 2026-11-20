@@ -269,7 +269,8 @@ export class Visibility {
     this.fleet = next;
     if (changed) yield* committedScope({ fleet: true });
   });
-  feedback = (issue: IssueId, page = 0) => this.c.feedback(issue, page);
+  feedback = (issue: IssueId, page = 0, finding_id?: string, revision?: string) =>
+    this.c.feedback(issue, page, finding_id, revision);
   find = (input: WorkDiscovery = {}) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {

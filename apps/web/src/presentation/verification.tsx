@@ -7,15 +7,26 @@ import { Button } from "@abracode/presentation/ui/button";
 import { queries } from "../work-data.ts";
 import { RequestState } from "../request-state.tsx";
 
-export function VerificationPanel({ work, inspect }: { work: WebWorkItem; inspect: Inspect }) {
+export function VerificationPanel({
+  work,
+  inspect,
+  decision,
+  focusForm,
+}: {
+  work: WebWorkItem;
+  inspect: Inspect;
+  decision?: string;
+  focusForm: (id: string) => void;
+}) {
   const research = work.policy === "research-only";
   const label = research
     ? "Research contract"
     : work.policy === "lightweight-fix"
       ? "Lightweight scope"
       : "OpenSpec plan";
-  return (
-    <section className="verification-evidence" aria-label="Verification evidence">
+  const actions = (
+    <>
+      {decision && <Button onClick={() => focusForm(decision)}>Answer current decision</Button>}
       <h3>{label}</h3>
       <div className="button-row">
         <Button
@@ -37,13 +48,49 @@ export function VerificationPanel({ work, inspect }: { work: WebWorkItem; inspec
           {research ? "Inspect research report" : "Inspect changes"}
         </Button>
       </div>
-      <RequestState query={queries.verification(work.issue_id)}>
+    </>
+  );
+  return (
+    <section className="verification-evidence" aria-label="Verification evidence">
+      <RequestState query={queries.verification(work.issue_id)} unavailable={actions}>
         {(result) => (
           <>
-            {result.plan && (
+            <h3>Controller checks</h3>
+            {!result.checks.length && <p>No check receipt is available.</p>}
+            {!!result.checks.length && (
               <p>
-                Scope fingerprint <code>{result.plan}</code>
+                {result.checks.some((check) => check.fingerprint === result.observed)
+                  ? "Checks passed on the observed content."
+                  : result.observed
+                    ? "Earlier checks passed. Current content has no matching check receipt."
+                    : "An earlier check passed. Current content is unconfirmed."}
               </p>
+            )}
+            <h3>Independent Review</h3>
+            {result.review ? (
+              <>
+                <p>
+                  {result.review.passed ? "Passed" : "Findings reported"} by{" "}
+                  {result.review.session_id} ·{" "}
+                  {result.review.fingerprint === result.observed
+                    ? "matches observed content"
+                    : "current revision unconfirmed"}
+                </p>
+                <details>
+                  <summary>Review evidence</summary>
+                  <code>{result.review.fingerprint}</code>
+                  <p>{result.review.findings}</p>
+                </details>
+              </>
+            ) : (
+              <p>No independent review receipt is available.</p>
+            )}
+            {actions}
+            {result.plan && (
+              <details>
+                <summary>Scope fingerprint</summary>
+                <code>{result.plan}</code>
+              </details>
             )}
             {result.scope && (
               <>
@@ -55,8 +102,6 @@ export function VerificationPanel({ work, inspect }: { work: WebWorkItem; inspec
                 </ul>
               </>
             )}
-            <h3>Controller checks</h3>
-            {!result.checks.length && <p>No check receipt is available.</p>}
             {result.checks.map((check) => (
               <details key={check.fingerprint}>
                 <summary>
@@ -97,22 +142,6 @@ export function VerificationPanel({ work, inspect }: { work: WebWorkItem; inspec
             {result.evidence?.map((item) => (
               <RetainedAsset key={item.request_id} receipt={item} />
             ))}
-            <h3>Independent Review</h3>
-            {result.review ? (
-              <>
-                <p>
-                  {result.review.passed ? "Passed" : "Findings reported"} by{" "}
-                  {result.review.session_id} ·{" "}
-                  {result.review.fingerprint === result.observed
-                    ? "matches observed content"
-                    : "current revision unconfirmed"}
-                </p>
-                <code>{result.review.fingerprint}</code>
-                <p>{result.review.findings}</p>
-              </>
-            ) : (
-              <p>No independent review receipt is available.</p>
-            )}
           </>
         )}
       </RequestState>
