@@ -38,7 +38,55 @@ const current = () =>
         ],
       }
     : undefined;
-if (args[0] === "pr") {
+if (state.inboxFixture && args[0] === "auth") output("fixture-credential");
+else if (state.inboxFixture && args[0] === "api" && args[1] === "--hostname") {
+  if (args[2] !== "inbox.invalid") throw Error("Foreign host");
+  const query = args.find((a) => a.startsWith("query=")) ?? "";
+  const root = state.remote,
+    info = { endCursor: null, hasNextPage: false };
+  const item = (pr, n, title) => ({
+    id: (pr ? "PR" : "Issue") + n,
+    number: n,
+    url: root + (pr ? "/pull/" : "/issues/") + n,
+    title,
+    state: "OPEN",
+    updatedAt: new Date().toISOString(),
+    author: { login: pr ? "colleague" : "operator" },
+    labels: { nodes: [], pageInfo: info },
+    ...(pr ? { isDraft: false } : {}),
+  });
+  const issue = item(false, 42, "Fix export retries"),
+    pr = item(true, 91, "Review retry messaging");
+  if (args[3] === "graphql") {
+    const selected = query.includes("pullRequest");
+    const node = selected ? pr : issue;
+    const repository = { id: "fixture-repo", url: root };
+    if (query.includes("item:"))
+      repository.item = {
+        ...node,
+        body: "Inspect the retry message.",
+        comments: {
+          nodes: [{ author: { login: "colleague" }, body: "Ready for review." }],
+          totalCount: 1,
+        },
+        ...(selected
+          ? { baseRefOid: "b".repeat(40), headRefOid: "a".repeat(40), changedFiles: 1 }
+          : {}),
+      };
+    else
+      repository.items = {
+        nodes: selected
+          ? [pr, ...(state.pr ? [item(true, 1, "Deliver export fix")] : [])]
+          : [issue],
+        pageInfo: info,
+      };
+    output({ data: { viewer: { id: "fixture-user" }, repository } });
+  } else if (args[3]?.includes("/pulls/91/files?"))
+    output([
+      { filename: "retry.ts", patch: "@@ -0,0 +1 @@\n+retry()", additions: 1, deletions: 0 },
+    ]);
+  else throw Error("Unexpected inbox read");
+} else if (args[0] === "pr") {
   if (args[1] === "list") {
     output(state.pr ? [current()] : []);
   } else if (args[1] === "create") {
@@ -46,7 +94,9 @@ if (args[0] === "pr") {
     state.branch = arg("--head");
     state.base = arg("--base");
     state.pr = {
-      url: "https://example.invalid/fixture/api/pull/1",
+      url: state.inboxFixture
+        ? state.remote + "/pull/1"
+        : "https://example.invalid/fixture/api/pull/1",
       state: "OPEN",
       headRefOid: remoteHead(state.branch),
       baseRefName: state.base,

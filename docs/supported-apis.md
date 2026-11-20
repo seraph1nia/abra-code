@@ -711,3 +711,7 @@ regular-file checks, content signatures and SHA-256. Retained native storage kee
 preview bytes independent of worktree retirement. The pinned A2UI 0.15.0 catalog
 loader, MessageProcessor v1.0 and React component implementations render the
 separate review catalog; its controls never enter the saved evidence catalog.
+
+## GitHub inbox
+
+The native inbox uses the configured `gh` executable. A local `gh auth token --hostname HOST` lookup partitions cached responses by active credential. Only its digest enters the partition key. Inventory and detail use `gh api --hostname HOST graphql` with fixed queries, repository variables and returned repository/item identity checks. The issue and pull-request connections each page 50 summaries ordered by update time. A selected item adds its body and ten recent comments. Label and discussion truncation are reported. Review reads the REST changed-files endpoint in pages of 100, bounded by 3,000 files and 64 KiB of patch evidence, between matching PR base and head reads. [GitHub repository connections](https://docs.github.com/en/graphql/reference/repos#repository) · [GitHub changed files](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests-files)

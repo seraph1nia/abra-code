@@ -23,7 +23,10 @@ export class Controller {
   }
   validation = (...args: Parameters<ValidationCommands["command"]>) =>
     this.services.validation.command(...args);
-  close = () => this.services.execution.close;
+  get inbox() {
+    return this.services.inbox;
+  }
+  close = () => this.inbox.close().pipe(Effect.andThen(this.services.execution.close));
   prAction = (...args: Parameters<VerificationCommands["prAction"]>) =>
     this.services.verification.prAction(...args);
   feedbackDisposition = (...args: Parameters<VerificationCommands["feedbackDisposition"]>) =>

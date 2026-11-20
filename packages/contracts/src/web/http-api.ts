@@ -1,3 +1,4 @@
+import { InboxQuery, InboxPage, InboxTarget, InboxDetail } from "../visibility/github-inbox.ts";
 import { EvidenceDataSchema, EvidenceQuerySchema } from "./worker-evidence.ts";
 import { VerificationViewSchema } from "./verification.ts";
 import { PrepareDiagramSelectionSchema } from "./diagram-actions.ts";
@@ -167,6 +168,16 @@ export const workspaceApi = HttpApi.make("abra-workspace")
         success: BindingReadSchema,
         error,
       }),
+      HttpApiEndpoint.get("githubInbox", "/api/work/github", {
+        query: InboxQuery,
+        success: InboxPage,
+        error,
+      }),
+      HttpApiEndpoint.get("githubItem", "/api/work/github/item", {
+        query: InboxTarget,
+        success: InboxDetail,
+        error,
+      }),
       HttpApiEndpoint.get("find", "/api/work/find", {
         query: WorkDiscoveryQuery,
         success: WorkPageSchema,
@@ -315,6 +326,8 @@ export const workspaceApi = HttpApi.make("abra-workspace")
 /** Fixed retained-work reads. Types follow the HTTP owner, including decoded numeric queries. */
 export type WorkReadName =
   | "binding"
+  | "githubInbox"
+  | "githubItem"
   | "find"
   | "leads"
   | "evidence"

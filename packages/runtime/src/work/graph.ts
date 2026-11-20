@@ -1,3 +1,4 @@
+import { InboxIndex, inboxTables, type SourceLink } from "./inbox-index.ts";
 import { DispatchSchema } from "../config/dispatch.ts";
 import {
   BatchInputSchema,
@@ -71,7 +72,8 @@ export type TaskEvidence = Omit<TaskIssue, "issue"> & { id: IssueId };
 type Row = Record<string, SQLOutputValue>;
 /** All ownership checks and writes are atomic, including across independent processes. */
 export interface WorkGraph {
-  create(input: NewIssue): Effect.Effect<Issue, CrewError>;
+  readonly inbox: InboxIndex;
+  create(input: NewIssue, source?: SourceLink): Effect.Effect<Issue, CrewError>;
   createBatch(input: BatchInput): Effect.Effect<typeof BatchResultSchema.Type, CrewError>;
   show(id: IssueId): Effect.Effect<Issue, CrewError>;
   repositoryIssueSummaries(
@@ -113,11 +115,13 @@ const decodeIssue = Schema.decodeUnknownSync(IssueSchema);
 
 /** A scoped connection. Transactions contain only synchronous SQL and domain checks. */
 export class SqliteWorkGraph implements WorkGraph {
+  readonly inbox: InboxIndex;
   private validatedVersion?: number;
   private constructor(
     private db: DatabaseSync,
     private readonly nextId: (request: RequestId) => IssueId,
   ) {
+    this.inbox = new InboxIndex(db);
     // SQLite lower() is ASCII-only; preserve the existing JavaScript Unicode search.
     db.function("abracode_lower", { deterministic: true }, (value) => String(value).toLowerCase());
   }
@@ -150,7 +154,8 @@ export class SqliteWorkGraph implements WorkGraph {
               version === 6 ||
               version === 7 ||
               version === 8 ||
-              version === 9,
+              version === 9 ||
+              version === 10,
             "WORK_DATABASE_VERSION",
             `Unsupported work database version ${String(version)}`,
           );
@@ -190,6 +195,7 @@ export class SqliteWorkGraph implements WorkGraph {
             CREATE INDEX IF NOT EXISTS issues_repository_priority ON issues(repository_id, priority, id);
             CREATE INDEX IF NOT EXISTS issues_status ON issues(status, priority, id);
           `);
+          db.exec(inboxTables);
           const columns = db.prepare("PRAGMA table_info(issues)").all();
           if (!columns.some((c) => c.name === "scope_json"))
             db.exec("ALTER TABLE issues ADD COLUMN scope_json TEXT");
@@ -230,7 +236,7 @@ export class SqliteWorkGraph implements WorkGraph {
           }
           const empty = !db.prepare("SELECT 1 FROM dependencies LIMIT 1").get();
           const versionStamp = graph.dataVersion();
-          db.exec("PRAGMA user_version = 9; COMMIT");
+          db.exec("PRAGMA user_version = 10; COMMIT");
           if (empty) graph.validatedVersion = versionStamp;
         } catch (error) {
           db.exec("ROLLBACK");
@@ -427,9 +433,11 @@ export class SqliteWorkGraph implements WorkGraph {
       );
   }
 
-  create(input: NewIssue) {
+  create(input: NewIssue, source?: SourceLink) {
     return sqlEffect((at) =>
       this.transaction(() => {
+        const linked = source && this.inbox.source(source);
+        if (linked) return this.issue(linked);
         const request = normalizeIssue(input);
         const encoded = JSON.stringify(request);
         ensure(
@@ -443,6 +451,7 @@ export class SqliteWorkGraph implements WorkGraph {
           .prepare("SELECT id, request_input FROM issues WHERE request_id = ?")
           .get(request.request_id);
         if (saved) {
+          ensure(!source, "REQUEST_REBIND", "Request identity already belongs to ordinary intake");
           ensure(
             JSON.stringify(
               normalizeIssue(Schema.decodeSync(SavedRequestSchema)(String(saved.request_input))),
@@ -464,6 +473,7 @@ export class SqliteWorkGraph implements WorkGraph {
           status: "open",
         };
         this.insert(issue, encoded);
+        if (source) this.inbox.link(issue.id, source);
         const link = this.db.prepare(
           "INSERT INTO dependencies (issue_id, dependency_id) VALUES (?, ?)",
         );

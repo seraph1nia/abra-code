@@ -104,6 +104,7 @@ export interface LeadCommands extends Pick<
   "principal" | "control" | "action" | "scan" | "prompt"
 > {}
 export interface ControllerServices {
+  readonly inbox: import("../work/github-inbox.ts").GithubInbox;
   readonly queries: Queries;
   readonly admission: AdmissionCommands;
   readonly execution: ExecutionCommands;

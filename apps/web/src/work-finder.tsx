@@ -1,3 +1,4 @@
+import { GithubInbox } from "./github-inbox.tsx";
 import { useEffect, useState } from "react";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import type { WorkDiscovery } from "@abracode/contracts/visibility/discovery-contracts";
@@ -22,7 +23,7 @@ export function WorkFinder({
   shown: boolean;
   close: () => void;
   workspace: WorkspaceSnapshot;
-  open: (id: string) => void;
+  open: (id: string, tab?: "Reports") => void;
   ask: (text: string) => void;
 }) {
   const mobile = useMediaQuery("(max-width: 760px)");
@@ -58,7 +59,7 @@ export function WorkFinder({
       <Input
         className="search"
         aria-label="Search work"
-        placeholder="Search all retained work…"
+        placeholder="Search work…"
         value={search}
         onChange={(event) => setSearch(event.target.value)}
       />
@@ -77,6 +78,14 @@ export function WorkFinder({
           </option>
         ))}
       </NativeSelect>
+      {shown && (
+        <GithubInbox
+          query={{ repository_id: query.repository_id, search: settled }}
+          ask={ask}
+          open={open}
+        />
+      )}
+      <h3>Local work</h3>
       <div className="work-filters">
         {(["active", "closed", "all"] as const).map((next) => (
           <Button

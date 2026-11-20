@@ -1,3 +1,9 @@
+import {
+  InboxQuery,
+  InboxPage,
+  InboxTarget,
+  InboxDetail,
+} from "@abracode/contracts/visibility/github-inbox";
 import { ContentHash } from "../identities.ts";
 import { EvidenceDataSchema, EvidenceQuerySchema } from "@abracode/contracts/web/worker-evidence";
 import { VerificationViewSchema } from "@abracode/contracts/web/verification";
@@ -203,6 +209,16 @@ export const visibility = Rpc.define({
         parseOptions: { onExcessProperty: "error", reportInput: false },
       }),
       output: Schema.toStandardSchemaV1(BindingReadSchema),
+    },
+    githubInbox: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(InboxQuery),
+      output: Schema.toStandardSchemaV1(InboxPage),
+    },
+    githubItem: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(InboxTarget),
+      output: Schema.toStandardSchemaV1(InboxDetail),
     },
     find: {
       errors: observerErrors,

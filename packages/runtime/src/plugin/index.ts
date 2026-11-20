@@ -1,3 +1,4 @@
+import { InboxPage, InboxDetail } from "@abracode/contracts/visibility/github-inbox";
 import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
 import { VerificationViewSchema } from "@abracode/contracts/web/verification";
 import { BindingReadSchema } from "@abracode/contracts/web/bindings";
@@ -155,6 +156,16 @@ export const createPlugin = (
         // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native RPC registration exposes an open error channel.
         const registration = yield* ctx.rpc.register(visibility, {
           binding: read(BindingReadSchema, (query) => observer.binding(query)),
+          githubInbox: read(InboxPage, (query) =>
+            central
+              ? c.inbox.list(query)
+              : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central work inbox")),
+          ),
+          githubItem: read(InboxDetail, (query) =>
+            central
+              ? c.inbox.detail(query)
+              : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central work inbox")),
+          ),
           find: read(WorkPageSchema, (query) => observer.find(query)),
           leads: read(LeadEvidencePageSchema, (query) => c.queries.leadEvidence(query)),
           messages: read(

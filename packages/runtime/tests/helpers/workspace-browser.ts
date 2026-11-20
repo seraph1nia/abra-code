@@ -316,6 +316,8 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
             observed_at: source.value.at,
           };
         }),
+      githubInbox: source.work.githubInbox,
+      githubItem: source.work.githubItem,
       find: operation("find", WorkPageSchema),
       leads: operation("leads", LeadEvidencePageSchema),
       evidence: operation("evidence", EvidenceDataSchema),

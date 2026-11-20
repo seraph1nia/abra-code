@@ -1,3 +1,6 @@
+import { GithubInbox } from "../work/github-inbox.ts";
+import { Forge } from "../git/forge.ts";
+import { InboxForge } from "../git/inbox.ts";
 import { ExecutionRecovery } from "../workflow/execution-recovery.ts";
 import { Authorizations, CheckpointEvidence } from "../workflow/authorization.ts";
 import { WorkAdmission } from "../workflow/admission.ts";
@@ -238,6 +241,12 @@ export function createWorkflow(
     advancement.workMessage,
   );
   const controller = new Controller({
+    inbox: new GithubInbox(
+      new InboxForge(new Forge(git.runner, config.commands.forge)),
+      work.inbox,
+      records,
+      admission,
+    ),
     queries,
     admission,
     execution: advancement,

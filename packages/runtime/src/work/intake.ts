@@ -56,8 +56,13 @@ export class WorkIntake {
     domainEffect,
   );
   create = Effect.fn("WorkIntake.create")(
-    function* (this: WorkIntake, input: WorkInput, supervisor: SessionId) {
-      return yield* this.work.create(yield* this.prepare(input, supervisor));
+    function* (
+      this: WorkIntake,
+      input: WorkInput,
+      supervisor: SessionId,
+      source?: import("./inbox-index.ts").SourceLink,
+    ) {
+      return yield* this.work.create(yield* this.prepare(input, supervisor), source);
     }.bind(this),
     domainEffect,
   );

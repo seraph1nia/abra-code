@@ -373,6 +373,8 @@ test("bounded supervision projection preserves record history and exposes read-o
     "evidence",
     "feedback",
     "find",
+    "githubInbox",
+    "githubItem",
     "leads",
     "messages",
     "overview",

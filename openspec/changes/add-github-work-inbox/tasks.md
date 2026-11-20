@@ -1,0 +1,25 @@
+# Tasks
+
+## 1. Read the registered repositories
+
+- [x] 1.1 Extend the native forge adapter with typed inbox summaries and selected-item detail. Reuse `Forge.run/json`, verified origin and the configured CLI. Send fixed GraphQL queries with explicit repository variables and host, independent issue and PR cursors, remote state and label arguments. Fetch recent comments only for the selected item. Document the fields, commands and bounds in `docs/supported-apis.md`. Exercise the actual argv and decoders with the fake forge, including private projects, fork PR identity, absent authors, partial labels and ambient host/repository overrides.
+- [x] 1.2 Aggregate pages across registered GitHub origins independently of delivery policy. Keep continuation scoped to the filters, repository and kind, bound parallel reads, deduplicate by stable identity and disclose partial coverage or stale data. Verify a later-page match, more than one repository, a non-GitHub origin, missing authentication, rate limiting, GraphQL errors with partial data and a repeated cursor. One unavailable project must leave the others usable.
+
+- [x] 1.3 Implement and test an indexed SQLite summary cache with account-scoped checkpoints, fair bounded paging, incremental all-state catch-up, open reconciliation, access isolation, expiry and backoff. Simulate interruption, restart, remote closure, account switch and cache pruning. Verify local assignments survive.
+- [x] 1.4 Share in-flight refreshes across chat and browser, apply five-minute freshness and bounded detail retention, and exercise the cold, stale and warm paths with counted forge calls. Verify hidden and idle workspaces perform no inventory reads.
+
+## 2. Connect GitHub items to local work
+
+- [x] 2.1 Add durable, uniquely constrained source and review links to the SQLite graph. Join existing controller publication records by verified repository and PR reference for delivery. Project role and local task status separately. Test upgrade from a populated database, same-number items in different repositories, old delivery records, an unrelated PR by the same author and overlapping review/delivery roles.
+- [x] 2.2 Implement explicit issue pickup in the controller through `WorkIntake`. Re-observe the selected source, retain its accepted snapshot and commit task creation and link together. Resolve existing equivalent requests before creating work and surface conflicting intent. Exercise two SQLite connections, failed validation, lost responses, restart and edited or closed sources. Document pickup and the behavior of subsequent refreshes in the supervisor's work-intake guidance.
+- [x] 2.3 Implement explicit private PR review through the existing research-only workflow. Bind the PR, base and head before and after reading paginated `GET /repos/{owner}/{repo}/pulls/{number}/files` with the same CLI. Supply the observed diff to Research, record coverage against the PR's changed-file count and identify absent or truncated patches, API limits and changed revisions. Retain findings with the reviewed revision in the local report. Test fork PRs, retry, partial diffs, head movement, and a finished report with the PR still open. Document that this action requests a private review. [GitHub changed-files endpoint](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests-files)
+
+## 3. Surface the inbox in Abra and Work
+
+- [x] 3.1 Expose shared discovery and detail contracts through native supervisor tools and the authenticated web read path. Add explicit assignment tools bound to registered items and ordinary management policy. Update Abra's instructions for “What's open?”, “Pick up this issue” and “Review this PR”. Verify observation has no intake effect, ambiguous item numbers require repository context, and private status reports distinguish local outcomes from changes observed on GitHub.
+- [x] 3.2 Extend the default Work finder and canvas with the shared inventory, optional filters, pagination and coverage feedback. Use typed external selections independently of local issue IDs. Preserve local-only navigation and chat drafts, and target pickup/review requests through the existing composer. Update `docs/web-workspace.md`. Rebuild the frontend and run browser coverage for default visibility, filter reset, merged history, linked work, partial reads and selecting an external item before intake.
+
+## 4. Verify the complete journey
+
+- [x] 4.1 Drive the disposable native/browser journey with a fake GitHub CLI and temporary repositories. Discover an unlabeled issue, pick it up twice, inspect its controller-owned PR, then review a colleague's fork PR and open the retained report after restart. Confirm consistent chat and finder results and independent local/remote closure. Follow the project's verification recipe and retain observations and screenshots using the project-local agent-browser workflow.
+- [x] 4.2 Run strict OpenSpec validation, `pnpm check` and `pnpm test:all` on the completed implementation. Verify all forge fixtures ran against disposable resources.

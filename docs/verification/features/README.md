@@ -32,3 +32,5 @@ recovery, legacy compatibility, offline sandbox and native handoff limits.
 [Combined expansion acceptance](expansion-acceptance.md) — three policies, two-slot
 automatic work, retained human decision, model selection, finding/acknowledgement,
 independent Review, delivery, portable architecture report and restart.
+
+For the GitHub inbox, set `ABRACODE_TEST_JOURNEY=github-inbox` and `ABRACODE_TEST_EVIDENCE_DIR` to a fresh temporary directory, then run `pnpm test:one packages/runtime/tests/extended/native.test.ts`. The local forge serves an unlabeled issue and a colleague’s PR. The journey checks repeated pickup, private findings, controller delivery and report navigation after restart. It retains Work and PR screenshots, accessibility snapshots and reproduction steps.

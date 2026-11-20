@@ -1,3 +1,9 @@
+import {
+  InboxQuery,
+  InboxPage,
+  InboxTarget,
+  InboxDetail,
+} from "@abracode/contracts/visibility/github-inbox";
 import { isActiveWorker } from "../workflow/worker-assignment.ts";
 import {
   WorkerReferenceSchema,
@@ -66,6 +72,34 @@ export function registerTools(
     Effect.gen(function* () {
       const definitions = [
         workSurfaceTool(ctx, c),
+        define({
+          name: "github_inbox",
+          diagnostic: true,
+          description:
+            "Discover all open GitHub issues and PRs in registered projects. Results include local roles, total cached matches and per-project coverage. Read again to continue incomplete coverage.",
+          input: InboxQuery,
+          output: InboxPage,
+          run: (query) => c.inbox.list(query),
+        }),
+        define({
+          name: "github_item",
+          diagnostic: true,
+          description: "Read the selected GitHub item, recent discussion and local assignments.",
+          input: InboxTarget,
+          output: InboxDetail,
+          run: (target) => c.inbox.detail(target),
+        }),
+        define({
+          name: "github_assign",
+          description:
+            "Explicitly pick up a GitHub issue or privately review a PR. Use the exact identity from github_inbox. Reuse the original instructions on retry.",
+          input: Schema.Struct({
+            ...InboxTarget.fields,
+            instructions: Schema.optional(Schema.String.check(Schema.isMaxLength(8192))),
+          }),
+          output: IssueId,
+          run: (a, s) => c.inbox.assign(a, s, a.instructions),
+        }),
         define({
           name: "selection_answer",
           description:

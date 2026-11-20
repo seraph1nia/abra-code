@@ -319,12 +319,12 @@ test("early SQLite schema upgrades preserve work, ownership and history", async 
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 9);
-    verify.exec("PRAGMA user_version = 10");
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 10);
+    verify.exec("PRAGMA user_version = 11");
   } finally {
     verify.close();
   }
-  await assert.rejects(run(SqliteWorkGraph.open(path)), /Unsupported work database version 10/);
+  await assert.rejects(run(SqliteWorkGraph.open(path)), /Unsupported work database version 11/);
 });
 
 test("workflow/scope/report identities are persisted and cannot rebind a request; legacy full-spec input retries compatibly", async (t) => {
@@ -509,7 +509,7 @@ for (const version of [3, 4, 5])
     );
     const verify = new DatabaseSync(path);
     try {
-      assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 9);
+      assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 10);
       assert.equal(
         verify.prepare("SELECT request_input FROM issues WHERE id = ?").get(issue.id)!
           .request_input,
@@ -611,7 +611,7 @@ test("schema-5 batch receipts keep original mapping while new task dispatch is d
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 9);
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 10);
     assert.equal(
       verify.prepare("SELECT request_input FROM work_batches").get()!.request_input,
       receipt,
@@ -704,7 +704,7 @@ test("version-6 migration preserves old request bytes while new schema/approval 
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 9);
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 10);
     assert.equal(
       verify.prepare("SELECT request_input FROM issues WHERE id = ?").get(old.id)!.request_input,
       original,

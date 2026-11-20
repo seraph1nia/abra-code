@@ -1,3 +1,4 @@
+import { InboxPage, InboxDetail } from "@abracode/contracts/visibility/github-inbox";
 import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
 import { VerificationViewSchema } from "@abracode/contracts/web/verification";
 import { reviewGroup } from "@abracode/contracts/web/review-api";
@@ -147,6 +148,14 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
       validated(read(query), schema);
   const work = HttpApiBuilder.group(api, "work", (handlers) =>
     handlers
+      .handle(
+        "githubInbox",
+        workRead((q) => backend.work.githubInbox(q), InboxPage),
+      )
+      .handle(
+        "githubItem",
+        workRead((q) => backend.work.githubItem(q), InboxDetail),
+      )
       .handle(
         "binding",
         workRead((q) => backend.work.binding(q), BindingReadSchema),

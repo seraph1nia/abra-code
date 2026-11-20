@@ -89,7 +89,12 @@ export class WorkAdmission {
     domainEffect,
   );
   createWork = Effect.fn("WorkAdmission.createWork")(
-    function* (this: WorkAdmission, input: WorkInput, supervisor: SessionId) {
+    function* (
+      this: WorkAdmission,
+      input: WorkInput,
+      supervisor: SessionId,
+      source?: import("../work/inbox-index.ts").SourceLink,
+    ) {
       input = yield* this.prepareIntake(input);
       return yield* this.locked(() =>
         domainEffect(
@@ -99,7 +104,7 @@ export class WorkAdmission {
               this.c.records,
               this.c.config.default_workflow,
               this.c.config,
-            ).create(input, supervisor);
+            ).create(input, supervisor, source);
             const readiness = (yield* this.c.queries.readinessFor([issue.id])).get(issue.id);
             return { issue, readiness };
           }),

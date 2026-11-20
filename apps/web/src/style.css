@@ -314,6 +314,7 @@
 }
 
 .sidebar {
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 17px;
@@ -362,6 +363,9 @@
   flex-direction: column;
   gap: 5px;
   margin: 0 -3px;
+}
+.sidebar > .work-list:not(:empty) {
+  min-height: 7rem;
 }
 .work-nav {
   text-align: left;

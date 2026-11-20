@@ -167,6 +167,8 @@ export class WorkspaceFixture implements WebBackend {
           observed_at: this.value.at,
         };
       }),
+    githubInbox: () => Effect.succeed({ entries: [], total: 0, coverage: [] }),
+    githubItem: this.unavailableRead,
     find: this.unavailableRead,
     leads: this.unavailableRead,
     evidence: this.unavailableRead,

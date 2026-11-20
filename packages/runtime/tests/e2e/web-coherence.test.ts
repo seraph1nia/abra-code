@@ -2873,3 +2873,86 @@ test("an optional inspector chunk has local accessible loading/error states and 
   assert.equal(await composer.inputValue(), "Keep this draft while inspection is unavailable");
   assert.equal(f.source.submissions, 0);
 });
+
+test("GitHub finder loads on demand, preserves drafts on inspection and exposes partial history", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage();
+  const reads: string[] = [];
+  const pr = {
+    repository_id: "api",
+    repo_node: "repo",
+    item_node: "pr",
+    kind: "pr",
+    number: 91,
+    url: "https://github.com/fixture/api/pull/91",
+    title: "Retry download",
+    author: "colleague",
+    labels: [],
+    labels_complete: true,
+    state: "OPEN",
+    updated_at: "2026-11-15T10:00:00Z",
+    draft: true,
+    links: [],
+  };
+  await page.route("**/api/work/github**", (route) => {
+    const url = new URL(route.request().url());
+    reads.push(url.pathname);
+    if (url.pathname.endsWith("/item"))
+      return route.fulfill({
+        json: {
+          ...pr,
+          observed_at: 1,
+          body: "Investigate the missing retry.",
+          comments: [],
+          comments_complete: true,
+        },
+      });
+    const merged = url.searchParams.get("state") === "MERGED";
+    return route.fulfill({
+      json: {
+        total: 1,
+        entries: [merged ? { ...pr, state: "MERGED", title: "Previous delivery" } : pr],
+        coverage: [
+          {
+            repository_id: "api",
+            kind: "pr",
+            status: "stale",
+            message: "GitHub rate limit reached",
+            observed_at: 1,
+          },
+        ],
+      },
+    });
+  });
+  await page.goto(f.origin);
+  const work = page.getByRole("button", { name: "Toggle work finder" });
+  await work.waitFor();
+  assert.equal(reads.length, 0);
+  const composer = page.getByRole("textbox", { name: "Message Abra" });
+  await composer.fill("Existing draft");
+  await work.click();
+  const row = page.getByRole("button", { name: /PR #91.*Retry download/ });
+  await row.waitFor();
+  await page.getByText(/GitHub rate limit reached/).waitFor();
+  assert.equal(reads.filter((p) => p.endsWith("/item")).length, 0);
+  await row.click();
+  await page.getByText("Investigate the missing retry.").waitFor();
+  assert.equal(
+    await page.locator('textarea[aria-label="Message Abra"]').inputValue(),
+    "Existing draft",
+  );
+  await page.getByRole("button", { name: "Ask Abra to review" }).click();
+  assert.equal(await composer.inputValue(), "Privately review " + pr.url + " in project api.");
+  await page.getByText("GitHub filters", { exact: true }).click();
+  await page.getByLabel("GitHub state").selectOption("MERGED");
+  await page.getByRole("button", { name: /Previous delivery/ }).waitFor();
+  await page.getByRole("button", { name: "Clear GitHub filters" }).click();
+  await row.waitFor();
+  await work.click();
+  await row.waitFor({ state: "detached" });
+  const before = reads.length;
+  await page.clock.install();
+  await page.clock.fastForward(310000);
+  assert.equal(reads.length, before);
+});

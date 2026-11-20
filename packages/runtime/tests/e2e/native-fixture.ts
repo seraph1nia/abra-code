@@ -1,3 +1,4 @@
+import { inboxJourney } from "./github-inbox.ts";
 import { cockpitJourney } from "./cockpit.ts";
 import { nativeObservation } from "../helpers/native-observation.ts";
 import { installNativeProbe } from "../helpers/native-probe.ts";
@@ -430,7 +431,9 @@ export function nativeTest(
                   }
                 : {}),
               generation,
-              conclusions: "Research kept the source unchanged.",
+              conclusions: user.includes("Privately review https://inbox.invalid")
+                ? "Reviewed retry messaging at the recorded PR head. The added retry message is consistent."
+                : "Research kept the source unchanged.",
               ...(user.includes("visual-report-native-acceptance")
                 ? {
                     diagrams: [
@@ -459,9 +462,13 @@ export function nativeTest(
               ],
               acceptance: [
                 {
-                  criterion: "Identify the source behavior",
+                  criterion: user.includes("Privately review https://inbox.invalid")
+                    ? `Report findings for base ${"b".repeat(40)} and head ${"a".repeat(40)}. Assessed 1 of 1 files with complete patch coverage. Identify files assessed and coverage limits.`
+                    : "Identify the source behavior",
                   met: true,
-                  evidence: "Read source.txt",
+                  evidence: user.includes("Privately review https://inbox.invalid")
+                    ? "Examined the added retry() line in retry.ts."
+                    : "Read source.txt",
                 },
               ],
               limitations: [
@@ -1001,7 +1008,9 @@ export function nativeTest(
       git.run(Id.AbsolutePath.make(projects[1]), ["commit", "-m", "Foreign control files"]),
     );
     await run(git.run(Id.AbsolutePath.make(projects[1]), ["push", "origin", "main"]));
-    await installSource(home, { buildWeb: journey === "workspace" || journey === "cockpit" });
+    await installSource(home, {
+      buildWeb: journey === "github-inbox" || journey === "workspace" || journey === "cockpit",
+    });
     if (
       journey === "workspace" ||
       journey === "reports" ||
@@ -1033,7 +1042,18 @@ export function nativeTest(
         mode: 0o755,
       },
     );
-    await writeFile(forgeState, JSON.stringify({}));
+    await writeFile(
+      forgeState,
+      JSON.stringify(
+        journey === "github-inbox"
+          ? { inboxFixture: true, remote: "https://inbox.invalid/fixture/api", merge_hold: true }
+          : {},
+      ),
+    );
+    if (journey === "github-inbox") {
+      await mkdir(join(root, "config/gh"), { recursive: true });
+      await writeFile(join(root, "config/gh/hosts.yml"), "inbox.invalid: {}\n");
+    }
     const harnessDir = await installNativeProbe(root, home);
     await writeFile(
       configPath,
@@ -1084,6 +1104,12 @@ export function nativeTest(
     );
     const env = {
       ...process.env,
+      ...(journey === "github-inbox"
+        ? {
+            ABRACODE_INBOX_FIXTURE_REMOTE: projects[1] + ".git",
+            GH_CONFIG_DIR: join(root, "config/gh"),
+          }
+        : {}),
       PATH: `${join(home, "node_modules/.bin")}:${process.env.PATH}`,
       XDG_CONFIG_HOME: join(root, "config"),
       XDG_DATA_HOME: join(root, "data"),
@@ -1476,6 +1502,26 @@ export function nativeTest(
     }
     if (journey === "reply-recovery") {
       engineeringEvidence.push(await runReplyRecovery());
+      return;
+    }
+    if (journey === "github-inbox") {
+      failFirstExplore = false;
+      engineeringEvidence.push(
+        await inboxJourney({
+          root,
+          home,
+          project: projects[1],
+          session: supervisor.id,
+          endpoint: {
+            url: `http://127.0.0.1:${port}`,
+            auth: { type: "basic", username: "opencode", password },
+          },
+          evidence: evidenceDirectory,
+          invoke,
+          restart,
+          eventually,
+        }),
+      );
       return;
     }
     if (journey === "cockpit") {
