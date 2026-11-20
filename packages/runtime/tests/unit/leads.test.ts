@@ -38,7 +38,7 @@ async function prepare() {
     agent: Agent.ID.make("abra"),
   });
   await run(f.controller.recordSupervisor(parent));
-  f.work.add(issue, repo);
+  f.seed.named(issue, repo);
   await run(f.controller.lead().control(parent, declaration));
   return { f, lead: (await run(readLeads(f.records)))[0]! };
 }
@@ -380,7 +380,7 @@ test("scoped lead proposals never create or start work until Abra accepts once; 
   const { f, lead } = await prepare();
   t.onTestFinished(() => run(f.close()));
   const other = Id.IssueId.make("other-project");
-  f.work.add(other, Id.RepositoryId.make("backend"));
+  f.seed.named(other, Id.RepositoryId.make("backend"));
   const act = f.controller.lead().action;
   await assert.rejects(
     run(act(lead.session_id, { action: "status", revision: 1, issue_id: other })),
@@ -417,7 +417,7 @@ test("scoped lead proposals never create or start work until Abra accepts once; 
       /scope/,
     );
   await run(act(lead.session_id, { action: "propose", revision: 1, batch }));
-  assert.equal(f.work.issues.size, 2);
+  assert.equal((await run(f.work.list)).length, 2);
   assert.equal(f.runtime.prompts, 0);
   await assert.rejects(
     run(
@@ -445,7 +445,7 @@ test("scoped lead proposals never create or start work until Abra accepts once; 
     ),
     accepted,
   );
-  assert.equal(f.work.issues.size, 3);
+  assert.equal((await run(f.work.list)).length, 3);
   assert.equal(f.runtime.prompts, 0);
 });
 
@@ -728,7 +728,7 @@ test("uncertain absent lead admission holds shared attention capacity and is nev
   const otherID = Id.LeadId.make("second-lead");
   await run(f.controller.lead().control(parent, { ...declaration, id: otherID }));
   const otherIssue = Id.IssueId.make("second-source");
-  f.work.add(otherIssue, repo);
+  f.seed.named(otherIssue, repo);
   await assert.rejects(
     run(
       f.controller.lead().control(parent, {
@@ -784,9 +784,9 @@ test("proposal acceptance recovers a graph commit without a lead receipt and syn
     request_id: batch.request_id,
   };
   await assert.rejects(run(f.controller.lead().control(parent, acceptance)), /lost accepted/);
-  assert.equal(f.work.issues.size, 2);
+  assert.equal((await run(f.work.list)).length, 2);
   await run(f.controller.lead().control(parent, acceptance));
-  assert.equal(f.work.issues.size, 2);
+  assert.equal((await run(f.work.list)).length, 2);
   const notices = new Map<Id.MessageId, string>();
   let calls = 0;
   f.runtime.notify = (_s: Id.SessionId, text: string, id?: Id.MessageId) =>

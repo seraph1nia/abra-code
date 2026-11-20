@@ -121,8 +121,16 @@ export function explainIssues(issues: readonly Issue[]): ReadyExplanation {
         ? []
         : [{ id, title: dependency.title, status: dependency.status }];
     });
-    if (issue.status === "open" && !issue.assignee && !blocked_by.length) result.ready.push(issue);
-    else result.blocked.push({ ...issue, blocked_by });
+    explainIssue(result, issue, blocked_by);
   }
   return result;
+}
+
+export function explainIssue(
+  result: ReadyExplanation,
+  issue: Issue,
+  blocked_by: ReadyExplanation["blocked"][number]["blocked_by"],
+) {
+  if (issue.status === "open" && !issue.assignee && !blocked_by.length) result.ready.push(issue);
+  else result.blocked.push({ ...issue, blocked_by });
 }

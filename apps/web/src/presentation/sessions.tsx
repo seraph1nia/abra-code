@@ -3,7 +3,7 @@ import { useSearch } from "@tanstack/react-router";
 import { Markdown } from "../markdown.tsx";
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
 import { orderedParts } from "@abracode/contracts/web/transcript";
-import { queries } from "../data.ts";
+import { queries } from "../work-data.ts";
 import { RequestState } from "../request-state.tsx";
 import { Button } from "@abracode/presentation/ui/button";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";

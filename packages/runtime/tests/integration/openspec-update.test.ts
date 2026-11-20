@@ -61,7 +61,7 @@ test("installed OpenSpec refreshes outdated instructions in the issue worktree b
   await run(f.git.run(p.path, ["push", "origin", "main"]));
   const spec = new OpenSpec(runner, bin);
   f.spec.update = (e) => spec.update(e);
-  f.work.add(issue);
+  f.seed.named(issue);
   const e = await run(f.controller.start(issue));
   assert.equal(e.base_commit, base);
   assert.notEqual(e.openspec_update_commit, base);

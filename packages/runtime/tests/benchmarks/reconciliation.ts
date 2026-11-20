@@ -20,7 +20,7 @@ const f = await run(fixture);
 try {
   const issue = Id.IssueId.make("reconciliation-benchmark");
   const supervisor = Id.SessionId.make("ses_benchmark");
-  f.work.add(issue);
+  f.seed.named(issue);
   await run(f.controller.start(issue, supervisor));
   await run(
     f.controller.workMessage(

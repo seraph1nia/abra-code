@@ -1,3 +1,5 @@
+import { deferred } from "./deferred.tsx";
+import { selectionMarker } from "@abracode/contracts/web/workspace-wire";
 import { memo, useMemo } from "react";
 import type { TranscriptMessage } from "@abracode/contracts/web/contracts";
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
@@ -11,6 +13,10 @@ import { orderedParts } from "@abracode/contracts/web/transcript";
 import { Markdown } from "./markdown.tsx";
 import { ToolObservation } from "./presentation/tools.tsx";
 import { MessageAttachment } from "./presentation/attachments.tsx";
+const SelectedMessage = deferred<{ message: TranscriptMessage }>(
+  () => import("./presentation/selected-message.tsx"),
+  "Captured selection",
+);
 export const emptyAttachments: readonly (typeof PresentationAttachmentSchema.Type)[] = [];
 export const emptyDiagnostics: readonly (typeof PresentationDiagnosticSchema.Type)[] = [];
 export const MessageContent = memo(function MessageContent({
@@ -75,7 +81,12 @@ export const MessageContent = memo(function MessageContent({
                 />
               ) : null;
             })
-          : message.text && <div className="message-text">{message.text}</div>}
+          : message.text &&
+            (message.role === "user" && message.text.includes(selectionMarker) ? (
+              <SelectedMessage message={message} />
+            ) : (
+              <div className="message-text">{message.text}</div>
+            ))}
         {message.files?.map((f) => (
           <p className="attachment" key={f}>
             <Paperclip aria-hidden="true" /> {f}

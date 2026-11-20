@@ -1,3 +1,4 @@
+import { cockpitJourney } from "./cockpit.ts";
 import { nativeObservation } from "../helpers/native-observation.ts";
 import { installNativeProbe } from "../helpers/native-probe.ts";
 import { simplifyCalls, simplifyLoopJourney } from "./simplify-loop.ts";
@@ -133,6 +134,7 @@ export function nativeTest(
     let stallFirstExplore = false;
     let missingToolProviderCalls = 0;
     let directWorkerProviderCalls = 0;
+    let releaseCockpit: (() => void) | undefined;
     let holdExplore = false;
     let exploreHeld = false;
     let releaseExplore: (() => void) | undefined;
@@ -148,22 +150,8 @@ export function nativeTest(
       applyHeld = false;
     let releaseApply: (() => void) | undefined;
     let failedCorrelatedRequest = false;
-    const parallelSeen = new Set<string>(),
-      parallelReleased = new Set<string>();
-    const parallelWaiting = new Map<string, Array<() => void>>();
-    const releaseParallel = (key: string) => {
-      parallelReleased.add(key);
-      for (const done of parallelWaiting.get(key) ?? []) done();
-      parallelWaiting.delete(key);
-    };
-    const acceptanceSeen = new Set<string>(),
-      acceptanceReleased = new Set<string>();
-    const acceptanceWaiting = new Map<string, Array<() => void>>();
-    const releaseAcceptance = (key: string) => {
-      acceptanceReleased.add(key);
-      for (const done of acceptanceWaiting.get(key) ?? []) done();
-      acceptanceWaiting.delete(key);
-    };
+    const parallel = parallelJourney();
+    const acceptance = acceptanceJourney();
     const streamProof = { tool: false, text: false };
     const releaseStreamProof: { tool?: () => void; text?: () => void } = {};
     const provider = createServer(async (req, res) => {
@@ -211,6 +199,16 @@ export function nativeTest(
               ? "review"
               : "supervisor";
       if (
+        journey === "cockpit" &&
+        !releaseCockpit &&
+        hasUserMarker("Hold the cockpit supervisor turn")
+      ) {
+        await new Promise<void>((finish) => {
+          releaseCockpit = finish;
+          res.once("close", finish);
+        });
+      }
+      if (
         user.includes("engineering-acceptance") &&
         ["explore", "apply", "review"].includes(role)
       ) {
@@ -235,33 +233,8 @@ export function nativeTest(
         });
       }
       providerRequests[role] = (providerRequests[role] ?? 0) + 1;
-      const acceptanceKey = user.includes("final-acceptance-authentication")
-        ? role === "explore"
-          ? "auth-explore"
-          : role === "apply"
-            ? "auth-apply"
-            : undefined
-        : role === "research" && user.includes("final-acceptance-database")
-          ? "db-research"
-          : undefined;
-      if (acceptanceKey && !acceptanceReleased.has(acceptanceKey)) {
-        acceptanceSeen.add(acceptanceKey);
-        await new Promise<void>((done) =>
-          acceptanceWaiting.set(acceptanceKey, [
-            ...(acceptanceWaiting.get(acceptanceKey) ?? []),
-            done,
-          ]),
-        );
-      }
-      const parallelKey =
-        role === "research" ? /parallel-lane-([a-z]+)/.exec(user)?.[1] : undefined;
-      if (parallelKey) {
-        parallelSeen.add(parallelKey);
-        if (!parallelReleased.has(parallelKey))
-          await new Promise<void>((done) =>
-            parallelWaiting.set(parallelKey, [...(parallelWaiting.get(parallelKey) ?? []), done]),
-          );
-      }
+      await acceptance.observe(role, user);
+      await parallel.observe(role, user);
       if (role === "research" && holdLeadResearch && user.includes("lead-blocker-investigation")) {
         holdLeadResearch = false;
         leadResearchHeld = true;
@@ -662,15 +635,13 @@ export function nativeTest(
           args: {
             passed:
               !user.includes("Approved short scope:") ||
-              user.includes("final-acceptance-flaky") ||
               (user.includes("Correction round") &&
                 !user.includes("Exhaust native correction budget")),
             findings:
-              user.includes("Approved short scope:") &&
-              !user.includes("Correction round") &&
-              !user.includes("final-acceptance-flaky")
+              user.includes("Approved short scope:") && !user.includes("Correction round")
                 ? "Correct the scoped edge case"
                 : "Specification implemented; deterministic check passes.",
+            ...acceptance.review(user),
             scope_status: "in_scope",
             ...(!user.includes("Approved short scope:")
               ? {
@@ -973,7 +944,7 @@ export function nativeTest(
     cleanup = async () => {
       releaseStreamProof.tool?.();
       releaseStreamProof.text?.();
-      for (const key of ["auth-explore", "db-research", "auth-apply"]) releaseAcceptance(key);
+      acceptance.close();
       releaseLeadResearch?.();
       const recordEvidence = async (cleanupComplete: boolean) => {
         if (!evidenceDirectory) return;
@@ -1044,7 +1015,7 @@ export function nativeTest(
         releaseExplore?.();
         releaseApply?.();
         releaseModelWorker?.();
-        for (const key of ["one", "two", "three", "dependent"]) releaseParallel(key);
+        parallel.close();
         if (t.task.result?.state === "fail")
           console.error(
             logs
@@ -1115,7 +1086,7 @@ export function nativeTest(
       git.run(Id.AbsolutePath.make(projects[1]), ["commit", "-m", "Foreign control files"]),
     );
     await run(git.run(Id.AbsolutePath.make(projects[1]), ["push", "origin", "main"]));
-    await installSource(home, { buildWeb: journey === "workspace" });
+    await installSource(home, { buildWeb: journey === "workspace" || journey === "cockpit" });
     if (
       journey === "workspace" ||
       journey === "reports" ||
@@ -1388,7 +1359,7 @@ export function nativeTest(
       await client.location.get({ location: { directory: home } });
     };
     const runParallel = () =>
-      parallelJourney({
+      parallel.run({
         supervisor: Id.SessionId.make(supervisor.id),
         workerQuestion: async (session, args) =>
           (
@@ -1402,8 +1373,6 @@ export function nativeTest(
         client,
         invoke,
         eventually,
-        seen: parallelSeen,
-        release: releaseParallel,
         restart,
       });
     const runModels = () =>
@@ -1465,7 +1434,7 @@ export function nativeTest(
       });
     const runAcceptance = () => {
       failFirstExplore = false;
-      return acceptanceJourney({
+      return acceptance.run({
         root,
         home,
         client,
@@ -1473,8 +1442,6 @@ export function nativeTest(
         invoke,
         eventually,
         work: observeWork,
-        seen: acceptanceSeen,
-        release: releaseAcceptance,
         quietSample: async () => {
           assert.ok(child?.pid);
           const settling = performance.now();
@@ -1600,6 +1567,50 @@ export function nativeTest(
     }
     if (journey === "reply-recovery") {
       engineeringEvidence.push(await runReplyRecovery());
+      return;
+    }
+    if (journey === "cockpit") {
+      failFirstExplore = false;
+      try {
+        engineeringEvidence.push(
+          await cockpitJourney({
+            home,
+            project: projects[0],
+            session: supervisor.id,
+            invoke,
+            eventually,
+            evidence: evidenceDirectory,
+            endpoint: {
+              url: `http://127.0.0.1:${port}`,
+              auth: { type: "basic", username: "opencode", password },
+            },
+            question: (session, args) =>
+              api.invoke(
+                { tool: "abra_worker_question", args, session: Id.SessionId.make(session) },
+                loc,
+              ),
+            waitSession: (session) =>
+              client.session.wait({ sessionID: Id.SessionId.make(session) }),
+            holdWorker: () => {
+              holdExplore = true;
+              exploreHeld = false;
+            },
+            held: () => exploreHeld,
+            releaseWorker: () => releaseExplore?.(),
+            holdAbra: async () => {
+              await client.session.prompt({
+                sessionID: supervisor.id,
+                text: "Hold the cockpit supervisor turn",
+              });
+              await eventually(async () => (releaseCockpit ? true : undefined));
+            },
+            releaseAbra: () => releaseCockpit?.(),
+          }),
+        );
+      } finally {
+        releaseExplore?.();
+        releaseCockpit?.();
+      }
       return;
     }
     if (journey === "workspace") {

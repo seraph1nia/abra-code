@@ -16,7 +16,7 @@ test(
     t.onTestFinished(() => run(f.close()));
     const session = Id.SessionId.make("ses_diagram-publication"),
       issue = Id.IssueId.make("diagram-publication");
-    f.work.add(issue);
+    f.seed.named(issue);
     await run(f.controller.start(issue, session));
     await run(f.controller.recordSupervisor(session));
     const owner = new SurfacePublications(new MemoryStore(), new TestLocks());

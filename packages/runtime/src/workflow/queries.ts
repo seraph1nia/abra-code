@@ -1,3 +1,5 @@
+import { retainedEvidence } from "./worker-evidence.ts";
+import type { EvidenceQuery } from "@abracode/contracts/web/worker-evidence";
 import { archivedPlans } from "../visibility/archived-plans.ts";
 import { CheckpointEvidence } from "./authorization.ts";
 import { createHash } from "node:crypto";
@@ -11,7 +13,12 @@ import {
   supervisionClasses,
   type SupervisionSummary,
 } from "../visibility/supervision.ts";
-import { hasWorkerSession, historicalWorkers } from "./worker-assignment.ts";
+import {
+  hasWorkerSession,
+  historicalWorkers,
+  nativeSessionIntent,
+  workerSessionID,
+} from "./worker-assignment.ts";
 import { messageRequests, requiresResponse, MessagesPageSchema } from "./message-contracts.ts";
 import { timestamp } from "../identities.ts";
 import { loadConfig } from "../config/load.ts";
@@ -85,10 +92,43 @@ export class Queries {
     };
   }
   executionContract = (e: Execution) => executionContract(e, this.config.supervision_mode);
-  private sessionID(e: Execution, role = e.active_role) {
-    return role ? e[`${role}_session_id`] : undefined;
-  }
   afterCommit = () => this.records.coordinateCommit(() => Effect.void);
+  evidence = (query: EvidenceQuery) =>
+    this.execution(query.issue_id).pipe(
+      Effect.flatMap((e) => retainedEvidence(this.records.store, e, query)),
+    );
+  verification = (id: IssueId) =>
+    Effect.gen({ self: this }, function* () {
+      yield* this.issue(id);
+      const e = yield* this.execution(id);
+      if (!e) return { checks: [] };
+      const receipt = e.verification_receipt;
+      const checks = [...(e.check_history ?? [])];
+      if (receipt && !checks.some((c) => c.fingerprint === receipt.fingerprint)) {
+        checks.push({
+          at: receipt.at,
+          fingerprint: receipt.fingerprint,
+          commands: receipt.commands.map((command) =>
+            (Array.isArray(command) ? command : command.argv).join(" "),
+          ),
+        });
+      }
+      const observed =
+        e.worktree_directory && (checks.length || e.review_receipt)
+          ? yield* this.git
+              .fingerprint(e.worktree_directory)
+              .pipe(Effect.orElseSucceed(() => undefined))
+          : undefined;
+      return {
+        checks,
+        ...(e.worker_references && { references: e.worker_references }),
+        ...(e.worker_evidence && { evidence: e.worker_evidence }),
+        ...(observed && { observed }),
+        ...(e.review_receipt && { review: e.review_receipt }),
+        ...(e.scope && { scope: e.scope.contract }),
+        ...(e.plan_fingerprint && { plan: e.plan_fingerprint }),
+      };
+    });
   feedback = (id: IssueId, page = 0) => this.records.feedback(id, page);
   projects = () => this.records.projects();
   project = (id: RepositoryId) => this.records.project(id);
@@ -714,9 +754,9 @@ export class Queries {
         (r) =>
           domainEffect(
             Effect.gen({ self: this }, function* () {
+              const intent = nativeSessionIntent(e);
               const sessionID =
-                this.sessionID(e, r) ??
-                (e.session_intent?.role === r ? e.session_intent.id : undefined);
+                workerSessionID(e, r) ?? (intent?.role === r ? intent.id : undefined);
               if (!sessionID) return undefined;
               const configured_model = workerProfile(e, r, this.config)?.model ?? e.worker_model;
               const model_source = e.configuration_snapshot?.dispatch_sources?.[r];
@@ -1088,11 +1128,48 @@ export class Queries {
       };
     });
 
-  ready = (bundle?: ReadBundle) =>
-    domainEffect(
+  readinessFor = (ids: readonly IssueId[]) =>
+    this.capture(() =>
       Effect.gen({ self: this }, function* () {
-        const { explanation, projects, executions, diagnostics, setups } =
-          bundle ?? (yield* this.observe());
+        const { explanation, projects, executions, setups } = yield* Effect.all(
+          {
+            explanation: this.work.explainSelected(ids),
+            projects: this.records.projectScan(),
+            executions: this.records.executionScan(),
+            setups: this.records.setupScan(),
+          },
+          { concurrency: "unbounded" },
+        );
+        const rows = yield* this.evaluateReadiness({
+          explanation,
+          projects: projects.values,
+          executions: executions.values,
+          setups: setups.values,
+          diagnostics: [...projects.diagnostics, ...executions.diagnostics, ...setups.diagnostics],
+        });
+        return new Map(rows.map((row) => [row.issue.id, row]));
+      }),
+    );
+
+  ready = (bundle?: ReadBundle) =>
+    (bundle ? Effect.succeed(bundle) : this.observe()).pipe(
+      Effect.flatMap((data) => this.evaluateReadiness(data)),
+      Effect.map((rows) =>
+        rows.sort(
+          (a, b) => a.issue.priority - b.issue.priority || a.issue.id.localeCompare(b.issue.id),
+        ),
+      ),
+    );
+
+  private evaluateReadiness({
+    explanation,
+    projects,
+    executions,
+    diagnostics,
+    setups,
+  }: Pick<ReadBundle, "explanation" | "projects" | "executions" | "diagnostics" | "setups">) {
+    return domainEffect(
+      Effect.gen({ self: this }, function* () {
         const declarations = yield* this.declarations();
         const authority = this.config.auto_schedule
           ? (yield* this.automaticAuthority()).blocker
@@ -1119,12 +1196,10 @@ export class Queries {
               },
             ),
             dependencies: blocked.get(issue.id) ?? issue.dependencies,
-          }))
-          .sort(
-            (a, b) => a.issue.priority - b.issue.priority || a.issue.id.localeCompare(b.issue.id),
-          );
+          }));
       }),
     );
+  }
 }
 
 export type ReadBundle = Effect.Success<ReturnType<Queries["observe"]>>;

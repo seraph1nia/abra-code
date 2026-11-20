@@ -1,3 +1,4 @@
+import { FilePatchId } from "./resources.ts";
 import { Count } from "../primitives.ts";
 import { LeadAttentionSchema } from "../visibility/lead-observation.ts";
 import { PlanningObservationSchema } from "../visibility/document-contracts.ts";
@@ -8,7 +9,7 @@ export { MessagesPageSchema } from "../workflow/message-contracts.ts";
 export { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
 export { WorkerInspectionSchema } from "../visibility/worker.ts";
 import { Schema } from "effect";
-import { RelativePath, Timestamp } from "../identities.ts";
+import { RelativePath, Timestamp, ContentHash } from "../identities.ts";
 import { VisualBuildSummarySchema, VisualReceiptSchema } from "../workflow/report-metadata.ts";
 
 /** Browser projections deliberately contain data only, without controller/adaptor imports. */
@@ -56,6 +57,7 @@ export const WorkDiffSchema = Schema.Struct({
   historical: Schema.Boolean,
   files: Schema.Array(
     Schema.Struct({
+      patch_id: FilePatchId,
       path: RelativePath,
       status: Schema.Literals(["added", "modified", "deleted"]),
       additions: Count,
@@ -69,7 +71,12 @@ export const WorkDiffSchema = Schema.Struct({
   message: Schema.optional(Schema.String),
   limited: Schema.Boolean,
 });
-export const WorkDocumentSchema = Schema.Struct({ path: Schema.String, content: Schema.String });
+export const WorkDocumentSchema = Schema.Struct({
+  path: Schema.String,
+  content: Schema.String,
+  hash: Schema.optionalKey(ContentHash),
+  generation: Schema.optionalKey(Count),
+});
 export const WorkReportSchema = Schema.Union([
   Schema.Struct({ content: Schema.String }),
   Schema.Struct({ unavailable: Schema.Literals(["not_started", "not_published"]) }),

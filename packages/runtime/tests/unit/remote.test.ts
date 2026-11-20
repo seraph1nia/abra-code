@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import * as Id from "../../src/identities.ts";
 import { run } from "../effects.ts";
 import { domainEffect } from "../../src/effect.ts";
@@ -81,9 +82,9 @@ test("verification setup blocks claims and incomplete legacy targets remain pres
   t.onTestFinished(() => run(f.close()));
   const { project } = await managed(f);
   await run(f.onboarding.register({ id: Id.RepositoryId.make("remote"), verification: [] }, false));
-  f.work.add(Id.IssueId.make("checks-1"), Id.RepositoryId.make("remote"));
+  f.seed.named(Id.IssueId.make("checks-1"), Id.RepositoryId.make("remote"));
   await assert.rejects(run(f.controller.start(Id.IssueId.make("checks-1"))), /Verification/);
-  assert.equal(f.work.claims, 0);
+  assert.equal(f.seed.countEvents("claimed"), 0);
   await run(
     f.onboarding.register(
       {
@@ -178,10 +179,10 @@ test("new worktrees use fresh remote commits while resume retains the saved base
   const { upstream, project } = await managed(f);
   const cached = await run(f.git.head(project.path));
   const fresh = await push(f, upstream, "new remote content\n");
-  f.work.add(Id.IssueId.make("remote-1"), Id.RepositoryId.make("remote"));
-  const first = await run(
-    f.controller.start(Id.IssueId.make("remote-1"), Id.SessionId.make("ses_supervisor")),
+  const { id: remote1Id } = await run(
+    f.work.create({ ...workGoal("remote-1"), repository_id: Id.RepositoryId.make("remote") }),
   );
+  const first = await run(f.controller.start(remote1Id, Id.SessionId.make("ses_supervisor")));
   assert.equal(first.base_commit, fresh);
   assert.equal(first.target_branch, "main");
   assert.equal(await run(f.git.head(first.worktree_directory!)), fresh);
@@ -190,7 +191,7 @@ test("new worktrees use fresh remote commits while resume retains the saved base
     "new remote content\n",
   );
   assert.equal(await run(f.git.head(project.path)), cached);
-  await run(f.controller.control(Id.IssueId.make("remote-1"), "pause"));
+  await run(f.controller.control(remote1Id, "pause"));
   await run(f.git.run(Id.AbsolutePath.make(upstream), ["switch", "-c", "trunk"]));
   const next = await push(f, upstream, "next default branch\n", "trunk");
   await run(
@@ -200,14 +201,14 @@ test("new worktrees use fresh remote commits while resume retains the saved base
       "refs/heads/trunk",
     ]),
   );
-  const resumed = await run(f.controller.control(Id.IssueId.make("remote-1"), "resume"));
+  const resumed = await run(f.controller.control(remote1Id, "resume"));
   assert.equal(resumed.base_commit, fresh);
   assert.equal(resumed.target_branch, "main");
   assert.equal(resumed.worktree_directory, first.worktree_directory);
-  f.work.add(Id.IssueId.make("remote-2"), Id.RepositoryId.make("remote"));
-  const second = await run(
-    f.controller.start(Id.IssueId.make("remote-2"), Id.SessionId.make("ses_supervisor")),
+  const { id: remote2Id } = await run(
+    f.work.create({ ...workGoal("remote-2"), repository_id: Id.RepositoryId.make("remote") }),
   );
+  const second = await run(f.controller.start(remote2Id, Id.SessionId.make("ses_supervisor")));
   assert.equal(second.base_commit, next);
   assert.equal(second.target_branch, "trunk");
   const calls: string[][] = [];
@@ -249,17 +250,18 @@ test("explicit targets override remote HEAD and missing fetches never fall back 
       "refs/heads/trunk",
     ]),
   );
-  f.work.add(Id.IssueId.make("fixed-1"), Id.RepositoryId.make("remote"));
-  const e = await run(f.controller.start(Id.IssueId.make("fixed-1")));
+  const { id: fixed1Id } = await run(
+    f.work.create({ ...workGoal("fixed-1"), repository_id: Id.RepositoryId.make("remote") }),
+  );
+  const e = await run(f.controller.start(fixed1Id));
   assert.equal(e.target_branch, "main");
   assert.equal(e.base_commit, project.inspected_commit);
   await rename(`${upstream}.git`, `${upstream}.offline`);
-  f.work.add(Id.IssueId.make("offline-1"), Id.RepositoryId.make("remote"));
-  await assert.rejects(run(f.controller.start(Id.IssueId.make("offline-1"))), /git|repository/);
-  assert.equal(
-    (await run(f.records.execution(Id.IssueId.make("offline-1"))))!.worktree_directory,
-    undefined,
+  const { id: offline1Id } = await run(
+    f.work.create({ ...workGoal("offline-1"), repository_id: Id.RepositoryId.make("remote") }),
   );
+  await assert.rejects(run(f.controller.start(offline1Id)), /git|repository/);
+  assert.equal((await run(f.records.execution(offline1Id)))!.worktree_directory, undefined);
   assert.equal(f.runtime.trees.length, 1);
 });
 test("interrupted provisioning recovers its recorded SHA even after a force-push and garbage collection", async (t) => {
@@ -270,9 +272,11 @@ test("interrupted provisioning recovers its recorded SHA even after a force-push
   const create = f.runtime.createWorktree.bind(f.runtime);
   f.runtime.createWorktree = () =>
     domainEffect(Effect.fail(new CrewError("NATIVE_CREATION", "Creation interrupted")));
-  f.work.add(Id.IssueId.make("recover-1"), Id.RepositoryId.make("remote"));
-  await assert.rejects(run(f.controller.start(Id.IssueId.make("recover-1"))), /interrupted/);
-  const saved = (await run(f.records.execution(Id.IssueId.make("recover-1"))))!;
+  const { id: recover1Id } = await run(
+    f.work.create({ ...workGoal("recover-1"), repository_id: Id.RepositoryId.make("remote") }),
+  );
+  await assert.rejects(run(f.controller.start(recover1Id)), /interrupted/);
+  const saved = (await run(f.records.execution(recover1Id)))!;
   assert.equal(saved.base_commit, pinned);
   await run(f.git.run(Id.AbsolutePath.make(upstream), ["reset", "--hard", `${pinned}~1`]));
   await writeFile(join(upstream, "source.txt"), "rewritten remote\n");
@@ -288,7 +292,7 @@ test("interrupted provisioning recovers its recorded SHA even after a force-push
   );
   await run(f.git.run(project.path, ["gc", "--prune=now"]));
   f.runtime.createWorktree = create;
-  const recovered = await run(f.controller.control(Id.IssueId.make("recover-1"), "resume"));
+  const recovered = await run(f.controller.control(recover1Id, "resume"));
   assert.equal(recovered.base_commit, pinned);
   assert.equal(await run(f.git.head(recovered.worktree_directory!)), pinned);
   assert.equal(f.runtime.trees.length, 1);
@@ -298,13 +302,13 @@ test("registered setup blockers prevent claims and fetched setup is rechecked be
   t.onTestFinished(() => run(f.close()));
   const { project, upstream } = await managed(f, true);
   assert.equal(project.openspec, false);
-  f.work.add(Id.IssueId.make("setup-1"), Id.RepositoryId.make("remote"));
+  f.seed.named(Id.IssueId.make("setup-1"), Id.RepositoryId.make("remote"));
   assert.match(
     (await run(f.controller.ready())).find((row) => row.issue.id === "setup-1")!.blockers.join(),
     /OpenSpec/,
   );
   await assert.rejects(run(f.controller.start(Id.IssueId.make("setup-1"))), /OpenSpec/);
-  assert.equal(f.work.claims, 0);
+  assert.equal(f.seed.countEvents("claimed"), 0);
   await run(
     f.git.run(Id.AbsolutePath.make(upstream), ["checkout", "HEAD~1", "--", "openspec/config.yaml"]),
   );
@@ -437,7 +441,7 @@ test("OpenSpec setup uses an owned worktree and a durable human merge gate befor
   );
   assert.ok("current_phase" in done && done.current_phase === "completed");
   await assert.rejects(access(path));
-  assert.equal(f.work.claims, 0);
+  assert.equal(f.seed.countEvents("claimed"), 0);
   assert.equal((await run(f.records.executions())).length, 0);
 });
 test("setup refuses changed content before delivery and retains resources after cleanup failures", async (t) => {

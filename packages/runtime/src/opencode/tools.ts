@@ -1,3 +1,14 @@
+import { isActiveWorker } from "../workflow/worker-assignment.ts";
+import {
+  WorkerReferenceSchema,
+  CaptureInputSchema,
+  EvidenceQuerySchema,
+} from "@abracode/contracts/web/worker-evidence";
+import { answerSelection } from "../workflow/selected-requests.ts";
+import { NativeStore } from "../storage/store.ts";
+import { FileLocks } from "../storage/lock.ts";
+import { AbsolutePath } from "../identities.ts";
+import { join } from "node:path";
 import { nativeReviews, reviewTool, type NativeReviewOwner } from "../web/review-tool.ts";
 import { mermaidVerifierTool } from "./diagram-tool.ts";
 import { workSurfaceTool } from "../web/render-tool.ts";
@@ -55,6 +66,26 @@ export function registerTools(
     Effect.gen(function* () {
       const definitions = [
         workSurfaceTool(ctx, c),
+        define({
+          name: "selection_answer",
+          description:
+            "Answer an admitted developer selection directly. Bind the answer to its request_id and issue_id so the developer can reopen it from their question.",
+          input: Schema.Struct({
+            request_id: RequestId,
+            issue_id: IssueId,
+            answer: Schema.NonEmptyString.check(Schema.isMaxLength(8192)),
+          }),
+          output: Schema.String,
+          run: (a, s) =>
+            answerSelection(
+              new NativeStore(ctx.storage),
+              new FileLocks(AbsolutePath.make(join(c.queries.settings.home, ".abracode/locks"))),
+              s,
+              a.request_id,
+              a.issue_id,
+              a.answer,
+            ),
+        }),
         ...(central ? [reviewTool(reviews ?? nativeReviews(ctx, c))] : []),
         mermaidVerifierTool(c, central),
         define({
@@ -280,14 +311,44 @@ export function registerTools(
         }),
         define({
           name: "worker_progress",
+          description:
+            "Report progress, retain chosen evidence, or read an exact retained item from the current assignment.",
           output: toolOutputs.worker_progress,
-          description: "Report meaningful progress for the current assigned generation.",
-          input: Schema.Struct({
-            generation: Count,
-            summary: NonEmpty.check(Schema.isMaxLength(8192)),
-          }),
+          input: Schema.Union([
+            Schema.Struct({
+              generation: Count,
+              summary: NonEmpty.check(Schema.isMaxLength(8192)),
+              capture: Schema.optionalKey(CaptureInputSchema),
+              references: Schema.optionalKey(
+                Schema.Array(WorkerReferenceSchema).check(Schema.isMaxLength(8)),
+              ),
+            }),
+            Schema.Struct({ generation: Count, read_evidence: EvidenceQuerySchema }),
+          ]),
           worker: true,
-          run: (a, s) => c.workerProgress(s, a.generation, a.summary),
+          run: (input, session) => {
+            if ("summary" in input)
+              return c.workerProgress(
+                session,
+                input.generation,
+                input.summary,
+                input.capture,
+                input.references,
+              );
+            return Effect.gen(function* () {
+              const e = yield* c.queries.assignment(session);
+              if (
+                !e ||
+                !isActiveWorker(e, session, { generation: input.generation }) ||
+                e.issue_id !== input.read_evidence.issue_id
+              )
+                return yield* new CrewError(
+                  "WORKER_ASSIGNMENT",
+                  "An active assignment on this issue and generation is required",
+                );
+              return yield* c.queries.evidence(input.read_evidence);
+            });
+          },
         }),
         define({
           name: "worker_wait",

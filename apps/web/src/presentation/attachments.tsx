@@ -21,10 +21,15 @@ const WorkViews = deferred<
   () => import("@abracode/presentation/surfaces").then((module) => ({ default: module.WorkViews })),
   "Generated view",
 );
-import { surfaceQuery, queries } from "../data.ts";
+import { surfaceQuery, bindingQuery } from "../data.ts";
 import { RequestState } from "../request-state.tsx";
 import type { Inspect } from "@abracode/presentation/cards";
-import { SaveSurfaceButton } from "./save-surface.tsx";
+const SaveSurfaceButton = deferred<
+  ComponentProps<typeof import("./save-surface.tsx").SaveSurfaceButton>
+>(
+  () => import("./save-surface.tsx").then((module) => ({ default: module.SaveSurfaceButton })),
+  "Save view",
+);
 
 type Target = typeof PresentationAttachmentSchema.Type.target;
 export function RetainedSurfaces({
@@ -128,7 +133,7 @@ function LiveSurface({
   inspect: Inspect;
   selection: BindingSelection;
 }) {
-  const result = useAtomValue(queries.binding(selection));
+  const result = useAtomValue(bindingQuery(selection));
   const value = AsyncResult.value(result);
   const previous = Option.isSome(value) ? value.value : undefined;
   const coverage: BindingCoverage = {

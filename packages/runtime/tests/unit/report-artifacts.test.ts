@@ -16,7 +16,7 @@ const parent = Id.SessionId.make("ses_legacy-parent"),
   issue = Id.IssueId.make("legacy-report");
 async function prepare(status: VisualBuild["status"] = "published") {
   const f = await run(fixture);
-  f.work.add(issue);
+  f.seed.named(issue);
   const e = await run(f.controller.start(issue, parent));
   await run(f.controller.recordSupervisor(parent));
   const snapshot = await run(captureReportSnapshot(f.work, e));

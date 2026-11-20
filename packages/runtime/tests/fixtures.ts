@@ -1,11 +1,5 @@
 import { cp } from "node:fs/promises";
 import { removeFixture } from "./helpers/resources.ts";
-import {
-  normalizeBatch,
-  batchRequests,
-  type BatchInput,
-  type BatchResult,
-} from "../src/work/batch.ts";
 import { capabilityRequirements } from "../src/opencode/role-policy.ts";
 import { workerProfile } from "../src/config/snapshot.ts";
 import { type WorkerEnvironment } from "../src/opencode/worker-environment.ts";
@@ -22,20 +16,14 @@ import {
 } from "../src/opencode/runtime.ts";
 import * as Id from "../src/identities.ts";
 import { domainEffect } from "../src/effect.ts";
-import { Effect, Schema, Semaphore } from "effect";
-import { createHash } from "node:crypto";
-import {
-  WorkDiscoveryQuery,
-  type WorkDiscovery,
-} from "@abracode/contracts/visibility/discovery-contracts";
+import { Effect, Exit, Scope, Semaphore } from "effect";
 import { mkdtemp, mkdir, writeFile, readFile, rename } from "../src/filesystem.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProcessRunner } from "../src/process.ts";
 import { Git } from "../src/git/repository.ts";
 import { Records, type Store } from "../src/storage/store.ts";
-import { explainIssues } from "../src/work/model.ts";
-import { type WorkGraph, type NewIssue } from "../src/work/graph.ts";
+import { fixtureGraph } from "./helpers/work-database.ts";
 
 import { createWorkflow } from "../src/opencode/application.ts";
 import { Onboarding } from "../src/config/onboard.ts";
@@ -111,245 +99,6 @@ export class TestLocks implements Locks {
             ),
           )
       : semaphore.withPermits(1)(body);
-  }
-}
-export class FakeWorkGraph implements WorkGraph {
-  issues = new Map<string, { -readonly [K in keyof Issue]: Issue[K] }>();
-  requests = new Map<string, { input: string; id: Id.IssueId }>();
-  private batches = new Map<
-    string,
-    { input: string; tasks: Array<{ client_key: string; id: Id.IssueId }> }
-  >();
-  claims = 0;
-  creations = 0;
-  // Includes direct fixture edits; production uses its committed SQL event sequence.
-  readonly revision = Effect.sync(() =>
-    createHash("sha256")
-      .update(JSON.stringify([...this.issues]))
-      .digest("hex"),
-  );
-  readonly closureTimes = Effect.succeed<Record<string, Id.Timestamp>>({});
-  readonly list = domainEffect(
-    Effect.sync(() => [...this.issues.values()].map((issue) => structuredClone(issue))),
-  );
-  readonly explain = this.list.pipe(Effect.map(explainIssues));
-  find = (input: WorkDiscovery = {}) =>
-    this.list.pipe(
-      Effect.map((issues) => {
-        const query = Schema.decodeSync(WorkDiscoveryQuery)(input);
-        const search = query.search?.trim().toLowerCase() ?? "";
-        const state = query.state ?? "active";
-        const matches = issues
-          .filter(
-            (issue) =>
-              (!query.repository_id || issue.repository_id === query.repository_id) &&
-              (state === "all" ||
-                (state === "closed" ? issue.status === "closed" : issue.status !== "closed")) &&
-              (!search ||
-                issue.title.toLowerCase().includes(search) ||
-                issue.id.toLowerCase().includes(search)),
-          )
-          .sort((a, b) => a.priority - b.priority || (a.id < b.id ? -1 : Number(a.id > b.id)));
-        const offset = query.offset ?? 0,
-          limit = query.limit ?? 50;
-        return {
-          entries: matches.slice(offset, offset + limit),
-          total: matches.length,
-          offset,
-          limit,
-          next_offset: offset + limit < matches.length ? offset + limit : undefined,
-        };
-      }),
-    );
-  readonly ready = this.explain.pipe(Effect.map((result) => result.ready));
-  show = (id: Id.IssueId) => {
-    return domainEffect(
-      Effect.sync(() => {
-        const i = this.issues.get(id);
-        ensure(i, "ISSUE_MISSING", "Missing issue");
-        return structuredClone(i);
-      }),
-    );
-  };
-  task = (id: Id.IssueId) =>
-    this.show(id).pipe(
-      Effect.map((issue) => ({
-        issue,
-        dependencies: issue.dependencies.map((id) => {
-          const dependency = this.issues.get(id);
-          return {
-            id,
-            title: dependency?.title,
-            status: dependency?.status ?? ("unavailable" as const),
-          };
-        }),
-      })),
-    );
-  taskEvidence = (issues: readonly Issue[]) =>
-    Effect.forEach(issues, ({ id }) =>
-      this.task(id).pipe(Effect.map(({ dependencies }) => ({ id, dependencies }))),
-    );
-  create = Effect.fn("FakeWorkGraph.create")(
-    function* (this: FakeWorkGraph, input: NewIssue) {
-      const encoded = JSON.stringify(input);
-      ensure(
-        !this.batches.has(input.request_id),
-        "REQUEST_REBIND",
-        "Request identity belongs to batch intake",
-      );
-      const saved = this.requests.get(input.request_id);
-      if (saved) {
-        ensure(
-          saved.input === encoded,
-          "REQUEST_REBIND",
-          "This request_id belongs to a different goal",
-        );
-        return yield* this.show(saved.id);
-      }
-      for (const id of input.dependencies) yield* this.show(id);
-      const id = Id.IssueId.make(`abra-created-${++this.creations}`);
-      this.requests.set(input.request_id, { input: encoded, id });
-      this.add(id, input.repository_id, input.dependencies);
-      const issue = this.issues.get(id)!;
-      issue.title = input.title;
-      issue.description = input.description;
-      issue.dispatch = input.dispatch;
-      issue.quality_profile = input.quality_profile;
-      issue.openspec_schema = input.openspec_schema;
-      issue.require_plan_approval = input.require_plan_approval;
-      issue.priority = input.priority;
-      issue.workflow_policy = input.workflow_policy ?? "full-openspec";
-      issue.scope = input.scope;
-      issue.report_reference = input.report_reference;
-      issue.request_id = input.request_id;
-      return yield* this.show(id);
-    }.bind(this),
-    domainEffect,
-  );
-  createBatch(input: BatchInput) {
-    return domainEffect(
-      Effect.sync(() => {
-        const batch = normalizeBatch(input),
-          encoded = JSON.stringify(batch);
-        ensure(
-          !this.requests.has(batch.request_id),
-          "REQUEST_REBIND",
-          "Batch identity belongs to single-item intake",
-        );
-        const saved = this.batches.get(batch.request_id);
-        if (saved) {
-          ensure(
-            saved.input === encoded,
-            "REQUEST_REBIND",
-            "Batch identity belongs to different definitions",
-          );
-          return {
-            request_id: batch.request_id,
-            tasks: saved.tasks.map((task) => ({
-              client_key: task.client_key,
-              issue: structuredClone(this.issues.get(task.id)!),
-            })),
-          } satisfies BatchResult;
-        }
-        for (const task of batch.tasks)
-          for (const dependency of task.dependencies)
-            if (dependency.type === "existing")
-              ensure(this.issues.has(dependency.issue_id), "MISSING", "Missing issue");
-        const ids = new Map(
-          batch.tasks.map((task, index) => [
-            task.client_key,
-            Id.IssueId.make(`abra-created-${this.creations + index + 1}`),
-          ]),
-        );
-        const planned = batchRequests(batch, ids),
-          local = new Set(ids.values());
-        for (const { input } of planned) {
-          ensure(
-            !this.requests.has(input.request_id),
-            "REQUEST_REBIND",
-            "Batch item identity already owned",
-          );
-          for (const dependency of input.dependencies)
-            ensure(
-              local.has(dependency) || this.issues.has(dependency),
-              "MISSING",
-              "Missing issue",
-            );
-        }
-        for (const { id, input } of planned) {
-          this.issues.set(id, {
-            ...input,
-            id,
-            status: "open",
-            workflow_policy: input.workflow_policy ?? "full-openspec",
-          });
-          this.requests.set(input.request_id, { id, input: JSON.stringify(input) });
-        }
-        this.creations += planned.length;
-        this.batches.set(batch.request_id, {
-          input: encoded,
-          tasks: planned.map(({ client_key, id }) => ({ client_key, id })),
-        });
-        return {
-          request_id: batch.request_id,
-          tasks: planned.map(({ client_key, id }) => ({
-            client_key,
-            issue: structuredClone(this.issues.get(id)!),
-          })),
-        } satisfies BatchResult;
-      }),
-    );
-  }
-  claim = (id: Id.IssueId, actor: Id.ExecutionId) => {
-    return domainEffect(
-      Effect.sync(() => {
-        const i = this.issues.get(id)!;
-        ensure(!i.assignee || i.assignee === actor, "CLAIM_LOST", "Another worker owns issue");
-        i.assignee = Id.ExecutionId.make(actor);
-        i.status = "in_progress";
-        this.claims++;
-      }),
-    );
-  };
-  block(id: Id.IssueId, _execution: Id.ExecutionId, _reason: string) {
-    return domainEffect(
-      Effect.sync(() => {
-        this.issues.get(id)!.status = "blocked";
-      }),
-    );
-  }
-  resume(id: Id.IssueId, _execution: Id.ExecutionId) {
-    return domainEffect(
-      Effect.sync(() => {
-        this.issues.get(id)!.status = "in_progress";
-      }),
-    );
-  }
-  close(id: Id.IssueId, _execution: Id.ExecutionId) {
-    return domainEffect(
-      Effect.sync(() => {
-        this.issues.get(id)!.status = "closed";
-      }),
-    );
-  }
-  history(_id: string) {
-    return domainEffect(Effect.sync(() => []));
-  }
-  completions(_start: Id.Timestamp, _end: Id.Timestamp) {
-    return Effect.succeed<Array<{ issue_id: Id.IssueId; at: Id.Timestamp }>>([]);
-  }
-  add(id: Id.IssueId, repo = Id.RepositoryId.make("api"), deps: Id.IssueId[] = []) {
-    this.issues.set(id, {
-      id,
-      title: id,
-      status: "open",
-      priority: 1,
-      repository_id: Id.RepositoryId.make(repo),
-      workflow_policy: "full-openspec",
-      request_id: Id.RequestId.make(id),
-      description: "",
-      dependencies: deps,
-    });
   }
 }
 export class FakeSpec extends OpenSpec {
@@ -846,6 +595,10 @@ export const fixture = domainEffect(
     const root = yield* mkdtemp(
       join(process.env.ABRACODE_TEST_REPOSITORY_SEED ?? tmpdir(), "abracode-unit-"),
     );
+    const scope = Scope.makeUnsafe();
+    const cleanup = Scope.close(scope, Exit.void).pipe(
+      Effect.ensuring(Effect.promise(() => removeFixture(root))),
+    );
     return yield* Effect.gen(function* () {
       yield* mkdir(join(root, "packages/agents/assets"), { recursive: true });
       for (const role of ["explore", "apply", "review", "research"])
@@ -858,7 +611,7 @@ export const fixture = domainEffect(
       const store = new MemoryStore();
       const records = new Records(store);
       const locks = new TestLocks();
-      const work = new FakeWorkGraph();
+      const { work, seed } = yield* fixtureGraph.pipe(Effect.provideService(Scope.Scope, scope));
       const spec = new FakeSpec();
       const runtime = new FakeRuntime(git);
       runtime.managementHome = root;
@@ -903,6 +656,7 @@ export const fixture = domainEffect(
         git,
         records,
         locks,
+        seed,
         work,
         spec,
         runtime,
@@ -912,10 +666,9 @@ export const fixture = domainEffect(
         controller,
         setup,
         scheduler,
-        close: () =>
-          controller.close().pipe(Effect.ensuring(Effect.promise(() => removeFixture(root)))),
+        close: () => controller.close().pipe(Effect.ensuring(cleanup)),
       };
-    }).pipe(Effect.onError(() => Effect.promise(() => removeFixture(root))));
+    }).pipe(Effect.onError(() => cleanup));
   }),
 );
 type PlanningChoices = Pick<Issue, "openspec_schema" | "require_plan_approval">;
@@ -923,11 +676,11 @@ export function planned(
   f: Effect.Success<typeof fixture>,
   id = Id.IssueId.make("abra-1"),
   choices: PlanningChoices = {},
+  dependencies: Id.IssueId[] = [],
 ) {
   return domainEffect(
     Effect.gen(function* () {
-      f.work.add(id);
-      Object.assign(f.work.issues.get(id)!, choices);
+      f.seed.named(id, undefined, dependencies, choices);
       let e = yield* f.controller.start(Id.IssueId.make(id), Id.SessionId.make("ses_supervisor"));
       f.spec.planned = true;
       f.runtime.success(e.explore_session_id!);

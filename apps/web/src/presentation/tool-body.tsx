@@ -1,3 +1,4 @@
+import type { WebWorkItem } from "@abracode/contracts/web/wire";
 import { useContext } from "react";
 import type { ToolPresentation } from "@abracode/contracts/web/presentation-contracts";
 import { SurfaceAttachment, MessageAttachment } from "./attachments.tsx";
@@ -11,13 +12,26 @@ import {
   type Inspect,
 } from "@abracode/presentation/cards";
 import { ObservationContext } from "./tool-context.ts";
-function Presentation({ value, inspect }: { value: ToolPresentation; inspect: Inspect }) {
+function Presentation({
+  value,
+  inspect,
+  work,
+}: {
+  value: ToolPresentation;
+  inspect: Inspect;
+  work: readonly WebWorkItem[];
+}) {
   switch (value.kind) {
     case "tasks":
       return (
         <>
           {value.tasks.map((task) => (
-            <TaskCard key={task.issue_id} task={task} inspect={inspect} />
+            <TaskCard
+              key={task.issue_id}
+              task={task}
+              current={work.find((w) => w.issue_id === task.issue_id)}
+              inspect={inspect}
+            />
           ))}
           {value.limited && (
             <p className="muted">
@@ -129,7 +143,7 @@ export function ObservedTool({ toolCallId }: { toolCallId: string }) {
     >
       {tool.presentation ? (
         <div className="inline-presentations">
-          <Presentation value={tool.presentation} inspect={inspect} />
+          <Presentation value={tool.presentation} work={observation.work} inspect={inspect} />
         </div>
       ) : (
         <details className="tool">

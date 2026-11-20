@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import { verifiedSpec } from "../helpers/spec-review.ts";
 import * as Id from "../../src/identities.ts";
 import { Clock, Deferred, Effect, Fiber } from "effect";
@@ -20,13 +21,13 @@ test("idle delivery and paused work retain claims/resources while releasing acti
   await run(f.records.saveProject(p));
   const first = await run(delivered(f));
   assert.equal(first.capacity_reservation, undefined);
-  f.work.add(Id.IssueId.make("abra-2"));
+  f.seed.named(Id.IssueId.make("abra-2"));
   assert.equal(
     (await run(f.controller.ready())).find((r) => r.issue.id === "abra-2")!.eligible,
     true,
   );
   await run(f.controller.start(Id.IssueId.make("abra-2")));
-  f.work.add(Id.IssueId.make("abra-3"));
+  f.seed.named(Id.IssueId.make("abra-3"));
   const blocked = (await run(f.controller.ready())).find((r) => r.issue.id === "abra-3")!;
   assert.ok(
     blocked.blocker_details.some(
@@ -35,7 +36,7 @@ test("idle delivery and paused work retain claims/resources while releasing acti
   );
   await run(f.controller.control(Id.IssueId.make("abra-2"), "pause"));
   await run(f.controller.start(Id.IssueId.make("abra-3")));
-  f.work.add(Id.IssueId.make("abra-4"));
+  f.seed.named(Id.IssueId.make("abra-4"));
   const retained = (await run(f.controller.ready())).find((r) => r.issue.id === "abra-4")!;
   assert.ok(
     retained.blocker_details.some(
@@ -110,23 +111,21 @@ test("uncertain prompt admission retains its active reservation", async (t) => {
       Effect.andThen(Deferred.succeed(entered, undefined)),
       Effect.andThen(Effect.never),
     );
-  f.work.add(Id.IssueId.make("abra-1"));
+  const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
   await run(
     Effect.scoped(
       Effect.gen(function* () {
-        const admission = yield* f.controller
-          .start(Id.IssueId.make("abra-1"))
-          .pipe(Effect.forkScoped);
+        const admission = yield* f.controller.start(issueId).pipe(Effect.forkScoped);
         yield* Deferred.await(entered);
         yield* Fiber.interrupt(admission);
       }),
     ),
   );
-  const saved = await run(f.controller.get(Id.IssueId.make("abra-1")));
+  const saved = await run(f.controller.get(issueId));
   assert.equal(saved.capacity_reservation!.status, "uncertain");
   assert.equal(saved.capacity_reservation!.prompt_id, saved.prompt_id);
-  f.work.add(Id.IssueId.make("abra-2"));
-  await assert.rejects(run(f.controller.start(Id.IssueId.make("abra-2"))), /active worker/);
+  const { id: abra2Id } = await run(f.work.create(workGoal("abra-2")));
+  await assert.rejects(run(f.controller.start(abra2Id)), /active worker/);
   assert.equal(f.runtime.creates, 1);
 });
 
@@ -162,7 +161,7 @@ for (const role of ["apply", "review"] as const) {
     let waiting;
     if (role === "apply") {
       const e = await run(planned(f));
-      f.work.add(Id.IssueId.make("abra-2"));
+      f.seed.named(Id.IssueId.make("abra-2"));
       await run(f.controller.start(Id.IssueId.make("abra-2")));
       f.config.max_workers = 1;
       const approval = await run(

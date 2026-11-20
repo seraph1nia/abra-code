@@ -1,7 +1,14 @@
 import { Schema } from "effect";
 import { ResourceSelectionSchema, type ResourceSelection } from "@abracode/contracts/web/resources";
 
-export const inspectorTabs = ["Overview", "Plan", "Diff", "Activity", "Reports"] as const;
+export const inspectorTabs = [
+  "Overview",
+  "Plan",
+  "Diff",
+  "Verification",
+  "Activity",
+  "Reports",
+] as const;
 export type InspectorTab = (typeof inspectorTabs)[number];
 export const activitySections = ["sessions", "communication", "checks", "leads"] as const;
 export type ActivitySection = (typeof activitySections)[number];
@@ -68,6 +75,7 @@ export function resourceFromSearch(search: WorkspaceSearch): ResourceSelection |
   const sections = {
     Overview: "summary",
     Plan: "plan",
+    Verification: "verification",
     Activity: "activity",
     Reports: "reports",
   } as const;
@@ -100,6 +108,7 @@ export function searchForResource(resource: ResourceSelection): WorkspaceSearch 
     summary: "Overview",
     plan: "Plan",
     changes: "Diff",
+    verification: "Verification",
     activity: "Activity",
     reports: "Reports",
   } as const;

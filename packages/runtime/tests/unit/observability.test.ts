@@ -16,7 +16,7 @@ import { run } from "../effects.ts";
 test("observations use finite labels, safe retained correlation and count distinct committed worker failures", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"));
+  f.seed.named(Id.IssueId.make("abra-1"));
   const e = await run(
     f.controller.start(Id.IssueId.make("abra-1"), Id.SessionId.make("ses_supervisor")),
   );

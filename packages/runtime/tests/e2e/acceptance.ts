@@ -1,3 +1,4 @@
+import { JourneyGates } from "./journey-gates.ts";
 import assert from "node:assert/strict";
 import { readFile, writeFile, access, mkdir, copyFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -8,7 +9,7 @@ import { run } from "../effects.ts";
 
 /** Product orchestration scenario on the existing disposable sample-code provider.
  * Task labels express the user operation; this proves mechanics, not domain judgment. */
-export async function acceptanceJourney(o: {
+type JourneyOptions = {
   root: string;
   home: string;
   client: any;
@@ -17,10 +18,10 @@ export async function acceptanceJourney(o: {
   eventually: <T>(action: () => Promise<T | undefined>, timeout?: number) => Promise<T>;
   work: (id: string) => Promise<{ phase?: string; issue_status: string; error?: string }>;
   restart: () => Promise<void>;
-  seen: Set<string>;
-  release: (key: string) => void;
   quietSample: () => Promise<unknown>;
-}) {
+};
+
+async function runJourney(o: JourneyOptions, gates: JourneyGates) {
   const initial = await readFile(join(o.home, "abracode.yaml"), "utf8");
   const authPath = await run(repo(o.root, "acceptance-auth-base")),
     workPath = await run(repo(o.root, "acceptance-work-base"));
@@ -115,7 +116,7 @@ export async function acceptanceJourney(o: {
     await o.restart();
     const status = (key: string) => o.invoke("abra_work_status", { issue_id: ids[key] });
     await o.eventually(async () => {
-      if (o.seen.has("auth-explore") && o.seen.has("db-research")) return true;
+      if (gates.seen.has("auth-explore") && gates.seen.has("db-research")) return true;
       const ready = (await o.invoke("abra_work_ready", {})).filter((r: any) =>
         Object.values(ids).includes(r.issue.id),
       );
@@ -126,7 +127,7 @@ export async function acceptanceJourney(o: {
       );
       throw Error(
         JSON.stringify({
-          seen: [...o.seen],
+          seen: [...gates.seen],
           ready: ready.map((r: any) => ({
             title: r.issue.title,
             eligible: r.eligible,
@@ -149,8 +150,8 @@ export async function acceptanceJourney(o: {
     );
     assert.ok(queued.blocker_details.some((b: any) => b.code === "capacity"));
     assert.equal(queued.execution?.apply_session_id, undefined);
-    o.release("auth-explore");
-    o.release("db-research");
+    gates.release("auth-explore");
+    gates.release("db-research");
     const plan = await o.eventually(async () => {
       const work = await o.work(ids.authentication);
       if (
@@ -237,7 +238,7 @@ export async function acceptanceJourney(o: {
       formID: form.form_id,
       answer: { authorize: true },
     });
-    await o.eventually(async () => (o.seen.has("auth-apply") ? true : undefined), 45000);
+    await o.eventually(async () => (gates.seen.has("auth-apply") ? true : undefined), 45000);
     const applying = await status("authentication");
     assert.equal(
       applying.execution.configuration_snapshot.dispatch_sources.apply.source,
@@ -262,7 +263,7 @@ export async function acceptanceJourney(o: {
     const sent = await o.invoke("abra_work_messages", { issue_id: ids.authentication });
     const intent = sent.entries.find((m: any) => m.record.request_id === request.request_id).record;
     assert.equal(intent.recipient_session_id, applying.execution.apply_session_id);
-    o.release("auth-apply");
+    gates.release("auth-apply");
     const done = await o.eventually(async () => {
       const work = await o.work(ids.authentication);
       if (["failed", "blocked", "recovery_required"].includes(work.phase ?? ""))
@@ -329,8 +330,29 @@ export async function acceptanceJourney(o: {
         "Disposable sample consumer behavior proves orchestration mechanics; no real authentication refactor or database performance claim.",
     };
   } finally {
-    for (const key of ["auth-explore", "db-research", "auth-apply"]) o.release(key);
+    for (const key of ["auth-explore", "db-research", "auth-apply"]) gates.release(key);
     await writeFile(join(o.home, "abracode.yaml"), initial);
     await o.restart();
   }
+}
+
+export function acceptanceJourney() {
+  const gates = new JourneyGates();
+  return {
+    run: (options: JourneyOptions) => runJourney(options, gates),
+    close: () => gates.close(),
+    observe(role: string, prompt: string) {
+      if (
+        prompt.includes("final-acceptance-authentication") &&
+        (role === "explore" || role === "apply")
+      )
+        return gates.wait(`auth-${role}`);
+      if (role === "research" && prompt.includes("final-acceptance-database"))
+        return gates.wait("db-research");
+    },
+    review(prompt: string) {
+      if (prompt.includes("final-acceptance-flaky"))
+        return { passed: true, findings: "Specification implemented; deterministic check passes." };
+    },
+  };
 }

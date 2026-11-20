@@ -1,3 +1,8 @@
+import {
+  RetainedReferenceSchema,
+  EvidenceReceiptSchema,
+} from "@abracode/contracts/web/worker-evidence";
+import { CheckResultSchema } from "@abracode/contracts/web/verification";
 import { SchemaBinding } from "../openspec/schema-contracts.ts";
 import { ProjectDispatchSchema } from "../config/dispatch.ts";
 import { ConfigurationSnapshotSchema } from "../config/snapshot.ts";
@@ -247,6 +252,13 @@ const fields = {
     }),
   ),
   plan_fingerprint: Schema.optional(Fingerprint),
+  worker_references: Schema.optional(
+    Schema.Array(RetainedReferenceSchema).check(Schema.isMaxLength(64)),
+  ),
+  worker_evidence: Schema.optional(
+    Schema.Array(EvidenceReceiptSchema).check(Schema.isMaxLength(64)),
+  ),
+  check_history: Schema.optional(Schema.Array(CheckResultSchema).check(Schema.isMaxLength(16))),
   verification_receipt: Schema.optional(
     Schema.Struct({ fingerprint: Fingerprint, commands: VerificationSchema, at: Timestamp }),
   ),

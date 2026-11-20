@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { Count, RoleSchema } from "../primitives.ts";
 import {
+  Fingerprint,
   IssueId,
   MessageId,
   ObligationKey,
@@ -24,7 +25,13 @@ const MessageEvidence = Schema.Array(
 export const MessageBody = Schema.NonEmptyString.check(
   Schema.makeFilter((body) => new TextEncoder().encode(body).length <= 8192 || "Maximum 8 KiB"),
 );
+export const LinkedCheckSchema = Schema.Struct({
+  fingerprint: Fingerprint,
+  at: Timestamp,
+  commands: Schema.Array(Schema.String),
+});
 export const MessageReplySchema = Schema.Struct({
+  check: Schema.optionalKey(LinkedCheckSchema),
   body: MessageBody,
   evidence: MessageEvidence,
   at: Timestamp,
@@ -59,6 +66,7 @@ const RequestFields = {
   source: Schema.optional(
     Schema.Union([
       Schema.Struct({ type: Schema.Literal("finding"), issue_id: IssueId, request_id: RequestId }),
+      Schema.Struct({ type: Schema.Literal("selection"), request_id: RequestId }),
       Schema.Struct({ type: Schema.Literal("decision"), key: ObligationKey }),
     ]),
   ),
@@ -283,6 +291,7 @@ export const WorkerReplySchema = Schema.Union([
   }),
   Schema.Struct({
     action: Schema.Literal("answer"),
+    check_fingerprint: Schema.optionalKey(Fingerprint),
     request_id: RequestId,
     generation: Count,
     body: MessageBody,

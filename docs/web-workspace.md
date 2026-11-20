@@ -283,3 +283,13 @@ only their affected sections. Later reads and all guarded actions check current
 authority again.
 
 Save snapshot retains the selected task, surface revision and request ID in browser storage before sending. If storage is unavailable, the view stays open and asks you to enable it. After an uncertain response or a failed local receipt write, reopening the same selection offers **Retry same save** with the original ID. After confirmation, **Save another snapshot** starts a new request.
+
+### Asking about selected work
+
+In Diff, highlight lines on one side or open **Select lines** to enter a range with the keyboard. **Ask Abra about selection** attaches one excerpt to the main draft. You can inspect another issue before sending. A changed source leaves the draft editable. A lost response uses the same request and its original capture. Expand the sent selection to read the excerpt, Abra's explicitly linked answer or a worker's acknowledgement and recheck. Opening a captured question works after the worktree retires.
+
+The Verification tab shows the task scope, prior check receipts, independently attributed Review findings, and links to the bound decision. Expand a screenshot to load its exact retained bytes and provenance. The desktop canvas width slider supports arrow keys. The same route opens a sheet on narrow screens.
+
+Since your last inspection compares material results and decisions for up to 20 recently inspected tasks on this device, scoped to the Abra session. Unobserved tasks have partial coverage. Opening the result advances its local reading position. Human-owned obligations remain in Attention until settled. While Abra is busy, choose Queue for Abra or Steer current Abra turn before sending. Stop current Abra turn acts on the conversation. Issue-specific pause, resume and advance requests still go through the controller.
+
+In a plan document, expand Ask about a plan passage and choose its first and last source lines. For a retained screenshot, select a rectangle in original image pixels. Both use the same draft and captured-question reader as a diff. Verification can download a worker-designated repository Playwright trace, show a file or symbol at its cited revision, and open versioned HTTPS documentation. Workers can supply references independently of an image or trace.

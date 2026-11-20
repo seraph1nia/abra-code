@@ -1,3 +1,4 @@
+import { EvidenceDataSchema, EvidenceReceiptSchema } from "@abracode/contracts/web/worker-evidence";
 import { SessionObservationSchema } from "./session-observation-contracts.ts";
 import { ExecutionContractSchema } from "../visibility/execution-contract.ts";
 export { SessionObservationSchema } from "./session-observation-contracts.ts";
@@ -120,7 +121,13 @@ export const toolOutputs = {
   work_attention: execution,
   work_wait_disposition: execution,
   worker_question: DecisionSchema,
-  worker_progress: ProgressSchema,
+  worker_progress: Schema.Union([
+    EvidenceDataSchema,
+    Schema.Struct({
+      ...ProgressSchema.fields,
+      capture: Schema.optional(EvidenceReceiptSchema),
+    }),
+  ]),
   worker_wait: DeclaredWaitSchema,
   work_decision: DecisionSchema,
   project_onboard: inspection,

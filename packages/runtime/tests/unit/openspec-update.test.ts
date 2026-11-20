@@ -32,7 +32,7 @@ test("controller refreshes instructions before Explore and retains its baseline 
         );
       }),
     );
-  f.work.add(issue);
+  f.seed.named(issue);
   const e = await run(f.controller.start(issue));
   assert.equal(updates, 1);
   assert.ok(e.explore_session_id);
@@ -80,7 +80,7 @@ test("controller refreshes instructions before Explore and retains its baseline 
 test("failed refresh retains provisioning and blocks all workers until explicit retry succeeds", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(issue);
+  f.seed.named(issue);
   f.spec.update = () => Effect.fail(new CrewError("COMMAND_FAILED", "OpenSpec update failed"));
   await assert.rejects(run(f.controller.start(issue)), /OpenSpec update failed/);
   const failed = await run(f.controller.get(issue));
@@ -105,7 +105,7 @@ test("failed refresh retains provisioning and blocks all workers until explicit 
 test("partial refresh is preserved and retry cannot silently commit unfinished changes", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(issue);
+  f.seed.named(issue);
   let updates = 0;
   f.spec.update = (e) =>
     domainEffect(
@@ -129,7 +129,7 @@ test("partial refresh is preserved and retry cannot silently commit unfinished c
 test("saved refresh is reused when change creation fails during provisioning", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(issue);
+  f.seed.named(issue);
   let updates = 0;
   f.spec.update = () =>
     Effect.sync(() => {
@@ -152,9 +152,10 @@ test("short-policy workflows do not invoke OpenSpec update", async (t) => {
     Effect.fail(new CrewError("UNEXPECTED_SPEC", "No OpenSpec for short policies"));
   for (const policy of ["research-only", "lightweight-fix"] as const) {
     const id = Id.IssueId.make(policy);
-    f.work.add(id, Id.RepositoryId.make(policy === "research-only" ? "api" : "frontend"));
-    f.work.issues.get(id)!.workflow_policy = policy;
-    f.work.issues.get(id)!.scope = { goal: "Inspect", acceptance: ["Evidence"], constraints: [] };
+    f.seed.named(id, Id.RepositoryId.make(policy === "research-only" ? "api" : "frontend"), [], {
+      workflow_policy: policy,
+      scope: { goal: "Inspect", acceptance: ["Evidence"], constraints: [] },
+    });
     const e = await run(f.controller.start(id));
     assert.equal(e.current_phase, "awaiting_plan_approval");
     assert.equal(e.openspec_update_commit, undefined);

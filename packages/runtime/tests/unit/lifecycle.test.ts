@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { failedSpec } from "../helpers/spec-review.ts";
 import * as Id from "../../src/identities.ts";
@@ -30,11 +31,11 @@ test("onboards three independent repositories, preserving instructions and stabl
 test("cross-repository dependency readiness and deterministic priority", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"), Id.RepositoryId.make("api"));
-  f.work.add(Id.IssueId.make("abra-2"), Id.RepositoryId.make("frontend"), [
+  f.seed.named(Id.IssueId.make("abra-1"), Id.RepositoryId.make("api"));
+  f.seed.named(Id.IssueId.make("abra-2"), Id.RepositoryId.make("frontend"), [
     Id.IssueId.make("abra-1"),
   ]);
-  f.work.add(Id.IssueId.make("abra-3"), Id.RepositoryId.make("worker"), [
+  f.seed.named(Id.IssueId.make("abra-3"), Id.RepositoryId.make("worker"), [
     Id.IssueId.make("abra-2"),
   ]);
   assert.deepEqual(
@@ -68,14 +69,14 @@ test("cross-repository dependency readiness and deterministic priority", async (
 test("duplicate starts and concurrent supervisors cannot create two writers", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"));
+  const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
   const results = await Promise.allSettled([
-    run(f.controller.start(Id.IssueId.make("abra-1"))),
-    run(f.controller.start(Id.IssueId.make("abra-1"))),
+    run(f.controller.start(issueId)),
+    run(f.controller.start(issueId)),
   ]);
   assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
-  assert.equal(f.work.claims, 1);
-  const e = await run(f.controller.start(Id.IssueId.make("abra-1")));
+  assert.equal(f.seed.countEvents("claimed"), 1);
+  const e = await run(f.controller.start(issueId));
   assert.equal(f.runtime.trees.length, 1);
   assert.equal(f.runtime.creates, 1);
   assert.ok(e.explore_session_id);
@@ -95,22 +96,22 @@ test("native-owned issue worktree survives Explore and Apply", async (t) => {
 test("rejects incomplete or invalid planning artifacts", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"));
-  const e = await run(f.controller.start(Id.IssueId.make("abra-1")));
+  const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
+  const e = await run(f.controller.start(issueId));
   f.runtime.success(e.explore_session_id!);
-  await assert.rejects(run(f.controller.advance(Id.IssueId.make("abra-1"))), /prerequisite/);
-  assert.equal((await run(f.controller.get(Id.IssueId.make("abra-1")))).current_phase, "blocked");
+  await assert.rejects(run(f.controller.advance(issueId)), /prerequisite/);
+  assert.equal((await run(f.controller.get(issueId))).current_phase, "blocked");
   assert.equal(f.runtime.creates, 1);
 });
 test("strict validation failure prevents plan approval", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"));
-  const e = await run(f.controller.start(Id.IssueId.make("abra-1")));
+  const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
+  const e = await run(f.controller.start(issueId));
   f.spec.planned = true;
   f.spec.valid = false;
   f.runtime.success(e.explore_session_id!);
-  await assert.rejects(run(f.controller.advance(Id.IssueId.make("abra-1"))), /Invalid OpenSpec/);
+  await assert.rejects(run(f.controller.advance(issueId)), /Invalid OpenSpec/);
   assert.equal(f.runtime.creates, 1);
 });
 test("pending human form does not authorize Apply and workers cannot self-approve", async (t) => {
@@ -141,7 +142,7 @@ test("unfinished implementation tasks reject false completion and retain worktre
   f.runtime.success(e.apply_session_id!);
   await assert.rejects(run(f.controller.advance(Id.IssueId.make("abra-1"))), /unfinished/);
   await access(e.worktree_directory!);
-  assert.equal(f.work.issues.get("abra-1")!.status, "blocked");
+  assert.equal((await run(f.work.show(Id.IssueId.make("abra-1")))).status, "blocked");
 });
 test("failed repository checks block review, archive, and delivery", async (t) => {
   const f = await run(fixture);
@@ -207,8 +208,8 @@ test("claim recovery handles rollback, lost response and a crash before claiming
   for (const checkpoint of ["before", "after", "crash"] as const) {
     const f = await run(fixture);
     t.onTestFinished(() => run(f.close()));
-    f.work.add(Id.IssueId.make("claim-recovery"));
-    const claim = f.work.claim;
+    const { id: claimRecoveryId } = await run(f.work.create(workGoal("claim-recovery")));
+    const claim = f.work.claim.bind(f.work);
     f.work.claim = (id, actor) =>
       domainEffect(
         Effect.gen(function* () {
@@ -217,13 +218,11 @@ test("claim recovery handles rollback, lost response and a crash before claiming
         }),
       );
     await assert.rejects(
-      run(
-        f.controller.start(Id.IssueId.make("claim-recovery"), Id.SessionId.make("ses_supervisor")),
-      ),
+      run(f.controller.start(claimRecoveryId, Id.SessionId.make("ses_supervisor"))),
       /Claim response lost/,
     );
     f.work.claim = claim;
-    const saved = (await run(f.records.execution(Id.IssueId.make("claim-recovery"))))!;
+    const saved = (await run(f.records.execution(claimRecoveryId)))!;
     let recovered;
     if (checkpoint === "crash") {
       saved.current_phase = "claiming";
@@ -232,7 +231,7 @@ test("claim recovery handles rollback, lost response and a crash before claiming
     } else recovered = await run(f.controller.control(saved.issue_id, "retry"));
     assert.equal(recovered.current_phase, "exploring");
     assert.equal((await run(f.work.show(saved.issue_id))).assignee, saved.execution_id);
-    assert.equal(f.work.claims, 1);
+    assert.equal(f.seed.countEvents("claimed"), 1);
     assert.equal(f.runtime.creates, 1);
   }
 });
@@ -242,16 +241,14 @@ test("merge authorization required and incomplete delivery preserves worktree", 
   const e = await run(delivered(f));
   await assert.rejects(run(f.controller.finish(Id.IssueId.make("abra-1"))), /authorization/);
   await access(e.worktree_directory!);
-  assert.equal(f.work.issues.get("abra-1")!.status, "in_progress");
+  assert.equal((await run(f.work.show(Id.IssueId.make("abra-1")))).status, "in_progress");
   assert.equal(f.delivery.merged, false);
 });
 test("merge, safe cleanup and WorkGraph closure unblock cross-repository dependent work", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-2"), Id.RepositoryId.make("frontend"), [
-    Id.IssueId.make("abra-1"),
-  ]);
   const e = await run(delivered(f));
+  f.seed.named(Id.IssueId.make("abra-2"), Id.RepositoryId.make("frontend"), [e.issue_id]);
   const pending = (await run(
     f.controller.approve(Id.IssueId.make("abra-1"), "merge", Id.SessionId.make("ses_supervisor")),
   )) as {
@@ -267,7 +264,7 @@ test("merge, safe cleanup and WorkGraph closure unblock cross-repository depende
   const done = (await run(f.controller.reconcile(Id.IssueId.make("abra-1"))))[0];
   assert.equal(done.current_phase, "completed");
   await assert.rejects(access(e.worktree_directory!));
-  assert.equal(f.work.issues.get("abra-1")!.status, "closed");
+  assert.equal((await run(f.work.show(Id.IssueId.make("abra-1")))).status, "closed");
   assert.equal(
     (await run(f.controller.ready())).find((x) => x.issue.id === "abra-2")!.eligible,
     true,
@@ -295,7 +292,7 @@ test("untracked or ignored work prevents cleanup after externally confirmed merg
   assert.ok(
     waiting.decisions?.some((d) => d.status === "open" && d.finishing_target?.kind === "follow_on"),
   );
-  assert.equal(f.work.issues.get("abra-1")!.status, "in_progress");
+  assert.equal((await run(f.work.show(Id.IssueId.make("abra-1")))).status, "in_progress");
   await access(e.worktree_directory!);
 });
 test("cleanup failure remains cleaning, recovery never repeats merge", async (t) => {
@@ -326,9 +323,9 @@ test("cleanup failure remains cleaning, recovery never repeats merge", async (t)
 test("scheduler is opt-in and respects global/per-project capacity", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"));
-  f.work.add(Id.IssueId.make("abra-2"));
-  f.work.add(Id.IssueId.make("abra-3"), Id.RepositoryId.make("frontend"));
+  f.seed.named(Id.IssueId.make("abra-1"));
+  f.seed.named(Id.IssueId.make("abra-2"));
+  f.seed.named(Id.IssueId.make("abra-3"), Id.RepositoryId.make("frontend"));
   const scheduler = new Scheduler(f.controller, f.records);
   assert.equal((await run(scheduler.tick())).length, 0);
   f.config.auto_schedule = true;
@@ -386,7 +383,7 @@ test("human rejection is durable, blocks WorkGraph, and retry reuses Explore to 
   );
   const blocked = await run(f.controller.get(Id.IssueId.make("abra-1")));
   assert.ok(blocked.approval_receipts[0].rejected_at);
-  assert.equal(f.work.issues.get("abra-1")!.status, "blocked");
+  assert.equal((await run(f.work.show(Id.IssueId.make("abra-1")))).status, "blocked");
   const resumed = await run(f.controller.control(Id.IssueId.make("abra-1"), "retry"));
   assert.equal(resumed.explore_session_id, e.explore_session_id);
   assert.equal(resumed.current_phase, "planning");

@@ -38,6 +38,8 @@
     "./web/resources": "./src/web/resources.ts",
     "./web/surfaces": "./src/web/surfaces.ts",
     "./web/transcript": "./src/web/transcript.ts",
+    "./web/worker-evidence": "./src/web/worker-evidence.ts",
+    "./web/verification": "./src/web/verification.ts",
     "./web/wire": "./src/web/wire.ts",
     "./web/worker-history": "./src/web/worker-history.ts",
     "./web/workspace-wire": "./src/web/workspace-wire.ts",

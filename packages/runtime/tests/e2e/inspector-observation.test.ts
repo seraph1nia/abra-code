@@ -1,7 +1,12 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Read-only typed query preservation. */
+import { Effect } from "effect";
+import { CrewError } from "../../src/domain.ts";
+import { SessionMessage } from "@opencode/schema/session-message";
+import { Schema } from "effect";
+import { ReceiptSchema, selectionMarker } from "@abracode/contracts/web/workspace-wire";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { IssueId } from "../../src/identities.ts";
+import { IssueId, SessionId, ObligationKey } from "../../src/identities.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 import { workspaceBrowserFixture } from "../helpers/workspace-browser.ts";
 
@@ -117,4 +122,382 @@ test("an observation arriving in flight retains a pending Overview refresh and e
     timeout: 3000,
   });
   assert.equal(f.source.submissions, 0);
+});
+
+test("a diff selection and draft survive inspection of another task and reload", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage();
+  const first = f.source.value.work.work[0];
+  f.source.value = {
+    ...f.source.value,
+    work: {
+      ...f.source.value.work,
+      work: [first, { ...first, issue_id: IssueId.make("abra-other"), title: "Another issue" }],
+    },
+  };
+  await page.setViewportSize({ width: 1600, height: 950 });
+  await page.goto(f.origin + "/?issue=abra-web&tab=Diff");
+  await page.getByLabel("Message Abra").fill("Does this cover a timeout?");
+  const source = page.getByRole("region", { name: "source.ts", exact: true });
+  await source.getByText("Select lines in source.ts").click();
+  await source.getByLabel("First line").fill("1");
+  await source.getByRole("button", { name: "Ask Abra about selection" }).click();
+  await page.locator(".selection-chip summary").click();
+  assert.match(await page.locator(".selection-chip pre").innerText(), /export const newValue = 2/);
+  await page.goto(f.origin + "/?issue=abra-other&tab=Overview");
+  await page.getByText("Details for Another issue", { exact: true }).waitFor();
+  await page.reload();
+  await page.locator(".selection-chip").waitFor();
+  assert.match(await page.locator(".selection-chip summary").innerText(), /abra-web.*source.ts/);
+  assert.equal(await page.getByLabel("Message Abra").inputValue(), "Does this cover a timeout?");
+  assert.equal(f.source.submissions, 0);
+  f.backend.submit = () =>
+    Effect.fail(
+      new CrewError("SELECTION_STALE", "Review the updated diff or remove the selection."),
+    );
+  await page.getByRole("button", { name: "Send message" }).click();
+  await page
+    .getByRole("alert")
+    .filter({ hasText: "Review the updated diff or remove the selection." })
+    .waitFor({ timeout: 3000 });
+  assert.equal(await page.getByLabel("Message Abra").isEditable(), true);
+  await page.getByRole("button", { name: "Remove selection" }).click();
+  assert.equal(await page.getByLabel("Message Abra").inputValue(), "Does this cover a timeout?");
+});
+
+test("a retired selection reopens its captured excerpt and linked worker result after reload", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const request_id = "retired-question";
+  const text = "Did the worker recheck this?";
+  const excerpt = "+historical implementation";
+  const selection = {
+    kind: "diff",
+    issue_id: "abra-web",
+    scope: "all",
+    file: "former.ts",
+    side: "additions",
+    start: 1,
+    end: 1,
+    patch_id: "a".repeat(64),
+  };
+  const native_text = text + selectionMarker + JSON.stringify({ request_id, selection, excerpt });
+  const at = new Date().toISOString();
+  const message_id = SessionMessage.ID.create();
+  const receipt = Schema.decodeUnknownSync(ReceiptSchema)({
+    request_id,
+    message_id,
+    text,
+    native_text,
+    at,
+    status: "admitted",
+    delivery: "queue",
+    capture: { selection, excerpt },
+    followups: [
+      {
+        request_id: "worker-recheck",
+        role: "apply",
+        status: "answered",
+        acknowledged_at: at,
+        answer: "I rechecked the timeout.",
+      },
+    ],
+  });
+  f.source.retainedReceipts.set(request_id, receipt);
+  f.source.value = {
+    ...f.source.value,
+    work: { ...f.source.value.work, work: [] },
+    messages: [{ id: message_id, role: "user", text: native_text, at }],
+  };
+  f.failedReads.add("diff");
+  const page = await f.browser.newPage();
+  await page.goto(f.origin);
+  await page.reload();
+  await page.getByText(/former.ts · Captured selection/).click();
+  await page.getByText(excerpt, { exact: true }).waitFor();
+  await page.getByText(/Worker acknowledged/).waitFor();
+  await page.getByText("I rechecked the timeout.", { exact: true }).waitFor();
+  assert.ok(!f.calls.some((c) => c.name === "diff"));
+});
+
+test("Verification uses one responsive canvas and keyboard resizing preserves the draft and route", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage({ viewport: { width: 1600, height: 980 } });
+  await page.goto(f.origin + "/?issue=abra-web&tab=Feedback");
+  await page.getByLabel("Message Abra").fill("Keep this question");
+  await page.getByRole("tab", { name: "Verification" }).click();
+  const width = page.getByRole("slider", { name: "Canvas width" });
+  const panel = page.getByRole("complementary", { name: "Work inspector" });
+  const before = (await panel.boundingBox())!.width;
+  await width.press("ArrowRight");
+  assert.ok((await panel.boundingBox())!.width > before);
+  await page.goBack();
+  await page.getByRole("tab", { name: "Activity", selected: true }).waitFor();
+  await page.goForward();
+  await page.setViewportSize({ width: 390, height: 830 });
+  await page
+    .getByRole("dialog")
+    .getByRole("tab", { name: "Verification", selected: true })
+    .waitFor();
+  await page.getByRole("button", { name: "Close inspector", exact: true }).click();
+  assert.equal(await page.getByLabel("Message Abra").inputValue(), "Keep this question");
+  assert.ok(!f.calls.some((c) => ["document", "diff", "worker-history"].includes(c.name)));
+});
+
+test("verification keeps a superseded check inspectable and distinguishes missing Review and research scope", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  f.source.value = {
+    ...f.source.value,
+    work: {
+      ...f.source.value.work,
+      work: f.source.value.work.work.map((work) => ({ ...work, policy: "lightweight-fix" })),
+    },
+  };
+  const old = "a".repeat(64);
+  f.detailOverrides.set("abra-web", {
+    verification: {
+      scope: { goal: "Keep the deadline", acceptance: ["Stop on timeout"], constraints: [] },
+      observed: "b".repeat(64),
+      checks: [{ fingerprint: old, at: f.source.value.at, commands: ["pnpm test"] }],
+    },
+  });
+  const page = await f.browser.newPage({ viewport: { width: 1600, height: 900 } });
+  await page.goto(f.origin);
+  await page.getByLabel("Message Abra").waitFor();
+  assert.ok(
+    !f.calls.some((c) => ["verification", "document", "diff", "worker-history"].includes(c.name)),
+  );
+  await page.goto(f.origin + "/?issue=abra-web&tab=Verification");
+  await page.getByRole("heading", { name: "Lightweight scope" }).waitFor();
+  await page.getByText("Stop on timeout").waitFor();
+  await page.getByText("Earlier pass · content has changed").click();
+  await page.getByText("pnpm test", { exact: true }).waitFor();
+  await page.getByText("No independent review receipt is available.").waitFor();
+  f.source.value = {
+    ...f.source.value,
+    work: {
+      ...f.source.value.work,
+      work: f.source.value.work.work.map((work) => ({ ...work, policy: "research-only" })),
+    },
+  };
+  await f.changed();
+  await page.getByRole("button", { name: "Inspect research report" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Inspect changes" }).count(), 0);
+});
+
+test("a retained screenshot loads only when its receipt is expanded", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const target = await f.browser.newPage({ viewport: { width: 640, height: 320 } });
+  await target.setContent("<h1>Original browser behavior</h1>");
+  const bytes = await target.screenshot();
+  const data = bytes.toString("base64");
+  await target.close();
+  const receipt = {
+    kind: "screenshot",
+    request_id: "capture",
+    path: "observed.png",
+    description: "Rendered result",
+    session_id: "ses_worker",
+    issue_id: "abra-web",
+    generation: 2,
+    at: f.source.value.at,
+    bytes: bytes.length,
+    hash: "a".repeat(64),
+    width: 640,
+    height: 320,
+  };
+  f.detailOverrides.set("abra-web", {
+    verification: { evidence: [receipt] },
+    evidence: { receipt, data },
+  });
+  const page = await f.browser.newPage({ viewport: { width: 1600, height: 900 } });
+  await page.goto(f.origin + "/?issue=abra-web&tab=Verification");
+  await page.getByText("Rendered result", { exact: true }).waitFor();
+  assert.ok(!f.calls.some((c) => c.name === "evidence"));
+  await page.getByText("Rendered result", { exact: true }).click();
+  await page.getByText("Revision unverified", { exact: true }).waitFor();
+  const image = page.getByRole("img", { name: "Rendered result" });
+  assert.equal(await image.getAttribute("src"), "data:image/png;base64," + data);
+  await page.getByText("Select a region", { exact: true }).click();
+  const rect = (await image.boundingBox())!;
+  await page.mouse.move(rect.x + rect.width / 4, rect.y + rect.height / 4);
+  await page.mouse.down();
+  await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+  await page.mouse.up();
+  assert.ok(Math.abs(Number(await page.getByLabel("Region x").inputValue()) - 160) <= 2);
+  await page.getByLabel("Region x").fill("640");
+  assert.ok(await page.getByRole("button", { name: "Ask Abra about region" }).isDisabled());
+  await page.getByLabel("Region x").fill("160");
+  await page.getByLabel("Region y").fill("80");
+  await page.getByLabel("Region width").fill("320");
+  await page.getByLabel("Region height").fill("160");
+  await page.getByRole("button", { name: "Ask Abra about region" }).click();
+  await page.setViewportSize({ width: 390, height: 820 });
+  await page.getByRole("button", { name: "Close inspector" }).click();
+  assert.match(
+    await page.locator(".selection-chip summary").innerText(),
+    /Image capture.*320×160 at 160, 80/,
+  );
+  const selection = {
+    kind: "region",
+    issue_id: "abra-web",
+    request_id: "capture",
+    hash: receipt.hash,
+    x: 160,
+    y: 80,
+    width: 320,
+    height: 160,
+  };
+  const request_id = "region-history",
+    message_id = SessionMessage.ID.create();
+  const text = "Check this region",
+    capture = { selection, excerpt: "Rendered result" };
+  const native_text = text + selectionMarker + JSON.stringify({ request_id, ...capture });
+  f.source.retainedReceipts.set(
+    request_id,
+    Schema.decodeUnknownSync(ReceiptSchema)({
+      request_id,
+      message_id,
+      text,
+      native_text,
+      capture,
+      at: receipt.at,
+      status: "admitted",
+      delivery: "queue",
+    }),
+  );
+  f.source.value = {
+    ...f.source.value,
+    messages: [{ id: message_id, role: "user", text: native_text, at: receipt.at }],
+  };
+  await page.goto(f.origin);
+  await page.getByText(/capture · Captured selection/).click();
+  const marked = page.getByLabel("Selected image region");
+  const smallImage = page.getByRole("img", { name: "Rendered result" });
+  await smallImage.waitFor();
+  const small = (await smallImage.boundingBox())!,
+    box = (await marked.boundingBox())!;
+  assert.ok(small.width < rect.width);
+  assert.ok(Math.abs(box.width / small.width - 0.5) < 0.005);
+  assert.ok(Math.abs((box.x - small.x) / small.width - 0.25) < 0.005);
+  assert.equal(await smallImage.getAttribute("src"), "data:image/png;base64," + data);
+});
+
+test("local return history follows inspected results independently of current attention", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const first = f.source.value.work.work[0];
+  const work = [
+    first,
+    ...["b", "c"].map((id) => ({
+      ...first,
+      issue_id: IssueId.make("abra-" + id),
+      title: "Task " + id,
+    })),
+  ];
+  f.source.value = { ...f.source.value, work: { ...f.source.value.work, work } };
+  const page = await f.browser.newPage({ viewport: { width: 1600, height: 900 } });
+  await page.goto(f.origin);
+  await page.getByText("Since your last inspection").click();
+  await page.getByText(/Inspect a task to start/).waitFor();
+  for (const w of work) {
+    await page.goto(f.origin + "/?issue=" + w.issue_id);
+    await page.getByRole("heading", { name: w.title, exact: true }).waitFor();
+  }
+  const decision = {
+    key: ObligationKey.make("decision"),
+    generation: 0,
+    status: "open" as const,
+    owner: "user" as const,
+    scope: "Change",
+    question: "Accept change?",
+    session_id: SessionId.make("ses_worker"),
+    opened_at: 1,
+  };
+  f.source.value = {
+    ...f.source.value,
+    work: {
+      ...f.source.value.work,
+      work: [
+        { ...first, last_check: "new-revision" },
+        { ...work[1], decisions: [decision] },
+        work[2],
+      ],
+    },
+  };
+  await page.goto(f.origin);
+  await page.getByText(/Since your last inspection/).click();
+  const recap = page.locator(".work-recap");
+  await recap.getByRole("button", { name: /Verification result/ }).waitFor({ timeout: 3000 });
+  assert.equal(await recap.getByRole("button").count(), 2);
+  await f.changed();
+  await f.changed();
+  assert.equal(await recap.getByRole("button").count(), 2);
+  await recap.getByRole("button", { name: /Verification result/ }).click();
+  await page.getByRole("tab", { name: "Verification", selected: true }).waitFor();
+  await recap.getByRole("button", { name: /Decision updated/ }).waitFor();
+  assert.equal(await recap.getByRole("button").count(), 1);
+  assert.equal(f.source.submissions, 0);
+});
+
+test("disabled local history leaves the main conversation and attention available", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage();
+  await page.addInitScript(() => {
+    const original = Storage.prototype.getItem.bind(localStorage);
+    Storage.prototype.getItem = function (key) {
+      if (key.startsWith("abra-recap-")) throw new Error("Storage offline");
+      return original(key);
+    };
+  });
+  await page.goto(f.origin);
+  await page.getByText("Since your last inspection").click();
+  await page.getByText("Local reading history is unavailable.").waitFor();
+  assert.ok(await page.getByRole("button", { name: /Attention/ }).isVisible());
+  assert.ok(await page.getByLabel("Message Abra").isEditable());
+});
+
+test("the busy composer submits the developer's delivery choice to Abra", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  f.source.value = { ...f.source.value, busy: true };
+  const page = await f.browser.newPage();
+  await page.goto(f.origin);
+  for (const delivery of ["queue", "steer"]) {
+    await page.getByLabel("Message delivery").selectOption(delivery);
+    await page.getByLabel("Message Abra").fill("Delivery " + delivery);
+    await page.getByRole("button", { name: "Send message" }).click();
+    await page
+      .locator(".message.user")
+      .getByText("Delivery " + delivery, { exact: true })
+      .waitFor();
+    assert.equal(f.source.value.receipts.at(-1)?.delivery, delivery);
+  }
+  assert.equal(f.source.stops, 0);
+});
+
+test("a plan passage attaches to the existing composer and retains its exact source lines", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  f.detailOverrides.set("abra-web", {
+    document: { content: "Same criterion\nFirst context\nSame criterion\nSecond context" },
+  });
+  const page = await f.browser.newPage({ viewport: { width: 1600, height: 900 } });
+  await page.goto(f.origin + "/?issue=abra-web&tab=Plan&file=proposal.md");
+  await page.getByText("Ask about a plan passage").click();
+  await page.getByLabel("First plan line").fill("3");
+  await page.getByLabel("Last plan line").fill("4");
+  await page.getByRole("button", { name: "Ask Abra about passage" }).click();
+  await page.reload();
+  await page.locator(".selection-chip summary").click();
+  assert.equal(
+    await page.locator(".selection-chip pre").innerText(),
+    "Same criterion\nSecond context",
+  );
+  assert.equal(f.replies.length, 0);
 });

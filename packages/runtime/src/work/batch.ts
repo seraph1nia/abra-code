@@ -87,22 +87,33 @@ export function normalizeBatch(raw: unknown) {
 export type NormalizedBatch = ReturnType<typeof normalizeBatch>;
 
 /** Resolve local references only after every new issue identity is allocated. */
-export function batchRequests(batch: NormalizedBatch, ids: ReadonlyMap<string, IssueId>) {
-  return batch.tasks.map((task) => {
+export function prepareBatch(batch: NormalizedBatch, allocate: (request: RequestId) => IssueId) {
+  const identities = new Map(
+    batch.tasks.map(({ client_key }) => {
+      const request_id = batchItemRequest(batch.request_id, client_key);
+      return [client_key, { id: allocate(request_id), request_id }] as const;
+    }),
+  );
+  const existing = new Set<IssueId>();
+  const requests = batch.tasks.map((task) => {
     const { client_key, dependencies, ...fields } = task;
     return {
       client_key,
-      id: ids.get(client_key)!,
+      id: identities.get(client_key)!.id,
       input: normalizeIssue({
         ...fields,
-        request_id: batchItemRequest(batch.request_id, client_key),
+        request_id: identities.get(client_key)!.request_id,
         dependencies: dependencies.map((dependency) => {
+          if (dependency.type === "existing") existing.add(dependency.issue_id);
           const id =
-            dependency.type === "existing" ? dependency.issue_id : ids.get(dependency.client_key);
+            dependency.type === "existing"
+              ? dependency.issue_id
+              : identities.get(dependency.client_key)?.id;
           ensure(id, "BATCH_DEPENDENCY", "Local dependency identity is missing");
           return id;
         }),
       }),
     };
   });
+  return { requests, existing: [...existing] };
 }

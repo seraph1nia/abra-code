@@ -3,7 +3,7 @@ import { ArrowUpRight } from "@abracode/presentation/icons";
 import { ArtifactCard, type Inspect } from "@abracode/presentation/cards";
 import type { PresentationAttachmentSchema } from "@abracode/contracts/presentation/contracts";
 import { api } from "../api.ts";
-import { queries } from "../data.ts";
+import { queries } from "../work-data.ts";
 import { RequestState } from "../request-state.tsx";
 import { deferred } from "../deferred.tsx";
 import { ReviewsForSource } from "./interactive-review-loader.tsx";

@@ -168,3 +168,9 @@ lead contract, revocation and parent-notice receipt loss. A successful native
 admission never substitutes for an acknowledgement or answer. Recovery metadata
 and accepted reply history remain retained; use the [recovery runbook](../../recovery.md)
 for authorized clearing actions.
+
+For a selected-work request, use the ticket diff, web admissions, messages and inspector observation regressions. Inspect a different issue before sending, reopen the original captured source after retirement, and compare a linked worker check with an unrelated later pass. An acknowledgement requires the original worker request and assignment.
+
+Open Verification, inspect a prior pass after editing, then expand the worker's retained screenshot after removing the scratch file. Confirm its generation and source session are visible, and its revision is labeled unverified.
+
+Check duplicate plan criteria by selecting the second occurrence and editing the first after capture. Verify the original passage after reload. On a retained screenshot, choose a region by keyboard, reopen the captured question at a narrow width, and compare the overlay with the original bytes. Run the worker-evidence integration test for a repository-generated Playwright trace, missing historical locations and versioned documentation.

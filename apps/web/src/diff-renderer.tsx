@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import type { SelectedLineRange, FileDiffMetadata } from "@pierre/diffs";
+import { IssueId } from "@abracode/contracts/identities";
+import { AttachSelection } from "./workspace-state/draft.ts";
+import { Button } from "@abracode/presentation/ui/button";
 import { FileDiff } from "@pierre/diffs/react";
 import type { WorkDiffSchema } from "@abracode/contracts/web/wire";
 import { parseDiffPatch } from "./diff-patch.ts";
 import type { WorkspaceSearch } from "./navigation.ts";
-import { queries } from "./data.ts";
+import { queries } from "./work-data.ts";
 import { RequestState } from "./request-state.tsx";
 import { Input } from "@abracode/presentation/ui/input";
 import { Alert, AlertDescription } from "@abracode/presentation/ui/alert";
@@ -68,21 +72,39 @@ export default function DiffRenderer({
       />
       {exact ? (
         <RequestState query={queries.diff(issue, exact, search.scope ?? "all")} showRefresh={false}>
-          {(selected) => <DiffFiles diff={selected} filter="" theme={theme} />}
+          {(selected) => (
+            <DiffFiles
+              issue={issue}
+              scope={search.scope ?? "all"}
+              diff={selected}
+              filter=""
+              theme={theme}
+            />
+          )}
         </RequestState>
       ) : (
-        <DiffFiles diff={diff} filter={needle} theme={theme} />
+        <DiffFiles
+          issue={issue}
+          scope={search.scope ?? "all"}
+          diff={diff}
+          filter={needle}
+          theme={theme}
+        />
       )}
     </div>
   );
 }
 
 function DiffFiles({
+  issue,
+  scope,
   diff,
   filter,
   theme,
 }: {
   diff: Diff;
+  issue: string;
+  scope: "all" | "uncommitted";
   filter: string;
   theme: "light" | "dark";
 }) {
@@ -124,9 +146,24 @@ function DiffFiles({
         /* oxlint-enable jsx-a11y/prefer-tag-over-role */
       )}
       <div className="diff-renderer" data-diff-renderer="pierre">
-        {files.map((file, index) => (
-          <FileDiff key={`${file.name}:${index}`} fileDiff={file} options={options} />
-        ))}
+        {files.map((file) => {
+          const entry = diff.files.find(
+            (item) => item.path === file.name || item.path === file.prevName,
+          );
+          return entry?.patch_id ? (
+            <SelectableFile
+              key={entry.patch_id}
+              file={file}
+              entry={entry}
+              patchId={entry.patch_id}
+              issue={issue}
+              scope={scope}
+              options={options}
+            />
+          ) : (
+            <FileDiff key={file.name} fileDiff={file} options={options} />
+          );
+        })}
       </div>
       {!files.length && !parsed.error && !diff.message && (
         <output>
@@ -134,5 +171,124 @@ function DiffFiles({
         </output>
       )}
     </>
+  );
+}
+
+function SelectableFile({
+  file,
+  entry,
+  patchId,
+  issue,
+  scope,
+  options,
+}: {
+  file: FileDiffMetadata;
+  entry: Diff["files"][number];
+  patchId: NonNullable<Diff["files"][number]["patch_id"]>;
+  issue: string;
+  scope: "all" | "uncommitted";
+  options: NonNullable<React.ComponentProps<typeof FileDiff>["options"]>;
+}) {
+  const attach = useContext(AttachSelection);
+  const [range, setRange] = useState<SelectedLineRange | null>(null);
+  const side = range?.side ?? (entry.additions ? "additions" : "deletions");
+  const initial =
+    (side === "additions" ? file.hunks[0]?.additionStart : file.hunks[0]?.deletionStart) ?? 1;
+  const start = Math.min(range?.start ?? initial, range?.end ?? initial);
+  const end = Math.max(range?.start ?? initial, range?.end ?? initial);
+  const added = side === "additions";
+  const hunk = file.hunks.find((h) => {
+    const first = added ? h.additionStart : h.deletionStart;
+    return start >= first && end < first + (added ? h.additionCount : h.deletionCount);
+  });
+  const offset =
+    hunk &&
+    (added
+      ? hunk.additionLineIndex - hunk.additionStart
+      : hunk.deletionLineIndex - hunk.deletionStart);
+  const excerpt =
+    offset === undefined
+      ? undefined
+      : (added ? file.additionLines : file.deletionLines)
+          .slice(start + offset, end + offset + 1)
+          .join("")
+          .replace(/\n$/, "");
+  const valid =
+    (!range?.endSide || range.endSide === side) && excerpt !== undefined && excerpt.length <= 8192;
+  const onAsk = () => {
+    if (valid)
+      attach({
+        selection: {
+          kind: "diff",
+          issue_id: IssueId.make(issue),
+          file: entry.path,
+          patch_id: patchId,
+          scope,
+          start,
+          end,
+          side,
+        },
+        excerpt,
+      });
+  };
+  return (
+    <section aria-label={file.name}>
+      <FileDiff
+        fileDiff={file}
+        options={{ ...options, enableLineSelection: true, onLineSelected: setRange }}
+      />
+      <details open={range ? true : undefined}>
+        <summary>Select lines in {file.name}</summary>
+        <label>
+          Side{" "}
+          <select
+            value={side}
+            onChange={(e) =>
+              setRange({
+                start,
+                end,
+                side: e.target.value === "deletions" ? "deletions" : "additions",
+              })
+            }
+          >
+            <option value="additions">New</option>
+            <option value="deletions">Old</option>
+          </select>
+        </label>
+        <label>
+          First line{" "}
+          <input
+            type="number"
+            min="1"
+            value={Number.isNaN(range?.start) ? "" : (range?.start ?? initial)}
+            onChange={(e) =>
+              setRange({
+                side,
+                start: e.target.valueAsNumber,
+                end: range?.end ?? e.target.valueAsNumber,
+              })
+            }
+          />
+        </label>
+        <label>
+          Last line{" "}
+          <input
+            type="number"
+            min="1"
+            value={Number.isNaN(range?.end) ? "" : (range?.end ?? initial)}
+            onChange={(e) =>
+              setRange({
+                side,
+                start: range?.start ?? e.target.valueAsNumber,
+                end: e.target.valueAsNumber,
+              })
+            }
+          />
+        </label>
+        <Button type="button" variant="outline" disabled={!valid} onClick={onAsk}>
+          Ask Abra about selection
+        </Button>
+      </details>
+    </section>
   );
 }

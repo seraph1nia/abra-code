@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
@@ -17,7 +18,6 @@ import { engineeringGuidance } from "../../src/opencode/engineering-skills.ts";
 import { resolveSkills, resolveCapturedSkills } from "../../src/opencode/worker-environment.ts";
 import { workerPrompt } from "../../src/workflow/prompts.ts";
 import { fixture } from "../fixtures.ts";
-import { IssueId } from "../../src/identities.ts";
 import { access, cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import { run } from "../effects.ts";
 
@@ -141,10 +141,9 @@ test("new admissions select the role matrix additively and load only relevant pr
 test("conditional prompts and role leaves retain policy-specific assignments", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const id = IssueId.make("engineering-prompt");
-  f.work.add(id);
+  const { id } = await run(f.work.create(workGoal("engineering-prompt")));
   const e = await run(f.controller.start(id));
-  const issue = f.work.issues.get(id)!;
+  const issue = await run(f.work.show(id));
   for (const role of ["explore", "apply", "review", "research"] as const) {
     const workflow = role === "research" ? "research-only" : "full-openspec";
     const prompt = workerPrompt({ ...e, workflow_policy: workflow }, issue, role);

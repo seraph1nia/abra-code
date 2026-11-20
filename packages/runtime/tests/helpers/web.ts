@@ -169,6 +169,8 @@ export class WorkspaceFixture implements WebBackend {
       }),
     find: this.unavailableRead,
     leads: this.unavailableRead,
+    evidence: this.unavailableRead,
+    verification: this.unavailableRead,
     overview: this.unavailableRead,
     detail: this.unavailableRead,
     document: this.unavailableRead,

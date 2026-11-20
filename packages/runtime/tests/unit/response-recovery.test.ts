@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import assert from "node:assert/strict";
 import { test, type TestContext } from "vite-plus/test";
@@ -28,7 +29,7 @@ async function recoverable(
   const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   await run(f.records.saveProject({ ...project, diagnostic_turns: diagnostics }));
   f.config.supervision_mode = "attended-automatic";
-  f.work.add(issue);
+  f.seed.named(issue);
   const e = await run(f.controller.start(issue, supervisor));
   const request = await run(
     f.controller.workMessage(
@@ -381,8 +382,7 @@ test("capacity waiting does not reserve a reminder or charge its diagnostic budg
   f.config.max_executions = 2;
   const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   await run(f.records.saveProject({ ...project, max_executions: 2 }));
-  const other = Id.IssueId.make("other-capacity-owner");
-  f.work.add(other);
+  const { id: other } = await run(f.work.create(workGoal("other-capacity-owner")));
   await run(f.controller.start(other));
   const prompts = f.runtime.prompts;
   await run(f.controller.reconcile(e.issue_id));
@@ -533,7 +533,7 @@ test("only a consumed request followed by its successful native turn establishes
   t.onTestFinished(() => run(f.close()));
   const issue = Id.IssueId.make("response-causality"),
     supervisor = Id.SessionId.make("ses_supervisor");
-  f.work.add(issue);
+  f.seed.named(issue);
   const e = await run(f.controller.start(issue, supervisor));
   const request = await run(
     f.controller.workMessage(

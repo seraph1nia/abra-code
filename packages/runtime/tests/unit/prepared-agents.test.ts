@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Test pinned injected filesystem/path and service lifetime. */
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
@@ -75,8 +76,7 @@ test("new selections capture static definitions before providers; prepared evide
   f.config.workers.explore = { definition: "specialist", model: f.config.models.default };
   const withAgents = <A, E>(effect: Effect.Effect<A, E>) =>
     run(effect.pipe(Effect.provideService(Agents, agents)));
-  const issue = Id.IssueId.make("prepared-once");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("prepared-once")));
   const prompt = f.runtime.prompt.bind(f.runtime);
   f.runtime.prompt = (session, text, id) =>
     Effect.gen(function* () {
@@ -183,8 +183,7 @@ test("external native override retains managed guidance and fragments; legacy sn
     agent: Id.AgentId.make("external"),
     model: f.config.models.default,
   };
-  const issue = Id.IssueId.make("external-prepared");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("external-prepared")));
   const e = await run(f.controller.start(issue).pipe(Effect.provideService(Agents, agents)));
   const context = await run(readWorkerContext(f.records.store, e.worker_context_id!));
   assert.equal(context.schema_version, 2);
@@ -237,8 +236,7 @@ test("catalog-dependent unknown/incompatible selections fail before native admis
     ["review", "INCOMPATIBLE_ROLE"],
   ]) {
     f.config.workers.apply = { definition };
-    const issue = Id.IssueId.make(`selection-${definition}`);
-    f.work.add(issue);
+    const { id: issue } = await run(f.work.create(workGoal(`selection-${definition}`)));
     const result = await run(
       f.controller.start(issue).pipe(Effect.provideService(Agents, agents), Effect.result),
     );
@@ -270,8 +268,7 @@ test("unreadable captured instruction sources fail as typed admission diagnostic
     ),
   );
   f.config.workers.explore = { definition: "unreadable" };
-  const issue = Id.IssueId.make("unreadable-selection");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("unreadable-selection")));
   const result = await run(
     f.controller.start(issue).pipe(Effect.provideService(Agents, agents), Effect.result),
   );
@@ -296,8 +293,7 @@ for (const denial of ["inspect-assignment", "inspect-*", "read*", "*"])
       catalog(join(f.root, "packages/agents/assets"), () => Effect.succeed([]), [denial]),
     );
     f.config.workers.explore = { definition: "specialist", model: f.config.models.default };
-    const issue = Id.IssueId.make("denied-contribution");
-    f.work.add(issue);
+    const { id: issue } = await run(f.work.create(workGoal("denied-contribution")));
     const e = await run(f.controller.start(issue).pipe(Effect.provideService(Agents, agents)));
     const context = await run(readWorkerContext(f.records.store, e.worker_context_id!));
     assert.equal(context.schema_version, 2);
@@ -350,8 +346,7 @@ test("interrupted preparation keeps its receipt unadmitted, releases capacity an
     ),
   );
   f.config.workers.explore = { definition: "specialist", model: f.config.models.default };
-  const issue = Id.IssueId.make("interrupted-preparation");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("interrupted-preparation")));
   const interrupted = await run(
     Effect.exit(f.controller.start(issue).pipe(Effect.provideService(Agents, agents))),
   );
@@ -360,6 +355,8 @@ test("interrupted preparation keeps its receipt unadmitted, releases capacity an
   let e = await run(f.controller.get(issue));
   assert.ok(e.session_intent?.prompt);
   const originalPrompt = e.session_intent.prompt;
+  const diagnostics = await run(f.controller.diagnostics(issue, "explore"));
+  assert.deepEqual(diagnostics.sessions, []);
   assert.equal(e.capacity_reservation, undefined);
   assert.equal(f.runtime.prompts, 0);
   assert.equal(f.runtime.creates, 0);
@@ -437,7 +434,7 @@ for (const stage of ["provider", "preflight"] as const) {
     );
     if (stage === "preflight") f.runtime.preflight = fail;
     f.config.workers.explore = { definition: "specialist", model: f.config.models.default };
-    f.work.add(issue);
+    f.seed.named(issue);
     await assert.rejects(
       run(f.controller.start(issue).pipe(Effect.provideService(Agents, agents))),
     );
@@ -452,8 +449,7 @@ for (const stage of ["provider", "preflight"] as const) {
 test("concurrent preparation claims one durable receipt and never invokes its provider twice", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const issue = Id.IssueId.make("concurrent-preparation");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("concurrent-preparation")));
   const e = await run(f.controller.start(issue));
   const entered = Deferred.makeUnsafe<void>(),
     release = Deferred.makeUnsafe<void>();
@@ -483,7 +479,7 @@ test("concurrent preparation claims one durable receipt and never invokes its pr
   };
   const contexts = new WorkerContexts(f.records, f.config);
   const prepare = contexts
-    .prepareAgent(prospective, "explore", f.work.issues.get(issue)!, prompt)
+    .prepareAgent(prospective, "explore", await run(f.work.show(issue)), prompt)
     .pipe(Effect.provideService(Agents, agents));
   await run(
     Effect.gen(function* () {

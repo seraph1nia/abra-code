@@ -1,3 +1,7 @@
+import type { Git } from "../git/repository.ts";
+import { captureEvidence, captureReference } from "./worker-evidence.ts";
+import type { CaptureInput, WorkerReference } from "@abracode/contracts/web/worker-evidence";
+import type { AbsolutePath } from "../identities.ts";
 import { QuestionIdentity, IssueId, ObligationKey, SessionId } from "../identities.ts";
 
 import { Clock, Effect } from "effect";
@@ -28,6 +32,8 @@ export class Obligations {
     private runtime: Runtime,
     private work: WorkGraph,
     private coordination: Coordination,
+    private home: AbsolutePath,
+    private git: Git,
   ) {}
   /** Fresh absence resolves only the residue questions inspected by the owning operation. */
   supersedeResidue = Effect.fn("Obligations.supersedeResidue")(
@@ -213,13 +219,48 @@ export class Obligations {
         }),
       ),
     );
-  progress = (session: SessionId, generation: number, summary: string) =>
+  progress = (
+    session: SessionId,
+    generation: number,
+    summary: string,
+    capture?: CaptureInput,
+    references?: readonly WorkerReference[],
+  ) =>
     this.coordination.with(() =>
       domainEffect(
         Effect.gen({ self: this }, function* () {
           const e = yield* this.assigned(session, generation);
           if (!(summary.length > 0 && summary.length <= 8192))
             return yield* new CrewError("PROGRESS", "Progress must contain 1–8192 characters");
+          if (capture) {
+            const receipt = yield* captureEvidence(
+              this.records.store,
+              this.home,
+              e,
+              session,
+              capture,
+            );
+            if (!e.worker_evidence?.some((r) => r.request_id === receipt.request_id))
+              e.worker_evidence = [...(e.worker_evidence ?? []), receipt];
+          }
+          if (references?.length) {
+            const items = [...(e.worker_references ?? [])];
+            for (const source of references) {
+              if (
+                items.some(
+                  (r) =>
+                    r.session_id === session &&
+                    r.generation === generation &&
+                    canonicalJSON(r.source) === canonicalJSON(source),
+                )
+              )
+                continue;
+              if (items.length >= 64)
+                return yield* new CrewError("WORKER_EVIDENCE", "Reference history is full");
+              items.push(yield* captureReference(this.git, e, session, source));
+            }
+            e.worker_references = items;
+          }
           e.progress = {
             schema_version: 1,
             generation,
@@ -228,8 +269,17 @@ export class Obligations {
             source: "worker",
             at: yield* Clock.currentTimeMillis,
           };
-          yield* this.records.saveOwned(e, ["progress"]);
-          return e.progress;
+          yield* this.records.saveOwned(e, [
+            "progress",
+            ...(capture ? ["worker_evidence" as const] : []),
+            ...(references?.length ? ["worker_references" as const] : []),
+          ]);
+          return {
+            ...e.progress,
+            ...(capture && {
+              capture: e.worker_evidence?.find((item) => item.request_id === capture.request_id),
+            }),
+          };
         }),
       ),
     );

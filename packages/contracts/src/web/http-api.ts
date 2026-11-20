@@ -1,3 +1,5 @@
+import { EvidenceDataSchema, EvidenceQuerySchema } from "./worker-evidence.ts";
+import { VerificationViewSchema } from "./verification.ts";
 import { PrepareDiagramSelectionSchema } from "./diagram-actions.ts";
 import { AgentCatalogSchema } from "./agent-settings.ts";
 import { DiagramPreparationSchema } from "../presentation/diagrams.ts";
@@ -174,6 +176,16 @@ export const workspaceApi = HttpApi.make("abra-workspace")
         success: ResourceSelectionSchema,
         error,
       }),
+      HttpApiEndpoint.get("evidence", "/api/work/evidence", {
+        query: EvidenceQuerySchema,
+        success: EvidenceDataSchema,
+        error,
+      }),
+      HttpApiEndpoint.get("verification", "/api/work/verification", {
+        query: WorkQuery,
+        success: VerificationViewSchema,
+        error,
+      }),
       HttpApiEndpoint.get("overview", "/api/work/overview", {
         query: WorkQuery,
         success: WorkOverviewSchema,
@@ -302,6 +314,8 @@ export type WorkReadName =
   | "binding"
   | "find"
   | "leads"
+  | "evidence"
+  | "verification"
   | "overview"
   | "detail"
   | "document"

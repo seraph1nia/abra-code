@@ -1,3 +1,4 @@
+import type { Submission } from "@abracode/contracts/web/workspace-wire";
 import type {
   ReviewSelection,
   ReviewAssetQuerySchema,
@@ -288,7 +289,7 @@ export class NativeWebBackend implements WebBackend {
         this.location(),
       ),
     );
-  submit = (input: { request_id: string; text: string; delivery: "queue" | "steer" }) =>
+  submit = (input: Submission) =>
     this.use((client) =>
       this.gateway(client).submit({ session_id: this.sessionID, ...input }, this.location()),
     );
@@ -304,56 +305,46 @@ export class NativeWebBackend implements WebBackend {
       .interrupt({ sessionID: this.sessionID, resume: false })
       .pipe(Effect.map((r) => r.interrupted)),
   );
+  private visibility(client: OpenCodeClient) {
+    return client.rpc(visibility);
+  }
+  private workMethod<I, A, E>(
+    select: (
+      rpc: ReturnType<NativeWebBackend["visibility"]>,
+    ) => (input: I, options: ReturnType<NativeWebBackend["location"]>) => Effect.Effect<A, E>,
+  ) {
+    return (input: I) =>
+      this.use((client) => select(this.visibility(client))(input, this.location()));
+  }
   readonly work: WorkQueries = {
-    binding: (input) =>
-      this.use((client) => client.rpc(visibility).binding(input, this.location())),
+    binding: this.workMethod((rpc) => rpc.binding),
+    evidence: this.workMethod((rpc) => rpc.evidence),
+    verification: this.workMethod((rpc) => rpc.verification),
+    overview: this.workMethod((rpc) => rpc.overview),
+    detail: this.workMethod((rpc) => rpc.detail),
+    document: this.workMethod((rpc) => rpc.document),
+    worker: this.workMethod((rpc) => rpc.worker),
     find: (input) =>
-      this.use((client) =>
-        client.rpc(visibility).find(
-          {
-            ...input,
-            state: input.state ?? "active",
-            offset: input.offset ?? 0,
-            limit: input.limit ?? 50,
-          },
-          this.location(),
-        ),
-      ),
+      this.workMethod((rpc) => rpc.find)({
+        ...input,
+        state: input.state ?? "active",
+        offset: input.offset ?? 0,
+        limit: input.limit ?? 50,
+      }),
     leads: (input) =>
-      this.use((client) =>
-        client.rpc(visibility).leads(
-          {
-            ...input,
-            offset: input.offset ?? 0,
-            request_offset: input.request_offset ?? 0,
-            proposal_offset: input.proposal_offset ?? 0,
-          },
-          this.location(),
-        ),
-      ),
-    overview: (input) =>
-      this.use((client) => client.rpc(visibility).overview(input, this.location())),
-    detail: (input) => this.use((client) => client.rpc(visibility).detail(input, this.location())),
-    document: (input) =>
-      this.use((client) => client.rpc(visibility).document(input, this.location())),
-    diff: (input) =>
-      this.use((client) =>
-        client.rpc(visibility).diff({ ...input, scope: input.scope ?? "all" }, this.location()),
-      ),
-    worker: (input) => this.use((client) => client.rpc(visibility).worker(input, this.location())),
+      this.workMethod((rpc) => rpc.leads)({
+        ...input,
+        offset: input.offset ?? 0,
+        request_offset: input.request_offset ?? 0,
+        proposal_offset: input.proposal_offset ?? 0,
+      }),
+    diff: (input) => this.workMethod((rpc) => rpc.diff)({ ...input, scope: input.scope ?? "all" }),
     messages: (input) =>
-      this.use((client) =>
-        client.rpc(visibility).messages({ ...input, offset: input.offset ?? 0 }, this.location()),
-      ),
+      this.workMethod((rpc) => rpc.messages)({ ...input, offset: input.offset ?? 0 }),
     feedback: (input) =>
-      this.use((client) =>
-        client.rpc(visibility).feedback({ ...input, page: input.page ?? 0 }, this.location()),
-      ),
+      this.workMethod((rpc) => rpc.feedback)({ ...input, page: input.page ?? 0 }),
     report: (input) =>
-      readWorkReport(
-        this.use((client) => client.rpc(visibility).report(input, this.location())),
-        this.work.detail(input),
-      ),
+      readWorkReport(this.workMethod((rpc) => rpc.report)(input), this.work.detail(input)),
     artifacts: (input) =>
       this.use((client) =>
         this.gateway(client).history(

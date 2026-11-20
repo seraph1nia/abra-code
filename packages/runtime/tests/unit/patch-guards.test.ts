@@ -11,7 +11,7 @@ import { installGuards } from "../../src/opencode/guards.ts";
 async function guard(t: TestContext, role: "explore" | "apply" = "explore") {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"));
+  f.seed.named(Id.IssueId.make("abra-1"));
   const e = await run(
     role === "apply"
       ? applying(f)

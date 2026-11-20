@@ -12,7 +12,7 @@ import {
   type ReadinessBlocker,
   type Role,
 } from "../domain.ts";
-import { synchronizeExecution, type Records } from "../storage/store.ts";
+import { removeOwnedField, type ExecutionPatch, type Records } from "../storage/store.ts";
 import { type Coordination } from "./coordination.ts";
 
 export const consumesWorker = (e: ManagedExecution) =>
@@ -139,15 +139,10 @@ export class Capacity {
           reservation.generation !== e.control_generation
         )
           return yield* new CrewError("STALE_OPERATION", "Preparation reservation was superseded");
-        const released = { ...e, capacity_observed_idle: true };
-        delete released.capacity_reservation;
-        synchronizeExecution(
-          e,
-          yield* this.records.saveOwned(released, [
-            "capacity_reservation",
-            "capacity_observed_idle",
-          ]),
-        );
+        yield* this.records.commitOwned(e, {
+          capacity_reservation: removeOwnedField,
+          capacity_observed_idle: true,
+        });
       }),
     );
   }
@@ -173,37 +168,29 @@ export class Capacity {
             newExecution,
             e.execution_id,
           );
+          let patch: ExecutionPatch;
           if (blockers.length) {
             yield* admissionWait(role);
             const now = yield* Clock.currentTimeMillis;
-            e.capacity_wait = {
-              request_id: request,
-              role,
-              reasons: blockers.map((b) => b.message),
-              consuming: [...new Set(blockers.flatMap((b) => b.consuming ?? []))],
-              next_check_at: now + 1000,
+            patch = {
+              capacity_wait: {
+                request_id: request,
+                role,
+                reasons: blockers.map((b) => b.message),
+                consuming: [...new Set(blockers.flatMap((b) => b.consuming ?? []))],
+                next_check_at: now + 1000,
+              },
             };
-            if (newExecution) yield* this.records.create(e);
-            else if (e.setup === true) yield* this.records.saveSetupOwned(e, ["capacity_wait"]);
-            else yield* this.records.saveOwned(e, ["capacity_wait"]);
-            return false;
+          } else {
+            patch = {
+              capacity_wait: removeOwnedField,
+              capacity_observed_idle: false,
+              capacity_reservation: { role, generation: e.control_generation, status: "preparing" },
+            };
           }
-          delete e.capacity_wait;
-          e.capacity_observed_idle = false;
-          e.capacity_reservation = {
-            role,
-            generation: e.control_generation,
-            status: "preparing",
-          };
-          const fields = [
-            "capacity_wait",
-            "capacity_observed_idle",
-            "capacity_reservation",
-          ] as const;
-          if (newExecution) yield* this.records.create(e);
-          else if (e.setup === true) yield* this.records.saveSetupOwned(e, fields);
-          else yield* this.records.saveOwned(e, fields);
-          return true;
+          if (newExecution) yield* this.records.create(e, patch);
+          else yield* this.records.commitOwned(e, patch);
+          return blockers.length === 0;
         }),
       ),
     );

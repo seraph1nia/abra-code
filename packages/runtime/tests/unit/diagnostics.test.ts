@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import * as Id from "../../src/identities.ts";
 import { run } from "../effects.ts";
 import { domainEffect } from "../../src/effect.ts";
@@ -50,10 +51,8 @@ test("workers snapshot configured defaults and role overrides independently of A
 test("failed workers keep configured snapshots on retry and reuse their session and worktree", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"));
-  const e = await run(
-    f.controller.start(Id.IssueId.make("abra-1"), Id.SessionId.make("ses_supervisor")),
-  );
+  const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
+  const e = await run(f.controller.start(issueId, Id.SessionId.make("ses_supervisor")));
   delete e.worker_model;
   await run(f.records.save(e));
   const session = f.runtime.sessions.get(e.explore_session_id!)!;
@@ -68,15 +67,15 @@ test("failed workers keep configured snapshots on retry and reuse their session 
     status: 403,
     message: "Free-tier authentication denied",
   };
-  await run(f.controller.reconcile(Id.IssueId.make("abra-1")));
-  const failed = (await run(f.records.execution(Id.IssueId.make("abra-1"))))!;
+  await run(f.controller.reconcile(issueId));
+  const failed = (await run(f.records.execution(issueId)))!;
   assert.match(failed.error_or_recovery_reason!, /provider.auth \(403\).*authentication denied/);
   assert.equal(failed.worker_failure?.session_id, session.id);
   f.runtime.selectedModel = {
     providerID: Id.ProviderId.make("openai"),
     id: Id.ModelId.make("supervisor-model"),
   };
-  const retried = await run(f.controller.control(Id.IssueId.make("abra-1"), "retry"));
+  const retried = await run(f.controller.control(issueId, "retry"));
   assert.equal(retried.explore_session_id, e.explore_session_id);
   assert.equal(retried.worktree_directory, e.worktree_directory);
   assert.deepEqual(session.model, e.configuration_snapshot?.workers.explore?.model);
@@ -85,16 +84,14 @@ test("failed workers keep configured snapshots on retry and reuse their session 
 test("Supervisor diagnostics expose assigned native errors and remain useful when a session is unavailable", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"));
-  const e = await run(
-    f.controller.start(Id.IssueId.make("abra-1"), Id.SessionId.make("ses_supervisor")),
-  );
+  const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
+  const e = await run(f.controller.start(issueId, Id.SessionId.make("ses_supervisor")));
   const session = f.runtime.sessions.get(e.explore_session_id!)!;
   session.busy = false;
   session.outcome = "failed";
   session.error = { type: "provider.auth", status: 403, message: "Provider rejected the worker" };
-  await run(f.controller.reconcile(Id.IssueId.make("abra-1")));
-  const diagnostic = await run(f.controller.diagnostics(Id.IssueId.make("abra-1")));
+  await run(f.controller.reconcile(issueId));
+  const diagnostic = await run(f.controller.diagnostics(issueId));
   assert.equal(diagnostic.sessions.length, 1);
   assert.equal(diagnostic.sessions[0].id, e.explore_session_id);
   assert.equal(diagnostic.last_worker_failure?.error.status, 403);
@@ -103,7 +100,7 @@ test("Supervisor diagnostics expose assigned native errors and remain useful whe
     /No execution/,
   );
   f.runtime.sessions.delete(e.explore_session_id!);
-  const unavailable = await run(f.controller.diagnostics(Id.IssueId.make("abra-1")));
+  const unavailable = await run(f.controller.diagnostics(issueId));
   assert.match(unavailable.sessions[0].diagnostic_error!, /Missing session/);
   assert.equal(unavailable.last_worker_failure?.error.message, "Provider rejected the worker");
 });
@@ -127,10 +124,8 @@ test("native Supervisor model selection uses its actual assistant model rather t
 test("native failure events retain their cause when the transcript has no error", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"));
-  const e = await run(
-    f.controller.start(Id.IssueId.make("abra-1"), Id.SessionId.make("ses_supervisor")),
-  );
+  const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
+  const e = await run(f.controller.start(issueId, Id.SessionId.make("ses_supervisor")));
   const session = f.runtime.sessions.get(e.explore_session_id!)!;
   session.busy = false;
   session.outcome = "failed";
@@ -141,8 +136,8 @@ test("native failure events retain their cause when the transcript has no error"
       message: "Provider rejected the request before a transcript was recorded",
     }),
   );
-  await run(f.controller.reconcile(Id.IssueId.make("abra-1")));
-  const diagnostic = await run(f.controller.diagnostics(Id.IssueId.make("abra-1")));
+  await run(f.controller.reconcile(issueId));
+  const diagnostic = await run(f.controller.diagnostics(issueId));
   assert.match(diagnostic.last_error!, /provider.auth \(403\).*before a transcript/);
   assert.equal(diagnostic.last_worker_failure?.error.status, 403);
   assert.equal(diagnostic.last_worker_failure?.role, "explore");

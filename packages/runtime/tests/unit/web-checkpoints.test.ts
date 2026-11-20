@@ -1,3 +1,4 @@
+import { workGraphAt } from "../helpers/work-database.ts";
 import { tmpdir } from "node:os";
 import { retainedExecution } from "../helpers/retained-execution.ts";
 import { Queries } from "../../src/workflow/queries.ts";
@@ -6,18 +7,18 @@ import { ProcessRunner } from "../../src/process.ts";
 import { checkpointMatchesForm } from "../../src/web/form-binding.ts";
 import { Form } from "@opencode/schema/form";
 import assert from "node:assert/strict";
-import { test } from "vite-plus/test";
+import { test, type TestContext } from "vite-plus/test";
 import { readFile, writeFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { Effect } from "effect";
 import { CrewError } from "../../src/domain.ts";
-import { fixtureConfig, FakeRuntime, FakeWorkGraph, FakeSpec } from "../fixtures.ts";
+import { fixtureConfig, FakeRuntime, FakeSpec } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import * as Id from "../../src/identities.ts";
 const supervisor = Id.SessionId.make("ses_supervisor");
 
-async function checkpointFixture(root: string, kind: "plan" | "merge") {
+async function checkpointFixture(t: TestContext, root: string, kind: "plan" | "merge") {
   const git = new Git(new ProcessRunner());
   const directory = Id.AbsolutePath.make(root);
   const change = Id.ChangeName.make("work-one");
@@ -48,7 +49,7 @@ async function checkpointFixture(root: string, kind: "plan" | "merge") {
   const queries = new Queries(
     config,
     records,
-    new FakeWorkGraph(),
+    (await workGraphAt(t)).graph,
     new FakeSpec(),
     git,
     new FakeRuntime(git),
@@ -59,7 +60,7 @@ async function checkpointFixture(root: string, kind: "plan" | "merge") {
 test("browser plan checkpoint observes current Git bytes and leaves the native approval unconsumed", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "abra-checkpoint-"));
   t.onTestFinished(() => rm(root, { recursive: true, force: true }));
-  const f = await checkpointFixture(root, "plan");
+  const f = await checkpointFixture(t, root, "plan");
   const { execution: retained, approval } = f;
   const read = () => run(f.queries.checkpoint(supervisor, approval.form_id));
   const current = await read();
@@ -94,9 +95,9 @@ test("browser plan checkpoint observes current Git bytes and leaves the native a
   assert.equal((await read()).active, true);
 });
 
-test("merge checkpoint does not authorize another delivered-content identity", async () => {
+test("merge checkpoint does not authorize another delivered-content identity", async (t) => {
   const root = "/fixture";
-  const f = await checkpointFixture(root, "merge");
+  const f = await checkpointFixture(t, root, "merge");
   const { execution: retained, approval } = f;
   assert.equal((await run(f.queries.checkpoint(supervisor, approval.form_id))).active, true);
   retained.delivered_commit = Id.Commit.make("f".repeat(40));
@@ -110,8 +111,8 @@ test("merge checkpoint does not authorize another delivered-content identity", a
   );
 });
 
-test("decision generation and finishing targets remain exact native bindings after supersession", async () => {
-  const { records, execution, queries } = await checkpointFixture("/fixture", "merge");
+test("decision generation and finishing targets remain exact native bindings after supersession", async (t) => {
+  const { records, execution, queries } = await checkpointFixture(t, "/fixture", "merge");
   const key = Id.ObligationKey.make("finishing-residue");
   execution.decisions = [
     {

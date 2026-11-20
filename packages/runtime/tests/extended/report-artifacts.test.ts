@@ -23,10 +23,10 @@ test(
     await installSource(f.config.home, { buildWeb: false });
     const parent = Id.SessionId.make("ses_concurrent-json"),
       issue = Id.IssueId.make("concurrent-report");
-    f.work.add(issue);
+    f.seed.named(issue);
     const hostile =
       '</ScRiPt><script>globalThis.reportExecuted=true</script><img src="https://example.invalid/asset">';
-    f.work.issues.get(issue)!.title = hostile;
+    f.seed.db.prepare("UPDATE issues SET title = ? WHERE id = ?").run(hostile, issue);
     await run(f.controller.recordSupervisor(parent));
     await run(f.controller.start(issue, parent));
     const reports = new Reports(f.config.home, f.records, f.git, f.locks, f.work, (...args) =>

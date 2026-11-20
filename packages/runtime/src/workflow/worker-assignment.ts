@@ -4,6 +4,12 @@ import { phaseRole } from "./roles.ts";
 
 export const workerSessionID = (e: Execution, role = e.active_role) =>
   role ? e[`${role}_session_id`] : undefined;
+/** Legacy intents are written at native creation. New intents also cover preflight. */
+export function nativeSessionIntent(e: Execution) {
+  const intent = e.session_intent;
+  if (intent && (!intent.prompt || intent.native_started)) return intent;
+}
+
 export const historicalWorkers = (e: Execution) => [
   ...(e.rounds?.flatMap((r) => r.worker_sessions ?? []) ?? []),
   ...(e.finishing?.synchronization?.flatMap((a) => a.worker_sessions) ?? []),

@@ -186,7 +186,7 @@ test("invalid task profiles leave no issue; captured selections survive config e
     ),
     { code: "DISPATCH_ROLE" },
   );
-  assert.equal(f.work.issues.size, 0);
+  assert.equal((await run(f.work.list)).length, 0);
   const issue = (await run(f.controller.createWork(input, Id.SessionId.make("ses_supervisor"))))
     .issue;
   const e = await run(f.controller.start(issue.id));

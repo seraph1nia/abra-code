@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import * as Id from "../../src/identities.ts";
 import { CrewError } from "../../src/domain.ts";
 import { run } from "../effects.ts";
@@ -15,7 +16,7 @@ test("observer joins WorkGraph, blockers and role sessions without advancing a w
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const e = await run(planned(f));
-  f.work.add(Id.IssueId.make("abra-2"), Id.RepositoryId.make("frontend"), [e.issue_id]);
+  f.seed.named(Id.IssueId.make("abra-2"), Id.RepositoryId.make("frontend"), [e.issue_id]);
   const before = await run(f.records.execution(e.issue_id));
   const view = new Visibility(f.controller);
   const snapshot = await run(view.snapshot());
@@ -120,7 +121,7 @@ test("proposal reads the owned worktree and schema artifact path, rejecting esca
 test("queued and retired work do not invoke OpenSpec; large proposals are bounded", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-queued"));
+  f.seed.named(Id.IssueId.make("abra-queued"));
   const view = new Visibility(f.controller);
   assert.equal((await run(view.detail(Id.IssueId.make("abra-queued")))).change, undefined);
   const e = await run(planned(f));
@@ -203,11 +204,11 @@ test("document selection stays inside the planning change and retired work is pa
   );
   for (let i = 0; i < 56; i++) {
     const id = `closed-${String(i).padStart(2, "0")}`;
-    f.work.add(Id.IssueId.make(id));
-    f.work.issues.get(id)!.status = "closed";
+    f.seed.named(Id.IssueId.make(id));
+    f.seed.close(id);
   }
   // A closed ticket with a live execution is attention work on every history page.
-  f.work.issues.get(e.issue_id)!.status = "closed";
+  f.seed.close(e.issue_id);
   const first = await run(view.snapshot());
   const second = await run(view.snapshot(1));
   assert.equal(first.closed_total, 56);
@@ -266,13 +267,13 @@ test("older closed issue detail preserves communication counts outside the loade
   const retained = (await run(f.records.execution(e.issue_id)))!;
   const newer = Array.from({ length: 51 }, (_, n) => {
     const id = Id.IssueId.make(`newer-closed-${n}`);
-    f.work.add(id);
-    f.work.issues.get(id)!.status = "closed";
+    f.seed.named(id);
+    f.seed.close(id);
     return { ...retained, issue_id: id, messages: undefined };
   });
   const empty = Id.IssueId.make("closed-without-execution");
-  f.work.add(empty);
-  f.work.issues.get(empty)!.status = "closed";
+  f.seed.named(empty);
+  f.seed.close(empty);
   const bundle = await run(f.controller.queries.observe());
   // Supply retained completion timestamps through the existing read-model seam;
   // no additional native workers or worktrees are needed for historical rows.
@@ -369,6 +370,7 @@ test("bounded supervision projection preserves record history and exposes read-o
     "detail",
     "diff",
     "document",
+    "evidence",
     "feedback",
     "find",
     "leads",
@@ -376,6 +378,7 @@ test("bounded supervision projection preserves record history and exposes read-o
     "overview",
     "report",
     "snapshot",
+    "verification",
     "worker",
   ]);
 });
@@ -403,7 +406,7 @@ test("task detail avoids collection scans and fleet observations scan once with 
   const view = new Visibility(f.controller);
   await run(view.detail(e.issue_id));
   assert.deepEqual(counts, { project: 0, execution: 0, setup: 0 });
-  f.work.add(Id.IssueId.make("later"));
+  f.seed.named(Id.IssueId.make("later"));
   assert.ok((await run(view.snapshot())).work.some((w) => w.issue_id === "later"));
   assert.deepEqual(counts, { project: 1, execution: 1, setup: 1 });
 });
@@ -603,7 +606,7 @@ test("selected task among unrelated active workers performs no scans, fleet read
   const base = await run(applying(f));
   for (let index = 0; index < 75; index++) {
     const id = Id.IssueId.make(`unrelated-${index}`);
-    f.work.add(id);
+    f.seed.named(id);
     await run(
       f.records.create({
         ...structuredClone(base),
@@ -652,8 +655,7 @@ test("selected detail keeps unavailable native activity and malformed retained e
   const unavailable = await run(view.detail(base.issue_id));
   assert.equal(unavailable.work.phase, "applying");
   assert.equal(unavailable.work.supervision?.native_activity, "unavailable");
-  const healthy = Id.IssueId.make("healthy-unstarted");
-  f.work.add(healthy);
+  const { id: healthy } = await run(f.work.create(workGoal("healthy-unstarted")));
   const key = Id.StorageKey.make(`execution/${base.issue_id}`);
   const future = { ...structuredClone(base), schema_version: 99 };
   await run(f.records.store.set(key, future));
@@ -670,8 +672,8 @@ test("binding summaries resolve off-page retained tasks without fleet, worker or
   t.onTestFinished(() => run(f.close()));
   for (let i = 0; i < 55; i++) {
     const id = Id.IssueId.make(`abra-closed-${String(i).padStart(2, "0")}`);
-    f.work.add(id);
-    f.work.issues.get(id)!.status = "closed";
+    f.seed.named(id);
+    f.seed.close(id);
   }
   const view = new Visibility(f.controller);
   assert.equal(
@@ -783,4 +785,39 @@ test("worker inspection reads only its ticket and admitted native session", asyn
   assert.equal((await run(Effect.flip(inspect(e.issue_id, current)))).code, "WORKER_UNAVAILABLE");
   assert.deepEqual(native.mock.calls, [[current]]);
   assert.deepEqual(scans.mock.calls, []);
+});
+
+test("a plan passage is bound to its occurrence, generation and exact document", async (t) => {
+  const { captureSelection } = await import("../../src/web/capture-selection.ts");
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(planned(f));
+  const file = Id.RelativePath.make("design.md");
+  const document = join(e.worktree_directory!, "openspec/changes", e.openspec_change, file);
+  await writeFile(document, "Same criterion\nFirst context\nSame criterion\nSecond context");
+  const source = await run(new Visibility(f.controller).document(e.issue_id, file));
+  const selection = {
+    kind: "plan" as const,
+    issue_id: e.issue_id,
+    file,
+    generation: source.generation!,
+    hash: source.hash!,
+    start: 3,
+    end: 4,
+  };
+  assert.equal(
+    await run(captureSelection(f.controller.queries, selection)),
+    "Same criterion\nSecond context",
+  );
+  await assert.rejects(
+    run(
+      captureSelection(f.controller.queries, {
+        ...selection,
+        generation: selection.generation + 1,
+      }),
+    ),
+    /changed/,
+  );
+  await writeFile(document, "Updated criteria");
+  await assert.rejects(run(captureSelection(f.controller.queries, selection)), /changed/);
 });

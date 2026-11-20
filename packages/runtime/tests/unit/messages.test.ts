@@ -27,7 +27,7 @@ async function assigned(t: TestContext) {
   t.onTestFinished(() => run(f.close()));
   const id = Id.IssueId.make("message-owner");
   const sender = Id.SessionId.make("ses_supervisor");
-  f.work.add(id);
+  f.seed.named(id);
   const e = await run(f.controller.start(id, sender));
   const request = { id: Id.RequestId.make("steer-one"), sender };
   const send = (text = "Continue within the assigned scope") =>
@@ -624,7 +624,10 @@ for (const limit of ["global", "repository", "role"] as const) {
       await run(f.records.saveProject(project));
     }
     const other = Id.IssueId.make("capacity-consumer");
-    f.work.add(other, limit === "repository" ? e.repository_id : Id.RepositoryId.make("frontend"));
+    f.seed.named(
+      other,
+      limit === "repository" ? e.repository_id : Id.RepositoryId.make("frontend"),
+    );
     const active = await run(f.controller.start(other, request.sender));
     const prompts = f.runtime.prompts,
       sessions = f.runtime.creates;
@@ -986,4 +989,109 @@ test("a recovery reservation cannot precede admission, follow response resolutio
   const notified = { ...sent, response_escalation: { ...escalation, notified: true } };
   assert.equal(messageHistoryError([escalated], [notified]), undefined);
   assert.match(messageHistoryError([notified], [escalated])!, /receipt cannot be rebound/);
+});
+
+test("a selected question links only its admitted handoff, explicit answer and matching verification", async (t) => {
+  const { f, e, request } = await assigned(t);
+  const { WebAdmissions } = await import("../../src/web/gateway.ts");
+  const { answerSelection, selectedFollowups } =
+    await import("../../src/workflow/selected-requests.ts");
+  const admissions = new WebAdmissions(
+    f.records.store,
+    { prompt: () => Effect.void, promptAdmission: () => Effect.succeed("consumed") },
+    f.locks,
+    () => Effect.succeed("observed line"),
+  );
+  const question = Id.RequestId.make("line-question");
+  const receipt = await run(
+    admissions.submit(request.sender, {
+      request_id: question,
+      text: "Does this cover retries?",
+      delivery: "queue",
+      selection: {
+        kind: "diff",
+        issue_id: e.issue_id,
+        file: Id.RelativePath.make("source.ts"),
+        patch_id: Id.ContentHash.make("a".repeat(64)),
+        scope: "all",
+        side: "additions",
+        start: 1,
+        end: 1,
+      },
+    }),
+  );
+  const handoff = {
+    issue_id: e.issue_id,
+    source: { type: "selection" as const, request_id: question },
+    request_id: request.id,
+    body: "Check retries",
+    role: "explore" as const,
+    response: "answer" as const,
+  };
+  await assert.rejects(
+    run(
+      f.controller.workMessage(
+        { ...handoff, source: { ...handoff.source, request_id: Id.RequestId.make("missing") } },
+        request.sender,
+      ),
+    ),
+  );
+  const sent = await run(f.controller.workMessage(handoff, request.sender));
+  assert.match(sent.prompt, /observed line/);
+  const reply = { request_id: sent.request_id, generation: e.control_generation };
+  await run(f.controller.workerReply(e.explore_session_id!, { ...reply, action: "acknowledge" }));
+  const current = await run(f.controller.get(e.issue_id));
+  current.verification_receipt = {
+    at: Id.Timestamp.make(new Date().toISOString()),
+    fingerprint: Id.Fingerprint.make("tested-content"),
+    commands: [["pnpm", "test"]],
+  };
+  await run(f.records.save(current));
+  assert.ok(selectedFollowups(receipt, current, request.sender)[0].acknowledged_at);
+  assert.equal(selectedFollowups(receipt, current, request.sender)[0].check, undefined);
+  const answer = {
+    ...reply,
+    action: "answer" as const,
+    body: "Retry passes",
+    check_fingerprint: current.verification_receipt.fingerprint,
+  };
+  await assert.rejects(
+    run(
+      f.controller.workerReply(e.explore_session_id!, {
+        ...answer,
+        check_fingerprint: Id.Fingerprint.make("wrong"),
+      }),
+    ),
+  );
+  await run(f.controller.workerReply(e.explore_session_id!, answer));
+  const saved = await run(f.controller.get(e.issue_id));
+  assert.deepEqual(selectedFollowups(receipt, saved, request.sender)[0].check?.commands, [
+    "pnpm test",
+  ]);
+  await run(
+    answerSelection(
+      f.records.store,
+      f.locks,
+      request.sender,
+      question,
+      e.issue_id,
+      "Covered by the retry test.",
+    ),
+  );
+  await assert.rejects(
+    run(
+      answerSelection(
+        f.records.store,
+        f.locks,
+        request.sender,
+        question,
+        Id.IssueId.make("foreign"),
+        "unrelated",
+      ),
+    ),
+  );
+  assert.equal(
+    (await run(admissions.receipt(request.sender, question)))?.answer,
+    "Covered by the retry test.",
+  );
 });

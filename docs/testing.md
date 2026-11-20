@@ -131,7 +131,7 @@ Skill frontmatter is validated with the bundled skill-creator validator (using a
 
 The [test workflow](../.github/workflows/test.yml) runs on pushes to `main` and
 pull requests targeting `main`. It provisions the pinned toolchain and browsers,
-then runs static checks, `pnpm test:all` and the build. Each regression executes
+then runs static checks, the full build and `pnpm test:prepared`. Each regression executes
 once in that partition; the workflow owns the exact step order.
 
 The frozen install includes developer dependencies and lifecycle scripts for Effect tooling, and populates the store used by offline installation tests. `pnpm check` includes linting, TypeScript, Effect diagnostics and React report-export and web type checking. Named steps fail on errors without automatically formatting or fixing files. Reporter Playwright Chromium is provisioned before integration tests, and the native browser is provisioned before end-to-end tests. Both setup steps install Ubuntu browser libraries with `--with-deps`; local systems can use the commands without that flag and supply compatible system libraries. Fixtures use temporary repositories, local model endpoints and disposable local bare remotes, with no personal credentials or user-remote pushes.
@@ -312,3 +312,13 @@ The combined suite caps worker concurrency at four (or available CPUs when fewer
 For tests of retained execution fields, use `retainedExecution` to write a valid execution through the real coordinated Records store. Supply phase evidence only when the assertion depends on it. Checkpoint readers can consume a stored approval and a temporary proposal whose bytes the Git adapter actually fingerprints. The legacy migration cases still create distinct active, form, interrupted and completed executions. The checkpoint reader uses a stored finishing target and control generation. The finishing lifecycle suite still creates the actual residue decision and exercises native authorization.
 
 On the same checkout, one run of `pnpm test:one packages/runtime/tests/unit/{records,web-checkpoints}.test.ts --maxWorkers=1` with the default timeout passed all 21 tests in 11.15 seconds before migration and 4.82 seconds after. Eleven records cases and three checkpoint cases now skip three repository initializations apiece. Thirteen also skip starting an execution through the controller, including the stale-replacement regression. These timings describe a single matched run.
+
+Controller fixtures use a scoped private SQLite database in memory. Create issues
+through the graph or controller and use the returned identity. Named seeds are
+available for tests with historical IDs or deterministic sort order. Assert
+claim and closure evidence through graph history. Reserve direct fixture SQL for
+states the public operations cannot create.
+
+`pnpm test:all` builds the workspace and runs the four routine test projects.
+Linux CI runs `pnpm build` followed by `pnpm test:prepared`, so browser tests
+exercise the same web output that the full build produced.

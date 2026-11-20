@@ -1,3 +1,6 @@
+import { selectionLabel } from "@abracode/contracts/web/resources";
+import { useCallback, useState } from "react";
+import type { Submission } from "@abracode/contracts/web/workspace-wire";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Composer owns draft/admission subscriptions independently of transcript presentation. */
 import { useAtom } from "@effect/atom-react";
 import { Exit } from "effect";
@@ -26,11 +29,18 @@ export function Composer({
   stateError: string;
   connectionError: string;
 }) {
-  const { draft, setDraft } = useWorkspaceDraft(workspace.session_id);
+  const [input, edit] = useWorkspaceDraft(workspace.session_id);
+  const [delivery, setDelivery] = useState<Submission["delivery"]>("queue");
+  const draft = input.text;
+  const setDraft = (text: string) => edit({ text });
+  const clearSent = useCallback((sent: Submission) => edit({ clearSent: sent }), [edit]);
   const { pending, admitting, send } = useWorkspaceAdmission({
     workspace,
     isReady,
+    delivery: workspace.busy ? delivery : "queue",
     draft,
+    selection: input.attachment?.selection,
+    clearSent,
     setDraft,
     refresh,
     setError,
@@ -78,6 +88,19 @@ export function Composer({
           if (!pending && !admitting && isReady && draft.trim()) void send();
         }}
       >
+        {input.attachment && (
+          <div className="selection-chip">
+            <details>
+              <summary>
+                {input.attachment.selection.issue_id} · {selectionLabel(input.attachment.selection)}
+              </summary>
+              <pre>{input.attachment.excerpt}</pre>
+            </details>
+            <Button type="button" variant="ghost" onClick={() => edit({ attachment: undefined })}>
+              Remove selection
+            </Button>
+          </div>
+        )}
         <Textarea
           aria-label="Message Abra"
           value={draft}
@@ -94,7 +117,11 @@ export function Composer({
             }
           }}
           placeholder={
-            workspace.busy ? "Queue a message for Abra…" : "Ask Abra to explore, plan, or build…"
+            workspace.busy
+              ? delivery === "steer"
+                ? "Steer the current Abra turn…"
+                : "Queue a message for Abra…"
+              : "Ask Abra to explore, plan, or build…"
           }
           rows={2}
           maxLength={32768}
@@ -103,6 +130,19 @@ export function Composer({
         <div className="composer-controls">
           <span className="muted">{workspace.model ?? "Using the current model"}</span>
           <div>
+            {workspace.busy && (
+              <select
+                aria-label="Message delivery"
+                disabled={admitting || !!pending}
+                value={pending?.delivery ?? delivery}
+                onChange={(event) =>
+                  setDelivery(event.target.value === "steer" ? "steer" : "queue")
+                }
+              >
+                <option value="queue">Queue for Abra</option>
+                <option value="steer">Steer current Abra turn</option>
+              </select>
+            )}
             {workspace.busy && (
               <Button
                 variant="outline"

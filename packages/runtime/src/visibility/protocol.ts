@@ -1,3 +1,7 @@
+import { ContentHash } from "../identities.ts";
+import { EvidenceDataSchema, EvidenceQuerySchema } from "@abracode/contracts/web/worker-evidence";
+import { VerificationViewSchema } from "@abracode/contracts/web/verification";
+import { FilePatchId } from "@abracode/contracts/web/resources";
 import {
   BindingReadQuery,
   BindingReadSchema,
@@ -156,6 +160,7 @@ const diff = Schema.Struct({
   historical: Schema.Boolean,
   files: Schema.Array(
     Schema.Struct({
+      patch_id: FilePatchId,
       path: RelativePath,
       status: Schema.Literals(["added", "modified", "deleted"]),
       additions: Count,
@@ -170,6 +175,8 @@ const diff = Schema.Struct({
   limited: Schema.Boolean,
 });
 const document = Schema.Struct({
+  hash: Schema.optionalKey(ContentHash),
+  generation: Schema.optionalKey(Count),
   path: Schema.Union([RelativePath, Schema.Literal("@report")]),
   content: Schema.String,
 });
@@ -255,6 +262,16 @@ export const visibility = Rpc.define({
       errors: observerErrors,
       input: Schema.toStandardSchemaV1(Schema.Struct({ issue_id: IssueId, path: RelativePath })),
       output: Schema.toStandardSchemaV1(document),
+    },
+    evidence: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(EvidenceQuerySchema),
+      output: Schema.toStandardSchemaV1(EvidenceDataSchema),
+    },
+    verification: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(Schema.Struct({ issue_id: IssueId })),
+      output: Schema.toStandardSchemaV1(VerificationViewSchema),
     },
     overview: {
       errors: observerErrors,

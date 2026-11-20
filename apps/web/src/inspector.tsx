@@ -1,3 +1,5 @@
+import { PlanPassage } from "./presentation/plan-passage.tsx";
+import { VerificationPanel } from "./presentation/verification.tsx";
 import { RelativePath } from "@abracode/contracts/identities";
 import { ReviewsForSource } from "./presentation/interactive-review-loader.tsx";
 import { ExportReport } from "./presentation/export-report.tsx";
@@ -21,7 +23,7 @@ import { api } from "./api.ts";
 import { phaseLabel } from "@abracode/contracts/presentation/work-state";
 import { OutcomeSummary, Evidence } from "@abracode/presentation/cards";
 import { ExecutionContractSummary } from "./presentation/execution-contract.tsx";
-import { queries } from "./data.ts";
+import { queries } from "./work-data.ts";
 import { RequestState } from "./request-state.tsx";
 import { inspectorTabs, type InspectorTab } from "./navigation.ts";
 import { useMediaQuery } from "./use-media-query.ts";
@@ -38,6 +40,8 @@ function Markdown({ content, className }: { content: string; className?: string 
   return <DeferredMarkdown key={content} content={content} className={className} mode="static" />;
 }
 type Props = {
+  width: number;
+  resize: (width: number) => void;
   work?: WorkItem;
   issue: IssueId;
   tab: InspectorTab;
@@ -110,6 +114,8 @@ function InspectorContent({
   work,
   tab,
   setTab,
+  width,
+  resize,
   close,
   ask,
   forms,
@@ -125,6 +131,16 @@ function InspectorContent({
           </div>
           <h2>{work.title}</h2>
         </div>
+        <input
+          className="canvas-size"
+          aria-label="Canvas width"
+          aria-valuetext={width + " percent"}
+          type="range"
+          min={30}
+          max={55}
+          value={width}
+          onChange={(event) => resize(event.currentTarget.valueAsNumber)}
+        />
         <Button variant="ghost" size="icon" onClick={close} aria-label="Close inspector">
           <X aria-hidden="true" />
         </Button>
@@ -173,6 +189,13 @@ function InspectorPanel({
     void navigate({ search: (previous) => ({ ...previous, file: file || undefined }) });
   };
   switch (tab) {
+    case "Verification":
+      return (
+        <>
+          <VerificationPanel work={work} inspect={inspect} />
+          <DecisionsPanel issue={work.issue_id} forms={forms} focusForm={focusForm} />
+        </>
+      );
     case "Overview":
       return (
         <RequestState query={queries.overview(work.issue_id)}>
@@ -194,6 +217,7 @@ function InspectorPanel({
             {(document) => (
               <>
                 <Markdown className="prose" content={document.content} />
+                <PlanPassage issue={work.issue_id} document={document} />
                 <ReviewsForSource
                   issue={work.issue_id}
                   source={{ kind: "plan", path: RelativePath.make(document.path) }}

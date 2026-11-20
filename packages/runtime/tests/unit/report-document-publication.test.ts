@@ -264,7 +264,9 @@ test("the report owner saves the exact observed surface without a research recei
       .phase,
     "awaiting_plan_approval",
   );
-  f.work.issues.get(execution.issue_id)!.title = "Later live title";
+  f.seed.db
+    .prepare("UPDATE issues SET title = ? WHERE id = ?")
+    .run("Later live title", execution.issue_id);
   await run(f.controller.saveVisualSurface(session, execution.issue_id, request));
   assert.equal(
     (
@@ -378,7 +380,9 @@ test("authorized report composition captures structured evidence through the exi
   assert.ok(
     document.data.evidence.checks.every((check: { status: string }) => check.status !== "passed"),
   );
-  f.work.issues.get(execution.issue_id)!.title = "Later current work";
+  f.seed.db
+    .prepare("UPDATE issues SET title = ? WHERE id = ?")
+    .run("Later current work", execution.issue_id);
   await run(f.controller.visualReport(session, execution.issue_id, request));
   assert.equal(
     (
@@ -441,11 +445,11 @@ test("mixed saved bindings retain independent snapshot rows and resolve off-page
   await run(f.controller.recordSupervisor(session));
   for (let i = 0; i < 55; i++) {
     const id = IssueId.make(`abra-history-${String(i).padStart(2, "0")}`);
-    f.work.add(id);
-    f.work.issues.get(id)!.status = "closed";
+    f.seed.named(id);
+    f.seed.close(id);
   }
   const id = IssueId.make("abra-history-54"),
-    originalTitle = f.work.issues.get(id)!.title;
+    originalTitle = (await run(f.work.show(id))).title;
   const view = new Visibility(f.controller);
   assert.equal(
     (await run(view.snapshot())).work.some((row) => row.issue_id === id),
@@ -482,7 +486,9 @@ test("mixed saved bindings retain independent snapshot rows and resolve off-page
       }),
     ),
   );
-  f.work.issues.get(id)!.title = "Current off-page live title";
+  f.seed.db
+    .prepare("UPDATE issues SET title = ? WHERE id = ?")
+    .run("Current off-page live title", id);
   const request = {
     request_id: RequestId.make("mixed-save"),
     surface: { surface_id: "mixed-save", revision: 1 },
@@ -501,7 +507,8 @@ test("mixed saved bindings retain independent snapshot rows and resolve off-page
   );
   assert.equal(document.data.snapshot_coverage.total, 56);
   assert.equal(document.data.live_coverage.total, 1);
-  f.work.issues.delete(id);
+  f.seed.db.prepare("DELETE FROM work_events WHERE issue_id = ?").run(id);
+  f.seed.db.prepare("DELETE FROM issues WHERE id = ?").run(id);
   await run(f.controller.saveVisualSurface(session, e.issue_id, request));
   assert.equal((await read()).json, original.json);
   await assert.rejects(

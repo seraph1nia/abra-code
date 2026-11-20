@@ -1,6 +1,6 @@
 import { validateDispatch } from "../config/dispatch.ts";
 import { type Config } from "../domain.ts";
-import { normalizeBatch, batchItemRequest, type BatchInput } from "./batch.ts";
+import { batchItemRequest, type BatchInput } from "./batch.ts";
 import { completeScope } from "./scope.ts";
 import { codingPolicy } from "../config/policy.ts";
 import { RequestId, SessionId } from "../identities.ts";
@@ -63,20 +63,22 @@ export class WorkIntake {
   );
   createBatch = Effect.fn("WorkIntake.createBatch")(
     function* (this: WorkIntake, input: BatchInput, supervisor: SessionId) {
-      const batch = normalizeBatch({
+      const batch = {
         ...input,
         tasks: input.tasks.map((task) => ({
           ...task,
           workflow_policy: task.workflow_policy ?? this.defaultWorkflow,
         })),
-      });
+      };
       for (const task of batch.tasks) {
         const { client_key, dependencies, ...fields } = task;
         const request = yield* this.prepare(
           {
             ...fields,
             request_id: batchItemRequest(batch.request_id, client_key),
-            dependencies: dependencies.flatMap((d) => (d.type === "existing" ? [d.issue_id] : [])),
+            dependencies: (dependencies ?? []).flatMap((d) =>
+              d.type === "existing" ? [d.issue_id] : [],
+            ),
           },
           supervisor,
         );

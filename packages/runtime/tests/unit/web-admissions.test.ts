@@ -190,3 +190,89 @@ test("adapter receipt time uses the supplied clock and retained time survives cl
     }).pipe(Effect.provide(TestClock.layer())),
   );
 });
+
+test("selected submissions reconcile captured input across concurrent retries, edits and restart", async () => {
+  const store = new MemoryStore(),
+    locks = new TestLocks();
+  const { IssueId, RelativePath, ContentHash } = await import("../../src/identities.ts");
+  const selection = {
+    kind: "diff" as const,
+    issue_id: IssueId.make("abra-web"),
+    file: RelativePath.make("source.ts"),
+    scope: "all" as const,
+    patch_id: ContentHash.make("a".repeat(64)),
+    side: "additions" as const,
+    start: 1,
+    end: 1,
+  };
+  let current = true,
+    prompts = 0,
+    reads = 0;
+  const capture = () => {
+    reads++;
+    return current
+      ? Effect.succeed("original excerpt")
+      : Effect.fail(new CrewError("SELECTION_STALE", "Selection changed"));
+  };
+  let observed = "";
+  const runtime = {
+    promptAdmission: (_s: SessionId, _id: MessageId, text: string) =>
+      Effect.sync(() => (text === observed ? ("consumed" as const) : ("absent" as const))),
+    prompt: (_s: SessionId, text: string) =>
+      Effect.gen(function* () {
+        prompts++;
+        observed = text;
+        return yield* new CrewError("RESPONSE_LOST", "After admission");
+      }),
+  };
+  const admissions = new WebAdmissions(store, runtime, locks, capture);
+  const chosen = { ...input, selection };
+  const [original, retry] = await Effect.runPromise(
+    Effect.all([admissions.submit(session, chosen), admissions.submit(session, chosen)], {
+      concurrency: "unbounded",
+    }),
+  );
+  assert.equal(original.message_id, retry.message_id);
+  assert.equal(prompts, 1);
+  assert.equal(reads, 1);
+  assert.match(observed, /original excerpt/);
+  assert.equal(original.capture?.excerpt, "original excerpt");
+  current = false;
+  const restarted = new WebAdmissions(store, runtime, locks, capture);
+  assert.equal((await Effect.runPromise(restarted.submit(session, chosen))).status, "admitted");
+  assert.equal(reads, 1);
+  await assert.rejects(
+    Effect.runPromise(
+      restarted.submit(session, { ...chosen, selection: { ...selection, start: 2, end: 2 } }),
+    ),
+    /different input/,
+  );
+  await assert.rejects(
+    Effect.runPromise(restarted.submit(session, { ...chosen, request_id: "new-id" })),
+    /Selection changed/,
+  );
+  assert.equal(await Effect.runPromise(restarted.receipt(session, "new-id")), null);
+  assert.equal(prompts, 1);
+});
+
+test("lost steer delivery remains on the original Abra session and identity", async () => {
+  const store = new MemoryStore();
+  const seen: unknown[][] = [];
+  const runtime = {
+    promptAdmission: () => Effect.succeed("consumed" as const),
+    prompt: (...args: unknown[]) => {
+      seen.push(args);
+      return Effect.fail(new CrewError("LOST", "Lost response"));
+    },
+  };
+  const request = { ...input, delivery: "steer" as const };
+  const first = await Effect.runPromise(
+    new WebAdmissions(store, runtime, new TestLocks()).submit(session, request),
+  );
+  const recovered = await Effect.runPromise(
+    new WebAdmissions(store, runtime, new TestLocks()).submit(session, request),
+  );
+  assert.equal(first.status, "uncertain");
+  assert.equal(recovered.status, "admitted");
+  assert.deepEqual(seen, [[session, input.text, first.message_id, true]]);
+});

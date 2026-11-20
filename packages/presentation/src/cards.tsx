@@ -1,3 +1,4 @@
+import type { WorkSummary } from "@abracode/contracts/visibility/work-summary";
 import type { ReactNode } from "react";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import type {
@@ -57,11 +58,32 @@ function Frame({
     </Card>
   );
 }
+export function VerificationLink({ work, inspect }: { work: WorkSummary; inspect: Inspect }) {
+  if (!work.last_check && !work.review_result && !work.latest_evidence) return null;
+  const label = work.review_result
+    ? "Review " + (work.review_result.endsWith("/passed") ? "passed" : "findings")
+    : work.last_check
+      ? "Check receipt"
+      : "Worker evidence";
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() =>
+        inspect({ action: "open_task", issue_id: work.issue_id, section: "verification" })
+      }
+    >
+      {label} · Inspect verification
+    </Button>
+  );
+}
 export function TaskCard({
   task,
+  current,
   inspect,
 }: {
   task: typeof TaskCardSchema.Type;
+  current?: WorkSummary;
   inspect?: Inspect;
 }) {
   const status =
@@ -81,6 +103,7 @@ export function TaskCard({
       status={status}
       description={task.progress?.summary ?? task.outcome?.next_action}
     >
+      {current && inspect && <VerificationLink work={current} inspect={inspect} />}
       {inspect && (
         <Button
           variant="outline"

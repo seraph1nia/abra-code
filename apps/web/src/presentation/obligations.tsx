@@ -10,7 +10,7 @@ import type {
 } from "@abracode/contracts/web/wire";
 import type { AttentionForm } from "@abracode/contracts/web/contracts";
 import { communicationSummary } from "@abracode/contracts/web/presentation-contracts";
-import { queries } from "../data.ts";
+import { queries } from "../work-data.ts";
 import { RequestState } from "../request-state.tsx";
 import { Button } from "@abracode/presentation/ui/button";
 import {

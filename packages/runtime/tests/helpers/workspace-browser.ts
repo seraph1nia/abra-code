@@ -1,3 +1,5 @@
+import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
+import { VerificationViewSchema } from "@abracode/contracts/web/verification";
 import { selectBindingRows } from "@abracode/contracts/web/bindings";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Disposable browser/HTTP/stream fixtures exercise the shipped frontend. */
 
@@ -101,6 +103,10 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
               diagnostics: [],
             }
           );
+        case "evidence":
+          return detailOverrides.get(input.issue_id)?.evidence;
+        case "verification":
+          return { checks: [], ...(detailOverrides.get(input.issue_id)?.verification as object) };
         case "overview":
           return {
             work,
@@ -119,7 +125,13 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
             ...detailOverrides.get(input.issue_id),
           };
         case "document":
-          return { path: input.path, content: "# Retained proposal\n\nReadable Markdown." };
+          return {
+            path: input.path,
+            content: "# Retained proposal\n\nReadable Markdown.",
+            hash: "a".repeat(64),
+            generation: 0,
+            ...(detailOverrides.get(input.issue_id)?.document as object),
+          };
         case "diff":
           return {
             at: Timestamp.make("2026-11-15T10:00:00Z"),
@@ -130,6 +142,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
             file: input.file || undefined,
             files: ["source.ts", "second.ts"].map((path) => ({
               path,
+              patch_id: (path === "source.ts" ? "a" : "b").repeat(64),
               status: "modified",
               additions: 1,
               deletions: 1,
@@ -305,6 +318,8 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
         }),
       find: operation("find", WorkPageSchema),
       leads: operation("leads", LeadEvidencePageSchema),
+      evidence: operation("evidence", EvidenceDataSchema),
+      verification: operation("verification", VerificationViewSchema),
       overview: operation("overview", WorkOverviewSchema),
       detail: operation("detail", WorkDetailSchema),
       document: operation("document", WorkDocumentSchema),

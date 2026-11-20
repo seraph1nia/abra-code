@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
@@ -42,8 +43,7 @@ test("saved pending declarations survive inspection failures and omission blocks
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const configuration = new ConfigApplication(f.config, f.records, f.onboarding);
-  const issue = Id.IssueId.make("active-declaration");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("active-declaration")));
   const execution = await run(f.controller.start(issue));
   const before = await readFile(f.config.config_path, "utf8");
   const document = await run(resolveConfig(f.root, f.config.config_path, before));
@@ -54,7 +54,7 @@ test("saved pending declarations survive inspection failures and omission blocks
   );
   const status = await run(configuration.status());
   assert.equal(status.find((p) => p.id === "api")?.status, "retained/undeclared");
-  f.work.add(Id.IssueId.make("new-declaration"));
+  f.seed.named(Id.IssueId.make("new-declaration"));
   assert.ok(
     (await run(f.controller.ready()))
       .find((r) => r.issue.id === "new-declaration")
@@ -91,8 +91,8 @@ test("saved pending declarations survive inspection failures and omission blocks
 test("worker admission is bound to current intent, not foreground or queue labels", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("prompt-owner"));
-  const execution = await run(f.controller.start(Id.IssueId.make("prompt-owner")));
+  const { id: promptOwnerId } = await run(f.work.create(workGoal("prompt-owner")));
+  const execution = await run(f.controller.start(promptOwnerId));
   assert.doesNotThrow(() =>
     requireOwnedPrompt(execution, execution.explore_session_id!, execution.prompt_id!),
   );

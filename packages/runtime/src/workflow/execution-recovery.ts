@@ -4,7 +4,6 @@ import type { OpenSpec } from "../openspec/adapter.ts";
 import type { Git } from "../git/repository.ts";
 import type { Runtime } from "../opencode/runtime.ts";
 import type { Delivery } from "../git/delivery.ts";
-import type { Operations } from "./operations.ts";
 import type { Queries } from "./queries.ts";
 import type { WorkerSessions } from "./sessions.ts";
 import type { Messages } from "./messages.ts";
@@ -16,24 +15,20 @@ import type { Finalization } from "./finalization.ts";
 import type { WorkAdmission } from "./admission.ts";
 import type { CodingChecks } from "./checks.ts";
 import { Clock, Effect } from "effect";
-import { CrewError, terminal, type Config, type Execution, type Project } from "../domain.ts";
+import { CrewError, terminal, type Execution, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import { IssueId, OperationAction } from "../identities.ts";
 import { synchronizeExecution } from "../storage/store.ts";
-import { measureReconcile } from "../observability.ts";
 import { phaseRole } from "./roles.ts";
 import type { Authorizations, CheckpointEvidence } from "./authorization.ts";
 interface Dependencies {
   readonly authorizations: Authorizations;
   readonly checkpoints: CheckpointEvidence;
-  readonly config: Config;
   readonly records: Records;
   readonly work: WorkGraph;
   readonly spec: OpenSpec;
   readonly git: Git;
   readonly runtime: Runtime;
   readonly delivery: Delivery;
-  readonly operations: Operations;
   readonly queries: Queries;
   readonly sessions: WorkerSessions;
   readonly messages: Messages;
@@ -46,94 +41,21 @@ interface Dependencies {
   readonly checks: CodingChecks;
 }
 
+export type RecoveryOutcome =
+  | Execution
+  | { action: "checkpoint"; execution: Execution }
+  | { action: "beginApply"; execution: Execution; project: Project };
+
 /** Reconciles retained claims, uncertain effects, checkpoint/capacity waits and
  * cleanup. All effects keep their existing ownership and approval gates. */
 export class ExecutionRecovery {
-  constructor(
-    private c: Dependencies,
-    private continueExecution: {
-      checkpoint: (e: Execution) => Effect.Effect<Execution, CrewError>;
-      beginApply: (e: Execution, p: Project) => Effect.Effect<Execution, CrewError>;
-      correctFailure: (
-        e: Execution,
-        error: CrewError,
-      ) => Effect.Effect<Execution | undefined, CrewError>;
-    },
-  ) {}
-  private get = (id: IssueId) => this.c.queries.get(id);
+  constructor(private c: Dependencies) {}
   private project = (e: Execution) => this.c.queries.effectiveProject(e);
   private assertPlan = (...args: Parameters<Dependencies["checks"]["assertPlan"]>) =>
     this.c.checks.assertPlan(...args);
   private launch = (...args: Parameters<Dependencies["sessions"]["launch"]>) =>
     this.c.sessions.launch(...args);
-  reconcile: (id?: IssueId) => Effect.Effect<Execution[], CrewError> = Effect.fn(
-    "ExecutionRecovery.reconcile",
-  )(
-    function* (this: ExecutionRecovery, id?: IssueId) {
-      const records = id
-        ? [yield* this.get(id)]
-        : (yield* this.c.records.executions()).filter(
-            (e) => !terminal(e) || e.finishing?.completion_notice?.status === "pending",
-          );
-      return yield* Effect.forEach(
-        records,
-        (record) =>
-          this.c.operations
-            .owned(record.issue_id, OperationAction.make("reconcile"), () =>
-              domainEffect(
-                Effect.gen({ self: this }, function* () {
-                  const e = yield* this.get(record.issue_id);
-                  return yield* this.reconcileExecution(e).pipe(
-                    Effect.catch((error) =>
-                      domainEffect(
-                        Effect.gen({ self: this }, function* () {
-                          if (e.stop_status === "requested")
-                            return yield* this.c.records.saveOwned(
-                              {
-                                ...e,
-                                error_or_recovery_reason: error.message,
-                              },
-                              ["error_or_recovery_reason"],
-                            );
-                          const corrected = yield* this.continueExecution.correctFailure(e, error);
-                          if (corrected) return corrected;
-                          if (
-                            error.code === "FORGE_OBSERVATION_FAILED" &&
-                            e.current_phase === "awaiting_merge"
-                          )
-                            return yield* this.c.finalization.wait(e, {
-                              category: "retryable",
-                              code: error.code,
-                              reason: error.message,
-                              owner: "forge",
-                            });
-                          return yield* this.c.transitions.fail(
-                            e,
-                            error,
-                            ["VERIFICATION_FAILED", "REVIEW_FAILED"].includes(error.code)
-                              ? "blocked"
-                              : "recovery_required",
-                          );
-                        }),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            )
-            .pipe(
-              Effect.catchIf(
-                (error) => ["LOCKED", "STOP_REQUESTED", "STALE_OPERATION"].includes(error.code),
-                () => this.get(record.issue_id),
-              ),
-            ),
-        { concurrency: Math.max(2, this.c.config.max_workers) },
-      );
-    }.bind(this),
-    domainEffect,
-    measureReconcile,
-  );
-  reconcileExecution: (e: Execution) => Effect.Effect<Execution, CrewError> = Effect.fn(
+  recover: (e: Execution) => Effect.Effect<RecoveryOutcome, CrewError> = Effect.fn(
     "ExecutionRecovery.reconcileOne",
   )(
     function* (this: ExecutionRecovery, e: Execution) {
@@ -165,7 +87,7 @@ export class ExecutionRecovery {
       let issue = yield* this.c.work.show(e.issue_id);
       if (e.current_phase === "claiming") {
         if (issue.status === "open" && !issue.assignee) {
-          if (!(yield* this.c.work.ready).some((i) => i.id === e.issue_id))
+          if (!(yield* this.c.work.explainSelected([e.issue_id])).ready.length)
             return yield* new CrewError(
               "NOT_READY",
               "Issue dependencies changed before claim recovery",
@@ -212,7 +134,7 @@ export class ExecutionRecovery {
       if (["blocked", "interrupted", "failed", "recovery_required"].includes(e.current_phase))
         return e;
       if (e.current_phase === "validating_external")
-        return yield* this.continueExecution.checkpoint(e);
+        return { action: "checkpoint", execution: e } as const;
       if (e.current_phase === "awaiting_merge" && !(yield* this.c.finishing.prepare(e, p)))
         return e;
       if (yield* this.c.obligations.recheck(e)) return e;
@@ -239,7 +161,7 @@ export class ExecutionRecovery {
           (e.plan_approval_required === false ||
             this.c.checkpoints.status(e, "plan") === "approved")
         )
-          return yield* this.continueExecution.beginApply(e, p);
+          return { action: "beginApply", execution: e, project: p } as const;
         if (e.current_phase === "awaiting_merge") {
           const pr = p.delivery === "github-pr" ? yield* this.c.delivery.inspect(p, e) : undefined;
           if (
@@ -276,7 +198,7 @@ export class ExecutionRecovery {
       }
       if (yield* this.c.obligations.recheck(e)) return e;
       if (e.current_phase === "planning" && e.workflow_policy !== "full-openspec")
-        return yield* this.continueExecution.checkpoint(e);
+        return { action: "checkpoint", execution: e } as const;
       if (e.active_role) {
         if (e.resume_after_decision) yield* this.c.messages.deliverAnswers(e);
         const turn = yield* this.c.sessions.reconcile(e);
@@ -287,7 +209,7 @@ export class ExecutionRecovery {
           yield* this.launch(e, turn.role);
           return e;
         }
-        if (turn.kind === "completed") return yield* this.continueExecution.checkpoint(e);
+        if (turn.kind === "completed") return { action: "checkpoint", execution: e } as const;
         return e;
       }
       const pendingRole = phaseRole(e.current_phase);
@@ -306,7 +228,7 @@ export class ExecutionRecovery {
         return e;
       }
       if (["archiving", "delivering", "verifying"].includes(e.current_phase))
-        return yield* this.continueExecution.checkpoint(e);
+        return { action: "checkpoint", execution: e } as const;
       return yield* new CrewError(
         "RECOVERY_REQUIRED",
         "No active session or durable phase operation can explain this state",

@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Effect, Schema } from "effect";
@@ -18,8 +19,7 @@ test(
   async (t) => {
     const f = await run(fixture);
     t.onTestFinished(() => run(f.close()));
-    const issue = Id.IssueId.make("diagram-verifier");
-    f.work.add(issue);
+    const { id: issue } = await run(f.work.create(workGoal("diagram-verifier")));
     const e = await run(f.controller.start(issue, Id.SessionId.make("ses_diagram-parent")));
     let tool: Tool.Info | undefined;
     const editor: ToolEditor = {

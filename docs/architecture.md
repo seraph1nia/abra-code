@@ -474,3 +474,10 @@ recovery. Authorization, locks, generation and JSON/export semantic identity rem
 with the publication owners. Matching files are reusable facts; conflicting files
 and changed scratch are preserved. There is no generic workflow engine, new store
 or change to legacy Markdown/HTML publication.
+
+Admission returns the retained execution or the next lifecycle action to
+Advancement. Advancement holds the ticket operation through start, recovery,
+checkpoint evaluation and correction. Recovery can request a checkpoint or an
+approved Apply handoff with its verified project. Finishing runs synchronization
+through the existing checks, specification and session owners. Leads submit
+batches to admission and send worker messages through the guarded message command.

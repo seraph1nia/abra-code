@@ -1,3 +1,5 @@
+import { selectedDiffExcerpt } from "../../src/visibility/ticket-diff.ts";
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import { parseDiffPatch } from "@abracode/web/diff-patch";
 import * as Id from "../../src/identities.ts";
 import { applyPatch } from "diff";
@@ -22,6 +24,19 @@ test("ticket diff covers commits, staged, unstaged and untracked files without m
   await run(f.git.run(tree, ["commit", "-m", "Implementation"]));
   await writeFile(join(tree, "source.txt"), "staged\n");
   await run(f.git.run(tree, ["add", "source.txt"]));
+  const file = Id.RelativePath.make("source.txt");
+  const staged = await run(view.diff(e.issue_id, "all", file));
+  const anchor = {
+    kind: "diff" as const,
+    issue_id: e.issue_id,
+    scope: "all" as const,
+    file,
+    patch_id: staged.files.find((entry) => entry.path === file)!.patch_id!,
+    side: "additions" as const,
+    start: 1,
+    end: 1,
+  };
+  assert.equal(selectedDiffExcerpt(staged, anchor), "staged");
   await writeFile(join(tree, "source.txt"), "working\n");
   await writeFile(join(tree, "new.ts"), "export const added = true;\n");
   const index = await run(f.git.run(tree, ["rev-parse", "--git-path", "index"]));
@@ -29,6 +44,15 @@ test("ticket diff covers commits, staged, unstaged and untracked files without m
   const all = await run(view.diff(e.issue_id, "all", Id.RelativePath.make("source.txt")));
   assert.match(all.patch!, /-original\n\+working/);
   assert.equal(all.base, e.base_commit);
+  assert.equal(staged.head, all.head);
+  assert.throws(() => selectedDiffExcerpt(all, anchor), /selected diff changed/);
+  const current = {
+    ...anchor,
+    patch_id: all.files.find((entry) => entry.path === file)!.patch_id!,
+  };
+  assert.equal(selectedDiffExcerpt(all, current), "working");
+  assert.equal(selectedDiffExcerpt(all, { ...current, side: "deletions" }), "original");
+  assert.throws(() => selectedDiffExcerpt(all, { ...current, end: 99 }), /visible lines/);
   assert.ok(all.files.some((file) => file.path === "new.ts" && file.status === "added"));
   assert.ok(all.files.some((file) => file.path.endsWith("proposal.md")));
   const local = await run(view.diff(e.issue_id, "uncommitted", Id.RelativePath.make("source.txt")));
@@ -37,6 +61,16 @@ test("ticket diff covers commits, staged, unstaged and untracked files without m
   const added = await run(view.diff(e.issue_id, "all", Id.RelativePath.make("new.ts")));
   assert.match(added.patch!, /\+export const added = true;/);
   assert.equal(parseDiffPatch(added.patch!).length, 1);
+  const addedAnchor = {
+    ...current,
+    file: added.file!,
+    patch_id: added.files.find((entry) => entry.path === added.file)!.patch_id!,
+  };
+  assert.equal(selectedDiffExcerpt(added, addedAnchor), "export const added = true;");
+  assert.throws(() => selectedDiffExcerpt(added, current), /selected diff changed/);
+  const other = await run(f.work.create(workGoal("another-issue")));
+  const foreign = await run(view.diff(other.id, "all", file));
+  assert.throws(() => selectedDiffExcerpt(foreign, current), /unavailable/);
   const collection = await run(view.diff(e.issue_id, "all"));
   assert.equal(collection.file, undefined);
   const rendered = parseDiffPatch(collection.patch!);
@@ -68,10 +102,12 @@ test("diff handles deletion, binary data, bounded patches and escaping untracked
   const binary = await run(view.diff(e.issue_id, "all", Id.RelativePath.make("source.txt")));
   assert.ok(binary.files.find((f) => f.path === "source.txt")?.binary);
   assert.equal(binary.patch, undefined);
+  assert.equal(binary.files.find((entry) => entry.path === binary.file)?.patch_id, undefined);
   assert.match(binary.message!, /Binary/);
   await writeFile(join(tree, "source.txt"), "large".repeat(15000));
   const large = await run(view.diff(e.issue_id, "all", Id.RelativePath.make("source.txt")));
   assert.equal(large.patch, undefined);
+  assert.equal(large.files.find((entry) => entry.path === large.file)?.patch_id, undefined);
   assert.match(large.message!, /64 KiB/);
   await writeFile(join(tree, 'a "quoted" é.ts'), "export const retained = true;\n");
   const collection = await run(view.diff(e.issue_id, "all"));
@@ -97,12 +133,9 @@ test("diff handles deletion, binary data, bounded patches and escaping untracked
 test("retired tickets use retained base/delivery objects; queued tickets have an explicit empty state", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-queued"));
+  const { id: abraQueuedId } = await run(f.work.create(workGoal("abra-queued")));
   const view = new Visibility(f.controller);
-  assert.match(
-    (await run(view.diff(Id.IssueId.make("abra-queued"), "all"))).message!,
-    /No worktree/,
-  );
+  assert.match((await run(view.diff(abraQueuedId, "all"))).message!, /No worktree/);
   const e = await run(planned(f));
   await writeFile(join(e.worktree_directory!, "source.txt"), "delivered\n");
   await run(f.git.run(e.worktree_directory!, ["add", "."]));

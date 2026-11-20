@@ -393,13 +393,28 @@ export async function prFeedbackLifecycle({
     generated_paths: [".generated-residue"],
   });
   await eventually(async () =>
-    (await feedbackStatus()).execution!.finishing?.authorizations?.length ? true : undefined,
+    (await feedbackStatus()).execution!.finishing?.authorizations?.find(
+      (authorization) =>
+        authorization.key === residue.key && authorization.form_id === residue.form_id,
+    ),
   );
-  const newMerge = await invoke("abra_work_approve", {
-    issue_id: feedbackIssue.id,
-    kind: "merge",
-  });
-  assert.ok("form_id" in newMerge);
+  const newMerge = await eventually(async () => {
+    const answer = await invoke("abra_work_approve", {
+      issue_id: feedbackIssue.id,
+      kind: "merge",
+    });
+    if ("form_id" in answer) return answer;
+    if ("current_phase" in answer) {
+      assert.equal(answer.current_phase, "awaiting_merge");
+      assert.equal(answer.delivered_commit, feedbackExecution.delivered_commit);
+      assert.ok(
+        !answer.approval_receipts.some(
+          (receipt) => receipt.fingerprint === answer.delivered_commit && receipt.authorized_at,
+        ),
+      );
+    }
+    return undefined;
+  }, 40000);
   assert.notEqual(newMerge.form_id, oldMerge.form_id);
   assert.notEqual(newMerge.form_id, staleMerge.form_id);
   assert.equal(newMerge.approval_required, true);

@@ -1,3 +1,4 @@
+import { removeOwnedField } from "../storage/store.ts";
 import { Clock, Effect } from "effect";
 import { ErrorCode, OperationAction, type IssueId, type SessionId } from "../identities.ts";
 import { CrewError, ensure, type Execution, type Project } from "../domain.ts";
@@ -225,8 +226,7 @@ export class PRFeedback {
           !e.feedback.findings.some((f) => f.blocking)
         ) {
           yield* this.c.work.resume(e.issue_id, e.execution_id);
-          delete e.delivery_block;
-          yield* this.c.transitions.move(e, "awaiting_merge", ["delivery_block"]);
+          yield* this.c.transitions.move(e, "awaiting_merge", { delivery_block: removeOwnedField });
         }
       }
       return assessment;

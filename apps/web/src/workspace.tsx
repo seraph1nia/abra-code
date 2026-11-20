@@ -1,9 +1,9 @@
+import { Recap } from "./recap-loader.tsx";
 import { MessageContent, emptyAttachments, emptyDiagnostics } from "./message-content.tsx";
 import { Composer } from "./composer.tsx";
-import { workspaceDraft } from "./workspace-state/draft.ts";
+import { workspaceDraft, AttachSelection, type DraftAttachment } from "./workspace-state/draft.ts";
 import { Link, useSearch } from "@tanstack/react-router";
 import { ArrowUpRight, Sparkles } from "@abracode/presentation/icons";
-import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import { useWorkspaceNavigation } from "./workspace-state/navigation.ts";
 import { useTranscriptViewport } from "./workspace-state/viewport.ts";
 import { RetainedSurfaces } from "./presentation/attachments.tsx";
@@ -16,7 +16,6 @@ import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { bootstrapQuery } from "./data.ts";
 import { useWorkspace } from "./use-workspace.ts";
 import { requestError } from "./request-state.tsx";
-import { NativeForm, NativePermission } from "./native-attention.tsx";
 import { deferred } from "./deferred.tsx";
 const WorkFinder = deferred<React.ComponentProps<typeof import("./work-finder.tsx").WorkFinder>>(
   () => import("./work-finder.tsx").then((module) => ({ default: module.WorkFinder })),
@@ -24,14 +23,15 @@ const WorkFinder = deferred<React.ComponentProps<typeof import("./work-finder.ts
   "deferred-panel",
   ({ shown }) => shown,
 );
-const LeadsPanel = deferred<
-  React.ComponentProps<typeof import("./presentation/leads.tsx").LeadsPanel>
+const AttentionPanel = deferred<
+  React.ComponentProps<typeof import("./presentation/attention-panel.tsx").AttentionPanel>
 >(
-  () => import("./presentation/leads.tsx").then((module) => ({ default: module.LeadsPanel })),
-  "Lead history",
-  "deferred-panel",
+  () =>
+    import("./presentation/attention-panel.tsx").then((module) => ({
+      default: module.AttentionPanel,
+    })),
+  "Current attention",
 );
-
 const Inspector = deferred<React.ComponentProps<typeof import("./inspector.tsx").Inspector>>(
   () => import("./inspector.tsx").then((module) => ({ default: module.Inspector })),
   "Work inspection",
@@ -97,6 +97,7 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
     [],
   );
 
+  const [canvasWidth, setCanvasWidth] = useState(39);
   const [attentionOpen, setAttentionOpen] = useState(true);
   const [retainedViews, setRetainedViews] = useState(false);
   const { theme, setTheme } = useTheme();
@@ -167,8 +168,16 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
     navigation.focusForm(id);
   }
 
+  function attach(attachment: DraftAttachment) {
+    setDraft({ attachment });
+    if (document.querySelector('[role="dialog"] .inspector')) closeInspector();
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLTextAreaElement>('[aria-label="Message Abra"]')?.focus(),
+    );
+  }
+
   function ask(text: string) {
-    setDraft(text);
+    setDraft({ text });
     requestAnimationFrame(() =>
       document.querySelector<HTMLTextAreaElement>('[aria-label="Message Abra"]')?.focus(),
     );
@@ -176,6 +185,7 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
   return (
     <div
       role="presentation"
+      style={{ "--canvas-width": canvasWidth + "%" } as React.CSSProperties}
       className={`workspace ${selected ? "inspecting" : ""} ${sidebar ? "finding" : ""}`}
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key === "f") viewport.onReadingIntent();
@@ -267,6 +277,15 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
             </span>
           </Button>
         </header>
+        <Recap
+          key={workspace.session_id}
+          session={workspace.session_id}
+          work={workspace.work.work}
+          selected={selected}
+          tab={tab}
+          view={JSON.stringify(route)}
+          open={open}
+        />
         <div
           className="conversation-scroll"
           ref={scroller}
@@ -280,57 +299,15 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
             managementAttention.length > 0 ||
             workspace.forms.length > 0 ||
             (workspace.work.management?.diagnostic_count ?? 0) > 0) && (
-            <section
-              className="attention"
-              hidden={!attentionOpen}
-              aria-label="Needs your attention"
-            >
-              <div className="section-heading">
-                <span className="attention-symbol">!</span>
-                <h2>Needs your attention</h2>
-                <span className="count">
-                  {attention + workAttention.length + managementAttention.length}
-                </span>
-              </div>
-              {workspace.forms.map((item) => (
-                <NativeForm key={`${item.form.id}-${item.binding}`} item={item} refresh={refresh} />
-              ))}
-              {workspace.permissions.map((item) => (
-                <NativePermission key={item.request.id} item={item} refresh={refresh} />
-              ))}
-              {workAttention.map((entry) => (
-                <div className="work-attention" key={`${entry.issue_id}:${entry.key}`}>
-                  <Button variant="ghost" onClick={() => open(entry.issue_id)}>
-                    {entry.title} · {entry.reason}
-                  </Button>
-                  <p className="muted">
-                    {entry.owner === "user" ? "You" : entry.owner} · {entry.next_action}
-                  </p>
-                </div>
-              ))}
-              {managementAttention.map((entry) => (
-                <LazyLeadAttention
-                  key={`${entry.lead_id}/${entry.repository_id}`}
-                  entry={entry}
-                  inspect={inspect}
-                />
-              ))}
-              {workspace.work.management?.truncated && (
-                <output>Lead attention coverage is limited to 20 repository/lead pairs.</output>
-              )}
-              {(workspace.work.management?.diagnostic_count ?? 0) > 0 && (
-                <output>
-                  Some retained lead evidence is unavailable. Inspect scoped lead diagnostics before
-                  assuming there is no pending work.
-                </output>
-              )}
-              {workspace.work.fleet?.attention_truncated && (
-                <output className="muted">
-                  Attention coverage is limited. Additional retained obligations may be available
-                  through Work.
-                </output>
-              )}
-            </section>
+            <AttentionPanel
+              workspace={workspace}
+              workAttention={workAttention}
+              attention={attention}
+              attentionOpen={attentionOpen}
+              refresh={refresh}
+              open={open}
+              inspect={inspect}
+            />
           )}
           <div
             className="transcript"
@@ -430,45 +407,24 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
         />
       </main>
       {selected && (
-        <Inspector
-          issue={selected}
-          work={work}
-          tab={tab}
-          setTab={setTab}
-          close={() => closeInspector()}
-          returnFocus={returnInspectorFocus}
-          forms={workspace.forms}
-          focusForm={focusForm}
-          inspect={inspect}
-          ask={ask}
-        />
+        <AttachSelection.Provider value={attach}>
+          <Inspector
+            width={canvasWidth}
+            resize={setCanvasWidth}
+            issue={selected}
+            work={work}
+            tab={tab}
+            setTab={setTab}
+            close={() => closeInspector()}
+            returnFocus={returnInspectorFocus}
+            forms={workspace.forms}
+            focusForm={focusForm}
+            inspect={inspect}
+            ask={ask}
+          />
+        </AttachSelection.Provider>
       )}
     </div>
-  );
-}
-
-function LazyLeadAttention({
-  entry,
-  inspect,
-}: {
-  entry: NonNullable<WorkspaceSnapshot["work"]["management"]>["entries"][number];
-  inspect: (target: ResourceSelection) => void;
-}) {
-  const [opened, setOpened] = useState(false);
-  return (
-    <details data-management-attention onToggle={(event) => setOpened(event.currentTarget.open)}>
-      <summary>
-        {entry.lead_id} · {entry.repository_id} · {entry.unanswered} unanswered · {entry.proposals}{" "}
-        unaccepted proposals
-      </summary>
-      {opened && (
-        <LeadsPanel
-          repository={entry.repository_id}
-          initialLead={entry.lead_id}
-          inspect={inspect}
-        />
-      )}
-    </details>
   );
 }
 

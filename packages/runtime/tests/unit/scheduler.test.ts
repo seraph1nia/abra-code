@@ -28,7 +28,7 @@ test("equal-priority repositories rotate fairly while failures do not block othe
     order: string[] = [];
   for (const repo of ["api", "frontend", "worker"])
     for (let index = 1; index <= 2; index++)
-      f.work.add(Id.IssueId.make(`${repo}-${index}`), Id.RepositoryId.make(repo));
+      f.seed.named(Id.IssueId.make(`${repo}-${index}`), Id.RepositoryId.make(repo));
   f.controller.start = (id) =>
     Effect.sync(() => {
       order.push(id);
@@ -45,10 +45,9 @@ test("highest priority wins; cursor crash does not duplicate a retained claim on
   const f = await setup(t);
   f.config.max_workers = 1;
   f.config.max_executions = 4;
-  f.work.add(Id.IssueId.make("api-one"));
-  f.work.add(Id.IssueId.make("frontend-one"), Id.RepositoryId.make("frontend"));
-  f.work.add(Id.IssueId.make("worker-one"), Id.RepositoryId.make("worker"));
-  f.work.issues.get("worker-one")!.priority = 0;
+  f.seed.named(Id.IssueId.make("api-one"));
+  f.seed.named(Id.IssueId.make("frontend-one"), Id.RepositoryId.make("frontend"));
+  f.seed.named(Id.IssueId.make("worker-one"), Id.RepositoryId.make("worker"), [], { priority: 0 });
   const set = f.records.store.set.bind(f.records.store);
   f.records.store.set = (key, value) =>
     key === "scheduler/rotation"
@@ -57,7 +56,7 @@ test("highest priority wins; cursor crash does not duplicate a retained claim on
   await assert.rejects(run(f.scheduler.tick()), /Simulated cursor commit crash/);
   const first = await run(f.controller.get(Id.IssueId.make("worker-one")));
   assert.equal(f.runtime.creates, 1);
-  assert.equal(f.work.claims, 1);
+  assert.equal(f.seed.countEvents("claimed"), 1);
   f.records.store.set = set;
   const resumed = new Scheduler(f.controller, f.records);
   await run(resumed.tick());
@@ -75,14 +74,14 @@ test("highest priority wins; cursor crash does not duplicate a retained claim on
     (await run(f.controller.get(Id.IssueId.make("frontend-one")))).active_role,
     "explore",
   );
-  assert.equal(f.work.claims, 3);
+  assert.equal(f.seed.countEvents("claimed"), 3);
 });
 
 test("automatic admission requires native central Abra and does not spend a cursor without it", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   f.config.auto_schedule = true;
-  f.work.add(Id.IssueId.make("no-authority"));
+  f.seed.named(Id.IssueId.make("no-authority"));
   assert.deepEqual(await run(f.scheduler.tick()), []);
   assert.ok(
     (await run(f.controller.ready()))[0].blocker_details.some((b) => b.code === "authority"),
@@ -108,19 +107,19 @@ test("overlapping scheduler ticks observe fresh capacity and never duplicate cla
   const f = await setup(t);
   f.config.max_workers = 2;
   f.config.max_executions = 4;
-  f.work.add(Id.IssueId.make("one"));
-  f.work.add(Id.IssueId.make("two"), Id.RepositoryId.make("frontend"));
-  f.work.add(Id.IssueId.make("three"), Id.RepositoryId.make("worker"));
+  f.seed.named(Id.IssueId.make("one"));
+  f.seed.named(Id.IssueId.make("two"), Id.RepositoryId.make("frontend"));
+  f.seed.named(Id.IssueId.make("three"), Id.RepositoryId.make("worker"));
   await Promise.all([run(f.scheduler.tick()), run(f.scheduler.tick())]);
   assert.equal(f.runtime.creates, 2);
-  assert.equal(f.work.claims, 2);
+  assert.equal(f.seed.countEvents("claimed"), 2);
   const queued = (await run(f.controller.ready())).find((row) => row.issue.id === "three")!;
   assert.ok(queued.blocker_details.some((b) => b.capacity_kind === "active"));
   const first = (await run(f.records.executions()))[0];
   await run(f.controller.control(first.issue_id, "pause"));
   await run(f.scheduler.tick());
   assert.equal(f.runtime.creates, 3);
-  assert.equal(f.work.claims, 3);
+  assert.equal(f.seed.countEvents("claimed"), 3);
   assert.equal((await run(f.controller.get(first.issue_id))).current_phase, "interrupted");
 });
 
@@ -131,8 +130,8 @@ test("ambiguous native admission keeps capacity and a paused execution is not au
   const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   project.max_executions = 3;
   await run(f.records.saveProject(project));
-  f.work.add(Id.IssueId.make("first"));
-  f.work.add(Id.IssueId.make("next"), Id.RepositoryId.make("frontend"));
+  f.seed.named(Id.IssueId.make("first"));
+  f.seed.named(Id.IssueId.make("next"), Id.RepositoryId.make("frontend"));
   const prompt = f.runtime.prompt.bind(f.runtime);
   f.runtime.prompt = (...args) =>
     prompt(...args).pipe(
@@ -143,11 +142,11 @@ test("ambiguous native admission keeps capacity and a paused execution is not au
   const e = await run(f.controller.get(Id.IssueId.make("first")));
   assert.equal(e.capacity_reservation!.status, "uncertain");
   assert.equal(f.runtime.creates, 1);
-  assert.equal(f.work.claims, 1);
+  assert.equal(f.seed.countEvents("claimed"), 1);
   f.runtime.prompt = prompt;
   await run(f.controller.control(e.issue_id, "pause"));
   await run(f.scheduler.tick());
   assert.equal(f.runtime.creates, 2);
-  assert.equal(f.work.claims, 2);
+  assert.equal(f.seed.countEvents("claimed"), 2);
   assert.equal((await run(f.controller.get(e.issue_id))).current_phase, "interrupted");
 });

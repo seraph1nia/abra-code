@@ -69,8 +69,8 @@ test("fleet counts and closure evidence cover closed tickets outside the visible
   const e = await run(planned(f));
   for (let n = 0; n < 56; n++) {
     const id = Id.IssueId.make(`done-${String(n).padStart(2, "0")}`);
-    f.work.add(id);
-    f.work.issues.get(id)!.status = "closed";
+    f.seed.named(id);
+    f.seed.close(id);
   }
   f.work.completions = () =>
     Effect.succeed([

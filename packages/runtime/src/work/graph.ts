@@ -3,11 +3,18 @@ import {
   BatchInputSchema,
   BatchResultSchema,
   normalizeBatch,
-  batchRequests,
+  prepareBatch,
   type BatchInput,
 } from "./batch.ts";
 import { committedScope } from "../visibility/invalidations.ts";
-import { AbsolutePath, Timestamp, timestamp, ExecutionId, IssueId } from "../identities.ts";
+import {
+  AbsolutePath,
+  Timestamp,
+  timestamp,
+  ExecutionId,
+  IssueId,
+  type RequestId,
+} from "../identities.ts";
 
 import { ScopeDraftSchema, ReportReferenceSchema } from "./scope.ts";
 import { Effect, Schema } from "effect";
@@ -26,6 +33,7 @@ import { domainEffect } from "../effect.ts";
 import {
   IssueSchema,
   explainIssues,
+  explainIssue,
   normalizeIssue,
   SavedRequestSchema,
   type Issue,
@@ -72,6 +80,7 @@ export interface WorkGraph {
   /** Opaque committed graph revision, observed without writing or acquiring a writer transaction. */
   readonly revision: Effect.Effect<string, CrewError>;
   readonly closureTimes: Effect.Effect<Record<string, Timestamp>, CrewError>;
+  explainSelected(ids: readonly IssueId[]): Effect.Effect<ReadyExplanation, CrewError>;
   readonly explain: Effect.Effect<ReadyExplanation, CrewError>;
   readonly ready: Effect.Effect<Issue[], CrewError>;
   claim(id: IssueId, execution: ExecutionId): Effect.Effect<void, CrewError>;
@@ -93,18 +102,26 @@ const decodeIssue = Schema.decodeUnknownSync(IssueSchema);
 
 /** A scoped connection. Transactions contain only synchronous SQL and domain checks. */
 export class SqliteWorkGraph implements WorkGraph {
-  private constructor(private db: DatabaseSync) {
+  private validatedVersion?: number;
+  private constructor(
+    private db: DatabaseSync,
+    private readonly nextId: (request: RequestId) => IssueId,
+  ) {
     // SQLite lower() is ASCII-only; preserve the existing JavaScript Unicode search.
     db.function("abracode_lower", { deterministic: true }, (value) => String(value).toLowerCase());
   }
 
-  static open(path: AbsolutePath | ":memory:") {
+  static open(
+    path: AbsolutePath | ":memory:",
+    nextId: (request: RequestId) => IssueId = () => IssueId.make(`abra-${randomUUID()}`),
+  ) {
     return Effect.gen(function* () {
       if (path !== ":memory:") yield* mkdir(dirname(path), { recursive: true, mode: 0o700 });
       const db = yield* Effect.acquireRelease(
         sqlEffect(() => new DatabaseSync(path)),
         (db) => sqlEffect(() => db.close()).pipe(Effect.orDie),
       );
+      const graph = new SqliteWorkGraph(db, nextId);
       yield* sqlEffect(() => {
         db.exec(
           "PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;",
@@ -200,13 +217,16 @@ export class SqliteWorkGraph implements WorkGraph {
               ALTER TABLE issues DROP COLUMN finder_rank;
             `);
           }
+          const empty = !db.prepare("SELECT 1 FROM dependencies LIMIT 1").get();
+          const versionStamp = graph.dataVersion();
           db.exec("PRAGMA user_version = 9; COMMIT");
+          if (empty) graph.validatedVersion = versionStamp;
         } catch (error) {
           db.exec("ROLLBACK");
           throw error;
         }
       });
-      return new SqliteWorkGraph(db);
+      return graph;
     });
   }
 
@@ -418,7 +438,7 @@ export class SqliteWorkGraph implements WorkGraph {
           ensure(dependencies.has(id), "ISSUE_MISSING", `Missing issue ${id}`);
         const issue: Issue = {
           ...request,
-          id: IssueId.make(`abra-${randomUUID()}`),
+          id: this.nextId(request.request_id),
           workflow_policy: request.workflow_policy ?? "full-openspec",
           status: "open",
         };
@@ -433,9 +453,48 @@ export class SqliteWorkGraph implements WorkGraph {
     ).pipe(Effect.tap(() => committedScope({ finder: true, work_all: true })));
   }
 
+  private dataVersion() {
+    return Number(this.db.prepare("PRAGMA data_version").get()!.data_version);
+  }
+  private validateHistoricalEdges() {
+    const edges = this.db
+      .prepare(`
+      SELECT d.issue_id, d.dependency_id, child.id AS child, parent.id AS parent
+      FROM dependencies d LEFT JOIN issues child ON child.id = d.issue_id
+      LEFT JOIN issues parent ON parent.id = d.dependency_id
+    `)
+      .all();
+    const degree = new Map<string, number>();
+    const children = new Map<string, string[]>();
+    for (const edge of edges) {
+      ensure(
+        edge.child && edge.parent,
+        "ISSUE_MISSING",
+        `Missing endpoint of dependency ${String(edge.issue_id)} -> ${String(edge.dependency_id)}`,
+      );
+      const child = String(edge.child),
+        parent = String(edge.parent);
+      degree.set(child, (degree.get(child) ?? 0) + 1);
+      if (!degree.has(parent)) degree.set(parent, 0);
+      const siblings = children.get(parent);
+      if (siblings) siblings.push(child);
+      else children.set(parent, [child]);
+    }
+    const ready = [...degree].filter(([, n]) => n === 0).map(([id]) => id);
+    for (const id of ready) {
+      for (const child of children.get(id) ?? []) {
+        const remaining = degree.get(child)! - 1;
+        degree.set(child, remaining);
+        if (remaining === 0) ready.push(child);
+      }
+    }
+    ensure(ready.length === degree.size, "BATCH_CYCLE", "Work dependencies contain a cycle");
+  }
+
   createBatch(input: BatchInput) {
-    return sqlEffect((at) =>
-      this.transaction(() => {
+    return sqlEffect((at) => {
+      let validated: number | undefined;
+      const result = this.transaction(() => {
         const batch = normalizeBatch(input),
           encoded = JSON.stringify(batch);
         ensure(
@@ -479,10 +538,7 @@ export class SqliteWorkGraph implements WorkGraph {
             })),
           });
         }
-        const ids = new Map(
-          batch.tasks.map((task) => [task.client_key, IssueId.make(`abra-${randomUUID()}`)]),
-        );
-        const requests = batchRequests(batch, ids);
+        const { requests, existing } = prepareBatch(batch, this.nextId);
         const created: Issue[] = requests.map(({ id, input }) => ({
           ...input,
           id,
@@ -498,36 +554,17 @@ export class SqliteWorkGraph implements WorkGraph {
           "REQUEST_REBIND",
           "Batch item identity is already owned by another intake request",
         );
-        // Validate the complete graph before inserting any receipt, issue or event.
-        const existing = this.issues(),
-          existingIDs = new Set(existing.map((issue) => issue.id));
-        for (const task of batch.tasks)
-          for (const dependency of task.dependencies)
-            if (dependency.type === "existing")
-              ensure(
-                existingIDs.has(dependency.issue_id),
-                "ISSUE_MISSING",
-                `Missing issue ${dependency.issue_id}`,
-              );
-        const all = [...existing, ...created];
-        const remaining = new Map(all.map((issue) => [issue.id, issue.dependencies.length]));
-        const children = new Map<IssueId, IssueId[]>();
-        for (const issue of all)
-          for (const dependency of issue.dependencies) {
-            ensure(remaining.has(dependency), "ISSUE_MISSING", `Missing issue ${dependency}`);
-            children.set(dependency, [...(children.get(dependency) ?? []), issue.id]);
-          }
-        const ready = [...remaining].filter(([, count]) => count === 0).map(([id]) => id);
-        let count = 0;
-        for (let index = 0; index < ready.length; index++) {
-          count++;
-          for (const child of children.get(ready[index]!) ?? []) {
-            const degree = remaining.get(child)! - 1;
-            remaining.set(child, degree);
-            if (degree === 0) ready.push(child);
-          }
+        validated = this.dataVersion();
+        if (validated !== this.validatedVersion) this.validateHistoricalEdges();
+        if (existing.length) {
+          const found = new Set(
+            this.db
+              .prepare("SELECT id FROM issues WHERE id IN (SELECT value FROM json_each(?))")
+              .all(JSON.stringify(existing))
+              .map((row) => row.id),
+          );
+          for (const id of existing) ensure(found.has(id), "ISSUE_MISSING", `Missing issue ${id}`);
         }
-        ensure(count === remaining.size, "BATCH_CYCLE", "Work dependencies contain a cycle");
         this.db
           .prepare("INSERT INTO work_batches (request_id, request_input) VALUES (?, ?)")
           .run(batch.request_id, encoded);
@@ -557,8 +594,10 @@ export class SqliteWorkGraph implements WorkGraph {
             issue,
           })),
         };
-      }),
-    ).pipe(Effect.tap(() => committedScope({ finder: true, work_all: true })));
+      });
+      if (validated !== undefined) this.validatedVersion = validated;
+      return result;
+    }).pipe(Effect.tap(() => committedScope({ finder: true, work_all: true })));
   }
 
   show(id: IssueId) {
@@ -612,6 +651,28 @@ export class SqliteWorkGraph implements WorkGraph {
         const issue = this.issue(id);
         const { dependencies, closed_at } = this.taskRows([issue])[0]!;
         return { issue, dependencies, closed_at };
+      }, false),
+    );
+  }
+
+  explainSelected(ids: readonly IssueId[]) {
+    return sqlEffect(() =>
+      this.transaction(() => {
+        const issues = this.issuesByID(ids).filter((issue) => issue.status !== "closed");
+        const evidence = this.taskRows(issues);
+        const result: ReadyExplanation = { ready: [], blocked: [] };
+        for (const [index, issue] of issues.entries()) {
+          const blockers = evidence[index]!.dependencies.flatMap(({ id, title, status }) => {
+            ensure(
+              status !== "unavailable" && title !== undefined,
+              "ISSUE_DEPENDENCIES",
+              `Missing dependency ${id}`,
+            );
+            return status === "closed" ? [] : [{ id, title, status }];
+          });
+          explainIssue(result, issue, blockers);
+        }
+        return result;
       }, false),
     );
   }

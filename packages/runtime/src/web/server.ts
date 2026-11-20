@@ -1,3 +1,5 @@
+import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
+import { VerificationViewSchema } from "@abracode/contracts/web/verification";
 import { reviewGroup } from "@abracode/contracts/web/review-api";
 import { AgentCatalogSchema } from "@abracode/contracts/web/agent-settings";
 import {
@@ -131,43 +133,83 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
         ),
       ),
   );
+  const workRead =
+    <I, S extends Schema.ConstraintDecoder<unknown>>(
+      read: (query: I) => Effect.Effect<NoInfer<S["Type"]>, CrewError>,
+      schema: S,
+    ) =>
+    ({ query }: { query: I }) =>
+      validated(read(query), schema);
   const work = HttpApiBuilder.group(api, "work", (handlers) =>
     handlers
-      .handle("binding", ({ query }) => validated(backend.work.binding(query), BindingReadSchema))
-      .handle("find", ({ query }) => validated(backend.work["find"](query), WorkPageSchema))
+      .handle(
+        "binding",
+        workRead((q) => backend.work.binding(q), BindingReadSchema),
+      )
+      .handle(
+        "find",
+        workRead((q) => backend.work.find(q), WorkPageSchema),
+      )
       .handle("resolve", ({ payload }) => backend.resolve(payload).pipe(Effect.mapError(refused)))
-      .handle("overview", ({ query }) =>
-        validated(backend.work.overview(query), WorkOverviewSchema),
+      .handle(
+        "evidence",
+        workRead((q) => backend.work.evidence(q), EvidenceDataSchema),
       )
-      .handle("detail", ({ query }) => validated(backend.work["detail"](query), WorkDetailSchema))
-      .handle("document", ({ query }) =>
-        validated(backend.work["document"](query), WorkDocumentSchema),
+      .handle(
+        "verification",
+        workRead((q) => backend.work.verification(q), VerificationViewSchema),
       )
-      .handle("diff", ({ query }) => validated(backend.work["diff"](query), WorkDiffSchema))
-      .handle("worker", ({ query }) =>
-        validated(backend.work["worker"](query), WorkerInspectionSchema),
+      .handle(
+        "overview",
+        workRead((q) => backend.work.overview(q), WorkOverviewSchema),
       )
-      .handle("worker-history", ({ query }) =>
-        validated(backend.work["worker-history"](query), WorkerHistoryPageSchema),
+      .handle(
+        "detail",
+        workRead((q) => backend.work.detail(q), WorkDetailSchema),
       )
-      .handle("leads", ({ query }) =>
-        validated(backend.work["leads"](query), LeadEvidencePageSchema),
+      .handle(
+        "document",
+        workRead((q) => backend.work.document(q), WorkDocumentSchema),
       )
-      .handle("messages", ({ query }) =>
-        validated(backend.work["messages"](query), MessagesPageSchema),
+      .handle(
+        "diff",
+        workRead((q) => backend.work.diff(q), WorkDiffSchema),
       )
-      .handle("feedback", ({ query }) =>
-        validated(backend.work["feedback"](query), FeedbackPageSchema),
+      .handle(
+        "worker",
+        workRead((q) => backend.work.worker(q), WorkerInspectionSchema),
       )
-      .handle("report", ({ query }) => validated(backend.work["report"](query), WorkReportSchema))
-      .handle("artifacts", ({ query }) =>
-        validated(backend.work["artifacts"](query), ArtifactsSchema),
+      .handle(
+        "worker-history",
+        workRead((q) => backend.work["worker-history"](q), WorkerHistoryPageSchema),
       )
-      .handle("artifactSummary", ({ query }) =>
-        validated(backend.work["artifactSummary"](query), ArtifactSummarySchema),
+      .handle(
+        "leads",
+        workRead((q) => backend.work.leads(q), LeadEvidencePageSchema),
       )
-      .handle("artifactDocument", ({ query }) =>
-        validated(backend.work["artifactDocument"](query), DocumentArtifactSchema),
+      .handle(
+        "messages",
+        workRead((q) => backend.work.messages(q), MessagesPageSchema),
+      )
+      .handle(
+        "feedback",
+        workRead((q) => backend.work.feedback(q), FeedbackPageSchema),
+      )
+      .handle(
+        "report",
+        workRead((q) => backend.work.report(q), WorkReportSchema),
+      )
+      .handle(
+        "artifacts",
+        workRead((q) => backend.work.artifacts(q), ArtifactsSchema),
+      )
+      .handle(
+        "artifactSummary",
+        workRead((q) => backend.work.artifactSummary(q), ArtifactSummarySchema),
+      )
+      .handle(
+        "artifactDocument",
+        workRead((q) => backend.work.artifactDocument(q), DocumentArtifactSchema),
       )
       .handle("exportDocument", ({ payload }) =>
         backend.exportDocument(payload).pipe(Effect.mapError(refused)),

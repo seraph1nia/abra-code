@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Effect } from "effect";
@@ -14,8 +15,8 @@ import { decode } from "../../src/decode.ts";
 test("primary supervision counts are exclusive projections; native queued and unavailable remain honest", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("summary"));
-  const e = await run(f.controller.start(Id.IssueId.make("summary")));
+  const { id: summaryId } = await run(f.work.create(workGoal("summary")));
+  const e = await run(f.controller.start(summaryId));
   const native = { ...f.runtime.sessions.get(e.explore_session_id!)!, executing: true };
   const at = Id.timestampAt(Date.now());
   const project = (
@@ -141,7 +142,7 @@ test("primary supervision counts are exclusive projections; native queued and un
   assert.deepEqual(await run(f.controller.get(e.issue_id)), before);
   assert.equal(f.runtime.creates, creates);
   assert.equal(f.runtime.prompts, prompts);
-  for (let index = 0; index < 129; index++) f.work.add(Id.IssueId.make(`queued-${index}`));
+  for (let index = 0; index < 129; index++) f.seed.named(Id.IssueId.make(`queued-${index}`));
   const bounded = await run(f.controller.queries.supervisionAggregate());
   assert.equal(bounded.tasks.length, 128);
   assert.equal(bounded.total, 130);

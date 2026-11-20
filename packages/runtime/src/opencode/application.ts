@@ -65,10 +65,9 @@ export function createWorkflow(
 ) {
   const sources = new RepositorySources(git, config.repository_root);
   const workspaces = new Workspaces(git, sources, runtime, config.worktree_root);
-  let advancement: Advancement;
   const workerContexts = new WorkerContexts(records, config, assets);
   const coordination = records.coordinate(locks);
-  const obligations = new Obligations(records, runtime, work, coordination);
+  const obligations = new Obligations(records, runtime, work, coordination, config.home, git);
   const attention = new AttentionService(config, records, runtime, coordination, locks);
   const operations = new Operations(records, locks, coordination);
   const capacity = new Capacity(config, records, coordination);
@@ -112,16 +111,6 @@ export function createWorkflow(
     assets,
   );
   const messages = sessions.messages;
-  const leads = new Leads(
-    config,
-    records,
-    work,
-    runtime,
-    locks,
-    obligations,
-    (a, s) => advancement.createWorkBatch(a, s),
-    (a, s) => advancement.workMessage(a, s),
-  );
   const checks = new CodingChecks(records, git, spec, sessions, coordination, queries, checkpoints);
   const transitions = new ExecutionTransitions(
     records,
@@ -158,7 +147,8 @@ export function createWorkflow(
     workspaces,
     sessions,
     obligations,
-    synchronize: (e, p, observation) => advancement.synchronize(e, p, observation),
+    checks,
+    spec,
   });
   const finalization = new Finalization({
     finishing,
@@ -175,58 +165,44 @@ export function createWorkflow(
     sessions,
     transitions,
   });
-  const admission = new WorkAdmission(
-    {
-      config,
-      records,
-      work,
-      spec,
-      git,
-      runtime,
-      reports,
-      queries,
-      coordination,
-      operations,
-      capacity,
-      transitions,
-      sessions,
-      workspaces,
-    },
-    {
-      reconcile: (e) => advancement.reconcileExecution(e),
-      checkpoint: (e) => advancement.checkpointExecution(e),
-    },
-  );
-  const recovery = new ExecutionRecovery(
-    {
-      authorizations,
-      checkpoints,
-      config,
-      records,
-      work,
-      spec,
-      git,
-      runtime,
-      delivery,
-      operations,
-      queries,
-      sessions,
-      messages,
-      obligations,
-      transitions,
-      finishing,
-      prFeedback,
-      finalization,
-      admission,
-      checks,
-    },
-    {
-      checkpoint: (e) => advancement.checkpointExecution(e),
-      beginApply: (e, p) => advancement.beginApply(e, p),
-      correctFailure: (e, error) => advancement.correctFailure(e, error),
-    },
-  );
-  advancement = new Advancement({
+  const admission = new WorkAdmission({
+    config,
+    records,
+    work,
+    spec,
+    git,
+    runtime,
+    reports,
+    queries,
+    coordination,
+    operations,
+    capacity,
+    transitions,
+    sessions,
+    workspaces,
+  });
+  const recovery = new ExecutionRecovery({
+    authorizations,
+    checkpoints,
+    records,
+    work,
+    spec,
+    git,
+    runtime,
+    delivery,
+    queries,
+    sessions,
+    messages,
+    obligations,
+    transitions,
+    finishing,
+    prFeedback,
+    finalization,
+    admission,
+    checks,
+  });
+  const advancement = new Advancement({
+    config,
     planning,
     authorizations,
     checkpoints,
@@ -236,9 +212,7 @@ export function createWorkflow(
     work,
     spec,
     git,
-    runtime,
     delivery,
-    coordination,
     obligations,
     operations,
     scopes,
@@ -253,6 +227,16 @@ export function createWorkflow(
     finishing,
     finalization,
   });
+  const leads = new Leads(
+    config,
+    records,
+    work,
+    runtime,
+    locks,
+    obligations,
+    admission.createWorkBatch,
+    advancement.workMessage,
+  );
   const controller = new Controller({
     queries,
     admission,

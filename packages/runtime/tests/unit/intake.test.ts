@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import * as Id from "../../src/identities.ts";
 import { CrewError } from "../../src/domain.ts";
@@ -33,7 +34,7 @@ test("requested goals create associated WorkGraph work that can immediately star
     (await run(f.controller.createWork(goal, Id.SessionId.make("ses_supervisor")))).issue.id,
     created.issue.id,
   );
-  assert.equal(f.work.creations, 1);
+  assert.equal((await run(f.work.list)).length, 1);
 });
 test("creation validates repository, goal, priority and dependencies before mutating WorkGraph", async (t) => {
   const f = await run(fixture);
@@ -68,11 +69,13 @@ test("creation validates repository, goal, priority and dependencies before muta
     ),
     /Missing/,
   );
-  assert.equal(f.work.creations, 0);
-  f.work.add(Id.IssueId.make("prerequisite"), Id.RepositoryId.make("frontend"));
+  assert.equal((await run(f.work.list)).length, 0);
+  const { id: prerequisiteId } = await run(
+    f.work.create({ ...workGoal("prerequisite"), repository_id: Id.RepositoryId.make("frontend") }),
+  );
   const created = await run(
     f.controller.createWork(
-      { ...goal, priority: 0, dependencies: [Id.IssueId.make("prerequisite")] },
+      { ...goal, priority: 0, dependencies: [prerequisiteId] },
       Id.SessionId.make("ses_supervisor"),
     ),
   );
@@ -80,7 +83,7 @@ test("creation validates repository, goal, priority and dependencies before muta
   assert.equal(created.readiness?.eligible, false);
   assert.match(created.readiness!.blockers.join(), /dependency/i);
   await assert.rejects(run(f.controller.start(created.issue.id)), /dependency/i);
-  assert.equal(f.work.claims, 0);
+  assert.equal(f.seed.countEvents("claimed"), 0);
 });
 test("missing project setup permits recording a goal and reports the start blocker", async (t) => {
   const f = await run(fixture);
@@ -129,8 +132,8 @@ test("a lost creation response recovers the authoritative issue across controlle
     f.locks,
   ).controller;
   const recovered = await run(restarted.createWork(goal, Id.SessionId.make("ses_supervisor")));
-  assert.equal(recovered.issue.id, "abra-created-1");
-  assert.equal(f.work.creations, 1);
+  assert.equal(recovered.issue.id, (await run(f.work.list))[0]!.id);
+  assert.equal((await run(f.work.list)).length, 1);
   await assert.rejects(
     run(
       restarted.createWork(
@@ -144,7 +147,7 @@ test("a lost creation response recovers the authoritative issue across controlle
 test("a failed creation can safely retry the same request", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const create = f.work.create;
+  const create = f.work.create.bind(f.work);
   f.work.create = () => Effect.fail(new CrewError("FIXTURE_FAILURE", "Creation failed"));
   await assert.rejects(
     run(f.controller.createWork(goal, Id.SessionId.make("ses_supervisor"))),
@@ -153,7 +156,7 @@ test("a failed creation can safely retry the same request", async (t) => {
   f.work.create = create;
   const created = await run(f.controller.createWork(goal, Id.SessionId.make("ses_supervisor")));
   assert.ok(created.issue.id);
-  assert.equal(f.work.creations, 1);
+  assert.equal((await run(f.work.list)).length, 1);
 });
 test("implicit request identity deduplicates retries while explicit new requests remain distinct", async (t) => {
   const f = await run(fixture);
@@ -171,7 +174,7 @@ test("implicit request identity deduplicates retries while explicit new requests
     ),
   );
   assert.notEqual(next.issue.id, first.issue.id);
-  assert.equal(f.work.creations, 2);
+  assert.equal((await run(f.work.list)).length, 2);
 });
 
 test("full-spec intake retains schema and an affirmative plan requirement without allowing policy weakening", async (t) => {
@@ -207,4 +210,33 @@ test("full-spec intake retains schema and an affirmative plan requirement withou
       /full-openspec/,
     );
   assert.equal((await run(f.work.list)).length, 1);
+});
+
+test("the controller fixture refuses a dependent claim and records a successful retry once", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const { issue: parent } = await run(
+    f.controller.createWork(goal, Id.SessionId.make("ses_supervisor")),
+  );
+  const { issue: child } = await run(
+    f.controller.createWork(
+      { ...goal, request_id: Id.RequestId.make("child"), dependencies: [parent.id] },
+      Id.SessionId.make("ses_supervisor"),
+    ),
+  );
+  const owner = Id.ExecutionId.make("owner");
+  await assert.rejects(run(f.work.claim(child.id, owner)), { code: "NOT_READY" });
+  assert.equal((await run(f.work.show(child.id))).status, "open");
+  assert.deepEqual(
+    (await run(f.work.history(child.id))).map((e) => e.kind),
+    ["created"],
+  );
+  await run(f.work.claim(parent.id, owner));
+  await run(f.work.close(parent.id, owner));
+  await run(f.work.claim(child.id, owner));
+  await run(f.work.claim(child.id, owner));
+  assert.deepEqual(
+    (await run(f.work.history(child.id))).map((e) => e.kind),
+    ["created", "claimed"],
+  );
 });

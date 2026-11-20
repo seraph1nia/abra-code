@@ -26,7 +26,7 @@ async function setup() {
     agent: Agent.ID.make("abra"),
   });
   await run(f.controller.recordSupervisor(parent));
-  f.work.add(issue, repo);
+  f.seed.named(issue, repo);
   await run(
     management.control(parent, {
       action: "register",
@@ -145,7 +145,7 @@ test("scoped lead observation retains paged requests, proposals and accepted wor
   const counters = {
     prompts: f.runtime.prompts,
     creates: f.runtime.creates,
-    issues: f.work.issues.size,
+    issues: (await run(f.work.list)).length,
     forms: f.runtime.forms.size,
   };
   const page = await run(f.controller.queries.leadEvidence({ issue_id: issue, lead_id: id }));
@@ -182,13 +182,13 @@ test("scoped lead observation retains paged requests, proposals and accepted wor
     {
       prompts: f.runtime.prompts,
       creates: f.runtime.creates,
-      issues: f.work.issues.size,
+      issues: (await run(f.work.list)).length,
       forms: f.runtime.forms.size,
     },
     counters,
   );
   const unrelated = Id.IssueId.make("unrelated-project-task");
-  f.work.add(unrelated, Id.RepositoryId.make("worker"));
+  f.seed.named(unrelated, Id.RepositoryId.make("worker"));
   await assert.rejects(
     run(f.controller.queries.leadEvidence({ issue_id: unrelated, lead_id: id })),
     /no configured or retained relationship/,
@@ -274,7 +274,7 @@ test("proposal attention remains discoverable and readable in a registered repos
   assert.equal(index.detail?.proposals[0].accepted, false);
   assert.equal(index.detail?.related_total, 0);
   assert.equal(
-    [...f.work.issues.values()].some((task) => task.repository_id === repository),
+    (await run(f.work.list)).some((task) => task.repository_id === repository),
     false,
   );
   const native = await run(new Visibility(f.controller).snapshot());

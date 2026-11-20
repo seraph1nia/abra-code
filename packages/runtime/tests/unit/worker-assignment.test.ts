@@ -1,18 +1,18 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import { retainedExecution } from "../helpers/retained-execution.ts";
 import { Records } from "../../src/storage/store.ts";
 import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import { IssueId, SessionId } from "../../src/identities.ts";
+import { SessionId } from "../../src/identities.ts";
 import { type Execution } from "../../src/domain.ts";
 import { isActiveWorker } from "../../src/workflow/worker-assignment.ts";
 
 test("all worker entry points share current role, phase, stop and generation semantics", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const issue = IssueId.make("assignment");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("assignment")));
   const started = await run(f.controller.start(issue));
   for (const [role, phase] of [
     ["explore", "exploring"],

@@ -1,3 +1,4 @@
+import type { Submission } from "@abracode/contracts/web/workspace-wire";
 import { randomUUID } from "node:crypto";
 import { Effect, Fiber, Schema, Stream } from "effect";
 import { Observable } from "rxjs";
@@ -36,11 +37,7 @@ export type NativeObservation =
 export interface NativeAgentSource {
   sessionID: string;
   current: Effect.Effect<{ busy: boolean }, CrewError>;
-  submit(input: {
-    request_id: string;
-    text: string;
-    delivery: "queue" | "steer";
-  }): Effect.Effect<SubmissionReceipt, CrewError>;
+  submit(input: Submission): Effect.Effect<SubmissionReceipt, CrewError>;
   receipt(requestID: string): Effect.Effect<SubmissionReceipt | null, CrewError>;
   stop: Effect.Effect<boolean, CrewError>;
   notifyAdmission: Effect.Effect<void>;
@@ -154,6 +151,7 @@ export class NativeAgentAdapter {
         request_id: options.request_id,
         text: input.text,
         delivery: options.delivery ?? "queue",
+        ...(options.selection && { selection: options.selection }),
       });
       if (receipt.status !== "admitted")
         return yield* new CrewError(

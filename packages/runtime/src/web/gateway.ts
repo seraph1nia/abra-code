@@ -1,24 +1,21 @@
+import { selectedFollowups, selectionReceiptKey } from "../workflow/selected-requests.ts";
+import { captureSelection } from "./capture-selection.ts";
+import type { WorkSelection } from "@abracode/contracts/web/resources";
+import type { Submission } from "@abracode/contracts/web/workspace-wire";
 import type { Reviews } from "./reviews.ts";
 import type { AgentDefinitionError } from "@abracode/agents";
 import type { AgentCatalog } from "@abracode/contracts/web/agent-settings";
 import { prepareDiagrams, documentDiagrams } from "../workflow/diagrams.ts";
 import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
 import { readReportDocument } from "../presentation/report-document.ts";
-import { presentationHash } from "../presentation/identity.ts";
+import { canonicalJSON, presentationHash } from "../presentation/identity.ts";
 import { committedScope } from "../visibility/invalidations.ts";
 import { artifactSummary, artifactPage } from "./artifacts.ts";
 import { join } from "node:path";
 import { Effect } from "effect";
 import type { Context } from "@opencode/plugin/effect/plugin";
 import { SessionMessage } from "@opencode/schema/session-message";
-import {
-  AbsolutePath,
-  LockKey,
-  SessionId,
-  StorageKey,
-  StoragePrefix,
-  timestamp,
-} from "../identities.ts";
+import { AbsolutePath, LockKey, SessionId, StoragePrefix, timestamp } from "../identities.ts";
 import { CrewError, type Config } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { NativeStore, type Store } from "../storage/store.ts";
@@ -28,7 +25,12 @@ import { type Controller } from "../workflow/controller.ts";
 import { decode } from "../decode.ts";
 import { webGateway } from "./protocol.ts";
 
-import { ReceiptSchema, ReceiptQuerySchema, type SubmissionReceipt } from "./workspace-wire.ts";
+import {
+  selectionMarker,
+  ReceiptSchema,
+  ReceiptQuerySchema,
+  type SubmissionReceipt,
+} from "./workspace-wire.ts";
 import { SurfacePublications } from "./surface-publications.ts";
 import { resolveOwnedResource } from "./resource-selection.ts";
 export type { SubmissionReceipt } from "./workspace-wire.ts";
@@ -39,13 +41,14 @@ export class WebAdmissions {
     private store: Store,
     private runtime: Pick<NativeRuntime, "promptAdmission" | "prompt">,
     private locks: Locks,
+    private capture?: (selection: WorkSelection) => Effect.Effect<string, CrewError>,
   ) {}
   /** Observe one retained identity. Missing evidence never admits or retries input. */
   receipt(session: SessionId, requestID: string) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
         const id = yield* decode(ReceiptQuerySchema.fields.request_id, requestID, "Request ID");
-        const key = StorageKey.make(`web/receipt/${session}/${id}`);
+        const key = selectionReceiptKey(session, id);
         const raw = yield* this.store.get(key);
         if (raw === undefined) return null;
         const receipt = yield* decode(ReceiptSchema, raw, key);
@@ -55,10 +58,7 @@ export class WebAdmissions {
       }),
     );
   }
-  submit(
-    session: SessionId,
-    input: { request_id: string; text: string; delivery: "queue" | "steer" },
-  ) {
+  submit(session: SessionId, input: Submission) {
     return this.locks.with(LockKey.make("web-admission"), () =>
       domainEffect(
         Effect.gen({ self: this }, function* () {
@@ -68,16 +68,44 @@ export class WebAdmissions {
             input.text.length > 32768
           )
             return yield* new CrewError("WEB_INPUT", "Invalid submission identity or text");
-          const key = StorageKey.make(`web/receipt/${session}/${input.request_id}`);
+          const key = selectionReceiptKey(session, input.request_id);
           const raw = yield* this.store.get(key);
           const prior = raw === undefined ? undefined : yield* decode(ReceiptSchema, raw, key);
-          if (prior && (prior.text !== input.text || prior.delivery !== input.delivery))
+          if (
+            prior &&
+            (prior.text !== input.text ||
+              prior.delivery !== input.delivery ||
+              canonicalJSON(prior.capture?.selection) !== canonicalJSON(input.selection))
+          )
             return yield* new CrewError(
               "WEB_CONFLICT",
               "Submission identity is already bound to different input",
             );
+          let capture = prior?.capture;
+          let nativeText = prior?.native_text;
+          if (!prior && input.selection) {
+            if (!this.capture)
+              return yield* new CrewError(
+                "SELECTION_UNAVAILABLE",
+                "Selection capture is unavailable.",
+              );
+            const excerpt = yield* this.capture(input.selection);
+            capture = { selection: input.selection, excerpt };
+            nativeText =
+              input.text +
+              selectionMarker +
+              JSON.stringify({ request_id: input.request_id, ...capture });
+            if (nativeText.length > 32768)
+              return yield* new CrewError(
+                "SELECTION_LIMIT",
+                "The question and excerpt exceed the native input bound.",
+              );
+          }
           const receipt: SubmissionReceipt = prior ?? {
-            ...input,
+            request_id: input.request_id,
+            delivery: input.delivery,
+            text: input.text,
+            ...(capture && { capture, native_text: nativeText! }),
             message_id: SessionMessage.ID.create(),
             status: "submitted",
             at: yield* timestamp,
@@ -87,7 +115,7 @@ export class WebAdmissions {
             const observation = yield* this.runtime.promptAdmission(
               session,
               receipt.message_id,
-              receipt.text,
+              receipt.native_text ?? receipt.text,
             );
             if (observation !== "absent") {
               const admitted = { ...receipt, status: "admitted" as const };
@@ -105,7 +133,12 @@ export class WebAdmissions {
           yield* this.store.set(key, receipt);
           yield* committedScope({ admissions: true });
           const admission = yield* this.runtime
-            .prompt(session, receipt.text, receipt.message_id, receipt.delivery === "steer")
+            .prompt(
+              session,
+              receipt.native_text ?? receipt.text,
+              receipt.message_id,
+              receipt.delivery === "steer",
+            )
             .pipe(Effect.result);
           const next = {
             ...receipt,
@@ -139,6 +172,7 @@ export function registerWebGateway(
     store,
     new NativeRuntime(ctx, config),
     new FileLocks(AbsolutePath.make(join(config.home, ".abracode/locks"))),
+    (selection) => captureSelection(controller.queries, selection),
   );
   const receipts = (id: SessionId) =>
     store.entries(StoragePrefix.make(`web/receipt/${id}/`)).pipe(
@@ -315,8 +349,13 @@ export function registerWebGateway(
           provide,
         ),
       receipt: ({ session_id, request_id }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(admissions.receipt(session_id, request_id)),
+        Effect.gen(function* () {
+          yield* assertSupervisor(session_id);
+          const receipt = yield* admissions.receipt(session_id, request_id);
+          if (!receipt?.capture) return receipt;
+          const execution = yield* controller.queries.execution(receipt.capture.selection.issue_id);
+          return { ...receipt, followups: selectedFollowups(receipt, execution, session_id) };
+        }).pipe(
           Effect.mapError((e) => error("refused", e.message, { code: e.code })),
           provide,
         ),

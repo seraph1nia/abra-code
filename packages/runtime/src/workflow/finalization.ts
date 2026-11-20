@@ -1,3 +1,4 @@
+import { removeOwnedField } from "../storage/store.ts";
 import { type PRFeedback } from "./pr-feedback.ts";
 import { externalOwns } from "../validation/contracts.ts";
 import { progress } from "../opencode/progress.ts";
@@ -68,8 +69,8 @@ export class Finalization {
         )
           return undefined;
         yield* this.c.sessions.idle(e);
-        yield* this.c.transitions.move(e, "awaiting_merge");
-        return yield* this.finish(e, p);
+        const committed = yield* this.c.transitions.move(e, "awaiting_merge");
+        return yield* this.finish(committed, p);
       }
       if (
         e.resume_phase !== "cleaning" ||
@@ -85,8 +86,8 @@ export class Finalization {
         for (const entry of removing)
           if (yield* pathExists(join(e.worktree_directory, entry.path))) return undefined;
       } else return undefined;
-      yield* this.c.transitions.move(e, "cleaning");
-      return yield* this.cleanup(e, p);
+      const committed = yield* this.c.transitions.move(e, "cleaning");
+      return yield* this.cleanup(committed, p);
     }.bind(this),
     domainEffect,
   );
@@ -126,8 +127,8 @@ export class Finalization {
           attempt.published,
           "HEAD",
         ]);
-        yield* this.c.transitions.move(e, "delivering");
-        return yield* this.deliver(e, p);
+        const committed = yield* this.c.transitions.move(e, "delivering");
+        return yield* this.deliver(committed, p);
       }
       if (
         !binding ||
@@ -164,8 +165,8 @@ export class Finalization {
         ]);
         if (remote !== `${binding.commit}\trefs/heads/${e.branch}`) return undefined;
       }
-      yield* this.c.transitions.move(e, "delivering");
-      return yield* this.deliver(e, p);
+      const committed = yield* this.c.transitions.move(e, "delivering");
+      return yield* this.deliver(committed, p);
     }.bind(this),
     domainEffect,
   );
@@ -255,17 +256,18 @@ export class Finalization {
         )
           return yield* new CrewError("VERIFICATION_STALE", "Content changed before delivery");
         yield* this.c.git.run(evidence.worktree_directory, ["add", "--all"]);
-        e.archived_tree = yield* this.c.git.tree(evidence.worktree_directory);
-        yield* this.c.transitions.move(e, "delivering", ["archived_tree"]);
-        return yield* this.deliver(e, p);
+        const committed = yield* this.c.transitions.move(e, "delivering", {
+          archived_tree: yield* this.c.git.tree(evidence.worktree_directory),
+        });
+        return yield* this.deliver(committed, p);
       }
       // Archival is idempotently reconciled from actual active/archive directories.
       e.archive_path = yield* this.c.spec.archive(e);
       yield* this.c.git.run(evidence.worktree_directory, ["add", "--all"]);
       e.archived_tree = yield* this.c.git.tree(evidence.worktree_directory);
       yield* this.c.records.saveOwned(e, ["archive_path", "archived_tree"]);
-      yield* this.c.transitions.move(e, "delivering");
-      return yield* this.deliver(e, p);
+      const committed = yield* this.c.transitions.move(e, "delivering");
+      return yield* this.deliver(committed, p);
     }.bind(this),
     domainEffect,
   );
@@ -356,12 +358,10 @@ export class Finalization {
         ),
       };
       yield* this.c.records.saveFinishing(e, ["publication", "synchronization"]);
-      e.delivered_commit = result.commit;
-      e.pull_request_reference = result.pr;
-      yield* this.c.transitions.move(e, "awaiting_merge", [
-        "delivered_commit",
-        "pull_request_reference",
-      ]);
+      yield* this.c.transitions.move(e, "awaiting_merge", {
+        delivered_commit: result.commit,
+        pull_request_reference: result.pr ?? removeOwnedField,
+      });
       yield* this.c.transitions.notice(
         e,
         p.delivery === "branch"
@@ -512,9 +512,10 @@ export class Finalization {
               );
           }
         }
-        e.delivery_receipt = yield* this.c.delivery.evidence(p, e);
-        delete e.delivery_wait;
-        yield* this.c.transitions.move(e, "cleaning", ["delivery_receipt", "delivery_wait"]);
+        yield* this.c.transitions.move(e, "cleaning", {
+          delivery_receipt: yield* this.c.delivery.evidence(p, e),
+          delivery_wait: removeOwnedField,
+        });
       }
       return yield* this.cleanup(e, p);
     }.bind(this),

@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import * as Id from "../../src/identities.ts";
 import { test } from "vite-plus/test";
@@ -18,8 +19,8 @@ const question = {
 test("keyed questions survive unrelated progress and restart; stale and wrong-role reports are refused", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"));
-  const e = await run(f.controller.start(Id.IssueId.make("abra-1"))),
+  const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
+  const e = await run(f.controller.start(issueId)),
     sid = e.explore_session_id!;
   const d = await run(f.controller.workerQuestion(sid, question));
   assert.deepEqual(await run(f.controller.workerQuestion(sid, question)), d);
@@ -66,8 +67,8 @@ test("keyed questions survive unrelated progress and restart; stale and wrong-ro
 test("user decisions retain native form identity, recreate after restart, collect answers without approval authority", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"));
-  const e = await run(f.controller.start(Id.IssueId.make("abra-1")));
+  const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
+  const e = await run(f.controller.start(issueId));
   const d = await run(
     f.controller.workerQuestion(e.explore_session_id!, { ...question, owner: "user" }),
   );
@@ -116,9 +117,9 @@ test("user decisions retain native form identity, recreate after restart, collec
 test("dependency/user waits clear only on matching evidence; expiry, invalid command and supersession stay inspectable", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"));
-  f.work.add(Id.IssueId.make("abra-dep"), Id.RepositoryId.make("frontend"));
-  const e = await run(f.controller.start(Id.IssueId.make("abra-1"))),
+  const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
+  f.seed.named(Id.IssueId.make("abra-dep"), Id.RepositoryId.make("frontend"));
+  const e = await run(f.controller.start(issueId)),
     sid = e.explore_session_id!;
   const clock = await run(TestClock.make());
   const call = <A, E>(effect: Effect.Effect<A, E>) =>
@@ -135,7 +136,7 @@ test("dependency/user waits clear only on matching evidence; expiry, invalid com
   const w = await call(f.controller.workerWait(sid, wait));
   assert.deepEqual(await call(f.controller.workerWait(sid, wait)), w);
   await assert.rejects(
-    call(f.controller.workerWait(sid, { ...wait, reference: Id.IssueId.make("abra-1") })),
+    call(f.controller.workerWait(sid, { ...wait, reference: issueId })),
     /another condition/,
   );
   await assert.rejects(
@@ -150,7 +151,7 @@ test("dependency/user waits clear only on matching evidence; expiry, invalid com
     /controller-owned/,
   );
   await call(f.controller.reconcile(e.issue_id));
-  f.work.issues.get("abra-dep")!.status = "closed";
+  f.seed.close("abra-dep");
   await call(clock.setTime(30001));
   await call(f.controller.reconcile(e.issue_id));
   assert.equal((await run(f.controller.get(e.issue_id))).waits![0].status, "cleared");
@@ -175,8 +176,14 @@ test("dependency/user waits clear only on matching evidence; expiry, invalid com
   );
   await call(f.controller.reconcile(e.issue_id));
   assert.equal((await run(f.controller.get(e.issue_id))).waits![1].status, "cleared");
-  f.work.issues.get("abra-dep")!.status = "open";
-  await call(f.controller.workerWait(sid, { ...wait, key: Id.ObligationKey.make("expires") }));
+  const pending = f.seed.named(Id.IssueId.make("pending-dep"));
+  await call(
+    f.controller.workerWait(sid, {
+      ...wait,
+      reference: pending.id,
+      key: Id.ObligationKey.make("expires"),
+    }),
+  );
   await call(clock.setTime(90002));
   await call(f.controller.reconcile(e.issue_id));
   assert.equal((await run(f.controller.get(e.issue_id))).waits![2].status, "expired");
@@ -189,4 +196,76 @@ test("dependency/user waits clear only on matching evidence; expiry, invalid com
     ),
   );
   assert.equal((await run(f.controller.get(e.issue_id))).waits![2].status, "superseded");
+});
+
+test("worker capture owns its scratch files and retains one exact image across restart", async (t) => {
+  const { mkdir, writeFile, symlink, rm } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const { id } = await run(f.work.create(workGoal("proof")));
+  const e = await run(f.controller.start(id));
+  const sid = e.explore_session_id!;
+  const dir = join(f.config.home, ".abracode/browser", sid);
+  await mkdir(dir, { recursive: true });
+  const data =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2ioAAAAASUVORK5CYII=";
+  await writeFile(join(dir, "one.png"), Buffer.from(data, "base64"));
+  await symlink(join(dir, "one.png"), join(dir, "linked.png"));
+  const input = {
+    kind: "screenshot" as const,
+    request_id: Id.RequestId.make("one"),
+    path: Id.RelativePath.make("one.png"),
+    description: "Visible result",
+    claimed_revision: "main",
+  };
+  const capture = (generation: number, patch: Partial<typeof input> = {}) =>
+    run(f.controller.workerProgress(sid, generation, "Checked display", { ...input, ...patch }));
+  await assert.rejects(capture(1), /generation/);
+  await assert.rejects(
+    capture(0, { path: Id.RelativePath.make("linked.png") }),
+    /assigned directory/,
+  );
+  await writeFile(join(dir, "large.png"), Buffer.alloc(2 * 1024 * 1024 + 1));
+  await assert.rejects(capture(0, { path: Id.RelativePath.make("large.png") }), /limit/);
+  const receipt = (await capture(0)).capture!;
+  await rm(dir, { recursive: true });
+  assert.deepEqual((await capture(0)).capture, receipt);
+  await assert.rejects(capture(0, { description: "Changed" }), /different inputs/);
+  const c = createWorkflow(
+    f.config,
+    f.records,
+    f.work,
+    f.spec,
+    f.git,
+    f.runtime,
+    f.delivery,
+    f.locks,
+  ).controller;
+  const { captureSelection } = await import("../../src/web/capture-selection.ts");
+  const region = {
+    kind: "region" as const,
+    issue_id: id,
+    request_id: receipt.request_id,
+    hash: receipt.hash,
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+  };
+  assert.match(await run(captureSelection(c.queries, region)), /selected 1×1/);
+  await assert.rejects(
+    run(captureSelection(c.queries, { ...region, x: 1 })),
+    /inside the original/,
+  );
+  await assert.rejects(
+    run(captureSelection(c.queries, { ...region, request_id: Id.RequestId.make("absent") })),
+    /unavailable/,
+  );
+  assert.equal((await run(c.queries.evidence(receipt))).data, data);
+  assert.equal((await run(c.queries.verification(id))).evidence?.length, 1);
+  await assert.rejects(
+    run(c.queries.evidence({ ...receipt, request_id: Id.RequestId.make("different") })),
+    /unavailable/,
+  );
 });

@@ -118,11 +118,20 @@ export type ExecutionOwnedField = Exclude<
   | "setup"
 >;
 export const removeOwnedField = Symbol("remove owned execution field");
-type ExecutionPatch = {
+export type ExecutionPatch = {
   [K in ExecutionOwnedField]?:
     | Exclude<Execution[K], undefined>
     | (undefined extends Execution[K] ? typeof removeOwnedField : never);
 };
+function applyPatch<E extends ManagedExecution>(current: E, patch: ExecutionPatch): E {
+  const next = { ...current };
+  for (const [field, value] of Object.entries(patch)) {
+    ensure(value !== undefined, "INVALID_PATCH", "Use explicit removal to clear an owned field");
+    if (value === removeOwnedField) Reflect.deleteProperty(next, field);
+    else Reflect.set(next, field, value);
+  }
+  return next;
+}
 export class Records {
   feedback = (id: IssueId, page = 0): Effect.Effect<FeedbackPage, CrewError> =>
     domainEffect(
@@ -629,18 +638,30 @@ export class Records {
   patchOwned(e: Execution, patch: ExecutionPatch) {
     return this.update(e.issue_id, (current) => {
       this.assertOwner(e, current);
-      const next = { ...current };
-      for (const [field, value] of Object.entries(patch)) {
-        ensure(
-          value !== undefined,
-          "INVALID_PATCH",
-          "Use explicit removal to clear an owned field",
-        );
-        if (value === removeOwnedField) Reflect.deleteProperty(next, field);
-        else Reflect.set(next, field, value);
-      }
-      return next;
+      return applyPatch(current, patch);
     });
+  }
+  /** Shared lifecycle handles observe the committed aggregate only after the write succeeds. */
+  commitOwned<E extends ManagedExecution>(e: E, patch: ExecutionPatch) {
+    const commit: Effect.Effect<ManagedExecution, CrewError> =
+      e.setup === true
+        ? this.coordinateCommit(() =>
+            domainEffect(
+              Effect.gen({ self: this }, function* () {
+                const current = yield* this.setup(e.repository_id);
+                ensure(current, "EXECUTION_MISSING", "No retained setup execution");
+                this.assertOwner(e, current);
+                return yield* this.saveSetup(applyPatch(current, patch));
+              }),
+            ),
+          )
+        : this.patchOwned(e, patch);
+    return commit.pipe(
+      Effect.map((saved) => {
+        synchronizeExecution(e, saved);
+        return e;
+      }),
+    );
   }
   /** Setup uses the same field ownership contract without becoming a graph execution. */
   saveSetupOwned(e: SetupExecution, fields: readonly ExecutionOwnedField[]) {
@@ -657,7 +678,7 @@ export class Records {
     );
   }
   /** Initial retention is distinct from a revision-checked replacement. */
-  create<E extends ManagedExecution>(e: E) {
+  create<E extends ManagedExecution>(e: E, patch: ExecutionPatch = {}) {
     return this.coordinateCommit(() =>
       domainEffect(
         Effect.gen({ self: this }, function* () {
@@ -670,7 +691,8 @@ export class Records {
             "EXECUTION_EXISTS",
             "Execution is already retained",
           );
-          yield* this.saveExecution(e, setup);
+          const saved = yield* this.saveExecution(applyPatch(e, patch), setup);
+          synchronizeExecution(e, saved);
           return e;
         }),
       ),

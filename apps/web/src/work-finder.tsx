@@ -4,7 +4,7 @@ import type { WorkDiscovery } from "@abracode/contracts/visibility/discovery-con
 import { RepositoryId } from "@abracode/contracts/identities";
 import { phaseLabel } from "@abracode/contracts/presentation/work-state";
 import { fleetLabels } from "@abracode/contracts/visibility/fleet";
-import { queries } from "./data.ts";
+import { queries } from "./work-data.ts";
 import { RequestState } from "./request-state.tsx";
 import { useMediaQuery } from "./use-media-query.ts";
 import { Button } from "@abracode/presentation/ui/button";

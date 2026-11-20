@@ -190,7 +190,7 @@ test("a captured task requirement survives registry changes, restart and replan 
     f.delivery,
     f.locks,
   ).controller;
-  f.work.issues.get(issue.id)!.require_plan_approval = undefined;
+  f.seed.db.prepare("UPDATE issues SET require_plan_approval = ? WHERE id = ?").run(null, issue.id);
   project.plan_approval = false;
   await run(f.records.saveProject(project));
   f.spec.planned = true;

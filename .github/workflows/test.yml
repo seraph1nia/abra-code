@@ -52,7 +52,7 @@ jobs:
         run: pnpm report:browser:install --with-deps
       - name: Install browser prerequisites
         run: pnpm browser:install --with-deps
-      - name: Run routine test suite
-        run: pnpm test:all
-      - name: Build plugin
+      - name: Build plugin, workspace and offline renderer
         run: pnpm build
+      - name: Run routine tests against built workspace
+        run: pnpm test:prepared

@@ -158,3 +158,15 @@ On 2026-11-19, verification used Node 26.13.0 and pnpm 12.21.0 on Linux. The tes
 - `pnpm check`, `pnpm build`, `pnpm licenses:check` and `pnpm exec openspec validate simplify-workspace-publication-and-runtime --strict` passed. The native journey used a disposable local provider and local bare Git remotes. Raw logs, timing measurements, screenshots and CLI artifacts for this run are under `/tmp/abra-runtime-acceptance-ovVVBG` on the verification machine.
 
 The [export measurements](../reports.md#measured-export-cost) include bytes read, source opens, application builds and diagram work. The [test fixture measurements](../testing.md) document the matched records and checkpoint runs.
+
+The parallel and acceptance journeys define their provider checkpoints alongside
+the scenario in `tests/e2e/parallel.ts` and `tests/e2e/acceptance.ts`. Each
+fixture run creates its own gates and releases pending provider calls on teardown.
+
+### Contextual cockpit
+
+Run `ABRACODE_TEST_JOURNEY=cockpit ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-contextual-cockpit pnpm test:one packages/runtime/tests/extended/native.test.ts` from the repository root. This uses three disposable tasks, a real OpenCode server, a deterministic provider, and a task-owned agent-browser session. The journey drops the selected submission response after native admission, updates the worktree, fails one verification read, and checks that the original excerpt and linked answer reopen while a separate worker continues. The supervisor answer uses the native tool harness. The output directory contains the native result, cleanup receipt, steps, accessibility snapshots and screenshots at both widths.
+
+The 2026-11-20 run retained its evidence in `/tmp/abra-contextual-cockpit-20261120`. The native result records a passing journey and completed cleanup. The focused admission, worker-evidence, ticket-diff and inspector-observation tests cover stale first sends, exact retries, trace and screenshot retention, and local reading history.
+
+On that tree, `pnpm check` passed and `pnpm test:all` passed all 852 tests in 144 files. Strict OpenSpec validation passed for `add-contextual-cockpit-steering`. Separate repository-wide strict validation flagged 25 existing items. A clean copy of the OpenSpec artifacts at HEAD had the same failing items and finding counts. The evidence directory includes `check.log`, `test-all.log`, and `openspec-all.log`.

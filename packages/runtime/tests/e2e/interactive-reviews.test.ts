@@ -176,6 +176,15 @@ test("interactive A2UI review shares drafts, enlarges designs, restores feedback
     await inline().getByRole("radio", { name: "Design B", exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: join(evidence, "interactive-review-narrow.png") });
   }
+  // Mounting the pending response can query its receipt before the submit response is lost.
+  let conflicting = 0;
+  await page.route("**/api/review/receipt?**", async (route) => {
+    const response = await route.fetch();
+    const receipt = await response.json();
+    if (!receipt) return route.fulfill({ response });
+    conflicting++;
+    await route.fulfill({ response, json: { ...receipt, request_id: "other-feedback" } });
+  });
   await page.route("**/api/review/submit", async (route) => {
     await route.fetch();
     await route.abort();
@@ -184,13 +193,6 @@ test("interactive A2UI review shares drafts, enlarges designs, restores feedback
   await inline().getByRole("alert").waitFor();
   assert.equal(fixture.source.submissions, 1);
   await page.unroute("**/api/review/submit");
-  let conflicting = 0;
-  await page.route("**/api/review/receipt?**", async (route) => {
-    const response = await route.fetch();
-    const receipt = await response.json();
-    conflicting++;
-    await route.fulfill({ response, json: { ...receipt, request_id: "other-feedback" } });
-  });
   await Promise.all([
     page.waitForResponse((response) => response.url().includes("/api/review/receipt")),
     page.reload(),

@@ -150,6 +150,18 @@ export async function leadJourney(o: {
       ? true
       : undefined,
   );
+  const status = () =>
+    o.invoke("abra_lead_control", { action: "status", id: lead.id }).then((rows: any[]) => rows[0]);
+  const waitForManagementIdle = () =>
+    o.eventually(async () => {
+      const current = await status();
+      const fleet = await o.invoke("abra_work_list", {});
+      const occupied = fleet.executions.some((e: any) =>
+        (e.attention ?? []).some((a: any) => ["uncertain", "admitted"].includes(a.status)),
+      );
+      return !current.active && !occupied ? true : undefined;
+    });
+  await waitForManagementIdle();
   const request = {
     action: "message",
     id: lead.id,
@@ -184,8 +196,6 @@ export async function leadJourney(o: {
     });
     throw error;
   }
-  const status = () =>
-    o.invoke("abra_lead_control", { action: "status", id: lead.id }).then((rows: any[]) => rows[0]);
   const answered = await o.eventually(async () => {
     const current = await status();
     return current.requests[0]?.request.status === "answered" &&
@@ -268,14 +278,7 @@ export async function leadJourney(o: {
   );
   // An answered request can precede native idle and release of its management
   // slot. Start the routing assertion only after earlier attention has settled.
-  await o.eventually(async () => {
-    const current = await status();
-    const fleet = await o.invoke("abra_work_list", {});
-    const occupied = fleet.executions.some((e: any) =>
-      (e.attention ?? []).some((a: any) => ["uncertain", "admitted"].includes(a.status)),
-    );
-    return !current.active && !occupied ? true : undefined;
-  });
+  await waitForManagementIdle();
   o.holdResearch();
   const started = await o.invoke("abra_work_start", { issue_id: issue.id });
   await o.eventually(async () => (o.held() ? true : undefined));

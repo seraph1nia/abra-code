@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { deliveryAction } from "../../src/workflow/delivery-outcome.ts";
 import { verifiedSpec } from "../helpers/spec-review.ts";
@@ -312,20 +313,20 @@ test("lost native session creation response reuses the retained intent without a
       Effect.andThen(Deferred.succeed(entered, undefined)),
       Effect.andThen(Effect.never),
     );
-  f.work.add(Id.IssueId.make("abra-1"));
+  const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
   await run(
     Effect.scoped(
       Effect.gen(function* () {
-        const start = yield* f.controller.start(Id.IssueId.make("abra-1")).pipe(Effect.forkScoped);
+        const start = yield* f.controller.start(issueId).pipe(Effect.forkScoped);
         yield* Deferred.await(entered);
         yield* Fiber.interrupt(start);
       }),
     ),
   );
-  const saved = await run(f.controller.get(Id.IssueId.make("abra-1")));
+  const saved = await run(f.controller.get(issueId));
   assert.ok(saved.session_intent);
   f.runtime.createSession = create;
-  const recovered = (await run(f.controller.reconcile(Id.IssueId.make("abra-1"))))[0];
+  const recovered = (await run(f.controller.reconcile(issueId)))[0];
   assert.equal(recovered.explore_session_id, saved.session_intent.id);
   assert.equal(f.runtime.creates, 1);
   assert.equal(f.runtime.prompts, 1);
@@ -405,17 +406,14 @@ test("restart after push rediscovers the exact remote ref and creates one PR", a
 test("replan cannot replace the explicit resume of a paused execution", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("abra-1"));
-  await run(f.controller.start(Id.IssueId.make("abra-1")));
-  await run(f.controller.control(Id.IssueId.make("abra-1"), "pause"));
+  const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
+  await run(f.controller.start(issueId));
+  await run(f.controller.control(issueId, "pause"));
   const prompts = f.runtime.prompts;
   await assert.rejects(
-    run(f.controller.control(Id.IssueId.make("abra-1"), "replan", "Reconsider requirements")),
+    run(f.controller.control(issueId, "replan", "Reconsider requirements")),
     /Resume paused/,
   );
-  assert.equal(
-    (await run(f.controller.get(Id.IssueId.make("abra-1")))).current_phase,
-    "interrupted",
-  );
+  assert.equal((await run(f.controller.get(issueId))).current_phase, "interrupted");
   assert.equal(f.runtime.prompts, prompts);
 });

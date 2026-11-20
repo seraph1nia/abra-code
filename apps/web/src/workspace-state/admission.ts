@@ -13,6 +13,9 @@ export function useWorkspaceAdmission({
   workspace,
   isReady,
   draft,
+  selection,
+  clearSent,
+  delivery,
   setDraft,
   refresh,
   setError,
@@ -20,6 +23,9 @@ export function useWorkspaceAdmission({
   workspace: WorkspaceSnapshot;
   isReady: boolean;
   draft: string;
+  delivery: Pending["delivery"];
+  selection?: Pending["selection"];
+  clearSent: (input: Pending) => void;
   setDraft: (text: string) => void;
   refresh: () => void;
   setError: (text: string) => void;
@@ -48,7 +54,8 @@ export function useWorkspaceAdmission({
       if (
         receipt.request_id !== pending.request_id ||
         receipt.text !== pending.text ||
-        receipt.delivery !== pending.delivery
+        receipt.delivery !== pending.delivery ||
+        JSON.stringify(receipt.capture?.selection) !== JSON.stringify(pending.selection)
       ) {
         setAdmitting(false);
         admittingRef.current = false;
@@ -63,6 +70,7 @@ export function useWorkspaceAdmission({
           sender.admitted = true;
           void sender.agent.detachActiveRun();
         }
+        if (pending.selection) clearSent(pending);
         setPending(undefined);
         setAdmitting(false);
         admittingRef.current = false;
@@ -93,14 +101,15 @@ export function useWorkspaceAdmission({
     return () => {
       active = false;
     };
-  }, [workspace.receipts, pending, storageKey, lookupReceipt, setError]);
+  }, [workspace.receipts, pending, storageKey, lookupReceipt, setError, clearSent]);
 
   async function send(input?: Pending) {
     if (!isReady || admittingRef.current || (!input && pending)) return;
     const submission = input ?? {
       request_id: crypto.randomUUID(),
       text: draft.trim(),
-      delivery: "queue" as const,
+      ...(selection && { selection }),
+      delivery,
     };
     if (!submission.text) return;
     // Persist before starting network admission; a storage failure leaves the draft intact.
@@ -113,7 +122,7 @@ export function useWorkspaceAdmission({
     admittingRef.current = true;
     setAdmitting(true);
     setPending(submission);
-    setDraft("");
+    if (!submission.selection) setDraft("");
     setError("");
     const sender = {
       agent: new HttpAgent({
@@ -125,14 +134,35 @@ export function useWorkspaceAdmission({
       admitted: false,
     };
     senders.current.set(submission.request_id, sender);
+    let refused = false;
     try {
-      await sender.agent.runAgent({
-        tools: [],
-        context: [],
-        forwardedProps: { request_id: submission.request_id, delivery: submission.delivery },
-      });
+      await sender.agent.runAgent(
+        {
+          tools: [],
+          context: [],
+          forwardedProps: {
+            request_id: submission.request_id,
+            delivery: submission.delivery,
+            ...(submission.selection && { selection: submission.selection }),
+          },
+        },
+        {
+          onRunErrorEvent: ({ event }) => {
+            if (!submission.selection || !event.code?.startsWith("SELECTION_") || !mounted.current)
+              return;
+            refused = true;
+            setPending(undefined);
+            try {
+              localStorage.removeItem(storageKey);
+            } catch {
+              /* Keep the mounted draft. */
+            }
+            setError(event.message);
+          },
+        },
+      );
     } catch (cause) {
-      if (!sender.admitted && mounted.current)
+      if (!sender.admitted && !refused && mounted.current)
         setError(
           cause instanceof Error
             ? cause.message

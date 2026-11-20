@@ -11,7 +11,7 @@ import {
 } from "./message-contracts.ts";
 import { join } from "node:path";
 import { externalOwns } from "../validation/contracts.ts";
-import { synchronizeExecution, type Records } from "../storage/store.ts";
+import { synchronizeExecution, removeOwnedField, type Records } from "../storage/store.ts";
 import { SessionId, IssueId, Timestamp, timestamp } from "../identities.ts";
 import { Clock, Effect } from "effect";
 import { Session } from "@opencode/schema/session";
@@ -32,10 +32,14 @@ import { type Capacity } from "./capacity.ts";
 import { type Coordination } from "./coordination.ts";
 import { type Queries } from "./queries.ts";
 import { type Git } from "../git/repository.ts";
-import { isActiveWorker, workerSessionID } from "./worker-assignment.ts";
+import { isActiveWorker, nativeSessionIntent, workerSessionID } from "./worker-assignment.ts";
 import { type AttentionService } from "./attention.ts";
 
 export { workerSessionID } from "./worker-assignment.ts";
+const idleCapacity = {
+  capacity_observed_idle: true,
+  capacity_reservation: removeOwnedField,
+} as const;
 type WorkerTurn =
   | { kind: "absent" }
   | { kind: "waiting" }
@@ -95,22 +99,23 @@ export class WorkerSessions {
                 ))
             )
               return;
-            e.worker_failure = {
-              prompt_id: messageRequests(e.messages).some(
-                (m) =>
-                  m.assignment_id === e.prompt_id &&
-                  ["admission_uncertain", "admitted", "acknowledged", "answered"].includes(
-                    m.status,
-                  ),
-              )
-                ? undefined
-                : e.prompt_id,
-              session_id: sessionID,
-              role,
-              error: diagnosticError(error),
-              at: yield* timestamp,
-            };
-            yield* this.records.saveOwned(e, ["worker_failure"]);
+            yield* this.records.commitOwned(e, {
+              worker_failure: {
+                prompt_id: messageRequests(e.messages).some(
+                  (m) =>
+                    m.assignment_id === e.prompt_id &&
+                    ["admission_uncertain", "admitted", "acknowledged", "answered"].includes(
+                      m.status,
+                    ),
+                )
+                  ? undefined
+                  : e.prompt_id,
+                session_id: sessionID,
+                role,
+                error: diagnosticError(error),
+                at: yield* timestamp,
+              },
+            });
           }),
         ),
       );
@@ -152,8 +157,6 @@ export class WorkerSessions {
           return yield* new CrewError("STALE_OPERATION", "Worker observation was superseded");
         // A reporting tool can commit while the native completion read is in flight.
         synchronizeExecution(e, current);
-        e.capacity_observed_idle = true;
-        delete e.capacity_reservation;
       }
       if (state.outcome === "succeeded") {
         if (
@@ -164,7 +167,7 @@ export class WorkerSessions {
               requiresResponse(m),
           )
         ) {
-          yield* this.records.saveOwned(e, ["capacity_observed_idle", "capacity_reservation"]);
+          yield* this.records.commitOwned(e, idleCapacity);
           yield* this.messages.recover(e);
           return { kind: "waiting" };
         }
@@ -189,18 +192,14 @@ export class WorkerSessions {
       if (turn.kind === "absent") return;
       if (turn.kind === "waiting")
         return yield* new CrewError("WRITER_BUSY", "A managed session still runs in this worktree");
-      e.capacity_observed_idle = true;
-      delete e.capacity_reservation;
       if (turn.kind === "stopped" && turn.phase === "failed") {
-        if (turn.failure) e.worker_failure = turn.failure;
-        yield* this.records.saveOwned(e, [
-          "capacity_observed_idle",
-          "capacity_reservation",
-          "worker_failure",
-        ]);
+        yield* this.records.commitOwned(e, {
+          ...idleCapacity,
+          ...(turn.failure && { worker_failure: turn.failure }),
+        });
         return yield* turn.error;
       }
-      yield* this.records.saveOwned(e, ["capacity_observed_idle", "capacity_reservation"]);
+      yield* this.records.commitOwned(e, idleCapacity);
       if (turn.kind !== "completed") {
         const outcome = turn.kind === "stopped" ? turn.phase : (turn.outcome ?? "unknown");
         return yield* new CrewError("SESSION_OUTCOME", `Worker outcome is ${outcome}`);
@@ -221,8 +220,7 @@ export class WorkerSessions {
         };
         yield* this.records.saveFinishing(e, ["attribution"]);
       }
-      delete e.active_role;
-      yield* this.records.saveOwned(e, ["active_role"]);
+      yield* this.records.commitOwned(e, { active_role: removeOwnedField });
       return turn.role;
     }.bind(this),
     domainEffect,
@@ -241,10 +239,9 @@ export class WorkerSessions {
         turn.kind === "stopped" ||
         (turn.kind === "unadmitted" && turn.outcome)
       )
-        yield* this.records.saveOwned(e, ["capacity_observed_idle", "capacity_reservation"]);
+        yield* this.records.commitOwned(e, idleCapacity);
       if (turn.kind === "stopped" && turn.failure) {
-        e.worker_failure = turn.failure;
-        yield* this.records.saveOwned(e, ["worker_failure"]);
+        yield* this.records.commitOwned(e, { worker_failure: turn.failure });
       }
       if (turn.kind !== "unadmitted") return turn;
       if (!e.prompt_id)
@@ -291,19 +288,19 @@ export class WorkerSessions {
       const project = yield* this.project(e);
       if (!(yield* this.capacity.reserve(e, role, project))) return;
       if (e.configuration_snapshot?.agent_selection_version === 1) {
-        e.session_intent ??= {
+        const intent = e.session_intent ?? {
           role,
           id: this.sessionID(e, role) ?? Session.ID.create(),
           prompt: SessionMessage.ID.create(),
         };
-        if (e.session_intent.role !== role || !e.session_intent.prompt)
+        if (intent.role !== role || !intent.prompt)
           return yield* new CrewError(
             "PREPARATION_INTENT",
             "Retained preparation identity conflicts with the assigned role",
           );
-        yield* this.records.saveOwned(e, ["session_intent"]);
+        yield* this.records.commitOwned(e, { session_intent: intent });
         yield* this.contexts
-          .prepareAgent(e, role, yield* this.queries.issue(e.issue_id), e.session_intent.prompt)
+          .prepareAgent(e, role, yield* this.queries.issue(e.issue_id), intent.prompt)
           .pipe(
             Effect.onInterrupt(() => this.capacity.releasePreparation(e, role)),
             Effect.tapError((error) => this.contexts.failure(e, role, error)),
@@ -320,40 +317,26 @@ export class WorkerSessions {
           "New worker admission requires resolved environment",
         );
       if (e.session_intent?.prompt) {
-        e.session_intent = { ...e.session_intent, native_started: true };
-        yield* this.records.saveOwned(e, ["session_intent"]);
+        yield* this.records.commitOwned(e, {
+          session_intent: { ...e.session_intent, native_started: true },
+        });
       }
       let id = this.sessionID(e, role);
       if (!id) {
-        e.session_intent ??= { role, id: Session.ID.create() };
-        if (e.session_intent.role !== role)
+        const intent = e.session_intent ?? { role, id: Session.ID.create() };
+        if (intent.role !== role)
           return yield* new CrewError(
             "SESSION_INTENT",
             "A different role has an unresolved session intent",
           );
-        yield* this.records.saveOwned(e, ["session_intent"]);
+        yield* this.records.commitOwned(e, { session_intent: intent });
         // Native create accepts a client-generated ID. A missing-response retry cannot create a second session.
-        id = yield* this.runtime.createSession(e, role, e.session_intent.id);
-        e[`${role}_session_id`] = id;
+        id = yield* this.runtime.createSession(e, role, intent.id);
       } else yield* this.runtime.refreshPermissions(e, role, id);
-      e.active_role = role;
       yield* this.runtime.switchAgent(id, environment.agent);
       const model = environment.model;
       if (model) yield* this.runtime.switchModel(id, model);
-      delete e.resume_after_decision;
-      e.prompt_id = e.session_intent?.prompt ?? SessionMessage.ID.create();
-      e.messages = e.messages?.map((m) =>
-        m.type !== "finding" && needsDisposition(m) ? { ...m, status: "superseded" as const } : m,
-      );
-      e.worker_started_at = yield* Clock.currentTimeMillis;
-      delete e.progress;
-      e.capacity_reservation = {
-        role,
-        generation: e.control_generation,
-        status: "uncertain",
-        session_id: id,
-        prompt_id: e.prompt_id,
-      };
+      const prompt = e.session_intent?.prompt ?? SessionMessage.ID.create();
       const artifacts =
         e.workflow_policy === "full-openspec"
           ? (yield* this.queries.specStatus(e)).artifacts.map((artifact) =>
@@ -365,31 +348,40 @@ export class WorkerSessions {
               ),
             )
           : [];
+      const assignment = { [`${role}_session_id`]: id, active_role: role, prompt_id: prompt };
       const context = yield* this.contexts.prepare(
-        e,
+        { ...e, ...assignment },
         role,
         yield* this.queries.issue(e.issue_id),
         environment,
         id,
-        e.prompt_id,
+        prompt,
         artifacts,
       );
-      e.worker_context_id = context.prompt_id;
-      delete e.session_intent;
-      yield* this.records.saveOwned(e, [
-        `${role}_session_id`,
-        "session_intent",
-        "active_role",
-        "resume_after_decision",
-        "prompt_id",
-        "messages",
-        "worker_started_at",
-        "progress",
-        "capacity_reservation",
-        "worker_context_id",
-      ]);
+      yield* this.records.commitOwned(e, {
+        ...assignment,
+        session_intent: removeOwnedField,
+        resume_after_decision: removeOwnedField,
+        ...(e.messages && {
+          messages: e.messages.map((m) =>
+            m.type !== "finding" && needsDisposition(m)
+              ? { ...m, status: "superseded" as const }
+              : m,
+          ),
+        }),
+        worker_started_at: yield* Clock.currentTimeMillis,
+        progress: removeOwnedField,
+        capacity_reservation: {
+          role,
+          generation: e.control_generation,
+          status: "uncertain",
+          session_id: id,
+          prompt_id: prompt,
+        },
+        worker_context_id: context.prompt_id,
+      });
       yield* this.planning.preparedAdmission(e, role);
-      yield* this.runtime.prompt(id, context.prompt, e.prompt_id);
+      yield* this.runtime.prompt(id, context.prompt, prompt);
       const saved = yield* this.records.update(e.issue_id, (current) => {
         ensure(
           current.control_generation === e.control_generation && current.prompt_id === e.prompt_id,
@@ -414,8 +406,9 @@ export class WorkerSessions {
   /** Called under exclusive execution ownership, outside shared coordination. */
   confirmStopped = Effect.fn("WorkerSessions.confirmStopped")(
     function* (this: WorkerSessions, e: Execution) {
-      if (e.session_intent && (!e.session_intent.prompt || e.session_intent.native_started)) {
-        const state = yield* this.runtime.session(e.session_intent.id);
+      const intent = nativeSessionIntent(e);
+      if (intent) {
+        const state = yield* this.runtime.session(intent.id);
         yield* this.runtime.interrupt(state.id, e.prompt_id);
       }
       for (const role of ["explore", "apply", "review", "research"] as const) {
@@ -428,10 +421,13 @@ export class WorkerSessions {
         }
       }
       yield* this.idle(e);
-      e.capacity_observed_idle = true;
-      delete e.capacity_reservation;
-      delete e.active_role;
-      if (e.session_intent?.prompt && !e.session_intent.native_started) delete e.session_intent;
+      return {
+        ...idleCapacity,
+        active_role: removeOwnedField,
+        ...(e.session_intent?.prompt && !e.session_intent.native_started
+          ? ({ session_intent: removeOwnedField } as const)
+          : {}),
+      } as const;
     }.bind(this),
     domainEffect,
   );

@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Effect } from "effect";
@@ -16,8 +17,7 @@ for (const admitted of [false, true]) {
   test(`native preflight preserves a pre-suite capture when ${admitted ? "admission response" : "submission"} was lost`, async (t) => {
     const f = await run(fixture);
     t.onTestFinished(() => run(f.close()));
-    const issue = Id.IssueId.make("pre-suite");
-    f.work.add(issue);
+    const { id: issue } = await run(f.work.create(workGoal("pre-suite")));
     const e = await run(f.controller.start(issue));
     const original = await run(readWorkerContext(f.records.store, e.worker_context_id!));
     const legacy: WorkerContext = {

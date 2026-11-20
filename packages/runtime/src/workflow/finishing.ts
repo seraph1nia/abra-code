@@ -1,3 +1,5 @@
+import type { CodingChecks } from "./checks.ts";
+import type { OpenSpec } from "../openspec/adapter.ts";
 import { Effect } from "effect";
 import { CrewError, type Execution, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
@@ -5,7 +7,7 @@ import { externalOwns } from "../validation/contracts.ts";
 import { type Git } from "../git/repository.ts";
 import { type Delivery } from "../git/delivery.ts";
 import { type Workspaces } from "../git/workspaces.ts";
-import { type Records, synchronizeExecution } from "../storage/store.ts";
+import { type Records, removeOwnedField, synchronizeExecution } from "../storage/store.ts";
 import { type WorkerSessions } from "./sessions.ts";
 import { type Obligations } from "./obligations.ts";
 import {
@@ -14,7 +16,11 @@ import {
   finishingAction,
   type PublicationObservation,
 } from "./finishing-readiness.ts";
-import { activeSynchronization, synchronizationAuthority } from "./synchronization.ts";
+import {
+  admitSynchronization,
+  activeSynchronization,
+  synchronizationAuthority,
+} from "./synchronization.ts";
 import { applyDispositions, residueTarget } from "./finishing-disposition.ts";
 import { type CleanupSample } from "../git/cleanup.ts";
 import { type FinishingTarget } from "./finishing-contracts.ts";
@@ -28,16 +34,22 @@ interface Dependencies {
   records: Records;
   sessions: WorkerSessions;
   obligations: Obligations;
-  synchronize: (
-    e: Execution,
-    p: Project,
-    observation: PublicationObservation,
-  ) => Effect.Effect<Execution, CrewError>;
+  checks: CodingChecks;
+  spec: OpenSpec;
 }
 
 /** Coordinates existing evidence owners within the caller's owned execution operation. */
 export class Finishing {
   constructor(private c: Dependencies) {}
+  private synchronize = (e: Execution, p: Project, observation: PublicationObservation) =>
+    Effect.gen({ self: this }, function* () {
+      const next = yield* admitSynchronization(this.c.git, this.c.records, e, observation);
+      if (next === "planning") {
+        yield* this.c.spec.create(e);
+        yield* this.c.sessions.launch(e, "explore");
+      } else yield* this.c.checks.verify(e, p);
+      return e;
+    });
   recoverAdmission = Effect.fn("Finishing.recoverAdmission")(
     function* (this: Finishing, e: Execution, p: Project) {
       const attempt = activeSynchronization(e);
@@ -63,10 +75,11 @@ export class Finishing {
       const observation = yield* observePublication(this.c.git, this.c.delivery, p, e);
       if (observation.remote !== attempt.published || observation.state === "merged")
         return undefined;
-      e.current_phase = "awaiting_merge";
-      delete e.error_or_recovery_reason;
-      yield* this.c.records.saveOwned(e, ["current_phase", "error_or_recovery_reason"]);
-      return yield* this.c.synchronize(e, p, observation);
+      const resumed = yield* this.c.records.commitOwned(e, {
+        current_phase: "awaiting_merge",
+        error_or_recovery_reason: removeOwnedField,
+      });
+      return yield* this.synchronize(resumed, p, observation);
     }.bind(this),
     domainEffect,
   );
@@ -177,7 +190,7 @@ export class Finishing {
           observation = yield* observePublication(this.c.git, this.c.delivery, p, e);
       }
       if (activeSynchronization(e)?.stage === "admitted") {
-        yield* this.c.synchronize(e, p, observation);
+        yield* this.synchronize(e, p, observation);
         return false;
       }
       const authority = synchronizationAuthority(e, observation);
@@ -208,7 +221,7 @@ export class Finishing {
         );
       }
       if (action.kind === "synchronize") {
-        yield* this.c.synchronize(e, p, observation);
+        yield* this.synchronize(e, p, observation);
         return false;
       }
       if (observation.state === "merged") return true;

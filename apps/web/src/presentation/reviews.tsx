@@ -3,7 +3,7 @@ import { useDeadline } from "../deadline.ts";
 import { Markdown as DeferredMarkdown } from "../markdown.tsx";
 import type { IssueId } from "@abracode/contracts/identities";
 import type { FeedbackPageSchema } from "@abracode/contracts/web/wire";
-import { queries } from "../data.ts";
+import { queries } from "../work-data.ts";
 import { RequestState } from "../request-state.tsx";
 import { Button } from "@abracode/presentation/ui/button";
 import {

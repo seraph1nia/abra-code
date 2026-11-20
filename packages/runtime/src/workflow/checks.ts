@@ -158,11 +158,21 @@ export class CodingChecks {
           ),
         };
       if (synchronization) yield* this.records.saveFinishing(e, ["synchronization"]);
+      const at = yield* timestamp;
+      const check = {
+        fingerprint: before,
+        at,
+        commands: p.verification.map((command) => verificationCommand(command).argv.join(" ")),
+      };
       const verified = yield* this.records.patchOwned(e, {
+        check_history: [
+          ...(e.check_history ?? []).filter((item) => item.fingerprint !== before),
+          check,
+        ].slice(-16),
         verification_receipt: {
           fingerprint: before,
           commands: p.verification,
-          at: yield* timestamp,
+          at,
         },
         review_receipt: removeOwnedField,
       });

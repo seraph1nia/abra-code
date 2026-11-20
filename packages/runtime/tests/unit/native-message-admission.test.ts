@@ -18,7 +18,7 @@ test("native context with unfinished input cannot establish idle from an earlier
   t.onTestFinished(() => run(f.close()));
   const issue = Id.IssueId.make("native-observation-race");
   const supervisor = Id.SessionId.make("ses_supervisor");
-  f.work.add(issue);
+  f.seed.named(issue);
   const e = await run(f.controller.start(issue, supervisor));
   await run(
     f.controller.workMessage(

@@ -75,7 +75,7 @@ for (const mode of ["standing", "human", "review"] as const) {
     const first = (await observe())[0];
     assert.equal(first.current_phase, "awaiting_merge");
     assert.ok(first.delivery_wait);
-    assert.equal(f.work.issues.get(e.issue_id)!.status, "in_progress");
+    assert.equal((await run(f.work.show(e.issue_id))).status, "in_progress");
     const receipts = structuredClone(first.approval_receipts);
     const count = reads;
     await observe();

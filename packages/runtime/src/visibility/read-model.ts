@@ -1,3 +1,4 @@
+import { presentationHash } from "../presentation/identity.ts";
 import { BindingReadQuery, selectBindingRows } from "@abracode/contracts/web/bindings";
 import { executionBlocker } from "../workflow/readiness.ts";
 import { executionContract } from "./execution-contract.ts";
@@ -47,6 +48,12 @@ function sessions(e?: Execution): WorkItem["sessions"] {
 }
 function supervision(mode: Config["supervision_mode"], e?: Execution) {
   return {
+    ...(e?.worker_evidence?.length && { latest_evidence: e.worker_evidence.at(-1)?.request_id }),
+    ...(e?.verification_receipt && { last_check: e.verification_receipt.fingerprint }),
+    ...(e?.review_receipt && {
+      review_result:
+        e.review_receipt.fingerprint + "/" + (e.review_receipt.passed ? "passed" : "findings"),
+    }),
     execution_contract: e ? executionContract(e, mode) : undefined,
     generation: e?.control_generation,
     delivered_head: e?.delivered_commit,
@@ -620,7 +627,8 @@ export class Visibility {
     domainEffect(
       Effect.gen({ self: this }, function* () {
         const e = yield* this.c.get(issueID);
-        return { path, content: yield* this.c.planDocument(e, path) };
+        const content = yield* this.c.planDocument(e, path);
+        return { path, content, generation: e.control_generation, hash: presentationHash(content) };
       }),
     );
   private observeOverview = Effect.fn("Visibility.observeOverview")(

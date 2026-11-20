@@ -24,7 +24,7 @@ for (const completionPending of [false, true])
     const prompts = f.runtime.prompts;
     const creates = f.runtime.creates;
     const sessions = structuredClone(f.runtime.sessions);
-    const issue = structuredClone(f.work.issues.get(e.issue_id));
+    const issue = structuredClone(await run(f.work.show(e.issue_id)));
     await assert.rejects(run(f.controller.advance(e.issue_id)), {
       code: "WRITER_BUSY",
       message: "A managed session still runs in this worktree",
@@ -49,7 +49,7 @@ for (const completionPending of [false, true])
       "error_or_recovery_reason",
     ] as const)
       assert.deepEqual(saved[key], e[key], `Busy refusal preserves ${key}`);
-    assert.deepEqual(f.work.issues.get(e.issue_id), issue);
+    assert.deepEqual(await run(f.work.show(e.issue_id)), issue);
   });
 
 for (const outcome of [undefined, "interrupted", "future-outcome"]) {
@@ -152,7 +152,7 @@ for (const admitted of [false, true]) {
         yield* Deferred.succeed(entered, undefined);
         return yield* Effect.never;
       });
-    f.work.add(Id.IssueId.make("abra-1"));
+    f.seed.named(Id.IssueId.make("abra-1"));
     await run(
       Effect.scoped(
         Effect.gen(function* () {
@@ -174,7 +174,9 @@ for (const admitted of [false, true]) {
         "Changed Explore guidance",
       ),
     );
-    f.work.issues.get(saved.issue_id)!.description = "Changed request after interrupted admission";
+    f.seed.db
+      .prepare("UPDATE issues SET description = ? WHERE id = ?")
+      .run("Changed request after interrupted admission", saved.issue_id);
     f.runtime.prompt = (id, text, messageID) => {
       payloads.push(text);
       submissions.push(messageID);

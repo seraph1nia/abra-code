@@ -10,13 +10,15 @@ import { run } from "../effects.ts";
 test("work discovery searches all retained tasks and keeps fleet totals independent of pages", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const execution = await run(planned(f));
-  f.work.issues.get(execution.issue_id)!.dependencies = [IssueId.make("history-55")];
+
   for (let i = 0; i < 56; i++) {
     const id = IssueId.make(`history-${String(i).padStart(2, "0")}`);
-    f.work.add(id, RepositoryId.make(i % 2 ? "docs" : "frontend"));
-    Object.assign(f.work.issues.get(id)!, { status: "closed", title: `Retained result ${i}` });
+    f.seed.named(id, RepositoryId.make(i % 2 ? "docs" : "frontend"), [], {
+      title: `Retained result ${i}`,
+    });
+    f.seed.close(id);
   }
+  const execution = await run(planned(f, undefined, {}, [IssueId.make("history-55")]));
   const view = new Visibility(f.controller);
   const first = Schema.decodeSync(WorkPageSchema)(
     await run(view.find({ state: "closed", limit: 20 })),

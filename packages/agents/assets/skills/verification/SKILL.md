@@ -23,3 +23,9 @@ Review assesses current staged, unstaged and untracked implementation/proof agai
 Availability or loading of this skill proves no behavior. Source inspection, check receipts and accessible observations are distinct evidence. Use actual values/actions, not cached screenshots or an assertion that a command ran. Leave approval and lifecycle decisions to the controller.
 
 Adapted from Lauren Tan's pstack create-verification-skill and Prove It Works (MIT, Copyright (c) 2026 Lauren Tan). Full notice is retained in the AbraCode distribution at `licenses/pstack.txt`. This portable procedure does not require an AbraCode-specific recipe or upstream references.
+
+When answering a correlated worker request with a controller verification result, include its exact retained `check_fingerprint` in `abra_worker_reply`. If no matching receipt exists, describe the observed outcome and any missing proof.
+
+The Verification canvas distinguishes controller check fingerprints, independent Review findings and worker-designated evidence. Use the browser skill to retain a chosen PNG. Only claim behaviors the evidence demonstrates. A screenshot has unverified revision provenance even when the worker reports a commit.
+
+A worker may retain a Playwright trace already produced by the target repository. Set the progress capture kind to `trace` and supply the relative ZIP path inside the assigned worktree. PNG and ZIP captures each have a 2 MiB limit. Supply optional `references` on progress reports for an owned file, commit, line and symbol, or an HTTPS documentation URL with its title and version. Historical code previews use the cited Git object when available. Other results can be inspected independently.

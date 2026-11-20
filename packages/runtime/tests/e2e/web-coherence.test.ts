@@ -1561,7 +1561,7 @@ test("Activity consolidates legacy routes and preserves disabled lead request/pr
   await page.getByRole("tablist", { name: "Work details" }).getByRole("tab").first().waitFor();
   assert.deepEqual(
     await page.getByRole("tablist", { name: "Work details" }).getByRole("tab").allTextContents(),
-    ["Overview", "Plan", "Diff", "Activity", "Reports"],
+    ["Overview", "Plan", "Diff", "Verification", "Activity", "Reports"],
   );
   const composer = page.locator('[aria-label="Message Abra"]');
   await page.getByRole("button", { name: "Close inspector", exact: true }).click();

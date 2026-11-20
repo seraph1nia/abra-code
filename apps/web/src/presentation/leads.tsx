@@ -5,7 +5,7 @@ import type {
   LeadEvidencePageSchema,
   LeadEvidenceQuery,
 } from "@abracode/contracts/visibility/lead-observation";
-import { queries } from "../data.ts";
+import { queries } from "../work-data.ts";
 import { RequestState } from "../request-state.tsx";
 import { Button } from "@abracode/presentation/ui/button";
 import {

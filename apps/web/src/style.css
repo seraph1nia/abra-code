@@ -205,13 +205,13 @@
   overflow: hidden;
 }
 .workspace.inspecting {
-  grid-template-columns: minmax(0, 1fr) minmax(380px, 39%);
+  grid-template-columns: minmax(0, 1fr) minmax(380px, var(--canvas-width, 39%));
 }
 .workspace.finding {
   grid-template-columns: 290px minmax(0, 1fr);
 }
 .workspace.finding.inspecting {
-  grid-template-columns: 290px minmax(340px, 1fr) minmax(380px, 39%);
+  grid-template-columns: 290px minmax(340px, 1fr) minmax(380px, var(--canvas-width, 39%));
 }
 .sidebar[hidden] {
   display: none;
@@ -1072,4 +1072,75 @@
   white-space: normal;
   align-items: stretch;
   flex-direction: column;
+}
+
+.canvas-size {
+  width: 5rem;
+  margin-inline-start: auto;
+}
+@media (max-width: 1250px) {
+  .canvas-size {
+    display: none;
+  }
+}
+.work-recap {
+  margin: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+.work-recap > summary {
+  cursor: pointer;
+}
+.work-recap p {
+  color: var(--muted-foreground);
+  margin-block: 0.5rem;
+}
+.image-region {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+.image-region img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.image-region > span {
+  position: absolute;
+  pointer-events: none;
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+  background: rgb(90 140 255 / 15%);
+}
+@media (max-width: 760px) {
+  .composer-controls {
+    flex-wrap: wrap;
+  }
+  .composer-controls > div {
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    margin-inline-start: auto;
+  }
+  .composer-controls select {
+    max-width: 100%;
+  }
+}
+.verification-evidence {
+  overflow-wrap: anywhere;
+}
+.verification-evidence h3 {
+  margin-block: 1rem 0.35rem;
+}
+.verification-evidence pre,
+.selection-chip pre,
+.message-body details pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.canvas-size {
+  accent-color: var(--primary);
+}
+.work-recap[open] {
+  max-height: 28vh;
+  overflow-y: auto;
 }

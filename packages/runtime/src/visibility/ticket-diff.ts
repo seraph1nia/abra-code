@@ -1,5 +1,9 @@
 import { RelativePath, Commit, timestamp, IssueId } from "../identities.ts";
 
+import { ContentHash } from "../identities.ts";
+import { digest } from "../digest.ts";
+import type { DiffSelection } from "@abracode/contracts/web/resources";
+import { parsePatch } from "diff";
 import { Effect } from "effect";
 import { CrewError, identifier } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
@@ -140,6 +144,18 @@ export class TicketDiff {
             return { message: "Text preview is unavailable or exceeds 64 KiB." };
           return { patch: patch.success };
         });
+      const patchIds = new Map<RelativePath, ContentHash>();
+      const remember = (path: RelativePath, patch: string) => {
+        patchIds.set(
+          path,
+          ContentHash.make(digest([issueID, scope, base, head, e.control_generation, path, patch])),
+        );
+      };
+      const selectableFiles = () =>
+        files.map((entry) => {
+          const id = patchIds.get(entry.path);
+          return id ? { ...entry, patch_id: id } : entry;
+        });
       if (file) {
         const entry = files.find((entry) => entry.path === file);
         if (!entry)
@@ -151,7 +167,8 @@ export class TicketDiff {
         const content = yield* preview(entry);
         if (Buffer.byteLength(content.patch ?? "") > documentLimit)
           return { ...result, message: "Patch exceeds 64 KiB. Text preview is limited." };
-        return { ...result, ...content };
+        if (content.patch) remember(file, content.patch);
+        return { ...result, ...content, files: selectableFiles() };
       }
       // Keep whole patches: truncating bytes can corrupt hunks or hide a later file's header.
       // Exact-file reads remain available when a comparison exceeds this total preview budget.
@@ -174,11 +191,13 @@ export class TicketDiff {
           omitted++;
           continue;
         }
+        remember(entry.path, content.patch);
         patches.push(patch);
         bytes += size;
       }
       return {
         ...result,
+        files: selectableFiles(),
         patch: patches.length ? patches.join("") : undefined,
         limited: result.limited || omitted > 0,
         ...(omitted
@@ -201,4 +220,35 @@ export class TicketDiff {
       ),
     ),
   );
+}
+
+/** Extract from the exact owned single-file read used for validation. */
+export function selectedDiffExcerpt(diff: WorkDiff, selection: DiffSelection) {
+  const id = diff.files.find((file) => file.path === selection.file)?.patch_id;
+  if (!id || id !== selection.patch_id || diff.file !== selection.file || !diff.patch)
+    throw new CrewError(
+      "SELECTION_STALE",
+      "The selected diff changed or is unavailable. Review the updated diff or remove the selection.",
+    );
+  const [patch] = parsePatch(diff.patch);
+  for (const hunk of patch?.hunks ?? []) {
+    const added = selection.side === "additions";
+    let line = added ? hunk.newStart : hunk.oldStart;
+    const excerpt: string[] = [];
+    for (const row of hunk.lines) {
+      if (row[0] !== " " && row[0] !== (added ? "+" : "-")) continue;
+      if (line >= selection.start && line <= selection.end) excerpt.push(row.slice(1));
+      line++;
+    }
+    if (excerpt.length && excerpt.length === selection.end - selection.start + 1) {
+      const text = excerpt.join("\n");
+      if (text.length > 8192)
+        throw new CrewError(
+          "SELECTION_LIMIT",
+          "Select a shorter passage (8192 characters maximum).",
+        );
+      return text;
+    }
+  }
+  throw new CrewError("SELECTION_RANGE", "Select visible lines on one side of a single hunk.");
 }

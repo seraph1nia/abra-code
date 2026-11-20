@@ -173,7 +173,7 @@ test("a lost batch response returns the original mapping after controller restar
   t.onTestFinished(() => run(restarted.close()));
   const recovered = await run(restarted.createWorkBatch(batch, sender));
   assert.equal(recovered.tasks[0].issue.id, recorded[0].id);
-  assert.equal(f.work.creations, 1);
+  assert.equal((await run(f.work.list)).length, 1);
   assert.equal(f.runtime.creates, 0);
 });
 

@@ -8,7 +8,11 @@ import { run } from "../effects.ts";
 import { SqliteWorkGraph, openWorkGraph, type NewIssue } from "../../src/work/graph.ts";
 import { ProcessRunner } from "../../src/process.ts";
 
-import { restoreV8FinderFixture, workDatabase as database } from "../helpers/work-database.ts";
+import {
+  workGraphAt,
+  restoreV8FinderFixture,
+  workDatabase as database,
+} from "../helpers/work-database.ts";
 
 const goal = (request_id: string, dependencies: string[] = []): NewIssue => ({
   repository_id: Id.RepositoryId.make("api"),
@@ -714,4 +718,61 @@ test("version-6 migration preserves old request bytes while new schema/approval 
   } finally {
     verify.close();
   }
+});
+
+test("batch integrity is checked on reopen and after peer commits, and reused only after commit", async (t) => {
+  const { graph, path } = await database(t);
+  const parent = await run(graph.create(goal("parent")));
+  const child = await run(graph.create({ ...goal("child"), dependencies: [parent.id] }));
+  for (let i = 0; i < 1000; i++)
+    await run(graph.create({ ...goal(`history-${i}`), dependencies: [parent.id] }));
+  const peer = new DatabaseSync(path);
+  t.onTestFinished(() => peer.close());
+  const add = peer.prepare("INSERT INTO dependencies VALUES (?,?)");
+  const attempt = batchGoal("revalidate");
+  const { graph: reopened } = await workGraphAt(t, path);
+  let cold = 0;
+  const validate = reopened["validateHistoricalEdges"].bind(reopened);
+  reopened["validateHistoricalEdges"] = () => {
+    cold++;
+    return validate();
+  };
+  peer.exec(
+    "CREATE TRIGGER fail_insert BEFORE INSERT ON batch_items BEGIN SELECT RAISE(ABORT, 'interrupted'); END",
+  );
+  await assert.rejects(run(reopened.createBatch(attempt)), /interrupted/);
+  await assert.rejects(run(reopened.createBatch(attempt)), /interrupted/);
+  assert.equal(cold, 2);
+  peer.exec("DROP TRIGGER fail_insert");
+  const receipt = await run(reopened.createBatch(attempt));
+  assert.equal(cold, 3);
+  let issueRows = 0;
+  const hydrate = reopened["hydrate"].bind(reopened);
+  reopened["hydrate"] = (rows, links) => {
+    issueRows += rows.length;
+    return hydrate(rows, links);
+  };
+  await run(reopened.createBatch({ ...batchGoal("warm"), tasks: [batchGoal().tasks[1]!] }));
+  assert.equal(cold, 3);
+  assert.equal(issueRows, 0);
+  for (const [target, code] of [
+    [child.id, "BATCH_CYCLE"],
+    ["absent", "ISSUE_MISSING"],
+  ] as const) {
+    peer.exec("PRAGMA foreign_keys=OFF");
+    add.run(parent.id, target);
+    for (const connection of [reopened, (await workGraphAt(t, path)).graph])
+      await assert.rejects(run(connection.createBatch(batchGoal("rejected"))), { code });
+    assert.equal(
+      peer.prepare("SELECT count(*) AS n FROM work_batches WHERE request_id=?").get("rejected")!.n,
+      0,
+    );
+    peer
+      .prepare("DELETE FROM dependencies WHERE issue_id=? AND dependency_id=?")
+      .run(parent.id, target);
+  }
+  assert.deepEqual(
+    (await run(reopened.createBatch(attempt))).tasks.map((t) => [t.client_key, t.issue.id]),
+    receipt.tasks.map((t) => [t.client_key, t.issue.id]),
+  );
 });

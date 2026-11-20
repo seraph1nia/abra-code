@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { IssueId, RequestId, ExecutionId, RepositoryId } from "../../src/identities.ts";
+import type { NewIssue, WorkEvent } from "../../src/work/graph.ts";
 import { Effect, Exit, Scope } from "effect";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -36,4 +39,48 @@ export function restoreV8FinderFixture(db: DatabaseSync) {
     CREATE INDEX issues_finder_repository_status ON issues(repository_id,status,priority,finder_rank);
     PRAGMA user_version = 8;
   `);
+}
+
+/** Named identities are reserved for historical references and ordering scenarios. */
+export const fixtureGraph = SqliteWorkGraph.open(":memory:", (request) =>
+  request.startsWith("named-")
+    ? IssueId.make(request.slice("named-".length))
+    : IssueId.make(`abra-${randomUUID()}`),
+).pipe(Effect.map((work) => ({ work, seed: graphSeeds(work) })));
+
+function graphSeeds(work: SqliteWorkGraph) {
+  const db = work["db"];
+  return {
+    db,
+    named(
+      id: IssueId,
+      repository_id = RepositoryId.make("api"),
+      dependencies: IssueId[] = [],
+      choices: Partial<NewIssue> = {},
+    ) {
+      return Effect.runSync(
+        work.create({
+          repository_id,
+          dependencies,
+          title: id,
+          description: id,
+          priority: 1,
+          request_id: RequestId.make(`named-${id}`),
+          ...choices,
+        }),
+      );
+    },
+    close(value: string) {
+      const id = IssueId.make(value);
+      const current = Effect.runSync(work.show(id));
+      const owner = current.assignee ?? ExecutionId.make("fixture-owner");
+      if (!current.assignee) Effect.runSync(work.claim(id, owner));
+      Effect.runSync(work.close(id, owner));
+    },
+    countEvents(kind: WorkEvent["kind"]) {
+      return Number(
+        db.prepare("SELECT COUNT(*) AS n FROM work_events WHERE kind = ?").get(kind)!.n,
+      );
+    },
+  };
 }

@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import * as Id from "../../src/identities.ts";
 import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -131,7 +132,7 @@ test("application database stays open for callbacks until the host plugin scope 
 test("interruption preserves provisioning intent and releases the controller lock for recovery", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  f.work.add(Id.IssueId.make("cancel-1"));
+  const { id: cancel1Id } = await run(f.work.create(workGoal("cancel-1")));
   const entered = Deferred.makeUnsafe<void>();
   const provision = f.runtime.createWorktree;
   f.runtime.createWorktree = () =>
@@ -140,21 +141,21 @@ test("interruption preserves provisioning intent and releases the controller loc
     Effect.scoped(
       Effect.gen(function* () {
         const fiber = yield* f.controller
-          .start(Id.IssueId.make("cancel-1"), Id.SessionId.make("ses_supervisor"))
+          .start(cancel1Id, Id.SessionId.make("ses_supervisor"))
           .pipe(Effect.forkScoped);
         yield* Deferred.await(entered);
         yield* Fiber.interrupt(fiber);
       }),
     ),
   );
-  const saved = (await run(f.records.execution(Id.IssueId.make("cancel-1"))))!;
+  const saved = (await run(f.records.execution(cancel1Id)))!;
   assert.equal(saved.current_phase, "provisioning");
   assert.ok(saved.base_commit);
   assert.equal(f.locks.held, false);
   f.runtime.createWorktree = provision;
-  const [recovered] = await run(f.controller.reconcile(Id.IssueId.make("cancel-1")));
+  const [recovered] = await run(f.controller.reconcile(cancel1Id));
   assert.equal(recovered.current_phase, "exploring");
-  assert.equal(f.work.claims, 1);
+  assert.equal(f.seed.countEvents("claimed"), 1);
   assert.equal(f.runtime.creates, 1);
 });
 
@@ -321,7 +322,7 @@ test("duplicate and reordered worker events preserve prompt-bound failure and re
   t.onTestFinished(() => run(f.close()));
   const issue = Id.IssueId.make("event-order"),
     supervisor = Id.SessionId.make("ses_supervisor");
-  f.work.add(issue);
+  f.seed.named(issue);
   const e = await run(f.controller.start(issue, supervisor));
   const request = await run(
     f.controller.workMessage(

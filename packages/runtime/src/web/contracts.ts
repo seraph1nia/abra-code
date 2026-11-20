@@ -1,3 +1,4 @@
+import type { Submission } from "@abracode/contracts/web/workspace-wire";
 import type { AgentCatalog } from "@abracode/contracts/web/agent-settings";
 import type {
   ReviewListSchema,
@@ -79,11 +80,7 @@ export interface WebBackend {
     },
     CrewError
   >;
-  submit(input: {
-    request_id: string;
-    text: string;
-    delivery: "queue" | "steer";
-  }): Effect.Effect<SubmissionReceipt, CrewError>;
+  submit(input: Submission): Effect.Effect<SubmissionReceipt, CrewError>;
   receipt(requestID: string): Effect.Effect<SubmissionReceipt | null, CrewError>;
   readonly stop: Effect.Effect<boolean, CrewError>;
   readonly work: WorkQueries;

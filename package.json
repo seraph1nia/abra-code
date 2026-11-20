@@ -55,7 +55,8 @@
     "test:integration": "vp test run --project integration",
     "test:one": "vp test run",
     "test:affected": "vp test related --run --project fast --project unit --project integration",
-    "test:all": "pnpm web:build && vp test run --project fast --project unit --project integration --project e2e",
+    "test:all": "pnpm web:build && pnpm test:prepared",
+    "test:prepared": "vp test run --project fast --project unit --project integration --project e2e",
     "test:native": "vp test run --project extended --project e2e native",
     "test:core": "vp test run --project fast --project unit",
     "test:extended": "vp test run --project extended"

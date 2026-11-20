@@ -45,3 +45,35 @@ scan lead history. `eligibility_observed: false` qualifies the compatibility
 admission checks. Finder pages share pure retained projections and request-local
 aggregate evidence with fleet observations, while skipping unused lead history.
 Malformed selected records and unavailable native activity stay local and visible.
+
+### Intake read costs
+
+The controller reads selected issues and their direct dependency evidence under
+the same record lock and bounded graph-revision check as fleet observation.
+Every admission reads current project, execution and setup diagnostics. Starting
+also rechecks capacity before reservation and claims the issue transactionally.
+
+The selected-readiness regression runs each request with 0 and 1,000 unrelated
+issues. Counts below include the entire controller command. Both sizes produce
+the same counts and read zero fleet closure histories or daily completion totals.
+
+| Command                                             | Hydrated issues | Direct readiness edges | Project / execution / setup scans |
+| --------------------------------------------------- | --------------: | ---------------------: | --------------------------------- |
+| Create one issue or a one-item batch                |               1 |                      0 | 1 / 1 / 1                         |
+| Two-item batch with a local dependency              |               2 |                      1 | 1 / 1 / 1                         |
+| Start a fresh issue                                 |               3 |                      0 | 1 / 3 / 3                         |
+| Refuse a start on capacity or invalid retained data |               1 |                      0 | 1 / 1 / 1                         |
+| Replay single intake after closure                  |               2 |                      0 | 1 / 1 / 1                         |
+
+Previously, a single create hydrated 1,001 rows. A subsequent one-item batch
+hydrated 1,001 rows to validate the graph and 1,002 to report readiness.
+
+Batch insertion validates the local DAG and checks distinct referenced existing
+IDs inside the write transaction. Every new edge originates at a new issue.
+An empty dependency table establishes integrity immediately. On reopening a
+populated graph or seeing another connection's commit, the next new batch checks
+both endpoints of each historical edge and verifies acyclicity. The connection
+retains that proof only after commit. A warm one-item insertion in the integrity
+regression visits zero historical edges and hydrates zero issues, with 1,000
+unrelated issues each depending on the same parent. Identical receipt replays
+still return their original key-to-issue mapping.

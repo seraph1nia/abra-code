@@ -1,3 +1,5 @@
+import { LinkedCheckSchema } from "../workflow/message-contracts.ts";
+import { WorkSelectionSchema } from "./resources.ts";
 import { BindingCoverageSchema } from "./bindings.ts";
 import { ObservationSchema } from "./changes.ts";
 import { PresentationPageSchema } from "../presentation/contracts.ts";
@@ -12,9 +14,42 @@ import { SurfaceSchema } from "./surfaces.ts";
 import { TranscriptPartSchema, TranscriptToolSchema } from "./presentation-contracts.ts";
 
 /** Application wire contracts, shared by HTTP, native RPC and AG-UI. */
+export const CapturedSelectionSchema = Schema.Struct({
+  selection: WorkSelectionSchema,
+  excerpt: Schema.String.check(Schema.isMaxLength(8192)),
+});
+export const SelectionFollowupSchema = Schema.Struct({
+  request_id: Schema.String,
+  role: Schema.String,
+  status: Schema.String,
+  acknowledged_at: Schema.optional(Schema.String),
+  answer: Schema.optional(Schema.String),
+  check: Schema.optional(LinkedCheckSchema),
+});
+export type SelectionFollowup = typeof SelectionFollowupSchema.Type;
+export const selectionMarker = "\n\nSelected work (captured source)\n";
+export function selectedQuestion(text: string) {
+  const index = text.lastIndexOf(selectionMarker);
+  if (index < 0) return;
+  try {
+    const source = Schema.decodeUnknownSync(
+      Schema.Struct({
+        request_id: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/)),
+        ...CapturedSelectionSchema.fields,
+      }),
+    )(JSON.parse(text.slice(index + selectionMarker.length)));
+    return { text: text.slice(0, index), ...source };
+  } catch {
+    return;
+  }
+}
 export const ReceiptSchema = Schema.Struct({
   request_id: Schema.String,
   message_id: SessionMessage.ID,
+  answer: Schema.optionalKey(Schema.String),
+  followups: Schema.optionalKey(Schema.Array(SelectionFollowupSchema)),
+  capture: Schema.optionalKey(CapturedSelectionSchema),
+  native_text: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(32768))),
   text: Schema.String,
   delivery: Schema.Literals(["queue", "steer"]),
   status: Schema.Literals(["submitted", "admitted", "uncertain"]),
@@ -68,14 +103,17 @@ export const ProjectsSchema = Schema.Array(
   Schema.Struct({ id: Schema.String, name: Schema.String, path: Schema.optional(Schema.String) }),
 );
 export const SubmissionSchema = Schema.Struct({
+  selection: Schema.optionalKey(WorkSelectionSchema),
   request_id: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/)),
   text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32768)),
   delivery: Schema.Literals(["queue", "steer"]),
 });
+export type Submission = typeof SubmissionSchema.Type;
 export const ReceiptQuerySchema = Schema.Struct({
   request_id: SubmissionSchema.fields.request_id,
 }).annotate({ parseOptions: { onExcessProperty: "error" }, reportInput: false });
 export const SubmissionOptionsSchema = Schema.Struct({
+  selection: SubmissionSchema.fields.selection,
   request_id: SubmissionSchema.fields.request_id,
   delivery: Schema.optionalKey(SubmissionSchema.fields.delivery),
 }).annotate({ parseOptions: { onExcessProperty: "error" }, reportInput: false });

@@ -1,3 +1,5 @@
+import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
+import { VerificationViewSchema } from "@abracode/contracts/web/verification";
 import { BindingReadSchema } from "@abracode/contracts/web/bindings";
 import { LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
 import { registerWebGateway } from "../web/gateway.ts";
@@ -134,108 +136,66 @@ export const createPlugin = (
           Queue.shutdown,
         );
         const observer = new Visibility(c, finderRequests);
-        const json =
-          <S extends Schema.Constraint>(schema: S) =>
-          (value: S["Type"]) =>
-            decodeJSON(schema, JSON.stringify(value), "Observer response");
-        // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
+        const read =
+          <I, S extends Schema.Constraint, R>(
+            schema: S,
+            handler: (input: I) => Effect.Effect<NoInfer<S["Type"]>, CrewError, R>,
+            method?: Parameters<typeof observerRequest>[0],
+          ) =>
+          (input: I, { error }: { error: Parameters<typeof observerResult>[1] }) =>
+            observerResult(
+              (method ? observerRequest(method) : Effect.void).pipe(
+                Effect.andThen(() => handler(input)),
+                Effect.flatMap((value) =>
+                  decodeJSON(schema, JSON.stringify(value), "Observer response"),
+                ),
+              ),
+              error,
+            ).pipe(provide);
+        // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native RPC registration exposes an open error channel.
         const registration = yield* ctx.rpc.register(visibility, {
-          binding: (query, { error }) =>
-            observerResult(
-              observer.binding(query).pipe(Effect.flatMap(json(BindingReadSchema))),
-              error,
-            ).pipe(provide),
-          find: (query, { error }) =>
-            observerResult(
-              observer.find(query).pipe(Effect.flatMap(json(WorkPageSchema))),
-              error,
-            ).pipe(provide),
-          leads: (query, { error }) =>
-            observerResult(
-              c.queries.leadEvidence(query).pipe(Effect.flatMap(json(LeadEvidencePageSchema))),
-              error,
-            ).pipe(provide),
-          messages: ({ issue_id, offset }, { error }) =>
-            observerResult(
-              observerRequest("messages").pipe(
-                Effect.andThen(
-                  c.queries
-                    .messages(issue_id, offset)
-                    .pipe(Effect.flatMap(json(MessagesPageSchema))),
-                ),
-              ),
-              error,
-            ).pipe(provide),
-          worker: ({ issue_id, session_id }, { error }) =>
-            observerResult(
-              c.queries
-                .inspectWorker(issue_id, session_id)
-                .pipe(Effect.flatMap(json(WorkerInspectionSchema))),
-              error,
-            ).pipe(provide),
-          feedback: ({ issue_id, page }, { error }) =>
-            observerResult(
-              observerRequest("feedback").pipe(
-                Effect.andThen(
-                  observer.feedback(issue_id, page).pipe(Effect.flatMap(json(FeedbackPageSchema))),
-                ),
-              ),
-              error,
-            ).pipe(provide),
-          report: ({ issue_id }, { error }) =>
-            observerResult(
-              observerRequest("report").pipe(
-                Effect.andThen(
-                  observer.report(issue_id).pipe(Effect.flatMap(json(WorkReportSchema))),
-                ),
-              ),
-              error,
-            ).pipe(provide),
-          snapshot: ({ closed_page }, { error }) =>
-            observerResult(
-              observerRequest("snapshot").pipe(
-                Effect.andThen(
-                  observer.snapshot(closed_page).pipe(Effect.flatMap(json(WorkSnapshotSchema))),
-                ),
-              ),
-              error,
-            ).pipe(provide),
-          diff: ({ issue_id, scope, file }, { error }) =>
-            observerResult(
-              observerRequest("diff").pipe(
-                Effect.andThen(
-                  observer.diff(issue_id, scope, file).pipe(Effect.flatMap(json(WorkDiffSchema))),
-                ),
-              ),
-              error,
-            ).pipe(provide),
-          document: ({ issue_id, path }, { error }) =>
-            observerResult(
-              observerRequest("document").pipe(
-                Effect.andThen(
-                  observer.document(issue_id, path).pipe(Effect.flatMap(json(WorkDocumentSchema))),
-                ),
-              ),
-              error,
-            ).pipe(provide),
-          overview: ({ issue_id }, { error }) =>
-            observerResult(
-              observerRequest("overview").pipe(
-                Effect.andThen(
-                  observer.overview(issue_id).pipe(Effect.flatMap(json(WorkOverviewSchema))),
-                ),
-              ),
-              error,
-            ).pipe(provide),
-          detail: ({ issue_id }, { error }) =>
-            observerResult(
-              observerRequest("detail").pipe(
-                Effect.andThen(
-                  observer.detail(issue_id).pipe(Effect.flatMap(json(WorkDetailSchema))),
-                ),
-              ),
-              error,
-            ).pipe(provide),
+          binding: read(BindingReadSchema, (query) => observer.binding(query)),
+          find: read(WorkPageSchema, (query) => observer.find(query)),
+          leads: read(LeadEvidencePageSchema, (query) => c.queries.leadEvidence(query)),
+          messages: read(
+            MessagesPageSchema,
+            ({ issue_id, offset }) => c.queries.messages(issue_id, offset),
+            "messages",
+          ),
+          worker: read(WorkerInspectionSchema, ({ issue_id, session_id }) =>
+            c.queries.inspectWorker(issue_id, session_id),
+          ),
+          feedback: read(
+            FeedbackPageSchema,
+            ({ issue_id, page }) => observer.feedback(issue_id, page),
+            "feedback",
+          ),
+          report: read(WorkReportSchema, ({ issue_id }) => observer.report(issue_id), "report"),
+          snapshot: read(
+            WorkSnapshotSchema,
+            ({ closed_page }) => observer.snapshot(closed_page),
+            "snapshot",
+          ),
+          diff: read(
+            WorkDiffSchema,
+            ({ issue_id, scope, file }) => observer.diff(issue_id, scope, file),
+            "diff",
+          ),
+          document: read(
+            WorkDocumentSchema,
+            ({ issue_id, path }) => observer.document(issue_id, path),
+            "document",
+          ),
+          evidence: read(EvidenceDataSchema, (query) => c.queries.evidence(query)),
+          verification: read(VerificationViewSchema, ({ issue_id }) =>
+            c.queries.verification(issue_id),
+          ),
+          overview: read(
+            WorkOverviewSchema,
+            ({ issue_id }) => observer.overview(issue_id),
+            "overview",
+          ),
+          detail: read(WorkDetailSchema, ({ issue_id }) => observer.detail(issue_id), "detail"),
         });
         const invalidations = Context.get(services, Invalidations);
         yield* invalidations.take.pipe(

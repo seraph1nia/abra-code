@@ -1,3 +1,4 @@
+import { admittedSelection, captureCheck } from "./selected-requests.ts";
 import { Effect } from "effect";
 import { createHash } from "node:crypto";
 import { ensure, type Execution } from "../domain.ts";
@@ -142,7 +143,17 @@ export class Messages {
         ensure((e.messages?.length ?? 0) < 256, "MESSAGE_LIMIT", "Execution message limit reached");
         ensure(e.prompt_id && e.active_role, "MESSAGE_ASSIGNMENT", "No retained assignment");
         let forwarded = "";
-        if (input.source?.type === "finding") {
+        if (input.source?.type === "selection") {
+          const receipt = yield* admittedSelection(
+            this.records.store,
+            sender,
+            input.source.request_id,
+            e.issue_id,
+          );
+          forwarded =
+            "\n\nDeveloper question and captured source: " +
+            JSON.stringify({ text: receipt.text, capture: receipt.capture });
+        } else if (input.source?.type === "finding") {
           const reference = input.source;
           const source = yield* this.queries.get(reference.issue_id);
           const finding = source.messages?.find((m) => m.request_id === reference.request_id);
@@ -836,6 +847,7 @@ export class Messages {
             if (old.reply)
               ensure(
                 old.reply.body === input.body &&
+                  old.reply.check?.fingerprint === input.check_fingerprint &&
                   JSON.stringify(old.reply.evidence) === JSON.stringify(input.evidence ?? []),
                 "MESSAGE_REBIND",
                 "Request already has a different answer",
@@ -845,7 +857,14 @@ export class Messages {
                 ...old,
                 status: "answered",
                 acknowledged_at: old.acknowledged_at ?? now,
-                reply: { body: input.body, evidence: input.evidence ?? [], at: now },
+                reply: {
+                  body: input.body,
+                  evidence: input.evidence ?? [],
+                  at: now,
+                  ...(input.check_fingerprint
+                    ? { check: captureCheck(current, input.check_fingerprint) }
+                    : {}),
+                },
               };
           }
         }

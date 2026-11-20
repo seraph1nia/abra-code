@@ -4,7 +4,7 @@ import { type WorkerSessions } from "./sessions.ts";
 import { Effect } from "effect";
 import { CrewError, terminal, type Execution, type Phase } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import { type Records, type ExecutionOwnedField } from "../storage/store.ts";
+import { type Records, type ExecutionPatch, removeOwnedField } from "../storage/store.ts";
 import { type WorkGraph } from "../work/graph.ts";
 import { type Runtime } from "../opencode/runtime.ts";
 import { type Coordination } from "./coordination.ts";
@@ -23,17 +23,12 @@ export class ExecutionTransitions {
   ) {}
   confirmStop = Effect.fn("ExecutionTransitions.confirmStop")(
     function* (this: ExecutionTransitions, e: Execution) {
-      yield* this.sessions.confirmStopped(e);
-      e.stop_status = "confirmed";
-      if (e.operation) e.operation = { ...e.operation, status: "stopped" };
-      return yield* this.records.saveOwned(e, [
-        "stop_status",
-        "operation",
-        "capacity_observed_idle",
-        "capacity_reservation",
-        "active_role",
-        "session_intent",
-      ]);
+      const stopped = yield* this.sessions.confirmStopped(e);
+      return yield* this.records.commitOwned(e, {
+        ...stopped,
+        stop_status: "confirmed",
+        ...(e.operation && { operation: { ...e.operation, status: "stopped" } }),
+      });
     }.bind(this),
     domainEffect,
   );
@@ -83,15 +78,13 @@ export class ExecutionTransitions {
       this: ExecutionTransitions,
       e: Execution,
       phase: Phase,
-      fields: readonly ExecutionOwnedField[] = [],
+      changes: ExecutionPatch = {},
     ) {
-      e.current_phase = phase;
-      delete e.error_or_recovery_reason;
-      return yield* this.records.saveOwned(e, [
-        "current_phase",
-        "error_or_recovery_reason",
-        ...fields,
-      ]);
+      return yield* this.records.commitOwned(e, {
+        ...changes,
+        current_phase: phase,
+        error_or_recovery_reason: removeOwnedField,
+      });
     }.bind(this),
     domainEffect,
   );
@@ -111,39 +104,35 @@ export class ExecutionTransitions {
         ["STALE_OPERATION", "STALE_REVISION", "STOP_REQUESTED"].includes(error.code)
       )
         return yield* this.queries.get(e.issue_id);
-      if (
+      const reason = CrewError.from(error).message;
+      const release =
         !e.active_role &&
         !e.session_intent &&
         !e.explore_session_id &&
         !e.apply_session_id &&
         !e.review_session_id &&
-        !e.research_session_id
-      ) {
-        e.capacity_observed_idle = true;
-        delete e.capacity_reservation;
-      }
-      e.resume_phase = e.current_phase;
-      e.current_phase = phase;
-      e.error_or_recovery_reason = CrewError.from(error).message;
+        !e.research_session_id;
       yield* this.coordination.with(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
-            yield* this.records.saveOwned(e, [
-              "resume_phase",
-              "current_phase",
-              "error_or_recovery_reason",
-              "capacity_observed_idle",
-              "capacity_reservation",
-            ]);
+            yield* this.records.commitOwned(e, {
+              resume_phase: e.current_phase,
+              current_phase: phase,
+              error_or_recovery_reason: reason,
+              ...(release && {
+                capacity_observed_idle: true,
+                capacity_reservation: removeOwnedField,
+              }),
+            });
             if (phase === "blocked" || phase === "failed") {
               const issue = yield* this.work.show(e.issue_id);
               if (issue.assignee === e.execution_id && issue.status === "in_progress")
-                yield* this.work.block(e.issue_id, e.execution_id, e.error_or_recovery_reason!);
+                yield* this.work.block(e.issue_id, e.execution_id, reason);
             }
           }),
         ),
       );
-      yield* this.notice(e, e.error_or_recovery_reason);
+      yield* this.notice(e, reason);
       return e;
     }.bind(this),
     domainEffect,

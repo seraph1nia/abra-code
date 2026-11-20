@@ -1,3 +1,4 @@
+import { JourneyGates } from "./journey-gates.ts";
 import assert from "node:assert/strict";
 import { OpenCode } from "@opencode/client";
 import { parseDocument } from "yaml";
@@ -17,7 +18,7 @@ type Execution = {
   stop_status?: "requested" | "confirmed";
 };
 /** Existing server/provider, controller tools and disposable repository factory. */
-export async function parallelJourney(options: {
+type JourneyOptions = {
   root: string;
   home: string;
   client: ReturnType<typeof OpenCode.make>;
@@ -26,10 +27,11 @@ export async function parallelJourney(options: {
   invoke: Invoke;
   eventually: <T>(action: () => Promise<T | undefined>, timeout?: number) => Promise<T>;
   restart: () => Promise<void>;
-  seen: Set<string>;
-  release: (key: string) => void;
-}) {
-  const { root, home, client, invoke, eventually, seen, release } = options;
+};
+
+async function runJourney(options: JourneyOptions, gates: JourneyGates) {
+  const { root, home, client, invoke, eventually } = options;
+  const { seen, release } = gates;
   const path = await run(repo(root, "parallel-base"));
   await invoke("abra_project_onboard", {
     id: "parallel",
@@ -316,4 +318,16 @@ export async function parallelJourney(options: {
     for (const key of ["one", "two", "three", "dependent"]) release(key);
     await toggle(false);
   }
+}
+
+export function parallelJourney() {
+  const gates = new JourneyGates();
+  return {
+    run: (options: JourneyOptions) => runJourney(options, gates),
+    close: () => gates.close(),
+    observe(role: string, prompt: string) {
+      const key = role === "research" && /parallel-lane-([a-z]+)/.exec(prompt)?.[1];
+      if (key) return gates.wait(key);
+    },
+  };
 }

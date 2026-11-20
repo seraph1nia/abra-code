@@ -1,3 +1,4 @@
+import { goal as workGoal } from "../helpers/work-goal.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Effect, Schema } from "effect";
@@ -66,15 +67,16 @@ test("required skills resolve by native ID at the worker location without granti
 test("captured context is immutable, survives source edits and diagnostics are read-only", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const issue = Id.IssueId.make("context");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("context")));
   const e = await run(f.controller.start(issue));
   assert.ok(e.worker_context_id);
   const original = await run(readWorkerContext(f.records.store, e.worker_context_id));
   await run(
     writeFile(join(f.config.home, "packages/agents/assets/explore.md"), "Changed role guidance"),
   );
-  f.work.issues.get(issue)!.description = "Changed issue request";
+  f.seed.db
+    .prepare("UPDATE issues SET description = ? WHERE id = ?")
+    .run("Changed issue request", issue);
   assert.deepEqual(await run(readWorkerContext(f.records.store, e.worker_context_id)), original);
   assert.ok(!original.guidance.content.startsWith("---"));
   await run(
@@ -103,7 +105,7 @@ test("captured context is immutable, survives source edits and diagnostics are r
       contexts.prepare(
         e,
         "explore",
-        f.work.issues.get(issue)!,
+        await run(f.work.show(issue)),
         original.environment,
         e.explore_session_id!,
         original.prompt_id,
@@ -122,8 +124,7 @@ test("captured context is immutable, survives source edits and diagnostics are r
 test("pre-session capability failures remain inspectable and release only unsubmitted capacity", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const issue = Id.IssueId.make("missing-skill");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("missing-skill")));
   f.runtime.preflight = () =>
     Effect.fail(
       new CrewError(
@@ -145,8 +146,7 @@ test("pre-session capability failures remain inspectable and release only unsubm
 test("request validation blocks missing tools, accepts patch and fences replaced observations", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const issue = Id.IssueId.make("request-tools");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("request-tools")));
   const e = await run(f.controller.start(issue));
   const ctx = await run(readWorkerContext(f.records.store, e.worker_context_id!));
   const names = ctx.environment.tools.map((group) =>
@@ -205,8 +205,7 @@ test("example configuration decodes with role prerequisites", async () => {
 test("legacy and malformed provenance stay explicit while context summaries remain bounded", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const issue = Id.IssueId.make("legacy-context");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("legacy-context")));
   const e = await run(f.controller.start(issue));
   const context = await run(readWorkerContext(f.records.store, e.worker_context_id!));
   await run(
@@ -244,8 +243,7 @@ test("legacy and malformed provenance stay explicit while context summaries rema
 test("partial context persistence is not prompt admission and cannot replace the active payload", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const issue = Id.IssueId.make("orphan-context");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("orphan-context")));
   const e = await run(f.controller.start(issue));
   const original = await run(readWorkerContext(f.records.store, e.worker_context_id!));
   const id = Id.MessageId.make("msg_orphan_context");
@@ -261,7 +259,7 @@ test("partial context persistence is not prompt admission and cannot replace the
       contexts.prepare(
         e,
         "explore",
-        f.work.issues.get(issue)!,
+        await run(f.work.show(issue)),
         original.environment,
         e.explore_session_id!,
         id,
@@ -306,8 +304,7 @@ test("cold native registry activation is awaited without creating a session", as
 test("policy incompatibility is retained as a blocker without replacing captured instructions", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const issue = Id.IssueId.make("policy-drift");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("policy-drift")));
   const e = await run(f.controller.start(issue));
   const context = await run(readWorkerContext(f.records.store, e.worker_context_id!));
   const prior = { ...context, policy: "previous-policy-version" };
@@ -325,8 +322,7 @@ test("policy incompatibility is retained as a blocker without replacing captured
 test("a deliberate retry keeps captured profiles despite live config edits and preserves old context", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const issue = Id.IssueId.make("new-profile-context");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("new-profile-context")));
   const e = await run(f.controller.start(issue));
   const previous = await run(readWorkerContext(f.records.store, e.worker_context_id!));
   const session = f.runtime.sessions.get(e.explore_session_id!)!;
@@ -354,8 +350,7 @@ test("a retained payload cannot be reused for another role, prompt or generation
   const { compatibleContext } = await import("../../src/workflow/worker-context.ts");
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const issue = Id.IssueId.make("bound-context");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("bound-context")));
   const e = await run(f.controller.start(issue));
   const context = await run(readWorkerContext(f.records.store, e.worker_context_id!));
   assert.doesNotThrow(() => compatibleContext(context, context));
@@ -373,8 +368,7 @@ test("a retained payload cannot be reused for another role, prompt or generation
 test("browser context derives distinct session names and evidence directories without altering old captures", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const issue = Id.IssueId.make("browser-context");
-  f.work.add(issue);
+  const { id: issue } = await run(f.work.create(workGoal("browser-context")));
   const e = await run(f.controller.start(issue));
   const previous = await run(readWorkerContext(f.records.store, e.worker_context_id!));
   const contexts = new WorkerContexts(f.records, f.config);
@@ -383,7 +377,7 @@ test("browser context derives distinct session names and evidence directories wi
       contexts.prepare(
         e,
         "explore",
-        f.work.issues.get(issue)!,
+        await run(f.work.show(issue)),
         previous.environment,
         Id.SessionId.make(id),
         Id.MessageId.make(`msg_${id}`),
