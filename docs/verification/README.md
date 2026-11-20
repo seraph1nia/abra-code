@@ -159,8 +159,8 @@ On 2026-11-19, verification used Node 26.13.0 and pnpm 12.21.0 on Linux. The tes
 
 The [export measurements](../reports.md#measured-export-cost) include bytes read, source opens, application builds and diagram work. The [test fixture measurements](../testing.md) document the matched records and checkpoint runs.
 
-The parallel and acceptance journeys define their provider checkpoints alongside
-the scenario in `tests/e2e/parallel.ts` and `tests/e2e/acceptance.ts`. Each
+The parallel, acceptance and lead journeys define their provider checkpoints alongside
+the scenario in `tests/e2e/parallel.ts`, `tests/e2e/acceptance.ts` and `tests/e2e/leads.ts`. Each
 fixture run creates its own gates and releases pending provider calls on teardown.
 
 ### Contextual cockpit

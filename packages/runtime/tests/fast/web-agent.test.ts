@@ -5,7 +5,7 @@ import { SessionMessage } from "@opencode/schema/session-message";
 import { AbstractAgent } from "@ag-ui/client";
 import { EventType } from "@ag-ui/core";
 import { from, lastValueFrom, toArray } from "rxjs";
-import { IssueId } from "../../src/identities.ts";
+import { Fingerprint, FormId, IssueId, timestampAt } from "../../src/identities.ts";
 import { WorkspaceStateJson } from "../../src/web/workspace-wire.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -13,6 +13,8 @@ import { Clock, Deferred, Effect, Exit, Fiber, Scope, Stream, Schema, PubSub } f
 import { TestClock } from "effect/testing";
 import { AbraAgent, AbraRunner, WorkspaceFeed } from "../../src/web/agent.ts";
 import { CrewError } from "../../src/domain.ts";
+import { retainedExecution } from "../helpers/retained-execution.ts";
+import { deliveryOutcome } from "../../src/workflow/delivery-outcome.ts";
 import { WorkspaceFixture } from "../helpers/web.ts";
 
 for (const termination of ["EOF", "failure"] as const)
@@ -164,13 +166,36 @@ test("client tool/context injection cannot alter native Abra configuration", asy
 
 test("unchanged fallbacks publish freshness only and scoped bursts keep off-page issue hints", async () => {
   const source = new WorkspaceFixture();
+  const item = source.value.work.work[0]!;
+  const fingerprint = Fingerprint.make("plan");
+  const { execution } = await retainedExecution({
+    issue_id: item.issue_id,
+    plan_fingerprint: fingerprint,
+    approval_receipts: [
+      { kind: "plan", fingerprint, form_id: FormId.make("frm_plan"), session_id: source.sessionID },
+    ],
+  });
   const scopes: import("@abracode/contracts/web/changes").ChangeScope[] = [];
   let reads = 0;
   source.observe = (scope: import("@abracode/contracts/web/changes").ChangeScope) =>
     Effect.gen(function* () {
       reads++;
       scopes.push(scope);
-      return { ...source.value, at: new Date(yield* Clock.currentTimeMillis).toISOString() };
+      const now = yield* Clock.currentTimeMillis;
+      return {
+        ...source.value,
+        at: new Date(now).toISOString(),
+        work: {
+          ...source.value.work,
+          work: [
+            {
+              ...item,
+              phase: "awaiting_plan_approval",
+              outcome: deliveryOutcome(execution, "in_progress", now),
+            },
+          ],
+        },
+      };
     });
   await Effect.runPromise(
     Effect.gen(function* () {
@@ -197,6 +222,9 @@ test("unchanged fallbacks publish freshness only and scoped bursts keep off-page
         "Initial read plus bootstrap delivery; wire projector suppresses the duplicate sequence",
       );
       assert.equal(events.filter((event) => event.type === "freshness").length, 3);
+      execution.approval_receipts[0]!.authorized_at = timestampAt(15000);
+      yield* TestClock.adjust("5 seconds");
+      assert.equal(events.filter((event) => event.type === "snapshot").length, 3);
       source.value = { ...source.value, busy: true };
       yield* feed.notify({ transcript: true });
       yield* TestClock.adjust("200 millis");

@@ -143,9 +143,7 @@ export function nativeTest(
     let holdModelWorker = false,
       modelWorkerHeld = false;
     let releaseModelWorker: (() => void) | undefined;
-    let holdLeadResearch = false,
-      leadResearchHeld = false;
-    let releaseLeadResearch: (() => void) | undefined;
+    const leads = leadJourney();
     let holdApply = false,
       applyHeld = false;
     let releaseApply: (() => void) | undefined;
@@ -235,13 +233,7 @@ export function nativeTest(
       providerRequests[role] = (providerRequests[role] ?? 0) + 1;
       await acceptance.observe(role, user);
       await parallel.observe(role, user);
-      if (role === "research" && holdLeadResearch && user.includes("lead-blocker-investigation")) {
-        holdLeadResearch = false;
-        leadResearchHeld = true;
-        await new Promise<void>((done) => {
-          releaseLeadResearch = done;
-        });
-      }
+      await leads.observe(role, user);
       if (role === "research" && holdModelWorker && user.includes("model-capture-acceptance")) {
         holdModelWorker = false;
         modelWorkerHeld = true;
@@ -382,73 +374,9 @@ export function nativeTest(
             },
           });
       }
-      if (user.startsWith("Controller project-lead request")) {
-        const revision = Number(/registration revision (\d+)/.exec(user)?.[1]);
-        const request_id = /Controller project-lead request ([^,]+)/.exec(user)?.[1];
-        calls.push({ name: "abra_lead_action", args: { action: "status", revision } });
-        const decision = /decision:(\d+):([a-zA-Z0-9._-]+?)\. /.exec(user);
-        if (decision)
-          calls.push({
-            name: "abra_lead_action",
-            args: {
-              action: "answer",
-              revision,
-              issue_id: /Source issue: ([^. ]+)/.exec(user)?.[1],
-              generation: Number(decision[1]),
-              key: decision[2],
-              body: "Use the existing retained read-only source scope; no additional changes are authorized.",
-            },
-          });
-        if (user.includes("lead-native-acceptance"))
-          calls.push({
-            name: "abra_lead_action",
-            args: {
-              action: "propose",
-              revision,
-              batch: {
-                request_id: "native-lead-proposal",
-                tasks: [
-                  {
-                    client_key: "investigation",
-                    repository_id: "lead-project",
-                    title: "Scoped lead investigation",
-                    description: "Read source and retain evidence",
-                    workflow_policy: "research-only",
-                    scope: {
-                      goal: "Read source",
-                      acceptance: ["Identify the source behavior"],
-                      constraints: ["Read only"],
-                    },
-                  },
-                ],
-              },
-            },
-          });
-        if (request_id !== "native-lead-recovery-answer")
-          calls.push({
-            name: "abra_lead_action",
-            args: {
-              action: "reply",
-              revision,
-              request_id,
-              body: "Native project-lead correlated findings retained.",
-            },
-          });
-      } else if (
-        user.startsWith(
-          "AbraCode response-only reminder for original project-lead request native-lead-recovery-answer",
-        )
-      ) {
-        calls.push({
-          name: "abra_lead_action",
-          args: {
-            action: "reply",
-            revision: Number(/registration revision (\d+)/.exec(user)?.[1]),
-            request_id: "native-lead-recovery-answer",
-            body: "Native project-lead recovery answer retained.",
-          },
-        });
-      } else if (role === "supervisor" && user.includes("Validate AbraCode tool input contracts")) {
+      const leadCalls = leads.calls(user);
+      if (leadCalls) calls.push(...leadCalls);
+      else if (role === "supervisor" && user.includes("Validate AbraCode tool input contracts")) {
         calls.push(
           {
             name: "abra_work_create",
@@ -678,21 +606,8 @@ export function nativeTest(
         const issueID = /AbraCode attention for ([^. ]+)\./.exec(user)![1];
         if (user.includes(": decision_pending.")) {
           const decision = JSON.parse(user.split(": decision_pending. ")[1].split("\n")[0]);
-          // Observe this notice without answering the lead-owned question. Leaving
-          // it admitted occupies the shared attention slot and prevents the
-          // project lead from receiving the decision it must actually answer.
-          if (decision.key === "native-lead-decision")
-            calls.push({
-              name: "abra_work_attention",
-              args: {
-                issue_id: issueID,
-                incident_id: /Incident ([^,]+),/.exec(user)![1],
-                generation: Number(/generation (\d+)/.exec(user)![1]),
-                action: "handled",
-                reason:
-                  "Observed the decision notice; the assigned project lead must supply the scoped answer",
-              },
-            });
+          const notice = leads.decisionNotice(decision.key, issueID, user);
+          if (notice) calls.push(notice);
           else
             calls.push(
               { name: "abra_work_status", args: { issue_id: issueID } },
@@ -945,7 +860,7 @@ export function nativeTest(
       releaseStreamProof.tool?.();
       releaseStreamProof.text?.();
       acceptance.close();
-      releaseLeadResearch?.();
+      leads.close();
       const recordEvidence = async (cleanupComplete: boolean) => {
         if (!evidenceDirectory) return;
         const evidenceDir = resolve(evidenceDirectory);
@@ -1390,7 +1305,7 @@ export function nativeTest(
         release: () => releaseModelWorker?.(),
       });
     const runLeads = () =>
-      leadJourney({
+      leads.run({
         observe: (value) => engineeringEvidence.push(value),
         snapshot: () => nativeObservation(() => observer.snapshot({}, loc)),
         leadEvidence: (query) => nativeObservation(() => observer.leads(query, loc)),
@@ -1400,12 +1315,6 @@ export function nativeTest(
         supervisor: supervisor.id,
         invoke,
         eventually,
-        holdResearch: () => {
-          holdLeadResearch = true;
-          leadResearchHeld = false;
-        },
-        held: () => leadResearchHeld,
-        releaseResearch: () => releaseLeadResearch?.(),
         leadTool: async (session, tool, args) =>
           ((await api.invoke({ tool, args, session }, loc)) as any).result,
         restart,

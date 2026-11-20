@@ -1,3 +1,4 @@
+import { JourneyGates } from "./journey-gates.ts";
 import * as Id from "../../src/identities.ts";
 import type {
   LeadEvidenceQuery,
@@ -8,7 +9,7 @@ import { repo } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { type WorkSnapshot } from "../../src/visibility/protocol.ts";
 
-export async function leadJourney(o: {
+type JourneyOptions = {
   root: string;
   home: string;
   client: any;
@@ -17,15 +18,13 @@ export async function leadJourney(o: {
   leadTool: (session: string, tool: string, args: unknown) => Promise<any>;
   eventually: <T>(action: () => Promise<T | undefined>, timeout?: number) => Promise<T>;
   restart: () => Promise<void>;
-  holdResearch: () => void;
-  held: () => boolean;
-  releaseResearch: () => void;
   observe: (value: unknown) => void;
   snapshot: () => Promise<WorkSnapshot>;
   leadEvidence: (
     query: typeof LeadEvidenceQuery.Type,
   ) => Promise<typeof LeadEvidencePageSchema.Type>;
-}) {
+};
+async function runJourney(o: JourneyOptions, holdResearch: () => JourneyGates) {
   const path = await run(repo(o.root, "lead-base"));
   await o.invoke("abra_project_onboard", {
     id: "lead-project",
@@ -279,9 +278,9 @@ export async function leadJourney(o: {
   // An answered request can precede native idle and release of its management
   // slot. Start the routing assertion only after earlier attention has settled.
   await waitForManagementIdle();
-  o.holdResearch();
+  const research = holdResearch();
   const started = await o.invoke("abra_work_start", { issue_id: issue.id });
-  await o.eventually(async () => (o.held() ? true : undefined));
+  await o.eventually(async () => (research.seen.has("research") ? true : undefined));
   await o.leadTool(started.research_session_id, "abra_worker_question", {
     key: "native-lead-decision",
     generation: started.control_generation,
@@ -339,7 +338,7 @@ export async function leadJourney(o: {
     "Use the existing retained read-only source scope; no additional changes are authorized.",
   );
   assert.ok((await status()).requests.some((r: any) => r.request.body.includes("decision:")));
-  o.releaseResearch();
+  research.release("research");
   await o.eventually(async () =>
     (await o.invoke("abra_work_status", { issue_id: issue.id })).execution.current_phase ===
     "completed"
@@ -462,5 +461,112 @@ export async function leadJourney(o: {
     actual_controller_calls: used.length,
     restart: true,
     approvals_unchanged: true,
+  };
+}
+
+function leadCalls(user: string) {
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  if (user.startsWith("Controller project-lead request")) {
+    const revision = Number(/registration revision (\d+)/.exec(user)?.[1]);
+    const request_id = /Controller project-lead request ([^,]+)/.exec(user)?.[1];
+    calls.push({ name: "abra_lead_action", args: { action: "status", revision } });
+    const decision = /decision:(\d+):([a-zA-Z0-9._-]+?)\. /.exec(user);
+    if (decision)
+      calls.push({
+        name: "abra_lead_action",
+        args: {
+          action: "answer",
+          revision,
+          issue_id: /Source issue: ([^. ]+)/.exec(user)?.[1],
+          generation: Number(decision[1]),
+          key: decision[2],
+          body: "Use the existing retained read-only source scope; no additional changes are authorized.",
+        },
+      });
+    if (user.includes("lead-native-acceptance"))
+      calls.push({
+        name: "abra_lead_action",
+        args: {
+          action: "propose",
+          revision,
+          batch: {
+            request_id: "native-lead-proposal",
+            tasks: [
+              {
+                client_key: "investigation",
+                repository_id: "lead-project",
+                title: "Scoped lead investigation",
+                description: "Read source and retain evidence",
+                workflow_policy: "research-only",
+                scope: {
+                  goal: "Read source",
+                  acceptance: ["Identify the source behavior"],
+                  constraints: ["Read only"],
+                },
+              },
+            ],
+          },
+        },
+      });
+    if (request_id !== "native-lead-recovery-answer")
+      calls.push({
+        name: "abra_lead_action",
+        args: {
+          action: "reply",
+          revision,
+          request_id,
+          body: "Native project-lead correlated findings retained.",
+        },
+      });
+  } else if (
+    user.startsWith(
+      "AbraCode response-only reminder for original project-lead request native-lead-recovery-answer",
+    )
+  ) {
+    calls.push({
+      name: "abra_lead_action",
+      args: {
+        action: "reply",
+        revision: Number(/registration revision (\d+)/.exec(user)?.[1]),
+        request_id: "native-lead-recovery-answer",
+        body: "Native project-lead recovery answer retained.",
+      },
+    });
+  } else return undefined;
+  return calls;
+}
+
+export function leadJourney() {
+  let research: JourneyGates | undefined;
+  return {
+    run: (options: JourneyOptions) => runJourney(options, () => (research = new JourneyGates())),
+    close: () => research?.close(),
+    observe(role: string, prompt: string) {
+      if (
+        research &&
+        !research.seen.has("research") &&
+        role === "research" &&
+        prompt.includes("lead-blocker-investigation")
+      )
+        return research.wait("research");
+    },
+    calls: leadCalls,
+    decisionNotice(key: string, issueID: string, user: string) {
+      // Observe this notice without answering the lead-owned question. Leaving
+      // it admitted occupies the shared attention slot and prevents the
+      // project lead from receiving the decision it must actually answer.
+      if (key === "native-lead-decision")
+        return {
+          name: "abra_work_attention",
+          args: {
+            issue_id: issueID,
+            incident_id: /Incident ([^,]+),/.exec(user)![1],
+            generation: Number(/generation (\d+)/.exec(user)![1]),
+            action: "handled",
+            reason:
+              "Observed the decision notice; the assigned project lead must supply the scoped answer",
+          },
+        };
+    },
   };
 }

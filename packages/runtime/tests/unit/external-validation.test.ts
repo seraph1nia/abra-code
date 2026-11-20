@@ -1,7 +1,7 @@
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { writeFile } from "node:fs/promises";
 
-import { test } from "vite-plus/test";
+import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Effect, Schema } from "effect";
 import { encode } from "@toon-format/toon";
@@ -15,6 +15,7 @@ import {
   externalOwns,
 } from "../../src/validation/contracts.ts";
 import { machineDocument, intentDigest } from "../../src/validation/no-mistakes.ts";
+import { ExecutionRecordSchema } from "../../src/storage/contracts.ts";
 import { consumesWorker } from "../../src/workflow/capacity.ts";
 import { CrewError } from "../../src/domain.ts";
 
@@ -161,7 +162,15 @@ test("external launch proof, skipped stages and custody return precede fresh nat
   let e = await run(applying(f));
   f.spec.done = true;
   f.runtime.success(e.apply_session_id!);
+  const writes = vi.spyOn(f.records.store, "set");
   e = await run(f.controller.advance(e.issue_id));
+  const returned = writes.mock.calls
+    .filter(([key]) => key === `execution/${e.issue_id}`)
+    .map(([, record]) => Schema.decodeUnknownSync(ExecutionRecordSchema)(record))
+    .find((record) => record.external_validation?.custody === "returned");
+  assert.equal(returned?.current_phase, "verifying");
+  assert.equal(returned.verification_receipt, undefined);
+  assert.equal(returned.review_receipt, undefined);
   assert.equal(e.current_phase, "verifying");
   assert.equal(e.external_validation!.status, "adopted");
   assert.equal(externalOwns(e), false);

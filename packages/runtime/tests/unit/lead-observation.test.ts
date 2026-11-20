@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "vite-plus/test";
+import { test, vi } from "vite-plus/test";
 import { Schema } from "effect";
 import { Agent } from "@opencode/schema/agent";
 import * as Id from "../../src/identities.ts";
@@ -39,6 +39,45 @@ async function setup() {
   );
   return f;
 }
+
+test("ticket lead reads hydrate only the selected issue as other repositories grow", async (t) => {
+  const f = await setup();
+  t.onTestFinished(() => run(f.close()));
+  const peer = Id.IssueId.make("another-lead-task");
+  f.seed.named(peer, repo);
+  const queries = f.controller.queries;
+  const fleet = vi.spyOn(queries, "observe");
+  const summaries = vi.spyOn(f.work, "repositoryIssueSummaries");
+  const hydrate = f.work["hydrate"].bind(f.work);
+  const hydrated: string[] = [];
+  f.work["hydrate"] = (rows, links) => {
+    hydrated.push(...rows.map((row) => String(row.id)));
+    return hydrate(rows, links);
+  };
+  for (const unrelated of [0, 1000]) {
+    for (let n = 0; n < unrelated; n++)
+      f.seed.named(Id.IssueId.make(`elsewhere-${n}`), Id.RepositoryId.make("frontend"));
+    hydrated.length = 0;
+    summaries.mockClear();
+    const list = await run(queries.leadEvidence({ issue_id: issue }));
+    assert.deepEqual(
+      list.entries.map((lead) => lead.id),
+      [id],
+    );
+    assert.deepEqual(hydrated, [issue]);
+    assert.equal(summaries.mock.calls.length, 0);
+
+    const page = await run(queries.leadEvidence({ issue_id: issue, lead_id: id }));
+    assert.deepEqual(
+      page.detail?.related_work.map((task) => task.issue_id),
+      [peer, issue],
+    );
+    assert.equal(page.detail?.related_total, 2);
+    assert.deepEqual(summaries.mock.calls, [[repo]]);
+    assert.deepEqual(hydrated, [issue, issue]);
+    assert.equal(fleet.mock.calls.length, 0);
+  }
+});
 
 test("scoped lead observation retains paged requests, proposals and accepted work after disable/scope change without mutation", async (t) => {
   const f = await setup();

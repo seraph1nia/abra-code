@@ -1,7 +1,7 @@
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Effect } from "effect";
-import { IssueId, MessageId } from "../../src/identities.ts";
+import { ExecutionId, IssueId, MessageId, ObligationKey } from "../../src/identities.ts";
 import {
   mergeChanges,
   workInvalidationKeys,
@@ -56,6 +56,46 @@ test("semantic deduplication ignores observation freshness and preserves retaine
     semanticWorkspace({ ...value, receipts: [receipt] }),
     semanticWorkspace({ ...value, receipts: [{ ...receipt, at: "2032-01-01T00:00:00Z" }] }),
   );
+});
+test("finishing ages advance without invalidating work and changed routing remains visible", () => {
+  const value = new WorkspaceFixture().value;
+  const snapshot = (at: number, routing: "pending" | "answered") =>
+    semanticWorkspace({
+      ...value,
+      work: {
+        ...value.work,
+        work: value.work.work.map((item) => ({
+          ...item,
+          outcome: {
+            execution_id: ExecutionId.make("finishing"),
+            generation: 1,
+            observed_at: at,
+            finishing: {
+              consumed: 0,
+              automatic_remaining: 2,
+              preflight_age_ms: at - 10,
+              questions: [
+                {
+                  key: ObligationKey.make("finish"),
+                  owner: "user",
+                  question: "Preserve files?",
+                  choices: ["preserve"],
+                  age_ms: at - 20,
+                  routing,
+                },
+              ],
+            },
+            approval: { kind: "merge", state: "recorded" },
+            delivery: { kind: "branch", state: "verified" },
+            cleanup: { state: "blocked", generated_paths: [] },
+            closure: "open",
+            next_action: "Inspect the remaining files",
+          },
+        })),
+      },
+    });
+  assert.deepEqual(snapshot(100, "pending"), snapshot(200, "pending"));
+  assert.notDeepEqual(snapshot(100, "pending"), snapshot(200, "answered"));
 });
 test("native event scopes respect controller home and session ownership across native locations", () => {
   const read = (type: string, data: unknown, directory = "/home/central") =>

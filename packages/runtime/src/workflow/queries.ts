@@ -167,7 +167,7 @@ export class Queries {
       }
       return { active: false };
     });
-  private observeLead = (lead: LeadRecord, bundle: ReadBundle) =>
+  private observeLeadState = (lead: LeadRecord) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
         const observed = yield* this.runtime.session(lead.session_id).pipe(Effect.result);
@@ -185,39 +185,45 @@ export class Queries {
                 : activity === "unavailable" || activity === "unobserved"
                   ? "unknown"
                   : activity;
-        const latest = lead.requests
-          .flatMap((r) => (r.request.reply ? [r.request.reply] : []))
-          .sort((a, b) => b.at.localeCompare(a.at))[0];
         return {
-          id: lead.id,
-          revision: lead.revision,
-          repositories: lead.repositories,
-          enabled: lead.enabled,
-          session_id: lead.session_id,
           session_available: available ?? false,
-          parent_session_id: lead.parent_session_id,
           state,
           observed_at: yield* timestamp,
-          request_count: lead.requests.length,
-          outstanding_count: lead.requests.filter((r) => requiresResponse(r.request)).length,
-          requests: lead.requests
-            .filter((r) => requiresResponse(r.request))
-            .slice(0, 20)
-            .map((r) => ({
-              issue_id: r.issue_id,
-              request_id: r.request.request_id,
-              status: r.request.status,
-              question: diagnosticText(r.request.body ?? "Controller request", 1500),
-              reply: r.request.reply ? diagnosticText(r.request.reply.body, 1500) : undefined,
-            })),
-          pending_proposals: lead.proposals.filter((p) => !p.accepted).map((p) => p.request_id),
-          assigned_work: bundle.issues
-            .filter((i) => lead.repositories.includes(i.repository_id) && i.status !== "closed")
-            .map((i) => i.id),
-          latest_outcome: latest ? diagnosticText(latest.body, 1500) : undefined,
         };
       }),
     );
+  private observeLead = (lead: LeadRecord, bundle: ReadBundle) =>
+    Effect.gen({ self: this }, function* () {
+      const latest = lead.requests
+        .flatMap((r) => (r.request.reply ? [r.request.reply] : []))
+        .sort((a, b) => b.at.localeCompare(a.at))[0];
+      return {
+        id: lead.id,
+        revision: lead.revision,
+        repositories: lead.repositories,
+        enabled: lead.enabled,
+        session_id: lead.session_id,
+        parent_session_id: lead.parent_session_id,
+        ...(yield* this.observeLeadState(lead)),
+        request_count: lead.requests.length,
+        outstanding_count: lead.requests.filter((r) => requiresResponse(r.request)).length,
+        requests: lead.requests
+          .filter((r) => requiresResponse(r.request))
+          .slice(0, 20)
+          .map((r) => ({
+            issue_id: r.issue_id,
+            request_id: r.request.request_id,
+            status: r.request.status,
+            question: diagnosticText(r.request.body ?? "Controller request", 1500),
+            reply: r.request.reply ? diagnosticText(r.request.reply.body, 1500) : undefined,
+          })),
+        pending_proposals: lead.proposals.filter((p) => !p.accepted).map((p) => p.request_id),
+        assigned_work: bundle.issues
+          .filter((i) => lead.repositories.includes(i.repository_id) && i.status !== "closed")
+          .map((i) => i.id),
+        latest_outcome: latest ? diagnosticText(latest.body, 1500) : undefined,
+      };
+    });
   leadOverview = (bundle: ReadBundle) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
@@ -274,20 +280,25 @@ export class Queries {
     domainEffect(
       Effect.gen({ self: this }, function* () {
         const query = yield* decode(LeadEvidenceQuery, input, "Lead evidence query");
-        const issue = query.issue_id ? yield* this.issue(query.issue_id) : undefined;
-        const repository_id = issue?.repository_id ?? query.repository_id!;
-        if (!issue && !(yield* this.project(repository_id)))
-          return yield* new CrewError("NOT_FOUND", "Repository is not registered");
-        const bundle = yield* this.observe();
+        const { repository_id, issues, scan } = yield* this.capture(() =>
+          Effect.gen({ self: this }, function* () {
+            const issue = query.issue_id ? yield* this.issue(query.issue_id) : undefined;
+            const repository_id = issue?.repository_id ?? query.repository_id!;
+            if (!issue && !(yield* this.project(repository_id)))
+              return yield* new CrewError("NOT_FOUND", "Repository is not registered");
+            // A ticket list only needs that ticket. Detail also shows related repository work.
+            const issues =
+              issue && !query.lead_id
+                ? [issue]
+                : yield* this.work.repositoryIssueSummaries(repository_id);
+            return { repository_id, issues, scan: yield* scanLeads(this.records) };
+          }),
+        );
+        const scopedIssueIDs = new Set(
+          query.issue_id ? [query.issue_id] : issues.map((task) => task.id),
+        );
         const requestsFor = (lead: LeadRecord) =>
-          lead.requests.filter((request) =>
-            issue
-              ? request.issue_id === issue.id
-              : bundle.issues.some(
-                  (task) => task.id === request.issue_id && task.repository_id === repository_id,
-                ),
-          );
-        const scan = yield* scanLeads(this.records);
+          lead.requests.filter((request) => scopedIssueIDs.has(request.issue_id));
         const proposalsFor = (lead: LeadRecord) =>
           lead.proposals.filter((proposal) =>
             proposal.batch.tasks.some((task) => task.repository_id === repository_id),
@@ -316,18 +327,16 @@ export class Queries {
           selected ? [selected] : scoped.slice(offset, offset + 20),
           (lead) =>
             Effect.gen({ self: this }, function* () {
-              const summary = yield* this.observeLead(lead, bundle);
+              const observation = yield* this.observeLeadState(lead);
               const requests = requestsFor(lead);
               const proposals = proposalsFor(lead);
               return {
-                id: summary.id,
-                revision: summary.revision,
-                repositories: summary.repositories,
-                enabled: summary.enabled,
-                session_id: summary.session_id,
-                session_available: summary.session_available,
-                state: summary.state,
-                observed_at: summary.observed_at,
+                id: lead.id,
+                revision: lead.revision,
+                repositories: lead.repositories,
+                enabled: lead.enabled,
+                session_id: lead.session_id,
+                ...observation,
                 model: lead.model,
                 request_count: requests.length,
                 outstanding_count: requests.filter((request) => requiresResponse(request.request))
@@ -348,7 +357,7 @@ export class Queries {
           const request_offset = query.request_offset ?? 0,
             proposal_offset = query.proposal_offset ?? 0;
           const captured = new Set([
-            ...(issue ? [issue.id] : []),
+            ...(query.issue_id ? [query.issue_id] : []),
             ...requests.map((request) => request.issue_id),
             ...proposals.flatMap(
               (proposal) =>
@@ -357,10 +366,8 @@ export class Queries {
                   .map((task) => task.issue.id) ?? [],
             ),
           ]);
-          const related = bundle.issues.filter(
-            (task) =>
-              task.repository_id === repository_id &&
-              (selected.repositories.includes(repository_id) || captured.has(task.id)),
+          const related = issues.filter(
+            (task) => selected.repositories.includes(repository_id) || captured.has(task.id),
           );
           detail = {
             lead_id: selected.id,
@@ -420,7 +427,7 @@ export class Queries {
         return yield* decode(
           LeadEvidencePageSchema,
           {
-            issue_id: issue?.id,
+            issue_id: query.issue_id,
             repository_id,
             observed_at: yield* timestamp,
             entries,

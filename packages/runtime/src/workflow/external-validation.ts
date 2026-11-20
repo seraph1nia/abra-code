@@ -9,7 +9,7 @@ import { Clock, Effect } from "effect";
 import { ObligationKey, FormId, Fingerprint, type SessionId } from "../identities.ts";
 import { ensure, type Execution, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import { synchronizeExecution, type Records } from "../storage/store.ts";
+import { removeOwnedField, synchronizeExecution, type Records } from "../storage/store.ts";
 import { type Git } from "../git/repository.ts";
 import { type Runtime } from "../opencode/runtime.ts";
 import { NoMistakes, intentDigest } from "../validation/no-mistakes.ts";
@@ -64,16 +64,14 @@ export class ExternalValidation {
           plan: e.plan_fingerprint,
         }),
       ).pipe(
-        Effect.tapError(() => {
-          if (externalOwns(e)) return Effect.void;
-          delete e.capacity_reservation;
-          return this.records.saveOwned(e, ["capacity_reservation"]);
-        }),
+        Effect.tapError(() =>
+          externalOwns(e)
+            ? Effect.void
+            : this.records.commitOwned(e, { capacity_reservation: removeOwnedField }),
+        ),
       );
-      if (externalOwns(e)) {
-        delete e.capacity_reservation;
-        yield* this.records.saveOwned(e, ["capacity_reservation"]);
-      }
+      if (externalOwns(e))
+        yield* this.records.commitOwned(e, { capacity_reservation: removeOwnedField });
       return e;
     }.bind(this),
     domainEffect,
@@ -156,13 +154,7 @@ export class ExternalValidation {
     domainEffect,
   );
   private save(e: Execution, r: ExternalRecord) {
-    e.external_validation = r;
-    return this.records.saveOwned(e, [
-      "external_validation",
-      "external_history",
-      "current_phase",
-      "capacity_reservation",
-    ]);
+    return this.records.commitOwned(e, { external_validation: r });
   }
   private accept(
     e: Execution,
@@ -218,12 +210,9 @@ export class ExternalValidation {
           e.issue_id,
           `Prepare external validation ${e.issue_id}`,
         );
-        e.implementation_head = head;
-        yield* this.records.saveOwned(e, ["implementation_head"]);
+        yield* this.records.commitOwned(e, { implementation_head: head });
         if (r?.status === "adopted" && r.adoption?.head === head) {
-          e.current_phase = "verifying";
-          yield* this.records.saveOwned(e, ["current_phase"]);
-          return e;
+          return yield* this.records.commitOwned(e, { current_phase: "verifying" });
         }
         const preflight = yield* this.engine.preflight(p, e);
         const count = (e.external_history?.length ?? 0) + (r ? 1 : 0);
@@ -232,7 +221,7 @@ export class ExternalValidation {
           "EXTERNAL_BUDGET",
           "External validation run budget exhausted",
         );
-        if (r) e.external_history = [...(e.external_history ?? []), r];
+        const previous = r;
         r = {
           schema_version: 1,
           generation: e.control_generation,
@@ -250,8 +239,11 @@ export class ExternalValidation {
           next_check_at: now,
           responses: [],
         };
-        e.current_phase = "validating_external";
-        yield* this.save(e, r);
+        yield* this.records.commitOwned(e, {
+          external_validation: r,
+          current_phase: "validating_external",
+          ...(previous && { external_history: [...(e.external_history ?? []), previous] }),
+        });
       }
       if (r.next_check_at > now) return e;
       // Starting the same nonce is a proof-mode replay, never a fresh generic run.
@@ -353,27 +345,19 @@ export class ExternalValidation {
       const at = yield* Clock.currentTimeMillis;
       yield* this.settleQuestions(e, r, at);
       const succeeded = this.success(r);
-      yield* this.save(e, {
-        ...r,
-        custody: "returned",
-        status: succeeded ? "adopted" : "aborted",
-        adoption: { head, at, sync },
-        error: succeeded ? undefined : "Custody returned; external validation did not pass",
+      return yield* this.records.commitOwned(e, {
+        external_validation: {
+          ...r,
+          custody: "returned",
+          status: succeeded ? "adopted" : "aborted",
+          adoption: { head, at, sync },
+          error: succeeded ? undefined : "Custody returned; external validation did not pass",
+        },
+        verification_receipt: removeOwnedField,
+        review_receipt: removeOwnedField,
+        current_phase: succeeded ? "verifying" : "blocked",
+        ...(!succeeded && { resume_phase: "applying" as const }),
       });
-      delete e.verification_receipt;
-      delete e.review_receipt;
-      if (succeeded) e.current_phase = "verifying";
-      else {
-        e.current_phase = "blocked";
-        e.resume_phase = "applying";
-      }
-      yield* this.records.saveOwned(e, [
-        "verification_receipt",
-        "review_receipt",
-        "current_phase",
-        "resume_phase",
-      ]);
-      return e;
     }.bind(this),
     domainEffect,
   );
@@ -415,8 +399,7 @@ export class ExternalValidation {
           session_id: actor,
           status: "prepared" as const,
         };
-        e.validation_setup = setup;
-        yield* this.records.saveOwned(e, ["validation_setup"]);
+        yield* this.records.commitOwned(e, { validation_setup: setup });
         yield* this.runtime.requestApproval(
           setup.session_id,
           setup.form_id,
@@ -426,12 +409,10 @@ export class ExternalValidation {
         if ((yield* this.runtime.approval(setup.session_id, setup.form_id)) !== "approved")
           return e;
         if (setup.status === "prepared") {
-          e.validation_setup = { ...setup, status: "running" };
-          yield* this.records.saveOwned(e, ["validation_setup"]);
+          yield* this.records.commitOwned(e, { validation_setup: { ...setup, status: "running" } });
           const result = yield* Effect.result(this.engine.setup(e));
           setup = { ...setup, status: result._tag === "Success" ? "confirmed" : "uncertain" };
-          e.validation_setup = setup;
-          yield* this.records.saveOwned(e, ["validation_setup"]);
+          yield* this.records.commitOwned(e, { validation_setup: setup });
         }
         yield* this.engine.preflight(p, e);
         return e;

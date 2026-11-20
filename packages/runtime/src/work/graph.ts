@@ -14,6 +14,7 @@ import {
   ExecutionId,
   IssueId,
   type RequestId,
+  type RepositoryId,
 } from "../identities.ts";
 
 import { ScopeDraftSchema, ReportReferenceSchema } from "./scope.ts";
@@ -73,6 +74,9 @@ export interface WorkGraph {
   create(input: NewIssue): Effect.Effect<Issue, CrewError>;
   createBatch(input: BatchInput): Effect.Effect<typeof BatchResultSchema.Type, CrewError>;
   show(id: IssueId): Effect.Effect<Issue, CrewError>;
+  repositoryIssueSummaries(
+    repository: RepositoryId,
+  ): Effect.Effect<Array<Pick<Issue, "id" | "title" | "status">>, CrewError>;
   task(id: IssueId): Effect.Effect<TaskIssue, CrewError>;
   taskEvidence(entries: readonly Issue[]): Effect.Effect<TaskEvidence[], CrewError>;
   readonly list: Effect.Effect<Issue[], CrewError>;
@@ -98,6 +102,13 @@ const sqlEffect = <A>(action: (at: Timestamp) => A) =>
   timestamp.pipe(
     Effect.flatMap((at) => Effect.try({ try: () => action(at), catch: CrewError.from })),
   );
+const decodeIssueSummary = Schema.decodeUnknownSync(
+  Schema.Struct({
+    id: IssueId,
+    title: IssueSchema.fields.title,
+    status: IssueSchema.fields.status,
+  }),
+);
 const decodeIssue = Schema.decodeUnknownSync(IssueSchema);
 
 /** A scoped connection. Transactions contain only synchronous SQL and domain checks. */
@@ -306,6 +317,16 @@ export class SqliteWorkGraph implements WorkGraph {
           "SELECT issue_id, dependency_id FROM dependencies ORDER BY issue_id, dependency_id",
         )
         .all(),
+    );
+  }
+  repositoryIssueSummaries(repository: RepositoryId) {
+    return sqlEffect(() =>
+      this.db
+        .prepare(
+          "SELECT id, title, status FROM issues WHERE repository_id = ? ORDER BY priority, id",
+        )
+        .all(repository)
+        .map((row) => decodeIssueSummary(row)),
     );
   }
   find(input: WorkDiscovery = {}) {
