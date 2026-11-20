@@ -1,4 +1,5 @@
 import { NativeSessionProjection } from "../../src/opencode/agui/native-state.ts";
+import type { ChangeScope, Observation } from "@abracode/contracts/web/changes";
 import { projectNativeMessage } from "../../src/opencode/agui/messages.ts";
 import { NativeAgentAdapter } from "../../src/opencode/agui/adapter.ts";
 import { SessionMessage } from "@opencode/schema/session-message";
@@ -175,12 +176,14 @@ test("unchanged fallbacks publish freshness only and scoped bursts keep off-page
       { kind: "plan", fingerprint, form_id: FormId.make("frm_plan"), session_id: source.sessionID },
     ],
   });
-  const scopes: import("@abracode/contracts/web/changes").ChangeScope[] = [];
+  const scopes: ChangeScope[] = [];
+  const release = Deferred.makeUnsafe<void>();
   let reads = 0;
-  source.observe = (scope: import("@abracode/contracts/web/changes").ChangeScope) =>
+  source.observe = (scope: ChangeScope) =>
     Effect.gen(function* () {
       reads++;
       scopes.push(scope);
+      if (scope.transcript) yield* Deferred.await(release);
       const now = yield* Clock.currentTimeMillis;
       return {
         ...source.value,
@@ -203,7 +206,7 @@ test("unchanged fallbacks publish freshness only and scoped bursts keep off-page
       const feed = yield* WorkspaceFeed.make(source).pipe(
         Effect.provideService(Scope.Scope, scope),
       );
-      const events: { type: string }[] = [];
+      const events: Stream.Success<typeof feed.updates>[] = [];
       const observer = yield* feed.updates.pipe(
         Stream.runForEach((event) =>
           Effect.sync(() => {
@@ -225,22 +228,41 @@ test("unchanged fallbacks publish freshness only and scoped bursts keep off-page
       execution.approval_receipts[0]!.authorized_at = timestampAt(15000);
       yield* TestClock.adjust("5 seconds");
       assert.equal(events.filter((event) => event.type === "snapshot").length, 3);
+      const peerObservations: Observation[] = [];
+      const peer = yield* feed.updates.pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            if (event.type === "snapshot") peerObservations.push(event.snapshot.observation!);
+          }),
+        ),
+        Effect.forkChild,
+      );
+      yield* TestClock.adjust("0 millis");
+      assert.equal(peerObservations.at(-1)?.baseline, true);
       source.value = { ...source.value, busy: true };
       yield* feed.notify({ transcript: true });
       yield* TestClock.adjust("200 millis");
       assert.equal(scopes.at(-1)?.transcript, true);
       assert.equal(scopes.at(-1)?.work_all, undefined);
-      const offPage = IssueId.make("closed-off-page");
-      yield* feed.notify({ issues: [offPage], finder: true });
-      yield* feed.notify({ attention: true });
+      const blockedReads = reads;
+      const offPage = [IssueId.make("closed-off-page"), IssueId.make("another-off-page")];
+      yield* feed.notify({ issues: [offPage[0]!], finder: true });
+      yield* feed.notify({ issues: [offPage[1]!], attention: true });
+      yield* Deferred.succeed(release, undefined);
       yield* TestClock.adjust("400 millis");
-      assert.ok(scopes.some((scope) => scope.issues?.includes(offPage)));
+      assert.equal(reads, blockedReads + 1);
+      assert.deepEqual(scopes.at(-1)?.issues, offPage);
+      const merged = events.at(-1);
+      assert.ok(merged?.type === "snapshot");
+      assert.deepEqual(merged.snapshot.observation?.changes.issues, offPage);
+      assert.deepEqual(peerObservations.at(-1), merged.snapshot.observation);
       const baseline = yield* feed.baseline;
       assert.equal(baseline.observation?.baseline, true);
       assert.ok(baseline.observation!.sequence >= 2);
       const before = reads;
       yield* Scope.close(scope, Exit.void);
       yield* Fiber.interrupt(observer);
+      yield* Fiber.interrupt(peer);
       yield* TestClock.adjust("10 seconds");
       assert.equal(reads, before);
     }).pipe(Effect.provide(TestClock.layer())),

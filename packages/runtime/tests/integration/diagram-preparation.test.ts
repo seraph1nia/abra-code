@@ -98,6 +98,46 @@ test("preparation bounds its queue, releases timed-out work and keeps another wa
   );
 });
 
+test("two renderer cleanup failures release capacity for a queued batch", async () => {
+  let signalClosing!: () => void;
+  let release!: () => void;
+  const bothClosing = new Promise<void>((resolve) => {
+    signalClosing = resolve;
+  });
+  const wait = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let launches = 0;
+  let closing = 0;
+  const owner = new DiagramPreparer({
+    compiler: "fixture",
+    deadlineMs: 1000,
+    factory: async () => {
+      const id = ++launches;
+      return {
+        render: async () => "<svg/>",
+        close: async () => {
+          if (id > 2) return;
+          if (++closing === 2) signalClosing();
+          await wait;
+          throw new Error(`Renderer ${id} failed to close`);
+        },
+      };
+    },
+  });
+  const prepare = (id: string) => owner.prepare([{ id, source: `flowchart LR\nA --> ${id}` }]);
+  const failures = Promise.all([
+    assert.rejects(prepare("one"), /Renderer 1 failed to close/),
+    assert.rejects(prepare("two"), /Renderer 2 failed to close/),
+  ]);
+  await bothClosing;
+  const third = prepare("three");
+  release();
+  await failures;
+  assert.equal((await third).verified, true);
+  assert.equal(launches, 3);
+});
+
 test("derived cache evicts bounded results and refuses aggregate prepared-output overflow", async () => {
   const source = (i: number) => [{ id: `d${i}`, source: `flowchart LR\nA --> B${i}` }];
   const owner = new DiagramPreparer({

@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { mergeChanges, type ChangeScope } from "@abracode/contracts/web/changes";
 import { semanticWorkspace } from "@abracode/contracts/web/observation";
 import { CrewError } from "../domain.ts";
-import { Effect, PubSub, Schedule, Schema, Stream, Semaphore } from "effect";
+import { Effect, PubSub, Queue, Schedule, Schema, Stream, Semaphore } from "effect";
 import { AbstractAgent } from "@ag-ui/client";
 import { EventType, type RunAgentInput } from "@ag-ui/core";
 import {
@@ -64,7 +64,7 @@ export class WorkspaceFeed {
   ) {}
   static make(backend: WebBackend) {
     return Effect.gen(function* () {
-      const signals = yield* PubSub.sliding<void>(1);
+      const signals = yield* Effect.acquireRelease(Queue.dropping<void>(1), Queue.shutdown);
       const events = yield* PubSub.sliding<FeedEvent>(64);
       const mutex = yield* Semaphore.make(1);
       const epoch = randomUUID();
@@ -75,7 +75,7 @@ export class WorkspaceFeed {
       const notify = (scope: ChangeScope) =>
         Effect.sync(() => {
           pending = mergeChanges(pending, scope);
-        }).pipe(Effect.andThen(PubSub.publish(signals, undefined)), Effect.asVoid);
+        }).pipe(Effect.andThen(Queue.offer(signals, undefined)), Effect.asVoid);
       const refresh = notify({ all: true });
       const publish = (event: FeedEvent) =>
         PubSub.publish(
@@ -125,8 +125,7 @@ export class WorkspaceFeed {
           observation: { ...value.observation!, baseline: true },
         })),
       );
-      const subscription = yield* PubSub.subscribe(signals);
-      yield* Stream.fromSubscription(subscription).pipe(
+      yield* Stream.fromQueue(signals).pipe(
         Stream.runForEach(() =>
           Effect.gen(function* () {
             const scope = pending;

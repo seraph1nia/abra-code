@@ -2928,6 +2928,23 @@ test("GitHub finder loads on demand, preserves drafts on inspection and exposes 
   await page.goto(f.origin);
   const work = page.getByRole("button", { name: "Toggle work finder" });
   await work.waitFor();
+  const observeFallback = async (text: string) => {
+    // Leave the feed idle so its server-side fallback discovers this message.
+    f.source.value = {
+      ...f.source.value,
+      messages: [
+        ...f.source.value.messages,
+        {
+          id: "msg_" + f.source.value.messages.length,
+          role: "assistant",
+          text,
+          at: f.source.value.at,
+        },
+      ],
+    };
+    await page.getByText(text, { exact: true }).waitFor();
+  };
+  await observeFallback("Inbox is unmounted");
   assert.equal(reads.length, 0);
   const composer = page.getByRole("textbox", { name: "Message Abra" });
   await composer.fill("Existing draft");
@@ -2949,10 +2966,23 @@ test("GitHub finder loads on demand, preserves drafts on inspection and exposes 
   await page.getByRole("button", { name: /Previous delivery/ }).waitFor();
   await page.getByRole("button", { name: "Clear GitHub filters" }).click();
   await row.waitFor();
+  const setHidden = (hidden: boolean) =>
+    page.evaluate((value) => {
+      Object.defineProperty(document, "hidden", { configurable: true, value });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, hidden);
+  await setHidden(true);
+  await row.waitFor({ state: "detached" });
+  const hiddenReads = reads.length;
+  await page.clock.install();
+  await page.clock.fastForward(310000);
+  await observeFallback("Inbox is hidden");
+  assert.equal(reads.length, hiddenReads);
+  await setHidden(false);
+  await row.waitFor();
   await work.click();
   await row.waitFor({ state: "detached" });
   const before = reads.length;
-  await page.clock.install();
   await page.clock.fastForward(310000);
   assert.equal(reads.length, before);
 });

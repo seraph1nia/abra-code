@@ -16,6 +16,7 @@ import {
   Scope,
   Stream,
 } from "effect";
+import { TestClock } from "effect/testing";
 import { type Context } from "@opencode/plugin/effect/plugin";
 import plugin from "../../src/plugin/index.ts";
 import { ProcessRunner } from "../../src/process.ts";
@@ -200,6 +201,106 @@ test("monitor scope interrupts reconciliation and closes the event subscription"
   assert.equal(reconciliations, 1);
   assert.equal(stopped, true);
   assert.equal(unsubscribed, true);
+});
+
+test("ticks during report recovery reserve one follow-up that reads current state", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  f.config.reconcile_interval_ms = 1000;
+  let ticks = 0;
+  f.scheduler.tick = () =>
+    Effect.sync(() => {
+      ticks++;
+      return [];
+    });
+  const release = Deferred.makeUnsafe<void>();
+  const key = Id.StorageKey.make("test/pending-report");
+  const seen: unknown[] = [];
+  let active = 0;
+  let peak = 0;
+  f.controller.reconcileReports = () =>
+    Effect.gen(function* () {
+      peak = Math.max(peak, ++active);
+      seen.push(yield* f.records.store.get(key));
+      if (seen.length === 1) yield* Deferred.await(release);
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          active--;
+        }),
+      ),
+    );
+  const ctx = { event: { subscribe: () => Stream.never } } as unknown as Context;
+  await run(
+    Effect.gen(function* () {
+      yield* monitor(ctx, f.controller, f.scheduler);
+      yield* TestClock.adjust("3100 millis");
+      assert.equal(ticks, 4);
+      assert.deepEqual(seen, [undefined]);
+      yield* f.records.store.set(key, "new report");
+      yield* Deferred.succeed(release, undefined);
+      yield* TestClock.adjust("0 millis");
+      assert.deepEqual(seen, [undefined, "new report"]);
+      assert.equal(peak, 1);
+      assert.equal(active, 0);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+});
+
+test("report recovery survives failure and a fresh monitor rediscovers interrupted work", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  f.config.reconcile_interval_ms = 1000;
+  let ticks = 0;
+  f.scheduler.tick = () =>
+    Effect.sync(() => {
+      ticks++;
+      return [];
+    });
+  const key = Id.StorageKey.make("test/pending-report");
+  const completed: unknown[] = [];
+  let passes = 0;
+  let interrupted = false;
+  f.controller.reconcileReports = () =>
+    Effect.gen(function* () {
+      passes++;
+      if (passes === 1) return yield* new CrewError("TEST", "Report read failed");
+      const pending = yield* f.records.store.get(key);
+      if (passes === 3)
+        return yield* Effect.never.pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              interrupted = true;
+            }),
+          ),
+        );
+      completed.push(pending);
+    });
+  const ctx = { event: { subscribe: () => Stream.never } } as unknown as Context;
+  await run(
+    Effect.gen(function* () {
+      yield* f.records.store.set(key, "first report");
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* monitor(ctx, f.controller, f.scheduler);
+          yield* TestClock.adjust("1100 millis");
+          assert.deepEqual(completed, ["first report"]);
+          yield* f.records.store.set(key, "unfinished report");
+          yield* TestClock.adjust("2 seconds");
+          assert.equal(ticks, 4);
+          assert.equal(passes, 3);
+        }),
+      );
+      assert.equal(interrupted, true);
+      yield* TestClock.adjust("2 seconds");
+      assert.equal(passes, 3);
+      assert.deepEqual(completed, ["first report"]);
+      yield* monitor(ctx, f.controller, f.scheduler);
+      yield* TestClock.adjust("100 millis");
+      assert.equal(passes, 4);
+      assert.deepEqual(completed, ["first report", "unfinished report"]);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
 });
 
 test("a failed critical section releases its real process lock", async (t) => {

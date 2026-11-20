@@ -171,9 +171,12 @@ export class DiagramBatch {
           return error("limit", "Prepared diagrams and diagnostics exceed 8 MiB");
         return prepared;
       } finally {
-        await cleanup();
-        this.active--;
-        this.queue.shift()?.();
+        try {
+          await cleanup();
+        } finally {
+          this.active--;
+          this.queue.shift()?.();
+        }
       }
     };
     const work = run();

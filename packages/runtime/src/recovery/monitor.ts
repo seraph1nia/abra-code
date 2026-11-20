@@ -8,14 +8,18 @@ import { workerFor } from "../opencode/guards.ts";
 export function monitor(ctx: Context, c: Controller, scheduler: Scheduler) {
   return Effect.gen(function* () {
     const requests = yield* Effect.acquireRelease(Queue.dropping<void>(1), Queue.shutdown);
+    const reports = yield* Effect.acquireRelease(Queue.dropping<void>(1), Queue.shutdown);
+    yield* Stream.fromQueue(reports).pipe(
+      Stream.runForEach(() =>
+        c
+          .reconcileReports()
+          .pipe(Effect.catch((error) => Effect.logError("AbraCode report recovery", error))),
+      ),
+      Effect.forkScoped,
+    );
     const tick = c.reconcile().pipe(
       Effect.andThen(scheduler.tick()),
-      Effect.tap(() =>
-        c.reconcileReports().pipe(
-          Effect.catch((error) => Effect.logError("AbraCode report recovery", error)),
-          Effect.forkScoped,
-        ),
-      ),
+      Effect.andThen(Queue.offer(reports, undefined)),
       Effect.catch((error) =>
         error.code === "LOCKED" ? Effect.void : Effect.logError("AbraCode reconciliation", error),
       ),

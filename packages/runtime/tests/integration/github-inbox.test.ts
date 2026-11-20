@@ -11,6 +11,7 @@ import type { Runner } from "../../src/process.ts";
 import type { InboxQuery, InboxTarget } from "@abracode/contracts/visibility/github-inbox";
 import { workDatabase, workGraphAt } from "../helpers/work-database.ts";
 import { dayMs } from "../../src/work/inbox-index.ts";
+import { Visibility } from "../../src/visibility/read-model.ts";
 
 async function setup(t: Parameters<typeof workDatabase>[0]) {
   const f = await run(fixture);
@@ -158,6 +159,7 @@ async function setup(t: Parameters<typeof workDatabase>[0]) {
 const session = SessionId.make("ses_supervisor");
 test("warm inbox shares bounded reads, resolves private review and keeps remote state independent", async (t) => {
   const { c, graph, target, calls, list, account } = await setup(t);
+  await run(new Visibility(c).snapshot());
   assert.equal(calls.length, 0);
   const [first] = await Promise.all([list(), list()]);
   assert.equal(first.total, 2);
