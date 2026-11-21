@@ -51,7 +51,7 @@ else {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
         "content-security-policy":
-          "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'",
+          "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; media-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'",
         "x-content-type-options": "nosniff",
       });
       response.end(text);

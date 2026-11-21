@@ -665,6 +665,8 @@ limits. See `native-agui-stream.test.ts`, `web-transcript.test.ts` and the
 
 The runtime pins `@a2ui/agent` 0.1.0 and shares `@a2ui/web_core` 0.15.0 with the work catalog. Its public `ExpressParser(catalog, surfaceId, "v1.0").compile(source, true)` consumes an untagged complete body and emits wire messages. Abra accepts one matching work-catalog creation and validates the complete message with its surface decoder. The SDK reports syntax locations and component-property corrections on compiler errors.
 
+The work v5 catalog shares the pinned SDK’s 18 basic component definitions and renderer functions. The work host supplies local icons, a frozen-media policy and HTTP(S)-only, user-activated URL opening. V1–v4 discovery documents retain their original definitions. [Basic catalog guide](https://a2ui.org/specification/v1.0-basic-catalog-implementation-guide/) and [catalog contracts](https://a2ui.org/concepts/catalogs/).
+
 ### Custom A2UI publication contract
 
 AbraCode supports the fixed native `abra_render_ui` publication tool, complete

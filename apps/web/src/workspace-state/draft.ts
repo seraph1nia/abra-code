@@ -51,7 +51,11 @@ export const workspaceDraft = Atom.family((sessionID: string) => {
         return;
       let value: Draft;
       if ("clearSent" in edit) value = { text: "" };
-      else if ("append" in edit) value = { ...prior, text: [prior.text, edit.append].filter(Boolean).join("\n").slice(0, 32768) };
+      else if ("append" in edit)
+        value = {
+          ...prior,
+          text: [prior.text, edit.append].filter(Boolean).join("\n").slice(0, 32768),
+        };
       else if ("text" in edit) value = { ...prior, text: edit.text.slice(0, 32768) };
       else if ("thought" in edit) {
         const { thought: _old, ...rest } = prior;

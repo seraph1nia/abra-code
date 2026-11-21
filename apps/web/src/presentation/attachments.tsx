@@ -345,7 +345,7 @@ function LiveSurface({
       )}
       <WorkViews
         records={[record]}
-      prepareMessage={prepareMessage}
+        prepareMessage={prepareMessage}
         work={previous?.work ?? []}
         liveCoverage={coverage}
         hideLiveWidgets={!previous}

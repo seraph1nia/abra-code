@@ -1,7 +1,7 @@
 {
   "version": 1,
   "distribution": "source clone; dependencies downloaded by the operator from their suppliers",
-  "lock_sha256": "293f3d717ed00f3079a0606e50ce5a1a4ec022c5e9e35ee156858c1f30ed3ea9",
+  "lock_sha256": "6d34cb0a08fc5f3dd17a298e5d9ede9900f19e47c50cec3dcfac4f9abe123366",
   "packages": [
     {
       "id": "@0no-co/graphql.web@1.3.4",
@@ -6492,7 +6492,7 @@
           "sha256": "39d0825be530e8b8aaeb1610c096aaa3c556941c635df77551c45b78cbbcc9a9"
         }
       ],
-      "uses": ["contributor-build", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "a39854f6706b5a0d567468fc1a6eab05de179984f563f66cb089d05f545904e2",
       "disposition": "reviewed: apache-2.0 supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },

@@ -41,6 +41,7 @@ import {
   basicComponentNames,
   contentNames,
   catalog,
+  catalogId,
   implementedCatalog,
   isChartComponent,
   chartComponents,
@@ -51,7 +52,8 @@ import {
 
 injectBasicCatalogStyles();
 type WorkViewContext = {
-  record: Pick<SurfaceRecord, "surface" | "snapshot" | "revision" | "at" | "coverage">;
+  record: Pick<SurfaceRecord, "surface" | "snapshot" | "revision" | "at" | "coverage"> &
+    Partial<Pick<SurfaceRecord, "session_id">>;
   work: readonly WorkItem[];
   liveCoverage?: BindingCoverage;
   hideLiveWidgets?: boolean;
@@ -93,7 +95,8 @@ export const reactWorkCatalog = implementedCatalog<ReactCatalogComponent>([
         const view = useContext(ViewContext);
         return <CatalogMedia kind={name} props={props} frozen={!!view?.frozen} />;
       });
-    if (name === "Icon") return createComponentImplementation(api, ({ props }) => <CatalogIcon name={props.name} />);
+    if (name === "Icon")
+      return createComponentImplementation(api, ({ props }) => <CatalogIcon name={props.name} />);
     return { ...implementation, schema: api.schema };
   }),
   ...contentNames.map(contentImplementation),
@@ -191,7 +194,17 @@ export function GeneratedSurface({
   );
   const diagrams = usePreparedDiagrams(request, preparedDiagrams);
   const [owner] = useState(
-    () => new SurfaceOwner(record, prepareSurface, (view) => view.processor.dispose()),
+    () =>
+      new SurfaceOwner(
+        record,
+        prepareSurface,
+        (view) => view.processor.dispose(),
+        (a, b) =>
+          a.revision === b.revision &&
+          a.at === b.at &&
+          a.session_id === b.session_id &&
+          a.surface.createSurface.surfaceId === b.surface.createSurface.surfaceId,
+      ),
   );
   const view = useSyncExternalStore(owner.subscribe, owner.read, owner.read);
   useEffect(() => owner.replace(record), [owner, record]);
@@ -206,11 +219,22 @@ export function GeneratedSurface({
       if (prepareMessage) prepareMessage(text);
       else setFeedback({ surface: rendered, text: `Report interaction: ${text}` });
     });
-    const failure = rendered.surface.onError.subscribe(({ message }) => setFeedback({ surface: rendered, text: message }));
-    return () => { action.unsubscribe(); failure.unsubscribe(); };
+    const failure = rendered.surface.onError.subscribe(({ message }) =>
+      setFeedback({ surface: rendered, text: message }),
+    );
+    return () => {
+      action.unsubscribe();
+      failure.unsubscribe();
+    };
   }, [rendered, prepareMessage]);
   return (
-    <section className="generated-surface" data-a2ui-renderer="upstream">
+    <section
+      className="generated-surface"
+      data-a2ui-renderer="upstream"
+      data-work-catalog={
+        rendered?.record.surface.createSurface.catalogId === catalogId ? "v5" : undefined
+      }
+    >
       {diagrams.retry && (
         <Button variant="outline" disabled={diagrams.pending} onClick={diagrams.retry}>
           Retry diagrams

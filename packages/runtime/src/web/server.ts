@@ -4,6 +4,7 @@ import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
 import { VerificationViewSchema } from "@abracode/contracts/web/verification";
 import { reviewGroup } from "@abracode/contracts/web/review-api";
 import { ProjectsSchema } from "@abracode/contracts/web/workspace-wire";
+import { catalogIds, workCatalogs } from "@abracode/contracts/web/catalog";
 import { AgentCatalogSchema } from "@abracode/contracts/web/agent-settings";
 import {
   ReviewListSchema,
@@ -58,7 +59,7 @@ const securityHeaders = {
   "referrer-policy": "no-referrer",
   "cache-control": "no-store",
   "content-security-policy":
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: http: data:; media-src 'self' https: http: data:; font-src 'self'; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: http: data:; media-src 'self' https: http: data:; font-src 'self'; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
 };
 const resourceErrors = new Map([
   [
@@ -422,6 +423,13 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
     );
     const routes = Layer.mergeAll(
       workspaceHandlers(options.backend, feed),
+      ...catalogIds.map((id, index) =>
+        HttpRouter.add(
+          "GET",
+          `/catalog/work-v${index + 1}.json`,
+          Effect.sync(() => json(workCatalogs[id], 200)),
+        ),
+      ),
       HttpRouter.add(
         "GET",
         "/THIRD_PARTY_NOTICES.txt",
@@ -499,7 +507,7 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
             ...(preview
               ? {
                   "content-security-policy":
-                    "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'",
+                    "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; media-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'",
                 }
               : {}),
           });

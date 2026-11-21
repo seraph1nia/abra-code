@@ -44,6 +44,8 @@ test(
                     children: [
                       ...(component.children as string[]),
                       "totals",
+                      "details",
+                      "media",
                       ...Object.values(analysisCharts).map((chart) => chart.id),
                       ...fixtures.map((_, i) => `inline${i}`),
                     ],
@@ -52,6 +54,21 @@ test(
             )
             .concat(fixtures.map((d, i) => ({ id: `inline${i}`, component: "Mermaid", ...d })))
             .concat(Object.values(analysisCharts))
+            .concat([
+              {
+                id: "details",
+                component: "Disclosure",
+                label: "Captured snippet",
+                child: "snippet",
+              },
+              { id: "snippet", component: "CodeBlock", code: "  retained()", language: "JS" },
+              {
+                id: "media",
+                component: "Image",
+                url: "https://example.invalid/live.png",
+                description: "Live photo",
+              },
+            ])
             .concat({
               id: "totals",
               component: "PieChart",
@@ -99,6 +116,18 @@ test(
       await report.locator('[data-diagram-state="ready"] .diagram-scroll svg').count(),
       32,
     );
+    await report.getByText("Captured snippet", { exact: true }).click();
+    const functionName = report
+      .locator(".catalog-code code span")
+      .filter({ hasText: /^retained$/ });
+    await functionName.waitFor();
+    const lightColor = await functionName.evaluate((el) => getComputedStyle(el).color);
+    const darkTheme = report.getByRole("checkbox", { name: "Dark theme", exact: true });
+    await darkTheme.check();
+    assert.notEqual(await functionName.evaluate((el) => getComputedStyle(el).color), lightColor);
+    await darkTheme.uncheck();
+    assert.equal(await report.locator(".catalog-code code").textContent(), "  retained()");
+    await report.getByText("Live photo · Media unavailable offline").waitFor();
     const chart = report.getByRole("figure", { name: "Captured totals" });
     await chart.locator("svg path[d]").first().waitFor();
     assert.deepEqual(await chart.locator("dd").allTextContents(), ["4", "2"]);
@@ -255,6 +284,13 @@ test(
           2,
         ),
       );
+    // Reopen the same document with a CSP that declines WebAssembly.
+    const restricted = join(moved, "restricted.html");
+    await writeFile(restricted, html.replace(" 'wasm-unsafe-eval'", ""));
+    await page.goto(pathToFileURL(restricted).href);
+    await page.getByText("Captured snippet", { exact: true }).click();
+    assert.equal(await page.locator(".catalog-code code").textContent(), "  retained()");
+    assert.equal(await page.locator(".catalog-code code span").count(), 0);
     // Preview is a foreground command with its own listener, started only here.
     const preview = spawn(
       resolve("node_modules/.bin/tsx"),

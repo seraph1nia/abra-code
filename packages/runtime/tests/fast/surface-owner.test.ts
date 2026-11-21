@@ -40,3 +40,25 @@ test("generated surface lifecycle stages replacements and recreates retired proc
   replay();
   assert.ok(created.every((view) => view.disposed === 1));
 });
+
+test("a refresh retains input state for an immutable revision and retries a failed replacement", () => {
+  const owner = new SurfaceOwner(
+    { revision: 1, valid: true },
+    (record) => {
+      if (!record.valid) throw new Error("unavailable");
+      return { draft: "" };
+    },
+    () => {},
+    (a, b) => a.revision === b.revision,
+  );
+  const release = owner.subscribe(() => {});
+  owner.read().rendered!.draft = "Edited";
+  owner.replace({ revision: 1, valid: true });
+  assert.equal(owner.read().rendered!.draft, "Edited");
+  owner.replace({ revision: 2, valid: false });
+  assert.ok(owner.read().error);
+  owner.replace({ revision: 2, valid: true });
+  assert.equal(owner.read().error, undefined);
+  assert.equal(owner.read().rendered!.draft, "");
+  release();
+});

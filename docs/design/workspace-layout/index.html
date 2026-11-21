@@ -1,47 +1,1689 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AbraCode workspace layout study</title>
-<style>
-:root{font:16px/1.55 "Source Sans 3",system-ui,sans-serif;color:#203044;background:#f6f8fb;--ink:#173650;--accent:#17559c;--line:#cdd7e2}*{box-sizing:border-box}body{margin:0}header,main,footer{max-width:1360px;margin:auto;padding:1rem clamp(1rem,4vw,4rem)}header{background:#163651;color:white;max-width:none}header>div{max-width:1240px;margin:auto}nav{display:flex;gap:1rem;align-items:center;flex-wrap:wrap}header a{color:white}a{color:var(--accent);text-underline-offset:3px}h1,h2,h3{line-height:1.15;color:var(--ink)}h1{font-size:clamp(2rem,5vw,3.7rem);color:white;margin:.55em 0 .2em;letter-spacing:-.05em}h2{font-size:clamp(1.6rem,3vw,2.25rem);letter-spacing:-.035em;margin-top:2em}h3{font-size:1.15rem;margin:1.7em 0 .45em}p,li{max-width:82ch}header p{max-width:73ch}section{scroll-margin-top:1rem}.call{padding:1rem 1.2rem;border-left:4px solid #478bc1;background:#e9f1f8;max-width:82ch}.act{display:inline-block;padding:.6rem 1rem;border-radius:.4rem;background:#fff;color:#173650;font-weight:650;text-decoration:none}.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:.45rem;background:#fff}table{width:100%;border-collapse:collapse;font-size:.92rem}th,td{text-align:left;vertical-align:top;padding:.8rem;border-bottom:1px solid var(--line)}thead th{background:#e7edf4;color:var(--ink)}tbody th{font-weight:650}.group th{background:#dae6ef;color:var(--ink);font-size:1.05rem}.group small{font-weight:400;display:block}.map td:first-child{font-weight:600}.filters{display:flex;gap:.7rem;align-items:center;flex-wrap:wrap;margin:1rem 0}.filters input,.filters select{font:inherit;border:1px solid #8194aa;border-radius:.3rem;padding:.5rem;min-width:0;max-width:100%}.chips{display:flex;gap:.5rem 1.2rem;flex-wrap:wrap}details{margin:.6rem 0}summary{cursor:pointer}code{background:#e7edf4;padding:.12rem .25rem}footer{margin-block:2rem}a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #c9790b;outline-offset:3px}#inventoryTable{table-layout:fixed;min-width:950px}#inventoryTable col:nth-child(1){width:15%}#inventoryTable col:nth-child(2){width:16%}#inventoryTable col:nth-child(3){width:27%}#inventoryTable col:nth-child(4){width:18%}#inventoryTable col:nth-child(5){width:24%}
-@media(max-width:720px){.inventorybox{border:none;background:transparent}.inventorybox table,.inventorybox tbody,.inventorybox tr,.inventorybox td,.inventorybox th{display:block}#inventoryTable{min-width:0}.inventorybox thead,.inventorybox colgroup{display:none}.inventorybox tr{padding:.8rem;background:white;border:1px solid var(--line);margin-bottom:.5rem;border-radius:.4rem}.inventorybox td,.inventorybox th{border:none;padding:.2rem}.inventorybox td:before{content:attr(data-label) " · ";color:#455c71;font-weight:650}.inventorybox .group{background:#dae6ef}.inventorybox .group th{background:transparent}.map{min-width:620px}}[hidden]{display:none!important}
-</style></head><body><header><div><nav><b>AbraCode</b> <span>Design study · 21 November 2026</span></nav><h1>Finding your way through Abra</h1><p>Keep the conversation one click away. Give work, GitHub and personal thoughts room to browse, and let one search open the exact item you came for.</p><nav><a class="act" href="mockups.html">Explore the mockups</a><a href="#inventory">Current UI inventory</a><a href="#search">Search and commands</a><a href="#memos">Memos</a></nav></div></header><main>
-<section><h2>What the sidebar is asking you to do</h2><p>Try finding a closed local task. “Work” opens a column with a Thoughts button, a shared query, a project selector and a GitHub inbox. “Closed” inside GitHub filters selects remote issues and PRs. The “Closed” button farther down selects SQLite tasks. Capacity then sits between that filter and its results. Both lists have their own pagination, and the fleet total below them still covers every project. Each control makes sense in isolation. Their order makes it hard to tell what a click or a count refers to.</p>
-<p>On a phone the same stack occupies the entire Canvas. On a first visit, Canvas means “find work.” On a later visit it may open yesterday’s report. Getting from chat to a note can include Canvas → Find other work → Thoughts → result → Ask Abra. A person who remembers the note’s wording still has to know where it lives.</p>
-<p class="call"><strong>Recommendation.</strong> Reserve the desktop sidebar for destinations. Put one collection and its own filters in the main area. Keep a single Abra conversation and make every durable item addressable through Search. On phones, expose Chat, Work and Thoughts directly.</p></section>
-<section id="layout"><h2>Where each part goes</h2><div class="scroll" tabindex="0"><table class="map"><thead><tr><th>Destination</th><th>Desktop</th><th>Phone</th><th>Reason for the placement</th></tr></thead><tbody>
-<tr><td>Chat</td><td>Landing view. Transcript, its attachments and composer occupy the main area. Opening evidence from chat adds a right-hand reader on wide screens.</td><td>Chat tab. Open evidence full screen. Back or Ask Abra restores the draft and reading position.</td><td>Preserves the relationship between a question and its evidence.</td></tr>
-<tr><td>Work</td><td>Full-width local task list. Repository and state beside its own search. Secondary views for Sessions, Capacity and Recently inspected. Select a row for task detail.</td><td>Work tab → list → detail. Use a section picker inside a task. Returning restores the list’s query, page and scroll.</td><td>Local work stays visible even when GitHub has hundreds of results.</td></tr>
-<tr><td>GitHub</td><td>Separate inbox. Issue/PR, state, label, Abra role and repository belong here. Linked Abra tasks go to their own detail.</td><td>More → GitHub. Global Search can jump straight to an issue or PR.</td><td>Remote “merged” and local “closed” describe different objects.</td></tr>
-<tr><td>Thoughts</td><td>Personal notebook list, filter and reader. Attach to chat, open original, or start a save draft.</td><td>Thoughts tab → note → attach. Return to the same filtered list.</td><td>Thoughts can predate a repository or never become work.</td></tr>
-<tr><td>Attention</td><td>Dedicated queue with ownership, scope, evidence and existing answer forms. Count links here from anywhere.</td><td>Header count → queue → form. Back returns to the interrupted task.</td><td>A blocking decision should stay reachable while the user reads a diff or note.</td></tr>
-<tr><td>Settings</td><td>Bottom of rail. Agents, Repositories, Appearance and About/licenses. Onboard repository next to the registry.</td><td>More → Settings. Search can open an agent or repository directly.</td><td>Administrative items leave the daily queues. The same onboarding action is discoverable in context.</td></tr>
-<tr><td>Search</td><td>Visible at top of rail plus ⌘/Ctrl K. Results can open, attach or prepare a draft.</td><td>Header Search opens a full-screen picker with type filters and a close control above the software keyboard.</td><td>Exact retrieval should take one entry point across screen sizes.</td></tr>
-</tbody></table></div><h3>Pane and history rules</h3><p>Wide desktop: rail, primary content, and at most one contextual reader. A work-list click replaces the list with a readable detail and a Back to Work affordance. A chat evidence click keeps chat in view beside that detail. Tablet: keep the destination names accessible in a menu and show the reader as a sheet. Phone: use one primary surface and a Back destination. Keep the top search and attention controls reachable from any collection. Hide bottom navigation while typing if the keyboard leaves too little room.</p>
-<p>Keep destination, collection filters, selected resource and source revision in navigation state suitable for Back and reload. Keep the unsent conversation draft, attached references, list scroll and reading position per Abra session. Preserve existing issue/tab/file/scope and exact-resource bookmarks. An item opened directly from a bookmark gets its owning collection as a return path. Dismissing Search restores focus to its trigger. Selecting a result moves focus to its heading, or to the composer for a draft action.</p>
-<h3>Two alternatives considered</h3><p><strong>Accordion sections inside Work</strong> would be a low-cost transition. It reduces the initial height, but the shared query, nested scroll and two different meanings of state survive. <strong>A project-first sidebar</strong> helps a single-repository workflow, but personal thoughts and cross-repository triage have no natural parent. Use repository as a remembered filter on Work and GitHub. Revisit a pinned repository shortcut if repeated journeys justify the space.</p></section>
-<section id="search"><h2>One search for items and commands</h2><p>Search starts in All. Provide type filters, a Commands tab and keyboard equivalents such as <code>thought:</code>, <code>session:</code> and <code>&gt;</code> for commands. On an empty query show recent destinations and frequent actions. A row shows type, human title, owning repository/task or notebook, and the effect of Enter. Return the exact ID first, then exact names, then contextual and textual matches. Reserve space for each matching type so a large task queue cannot bury a single matching thought.</p>
-<div class="scroll" tabindex="0"><table class="map"><thead><tr><th>What I remember</th><th>Match and open</th><th>Source and work needed</th></tr></thead><tbody>
-<tr><td>Work title or issue ID</td><td>Search active and closed across projects → task Overview. Offer exact sections and scoped See all.</td><td>Reuse existing bounded local work discovery and resource resolver.</td></tr>
-<tr><td>A note’s words or tag</td><td>Thought snippet, date and tags → note reader. Secondary Attach to chat and Open in Memos.</td><td>Use current personal notebook search and checked detail. Translate an explicit tag to its own field.</td></tr>
-<tr><td>A worker or session</td><td>Role, session ID, owning task/title, repository → exact read-only worker transcript. Main Abra session → Chat.</td><td>Add bounded cross-task discovery over owned sessions. Existing task-scoped worker readers already open exact hits.</td></tr>
-<tr><td>GitHub issue or PR</td><td>Qualified repo/number, title, issue/PR kind → remote item, with links to associated Abra work.</td><td>Reuse observed inbox/coverage and detail. Add a bookmarkable item route. Show both objects when a task links a PR.</td></tr>
-<tr><td>Decision, permission or wait</td><td>Owner, task, label or decision key → bound Attention form or retained decision history for settled items.</td><td>Use current native obligations and scoped decision reads. Resolve the generation before offering a response.</td></tr>
-<tr><td>A report, review or generated view</td><td>Title, task, ID, revision → exact document, feedback form or surface with producing message when available.</td><td>Add a bounded metadata lookup across retained publications. Distinguish frozen output and live widgets. Preserve digests and revision IDs.</td></tr>
-<tr><td>A file, finding or evidence</td><td>Task + path, finding ID, plan passage, check/receipt label → exact plan, diff, finding, screenshot or owning check.</td><td>Reuse scoped evidence readers. Add discovery and typed destinations where individual receipts lack a route. Resolve the parent and identify missing historical bytes.</td></tr>
-<tr><td>Conversation, lead or proposal</td><td>Message/lead ID, task or searchable visible excerpt → originating session, message, communication or proposal with owner context.</td><td>Later: add retained, bounded lookup and anchors. Label loaded-page-only matches until an owner supports cross-history discovery. Compacted content can be unavailable.</td></tr>
-<tr><td>Agent, repository or workspace page</td><td>Name/ID → expanded definition, registry entry, scoped Work, Capacity, history, appearance or licenses.</td><td>Reuse Settings catalogs and route commands. Deep links to individual rows and new destinations need wiring.</td></tr>
-<tr><td>Something to do</td><td>“add project”, “onboard repo”, “save thought”, “pause work”, “review pending”, “download report” → named action with effect and required context.</td><td>Use one command catalogue for menus, palette and slash aliases. Show unavailable actions with their missing prerequisite in scoped search.</td></tr>
-</tbody></table></div>
-<p>Return small independent pages per source. Query the existing owners on demand, allow slow sources to arrive separately, cancel obsolete queries, and expose “More in Thoughts/Work/…” with the query intact. A disconnected notebook should say “Thoughts unavailable · Retry” alongside usable work results. Deduplicate by source and stable identity. A source link can join a task, PR and memo without collapsing them into a single hit. Global search should never claim to cover an unobserved page.</p>
-<h3>What pressing Enter does</h3><p><strong>Open</strong> navigates to an item. <strong>Attach to chat</strong> adds a versioned reference or selected excerpt and preserves the existing words. <strong>Prepare draft</strong> inserts editable text at the caret, adds a newline when needed and focuses the composer. Selecting a template with a nonempty draft must preserve that draft. <strong>Open form</strong> takes the user to the existing decision or export control. Its own submit or download gesture performs the action.</p>
-<p>Make the palette the discoverable catalogue. Add slash aliases only for frequent composer actions. Typing <code>/onboard-repo</code> at the beginning of a composer command opens the same “Onboard repository” entry as “add project” in Search. Choosing it prepares “Help me onboard a repository.” A user can add a path or URL, review it, then Send. <code>/save-thought</code> opens a draft for exact notebook wording. <code>/attach-thought</code> opens the thought picker and attaches the selected reference. Ordinary pasted code, code fences and paths beginning with a slash remain literal unless the user selects a command. Code snippets can be inserted as editable fenced text with source attribution; a selection tied to a file revision should use the existing attachment mechanism.</p>
-<p>A shortcut for “pause this work” prepares the current issue-specific request. A result for “approve plan” opens the native bound form. Keep Stop current Abra turn visible only in its busy conversation. Ranking, aliases and navigation can evolve independently of the controller and its checkpoint checks.</p></section>
-<section id="memos"><h2>Let a thought keep its source</h2>
-<p>AbraCode already reads the private personal notebook across projects. A selected thought carries instance, account, memo resource name and wording hash. The detail read verifies this identity and returns its original Memos URL. The save operation verifies the newly written memo and returns a reference; the accepted issue stores only the chosen excerpt and reference. The pinned Memos browser route was exercised with a signed-in, disposable account. <a href="../../supported-apis.md#memos-26111">Repository API evidence</a> · <a href="https://github.com/usememos/memos/blob/26.11.1/proto/api/memo_service.proto">Pinned Memos API</a></p>
-<ol><li><strong>After saving</strong>, resolve the verified reference and render a receipt with its first line, “Saved to Memos”, Open in Memos and Attach to chat. Retry an uncertain save using the same request identity.</li><li><strong>When using a thought</strong>, show a compact native card in the reader, draft and sent message. Include snippet, optional tags, date and original link. Expand on demand to read full text through existing detail. Use the same card on phone. Keep the private body out of generic search caches and global recent-query previews.</li><li><strong>When work is accepted</strong>, keep the exact accepted excerpt, account and memo identity. Show “Open original in Memos” and an optional live preview. If wording changed, keep the accepted quote and offer to select the current version for a new discussion. If the memo was deleted, access changed, or the configured account differs, preserve retained evidence and explain why live preview is unavailable.</li><li><strong>When following the link</strong>, use the configured notebook origin and validated memo resource. Opening on a phone needs a reachable origin and a signed-in Memos account; loopback there identifies the phone. Keep credentials server-side. Defer a full-page iframe until frame policy, authenticated cookies, phone ergonomics and a benefit over the native card are demonstrated.</li></ol>
-<p>A later “Used in work” section could read a reverse lookup of accepted thought references in the work graph. That gives the reader a path back to the resulting tasks. Writing reciprocal links into private memo text changes its wording hash; make any future Memos writeback a separate, explicit action.</p></section>
-<section id="inventory"><h2>Current UI inventory</h2><p>Each row describes a visible feature or related control family. Section bands identify the default desktop and phone placement. The placement column records exceptions and transitions between surfaces. Filter by any displayed word, including a pane or phone location.</p><div class="filters"><label>Find <input id="query" type="search" placeholder="e.g. session, receipt, Canvas"></label><label>Area <select id="area"><option value="">All areas</option><option>Workspace shell</option><option>Work finder</option><option>Thoughts</option><option>Conversation and input</option><option>Attention and recap</option><option>Task reader</option><option>Settings and standalone surfaces</option></select></label><output id="count" aria-live="polite"></output></div>
-<div class="scroll inventorybox" tabindex="0" aria-label="Workspace inventory"><table id="inventoryTable"><colgroup><col><col><col><col><col></colgroup><thead><tr><th>UI element</th><th>How you reach it</th><th>What appears today</th><th>Pane and neighbours</th><th>Assessment and proposed home</th></tr></thead><tbody data-area="Workspace shell"><tr class="group"><th scope="rowgroup" colspan="5">Workspace shell <small>Desktop · Workspace header or central Chat &nbsp; / &nbsp; Phone · Phone Chat &nbsp; <a href="../../../apps/web/src/workspace.tsx">Source</a></small></th></tr><tr><th scope="row">Boot and connection</th><td data-label="Entry">Open /</td><td data-label="Today">Connecting screen, failure text and automatic retry. Once connected, dot and ready, working or reconnecting label in header.</td><td data-label="Placement">Full page → header</td><td data-label="Assessment">Header text becomes visually hidden on phone. Keep the accessible status beside Abra.</td></tr><tr><th scope="row">Work, Abra, Settings and appearance</th><td data-label="Entry">Top bar → Work, gear or sun/moon selector</td><td data-label="Today">Work toggles finder, Abra titles the conversation, Settings changes route, theme selects System, Light or Dark.</td><td data-label="Placement">Header spans all columns</td><td data-label="Assessment">Move destinations to navigation. Keep theme in Settings and status near Chat.</td></tr><tr><th scope="row">Phone destinations</th><td data-label="Entry">Top strip → Chat, Canvas, Settings or Search</td><td data-label="Today">Chat is the landing view. Canvas recalls the last inspected resource per tab and session, or opens finder. Find other work reopens finder.</td><td data-label="Placement">Phone-only navigation above content</td><td data-label="Assessment">Canvas can mean a list, a file or a report. Give lists stable names and detail a Back destination.</td></tr><tr><th scope="row">Global Search</th><td data-label="Entry">Header, Settings, phone Search or ⌘/Ctrl K</td><td data-label="Today">Modal input, keyboard-highlighted rows, status and See all results in Work. Searches up to eight active/closed local tasks. Exact ID can lead.</td><td data-label="Placement">Dialog over current route</td><td data-label="Assessment">Good entry point. Expand sources and carry query plus type into results.</td></tr><tr><th scope="row">Navigation commands</th><td data-label="Entry">Open Search, type a label or leave blank</td><td data-label="Today">Return to chat, Open Work finder, Open Settings. Conditional resume, pending decisions and selected task’s Plan, Diff, Verification and Reports.</td><td data-label="Placement">Same dialog as task hits</td><td data-label="Assessment">Give commands a distinct verb and effect. Preserve return focus on Escape.</td></tr></tbody><tbody data-area="Work finder"><tr class="group"><th scope="rowgroup" colspan="5">Work finder <small>Desktop · Optional 290 px left pane beside Chat &nbsp; / &nbsp; Phone · Canvas → finder, single screen &nbsp; <a href="../../../apps/web/src/work-finder.tsx">Source</a></small></th></tr><tr><th scope="row">Heading and close</th><td data-label="Entry">Work or /?view=finder</td><td data-label="Today">Work heading and X. Selecting a local task normally closes finder and opens its inspector. Finder can be reopened beside it.</td><td data-label="Placement">Top of finder</td><td data-label="Assessment">Opening a task loses visual position in the list. Give Work a full page with restorable filters and scroll.</td></tr><tr><th scope="row">Thoughts entrance</th><td data-label="Entry">Work → Thoughts</td><td data-label="Today">Button swaps the entire finder body for the notebook. Back to Work restores finder.</td><td data-label="Placement">Above the work search field</td><td data-label="Assessment">Personal notes span repositories. Give them a peer destination.</td></tr><tr><th scope="row">Shared query and project</th><td data-label="Entry">Type in Search work or choose All projects</td><td data-label="Today">Debounced text and native project select drive both GitHub and local work. State and paging are independent below.</td><td data-label="Placement">Above two different collections</td><td data-label="Assessment">Scope each list explicitly. Make cross-source search a deliberate action.</td></tr><tr><th scope="row">GitHub filters</th><td data-label="Entry">Work → GitHub filters disclosure</td><td data-label="Today">Issue/PR, open/closed/merged, Abra assignment role, label and Clear GitHub filters.</td><td data-label="Placement">GitHub block nested in finder</td><td data-label="Assessment">Move all four together to GitHub. Local task states have different meanings.</td></tr><tr><th scope="row">GitHub results and freshness</th><td data-label="Entry">Scroll GitHub inbox, Refresh GitHub or use its page buttons</td><td data-label="Today">Repo, number, title, author, draft/state, assignment and labels. Observed/matching counts, per-repo coverage, last checked, errors and partial labels.</td><td data-label="Placement">Own scroll area capped at 38dvh above Local work</td><td data-label="Assessment">Give this queue room to read titles. Keep coverage next to results and distinguish remote state from local role.</td></tr><tr><th scope="row">GitHub issue or PR</th><td data-label="Entry">Select remote result</td><td data-label="Today">Right-hand sheet with body, author, state/time, original GitHub link, recent comments and partial-discussion notice, base/head and reviewed revision.</td><td data-label="Placement">Modal sheet over finder, including phone</td><td data-label="Assessment">Give detail a route with return to the filtered inbox.</td></tr><tr><th scope="row">Linked work and intake</th><td data-label="Entry">GitHub detail → role/status link or Ask Abra</td><td data-label="Today">Linked task opens Overview or Reports for a closed review. Open issue/PR offers pickup/private-review prompt in composer.</td><td data-label="Placement">Sheet → inspector or draft</td><td data-label="Assessment">Keep linked identities visible. Label the action as drafting a request.</td></tr><tr><th scope="row">Local work filters and rows</th><td data-label="Entry">Work → Local work → Active, Closed or All → task</td><td data-label="Today">Status dot and title, phase, capacity wait, blockers, native activity. Match count and Previous/Next, 50 per page.</td><td data-label="Placement">Second result list in finder, below capacity</td><td data-label="Assessment">Default Work to local tasks. Use a concise row with repository, phase and next blocker.</td></tr><tr><th scope="row">Capacity</th><td data-label="Entry">Open finder, optionally choose project</td><td data-label="Today">Worker use/limit and retained execution slots/limit, plus idle-wait explanation for workspace and selected project.</td><td data-label="Placement">Between local filters and rows</td><td data-label="Assessment">Move detail to Work → Capacity. Link a waiting task to the relevant capacity scope.</td></tr><tr><th scope="row">Fleet overview</th><td data-label="Entry">Below local results → Fleet across all projects → project</td><td data-label="Today">Disclosure of global status counts, per-project counts/attention, native observation coverage, completed today/timezone and stale/unavailable states.</td><td data-label="Placement">Below local pagination, independent of query</td><td data-label="Assessment">Put global totals under Work → Capacity with scope and observation time. A filtered list should never imply filtered totals.</td></tr><tr><th scope="row">Repository onboarding</th><td data-label="Entry">Bottom of finder → Add a project, or empty Chat suggestion</td><td data-label="Today">Closes finder and seeds a natural-language request in main draft. Actual intake continues with Abra.</td><td data-label="Placement">Finder footer alongside Licenses</td><td data-label="Assessment">Call it Onboard repository. Put it in Search and Settings → Repositories, with a composer alias.</td></tr><tr><th scope="row">Licenses</th><td data-label="Entry">Bottom of finder → Licenses</td><td data-label="Today">Opens third-party notices as a separate text document.</td><td data-label="Placement">Finder footer, external tab</td><td data-label="Assessment">Move to Settings → About. Leave portable report notices in the export.</td></tr></tbody><tbody data-area="Thoughts"><tr class="group"><th scope="rowgroup" colspan="5">Thoughts <small>Desktop · Replaces the left finder content &nbsp; / &nbsp; Phone · Inside phone Canvas in place of finder &nbsp; <a href="../../../apps/web/src/thoughts.tsx">Source</a></small></th></tr><tr><th scope="row">Browse and refine</th><td data-label="Entry">Work → Thoughts → Search thoughts</td><td data-label="Today">Private notebook snippets, created time, tags. Literal text, tag, From/Before UTC, explicit search, cursor-backed Previous/Next and retry.</td><td data-label="Placement">Same pane as search form, across all projects</td><td data-label="Assessment">Give notes their own page. Keep date/tag filters there and send global text searches to this source.</td></tr><tr><th scope="row">Read and open original</th><td data-label="Entry">Select a snippet</td><td data-label="Today">Date and full whitespace-preserved text, Back to results, Back to Work, Open in Memos in a new tab.</td><td data-label="Placement">Detail replaces thought list in finder</td><td data-label="Assessment">Make this reader reachable from global results. Preserve the existing original link.</td></tr><tr><th scope="row">Discuss a thought</th><td data-label="Entry">Thought detail → Ask Abra about this</td><td data-label="Today">Attaches a versioned reference to current draft. Chip displays the memo name and Remove thought. User adds text and sends.</td><td data-label="Placement">Finder → composer</td><td data-label="Assessment">Show a recognizable first line, source link and expandable excerpt before sending.</td></tr><tr><th scope="row">Capture a thought</th><td data-label="Entry">Ask Abra to save exact wording, or create a private personal memo in Memos</td><td data-label="Today">Supervisor save returns a verified reference. The finder provides list/detail controls. Native Memos has its own capture UI.</td><td data-label="Placement">Chat or external Memos page</td><td data-label="Assessment">Render a save receipt with the same source card. Offer Save thought as a draft command.</td></tr><tr><th scope="row">Accepted thought on work</th><td data-label="Entry">Task → Overview → Accepted thought</td><td data-label="Today">Account and memo name in text plus the exact accepted excerpt in a blockquote.</td><td data-label="Placement">Embedded in task description area</td><td data-label="Assessment">Add Open in Memos beside the frozen quote. Label the accepted words separately from today’s memo.</td></tr></tbody><tbody data-area="Conversation and input"><tr class="group"><th scope="rowgroup" colspan="5">Conversation and input <small>Desktop · Central pane, retained when navigating &nbsp; / &nbsp; Phone · Chat screen, composer above keyboard &nbsp; <a href="../../../apps/web/src/workspace.tsx">Source</a></small></th></tr><tr><th scope="row">Empty conversation</th><td data-label="Entry">Open Chat before there are messages</td><td data-label="Today">Welcome heading and three prompt starters for attention, onboarding and visualizing work.</td><td data-label="Placement">In transcript above composer</td><td data-label="Assessment">Retain starters for discovery. Give frequent actions a home after welcome disappears.</td></tr><tr><th scope="row">Transcript and history</th><td data-label="Entry">Scroll Chat → Load earlier messages</td><td data-label="Today">You, Abra or Session label, time, Markdown or plain text, code/tables, interleaved tool calls and system notices. Queued text carries delivery mode.</td><td data-label="Placement">One scroll surface between recap and composer</td><td data-label="Assessment">Keep chronology and reading position. Link search hits to the producing message when identifiable.</td></tr><tr><th scope="row">Tool observations</th><td data-label="Entry">Expand a tool in a message or worker transcript</td><td data-label="Today">Status, bounded input/output, or typed task, decision, communication, session, finding and artifact cards with evidence links.</td><td data-label="Placement">Inline at the producing call</td><td data-label="Assessment">Keep compact summaries with explicit links to exact evidence. Expand raw details locally.</td></tr><tr><th scope="row">Generated layouts</th><td data-label="Entry">Message → Open view, or Other retained views disclosure</td><td data-label="Today">Exact surface revision opens in inspector. Inline views include rows, columns, text, tables, status summaries, boards, dependencies, timelines, decisions, report/evidence/resource links and diagrams.</td><td data-label="Placement">Inline attachment → inspector, or retained fallback after messages</td><td data-label="Assessment">Keep inline context. Search generated views by title/ID and revision, preserving live versus captured data.</td></tr><tr><th scope="row">Charts and diagrams</th><td data-label="Entry">Open a generated view or report → chart data, diagram source or enlarge</td><td data-label="Today">Charts include line, bar and pie. Working tree also declares histogram, scatter, heatmap and Gantt plus stacked bars. Mermaid offers source and enlarged zoom controls.</td><td data-label="Placement">Within owning surface or frozen report</td><td data-label="Assessment">Index the parent view. Keep data tables, accessible labels and source fallbacks with the visual.</td></tr><tr><th scope="row">Surface freshness and setup</th><td data-label="Entry">Open retained view, expand saved tasks or repository setup</td><td data-label="Today">Live/captured labels, workspace worker/slot counts, scheduling mode and setup disclosures appear when provided. Older views can lack exact provenance.</td><td data-label="Placement">Alongside generated output</td><td data-label="Assessment">Keep this context with its specific view. Link to Work → Capacity for current workspace totals.</td></tr><tr><th scope="row">Save a view</th><td data-label="Entry">Generated view → select owning task → Save snapshot</td><td data-label="Today">Immutable report action, retry same save on uncertainty, open saved report or save another snapshot.</td><td data-label="Placement">Inline surface actions</td><td data-label="Assessment">Keep an explicit artifact action. Search should open its control without silently saving.</td></tr><tr><th scope="row">Reports and interactive reviews in chat</th><td data-label="Entry">Expand attached preview, open report or fill produced review</td><td data-label="Today">Exact report preview, receipt/status, feedback fields or message-local diagnostics. Other retained views and truncation notices cover gaps.</td><td data-label="Placement">Beside producing message/tool</td><td data-label="Assessment">Keep the evidence in context and offer a search path to the same resource.</td></tr><tr><th scope="row">Composer and draft</th><td data-label="Entry">Chat → Message Abra → Send or Enter</td><td data-label="Today">Textarea, model label, Send button, Shift+Enter newline, session caption and retained draft. Errors expose Refresh.</td><td data-label="Placement">Fixed below transcript</td><td data-label="Assessment">One writable Abra composer. Preserve unsent text when inserting templates or navigating.</td></tr><tr><th scope="row">Busy turn and admission</th><td data-label="Entry">While Abra works, select delivery or Stop. Pending send → Reconcile submission</td><td data-label="Today">Queue/steer selector, Stop current Abra turn, pending status and retained retry identity. Queued input also appears in transcript.</td><td data-label="Placement">Controls beside Send or status immediately above</td><td data-label="Assessment">Keep these live controls in Chat. A task’s Pause request has different scope.</td></tr><tr><th scope="row">Evidence attachments and follow-up</th><td data-label="Entry">Select diff lines, plan passage or image region → Ask Abra</td><td data-label="Today">One selection chip with expandable excerpt and Remove. Sent capture can expand to exact question, answer, worker acknowledgement and recheck.</td><td data-label="Placement">Inspector → draft → message disclosure</td><td data-label="Assessment">Reuse the attachment affordance for recognizable source cards. Keep exact revision and original words.</td></tr></tbody><tbody data-area="Attention and recap"><tr class="group"><th scope="rowgroup" colspan="5">Attention and recap <small>Desktop · Above transcript inside Chat &nbsp; / &nbsp; Phone · Under Chat header, competes with transcript height &nbsp; <a href="../../../apps/web/src/presentation/attention-panel.tsx">Source</a></small></th></tr><tr><th scope="row">Personal reading history</th><td data-label="Entry">Expand Since your last inspection → changed task</td><td data-label="Today">Device-local recap for up to 20 inspected tasks. Verification or decision change opens corresponding section.</td><td data-label="Placement">Separate disclosure above conversation</td><td data-label="Assessment">Move to Work → Recently inspected. Keep unread material separate from requests for action.</td></tr><tr><th scope="row">Attention and Review next</th><td data-label="Entry">Header count → Attention, or Review next shortcut</td><td data-label="Today">Count can end in + for partial coverage. First active form or permission can receive focus. Panel expands in place and preserves edits for its binding.</td><td data-label="Placement">Same Chat pane as recap, before transcript</td><td data-label="Assessment">Give Attention a full queue and a visible shortcut from Chat. Preserve drafts while reading evidence.</td></tr><tr><th scope="row">Native forms</th><td data-label="Entry">Expand Attention or follow Review current approval from task</td><td data-label="Today">Conditional text, choice, multi-choice, number/integer, boolean, external inputs, defaults, validation, submit/response and stale checkpoint states.</td><td data-label="Placement">Form cards inside attention panel</td><td data-label="Assessment">Search for a pending decision to open its bound form. Keep explicit native submission.</td></tr><tr><th scope="row">Permissions</th><td data-label="Entry">Attention → native permission card</td><td data-label="Today">Action/request details and once, always or reject choices.</td><td data-label="Placement">Same dock as forms, distinct controls</td><td data-label="Assessment">Keep permission scope and choices visible at the decision point.</td></tr><tr><th scope="row">Work obligations and leads</th><td data-label="Entry">Attention → work reason, or expand a repository/lead</td><td data-label="Today">Owner and next action, linked task, unanswered lead counts/proposals and scoped history. Coverage and diagnostic notices.</td><td data-label="Placement">Same dock, mixed with forms and permissions</td><td data-label="Assessment">Group by Needs you and Other owners. Preserve source counts/limits and independent decisions.</td></tr></tbody><tbody data-area="Task reader"><tr class="group"><th scope="rowgroup" colspan="5">Task reader <small>Desktop · Right inspector above 1250 px, tablet sheet, optional full report canvas &nbsp; / &nbsp; Phone · Canvas detail replaces Chat &nbsp; <a href="../../../apps/web/src/inspector.tsx">Source</a></small></th></tr><tr><th scope="row">Reader frame and navigation</th><td data-label="Entry">Click work, linked evidence, Search result or route bookmark</td><td data-label="Today">Task/title, issue ID, Work details select, refresh, close and desktop width slider 30–55%. Exact selections open directly. Failures can retry.</td><td data-label="Placement">One detail surface per selection</td><td data-label="Assessment">Use stable URLs and a visible way back to the parent list. Keep reader beside Chat when entered from a message.</td></tr><tr><th scope="row">Overview and work controls</th><td data-label="Entry">Work details → Overview</td><td data-label="Today">Status, priority, policy, description, immediate approval link, planning/repair contract, progress, readiness and blockers. Pause, resume, advance fill the composer.</td><td data-label="Placement">Shared overview with accepted thought and decisions</td><td data-label="Assessment">Lead with next action and blocker. Put lifecycle requests under Ask Abra with explicit draft behavior.</td></tr><tr><th scope="row">Outcomes and planning evidence</th><td data-label="Entry">Overview → Outcomes or Unavailable planning evidence</td><td data-label="Today">Independent approval, delivery, closure and cleanup evidence, commit/time, blocked local paths and truncation.</td><td data-label="Placement">Overview disclosure</td><td data-label="Assessment">Keep outcome dimensions and timestamps. A single Done badge would lose evidence.</td></tr><tr><th scope="row">Decisions and waits</th><td data-label="Entry">Overview or Verification → decision card or resolved history</td><td data-label="Today">Current or exact generation, past decisions, waits, owner, supporting evidence and answer in native form.</td><td data-label="Placement">Embedded in both sections</td><td data-label="Assessment">Retain cross-links. Have recurring links resolve to one detail and one answer form.</td></tr><tr><th scope="row">Plan index</th><td data-label="Entry">Work details → Plan</td><td data-label="Today">Policy-specific research contract, lightweight scope or planning artifacts, archive commit, progress, list limits/errors and source reviews.</td><td data-label="Placement">Inspector list</td><td data-label="Assessment">Keep policy-specific nouns and allow file search scoped to the task.</td></tr><tr><th scope="row">Plan document and passage</th><td data-label="Entry">Choose artifact → Ask about a plan passage</td><td data-label="Today">Markdown, All artifacts, start/end lines or source criterion, selected excerpt and attached reviews.</td><td data-label="Placement">Replaces plan list in reader</td><td data-label="Assessment">Link exact file/hash/lines. Return to the same plan list.</td></tr><tr><th scope="row">Diff and file selection</th><td data-label="Entry">Work details → Diff, type Search changes or follow exact file</td><td data-label="Today">All/uncommitted scope, split patch, filename/content search and revision mismatch/unavailable states. Pointer or old/new line-range inputs attach to draft.</td><td data-label="Placement">Same reader for search, file and lines</td><td data-label="Assessment">Give diff the width of the reader, allow wide code to scroll independently and retain mobile keyboard selection.</td></tr><tr><th scope="row">Verification summary</th><td data-label="Entry">Work details → Verification</td><td data-label="Today">Controller checks, independent review, scope/criteria/constraints, fingerprint, previous commands and match to observed revision. Links to scope, changes/report and decision.</td><td data-label="Placement">Same section as receipts and decisions</td><td data-label="Assessment">Keep verdict, revision match and next decision above evidence.</td></tr><tr><th scope="row">Verification assets and references</th><td data-label="Entry">Expand receipt, image, code reference or documentation link</td><td data-label="Today">Lazy screenshot with selectable region, downloadable trace, file/line/symbol/revision excerpt, versioned documentation and reporting session.</td><td data-label="Placement">Within Verification</td><td data-label="Assessment">Keep original evidence and ownership together. Expose searchable receipt metadata.</td></tr><tr><th scope="row">Activity navigation</th><td data-label="Entry">Work details → Activity</td><td data-label="Today">Four horizontal tabs for Sessions, Communication, Reviews &amp; checks, Leads &amp; proposals.</td><td data-label="Placement">Second navigation level in task reader</td><td data-label="Assessment">Keep task scope in the breadcrumb. Provide direct global hits for identified children.</td></tr><tr><th scope="row">Worker sessions and transcript</th><td data-label="Entry">Activity → Sessions → card or select read-only worker session</td><td data-label="Today">Role/ID and session observations, eight summaries per page. Selected worker history labels assignments, notices, text/tools, bounded pages, older/latest navigation.</td><td data-label="Placement">Cards, selector and transcript stacked in same Activity tab</td><td data-label="Assessment">Index role, session ID, repository and owning task. Open this exact reader. Give instructions via Abra.</td></tr><tr><th scope="row">Communication</th><td data-label="Entry">Activity → Communication → message/evidence</td><td data-label="Today">Paged retained requests/replies, obligations, answers, source evidence and links to existing decision.</td><td data-label="Placement">Within Activity</td><td data-label="Assessment">Keep correspondence by task, and link search results to the retained owner.</td></tr><tr><th scope="row">Reviews, checks and findings</th><td data-label="Entry">Activity → Reviews &amp; checks → finding or log</td><td data-label="Today">Current/history, feedback, check runs/logs, observed gate and retained actions. Exact finding links to matching changed file if available.</td><td data-label="Placement">Activity subtab, exact finding in same inspector</td><td data-label="Assessment">Verification answers whether the revision passed. Keep the event history here and link across.</td></tr><tr><th scope="row">Leads and proposals</th><td data-label="Entry">Activity → Leads &amp; proposals → Inspect lead history</td><td data-label="Today">Scoped lead list, request/answer history, candidate tasks, proposals and accepted/related work with separate pages.</td><td data-label="Placement">Task Activity or expanded lead in Attention</td><td data-label="Assessment">Retain repository/lead identity across both entry points.</td></tr><tr><th scope="row">Reports index and Markdown</th><td data-label="Entry">Work details → Reports</td><td data-label="Today">Paged retained revisions, title/status/format, Preview and Download JSON/HTML, source review and Markdown research report or unavailable reason.</td><td data-label="Placement">One task section for list and Markdown</td><td data-label="Assessment">Keep the task’s publication history. Give exact reports global hits by title and ID.</td></tr><tr><th scope="row">Published report and export</th><td data-label="Entry">Preview → full report canvas or other reports, export controls</td><td data-label="Today">Frozen JSON reader with provenance, evidence, findings/checks/events/excerpts/limitations/diagrams, legacy HTML sandbox, raw download. Supported JSON exports to portable HTML with preview/download.</td><td data-label="Placement">Exact artifact in reader, optional full canvas</td><td data-label="Assessment">Make live task and saved revision explicit. Keep export local to the report.</td></tr><tr><th scope="row">Interactive feedback</th><td data-label="Entry">From plan, report or producing message → Give feedback</td><td data-label="Today">Comment, single/multi-select and design choices with enlarge, validation, Send feedback to Abra, reconciliation, receipt and revised version.</td><td data-label="Placement">Embedded review against source revision</td><td data-label="Assessment">Keep visual feedback beside its source. A review response and a plan/merge approval have separate effects.</td></tr></tbody><tbody data-area="Settings and standalone surfaces"><tr class="group"><th scope="rowgroup" colspan="5">Settings and standalone surfaces <small>Desktop · Settings route replaces workspace, own nav and header &nbsp; / &nbsp; Phone · Top destination Settings, local sections &nbsp; <a href="../../../apps/web/src/settings.tsx">Source</a></small></th></tr><tr><th scope="row">Settings navigation</th><td data-label="Entry">Header gear, phone Settings, Search command or /settings</td><td data-label="Today">Agents by default, Repositories, search, brand and Back to workspace on desktop. Returning recalls workspace state.</td><td data-label="Placement">Dedicated settings sidebar, stacked local nav on small screens</td><td data-label="Assessment">One Settings destination. Make repositories discoverable via global Search too.</td></tr><tr><th scope="row">Agent definitions</th><td data-label="Entry">Settings → Agents → expand definition</td><td data-label="Today">Read-only cards with ID, mode, description, revision, roles, model, assignment context, tools/custom tools, skills/preloads, requirements, denials and instruction source/content status.</td><td data-label="Placement">Expanding rows in settings main pane</td><td data-label="Assessment">Search agent ID/description and land on expanded definition. Keep authoring in its existing owner.</td></tr><tr><th scope="row">Repository registry</th><td data-label="Entry">Settings → Repositories or /settings/repositories</td><td data-label="Today">Read-only names, ID and path when available, count, refresh and empty state, including repos without tasks.</td><td data-label="Placement">Separate settings page</td><td data-label="Assessment">Place Onboard repository here. Link to Work or GitHub with this repository filter.</td></tr><tr><th scope="row">Request and navigation failures</th><td data-label="Entry">Open any unavailable section or unknown route</td><td data-label="Today">Loading skeletons, retained data on refresh failure where supported, local alert/retry. Navigation can toast with Retry. Page not found links home.</td><td data-label="Placement">Near affected resource, or full page on route failure</td><td data-label="Assessment">Keep good results while one source fails. Give each source a retry and a route home.</td></tr><tr><th scope="row">Portable report and offline feedback</th><td data-label="Entry">Download exported HTML → open file → Local review feedback</td><td data-label="Today">Saved report, dark toggle, notices. Comments, severity, affected section, suggestions and questions produce selectable Markdown or JSON locally.</td><td data-label="Placement">Independent document outside workspace</td><td data-label="Assessment">Keep offline feedback export self-contained. Search the originating saved report in AbraCode.</td></tr></tbody></table></div></section>
-<section><h2>Order of change and acceptance journeys</h2><ol><li><strong>Move the collections first.</strong> Use existing reads. Move the GitHub filters and rows together; give Thoughts a route; keep the old finder bookmark meaningful. Exercise local Closed versus remote Merged and return to the same list page.</li><li><strong>Expand search and draft actions.</strong> Ship Work, Thoughts, GitHub, Settings and commands, then the bounded session lookup. In a workspace larger than one page, find a closed task and a worker by ID. With one provider unavailable, select a result from another. Start onboarding from Settings, Search and slash with a half-written draft.</li><li><strong>Carry references through chat.</strong> Save a thought, attach it, send a question, accept an excerpt and follow its original link. Change the memo and repeat with the old reference. Verify that the captured excerpt stays readable.</li><li><strong>Complete evidence discovery.</strong> Add task-scoped metadata for reports, findings, reviews and communications, then cross-task indexing where needed. Test exact revisions, missing sources and Back on phone. Use a real phone keyboard and screen reader before committing the new navigation.</li></ol></section>
-<section><h2>Basis and limits</h2><p>This study follows the current checkout of the operator web workspace, shared presentation components and portable report viewer. Desktop header/finder and phone Chat/Canvas navigation were checked in the running app. Conditional native forms, uncommon evidence states and offline views were inventoried from their renderers and verification recipes. The mockups use invented records. They illustrate information placement and selected journeys, with no connection to the notebook or controller. Chart families include work already in progress in this checkout.</p>
-<p>Trace the implementations in the <a href="../../../apps/web/src/workspace.tsx">workspace</a>, <a href="../../../apps/web/src/work-finder.tsx">finder</a>, <a href="../../../apps/web/src/github-inbox.tsx">GitHub inbox</a>, <a href="../../../apps/web/src/workspace-palette.tsx">palette</a>, <a href="../../../apps/web/src/inspector.tsx">inspector</a>, <a href="../../../apps/web/src/presentation/">evidence renderers</a>, <a href="../../../packages/presentation/src/">shared views</a>, <a href="../../../apps/report/src/">portable viewer</a> and <a href="../../../packages/runtime/src/work/thoughts.ts">thought adapter</a>. The <a href="../../verification/memos-thoughts.md">Memos journey</a> describes the native checks.</p></section></main><footer><a href="mockups.html">Open the current and proposed layouts</a> · <a href="#inventory">Back to inventory</a></footer><script>
-function filterRows(){const term=document.querySelector('#query').value.trim().toLowerCase(),area=document.querySelector('#area').value;let count=0;for(const body of document.querySelectorAll('#inventoryTable tbody')){let matches=0;for(const row of body.querySelectorAll('tr:not(.group)')){row.hidden=!!((area&&body.dataset.area!==area)||!(body.querySelector('.group').textContent+' '+row.textContent).toLowerCase().includes(term));if(!row.hidden)matches++}body.hidden=!matches;count+=matches}document.querySelector('#count').textContent=count+' matching feature groups'}document.querySelector('#query').addEventListener('input',filterRows);document.querySelector('#area').addEventListener('change',filterRows);filterRows()
-</script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AbraCode workspace layout study</title>
+    <style>
+      :root {
+        font:
+          16px/1.55 "Source Sans 3",
+          system-ui,
+          sans-serif;
+        color: #203044;
+        background: #f6f8fb;
+        --ink: #173650;
+        --accent: #17559c;
+        --line: #cdd7e2;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      header,
+      main,
+      footer {
+        max-width: 1360px;
+        margin: auto;
+        padding: 1rem clamp(1rem, 4vw, 4rem);
+      }
+      header {
+        background: #163651;
+        color: white;
+        max-width: none;
+      }
+      header > div {
+        max-width: 1240px;
+        margin: auto;
+      }
+      nav {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      header a {
+        color: white;
+      }
+      a {
+        color: var(--accent);
+        text-underline-offset: 3px;
+      }
+      h1,
+      h2,
+      h3 {
+        line-height: 1.15;
+        color: var(--ink);
+      }
+      h1 {
+        font-size: clamp(2rem, 5vw, 3.7rem);
+        color: white;
+        margin: 0.55em 0 0.2em;
+        letter-spacing: -0.05em;
+      }
+      h2 {
+        font-size: clamp(1.6rem, 3vw, 2.25rem);
+        letter-spacing: -0.035em;
+        margin-top: 2em;
+      }
+      h3 {
+        font-size: 1.15rem;
+        margin: 1.7em 0 0.45em;
+      }
+      p,
+      li {
+        max-width: 82ch;
+      }
+      header p {
+        max-width: 73ch;
+      }
+      section {
+        scroll-margin-top: 1rem;
+      }
+      .call {
+        padding: 1rem 1.2rem;
+        border-left: 4px solid #478bc1;
+        background: #e9f1f8;
+        max-width: 82ch;
+      }
+      .act {
+        display: inline-block;
+        padding: 0.6rem 1rem;
+        border-radius: 0.4rem;
+        background: #fff;
+        color: #173650;
+        font-weight: 650;
+        text-decoration: none;
+      }
+      .scroll {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 0.45rem;
+        background: #fff;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+      }
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 0.8rem;
+        border-bottom: 1px solid var(--line);
+      }
+      thead th {
+        background: #e7edf4;
+        color: var(--ink);
+      }
+      tbody th {
+        font-weight: 650;
+      }
+      .group th {
+        background: #dae6ef;
+        color: var(--ink);
+        font-size: 1.05rem;
+      }
+      .group small {
+        font-weight: 400;
+        display: block;
+      }
+      .map td:first-child {
+        font-weight: 600;
+      }
+      .filters {
+        display: flex;
+        gap: 0.7rem;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: 1rem 0;
+      }
+      .filters input,
+      .filters select {
+        font: inherit;
+        border: 1px solid #8194aa;
+        border-radius: 0.3rem;
+        padding: 0.5rem;
+        min-width: 0;
+        max-width: 100%;
+      }
+      .chips {
+        display: flex;
+        gap: 0.5rem 1.2rem;
+        flex-wrap: wrap;
+      }
+      details {
+        margin: 0.6rem 0;
+      }
+      summary {
+        cursor: pointer;
+      }
+      code {
+        background: #e7edf4;
+        padding: 0.12rem 0.25rem;
+      }
+      footer {
+        margin-block: 2rem;
+      }
+      a:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      summary:focus-visible {
+        outline: 3px solid #c9790b;
+        outline-offset: 3px;
+      }
+      #inventoryTable {
+        table-layout: fixed;
+        min-width: 950px;
+      }
+      #inventoryTable col:nth-child(1) {
+        width: 15%;
+      }
+      #inventoryTable col:nth-child(2) {
+        width: 16%;
+      }
+      #inventoryTable col:nth-child(3) {
+        width: 27%;
+      }
+      #inventoryTable col:nth-child(4) {
+        width: 18%;
+      }
+      #inventoryTable col:nth-child(5) {
+        width: 24%;
+      }
+      @media (max-width: 720px) {
+        .inventorybox {
+          border: none;
+          background: transparent;
+        }
+        .inventorybox table,
+        .inventorybox tbody,
+        .inventorybox tr,
+        .inventorybox td,
+        .inventorybox th {
+          display: block;
+        }
+        #inventoryTable {
+          min-width: 0;
+        }
+        .inventorybox thead,
+        .inventorybox colgroup {
+          display: none;
+        }
+        .inventorybox tr {
+          padding: 0.8rem;
+          background: white;
+          border: 1px solid var(--line);
+          margin-bottom: 0.5rem;
+          border-radius: 0.4rem;
+        }
+        .inventorybox td,
+        .inventorybox th {
+          border: none;
+          padding: 0.2rem;
+        }
+        .inventorybox td:before {
+          content: attr(data-label) " · ";
+          color: #455c71;
+          font-weight: 650;
+        }
+        .inventorybox .group {
+          background: #dae6ef;
+        }
+        .inventorybox .group th {
+          background: transparent;
+        }
+        .map {
+          min-width: 620px;
+        }
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <nav><b>AbraCode</b> <span>Design study · 21 November 2026</span></nav>
+        <h1>Finding your way through Abra</h1>
+        <p>
+          Keep the conversation one click away. Give work, GitHub and personal thoughts room to
+          browse, and let one search open the exact item you came for.
+        </p>
+        <nav>
+          <a class="act" href="mockups.html">Explore the mockups</a
+          ><a href="#inventory">Current UI inventory</a><a href="#search">Search and commands</a
+          ><a href="#memos">Memos</a>
+        </nav>
+      </div>
+    </header>
+    <main>
+      <section>
+        <h2>What the sidebar is asking you to do</h2>
+        <p>
+          Try finding a closed local task. “Work” opens a column with a Thoughts button, a shared
+          query, a project selector and a GitHub inbox. “Closed” inside GitHub filters selects
+          remote issues and PRs. The “Closed” button farther down selects SQLite tasks. Capacity
+          then sits between that filter and its results. Both lists have their own pagination, and
+          the fleet total below them still covers every project. Each control makes sense in
+          isolation. Their order makes it hard to tell what a click or a count refers to.
+        </p>
+        <p>
+          On a phone the same stack occupies the entire Canvas. On a first visit, Canvas means “find
+          work.” On a later visit it may open yesterday’s report. Getting from chat to a note can
+          include Canvas → Find other work → Thoughts → result → Ask Abra. A person who remembers
+          the note’s wording still has to know where it lives.
+        </p>
+        <p class="call">
+          <strong>Recommendation.</strong> Reserve the desktop sidebar for destinations. Put one
+          collection and its own filters in the main area. Keep a single Abra conversation and make
+          every durable item addressable through Search. On phones, expose Chat, Work and Thoughts
+          directly.
+        </p>
+      </section>
+      <section id="layout">
+        <h2>Compare the layouts</h2>
+        <nav class="chips" aria-label="Mockup presets">
+          <a href="mockups.html?layout=old&amp;screen=wide&amp;scene=work">Current desktop finder</a
+          ><a href="mockups.html?layout=new&amp;screen=wide&amp;scene=work">Proposed desktop Work</a
+          ><a href="mockups.html?layout=old&amp;screen=phone&amp;scene=work">Current phone Canvas</a
+          ><a href="mockups.html?layout=new&amp;screen=phone&amp;scene=memo"
+            >Proposed phone thought</a
+          >
+        </nav>
+        <p>
+          In the proposed layout, try searching <code>session:reviewer</code>,
+          <code>thought:keep</code> or <code>add project</code>. Start a sentence in Chat before
+          attaching a thought. Use the Layout switch to compare the same scene, or the scene menu to
+          inspect another area. Use Fit window to follow the actual viewport.
+        </p>
+        <h2>Where each part goes</h2>
+        <div class="scroll" tabindex="0">
+          <table class="map">
+            <thead>
+              <tr>
+                <th>Destination</th>
+                <th>Desktop</th>
+                <th>Phone</th>
+                <th>Reason for the placement</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Chat</td>
+                <td>
+                  Landing view. Transcript, its attachments and composer occupy the main area.
+                  Opening evidence from chat adds a right-hand reader on wide screens.
+                </td>
+                <td>
+                  Chat tab. Open evidence full screen. Back or Ask Abra restores the draft and
+                  reading position.
+                </td>
+                <td>Preserves the relationship between a question and its evidence.</td>
+              </tr>
+              <tr>
+                <td>Work</td>
+                <td>
+                  Full-width local task list. Repository and state beside its own search. Secondary
+                  views for Sessions, Capacity and Recently inspected. Select a row for task detail.
+                </td>
+                <td>
+                  Work tab → list → detail. Use a section picker inside a task. Returning restores
+                  the list’s query, page and scroll.
+                </td>
+                <td>Local work stays visible even when GitHub has hundreds of results.</td>
+              </tr>
+              <tr>
+                <td>GitHub</td>
+                <td>
+                  Separate inbox. Issue/PR, state, label, Abra role and repository belong here.
+                  Linked Abra tasks go to their own detail.
+                </td>
+                <td>More → GitHub. Global Search can jump straight to an issue or PR.</td>
+                <td>Remote “merged” and local “closed” describe different objects.</td>
+              </tr>
+              <tr>
+                <td>Thoughts</td>
+                <td>
+                  Personal notebook list, filter and reader. Attach to chat, open original, or start
+                  a save draft.
+                </td>
+                <td>Thoughts tab → note → attach. Return to the same filtered list.</td>
+                <td>Thoughts can predate a repository or never become work.</td>
+              </tr>
+              <tr>
+                <td>Attention</td>
+                <td>
+                  Dedicated queue with ownership, scope, evidence and existing answer forms. Count
+                  links here from anywhere.
+                </td>
+                <td>Header count → queue → form. Back returns to the interrupted task.</td>
+                <td>
+                  A blocking decision should stay reachable while the user reads a diff or note.
+                </td>
+              </tr>
+              <tr>
+                <td>Settings</td>
+                <td>
+                  Bottom of rail. Agents, Repositories, Appearance and About/licenses. Onboard
+                  repository next to the registry.
+                </td>
+                <td>More → Settings. Search can open an agent or repository directly.</td>
+                <td>
+                  Administrative items leave the daily queues. The same onboarding action is
+                  discoverable in context.
+                </td>
+              </tr>
+              <tr>
+                <td>Search</td>
+                <td>
+                  Visible at top of rail plus ⌘/Ctrl K. Results can open, attach or prepare a draft.
+                </td>
+                <td>
+                  Header Search opens a full-screen picker with type filters and a close control
+                  above the software keyboard.
+                </td>
+                <td>Exact retrieval should take one entry point across screen sizes.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Pane and history rules</h3>
+        <p>
+          Wide desktop: rail, primary content, and at most one contextual reader. A work-list click
+          replaces the list with a readable detail and a Back to Work affordance. A chat evidence
+          click keeps chat in view beside that detail. Tablet: keep the destination names accessible
+          in a menu and show the reader as a sheet. Phone: use one primary surface and a Back
+          destination. Keep the top search and attention controls reachable from any collection.
+          Hide bottom navigation while typing if the keyboard leaves too little room.
+        </p>
+        <p>
+          Keep destination, collection filters, selected resource and source revision in navigation
+          state suitable for Back and reload. Keep the unsent conversation draft, attached
+          references, list scroll and reading position per Abra session. Preserve existing
+          issue/tab/file/scope and exact-resource bookmarks. An item opened directly from a bookmark
+          gets its owning collection as a return path. Dismissing Search restores focus to its
+          trigger. Selecting a result moves focus to its heading, or to the composer for a draft
+          action.
+        </p>
+        <h3>Two alternatives considered</h3>
+        <p>
+          <strong>Accordion sections inside Work</strong> would be a low-cost transition. It reduces
+          the initial height, but the shared query, nested scroll and two different meanings of
+          state survive. <strong>A project-first sidebar</strong> helps a single-repository
+          workflow, but personal thoughts and cross-repository triage have no natural parent. Use
+          repository as a remembered filter on Work and GitHub. Revisit a pinned repository shortcut
+          if repeated journeys justify the space.
+        </p>
+      </section>
+      <section id="search">
+        <h2>One search for items and commands</h2>
+        <p>
+          Search starts in All. Provide type filters, a Commands tab and keyboard equivalents such
+          as <code>thought:</code>, <code>session:</code> and <code>&gt;</code> for commands. On an
+          empty query show recent destinations and frequent actions. A row shows type, human title,
+          owning repository/task or notebook, and the effect of Enter. Return the exact ID first,
+          then exact names, then contextual and textual matches. Reserve space for each matching
+          type so a large task queue cannot bury a single matching thought.
+        </p>
+        <div class="scroll" tabindex="0">
+          <table class="map">
+            <thead>
+              <tr>
+                <th>What I remember</th>
+                <th>Match and open</th>
+                <th>Source and work needed</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Work title or issue ID</td>
+                <td>
+                  Search active and closed across projects → task Overview. Offer exact sections and
+                  scoped See all.
+                </td>
+                <td>Reuse existing bounded local work discovery and resource resolver.</td>
+              </tr>
+              <tr>
+                <td>A note’s words or tag</td>
+                <td>
+                  Thought snippet, date and tags → note reader. Secondary Attach to chat and Open in
+                  Memos.
+                </td>
+                <td>
+                  Use current personal notebook search and checked detail. Translate an explicit tag
+                  to its own field.
+                </td>
+              </tr>
+              <tr>
+                <td>A worker or session</td>
+                <td>
+                  Role, session ID, owning task/title, repository → exact read-only worker
+                  transcript. Main Abra session → Chat.
+                </td>
+                <td>
+                  Add bounded cross-task discovery over owned sessions. Existing task-scoped worker
+                  readers already open exact hits.
+                </td>
+              </tr>
+              <tr>
+                <td>GitHub issue or PR</td>
+                <td>
+                  Qualified repo/number, title, issue/PR kind → remote item, with links to
+                  associated Abra work.
+                </td>
+                <td>
+                  Reuse observed inbox/coverage and detail. Add a bookmarkable item route. Show both
+                  objects when a task links a PR.
+                </td>
+              </tr>
+              <tr>
+                <td>Decision, permission or wait</td>
+                <td>
+                  Owner, task, label or decision key → bound Attention form or retained decision
+                  history for settled items.
+                </td>
+                <td>
+                  Use current native obligations and scoped decision reads. Resolve the generation
+                  before offering a response.
+                </td>
+              </tr>
+              <tr>
+                <td>A report, review or generated view</td>
+                <td>
+                  Title, task, ID, revision → exact document, feedback form or surface with
+                  producing message when available.
+                </td>
+                <td>
+                  Add a bounded metadata lookup across retained publications. Distinguish frozen
+                  output and live widgets. Preserve digests and revision IDs.
+                </td>
+              </tr>
+              <tr>
+                <td>A file, finding or evidence</td>
+                <td>
+                  Task + path, finding ID, plan passage, check/receipt label → exact plan, diff,
+                  finding, screenshot or owning check.
+                </td>
+                <td>
+                  Reuse scoped evidence readers. Add discovery and typed destinations where
+                  individual receipts lack a route. Resolve the parent and identify missing
+                  historical bytes.
+                </td>
+              </tr>
+              <tr>
+                <td>Conversation, lead or proposal</td>
+                <td>
+                  Message/lead ID, task or searchable visible excerpt → originating session,
+                  message, communication or proposal with owner context.
+                </td>
+                <td>
+                  Later: add retained, bounded lookup and anchors. Label loaded-page-only matches
+                  until an owner supports cross-history discovery. Compacted content can be
+                  unavailable.
+                </td>
+              </tr>
+              <tr>
+                <td>Agent, repository or workspace page</td>
+                <td>
+                  Name/ID → expanded definition, registry entry, scoped Work, Capacity, history,
+                  appearance or licenses.
+                </td>
+                <td>
+                  Reuse Settings catalogs and route commands. Deep links to individual rows and new
+                  destinations need wiring.
+                </td>
+              </tr>
+              <tr>
+                <td>Something to do</td>
+                <td>
+                  “add project”, “onboard repo”, “save thought”, “pause work”, “review pending”,
+                  “download report” → named action with effect and required context.
+                </td>
+                <td>
+                  Use one command catalogue for menus, palette and slash aliases. Show unavailable
+                  actions with their missing prerequisite in scoped search.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Return small independent pages per source. Query the existing owners on demand, allow slow
+          sources to arrive separately, cancel obsolete queries, and expose “More in
+          Thoughts/Work/…” with the query intact. A disconnected notebook should say “Thoughts
+          unavailable · Retry” alongside usable work results. Deduplicate by source and stable
+          identity. A source link can join a task, PR and memo without collapsing them into a single
+          hit. Global search should never claim to cover an unobserved page.
+        </p>
+        <h3>What pressing Enter does</h3>
+        <p>
+          <strong>Open</strong> navigates to an item. <strong>Attach to chat</strong> adds a
+          versioned reference or selected excerpt and preserves the existing words.
+          <strong>Prepare draft</strong> adds editable text after the existing draft, inserts a
+          newline when needed and focuses the composer. Selecting a template with a nonempty draft
+          must preserve that draft. <strong>Open form</strong> takes the user to the existing
+          decision or export control. Its own submit or download gesture performs the action.
+        </p>
+        <p>
+          Make the palette the discoverable catalogue. Add slash aliases only for frequent composer
+          actions. Typing <code>/onboard-repo</code> at the beginning of a composer command opens
+          the same “Onboard repository” entry as “add project” in Search. Choosing it prepares “Help
+          me onboard a repository.” A user can add a path or URL, review it, then Send.
+          <code>/save-thought</code> opens a draft for exact notebook wording.
+          <code>/attach-thought</code> opens the thought picker and attaches the selected reference.
+          Ordinary pasted code, code fences and paths beginning with a slash remain literal unless
+          the user selects a command. Code snippets can be inserted as editable fenced text with
+          source attribution; a selection tied to a file revision should use the existing attachment
+          mechanism.
+        </p>
+        <p>
+          A shortcut for “pause this work” prepares the current issue-specific request. A result for
+          “approve plan” opens the native bound form. Keep Stop current Abra turn visible only in
+          its busy conversation. Ranking, aliases and navigation can evolve independently of the
+          controller and its checkpoint checks.
+        </p>
+      </section>
+      <section id="memos">
+        <h2>Let a thought keep its source</h2>
+        <p>
+          AbraCode already reads the private personal notebook across projects. A selected thought
+          carries instance, account, memo resource name and wording hash. The detail read verifies
+          this identity and returns its original Memos URL. The save operation verifies the newly
+          written memo and returns a reference; the accepted issue stores only the chosen excerpt
+          and reference. The pinned Memos browser route was exercised with a signed-in, disposable
+          account. <a href="../../supported-apis.md#memos-26111">Repository API evidence</a> ·
+          <a href="https://github.com/usememos/memos/blob/26.11.1/proto/api/memo_service.proto"
+            >Pinned Memos API</a
+          >
+        </p>
+        <ol>
+          <li>
+            <strong>After saving</strong>, resolve the verified reference and render a receipt with
+            its first line, “Saved to Memos”, Open in Memos and Attach to chat. Retry an uncertain
+            save using the same request identity.
+          </li>
+          <li>
+            <strong>When using a thought</strong>, show a compact native card in the reader, draft
+            and sent message. Include snippet, optional tags, date and original link. Expand on
+            demand to read full text through existing detail. Use the same card on phone. Keep the
+            private body out of generic search caches and global recent-query previews.
+          </li>
+          <li>
+            <strong>When work is accepted</strong>, keep the exact accepted excerpt, account and
+            memo identity. Show “Open original in Memos” and an optional live preview. If wording
+            changed, keep the accepted quote and offer to select the current version for a new
+            discussion. If the memo was deleted, access changed, or the configured account differs,
+            preserve retained evidence and explain why live preview is unavailable.
+          </li>
+          <li>
+            <strong>When following the link</strong>, use the configured notebook origin and
+            validated memo resource. Opening on a phone needs a reachable origin and a signed-in
+            Memos account; loopback there identifies the phone. Keep credentials server-side. Defer
+            a full-page iframe until frame policy, authenticated cookies, phone ergonomics and a
+            benefit over the native card are demonstrated.
+          </li>
+        </ol>
+        <p>
+          A later “Used in work” section could read a reverse lookup of accepted thought references
+          in the work graph. That gives the reader a path back to the resulting tasks. Writing
+          reciprocal links into private memo text changes its wording hash; make any future Memos
+          writeback a separate, explicit action.
+        </p>
+      </section>
+      <section id="inventory">
+        <h2>Current UI inventory</h2>
+        <p>
+          Each row describes a visible feature or related control family. Section bands identify the
+          default desktop and phone placement. The placement column records exceptions and
+          transitions between surfaces. Filter by any displayed word, including a pane or phone
+          location.
+        </p>
+        <div class="filters">
+          <label
+            >Find
+            <input id="query" type="search" placeholder="e.g. session, receipt, Canvas" /></label
+          ><label
+            >Area
+            <select id="area">
+              <option value="">All areas</option>
+              <option>Workspace shell</option>
+              <option>Work finder</option>
+              <option>Thoughts</option>
+              <option>Conversation and input</option>
+              <option>Attention and recap</option>
+              <option>Task reader</option>
+              <option>Settings and standalone surfaces</option>
+            </select></label
+          ><output id="count" aria-live="polite"></output>
+        </div>
+        <div class="scroll inventorybox" tabindex="0" aria-label="Workspace inventory">
+          <table id="inventoryTable">
+            <colgroup>
+              <col />
+              <col />
+              <col />
+              <col />
+              <col />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>UI element</th>
+                <th>How you reach it</th>
+                <th>What appears today</th>
+                <th>Pane and neighbours</th>
+                <th>Assessment and proposed home</th>
+              </tr>
+            </thead>
+            <tbody data-area="Workspace shell">
+              <tr class="group">
+                <th scope="rowgroup" colspan="5">
+                  Workspace shell
+                  <small
+                    >Desktop · Workspace header or central Chat &nbsp; / &nbsp; Phone · Phone Chat
+                    &nbsp; <a href="../../../apps/web/src/workspace.tsx">Source</a></small
+                  >
+                </th>
+              </tr>
+              <tr>
+                <th scope="row">Boot and connection</th>
+                <td data-label="Entry">Open /</td>
+                <td data-label="Today">
+                  Connecting screen, failure text and automatic retry. Once connected, dot and
+                  ready, working or reconnecting label in header.
+                </td>
+                <td data-label="Placement">Full page → header</td>
+                <td data-label="Assessment">
+                  Header text becomes visually hidden on phone. Keep the accessible status beside
+                  Abra.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Work, Abra, Settings and appearance</th>
+                <td data-label="Entry">Top bar → Work, gear or sun/moon selector</td>
+                <td data-label="Today">
+                  Work toggles finder, Abra titles the conversation, Settings changes route, theme
+                  selects System, Light or Dark.
+                </td>
+                <td data-label="Placement">Header spans all columns</td>
+                <td data-label="Assessment">
+                  Move destinations to navigation. Keep theme in Settings and status near Chat.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Phone destinations</th>
+                <td data-label="Entry">Top strip → Chat, Canvas, Settings or Search</td>
+                <td data-label="Today">
+                  Chat is the landing view. Canvas recalls the last inspected resource per tab and
+                  session, or opens finder. Find other work reopens finder.
+                </td>
+                <td data-label="Placement">Phone-only navigation above content</td>
+                <td data-label="Assessment">
+                  Canvas can mean a list, a file or a report. Give lists stable names and detail a
+                  Back destination.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Global Search</th>
+                <td data-label="Entry">Header, Settings, phone Search or ⌘/Ctrl K</td>
+                <td data-label="Today">
+                  Modal input, keyboard-highlighted rows, status and See all results in Work.
+                  Searches up to eight active/closed local tasks. Exact ID can lead.
+                </td>
+                <td data-label="Placement">Dialog over current route</td>
+                <td data-label="Assessment">
+                  Good entry point. Expand sources and carry query plus type into results.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Navigation commands</th>
+                <td data-label="Entry">Open Search, type a label or leave blank</td>
+                <td data-label="Today">
+                  Return to chat, Open Work finder, Open Settings. Conditional resume, pending
+                  decisions and selected task’s Plan, Diff, Verification and Reports.
+                </td>
+                <td data-label="Placement">Same dialog as task hits</td>
+                <td data-label="Assessment">
+                  Give commands a distinct verb and effect. Preserve return focus on Escape.
+                </td>
+              </tr>
+            </tbody>
+            <tbody data-area="Work finder">
+              <tr class="group">
+                <th scope="rowgroup" colspan="5">
+                  Work finder
+                  <small
+                    >Desktop · Optional 290 px left pane beside Chat &nbsp; / &nbsp; Phone · Canvas
+                    → finder, single screen &nbsp;
+                    <a href="../../../apps/web/src/work-finder.tsx">Source</a></small
+                  >
+                </th>
+              </tr>
+              <tr>
+                <th scope="row">Heading and close</th>
+                <td data-label="Entry">Work or /?view=finder</td>
+                <td data-label="Today">
+                  Work heading and X. Selecting a local task normally closes finder and opens its
+                  inspector. Finder can be reopened beside it.
+                </td>
+                <td data-label="Placement">Top of finder</td>
+                <td data-label="Assessment">
+                  Opening a task loses visual position in the list. Give Work a full page with
+                  restorable filters and scroll.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Thoughts entrance</th>
+                <td data-label="Entry">Work → Thoughts</td>
+                <td data-label="Today">
+                  Button swaps the entire finder body for the notebook. Back to Work restores
+                  finder.
+                </td>
+                <td data-label="Placement">Above the work search field</td>
+                <td data-label="Assessment">
+                  Personal notes span repositories. Give them a peer destination.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Shared query and project</th>
+                <td data-label="Entry">Type in Search work or choose All projects</td>
+                <td data-label="Today">
+                  Debounced text and native project select drive both GitHub and local work. State
+                  and paging are independent below.
+                </td>
+                <td data-label="Placement">Above two different collections</td>
+                <td data-label="Assessment">
+                  Scope each list explicitly. Make cross-source search a deliberate action.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">GitHub filters</th>
+                <td data-label="Entry">Work → GitHub filters disclosure</td>
+                <td data-label="Today">
+                  Issue/PR, open/closed/merged, Abra assignment role, label and Clear GitHub
+                  filters.
+                </td>
+                <td data-label="Placement">GitHub block nested in finder</td>
+                <td data-label="Assessment">
+                  Move all four together to GitHub. Local task states have different meanings.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">GitHub results and freshness</th>
+                <td data-label="Entry">
+                  Scroll GitHub inbox, Refresh GitHub or use its page buttons
+                </td>
+                <td data-label="Today">
+                  Repo, number, title, author, draft/state, assignment and labels. Observed/matching
+                  counts, per-repo coverage, last checked, errors and partial labels.
+                </td>
+                <td data-label="Placement">Own scroll area capped at 38dvh above Local work</td>
+                <td data-label="Assessment">
+                  Give this queue room to read titles. Keep coverage next to results and distinguish
+                  remote state from local role.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">GitHub issue or PR</th>
+                <td data-label="Entry">Select remote result</td>
+                <td data-label="Today">
+                  Right-hand sheet with body, author, state/time, original GitHub link, recent
+                  comments and partial-discussion notice, base/head and reviewed revision.
+                </td>
+                <td data-label="Placement">Modal sheet over finder, including phone</td>
+                <td data-label="Assessment">
+                  Give detail a route with return to the filtered inbox.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Linked work and intake</th>
+                <td data-label="Entry">GitHub detail → role/status link or Ask Abra</td>
+                <td data-label="Today">
+                  Linked task opens Overview or Reports for a closed review. Open issue/PR offers
+                  pickup/private-review prompt in composer.
+                </td>
+                <td data-label="Placement">Sheet → inspector or draft</td>
+                <td data-label="Assessment">
+                  Keep linked identities visible. Label the action as drafting a request.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Local work filters and rows</th>
+                <td data-label="Entry">Work → Local work → Active, Closed or All → task</td>
+                <td data-label="Today">
+                  Status dot and title, phase, capacity wait, blockers, native activity. Match count
+                  and Previous/Next, 50 per page.
+                </td>
+                <td data-label="Placement">Second result list in finder, below capacity</td>
+                <td data-label="Assessment">
+                  Default Work to local tasks. Use a concise row with repository, phase and next
+                  blocker.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Capacity</th>
+                <td data-label="Entry">Open finder, optionally choose project</td>
+                <td data-label="Today">
+                  Worker use/limit and retained execution slots/limit, plus idle-wait explanation
+                  for workspace and selected project.
+                </td>
+                <td data-label="Placement">Between local filters and rows</td>
+                <td data-label="Assessment">
+                  Move detail to Work → Capacity. Link a waiting task to the relevant capacity
+                  scope.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Fleet overview</th>
+                <td data-label="Entry">
+                  Below local results → Fleet across all projects → project
+                </td>
+                <td data-label="Today">
+                  Disclosure of global status counts, per-project counts/attention, native
+                  observation coverage, completed today/timezone and stale/unavailable states.
+                </td>
+                <td data-label="Placement">Below local pagination, independent of query</td>
+                <td data-label="Assessment">
+                  Put global totals under Work → Capacity with scope and observation time. A
+                  filtered list should never imply filtered totals.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Repository onboarding</th>
+                <td data-label="Entry">
+                  Bottom of finder → Add a project, or empty Chat suggestion
+                </td>
+                <td data-label="Today">
+                  Closes finder and seeds a natural-language request in main draft. Actual intake
+                  continues with Abra.
+                </td>
+                <td data-label="Placement">Finder footer alongside Licenses</td>
+                <td data-label="Assessment">
+                  Call it Onboard repository. Put it in Search and Settings → Repositories, with a
+                  composer alias.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Licenses</th>
+                <td data-label="Entry">Bottom of finder → Licenses</td>
+                <td data-label="Today">Opens third-party notices as a separate text document.</td>
+                <td data-label="Placement">Finder footer, external tab</td>
+                <td data-label="Assessment">
+                  Move to Settings → About. Leave portable report notices in the export.
+                </td>
+              </tr>
+            </tbody>
+            <tbody data-area="Thoughts">
+              <tr class="group">
+                <th scope="rowgroup" colspan="5">
+                  Thoughts
+                  <small
+                    >Desktop · Replaces the left finder content &nbsp; / &nbsp; Phone · Inside phone
+                    Canvas in place of finder &nbsp;
+                    <a href="../../../apps/web/src/thoughts.tsx">Source</a></small
+                  >
+                </th>
+              </tr>
+              <tr>
+                <th scope="row">Browse and refine</th>
+                <td data-label="Entry">Work → Thoughts → Search thoughts</td>
+                <td data-label="Today">
+                  Private notebook snippets, created time, tags. Literal text, tag, From/Before UTC,
+                  explicit search, cursor-backed Previous/Next and retry.
+                </td>
+                <td data-label="Placement">Same pane as search form, across all projects</td>
+                <td data-label="Assessment">
+                  Give notes their own page. Keep date/tag filters there and send global text
+                  searches to this source.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Read and open original</th>
+                <td data-label="Entry">Select a snippet</td>
+                <td data-label="Today">
+                  Date and full whitespace-preserved text, Back to results, Back to Work, Open in
+                  Memos in a new tab.
+                </td>
+                <td data-label="Placement">Detail replaces thought list in finder</td>
+                <td data-label="Assessment">
+                  Make this reader reachable from global results. Preserve the existing original
+                  link.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Discuss a thought</th>
+                <td data-label="Entry">Thought detail → Ask Abra about this</td>
+                <td data-label="Today">
+                  Attaches a versioned reference to current draft. Chip displays the memo name and
+                  Remove thought. User adds text and sends.
+                </td>
+                <td data-label="Placement">Finder → composer</td>
+                <td data-label="Assessment">
+                  Show a recognizable first line, source link and expandable excerpt before sending.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Capture a thought</th>
+                <td data-label="Entry">
+                  Ask Abra to save exact wording, or create a private personal memo in Memos
+                </td>
+                <td data-label="Today">
+                  Supervisor save returns a verified reference. The finder provides list/detail
+                  controls. Native Memos has its own capture UI.
+                </td>
+                <td data-label="Placement">Chat or external Memos page</td>
+                <td data-label="Assessment">
+                  Render a save receipt with the same source card. Offer Save thought as a draft
+                  command.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Accepted thought on work</th>
+                <td data-label="Entry">Task → Overview → Accepted thought</td>
+                <td data-label="Today">
+                  Account and memo name in text plus the exact accepted excerpt in a blockquote.
+                </td>
+                <td data-label="Placement">Embedded in task description area</td>
+                <td data-label="Assessment">
+                  Add Open in Memos beside the frozen quote. Label the accepted words separately
+                  from today’s memo.
+                </td>
+              </tr>
+            </tbody>
+            <tbody data-area="Conversation and input">
+              <tr class="group">
+                <th scope="rowgroup" colspan="5">
+                  Conversation and input
+                  <small
+                    >Desktop · Central pane, retained when navigating &nbsp; / &nbsp; Phone · Chat
+                    screen, composer above keyboard &nbsp;
+                    <a href="../../../apps/web/src/workspace.tsx">Source</a></small
+                  >
+                </th>
+              </tr>
+              <tr>
+                <th scope="row">Empty conversation</th>
+                <td data-label="Entry">Open Chat before there are messages</td>
+                <td data-label="Today">
+                  Welcome heading and three prompt starters for attention, onboarding and
+                  visualizing work.
+                </td>
+                <td data-label="Placement">In transcript above composer</td>
+                <td data-label="Assessment">
+                  Retain starters for discovery. Give frequent actions a home after welcome
+                  disappears.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Transcript and history</th>
+                <td data-label="Entry">Scroll Chat → Load earlier messages</td>
+                <td data-label="Today">
+                  You, Abra or Session label, time, Markdown or plain text, code/tables, interleaved
+                  tool calls and system notices. Queued text carries delivery mode.
+                </td>
+                <td data-label="Placement">One scroll surface between recap and composer</td>
+                <td data-label="Assessment">
+                  Keep chronology and reading position. Link search hits to the producing message
+                  when identifiable.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Tool observations</th>
+                <td data-label="Entry">Expand a tool in a message or worker transcript</td>
+                <td data-label="Today">
+                  Status, bounded input/output, or typed task, decision, communication, session,
+                  finding and artifact cards with evidence links.
+                </td>
+                <td data-label="Placement">Inline at the producing call</td>
+                <td data-label="Assessment">
+                  Keep compact summaries with explicit links to exact evidence. Expand raw details
+                  locally.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Generated layouts</th>
+                <td data-label="Entry">Message → Open view, or Other retained views disclosure</td>
+                <td data-label="Today">
+                  Exact surface revision opens in inspector. Inline views include rows, columns,
+                  text, tables, status summaries, boards, dependencies, timelines, decisions,
+                  report/evidence/resource links and diagrams.
+                </td>
+                <td data-label="Placement">
+                  Inline attachment → inspector, or retained fallback after messages
+                </td>
+                <td data-label="Assessment">
+                  Keep inline context. Search generated views by title/ID and revision, preserving
+                  live versus captured data.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Generated content and input controls</th>
+                <td data-label="Entry">
+                  Open a v5 generated layout in a producing message or in the inspector
+                </td>
+                <td data-label="Today">
+                  Cards, rows/columns, lists, dividers, tabs and modals organize literal text,
+                  facts, tables, code and disclosures. Image, icon, video and audio can appear. Text
+                  fields, choices, checkboxes, sliders and date/time inputs can be provided by that
+                  view.
+                </td>
+                <td data-label="Placement">
+                  Inside the owning generated view. Offline media availability depends on the
+                  captured source.
+                </td>
+                <td data-label="Assessment">
+                  Keep these controls attached to the generated resource. Index a titled view or
+                  review and open it at its revision.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Generated button actions</th>
+                <td data-label="Entry">Click a button inside a v5 generated view</td>
+                <td data-label="Today">
+                  An event can append prepared text to the Abra draft. An allowed URL action opens a
+                  link. Ordinary finder onboarding uses a separate text setter that can replace
+                  existing prose.
+                </td>
+                <td data-label="Placement">Rendered view → main composer or linked page</td>
+                <td data-label="Assessment">
+                  Reuse the append behavior for onboarding and code templates. Show the intended
+                  effect before selection.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Charts and diagrams</th>
+                <td data-label="Entry">
+                  Open a generated view or report → chart data, diagram source or enlarge
+                </td>
+                <td data-label="Today">
+                  Charts include line, bar and pie. Working tree also declares histogram, scatter,
+                  heatmap and Gantt plus stacked bars. Mermaid offers source and enlarged zoom
+                  controls.
+                </td>
+                <td data-label="Placement">Within owning surface or frozen report</td>
+                <td data-label="Assessment">
+                  Index the parent view. Keep data tables, accessible labels and source fallbacks
+                  with the visual.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Surface freshness and setup</th>
+                <td data-label="Entry">
+                  Open retained view, expand saved tasks or repository setup
+                </td>
+                <td data-label="Today">
+                  Live/captured labels, workspace worker/slot counts, scheduling mode and setup
+                  disclosures appear when provided. Older views can lack exact provenance.
+                </td>
+                <td data-label="Placement">Alongside generated output</td>
+                <td data-label="Assessment">
+                  Keep this context with its specific view. Link to Work → Capacity for current
+                  workspace totals.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Save a view</th>
+                <td data-label="Entry">Generated view → select owning task → Save snapshot</td>
+                <td data-label="Today">
+                  Immutable report action, retry same save on uncertainty, open saved report or save
+                  another snapshot.
+                </td>
+                <td data-label="Placement">Inline surface actions</td>
+                <td data-label="Assessment">
+                  Keep an explicit artifact action. Search should open its control without silently
+                  saving.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Reports and interactive reviews in chat</th>
+                <td data-label="Entry">
+                  Expand attached preview, open report or fill produced review
+                </td>
+                <td data-label="Today">
+                  Exact report preview, receipt/status, feedback fields or message-local
+                  diagnostics. Other retained views and truncation notices cover gaps.
+                </td>
+                <td data-label="Placement">Beside producing message/tool</td>
+                <td data-label="Assessment">
+                  Keep the evidence in context and offer a search path to the same resource.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Composer and draft</th>
+                <td data-label="Entry">Chat → Message Abra → Send or Enter</td>
+                <td data-label="Today">
+                  Textarea, model label, Send button, Shift+Enter newline, session caption and
+                  retained draft. Errors expose Refresh.
+                </td>
+                <td data-label="Placement">Fixed below transcript</td>
+                <td data-label="Assessment">
+                  One writable Abra composer. Preserve unsent text when inserting templates or
+                  navigating.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Busy turn and admission</th>
+                <td data-label="Entry">
+                  While Abra works, select delivery or Stop. Pending send → Reconcile submission
+                </td>
+                <td data-label="Today">
+                  Queue/steer selector, Stop current Abra turn, pending status and retained retry
+                  identity. Queued input also appears in transcript.
+                </td>
+                <td data-label="Placement">Controls beside Send or status immediately above</td>
+                <td data-label="Assessment">
+                  Keep these live controls in Chat. A task’s Pause request has different scope.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Evidence attachments and follow-up</th>
+                <td data-label="Entry">
+                  Select diff lines, plan passage or image region → Ask Abra
+                </td>
+                <td data-label="Today">
+                  One selection chip with expandable excerpt and Remove. Sent capture can expand to
+                  exact question, answer, worker acknowledgement and recheck.
+                </td>
+                <td data-label="Placement">Inspector → draft → message disclosure</td>
+                <td data-label="Assessment">
+                  Reuse the attachment affordance for recognizable source cards. Keep exact revision
+                  and original words.
+                </td>
+              </tr>
+            </tbody>
+            <tbody data-area="Attention and recap">
+              <tr class="group">
+                <th scope="rowgroup" colspan="5">
+                  Attention and recap
+                  <small
+                    >Desktop · Above transcript inside Chat &nbsp; / &nbsp; Phone · Under Chat
+                    header, competes with transcript height &nbsp;
+                    <a href="../../../apps/web/src/presentation/attention-panel.tsx"
+                      >Source</a
+                    ></small
+                  >
+                </th>
+              </tr>
+              <tr>
+                <th scope="row">Personal reading history</th>
+                <td data-label="Entry">Expand Since your last inspection → changed task</td>
+                <td data-label="Today">
+                  Device-local recap for up to 20 inspected tasks. Verification or decision change
+                  opens corresponding section.
+                </td>
+                <td data-label="Placement">Separate disclosure above conversation</td>
+                <td data-label="Assessment">
+                  Move to Work → Recently inspected. Keep unread material separate from requests for
+                  action.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Attention and Review next</th>
+                <td data-label="Entry">Header count → Attention, or Review next shortcut</td>
+                <td data-label="Today">
+                  Count can end in + for partial coverage. First active form or permission can
+                  receive focus. Panel expands in place and preserves edits for its binding.
+                </td>
+                <td data-label="Placement">Same Chat pane as recap, before transcript</td>
+                <td data-label="Assessment">
+                  Give Attention a full queue and a visible shortcut from Chat. Preserve drafts
+                  while reading evidence.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Native forms</th>
+                <td data-label="Entry">
+                  Expand Attention or follow Review current approval from task
+                </td>
+                <td data-label="Today">
+                  Conditional text, choice, multi-choice, number/integer, boolean, external inputs,
+                  defaults, validation, submit/response and stale checkpoint states.
+                </td>
+                <td data-label="Placement">Form cards inside attention panel</td>
+                <td data-label="Assessment">
+                  Search for a pending decision to open its bound form. Keep explicit native
+                  submission.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Permissions</th>
+                <td data-label="Entry">Attention → native permission card</td>
+                <td data-label="Today">
+                  Action/request details and once, always or reject choices.
+                </td>
+                <td data-label="Placement">Same dock as forms, distinct controls</td>
+                <td data-label="Assessment">
+                  Keep permission scope and choices visible at the decision point.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Work obligations and leads</th>
+                <td data-label="Entry">Attention → work reason, or expand a repository/lead</td>
+                <td data-label="Today">
+                  Owner and next action, linked task, unanswered lead counts/proposals and scoped
+                  history. Coverage and diagnostic notices.
+                </td>
+                <td data-label="Placement">Same dock, mixed with forms and permissions</td>
+                <td data-label="Assessment">
+                  Group by Needs you and Other owners. Preserve source counts/limits and independent
+                  decisions.
+                </td>
+              </tr>
+            </tbody>
+            <tbody data-area="Task reader">
+              <tr class="group">
+                <th scope="rowgroup" colspan="5">
+                  Task reader
+                  <small
+                    >Desktop · Right inspector above 1250 px, tablet sheet, optional full report
+                    canvas &nbsp; / &nbsp; Phone · Canvas detail replaces Chat &nbsp;
+                    <a href="../../../apps/web/src/inspector.tsx">Source</a></small
+                  >
+                </th>
+              </tr>
+              <tr>
+                <th scope="row">Reader frame and navigation</th>
+                <td data-label="Entry">
+                  Click work, linked evidence, Search result or route bookmark
+                </td>
+                <td data-label="Today">
+                  Task/title, issue ID, Work details select, refresh, close and desktop width slider
+                  30–55%. Exact selections open directly. Failures can retry.
+                </td>
+                <td data-label="Placement">One detail surface per selection</td>
+                <td data-label="Assessment">
+                  Use stable URLs and a visible way back to the parent list. Keep reader beside Chat
+                  when entered from a message.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Overview and work controls</th>
+                <td data-label="Entry">Work details → Overview</td>
+                <td data-label="Today">
+                  Status, priority, policy, description, immediate approval link, planning/repair
+                  contract, progress, readiness and blockers. Pause, resume, advance fill the
+                  composer.
+                </td>
+                <td data-label="Placement">Shared overview with accepted thought and decisions</td>
+                <td data-label="Assessment">
+                  Lead with next action and blocker. Put lifecycle requests under Ask Abra with
+                  explicit draft behavior.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Outcomes and planning evidence</th>
+                <td data-label="Entry">Overview → Outcomes or Unavailable planning evidence</td>
+                <td data-label="Today">
+                  Independent approval, delivery, closure and cleanup evidence, commit/time, blocked
+                  local paths and truncation.
+                </td>
+                <td data-label="Placement">Overview disclosure</td>
+                <td data-label="Assessment">
+                  Keep outcome dimensions and timestamps. A single Done badge would lose evidence.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Decisions and waits</th>
+                <td data-label="Entry">
+                  Overview or Verification → decision card or resolved history
+                </td>
+                <td data-label="Today">
+                  Current or exact generation, past decisions, waits, owner, supporting evidence and
+                  answer in native form.
+                </td>
+                <td data-label="Placement">Embedded in both sections</td>
+                <td data-label="Assessment">
+                  Retain cross-links. Have recurring links resolve to one detail and one answer
+                  form.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Plan index</th>
+                <td data-label="Entry">Work details → Plan</td>
+                <td data-label="Today">
+                  Policy-specific research contract, lightweight scope or planning artifacts,
+                  archive commit, progress, list limits/errors and source reviews.
+                </td>
+                <td data-label="Placement">Inspector list</td>
+                <td data-label="Assessment">
+                  Keep policy-specific nouns and allow file search scoped to the task.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Plan document and passage</th>
+                <td data-label="Entry">Choose artifact → Ask about a plan passage</td>
+                <td data-label="Today">
+                  Markdown, All artifacts, start/end lines or source criterion, selected excerpt and
+                  attached reviews.
+                </td>
+                <td data-label="Placement">Replaces plan list in reader</td>
+                <td data-label="Assessment">
+                  Link exact file/hash/lines. Return to the same plan list.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Diff and file selection</th>
+                <td data-label="Entry">
+                  Work details → Diff, type Search changes or follow exact file
+                </td>
+                <td data-label="Today">
+                  All/uncommitted scope, split patch, filename/content search and revision
+                  mismatch/unavailable states. Pointer or old/new line-range inputs attach to draft.
+                </td>
+                <td data-label="Placement">Same reader for search, file and lines</td>
+                <td data-label="Assessment">
+                  Give diff the width of the reader, allow wide code to scroll independently and
+                  retain mobile keyboard selection.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Verification summary</th>
+                <td data-label="Entry">Work details → Verification</td>
+                <td data-label="Today">
+                  Controller checks, independent review, scope/criteria/constraints, fingerprint,
+                  previous commands and match to observed revision. Links to scope, changes/report
+                  and decision.
+                </td>
+                <td data-label="Placement">Same section as receipts and decisions</td>
+                <td data-label="Assessment">
+                  Keep verdict, revision match and next decision above evidence.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Verification assets and references</th>
+                <td data-label="Entry">
+                  Expand receipt, image, code reference or documentation link
+                </td>
+                <td data-label="Today">
+                  Lazy screenshot with selectable region, downloadable trace,
+                  file/line/symbol/revision excerpt, versioned documentation and reporting session.
+                </td>
+                <td data-label="Placement">Within Verification</td>
+                <td data-label="Assessment">
+                  Keep original evidence and ownership together. Expose searchable receipt metadata.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Activity navigation</th>
+                <td data-label="Entry">Work details → Activity</td>
+                <td data-label="Today">
+                  Four horizontal tabs for Sessions, Communication, Reviews &amp; checks, Leads
+                  &amp; proposals.
+                </td>
+                <td data-label="Placement">Second navigation level in task reader</td>
+                <td data-label="Assessment">
+                  Keep task scope in the breadcrumb. Provide direct global hits for identified
+                  children.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Worker sessions and transcript</th>
+                <td data-label="Entry">
+                  Activity → Sessions → card or select read-only worker session
+                </td>
+                <td data-label="Today">
+                  Role/ID and session observations, eight summaries per page. Selected worker
+                  history labels assignments, notices, text/tools, bounded pages, older/latest
+                  navigation.
+                </td>
+                <td data-label="Placement">
+                  Cards, selector and transcript stacked in same Activity tab
+                </td>
+                <td data-label="Assessment">
+                  Index role, session ID, repository and owning task. Open this exact reader. Give
+                  instructions via Abra.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Communication</th>
+                <td data-label="Entry">Activity → Communication → message/evidence</td>
+                <td data-label="Today">
+                  Paged retained requests/replies, obligations, answers, source evidence and links
+                  to existing decision.
+                </td>
+                <td data-label="Placement">Within Activity</td>
+                <td data-label="Assessment">
+                  Keep correspondence by task, and link search results to the retained owner.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Reviews, checks and findings</th>
+                <td data-label="Entry">Activity → Reviews &amp; checks → finding or log</td>
+                <td data-label="Today">
+                  Current/history, feedback, check runs/logs, observed gate and retained actions.
+                  Exact finding links to matching changed file if available.
+                </td>
+                <td data-label="Placement">Activity subtab, exact finding in same inspector</td>
+                <td data-label="Assessment">
+                  Verification answers whether the revision passed. Keep the event history here and
+                  link across.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Leads and proposals</th>
+                <td data-label="Entry">Activity → Leads &amp; proposals → Inspect lead history</td>
+                <td data-label="Today">
+                  Scoped lead list, request/answer history, candidate tasks, proposals and
+                  accepted/related work with separate pages.
+                </td>
+                <td data-label="Placement">Task Activity or expanded lead in Attention</td>
+                <td data-label="Assessment">
+                  Retain repository/lead identity across both entry points.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Reports index and Markdown</th>
+                <td data-label="Entry">Work details → Reports</td>
+                <td data-label="Today">
+                  Paged retained revisions, title/status/format, Preview and Download JSON/HTML,
+                  source review and Markdown research report or unavailable reason.
+                </td>
+                <td data-label="Placement">One task section for list and Markdown</td>
+                <td data-label="Assessment">
+                  Keep the task’s publication history. Give exact reports global hits by title and
+                  ID.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Published report and export</th>
+                <td data-label="Entry">
+                  Preview → full report canvas or other reports, export controls
+                </td>
+                <td data-label="Today">
+                  Frozen JSON reader with provenance, evidence,
+                  findings/checks/events/excerpts/limitations/diagrams, legacy HTML sandbox, raw
+                  download. Supported JSON exports to portable HTML with preview/download.
+                </td>
+                <td data-label="Placement">Exact artifact in reader, optional full canvas</td>
+                <td data-label="Assessment">
+                  Make live task and saved revision explicit. Keep export local to the report.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Interactive feedback</th>
+                <td data-label="Entry">From plan, report or producing message → Give feedback</td>
+                <td data-label="Today">
+                  Comment, single/multi-select and design choices with enlarge, validation, Send
+                  feedback to Abra, reconciliation, receipt and revised version.
+                </td>
+                <td data-label="Placement">Embedded review against source revision</td>
+                <td data-label="Assessment">
+                  Keep visual feedback beside its source. A review response and a plan/merge
+                  approval have separate effects.
+                </td>
+              </tr>
+            </tbody>
+            <tbody data-area="Settings and standalone surfaces">
+              <tr class="group">
+                <th scope="rowgroup" colspan="5">
+                  Settings and standalone surfaces
+                  <small
+                    >Desktop · Settings route replaces workspace, own nav and header &nbsp; / &nbsp;
+                    Phone · Top destination Settings, local sections &nbsp;
+                    <a href="../../../apps/web/src/settings.tsx">Source</a></small
+                  >
+                </th>
+              </tr>
+              <tr>
+                <th scope="row">Settings navigation</th>
+                <td data-label="Entry">Header gear, phone Settings, Search command or /settings</td>
+                <td data-label="Today">
+                  Agents by default, Repositories, search, brand and Back to workspace on desktop.
+                  Returning recalls workspace state.
+                </td>
+                <td data-label="Placement">
+                  Dedicated settings sidebar, stacked local nav on small screens
+                </td>
+                <td data-label="Assessment">
+                  One Settings destination. Make repositories discoverable via global Search too.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Agent definitions</th>
+                <td data-label="Entry">Settings → Agents → expand definition</td>
+                <td data-label="Today">
+                  Read-only cards with ID, mode, description, revision, roles, model, assignment
+                  context, tools/custom tools, skills/preloads, requirements, denials and
+                  instruction source/content status.
+                </td>
+                <td data-label="Placement">Expanding rows in settings main pane</td>
+                <td data-label="Assessment">
+                  Search agent ID/description and land on expanded definition. Keep authoring in its
+                  existing owner.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Repository registry</th>
+                <td data-label="Entry">Settings → Repositories or /settings/repositories</td>
+                <td data-label="Today">
+                  Read-only names, ID and path when available, count, refresh and empty state,
+                  including repos without tasks.
+                </td>
+                <td data-label="Placement">Separate settings page</td>
+                <td data-label="Assessment">
+                  Place Onboard repository here. Link to Work or GitHub with this repository filter.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Request and navigation failures</th>
+                <td data-label="Entry">Open any unavailable section or unknown route</td>
+                <td data-label="Today">
+                  Loading skeletons, retained data on refresh failure where supported, local
+                  alert/retry. Navigation can toast with Retry. Page not found links home.
+                </td>
+                <td data-label="Placement">
+                  Near affected resource, or full page on route failure
+                </td>
+                <td data-label="Assessment">
+                  Keep good results while one source fails. Give each source a retry and a route
+                  home.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Portable report and offline feedback</th>
+                <td data-label="Entry">
+                  Download exported HTML → open file → Local review feedback
+                </td>
+                <td data-label="Today">
+                  Saved report, dark toggle, notices. Comments, severity, affected section,
+                  suggestions and questions produce selectable Markdown or JSON locally.
+                </td>
+                <td data-label="Placement">Independent document outside workspace</td>
+                <td data-label="Assessment">
+                  Keep offline feedback export self-contained. Search the originating saved report
+                  in AbraCode.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section>
+        <h2>Order of change and acceptance journeys</h2>
+        <ol>
+          <li>
+            <strong>Move the collections first.</strong> Use existing reads. Move the GitHub filters
+            and rows together; give Thoughts a route; keep the old finder bookmark meaningful.
+            Exercise local Closed versus remote Merged and return to the same list page.
+          </li>
+          <li>
+            <strong>Expand search and draft actions.</strong> Ship Work, Thoughts, GitHub, Settings
+            and commands, then the bounded session lookup. In a workspace larger than one page, find
+            a closed task and a worker by ID. With one provider unavailable, select a result from
+            another. Start onboarding from Settings, Search and slash with a half-written draft.
+          </li>
+          <li>
+            <strong>Carry references through chat.</strong> Save a thought, attach it, send a
+            question, accept an excerpt and follow its original link. Change the memo and repeat
+            with the old reference. Verify that the captured excerpt stays readable.
+          </li>
+          <li>
+            <strong>Complete evidence discovery.</strong> Add task-scoped metadata for reports,
+            findings, reviews and communications, then cross-task indexing where needed. Test exact
+            revisions, missing sources and Back on phone. Use a real phone keyboard and screen
+            reader before committing the new navigation.
+          </li>
+        </ol>
+      </section>
+      <section>
+        <h2>Basis and limits</h2>
+        <p>
+          This study follows the current checkout of the operator web workspace, shared presentation
+          components and portable report viewer. Desktop header/finder and phone Chat/Canvas
+          navigation were checked in the running app. Conditional native forms, uncommon evidence
+          states and offline views were inventoried from their renderers and verification recipes.
+          The mockups use invented records. They illustrate information placement and selected
+          journeys, with no connection to the notebook or controller. Generated controls and chart
+          families include work already in progress in this checkout.
+        </p>
+        <p>
+          Trace the implementations in the
+          <a href="../../../apps/web/src/workspace.tsx">workspace</a>,
+          <a href="../../../apps/web/src/work-finder.tsx">finder</a>,
+          <a href="../../../apps/web/src/github-inbox.tsx">GitHub inbox</a>,
+          <a href="../../../apps/web/src/workspace-palette.tsx">palette</a>,
+          <a href="../../../apps/web/src/inspector.tsx">inspector</a>,
+          <a href="../../../apps/web/src/presentation/">evidence renderers</a>,
+          <a href="../../../packages/presentation/src/">shared views</a>,
+          <a href="../../../apps/report/src/">portable viewer</a> and
+          <a href="../../../packages/runtime/src/work/thoughts.ts">thought adapter</a>. The
+          <a href="../../verification/memos-thoughts.md">Memos journey</a> describes the native
+          checks.
+        </p>
+      </section>
+    </main>
+    <footer>
+      <a href="mockups.html">Open the current and proposed layouts</a> ·
+      <a href="#inventory">Back to inventory</a>
+    </footer>
+    <script>
+      function filterRows() {
+        const term = document.querySelector("#query").value.trim().toLowerCase(),
+          area = document.querySelector("#area").value;
+        let count = 0;
+        for (const body of document.querySelectorAll("#inventoryTable tbody")) {
+          let matches = 0;
+          for (const row of body.querySelectorAll("tr:not(.group)")) {
+            row.hidden = !!(
+              (area && body.dataset.area !== area) ||
+              !(body.querySelector(".group").textContent + " " + row.textContent)
+                .toLowerCase()
+                .includes(term)
+            );
+            if (!row.hidden) matches++;
+          }
+          body.hidden = !matches;
+          count += matches;
+        }
+        document.querySelector("#count").textContent = count + " matching feature groups";
+      }
+      document.querySelector("#query").addEventListener("input", filterRows);
+      document.querySelector("#area").addEventListener("change", filterRows);
+      filterRows();
+    </script>
+  </body>
+</html>

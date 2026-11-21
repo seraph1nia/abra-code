@@ -24,20 +24,31 @@ export type ContentName = keyof typeof contentProps;
 export const contentNames = Object.keys(contentProps) as ContentName[];
 
 const descriptions: Record<ContentName, string> = {
-  Table: "A read-only table with a caption, column headers and one literal text cell per column in each row.",
+  Table:
+    "A read-only table with a caption, column headers and one literal text cell per column in each row.",
   Disclosure: "Expandable labeled section containing one child component.",
   KeyValueList: "Labeled facts about one item, in display order.",
   CodeBlock: "Literal code or output with its original whitespace and optional language label.",
 };
 
-export const contentDefinitions = Object.fromEntries(contentNames.map((name) => {
-  const document = Schema.toJsonSchemaDocument(Schema.Struct({
-    component: Schema.Literal(name),
-    ...contentProps[name].fields,
-  }), { onExcessProperty: "error" });
-  // A catalog Child reference drives both graph validation and Express nesting.
-  if (name === "Disclosure") {
-    document.schema.properties = { ...Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(document.schema.properties), child: { $ref: "common_types.json#/$defs/Child" } };
-  }
-  return [name, { ...document.schema, description: descriptions[name] }];
-}));
+export const contentDefinitions = Object.fromEntries(
+  contentNames.map((name) => {
+    const document = Schema.toJsonSchemaDocument(
+      Schema.Struct({
+        component: Schema.Literal(name),
+        ...contentProps[name].fields,
+      }),
+      { onExcessProperty: "error" },
+    );
+    // A catalog Child reference drives both graph validation and Express nesting.
+    if (name === "Disclosure") {
+      document.schema.properties = {
+        ...Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
+          document.schema.properties,
+        ),
+        child: { $ref: "common_types.json#/$defs/Child" },
+      };
+    }
+    return [name, { ...document.schema, description: descriptions[name] }];
+  }),
+);

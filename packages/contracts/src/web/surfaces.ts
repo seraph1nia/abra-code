@@ -1,9 +1,12 @@
-import { validateChart, chartComponents, v3BarChart } from "./charts.ts";
+import { validateChart, chartComponents } from "./charts.ts";
 import { collectDiagrams, diagramBudget } from "../presentation/diagrams.ts";
 import { Schema } from "effect";
 import { ResourceSelectionSchema } from "./resources.ts";
 import {
   CreateSurfaceMessageSchema,
+  Catalog,
+  PayloadValidator,
+  DataModel,
   getComponentReferences,
   MessageProcessor,
   STRICT_VALIDATION,
@@ -12,9 +15,9 @@ import {
   catalogId,
   catalogV1Id,
   catalogIds,
-  catalogV3Id,
   workCatalogs,
   contentProps,
+  sdkComponent,
   isChartComponent,
   ComponentId,
   ComponentSchema,
@@ -54,7 +57,14 @@ export type WorkComponent = WorkSurface["createSurface"]["components"][number];
 export const toSdkSurface = (surface: WorkSurface) =>
   CreateSurfaceMessageSchema.parse({
     ...surface,
-    createSurface: { ...surface.createSurface, catalogId },
+    createSurface: {
+      ...surface.createSurface,
+      catalogId,
+      ...(surface.createSurface.dataModel && {
+        dataModel: structuredClone(surface.createSurface.dataModel),
+      }),
+      components: surface.createSurface.components.map(sdkComponent),
+    },
   });
 
 export const surfaceValidation = {
@@ -63,6 +73,16 @@ export const surfaceValidation = {
   maxDepth: 10,
   allowedMessages: ["createSurface"],
 };
+
+const historicalValidators = new Map<string, PayloadValidator>();
+function historicalValidator(version: Exclude<(typeof catalogIds)[number], typeof catalogId>) {
+  let validator = historicalValidators.get(version);
+  if (!validator) {
+    validator = new PayloadValidator(Catalog.fromJson(workCatalogs[version]), STRICT_VALIDATION);
+    historicalValidators.set(version, validator);
+  }
+  return validator;
+}
 
 export function referencedWorkIds(surface: WorkSurface): string[] {
   return surface.createSurface.components.flatMap((component) => {
@@ -102,22 +122,24 @@ export function validateSurface(value: unknown, workIds?: ReadonlySet<string>): 
   for (const c of surface.createSurface.components) {
     const id = Schema.decodeUnknownSync(ComponentId)(c.id);
     if (components.has(id)) throw new Error("Repeated component identity");
-    if (typeof c.component !== "string" || !Object.hasOwn(workCatalogs[version].components, c.component))
+    if (typeof c.component !== "string") throw new Error("Missing component type");
+    if (!Object.hasOwn(workCatalogs[version].components, c.component))
       throw new Error(`${c.component} is unavailable in this catalog version`);
+    if (version !== catalogId) historicalValidator(version).validateComponent(c);
     if (c.component === "Table") {
       const { columns, rows } = Schema.decodeUnknownSync(contentProps.Table)(c);
-      if (rows.some(row => row.length !== columns.length)) throw new Error("Each table row needs one cell per column");
+      if (rows.some((row) => row.length !== columns.length))
+        throw new Error("Each table row needs one cell per column");
     }
     if (isChartComponent(c.component)) {
-      if (version === catalogV3Id && c.component === "BarChart") {
-        const { component: _component, id: _id, ...props } = c;
-        Schema.decodeUnknownSync(v3BarChart.props)(props, { onExcessProperty: "error" });
-      }
       validateChart(chartComponents[c.component].decode(c));
     }
     if (c.component === "ResourceLink")
       Schema.decodeUnknownSync(ResourceSelectionSchema)(c.target, { onExcessProperty: "error" });
-    if (c.component === "Text" && (typeof c.text === "string" ? c.text.length > 4096 : version !== catalogId))
+    if (
+      c.component === "Text" &&
+      (typeof c.text === "string" ? c.text.length > 4096 : version !== catalogId)
+    )
       throw new Error("Text requires bounded literal text");
     if (
       version !== catalogId &&
@@ -142,6 +164,40 @@ export function validateSurface(value: unknown, workIds?: ReadonlySet<string>): 
   }
   visit("root", 0);
   if (seen.size !== components.size) throw new Error("Unreachable component");
+  // Templates can expand one declared node into many rendered nodes. Count the
+  // actual initial tree with the same relative paths as the SDK binder.
+  if (surface.createSurface.components.some((c) => c.children && !Array.isArray(c.children))) {
+    const data = new DataModel(surface.createSurface.dataModel ?? {});
+    let instances = 0;
+    function countInstances(id: string, base: string) {
+      if (++instances > 100)
+        throw new Error("A surface can render at most 100 component instances");
+      const component = components.get(id)!;
+      const template = component.children;
+      if (
+        template &&
+        typeof template === "object" &&
+        !Array.isArray(template) &&
+        "componentId" in template &&
+        "path" in template &&
+        typeof template.componentId === "string" &&
+        typeof template.path === "string"
+      ) {
+        const path = DataModel.resolvePath(template.path, base);
+        const rows = data.get(path);
+        if (Array.isArray(rows))
+          for (let i = 0; i < rows.length; i++)
+            countInstances(template.componentId, DataModel.resolvePath(String(i), path));
+      } else
+        for (const [child] of getComponentReferences(component, validationCatalog))
+          countInstances(child, base);
+    }
+    try {
+      countInstances("root", "/");
+    } finally {
+      data.dispose();
+    }
+  }
   const processor = new MessageProcessor([validationCatalog], undefined, {
     version: "1.0",
     validationConfig: surfaceValidation,

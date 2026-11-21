@@ -12,9 +12,11 @@ import { Schema } from "effect";
 import { IssueId } from "../identities.ts";
 import { ResourceSelectionSchema } from "./resources.ts";
 import {
+  A2uiExpressionError,
   basicCatalog,
   Catalog,
   type ComponentApi,
+  type DataContext,
   PayloadValidator,
   STRICT_VALIDATION,
 } from "@a2ui/web_core/v1_0";
@@ -135,8 +137,8 @@ const sharedDefinitions = {
 /** Deterministic generated artifact shared by the native tool, server and browser. */
 const previousDocument = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
-  $id: catalogId,
-  catalogId,
+  $id: catalogV4Id,
+  catalogId: catalogV4Id,
   protocolVersion: "1.0",
   title: "AbraCode work views",
   instructions:
@@ -174,9 +176,7 @@ function historicalCatalog(id: Exclude<(typeof catalogIds)[number], typeof catal
     components: Object.fromEntries(
       names.map((name) => [
         name,
-        name === "BarChart"
-          ? customDocument(v3BarChart).schema
-          : previousDocument.components[name],
+        name === "BarChart" ? customDocument(v3BarChart).schema : previousDocument.components[name],
       ]),
     ),
     $defs: {
@@ -191,18 +191,28 @@ function historicalCatalog(id: Exclude<(typeof catalogIds)[number], typeof catal
 const upstream = basicCatalog.toJson();
 export const workCatalogDocument = {
   ...previousDocument,
+  $id: catalogId,
+  catalogId,
   instructions:
     "Use root as the root component ID. Basic controls bind to the surface data model. " +
     "Button events prepare a message for the user. openUrl requires a user gesture and an HTTP(S) destination. " +
     "Use embedded media for offline reports. Work widgets default to live data; mode snapshot uses retained work. " +
     "Omit issueIds to select all work. Use ResourceLink for owned workspace navigation.",
   components: {
-    ...Object.fromEntries(Object.entries(object(upstream.components)).map(([name, schema]) => {
-      const definition = object(schema);
-      return [name, { ...definition, ...(definition.allOf
-        ? { unevaluatedProperties: false }
-        : { additionalProperties: false }) }];
-    })),
+    ...Object.fromEntries(
+      Object.entries(object(upstream.components)).map(([name, schema]) => {
+        const definition = object(schema);
+        return [
+          name,
+          {
+            ...definition,
+            ...(definition.allOf
+              ? { unevaluatedProperties: false }
+              : { additionalProperties: false }),
+          },
+        ];
+      }),
+    ),
     ...contentDefinitions,
     ...customDefinitions,
   },
@@ -220,22 +230,29 @@ export const workCatalogs = {
   [catalogV1Id]: historicalCatalog(catalogV1Id),
   [catalogV2Id]: historicalCatalog(catalogV2Id),
   [catalogV3Id]: historicalCatalog(catalogV3Id),
-  [catalogV4Id]: { ...previousDocument, $id: catalogV4Id, catalogId: catalogV4Id },
+  [catalogV4Id]: previousDocument,
   [catalogId]: workCatalogDocument,
 };
 export const catalog = Catalog.fromJson(workCatalogDocument);
 
 // The pinned SDK also opens mailto and tel. The v1 guide requires HTTP(S).
-const basicFunctions = [...basicCatalog.functions.values()].map((fn) => fn.name === "openUrl"
-  ? { ...fn, execute(args: Record<string, unknown>) {
-      if (typeof window === "undefined" || typeof args.url !== "string")
-        throw new Error("openUrl requires a browser URL");
-      const url = new URL(args.url, window.location.href);
-      if (url.protocol !== "https:" && url.protocol !== "http:")
-        throw new Error("openUrl requires HTTP or HTTPS");
-      window.open(url.href, "_blank", "noopener,noreferrer");
-    } }
-  : fn);
+const basicFunctions = [...basicCatalog.functions.values()].map((fn) =>
+  fn.name === "openUrl"
+    ? {
+        ...fn,
+        execute(args: Record<string, unknown>, context: DataContext) {
+          if (typeof window === "undefined" || typeof args.url !== "string")
+            throw new A2uiExpressionError("openUrl requires a browser URL", "openUrl");
+          if (!context.isUserActivated || window.navigator.userActivation?.isActive === false)
+            throw new A2uiExpressionError("openUrl requires a user gesture", "openUrl");
+          const url = new URL(args.url, window.location.href);
+          if (url.protocol !== "https:" && url.protocol !== "http:")
+            throw new A2uiExpressionError("openUrl requires HTTP or HTTPS", "openUrl");
+          window.open(url.href, "_blank", "noopener,noreferrer");
+        },
+      }
+    : fn,
+);
 
 export function implementedCatalog<T extends ComponentApi>(entries: readonly T[]) {
   return new Catalog(catalogId, "1.0", entries, basicFunctions, {
@@ -252,6 +269,21 @@ const componentIdentifier = Schema.String.check(Schema.isPattern(/^[a-zA-Z][a-zA
 const componentIdentifierHelp =
   "Component IDs must start with a letter and contain only letters, digits or underscores (up to 101 characters); use projects_heading, not projects-heading.";
 
+// web_core 0.15 uses bare envelope names. Keep canonical v1 names on the wire.
+export function sdkComponent(value: Record<string, Schema.Json>) {
+  let component = value;
+  for (const name of ["checks", "accessibility", "metadata", "catalogId"]) {
+    const canonical = `@${name}`;
+    if (!Object.hasOwn(value, canonical)) continue;
+    if (Object.hasOwn(value, name))
+      throw new Error(`Conflicting component keys: ${name} and ${canonical}`);
+    if (component === value) component = { ...value };
+    component[name] = value[canonical]!;
+    delete component[canonical];
+  }
+  return component;
+}
+
 /** SDK validation remains authoritative for the upstream component definitions. */
 export const ComponentSchema = Schema.Record(Schema.String, Schema.Json).check(
   Schema.makeFilter(
@@ -259,7 +291,7 @@ export const ComponentSchema = Schema.Record(Schema.String, Schema.Json).check(
       if (!Schema.is(componentIdentifier)(value.id))
         return { path: ["id"], issue: componentIdentifierHelp };
       try {
-        validator.validateComponent(value);
+        validator.validateComponent(sdkComponent(value));
         return true;
       } catch (error) {
         return error instanceof Error ? error.message.slice(0, 2048) : false;

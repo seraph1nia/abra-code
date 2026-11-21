@@ -1,47 +1,1812 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AbraCode layout mockups</title><style>
-:root{font:15px/1.45 "Source Sans 3",system-ui,sans-serif;color:#21384b;background:#e5ebf0;--ink:#19374c;--line:#cad5de;--blue:#124e83;--paper:white;--soft:#f2f6f9}*{box-sizing:border-box}body{margin:0}button,select,input,textarea{font:inherit;color:inherit}button,select{cursor:pointer}button,a,summary,input,textarea,select{touch-action:manipulation}:focus-visible{outline:3px solid #b56516;outline-offset:2px}a{color:var(--blue)}button,select,.field{border:1px solid #b3c1ce;border-radius:6px;background:white;padding:.48rem .72rem}button:hover{background:#e6f0fa}button[aria-pressed=true],.active{background:#dcebf8;color:#104574;border-color:#8caecb}button:disabled{cursor:default;color:#586a79;background:#edf0f3}.study{background:#163651;color:white;padding:12px clamp(12px,3vw,45px);display:flex;align-items:center;gap:12px;flex-wrap:wrap}.study a{color:white}.study h1{font-size:1.2rem;margin:0 auto 0 0}.study label{display:flex;align-items:center;gap:6px;font-size:.88rem}.study select{color:var(--ink);padding:4px}.caption{max-width:1450px;color:#384e61;margin:12px auto;padding:0 15px;font-size:.92rem}.frame{display:flex;flex-direction:column;background:white;margin:0 auto 16px;width:calc(100% - 30px);max-width:1450px;height:min(900px,calc(100dvh - 116px));min-height:540px;border:1px solid #a6b7c6;border-radius:10px;overflow:hidden;box-shadow:0 12px 35px #253a4c13}.frame.phone{max-width:390px;height:min(800px,calc(100dvh - 116px));min-height:450px}.bar,.tools,.tabs,.mobilebar{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.bar,.mobilebar{padding:10px 14px;border-bottom:1px solid var(--line)}.bar strong{margin-right:auto}.bar small{color:#4c655d}.layout{display:flex;min-height:0;flex:1}.rail,.column,.reader,.chat{min-width:0;overflow:auto}.rail{flex:0 0 175px;display:flex;flex-direction:column;gap:5px;padding:16px 10px;background:#f0f5f9;border-right:1px solid var(--line)}.rail strong{padding:3px 9px 10px;font-size:1.1rem}.rail button{text-align:left;background:transparent;border-color:transparent}.rail button.active,.rail button:hover{background:#dce8f2}.rail .railsearch{border:1px solid #a8bdcd;background:white;margin-bottom:10px}.foot{margin-top:auto}.column,.reader{padding:clamp(15px,2.3vw,34px);flex:1}.reader{background:#f8fafc;border-left:1px solid var(--line)}.finder{padding:14px;flex:0 0 290px;background:var(--soft);border-right:1px solid var(--line)}.chat{flex:1;display:flex;flex-direction:column;background:white}.chatbody{padding:clamp(18px,3vw,48px);flex:1;overflow:auto}.chatbody>*{max-width:65ch;margin-inline:auto}.composer{padding:12px clamp(12px,3vw,44px);border-top:1px solid var(--line);background:white}.composer textarea{width:100%;min-height:60px;border:1px solid #8fa9bd;border-radius:6px;padding:8px}.composer small{margin-right:auto}.message{margin-block:1.2rem}.message strong,.row strong{display:block}.message p{margin:.3rem 0}.callout,blockquote{margin:12px 0;padding:12px;border-left:3px solid #4882a8;background:#eff5fa}.old .newonly{display:none}h2{font-size:clamp(1.5rem,3vw,2.35rem);line-height:1.08;letter-spacing:-.035em;margin:.45em 0}h3{font-size:1rem;margin:1.35em 0 .4em}.eyeline,small{font-size:.82rem;color:#4b6476}p{max-width:72ch}.tabs,.tools{margin:.7rem 0}.tabs{border-bottom:1px solid var(--line);padding-bottom:8px}.row{display:block;width:100%;text-align:left;padding:12px 8px;border:0;border-radius:0;border-bottom:1px solid var(--line);background:transparent}.row span,.row small{display:block}.row small{margin-top:2px}.field{background:#fbfcfe;color:#4b6174;display:inline-block;margin:2px 0}.finder .field{display:block}.finder h2{font-size:1.3rem}.finder .row{font-size:.91rem}.finder details,.column details,.reader details{margin:.7rem 0}.finder summary,summary{cursor:pointer}.tag{font-size:.8rem;padding:.15rem .4rem;border-radius:4px;background:#e2eef5}.mobilebar{justify-content:space-around;flex-wrap:nowrap;gap:0}.mobilebar button{border-color:transparent;padding:.5rem .3rem;flex:1}.bottomnav{border-top:1px solid var(--line);border-bottom:0}.strong{background:var(--blue);color:white;border-color:var(--blue)}.strong:hover{background:#163a60}.phone .layout{flex-direction:column}.phone .finder,.phone .reader{flex:1;border:0}.phone .column,.phone .reader{padding:15px}.phone .bar{padding:6px 10px}.phone .bar button{font-size:.86rem}.chat .note{border-bottom:1px solid var(--line);padding:7px 14px;margin:0;color:#516373}.phone .chatbody{padding:16px}.phone .composer{padding:8px}.wideReader{flex:0 0 43%}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#e8eff4;padding:10px}.code{font:14px/1.5 ui-monospace,monospace}.chart{display:flex;gap:12px;align-items:end;height:85px;border-bottom:1px solid var(--line)}.chart i{width:36px;background:#5588ac}.flow{display:flex;flex-wrap:wrap;gap:7px}.flow span{padding:7px;background:#e5eef4}.kpi{font-size:1.55rem;font-weight:600}.frame dialog{width:min(560px,94vw);max-height:80dvh;border:1px solid #869db1;border-radius:10px;padding:16px;color:var(--ink)}dialog::backdrop{background:#142e4480}.phone dialog{width:min(390px,100vw);height:min(690px,90dvh)}dialog input{width:100%;padding:10px;border:1px solid #90a7bb;border-radius:5px}.itemlist{max-height:44dvh;overflow:auto}.itemlist button:focus{background:#dcebf8}.tools button{font-size:.9rem}.phone .tools button,.phone .mobilebar button{min-height:42px}.phone h2{font-size:1.7rem}.finder .githubmini{max-height:38vh;overflow:auto}.scope{font-size:.85rem;color:#536c7d}.back{border:0;background:transparent;color:var(--blue);padding:.25rem 0}.pick{width:100%;max-width:18em}.split{display:flex;justify-content:space-between;gap:5px;align-items:center}.notice{display:block;font-size:.85rem;color:#325d47}.old .finder .tools{gap:3px}.old .finder button{padding:.33rem .45rem}.settingsnav{flex:0 0 160px;padding:15px;border-right:1px solid var(--line)}.settingsnav button{display:block;margin-bottom:6px}.phone .settingsnav{flex:0;display:flex;gap:4px;border:0}.phone .newrail{display:none}.frame.tablet .reader.wideReader{flex:0 0 min(560px,90%);box-shadow:-8px 0 20px #18334824}.frame.tablet .newrail{flex-basis:125px}.mockhelp{margin:0 auto 12px;max-width:1450px;padding:0 15px;color:#435b6d}.mockhelp summary{font-size:.85rem}
-@media(max-width:660px){.study{gap:6px 10px}.study h1{font-size:1rem}.study label{font-size:.8rem}.caption{font-size:.84rem}.frame,.frame.phone{width:calc(100% - 12px);min-height:440px;height:72dvh}.study{padding:8px}.study select{max-width:120px}.frame.wide{overflow:auto}.frame.wide>.layout,.frame.wide>.bar{min-width:800px}}
-</style></head><body><header class="study"><a href="index.html">Study</a><h1>Workspace mockups</h1><label>Layout <select id="version"><option value="new">Proposed</option><option value="old">Current</option></select></label><label>Screen <select id="device"><option value="auto">Fit window</option><option value="wide">Desktop</option><option value="phone">Phone</option></select></label><label>Jump to <select id="scene"></select></label></header><p id="caption" class="caption"></p><main id="frame" class="frame" aria-label="Interactive layout example"><div id="view" style="display:contents"></div><dialog id="palette"><div class="split"><h2>Search</h2><button id="closeSearch">Close</button></div><input type="search" id="term" aria-label="Search workspace" autocomplete="off"><div id="types" class="tools"></div><div class="itemlist" id="hits"></div><small>↑ ↓ to choose · Enter to open · Esc to return</small></dialog></main><details class="mockhelp"><summary>About these sketches</summary><p>Invented records and in-memory drafts. Use the controls in the dark bar to compare the same scene. Buttons walk through representative flows. Bordered text shows the footprint of other controls. Refresh resets the sample. No messages, notebook writes, approvals or network requests are sent.</p></details>
-<script>
-const $=s=>document.querySelector(s);
-const scenes={chat:'Chat',work:'Work',github:'GitHub inbox',pr:'GitHub detail',thoughts:'Thoughts',memo:'Thought detail',attention:'Attention',task:'Task overview',plan:'Plan',diff:'Diff',verification:'Verification',sessions:'Session reader',communication:'Communication',checks:'Reviews & checks',leads:'Leads & proposals',reports:'Reports',report:'Saved report',review:'Interactive review',surface:'Generated view',portable:'Offline export',capacity:'Capacity and fleet',recap:'Recently inspected',settings:'Agents',repos:'Repositories',search:'Search'};
-const taskPages=['task','plan','diff','verification','sessions','communication','checks','leads','reports','report','review','surface'];
-const activity=['sessions','communication','checks','leads'];
-const notes='Keep the draft when opening a worker session.';
-const work='Preserve chat drafts on mobile';
-const cmd='Help me onboard a repository.';
-const save='Save this exact wording as a private thought: ';
-const demo={page:'work',from:'work',draft:'',attached:false,sent:[],origin:'',scope:'All',previous:'work',lastCanvas:'work',message:'',phoneMenu:false,mode:'new',back:[],filter:'Active',memoOriginal:false};
-const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
-const B=(label,action,cls='')=>'<button type="button" class="'+cls+'" data-act="'+action+'">'+esc(label)+'</button>';
-const R=(title,detail,action)=>'<button class="row" data-act="'+action+'"><strong>'+esc(title)+'</strong><small>'+esc(detail)+'</small></button>';
-const F=t=>'<span class="field">'+esc(t)+'</span>';
-const D=(title,body)=>'<details><summary>'+title+'</summary>'+body+'</details>';
-const head=(path,title)=>'<div class="eyeline">'+path+'</div><h2>'+title+'</h2>';
-const go=(p)=>'go/'+p;
-const newUI=()=>$('#version').value==='new';
-const phone=()=>$('#device').value==='phone'||($('#device').value==='auto'&&innerWidth<=760);
-const tablet=()=>$('#device').value==='auto'&&innerWidth>760&&innerWidth<=1250;
-const isTask=p=>taskPages.includes(p);
-const nav=(label,p)=>B(label,go(p),demo.page===p?'active':'');
-const section=(name,items)=>'<h3>'+name+'</h3>'+items;
-const badges=()=>B('Attention · 2',go('attention'));
-const paletteButton=()=>B(phone()?'Search':'Search  ⌘ / Ctrl K','search');
-const status='<small>● Abra is ready</small>';
-const stash=()=>{if($('#draft'))demo.draft=$('#draft').value};
-function move(p,remember=true){stash();if(remember&&p!==demo.page){demo.back.push(demo.page);if(isTask(p)&&!isTask(demo.page))demo.from=demo.page}if(isTask(p))demo.lastCanvas=p;demo.page=p;demo.message='';demo.memoOriginal=false;draw()}
-function back(fallback){const prior=demo.back.pop();move(prior||fallback,false)}
-function insert(text){stash();const separator=demo.draft&&!/\s$/.test(demo.draft)?'\n':'';demo.draft+=separator+text;moveToDraft()}
-function moveToDraft(){demo.back.push(demo.page);demo.page='chat';draw();$('#draft')?.focus()}
-function deck(){return '<section class="chat">'+(newUI()?'':'<div class="note">'+D('Since your last inspection',R(work,'Verification result',go('verification')))+'</div>')+(demo.page==='attention'&&!newUI()?'<div class="note" style="max-height:40%;overflow:auto">'+attention()+'</div>':(!newUI()?'<div class="note">'+B('Review next',go('attention'))+'</div>':''))+'<div class="chatbody">'+head('Main conversation','Abra')+'<article class="message"><strong>You <small>10:24</small></strong><p>What changed in mobile navigation?</p></article><article class="message"><strong>Abra <small>10:25</small></strong><p>The worker recorded the draft-restoration check. You can inspect the evidence or read the session.</p>'+R('Draft restoration check','Verification · '+work,go('verification'))+R('Navigation review','Worker session · reviewer',go('sessions'))+R('Mobile work summary','Generated view · revision 2',go('surface'))+'</article>'+demo.sent.map(x=>'<article class="message"><strong>You</strong><p>'+esc(x.text)+'</p>'+(x.attached?memoCard(false):'')+'</article>').join('')+'</div><div class="composer">'+(demo.attached?(newUI()?memoCard(true):'<div class="tools">Selected thought · memos/draft-note '+B('Remove thought','remove')+'</div>'):'')+'<textarea id="draft" aria-label="Message Abra" placeholder="'+(newUI()?'Message Abra or type / for commands':'Ask Abra to explore, plan, or build…')+'">'+esc(demo.draft)+'</textarea><div id="slash"></div><div class="tools"><small>Current model</small>'+B('Send','send','strong')+'</div><output class="notice">'+esc(demo.message)+'</output></div></section>'}
-function memoCard(remove){return '<blockquote><strong>'+notes+'</strong><br><small>Personal Memos · #mobile · 20 Nov</small><div class="tools">'+B('Open in Memos ↗','original')+(remove?B('Remove thought','remove'):'')+'</div></blockquote>'}
-function workRows(){return (demo.filter!=='Closed'?R(work,'abra-code · Waiting for plan approval',go('task')):'')+(demo.filter!=='Active'?R('Finish draft restoration check','abra-code · Closed',go('verification')):'')}
-function filters(){return '<div class="tabs">'+['Active','Closed','All'].map(v=>B(v,'filter/'+v,demo.filter===v?'active':'')).join('')+'</div>'}
-function githubRows(){return R('PR #42 · Restore draft focus','abra-code · open · review',go('pr'))}
-function oldFinder(){const p=demo.page;if(['thoughts','memo'].includes(p))return '<aside class="column finder">'+B('Back to Work',go('work'),'back')+thoughts(p==='memo')+'</aside>';return '<aside class="column finder"><div class="split"><h2>Work</h2>'+B('Close',go('chat'))+'</div>'+B('Thoughts',go('thoughts'))+F('Search work…')+F('All projects ▾')+'<section class="githubmini"><h3>GitHub inbox</h3>'+D('GitHub filters',F('Type · State · Abra role · Label'))+'<small>Refresh GitHub</small>'+githubRows()+'</section><h3>Local work</h3>'+filters()+'<strong>Workspace capacity</strong><br><small>Workers 1 / 4 · Execution slots 2 / 6</small>'+workRows()+'<small>Previous · 1–1 of 1 · Next</small>'+D('Fleet across all projects','<p>Waiting for approval 1 · Completed today 1</p>')+B('Add a project','onboard')+'<p><small>Licenses</small></p></aside>'}
-function thoughts(detail){return head(newUI()?'Personal notebook':'Work finder',detail?'Thought':'Thoughts')+(detail?B('‹ Results',go('thoughts'),'back')+'<p class="scope">20 November · #mobile</p><blockquote>'+notes+'</blockquote><div class="tools">'+B('Open in Memos ↗','original')+B(newUI()?'Attach to chat':'Ask Abra about this','attach','strong')+'</div>':F('Search your thoughts…')+D(newUI()?'Filters':'Tag and dates',F('Tag')+F('From (UTC)')+F('Before (UTC)'))+(newUI()?B('Save a thought','save'):'')+R(notes,'20 November · #mobile',go('memo')))}
-function attention(){return head('Workspace','Attention')+'<h3>Plan approval</h3><p>'+work+'</p>'+B('Read the plan',go('plan'))+'<div class="callout"><strong>Native answer form</strong><p>Review the current plan before submitting.</p>'+F('Decision ▾')+' '+F('Submit answer')+'</div>'+D('Permission request','<p>Allow access to the selected directory?</p>'+F('Once')+F('Always')+F('Reject'))+D('Other owners and lead requests','<p>Abra · Waiting for the reviewer’s answer.</p>')}
-function rail(){return '<nav aria-label="Destinations" class="rail newrail"><strong>AbraCode</strong>'+B('Search   ⌘ / Ctrl K','search','railsearch')+nav('Chat','chat')+nav('Work','work')+nav('GitHub','github')+nav('Thoughts','thoughts')+nav('Attention · 2','attention')+'<div class="foot">'+nav('Settings','settings')+'</div></nav>'}
-function list(){return head('Workspace','Work')+'<div class="tabs">'+nav('Tasks','work')+nav('Sessions','sessions-list')+nav('Capacity','capacity')+nav('Recently inspected','recap')+'</div><div class="tools">'+F('Search local work…')+F('All repositories ▾')+'</div>'+filters()+workRows()}
-function remote(detail){return detail?head('abra-code / PR #42','Restore draft focus')+'<p>Open · alix · checked at 10:22</p><p>Return the cursor to the existing draft after inspecting a worker.</p>'+F('Open on GitHub ↗')+section('Linked Abra work',R(work,'Review · in progress',go('task')))+D('Recent discussion','<p>Can we verify this on a narrow screen?</p>')+B('Ask Abra to review','review-pr'):head('Workspace','GitHub')+'<div class="tools">'+F('Search GitHub…')+F('All repositories ▾')+'</div>'+D('GitHub filters',F('Type')+F('Remote state')+F('Abra role')+F('Label'))+'<p class="scope">Open issues and pull requests · checked at 10:22</p>'+githubRows()}
-function settings(repo){return head('Settings',repo?'Repositories':'Agents')+'<small>Read only</small>'+(repo?'<h3>abra-code</h3><code>~/Projects/abra-code</code><p>1 repository onboarded</p>'+(newUI()?B('Onboard repository','onboard'):''):D('Abra · supervisor','<p>Main conversation and coordination.</p><dl><dt>Roles</dt><dd>Supervisor</dd><dt>Tools and skills</dt><dd>Work inspection, planning and notebook lookup</dd></dl>'+D('Instructions','<p>Authored instructions and source references.</p>')))}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AbraCode layout mockups</title>
+    <style>
+      :root {
+        font:
+          15px/1.45 "Source Sans 3",
+          system-ui,
+          sans-serif;
+        color: #21384b;
+        background: #e5ebf0;
+        --ink: #19374c;
+        --line: #cad5de;
+        --blue: #124e83;
+        --paper: white;
+        --soft: #f2f6f9;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      button,
+      select,
+      input,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+      button,
+      select {
+        cursor: pointer;
+      }
+      button,
+      a,
+      summary,
+      input,
+      textarea,
+      select {
+        touch-action: manipulation;
+      }
+      :focus-visible {
+        outline: 3px solid #b56516;
+        outline-offset: 2px;
+      }
+      a {
+        color: var(--blue);
+      }
+      button,
+      select,
+      .field {
+        border: 1px solid #b3c1ce;
+        border-radius: 6px;
+        background: white;
+        padding: 0.48rem 0.72rem;
+      }
+      button:hover {
+        background: #e6f0fa;
+      }
+      button[aria-pressed="true"],
+      .active {
+        background: #dcebf8;
+        color: #104574;
+        border-color: #8caecb;
+      }
+      button:disabled {
+        cursor: default;
+        color: #586a79;
+        background: #edf0f3;
+      }
+      .study {
+        background: #163651;
+        color: white;
+        padding: 12px clamp(12px, 3vw, 45px);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .study a {
+        color: white;
+      }
+      .study h1 {
+        font-size: 1.2rem;
+        margin: 0 auto 0 0;
+      }
+      .study label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.88rem;
+      }
+      .study select {
+        color: var(--ink);
+        padding: 4px;
+      }
+      .caption {
+        max-width: 1450px;
+        color: #384e61;
+        margin: 12px auto;
+        padding: 0 15px;
+        font-size: 0.92rem;
+      }
+      .frame {
+        display: flex;
+        flex-direction: column;
+        background: white;
+        margin: 0 auto 16px;
+        width: calc(100% - 30px);
+        max-width: 1450px;
+        height: min(900px, calc(100dvh - 116px));
+        min-height: 540px;
+        border: 1px solid #a6b7c6;
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 12px 35px #253a4c13;
+      }
+      .frame.phone {
+        max-width: 390px;
+        height: min(800px, calc(100dvh - 116px));
+        min-height: 450px;
+      }
+      .bar,
+      .tools,
+      .tabs,
+      .mobilebar {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        flex-wrap: wrap;
+      }
+      .bar,
+      .mobilebar {
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+      }
+      .bar strong {
+        margin-right: auto;
+      }
+      .bar small {
+        color: #4c655d;
+      }
+      .layout {
+        display: flex;
+        min-height: 0;
+        flex: 1;
+      }
+      .rail,
+      .column,
+      .reader,
+      .chat {
+        min-width: 0;
+        overflow: auto;
+      }
+      .rail {
+        flex: 0 0 175px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        padding: 16px 10px;
+        background: #f0f5f9;
+        border-right: 1px solid var(--line);
+      }
+      .rail strong {
+        padding: 3px 9px 10px;
+        font-size: 1.1rem;
+      }
+      .rail button {
+        text-align: left;
+        background: transparent;
+        border-color: transparent;
+      }
+      .rail button.active,
+      .rail button:hover {
+        background: #dce8f2;
+      }
+      .rail .railsearch {
+        border: 1px solid #a8bdcd;
+        background: white;
+        margin-bottom: 10px;
+      }
+      .foot {
+        margin-top: auto;
+      }
+      .column,
+      .reader {
+        padding: clamp(15px, 2.3vw, 34px);
+        flex: 1;
+      }
+      .reader {
+        background: #f8fafc;
+        border-left: 1px solid var(--line);
+      }
+      .finder {
+        padding: 14px;
+        flex: 0 0 290px;
+        background: var(--soft);
+        border-right: 1px solid var(--line);
+      }
+      .chat {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: white;
+      }
+      .chatbody {
+        padding: clamp(18px, 3vw, 48px);
+        flex: 1;
+        overflow: auto;
+      }
+      .chatbody > * {
+        max-width: 65ch;
+        margin-inline: auto;
+      }
+      .composer {
+        padding: 12px clamp(12px, 3vw, 44px);
+        border-top: 1px solid var(--line);
+        background: white;
+      }
+      .composer textarea {
+        width: 100%;
+        min-height: 60px;
+        border: 1px solid #8fa9bd;
+        border-radius: 6px;
+        padding: 8px;
+      }
+      .composer small {
+        margin-right: auto;
+      }
+      .message {
+        margin-block: 1.2rem;
+      }
+      .message strong,
+      .row strong {
+        display: block;
+      }
+      .message p {
+        margin: 0.3rem 0;
+      }
+      .callout,
+      blockquote {
+        margin: 12px 0;
+        padding: 12px;
+        border-left: 3px solid #4882a8;
+        background: #eff5fa;
+      }
+      .old .newonly {
+        display: none;
+      }
+      h2 {
+        font-size: clamp(1.5rem, 3vw, 2.35rem);
+        line-height: 1.08;
+        letter-spacing: -0.035em;
+        margin: 0.45em 0;
+      }
+      h3 {
+        font-size: 1rem;
+        margin: 1.35em 0 0.4em;
+      }
+      .eyeline,
+      small {
+        font-size: 0.82rem;
+        color: #4b6476;
+      }
+      p {
+        max-width: 72ch;
+      }
+      .tabs,
+      .tools {
+        margin: 0.7rem 0;
+      }
+      .tabs {
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 8px;
+      }
+      .row {
+        display: block;
+        width: 100%;
+        text-align: left;
+        padding: 12px 8px;
+        border: 0;
+        border-radius: 0;
+        border-bottom: 1px solid var(--line);
+        background: transparent;
+      }
+      .row span,
+      .row small {
+        display: block;
+      }
+      .row small {
+        margin-top: 2px;
+      }
+      .field {
+        background: #fbfcfe;
+        color: #4b6174;
+        display: inline-block;
+        margin: 2px 0;
+      }
+      .finder .field {
+        display: block;
+      }
+      .finder h2 {
+        font-size: 1.3rem;
+      }
+      .finder .row {
+        font-size: 0.91rem;
+      }
+      .finder details,
+      .column details,
+      .reader details {
+        margin: 0.7rem 0;
+      }
+      .finder summary,
+      summary {
+        cursor: pointer;
+      }
+      .tag {
+        font-size: 0.8rem;
+        padding: 0.15rem 0.4rem;
+        border-radius: 4px;
+        background: #e2eef5;
+      }
+      .mobilebar {
+        justify-content: space-around;
+        flex-wrap: nowrap;
+        gap: 0;
+      }
+      .mobilebar button {
+        border-color: transparent;
+        padding: 0.5rem 0.3rem;
+        flex: 1;
+      }
+      .bottomnav {
+        border-top: 1px solid var(--line);
+        border-bottom: 0;
+      }
+      .strong {
+        background: var(--blue);
+        color: white;
+        border-color: var(--blue);
+      }
+      .strong:hover {
+        background: #163a60;
+      }
+      .phone .layout {
+        flex-direction: column;
+      }
+      .phone .finder,
+      .phone .reader {
+        flex: 1;
+        border: 0;
+      }
+      .phone .column,
+      .phone .reader {
+        padding: 15px;
+      }
+      .phone .bar {
+        padding: 6px 10px;
+      }
+      .phone .bar button {
+        font-size: 0.86rem;
+      }
+      .chat .note {
+        border-bottom: 1px solid var(--line);
+        padding: 7px 14px;
+        margin: 0;
+        color: #516373;
+      }
+      .phone .chatbody {
+        padding: 16px;
+      }
+      .phone .composer {
+        padding: 8px;
+      }
+      .wideReader {
+        flex: 0 0 43%;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: #e8eff4;
+        padding: 10px;
+      }
+      .code {
+        font:
+          14px/1.5 ui-monospace,
+          monospace;
+      }
+      .chart {
+        display: flex;
+        gap: 12px;
+        align-items: end;
+        height: 85px;
+        border-bottom: 1px solid var(--line);
+      }
+      .chart i {
+        width: 36px;
+        background: #5588ac;
+      }
+      .flow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+      .flow span {
+        padding: 7px;
+        background: #e5eef4;
+      }
+      .kpi {
+        font-size: 1.55rem;
+        font-weight: 600;
+      }
+      .frame dialog {
+        width: min(560px, 94vw);
+        max-height: 80dvh;
+        border: 1px solid #869db1;
+        border-radius: 10px;
+        padding: 16px;
+        color: var(--ink);
+      }
+      dialog::backdrop {
+        background: #142e4480;
+      }
+      .phone dialog {
+        width: min(390px, 100vw);
+        height: min(690px, 90dvh);
+      }
+      dialog input {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #90a7bb;
+        border-radius: 5px;
+      }
+      .itemlist {
+        max-height: 44dvh;
+        overflow: auto;
+      }
+      .itemlist button:focus {
+        background: #dcebf8;
+      }
+      .tools button {
+        font-size: 0.9rem;
+      }
+      .phone .tools button,
+      .phone .mobilebar button {
+        min-height: 42px;
+      }
+      .phone h2 {
+        font-size: 1.7rem;
+      }
+      .finder .githubmini {
+        max-height: 38vh;
+        overflow: auto;
+      }
+      .scope {
+        font-size: 0.85rem;
+        color: #536c7d;
+      }
+      .back {
+        border: 0;
+        background: transparent;
+        color: var(--blue);
+        padding: 0.25rem 0;
+      }
+      .pick {
+        width: 100%;
+        max-width: 18em;
+      }
+      .split {
+        display: flex;
+        justify-content: space-between;
+        gap: 5px;
+        align-items: center;
+      }
+      .notice {
+        display: block;
+        font-size: 0.85rem;
+        color: #325d47;
+      }
+      .old .finder .tools {
+        gap: 3px;
+      }
+      .old .finder button {
+        padding: 0.33rem 0.45rem;
+      }
+      .settingsnav {
+        flex: 0 0 160px;
+        padding: 15px;
+        border-right: 1px solid var(--line);
+      }
+      .settingsnav button {
+        display: block;
+        margin-bottom: 6px;
+      }
+      .phone .settingsnav {
+        flex: 0;
+        display: flex;
+        gap: 4px;
+        border: 0;
+      }
+      .phone .newrail {
+        display: none;
+      }
+      .frame.tablet .reader.wideReader {
+        flex: 0 0 min(560px, 90%);
+        box-shadow: -8px 0 20px #18334824;
+      }
+      .frame.tablet .newrail {
+        flex-basis: 125px;
+      }
+      .mockhelp {
+        margin: 0 auto 12px;
+        max-width: 1450px;
+        padding: 0 15px;
+        color: #435b6d;
+      }
+      .mockhelp summary {
+        font-size: 0.85rem;
+      }
+      @media (max-width: 660px) {
+        .study {
+          gap: 6px 10px;
+        }
+        .study h1 {
+          font-size: 1rem;
+        }
+        .study label {
+          font-size: 0.8rem;
+        }
+        .caption {
+          font-size: 0.84rem;
+        }
+        .frame,
+        .frame.phone {
+          width: calc(100% - 12px);
+          min-height: 440px;
+          height: 72dvh;
+        }
+        .study {
+          padding: 8px;
+        }
+        .study select {
+          max-width: 120px;
+        }
+        .frame.wide {
+          overflow: auto;
+        }
+        .frame.wide > .layout,
+        .frame.wide > .bar {
+          min-width: 800px;
+        }
+      }
+      .frame.tablet .layout {
+        position: relative;
+      }
+      .frame.tablet .reader.wideReader {
+        position: absolute;
+        inset: 0 0 0 auto;
+        width: min(560px, 90%);
+        background: #f8fafc;
+        z-index: 1;
+      }
+      .phone .reader.wideReader {
+        flex: 1;
+      }
+      .phone dialog[open] {
+        padding: 16px;
+        max-width: 100vw;
+      }
+      .phone dialog[open] .itemlist {
+        max-height: 56dvh;
+      }
+      .tasklabels,
+      .taskrow.row {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(110px, 0.7fr) minmax(0, 1fr);
+        align-items: center;
+        gap: 14px;
+      }
+      .tasklabels {
+        padding: 8px;
+        color: #536b7e;
+        background: #f2f6f9;
+        font-size: 0.85rem;
+      }
+      .taskrow.row {
+        padding: 16px 8px;
+      }
+      .phase {
+        width: fit-content;
+        background: #ecf2f6;
+        border-radius: 4px;
+        padding: 3px 7px;
+        font-size: 0.85rem;
+      }
+      .phone .tasklabels {
+        display: none;
+      }
+      .phone .taskrow.row {
+        grid-template-columns: 1fr auto;
+        gap: 3px 6px;
+      }
+      .phone .taskrow > small {
+        grid-column: 1/-1;
+      }
+      .taskrow small {
+        font-size: 0.88rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="study">
+      <a href="index.html">Study</a>
+      <h1>Workspace mockups</h1>
+      <label
+        >Layout
+        <select id="version">
+          <option value="new">Proposed</option>
+          <option value="old">Current</option>
+        </select></label
+      ><label
+        >Screen
+        <select id="device">
+          <option value="auto">Fit window</option>
+          <option value="wide">Desktop</option>
+          <option value="phone">Phone</option>
+        </select></label
+      ><label
+        >Jump to
+        <select id="scene"></select
+      ></label>
+    </header>
+    <p id="caption" class="caption"></p>
+    <main id="frame" class="frame" aria-label="Interactive layout example">
+      <div id="view" style="display: contents"></div>
+      <dialog id="palette">
+        <div class="split">
+          <h2>Search</h2>
+          <button id="closeSearch">Close</button>
+        </div>
+        <input type="search" id="term" aria-label="Search workspace" autocomplete="off" />
+        <div id="types" class="tools"></div>
+        <div class="itemlist" id="hits"></div>
+        <small>↑ ↓ to choose · Enter to open · Esc to return</small>
+      </dialog>
+    </main>
+    <details class="mockhelp">
+      <summary>About these sketches</summary>
+      <p>
+        Invented records and in-memory drafts. Use the controls in the dark bar to compare the same
+        scene. Buttons walk through representative flows. Bordered text shows the footprint of other
+        controls. Refresh resets the sample. No messages, notebook writes, approvals or network
+        requests are sent.
+      </p>
+    </details>
+    <script>
+      const $ = (s) => document.querySelector(s);
+      const scenes = {
+        chat: "Chat",
+        work: "Work",
+        github: "GitHub inbox",
+        pr: "GitHub detail",
+        thoughts: "Thoughts",
+        memo: "Thought detail",
+        attention: "Attention",
+        task: "Task overview",
+        plan: "Plan",
+        diff: "Diff",
+        verification: "Verification",
+        sessions: "Session reader",
+        communication: "Communication",
+        checks: "Reviews & checks",
+        leads: "Leads & proposals",
+        reports: "Reports",
+        report: "Saved report",
+        review: "Interactive review",
+        surface: "Generated view",
+        portable: "Offline export",
+        capacity: "Capacity and fleet",
+        recap: "Recently inspected",
+        settings: "Agents",
+        repos: "Repositories",
+        search: "Search",
+      };
+      const taskPages = [
+        "task",
+        "plan",
+        "diff",
+        "verification",
+        "sessions",
+        "communication",
+        "checks",
+        "leads",
+        "reports",
+        "report",
+        "review",
+        "surface",
+      ];
+      const activity = ["sessions", "communication", "checks", "leads"];
+      const notes = "Keep the draft when opening a worker session.";
+      const work = "Preserve chat drafts on mobile";
+      const cmd = "Help me onboard a repository.";
+      const save = "Save this exact wording as a private thought: ";
+      const demo = {
+        page: "work",
+        from: "work",
+        draft: "",
+        attached: false,
+        excerpt: false,
+        sent: [],
+        scope: "All",
+        lastCanvas: "work",
+        message: "",
+        back: [],
+        filter: "Active",
+        taskQuery: "",
+        repo: "",
+      };
+      const esc = (s) =>
+        String(s)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;");
+      const B = (label, action, cls = "") =>
+        '<button type="button" class="' +
+        cls +
+        '" data-act="' +
+        action +
+        '">' +
+        esc(label) +
+        "</button>";
+      const R = (title, detail, action) =>
+        '<button class="row" data-act="' +
+        action +
+        '"><strong>' +
+        esc(title) +
+        "</strong><small>" +
+        esc(detail) +
+        "</small></button>";
+      const F = (t) => '<span class="field">' + esc(t) + "</span>";
+      const D = (title, body) => "<details><summary>" + title + "</summary>" + body + "</details>";
+      const head = (path, title) => '<div class="eyeline">' + path + "</div><h2>" + title + "</h2>";
+      const go = (p) => "go/" + p;
+      const newUI = () => $("#version").value === "new";
+      const phone = () =>
+        $("#device").value === "phone" || ($("#device").value === "auto" && innerWidth <= 760);
+      const tablet = () => $("#device").value === "auto" && innerWidth > 760 && innerWidth <= 1250;
+      const isTask = (p) => taskPages.includes(p) || tasks.some((t) => t.id === p);
+      const nav = (label, p) => B(label, go(p), demo.page === p ? "active" : "");
+      function destination(label, p) {
+        const current = demo.page;
+        const parent =
+          current === "memo"
+            ? "thoughts"
+            : current === "pr"
+              ? "github"
+              : current === "repos"
+                ? "settings"
+                : isTask(current)
+                  ? demo.from === "chat"
+                    ? "chat"
+                    : "work"
+                  : ["sessions-list", "capacity", "recap"].includes(current)
+                    ? "work"
+                    : current;
+        return B(label, go(p), parent === p ? "active" : "");
+      }
+      const section = (name, items) => "<h3>" + name + "</h3>" + items;
+      const badges = () => B("Attention · 2", go("attention"));
+      const paletteButton = () => B(phone() ? "Search" : "Search  ⌘ / Ctrl K", "search");
+      const status = "<small>● Abra is ready</small>";
+      const stash = () => {
+        if ($("#draft")) demo.draft = $("#draft").value;
+      };
+      function move(p, remember = true) {
+        stash();
+        if (remember && p !== demo.page) {
+          demo.back.push(demo.page);
+          if (isTask(p) && !isTask(demo.page)) demo.from = demo.page;
+        }
+        if (isTask(p)) demo.lastCanvas = p;
+        demo.page = p;
+        demo.message = "";
+        draw();
+      }
+      function back(fallback) {
+        const prior = demo.back.pop();
+        move(prior || fallback, false);
+      }
+      function insert(text) {
+        stash();
+        const separator = demo.draft && !/\s$/.test(demo.draft) ? "\n" : "";
+        demo.draft += separator + text;
+        moveToDraft();
+      }
+      function moveToDraft() {
+        demo.back.push(demo.page);
+        demo.page = "chat";
+        draw();
+        $("#draft")?.focus();
+      }
+      function deck() {
+        return (
+          '<section class="chat">' +
+          (newUI()
+            ? ""
+            : '<div class="note">' +
+              D("Since your last inspection", R(work, "Verification result", go("verification"))) +
+              "</div>") +
+          (demo.page === "attention" && !newUI()
+            ? '<div class="note" style="max-height:40%;overflow:auto">' + attention() + "</div>"
+            : !newUI()
+              ? '<div class="note">' + B("Review next", go("attention")) + "</div>"
+              : "") +
+          '<div class="chatbody">' +
+          head("Main conversation", "Abra") +
+          '<article class="message"><strong>You <small>10:24</small></strong><p>What changed in mobile navigation?</p></article><article class="message"><strong>Abra <small>10:25</small></strong><p>The worker recorded the draft-restoration check. You can inspect the evidence or read the session.</p>' +
+          R("Draft restoration check", "Verification · " + work, go("verification")) +
+          R("Navigation review", "Worker session · reviewer", go("sessions")) +
+          R("Mobile work summary", "Generated view · revision 2", go("surface")) +
+          "</article>" +
+          demo.sent
+            .map(
+              (x) =>
+                '<article class="message"><strong>You</strong><p>' +
+                esc(x.text) +
+                "</p>" +
+                (x.attached
+                  ? newUI()
+                    ? memoCard(false)
+                    : "<small>Selected personal thought · memos/draft-note</small>"
+                  : "") +
+                (x.excerpt
+                  ? D("Captured selection", "<pre>restoreDraftFocus(session)</pre>")
+                  : "") +
+                "</article>",
+            )
+            .join("") +
+          '</div><div class="composer">' +
+          (demo.attached
+            ? newUI()
+              ? memoCard(true)
+              : '<div class="tools">Selected thought · memos/draft-note ' +
+                B("Remove thought", "remove") +
+                "</div>"
+            : "") +
+          (demo.excerpt
+            ? D("AC-18 · Captured selection", "<pre>restoreDraftFocus(session)</pre>") +
+              B("Remove selection", "clear-excerpt")
+            : "") +
+          '<textarea id="draft" aria-label="Message Abra" placeholder="' +
+          (newUI()
+            ? "Message Abra or type / for commands"
+            : "Ask Abra to explore, plan, or build…") +
+          '">' +
+          esc(demo.draft) +
+          '</textarea><div id="slash"></div><div class="tools"><small>Current model</small>' +
+          B("Send", "send", "strong") +
+          '</div><output class="notice">' +
+          esc(demo.message) +
+          "</output></div></section>"
+        );
+      }
+      function memoCard(remove) {
+        return (
+          "<blockquote><strong>" +
+          notes +
+          '</strong><br><small>Personal Memos · #mobile · 20 Nov</small><div class="tools">' +
+          B("Open in Memos ↗", "original") +
+          (remove ? B("Remove thought", "remove") : "") +
+          "</div></blockquote>"
+        );
+      }
+      const tasks = [
+        {
+          id: "AC-18",
+          title: work,
+          repo: "abra-code",
+          phase: "Waiting for approval",
+          next: "Review the current plan",
+        },
+        {
+          id: "AC-21",
+          title: "Open a saved thought from chat",
+          repo: "abra-code",
+          phase: "In progress",
+          next: "Worker is implementing the source card",
+        },
+        {
+          id: "NB-07",
+          title: "Verify notebook links from a phone",
+          repo: "notebook",
+          phase: "Queued",
+          next: "Waiting for capacity",
+        },
+        {
+          id: "AC-12",
+          title: "Finish draft restoration check",
+          repo: "abra-code",
+          phase: "Closed",
+          next: "Verification completed",
+        },
+      ];
+      function workRows() {
+        const hits = tasks.filter(
+          (t) =>
+            (demo.filter === "All" || (demo.filter === "Closed") === (t.phase === "Closed")) &&
+            (!newUI() ||
+              ((!demo.repo || t.repo === demo.repo) &&
+                [t.title, t.id, t.repo, t.phase]
+                  .join(" ")
+                  .toLowerCase()
+                  .includes(demo.taskQuery.toLowerCase()))),
+        );
+        if (!hits.length) return "<p>No matching work.</p>";
+        return hits
+          .map((t) =>
+            newUI()
+              ? '<button class="taskrow row" data-act="' +
+                go(t.id === "AC-18" ? "task" : t.id) +
+                '"><span><strong>' +
+                t.title +
+                "</strong><small>" +
+                t.id +
+                " · " +
+                t.repo +
+                '</small></span><span class="phase">' +
+                t.phase +
+                "</span><small>" +
+                t.next +
+                "</small></button>"
+              : R(t.title, t.phase + " · " + t.next, go(t.id === "AC-18" ? "task" : t.id)),
+          )
+          .join("");
+      }
+      function filters() {
+        return (
+          '<div class="tabs">' +
+          ["Active", "Closed", "All"]
+            .map((v) => B(v, "filter/" + v, demo.filter === v ? "active" : ""))
+            .join("") +
+          "</div>"
+        );
+      }
+      function githubRows() {
+        return R("PR #42 · Restore draft focus", "abra-code · open · review", go("pr"));
+      }
+      function oldFinder() {
+        const p = demo.page;
+        if (["thoughts", "memo"].includes(p))
+          return (
+            '<aside class="column finder">' +
+            B("Back to Work", go("work"), "back") +
+            thoughts(p === "memo") +
+            "</aside>"
+          );
+        return (
+          '<aside class="column finder"><div class="split"><h2>Work</h2>' +
+          B("Close", go("chat")) +
+          "</div>" +
+          B("Thoughts", go("thoughts")) +
+          F("Search work…") +
+          F("All projects ▾") +
+          '<section class="githubmini"><h3>GitHub inbox</h3>' +
+          D("GitHub filters", F("Type · State · Abra role · Label")) +
+          "<small>Refresh GitHub</small>" +
+          githubRows() +
+          "</section><h3>Local work</h3>" +
+          filters() +
+          "<strong>Workspace capacity</strong><br><small>Workers 1 / 4 · Execution slots 2 / 6</small>" +
+          workRows() +
+          "<small>Previous · Next</small>" +
+          D("Fleet across all projects", "<p>Waiting for approval 1 · Completed today 1</p>") +
+          B("Add a project", "onboard") +
+          "<p><small>Licenses</small></p></aside>"
+        );
+      }
+      function thoughts(detail) {
+        return (
+          head(newUI() ? "Personal notebook" : "Work finder", detail ? "Thought" : "Thoughts") +
+          (detail
+            ? B(newUI() ? "‹ Thoughts" : "‹ Results", go("thoughts"), "back") +
+              '<p class="scope">20 November · #mobile</p><blockquote>' +
+              notes +
+              '</blockquote><div class="tools">' +
+              B("Open in Memos ↗", "original") +
+              B(newUI() ? "Attach to chat" : "Ask Abra about this", "attach", "strong") +
+              "</div>"
+            : F("Search your thoughts…") +
+              D(
+                newUI() ? "Filters" : "Tag and dates",
+                F("Tag") + F("From (UTC)") + F("Before (UTC)"),
+              ) +
+              (newUI() ? B("Save a thought", "save") : "") +
+              R(notes, "20 November · #mobile", go("memo")))
+        );
+      }
+      function attention() {
+        return (
+          head("Workspace", "Attention") +
+          "<h3>Plan approval</h3><p>" +
+          work +
+          "</p>" +
+          B("Read the plan", go("plan")) +
+          '<div class="callout"><strong>Native answer form</strong><p>Review the current plan before submitting.</p>' +
+          F("Decision ▾") +
+          " " +
+          F("Submit answer") +
+          "</div>" +
+          D(
+            "Permission request",
+            "<p>Allow access to the selected directory?</p>" +
+              F("Once") +
+              F("Always") +
+              F("Reject"),
+          ) +
+          D("Other owners and lead requests", "<p>Abra · Waiting for the reviewer’s answer.</p>")
+        );
+      }
+      function rail() {
+        return (
+          '<nav aria-label="Destinations" class="rail newrail"><strong>AbraCode</strong>' +
+          B("Search   ⌘ / Ctrl K", "search", "railsearch") +
+          destination("Chat", "chat") +
+          destination("Work", "work") +
+          destination("GitHub", "github") +
+          destination("Thoughts", "thoughts") +
+          destination("Attention · 2", "attention") +
+          '<div class="foot">' +
+          destination("Settings", "settings") +
+          "</div></nav>"
+        );
+      }
+      function list() {
+        return (
+          head("Workspace", "Work") +
+          '<div class="tabs">' +
+          nav("Tasks", "work") +
+          nav("Sessions", "sessions-list") +
+          nav("Capacity", "capacity") +
+          nav("Recently inspected", "recap") +
+          '</div><div class="tools">' +
+          '<input id="taskQuery" type="search" class="field" placeholder="Search local work…" aria-label="Search local work" value="' +
+          esc(demo.taskQuery) +
+          '">' +
+          '<select aria-label="Repository filter" id="repoFilter">' +
+          ["", "abra-code", "notebook"]
+            .map(
+              (id) =>
+                '<option value="' +
+                id +
+                '" ' +
+                (demo.repo === id ? "selected" : "") +
+                ">" +
+                (id || "All repositories") +
+                "</option>",
+            )
+            .join("") +
+          "</select>" +
+          "</div>" +
+          filters() +
+          '<div class="tasklabels"><span>Task</span><span>Status</span><span>Next step</span></div><div id="taskRows">' +
+          workRows() +
+          "</div>"
+        );
+      }
+      function remote(detail) {
+        return detail
+          ? head("abra-code / PR #42", "Restore draft focus") +
+              "<p>Open · alix · checked at 10:22</p><p>Return the cursor to the existing draft after inspecting a worker.</p>" +
+              F("Open on GitHub ↗") +
+              section("Linked Abra work", R(work, "Review · in progress", go("task"))) +
+              D("Recent discussion", "<p>Can we verify this on a narrow screen?</p>") +
+              B("Ask Abra to review", "review-pr")
+          : head("Workspace", "GitHub") +
+              '<div class="tools">' +
+              F("Search GitHub…") +
+              F("All repositories ▾") +
+              "</div>" +
+              D("GitHub filters", F("Type") + F("Remote state") + F("Abra role") + F("Label")) +
+              '<p class="scope">Open issues and pull requests · checked at 10:22</p>' +
+              githubRows();
+      }
+      function settings(repo) {
+        return (
+          head("Settings", repo ? "Repositories" : "Agents") +
+          "<small>Read only</small>" +
+          (repo
+            ? "<h3>abra-code</h3><code>~/Projects/abra-code</code><p>1 repository onboarded</p>" +
+              (newUI() ? B("Onboard repository", "onboard") : "")
+            : D(
+                "Abra · supervisor",
+                "<p>Main conversation and coordination.</p><dl><dt>Roles</dt><dd>Supervisor</dd><dt>Tools and skills</dt><dd>Work inspection, planning and notebook lookup</dd></dl>" +
+                  D("Instructions", "<p>Authored instructions and source references.</p>"),
+              ))
+        );
+      }
+      function taskBody(p) {
+        switch (p) {
+          case "task":
+            return (
+              '<p><span class="tag">Waiting for approval</span> · P1 · Full OpenSpec task</p><p>Restore the operator’s draft and reading position after inspecting a session.</p>' +
+              B("Review current plan approval", go("attention")) +
+              section(
+                "Accepted thought",
+                newUI()
+                  ? memoCard(false)
+                  : "<small>users/abra · memos/draft-note</small><blockquote>" +
+                      notes +
+                      "</blockquote>",
+              ) +
+              D(
+                "Planning and repair",
+                "<p>Human plan approval required. Automatic repair allowance remaining: 1.</p>",
+              ) +
+              D(
+                "Outcomes and latest progress",
+                "<p>Plan ready for human review. Delivery pending.</p>",
+              ) +
+              B("Ask Abra to pause work", "pause")
+            );
+          case "plan":
+            return (
+              section(
+                "Planning artifacts",
+                D(
+                  "design.md",
+                  "<h3>Restore the existing draft</h3><p>Keep the same draft and attachment when switching between the task reader and chat.</p>" +
+                    F("Source lines 12–14") +
+                    " " +
+                    B("Ask about passage", "excerpt"),
+                ),
+              ) + R("Review the navigation choices", "Feedback on plan revision 2", go("review"))
+            );
+          case "diff":
+            return (
+              F("All changes / Uncommitted") +
+              " " +
+              F("Search changes…") +
+              "<h3>apps/web/src/workspace.tsx</h3><pre>− focusInput()\n+ restoreDraftFocus(session)</pre>" +
+              D(
+                "Select lines",
+                F("New · lines 12–13") + " " + B("Ask Abra about selection", "excerpt"),
+              )
+            );
+          case "verification":
+            return (
+              section("Controller checks", "<p>Passed on observed content · today 10:20</p>") +
+              section("Independent Review", "<p>Passed · reviewer session</p>") +
+              B("Inspect changes", go("diff")) +
+              " " +
+              B("Review current approval", go("attention")) +
+              D("Retained check", "<pre>pnpm test:one draft.test.ts</pre>") +
+              D(
+                "Recorded screenshot and trace",
+                F("Select image region") + " " + F("Download trace"),
+              ) +
+              D("Scope, sources and decisions", "<p>Draft restoration · design.md lines 12–14</p>")
+            );
+          case "sessions":
+            return (
+              section("Retained worker sessions", F("Reviewer · ses-draft-17 ▾")) +
+              '<h3>Worker transcript</h3><p class="scope">Read only · observed at 10:20</p><strong>Assignment</strong><p>Check draft restoration on a narrow screen.</p><strong>Worker</strong><p>The draft and cursor survived the round trip to the plan.</p>' +
+              D("Observed check", "<pre>draft-restoration: passed</pre>") +
+              F("Earlier worker messages")
+            );
+          case "communication":
+            return (
+              section(
+                "Retained communication",
+                D(
+                  "Supervisor → reviewer · check draft focus",
+                  "<p>Retained answer: verified on the phone viewport.</p>",
+                ),
+              ) + R("Open existing decision", "Plan approval · generation 2", go("attention"))
+            );
+          case "checks":
+            return (
+              section(
+                "Reviews & checks",
+                "<p>Current findings · 1</p>" +
+                  R(
+                    "Draft focus on returning from detail",
+                    "workspace.tsx · revision 2",
+                    go("diff"),
+                  ),
+              ) +
+              D(
+                "Previous findings and actions",
+                "<p>Focus target identified in the previous review.</p>",
+              ) +
+              D("Retained check logs", "<pre>draft-restoration: passed</pre>")
+            );
+          case "leads":
+            return section(
+              "Project leads & proposals",
+              D(
+                "UX lead · Inspect lead history",
+                "<p>Proposal: Make draft restoration predictable.</p>" +
+                  R("Inspect accepted work", work, go("task")),
+              ),
+            );
+          case "reports":
+            return (
+              section(
+                "Retained reports",
+                R(
+                  "Mobile navigation review",
+                  "Published · JSON snapshot · revision 2",
+                  go("report"),
+                ),
+              ) +
+              section("Markdown report", "<p>Draft restoration passed the controller check.</p>")
+            );
+          case "report":
+            return (
+              section(
+                "Mobile navigation review",
+                '<p class="scope">Saved snapshot · revision 2</p><blockquote>Draft text survived the return from the worker session.</blockquote>',
+              ) +
+              D(
+                "Document provenance and limitations",
+                "<p>Captured from task AC-18 at 10:20.</p>",
+              ) +
+              B("View offline export", go("portable")) +
+              " " +
+              B("Give feedback", go("review")) +
+              " " +
+              F("Download selected JSON")
+            );
+          case "review":
+            return (
+              '<h3>Which return path works better?</h3><p>Plan feedback · revision 2</p><label><input type="radio" name="choice"> Return to draft</label><br><label><input type="radio" name="choice"> Return to list</label><p>' +
+              F("Comment") +
+              " " +
+              F("Send feedback to Abra") +
+              "</p>"
+            );
+          case "surface":
+            return (
+              head("Conversation view · revision 2", "Mobile work summary") +
+              '<div class="flow"><span>Queued · 2</span><span>In progress · 1</span><span>Waiting · 1</span></div><h3>Checks this week</h3><div class="chart" aria-label="Checks by day, 2, 3, 5"><i style="height:32%"></i><i style="height:55%"></i><i style="height:85%"></i></div>' +
+              R(work, "Open live task", go("task")) +
+              D("Save snapshot with task", F("Choose task") + F("Save snapshot"))
+            );
+        }
+      }
+      function reader(p, side = false) {
+        const sample = tasks.find((t) => t.id === p);
+        if (sample)
+          return (
+            '<section class="reader">' +
+            B("‹ Back to Work", "back", "back") +
+            head(sample.repo + " / " + sample.id, sample.title) +
+            '<p class="tag">' +
+            sample.phase +
+            "</p>" +
+            section("Next step", "<p>" + sample.next + "</p>") +
+            "</section>"
+          );
+        const current = activity.includes(p) ? "sessions" : p;
+        return (
+          '<section class="reader ' +
+          (side ? "wideReader" : "") +
+          '">' +
+          (newUI()
+            ? B("‹ Back", "back", "back")
+            : phone()
+              ? B("Find other work", go("work"), "back")
+              : B("Close inspector", go("chat"), "back")) +
+          (p === "surface"
+            ? taskBody(p)
+            : head("abra-code / AC-18", p === "task" ? work : scenes[p]) +
+              '<label>Work details <select id="detailSection">' +
+              ["task", "plan", "diff", "verification", "sessions", "reports"]
+                .map(
+                  (k) =>
+                    '<option value="' +
+                    k +
+                    '" ' +
+                    (k === current ? "selected" : "") +
+                    ">" +
+                    (k === "sessions" ? "Activity" : k === "task" ? "Overview" : scenes[k]) +
+                    "</option>",
+                )
+                .join("") +
+              "</select></label>" +
+              (activity.includes(p)
+                ? '<div class="tabs">' +
+                  activity.map((k) => nav(k === "sessions" ? "Sessions" : scenes[k], k)).join("") +
+                  "</div>"
+                : "") +
+              taskBody(p)) +
+          "</section>"
+        );
+      }
+      function misc(p) {
+        if (p === "capacity")
+          return (
+            head("Work", "Capacity") +
+            '<p>Workspace · all repositories</p><p><span class="kpi">1 / 4</span> workers &nbsp; <span class="kpi">2 / 6</span> execution slots</p>' +
+            D("Fleet by project", "<p>abra-code · 1 active · 1 waiting · 1 completed today</p>")
+          );
+        if (p === "recap")
+          return (
+            head("Work", "Recently inspected") +
+            R(work, "Verification result changed since your last inspection", go("verification"))
+          );
+        if (p === "sessions-list")
+          return (
+            head("Work", "Sessions") +
+            R("Navigation review", "ses-draft-17 · Reviewer · " + work, go("sessions"))
+          );
+        if (p === "more")
+          return (
+            head("Workspace", "More") +
+            R("GitHub", "Issues and pull requests", go("github")) +
+            R("Settings", "Agents and repositories", go("settings"))
+          );
+        if (p === "portable")
+          return (
+            head("Standalone HTML / Saved report", "Mobile navigation review") +
+            F("Dark theme") +
+            "<p>Captured checks passed.</p>" +
+            D(
+              "Local review feedback",
+              F("Comments, severity, affected section, changes, questions") +
+                F("Prepare Markdown or JSON"),
+            ) +
+            D("Third-party notices", "<p>Bundled licenses</p>") +
+            B("‹ Back to report", go("report"))
+          );
+        return "";
+      }
+      function collection(p) {
+        if (p === "original")
+          return (
+            head("External destination · illustrative", "Memos") +
+            "<small>Private personal memo · signed-in reader</small><blockquote>" +
+            notes +
+            '</blockquote><p class="code">/memos/draft-note</p>' +
+            B("Return to AbraCode", "back")
+          );
+        if (p === "chat") return deck();
+        if (isTask(p)) return reader(p);
+        return (
+          '<section class="column">' +
+          (p === "pr" ? B("‹ Back", "back", "back") : "") +
+          (p === "work"
+            ? list()
+            : p === "github" || p === "pr"
+              ? remote(p === "pr")
+              : p === "thoughts" || p === "memo"
+                ? thoughts(p === "memo")
+                : p === "attention"
+                  ? attention()
+                  : ["settings", "repos"].includes(p)
+                    ? '<div class="tabs">' +
+                      nav("Agents", "settings") +
+                      nav("Repositories", "repos") +
+                      D("Appearance and About", F("System / Light / Dark") + F("Licenses")) +
+                      "</div>" +
+                      settings(p === "repos")
+                    : misc(p)) +
+          "</section>"
+        );
+      }
+      function draw() {
+        const p = demo.page;
+        const n = newUI(),
+          mob = phone();
+        $("#frame").className =
+          "frame " +
+          (n ? "new" : "old") +
+          " " +
+          (mob ? "phone" : "wide") +
+          (tablet() ? " tablet" : "");
+        $("#scene").value = scenes[p] ? p : p === "sessions-list" ? "sessions" : "chat";
+        let html = "";
+        if (p === "original" || p === "portable")
+          html =
+            '<div class="layout"><section class="column">' +
+            (p === "original" ? collection(p) : misc(p)) +
+            "</section></div>";
+        else if (n) {
+          const side = isTask(p) && demo.from === "chat" && !mob;
+          html =
+            (mob || tablet()
+              ? '<div class="bar"><strong>' +
+                (tablet() ? B("Destinations", go("more")) : "AbraCode") +
+                "</strong>" +
+                paletteButton() +
+                badges() +
+                "</div>"
+              : "") +
+            '<div class="layout">' +
+            (mob || tablet() ? "" : rail()) +
+            (side ? deck() + reader(p, true) : collection(p)) +
+            "</div>" +
+            (mob
+              ? '<nav class="mobilebar bottomnav">' +
+                destination("Chat", "chat") +
+                destination("Work", "work") +
+                destination("Thoughts", "thoughts") +
+                destination("More", "more") +
+                "</nav>"
+              : "");
+          if (tablet() && p === "more")
+            html = html.replace(
+              "<h2>More</h2>",
+              "<h2>Destinations</h2>" +
+                nav("Chat", "chat") +
+                nav("Work", "work") +
+                nav("Thoughts", "thoughts"),
+            );
+        } else {
+          const settingsPage = ["settings", "repos"].includes(p);
+          html = mob
+            ? '<nav class="mobilebar">' +
+              nav("Chat", "chat") +
+              B("Canvas", go(demo.lastCanvas)) +
+              nav("Settings", "settings") +
+              paletteButton() +
+              "</nav>"
+            : "";
+          if (settingsPage) {
+            html +=
+              (!mob
+                ? '<div class="bar"><strong>AbraCode / Settings</strong>' +
+                  paletteButton() +
+                  B("Back to workspace", go("chat")) +
+                  "</div>"
+                : "") +
+              '<div class="layout"><nav class="settingsnav">' +
+              nav("Agents", "settings") +
+              nav("Repositories", "repos") +
+              '</nav><section class="column">' +
+              settings(p === "repos") +
+              "</section></div>";
+          } else {
+            const canvas = mob && !["chat", "attention", "recap"].includes(p);
+            const finder = ["work", "github", "thoughts", "memo", "pr", "capacity"].includes(p);
+            if (!canvas)
+              html +=
+                '<div class="bar">' +
+                (!mob ? B("Work", go(finder ? "chat" : "work")) + paletteButton() : "") +
+                "<strong>Abra</strong>" +
+                (!mob ? status : "") +
+                badges() +
+                (!mob ? B("Settings", go("settings")) : "") +
+                F("Theme ▾") +
+                "</div>";
+            html +=
+              '<div class="layout">' +
+              (finder && (!mob || p !== "pr") ? oldFinder() : "") +
+              (!canvas ? deck() : "") +
+              (p === "pr"
+                ? '<aside class="reader wideReader">' +
+                  B("Close", go("github")) +
+                  remote(true) +
+                  "</aside>"
+                : isTask(p)
+                  ? reader(p, !mob)
+                  : "") +
+              "</div>";
+          }
+        }
+        $("#view").innerHTML = html;
+        const taskQuery = $("#taskQuery");
+        if (taskQuery)
+          taskQuery.oninput = () => {
+            demo.taskQuery = taskQuery.value;
+            $("#taskRows").innerHTML = workRows();
+          };
+        const repoFilter = $("#repoFilter");
+        if (repoFilter)
+          repoFilter.onchange = () => {
+            demo.repo = repoFilter.value;
+            $("#taskRows").innerHTML = workRows();
+          };
+        const sectionSelect = $("#detailSection");
+        if (sectionSelect) sectionSelect.onchange = (e) => move(e.target.value);
+        if (!n && p === "capacity") {
+          const fleet = [...document.querySelectorAll(".finder details")].at(-1);
+          if (fleet) {
+            fleet.open = true;
+            fleet.scrollIntoView({ block: "nearest" });
+          }
+        }
+        if (!n && p === "recap") {
+          const recap = document.querySelector(".chat details");
+          if (recap) recap.open = true;
+        }
+        if (!n && p === "github") {
+          const git = document.querySelector(".githubmini details");
+          if (git) git.open = true;
+        }
+        $("#caption").textContent =
+          (n ? "Proposed" : "Current") +
+          " · " +
+          (mob ? "Phone" : tablet() ? "Tablet" : "Desktop") +
+          " — " +
+          (p === "work"
+            ? n
+              ? "Local tasks have their own page. GitHub, Thoughts and Capacity each have a named home."
+              : "The opened Work finder stacks two collections, their filters, capacity, fleet and administration."
+            : isTask(p)
+              ? n
+                ? "The owning task stays visible in the reader."
+                : "The work inspector follows the selected task and evidence section."
+              : "Explore " + (scenes[p] || p) + ".");
+      }
+      const entries = [
+        ["Work", work, "AC-18 · abra-code · Open overview", go("task")],
+        ["Work", "Finish draft restoration check", "AC-12 · Closed · Open overview", go("AC-12")],
+        ["Thoughts", notes, "#mobile · Personal Memos · Read thought", go("memo")],
+        [
+          "Sessions",
+          "Navigation review",
+          "ses-draft-17 · Reviewer · AC-18 · Open session",
+          go("sessions"),
+        ],
+        ["GitHub", "Restore draft focus", "abra-code#42 · Pull request · Open detail", go("pr")],
+        [
+          "Reports",
+          "Mobile navigation review",
+          "AC-18 · Snapshot revision 2 · Open report",
+          go("report"),
+        ],
+        ["Views", "Mobile work summary", "Revision 2 · Open generated view", go("surface")],
+        ["Decisions", "Approve navigation plan", "AC-18 · Open bound form", go("attention")],
+        ["Evidence", "design.md", "AC-18 · Plan passage · Read source", go("plan")],
+        ["Evidence", "workspace.tsx", "AC-18 · Read file diff", go("diff")],
+        ["Evidence", "Draft focus finding", "AC-18 · Read review evidence", go("checks")],
+        [
+          "Evidence",
+          "Draft restoration check",
+          "AC-18 · Read verification receipts",
+          go("verification"),
+        ],
+        ["Reviews", "Review the navigation choices", "AC-18 · Open feedback form", go("review")],
+        ["Leads", "UX lead proposal", "abra-code · Read history", go("leads")],
+        ["Messages", "Check draft focus", "AC-18 · Open communication", go("communication")],
+        ["Settings", "abra-code", "Repository · Open registry", go("repos")],
+        ["Settings", "Abra", "Agent · Inspect definition", go("settings")],
+        [
+          "Commands",
+          "Onboard repository",
+          "add project · onboard repo · /onboard-repo · Prepare draft",
+          "onboard",
+        ],
+        ...tasks
+          .filter((t) => ["AC-21", "NB-07"].includes(t.id))
+          .map((t) => ["Work", t.title, t.id + " · " + t.repo + " · " + t.phase, go(t.id)]),
+        ["Commands", "Insert example code", "draft snippet · Insert editable fenced code", "code"],
+        ["Commands", "Save thought", "/save-thought · Prepare draft", "save"],
+        ["Commands", "Attach thought", "/attach-thought · Choose thought", go("thoughts")],
+        ["Commands", "Pause work AC-18", "Prepare a request in chat", "pause"],
+        ["Commands", "Review pending decisions", "Open form", go("attention")],
+        ["Commands", "Return to chat", "Open draft", go("chat")],
+        ["Commands", "Open Work finder", "Browse work", go("work")],
+        ["Commands", "Open Settings", "Open page", go("settings")],
+        ["Commands", "Capacity", "Open workspace totals", go("capacity")],
+        ["Commands", "Recently inspected", "Open reading history", go("recap")],
+      ];
+      function search() {
+        stash();
+        demo.scope = "All";
+        $("#term").value = "";
+        $("#term").placeholder = newUI()
+          ? "Work, thoughts, sessions, commands…"
+          : "Search work and commands…";
+        $("#palette").showModal();
+        results();
+        $("#term").focus();
+      }
+      function results() {
+        const n = newUI();
+        const types = ["All", "Work", "Thoughts", "Sessions", "Commands"];
+        $("#types").innerHTML = n
+          ? types.map((t) => B(t, "scope/" + t, demo.scope === t ? "active" : "")).join("")
+          : "";
+        const q = $("#term").value.trim().toLowerCase();
+        let filtered;
+        if (n) {
+          const m = q.match(
+            /^(work|thoughts?|sessions?|commands?|github|reports?|views?|evidence|messages?|leads?|reviews?|decisions?|settings):\s*(.*)$/,
+          );
+          const needle = m ? m[2] : q.startsWith(">") ? q.slice(1).trim() : q;
+          const scope = m ? m[1] : q.startsWith(">") ? "commands" : demo.scope.toLowerCase();
+          filtered = entries.filter(
+            (r) =>
+              (scope === "all" ||
+                r[0].toLowerCase().replace(/s$/, "") === scope.replace(/s$/, "")) &&
+              r.slice(0, 3).join(" ").toLowerCase().includes(needle),
+          );
+          if (!q && scope === "all")
+            filtered = [
+              entries[0],
+              entries[2],
+              entries[3],
+              entries.find((r) => r[3] === "onboard"),
+            ];
+        } else {
+          const commands = entries.filter(
+            (r) =>
+              r[0] === "Commands" &&
+              [
+                "Return to chat",
+                "Open Work finder",
+                "Open Settings",
+                "Review pending decisions",
+              ].includes(r[1]),
+          );
+          if (isTask(demo.page))
+            for (const t of ["plan", "diff", "verification", "reports"])
+              commands.push(["Commands", "Open " + scenes[t], work, go(t)]);
+          if (demo.lastCanvas !== "work")
+            commands.push(["Commands", "Resume last inspection", work, go(demo.lastCanvas)]);
+          filtered = [...commands, ...(q ? entries.filter((r) => r[0] === "Work") : [])].filter(
+            (r) => r.slice(1, 3).join(" ").toLowerCase().includes(q),
+          );
+          if (q) filtered.push(["Work", "See all results in Work", q, go("work")]);
+        }
+        $("#hits").innerHTML =
+          filtered.map((r) => R(r[1], r[0] + " · " + r[2], r[3])).join("") ||
+          "<p>No matches in these sample records.</p>";
+      }
+      function act(a) {
+        if (a.startsWith("scope/")) {
+          demo.scope = a.slice(6);
+          results();
+          $("#term").focus();
+          return;
+        }
+        if ($("#palette").open) $("#palette").close();
+        if (a === "search") {
+          search();
+          return;
+        }
+        if (a.startsWith("go/")) {
+          move(a.slice(3));
+          return;
+        }
+        if (a.startsWith("filter/")) {
+          demo.filter = a.slice(7);
+          draw();
+          return;
+        }
+        switch (a) {
+          case "back":
+            back("work");
+            break;
+          case "original":
+            move("original");
+            break;
+          case "remove":
+            stash();
+            demo.attached = false;
+            draw();
+            break;
+          case "attach":
+            stash();
+            demo.attached = true;
+            moveToDraft();
+            break;
+          case "onboard":
+            if (newUI()) insert(cmd);
+            else {
+              demo.draft = "Inspect registered projects and help me onboard a project.";
+              moveToDraft();
+            }
+            break;
+          case "code":
+            insert(["Example from AC-18", "~~~ts", "restoreDraftFocus(session)", "~~~"].join("\n"));
+            break;
+          case "save":
+            insert(save);
+            break;
+          case "pause":
+            insert("Ask the controller to pause AC-18.");
+            break;
+          case "clear-excerpt":
+            stash();
+            demo.excerpt = false;
+            draw();
+            break;
+          case "excerpt":
+            stash();
+            demo.excerpt = true;
+            moveToDraft();
+            break;
+          case "review-pr":
+            insert("Privately review PR #42 in abra-code.");
+            break;
+          case "send":
+            stash();
+            if (!demo.draft.trim()) break;
+            demo.sent.push({ text: demo.draft, attached: demo.attached, excerpt: demo.excerpt });
+            demo.excerpt = false;
+            demo.draft = "";
+            demo.attached = false;
+            demo.message = "Added to this sample conversation.";
+            draw();
+            break;
+        }
+      }
+      function slashList() {
+        const el = $("#draft");
+        if (!el) return;
+        demo.draft = el.value;
+        if ((demo.draft.match(/^(?:```|~~~)/gm) || []).length % 2) {
+          $("#slash").innerHTML = "";
+          return;
+        }
+        const match = demo.draft.match(/(?:^|\n)\/(\S*)$/);
+        const options = [
+          ["/onboard-repo", "onboard"],
+          ["/save-thought", "save"],
+          ["/attach-thought", "pick"],
+        ];
+        $("#slash").innerHTML =
+          newUI() && match
+            ? options
+                .filter(([label]) => label.slice(1).startsWith(match[1]))
+                .map(([label, a]) => B(label, "alias/" + a))
+                .join("")
+            : "";
+      }
+      document.addEventListener("click", (e) => {
+        const a = e.target.closest("[data-act]")?.dataset.act;
+        if (!a) return;
+        if (a.startsWith("alias/")) {
+          const el = $("#draft");
+          el.value = el.value.replace(/\/\S*$/, "");
+          stash();
+          if (a === "alias/pick") {
+            move("thoughts");
+            return;
+          }
+          act(a.slice(6));
+          return;
+        }
+        act(a);
+      });
+      $("#term").oninput = results;
+      document.addEventListener("input", (e) => {
+        if (e.target.id === "draft") slashList();
+      });
+      $("#closeSearch").onclick = () => $("#palette").close();
+      document.addEventListener("keydown", (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+          e.preventDefault();
+          if (!$("#palette").open) search();
+          return;
+        }
+        if (!$("#palette").open) return;
+        const rows = Array.from(document.querySelectorAll("#hits button")),
+          i = rows.indexOf(document.activeElement);
+        if (["ArrowDown", "ArrowUp"].includes(e.key) && rows.length) {
+          e.preventDefault();
+          const next =
+            i < 0
+              ? e.key === "ArrowDown"
+                ? 0
+                : rows.length - 1
+              : (i + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
+          rows[next].focus();
+        }
+        if (e.key === "Enter" && document.activeElement === $("#term") && rows.length) {
+          e.preventDefault();
+          rows[0].click();
+        }
+      });
+      $("#scene").innerHTML = Object.entries(scenes)
+        .map(([p, t]) => '<option value="' + p + '">' + t + "</option>")
+        .join("");
+      $("#scene").onchange = (e) => (e.target.value === "search" ? search() : move(e.target.value));
+      $("#version").onchange = () => {
+        stash();
+        if (["more", "sessions-list"].includes(demo.page)) demo.page = "work";
+        draw();
+      };
+      $("#device").onchange = () => {
+        stash();
+        draw();
+      };
+      let width = innerWidth;
+      window.addEventListener("resize", () => {
+        if (width !== innerWidth) {
+          width = innerWidth;
+          stash();
+          draw();
+        }
+      });
+      const preset = new URLSearchParams(location.search);
+      if (["new", "old"].includes(preset.get("layout"))) $("#version").value = preset.get("layout");
+      if (["wide", "phone", "auto"].includes(preset.get("screen")))
+        $("#device").value = preset.get("screen");
+      const initialScene = preset.get("scene");
+      if (Object.hasOwn(scenes, initialScene) && initialScene !== "search")
+        demo.page = initialScene;
+      draw();
+      if (initialScene === "search") search();
+    </script>
+  </body>
+</html>

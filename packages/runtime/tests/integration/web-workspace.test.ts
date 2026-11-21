@@ -1,5 +1,5 @@
 import { validateSurface } from "../../src/web/surfaces.ts";
-import { catalogId } from "../../src/web/catalog.ts";
+import { catalogId, catalogIds, workCatalogs } from "../../src/web/catalog.ts";
 import { presentationHash } from "../../src/presentation/identity.ts";
 import { NativeSessionProjection } from "../../src/opencode/agui/native-state.ts";
 import { SessionMessage } from "@opencode/schema/session-message";
@@ -525,6 +525,16 @@ test("explicit report exports use fixed identities and opaque preview without pr
   assert.equal(exports, 1);
   assert.equal(web.backend.submissions, 0);
   assert.equal(web.backend.stops, 0);
+});
+
+test("workspace serves the exact versioned discovery documents", async (t) => {
+  const web = await fixture();
+  t.onTestFinished(web.close);
+  for (const [index, id] of catalogIds.entries()) {
+    const response = await fetch(web.origin + `/catalog/work-v${index + 1}.json`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), workCatalogs[id]);
+  }
 });
 
 test("hashed public assets cache immutably and use package compression while private responses stay fresh", async (t) => {

@@ -408,9 +408,14 @@ test("local return history follows inspected results independently of current at
   await page.goto(f.origin);
   await page.getByText("Since your last inspection").click();
   await page.getByText(/Inspect a task to start/).waitFor();
-  for (const w of work) {
+  for (const [index, w] of work.entries()) {
     await page.goto(f.origin + "/?issue=" + w.issue_id);
     await page.getByRole("heading", { name: w.title, exact: true }).waitFor();
+    // The lazy history panel records this visit after the inspector heading appears.
+    await page
+      .locator(".work-recap p")
+      .filter({ hasText: `Currently observed: ${index + 1}.` })
+      .waitFor({ state: "attached" });
   }
   const decision = {
     key: ObligationKey.make("decision"),

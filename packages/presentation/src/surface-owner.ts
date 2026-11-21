@@ -7,6 +7,7 @@ export class SurfaceOwner<R, V> {
     private record: R,
     private prepare: (record: R) => V,
     private dispose: (value: V) => void,
+    private sameRecord: (previous: R, next: R) => boolean = Object.is,
   ) {}
   read = () => this.view;
   subscribe = (listener: () => void) => {
@@ -23,7 +24,8 @@ export class SurfaceOwner<R, V> {
     };
   };
   replace(record: R) {
-    if (record === this.record) return;
+    if (this.record === record || (!this.view.error && this.sameRecord(this.record, record)))
+      return;
     this.record = record;
     if (this.listeners.size) this.stage();
   }

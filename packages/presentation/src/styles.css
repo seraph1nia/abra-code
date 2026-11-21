@@ -696,23 +696,97 @@ output:not([class~="inline-status"]) {
   font-size: 13px;
 }
 
-.catalog-table-scroll, .catalog-code pre {
+.catalog-table-scroll,
+.catalog-code pre {
   max-width: 100%;
   overflow: auto;
 }
-.catalog-table-scroll table { border-collapse: collapse; width: 100%; }
-.catalog-table-scroll :is(th, td) { border-bottom: 1px solid var(--border); padding: .4rem .6rem; text-align: start; }
-.catalog-table-scroll caption, .catalog-code figcaption { color: var(--muted-foreground); text-align: start; }
-.catalog-disclosure summary { cursor: pointer; font-weight: 600; }
-.catalog-facts > div { display: flex; flex-wrap: wrap; gap: .25rem 1rem; }
-.catalog-facts dt { font-weight: 600; }
-.catalog-facts dd { margin: 0; overflow-wrap: anywhere; }
-.catalog-code pre { padding: .75rem; white-space: pre; background: var(--muted); border-radius: var(--radius); }
-.catalog-code, .catalog-facts, .catalog-disclosure, .catalog-table-scroll { margin: .5rem; min-width: 0; }
-.catalog-player, .catalog-image { display: block; width: 100%; max-width: 100%; }
-.catalog-image[data-variant="icon"] { width: 24px; height: 24px; }
-.catalog-image[data-variant="avatar"] { width: 40px; height: 40px; border-radius: 50%; }
-.catalog-image[data-variant="smallFeature"] { max-width: 100px; }
-.catalog-image[data-variant="mediumFeature"] { max-width: 300px; }
-.catalog-image[data-variant="largeFeature"] { max-height: 400px; }
-.catalog-image[data-variant="header"] { height: 200px; }
+.catalog-table-scroll table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.catalog-table-scroll :is(th, td) {
+  border-bottom: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  text-align: start;
+}
+.catalog-table-scroll caption,
+.catalog-code figcaption {
+  color: var(--muted-foreground);
+  text-align: start;
+}
+.catalog-disclosure summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.catalog-facts > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+.catalog-facts dt {
+  font-weight: 600;
+}
+.catalog-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.catalog-code pre {
+  padding: 0.75rem;
+  white-space: pre;
+  background: var(--muted);
+  border-radius: var(--radius);
+}
+.catalog-code code span {
+  color: var(--code-light, inherit);
+}
+[data-theme="dark"] .catalog-code code span {
+  color: var(--code-dark, inherit);
+}
+.catalog-code,
+.catalog-facts,
+.catalog-disclosure,
+.catalog-table-scroll {
+  margin: 0.5rem;
+  min-width: 0;
+}
+.catalog-player,
+.catalog-image {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+}
+.catalog-image[data-variant="icon"] {
+  width: 24px;
+  height: 24px;
+}
+.catalog-image[data-variant="avatar"] {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+.catalog-image[data-variant="smallFeature"] {
+  max-width: 100px;
+}
+.catalog-image[data-variant="mediumFeature"] {
+  max-width: 300px;
+}
+.catalog-image[data-variant="largeFeature"] {
+  max-height: 400px;
+}
+.catalog-image[data-variant="header"] {
+  height: 200px;
+}
+
+/* Give visual children their spacing once, even inside nested basic layouts. */
+.generated-surface[data-work-catalog="v5"] {
+  --a2ui-row-gap: 0;
+  --a2ui-column-gap: 0;
+  --a2ui-list-gap: 0;
+  --a2ui-text-color-text: currentColor;
+  --_a2ui-text-margin: 0.5rem;
+}
+.generated-surface[data-work-catalog="v5"] :is(.catalog-image, .catalog-player) {
+  margin: 0.5rem;
+  max-width: calc(100% - 1rem);
+}

@@ -269,7 +269,9 @@ deferred-feature, Back/focus and 375/390px acceptance remains pending.
 
 ### Versioned diagram data
 
-Work catalog v4 and `abracode-react/v4` add stacked bars, histograms, scatter plots, heatmaps and Gantt charts. Retained v3 charts use their original schema.
+Work catalog v4 and `abracode-react/v4` add stacked bars, histograms, scatter plots, heatmaps and Gantt charts. Retained v3 charts use their original schema. Work catalog v5 and `abracode-react/v5` add the full A2UI basic catalog, Table, Disclosure, KeyValueList and CodeBlock. The shared renderer uses bundled icons and embedded media for portable reports.
+
+Give a `CodeBlock` a language such as `ts`, `json`, or `bash` to highlight it in the workspace and offline reports. Pierre Highlights supplies light and dark token colors. Unlabeled snippets, unknown languages, and ANSI output display as literal text. The workspace loads the highlighter on demand, and the portable HTML embeds it. Both support plain text when an embedding policy blocks WebAssembly.
 
 Work catalog v3 and `abracode-react/v3` add literal TanStack charts to workspace views and portable reports. The v2 catalog and renderer identity remain supported.
 

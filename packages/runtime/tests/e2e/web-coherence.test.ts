@@ -829,6 +829,7 @@ test("artifact pages keep exact off-page documents reachable without preloading 
   await page.goto(`${f.origin}/?${new URLSearchParams({ resource: JSON.stringify(target) })}`);
   await page.locator('[data-report-document="report-page-9"]').waitFor();
   await page.getByRole("button", { name: "Other reports" }).click();
+  await page.locator(".report-revision").first().waitFor();
   assert.equal(await page.locator(".report-revision").count(), 8);
   assert.equal(
     await page.locator(".report-revision").filter({ hasText: "Captured report 9" }).count(),
@@ -840,6 +841,7 @@ test("artifact pages keep exact off-page documents reachable without preloading 
   await page.reload();
   await page.locator('[data-report-document="report-page-9"]').waitFor();
   await page.getByRole("button", { name: "Other reports" }).click();
+  await page.locator(".report-revision").filter({ hasText: "Captured report 9" }).waitFor();
   assert.equal(await page.locator(".report-revision").count(), 2);
   const download = page.getByRole("link", { name: "Download selected JSON", exact: true });
   assert.equal(

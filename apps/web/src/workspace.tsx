@@ -5,7 +5,12 @@ import { SearchTrigger } from "./search-trigger.tsx";
 import { Recap } from "./recap-loader.tsx";
 import { MessageContent, emptyAttachments, emptyDiagnostics } from "./message-content.tsx";
 import { Composer } from "./composer.tsx";
-import { workspaceDraft, PrepareSurfaceMessage, AttachSelection, type DraftAttachment } from "./workspace-state/draft.ts";
+import {
+  workspaceDraft,
+  PrepareSurfaceMessage,
+  AttachSelection,
+  type DraftAttachment,
+} from "./workspace-state/draft.ts";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { ArrowUpRight, Sparkles, Settings, SunMoon } from "@abracode/presentation/icons";
 import { useWorkspaceNavigation } from "./workspace-state/navigation.ts";
@@ -268,8 +273,7 @@ function Workspace({
     setDraft({ text });
     focusComposer();
   }
-  return (
-    <PrepareSurfaceMessage.Provider value={(text) => { setDraft({ append: text }); focusComposer(); }}>
+  const panels = (
     <OpenSurface.Provider value={navigation.openSurface}>
       {palette && (
         <Palette
@@ -553,6 +557,15 @@ function Workspace({
         )}
       </div>
     </OpenSurface.Provider>
+  );
+  return (
+    <PrepareSurfaceMessage.Provider
+      value={(text) => {
+        setDraft({ append: text });
+        focusComposer();
+      }}
+    >
+      {panels}
     </PrepareSurfaceMessage.Provider>
   );
 }

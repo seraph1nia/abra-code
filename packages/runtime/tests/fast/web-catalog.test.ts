@@ -8,6 +8,7 @@ import {
   catalogV1Id,
   catalogV2Id,
   catalogV3Id,
+  catalogV4Id,
   legacyCatalogId,
   componentNames,
   workCatalogDocument,
@@ -44,7 +45,10 @@ test("generated Effect catalog round-trips through the official loader with the 
   assert.deepEqual(loaded.toJson(), workCatalogDocument);
   assert.deepEqual([...loaded.components.keys()], componentNames);
   assert.equal(loaded.protocolVersion, "1.0");
-  assert.deepEqual(Object.keys(workCatalogDocument.functions), Object.keys(basicCatalog.toJson().functions as object));
+  assert.deepEqual(
+    Object.keys(workCatalogDocument.functions),
+    Object.keys(basicCatalog.toJson().functions as object),
+  );
   assert.deepEqual([...validationCatalog.functions.keys()], [...basicCatalog.functions.keys()]);
   for (const name of basicCatalog.components.keys()) assert.ok(loaded.components.has(name));
   assert.match(JSON.stringify(Schema.toJsonSchemaDocument(SurfaceSchema)), /Kanban/);
@@ -317,4 +321,60 @@ test("trusted generated links share the closed resource capabilities and reject 
   assert.throws(() => validateSurface(link(targets[0], { onClick: "run_tool" })));
   assert.throws(() => validateSurface(link(targets[0], { url: "javascript:alert(1)" })));
   assert.throws(() => validateSurface(link(targets[0]), new Set(["abra-other"])));
+});
+
+test("v5 content components and expanded templates preserve the bounded layout contract", () => {
+  const publish = (components: object[], id: string = catalogId, dataModel?: object) =>
+    validateSurface({
+      version: "1.0",
+      createSurface: {
+        surfaceId: "content",
+        catalogId: id,
+        components,
+        ...(dataModel && { dataModel }),
+      },
+    });
+  const table = {
+    id: "body",
+    component: "Table",
+    caption: "Comparison",
+    columns: ["Name"],
+    rows: [["Local"]],
+  };
+  const disclosure = { id: "root", component: "Disclosure", label: "Details", child: "body" };
+  publish([disclosure, table]);
+  assert.throws(
+    () => publish([disclosure, { ...table, rows: [["a", "b"]] }]),
+    /one cell per column/,
+  );
+  assert.throws(() => publish([disclosure]));
+  for (const id of [catalogV1Id, catalogV2Id, catalogV3Id, catalogV4Id]) {
+    assert.throws(() => publish([disclosure, table], id));
+    assert.throws(() => publish([{ id: "root", component: "Card", child: "body" }, table], id));
+    assert.throws(() =>
+      publish([{ id: "root", component: "Text", text: { "@path": "/name" } }], id),
+    );
+  }
+  const template = [
+    { id: "root", component: "List", children: { componentId: "item", path: "/rows" } },
+    { id: "item", component: "Text", text: { "@path": "label" } },
+  ];
+  publish(template, catalogId, { rows: [{ label: "A" }] });
+  assert.throws(
+    () => publish(template, catalogId, { rows: Array(100).fill("row") }),
+    /100 component instances/,
+  );
+  publish([
+    {
+      id: "root",
+      component: "TextField",
+      label: "Name",
+      "@checks": [
+        {
+          condition: { "@call": "required", args: { value: { "@path": "/name" } } },
+          message: "Enter a name",
+        },
+      ],
+    },
+  ]);
 });

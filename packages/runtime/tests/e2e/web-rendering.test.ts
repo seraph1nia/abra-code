@@ -535,50 +535,132 @@ test("work catalog renders the basic components, binds local inputs and prepares
   const f = await workspaceBrowserFixture();
   t.onTestFinished(f.close);
   const field = { "@path": "/note" };
+  const snippet = "if (ready) {\r\n\tlog('<b>😀</b>');\r\n}\r\n\r\n";
   const entries = [
+    { id: "log", component: "CodeBlock", code: "  raw <b>output</b>\n", language: "Build log" },
     { id: "card", component: "Card", child: "table" },
     { id: "list", component: "List", children: { componentId: "item", path: "/items" } },
     { id: "facts", component: "KeyValueList", entries: [{ label: "Branch", value: "trunk" }] },
     { id: "details", component: "Disclosure", label: "View code", child: "code" },
-    { id: "tabs", component: "Tabs", tabs: [{ title: "First tab", child: "icon" }, { title: "Second tab", child: "tabText" }] },
+    {
+      id: "tabs",
+      component: "Tabs",
+      tabs: [
+        { title: "First tab", child: "icon" },
+        { title: "Second tab", child: "tabText" },
+      ],
+    },
     { id: "modal", component: "Modal", trigger: "trigger", content: "modalText" },
     { id: "line", component: "Divider" },
-    { id: "image", component: "Image", url: "data:image/gif;base64,R0lGODlhAQABAAAAACw=", description: "Catalog image" },
+    {
+      id: "image",
+      component: "Image",
+      url: "data:image/gif;base64,R0lGODlhAQABAAAAACw=",
+      description: "Catalog image",
+    },
     { id: "video", component: "Video", url: "data:video/mp4;base64," },
     { id: "audio", component: "AudioPlayer", url: "data:audio/wav;base64,", description: "Sound" },
     { id: "entry", component: "TextField", label: "Change note", value: field },
     { id: "echo", component: "Text", text: field },
     { id: "check", component: "CheckBox", label: "Enabled", value: { "@path": "/enabled" } },
-    { id: "choice", component: "ChoicePicker", value: { "@path": "/choices" }, options: [{ label: "Alpha", value: "a" }] },
+    {
+      id: "choice",
+      component: "ChoicePicker",
+      value: { "@path": "/choices" },
+      options: [{ label: "Alpha", value: "a" }],
+    },
     { id: "slider", component: "Slider", value: { "@path": "/count" }, max: 10 },
-    { id: "formatted", component: "Text", text: { "@call": "formatNumber", args: { value: { "@path": "/count" }, decimals: 2 } } },
+    {
+      id: "formatted",
+      component: "Text",
+      text: { "@call": "formatNumber", args: { value: { "@path": "/count" }, decimals: 2 } },
+    },
     { id: "date", component: "DateTimeInput", value: { "@path": "/date" }, enableDate: true },
-    { id: "button", component: "Button", child: "actionLabel", action: { event: { name: "review", userMessage: field } } },
+    {
+      id: "link",
+      component: "Button",
+      child: "linkLabel",
+      action: { functionCall: { "@call": "openUrl", args: { url: "/catalog/work-v5.json" } } },
+    },
+    {
+      id: "button",
+      component: "Button",
+      child: "actionLabel",
+      action: { event: { name: "review", userMessage: field } },
+    },
   ];
-  const surface = validateSurface({ version: "1.0", createSurface: {
-    catalogId, surfaceId: "basic", dataModel: { note: "Initial note", count: 3, enabled: false, date: "2026-11-21", choices: [], items: [{ value: "List row" }] },
-    components: [
-      { id: "root", component: "Column", children: ["row"] },
-      { id: "row", component: "Row", children: entries.map(entry => entry.id) }, ...entries,
-      { id: "table", component: "Table", caption: "Option costs", columns: ["Option", "Cost"], rows: [["A", "Low"]] },
-      { id: "item", component: "Text", text: { "@path": "value" } },
-      { id: "code", component: "CodeBlock", code: "if (ready) {\n  run();\n}", language: "JS" },
-      { id: "icon", component: "Icon", name: "settings" },
-      { id: "tabText", component: "Text", text: "Other tab content" },
-      { id: "trigger", component: "Text", text: "Open dialog" },
-      { id: "modalText", component: "Text", text: "Dialog content" },
-      { id: "actionLabel", component: "Text", text: "Prepare reply" },
-    ] } });
-  f.source.value = { ...f.source.value, surfaces: [{ session_id: f.source.sessionID, tool_call_id: "basic", revision: 1, at: f.source.value.at, snapshot: [], surface }] };
+  const surface = validateSurface({
+    version: "1.0",
+    createSurface: {
+      catalogId,
+      surfaceId: "basic",
+      dataModel: {
+        note: "Initial note",
+        count: 3,
+        enabled: false,
+        date: "2026-11-21",
+        choices: [],
+        items: [{ value: "List row" }],
+      },
+      components: [
+        { id: "root", component: "Column", children: ["row"] },
+        { id: "row", component: "Row", children: entries.map((entry) => entry.id) },
+        ...entries,
+        {
+          id: "table",
+          component: "Table",
+          caption: "Option costs",
+          columns: ["Option", "Cost"],
+          rows: [["A", "Low"]],
+        },
+        { id: "item", component: "Text", text: { "@path": "value" } },
+        { id: "code", component: "CodeBlock", code: snippet, language: "JS" },
+        { id: "icon", component: "Icon", name: "settings" },
+        { id: "tabText", component: "Text", text: "Other tab content" },
+        { id: "trigger", component: "Text", text: "Open dialog" },
+        { id: "modalText", component: "Text", text: "Dialog content" },
+        { id: "linkLabel", component: "Text", text: "Inspect catalog" },
+        { id: "actionLabel", component: "Text", text: "Prepare reply" },
+      ],
+    },
+  });
+  f.source.value = {
+    ...f.source.value,
+    surfaces: [
+      {
+        session_id: f.source.sessionID,
+        tool_call_id: "basic",
+        revision: 1,
+        at: f.source.value.at,
+        snapshot: [],
+        surface,
+      },
+    ],
+  };
   const page = await f.browser.newPage();
   await page.goto(f.origin);
   await page.getByText("Other retained views (1)", { exact: true }).click();
   const view = page.locator(".generated-surface");
-  await view.getByRole("table", { name: "Option costs" }).getByRole("cell", { name: "Low" }).waitFor();
+  await view
+    .getByRole("table", { name: "Option costs" })
+    .getByRole("cell", { name: "Low" })
+    .waitFor();
   await view.getByText("trunk").waitFor();
   await view.getByText("List row").waitFor();
   await view.getByText("View code").click();
-  assert.equal(await view.locator("pre code").textContent(), "if (ready) {\n  run();\n}");
+  const highlighted = view.locator(".catalog-code").filter({ hasText: "JS" }).locator("code");
+  const keyword = highlighted.locator("span").filter({ hasText: /^if\s*$/ });
+  await keyword.waitFor();
+  assert.equal(await highlighted.textContent(), snippet);
+  assert.equal(await highlighted.locator("b").count(), 0);
+  assert.ok(
+    await keyword.evaluate(
+      (el) => getComputedStyle(el).color !== getComputedStyle(el.parentElement!).color,
+    ),
+  );
+  const log = view.locator(".catalog-code").filter({ hasText: "Build log" }).locator("code");
+  assert.equal(await log.textContent(), "  raw <b>output</b>\n");
+  assert.equal(await log.locator("*").count(), 0);
   await view.getByRole("img", { name: "settings" }).waitFor();
   await view.getByText("Second tab").click();
   await view.getByText("Other tab content").waitFor();
@@ -588,14 +670,28 @@ test("work catalog renders the basic components, binds local inputs and prepares
   await view.getByRole("img", { name: "Catalog image" }).waitFor();
   assert.equal(await view.locator("audio[controls], video[controls]").count(), 2);
   await view.locator("input[type=date]").waitFor();
-  await view.getByText("3.00", {exact:true}).waitFor();
+  await view.getByText("3.00", { exact: true }).waitFor();
   await view.getByRole("slider").press("ArrowRight");
-  await view.getByText("4.00", {exact:true}).waitFor();
-  await view.getByText("Enabled", {exact:true}).click();
-  await view.getByText("Alpha", {exact:true}).click();
+  await view.getByText("4.00", { exact: true }).waitFor();
+  await view.getByText("Enabled", { exact: true }).click();
+  await view.getByText("Alpha", { exact: true }).click();
   await view.locator("input[type=text]").fill("Review the table");
-  await view.getByText("Review the table", { exact:true }).waitFor();
+  await view.getByText("Review the table", { exact: true }).waitFor();
+  await page.evaluate(() => {
+    window.open = (...args) => {
+      document.documentElement.dataset.catalogNavigation = JSON.stringify(args);
+      return null;
+    };
+  });
+  await view.getByRole("button", { name: "Inspect catalog" }).click();
+  assert.equal(
+    await page.locator("html").getAttribute("data-catalog-navigation"),
+    JSON.stringify([f.origin + "/catalog/work-v5.json", "_blank", "noopener,noreferrer"]),
+  );
   await view.getByRole("button", { name: "Prepare reply" }).click();
-  assert.equal(await page.getByRole("textbox", { name: "Message Abra" }).inputValue(), "Review the table");
+  assert.equal(
+    await page.getByRole("textbox", { name: "Message Abra" }).inputValue(),
+    "Review the table",
+  );
   assert.equal(f.source.submissions, 0);
 });
