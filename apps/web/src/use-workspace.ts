@@ -7,6 +7,6 @@ import { useWorkspaceHistory } from "./workspace-state/history.ts";
 export function useWorkspace(initial: WorkspaceSnapshot) {
   const [error, setError] = useState("");
   const observation = useWorkspaceObservation(initial, setError);
-  const history = useWorkspaceHistory(observation.workspace, setError, observation.conversation);
+  const history = useWorkspaceHistory(observation.workspace, observation.conversation);
   return { ...observation, ...history, error, setError };
 }

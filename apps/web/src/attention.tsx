@@ -2,6 +2,7 @@
 import { useRef, useState } from "react";
 import { ArrowUpRight } from "@abracode/presentation/icons";
 import { useAtom } from "@effect/atom-react";
+import { toast } from "sonner";
 import { Exit } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import type { Form } from "@opencode/schema/form";
@@ -64,7 +65,12 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
     submitting.current = true;
     try {
       const response = await reply({ id: form.id, binding: item.binding, answer: prepared.answer });
-      if (Exit.isSuccess(response)) refresh();
+      if (Exit.isSuccess(response)) {
+        toast.success(item.checkpoint ? "Checkpoint decision submitted" : "Answer submitted", {
+          description: form.title,
+        });
+        refresh();
+      }
     } finally {
       submitting.current = false;
     }
@@ -363,7 +369,15 @@ function PermissionContent({ item, refresh }: { item: AttentionPermission; refre
     submitting.current = true;
     try {
       const response = await reply({ id: item.request.id, binding: item.binding, decision });
-      if (Exit.isSuccess(response)) refresh();
+      if (Exit.isSuccess(response)) {
+        const confirmation = {
+          once: "Permission allowed once",
+          always: "Permission always allowed",
+          reject: "Permission denied",
+        };
+        toast.success(confirmation[decision], { description: item.request.action });
+        refresh();
+      }
     } finally {
       submitting.current = false;
     }

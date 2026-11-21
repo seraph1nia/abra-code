@@ -2,7 +2,8 @@
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { RegistryContext } from "@effect/atom-react";
 import { Effect, Exit } from "effect";
-import { AtomRegistry } from "effect/reactivity";
+import { toast } from "sonner";
+import { AsyncResult, AtomRegistry } from "effect/reactivity";
 import type { WorkspaceSnapshot, TranscriptMessage } from "@abracode/contracts/web/contracts";
 import type {
   PresentationAttachmentSchema,
@@ -11,11 +12,7 @@ import type {
 import { historyQuery } from "../data.ts";
 import { requestError } from "../request-error.ts";
 import type { Conversation } from "./conversation.ts";
-export function useWorkspaceHistory(
-  workspace: WorkspaceSnapshot,
-  setError: (text: string) => void,
-  conversation: Conversation,
-) {
+export function useWorkspaceHistory(workspace: WorkspaceSnapshot, conversation: Conversation) {
   const registry = useContext(RegistryContext);
   const mounted = useRef(false);
   useEffect(() => {
@@ -35,16 +32,20 @@ export function useWorkspaceHistory(
   const [cursor, setCursor] = useState<string>();
   const [loadingHistory, setLoadingHistory] = useState(false);
   const historyLoading = useRef(false);
-  async function loadHistory() {
+  async function loadHistory(beforeLoad: () => void) {
     const next = cursor ?? workspace.older;
-    if (!next || historyLoading.current) return;
+    if (!next || historyLoading.current || !mounted.current) return;
+    beforeLoad();
     historyLoading.current = true;
     setLoadingHistory(true);
+    const query = historyQuery(next);
+    if (AsyncResult.isFailure(registry.get(query))) registry.refresh(query);
     const result = await Effect.runPromiseExit(
-      AtomRegistry.getResult(registry, historyQuery(next)),
+      AtomRegistry.getResult(registry, query, { suspendOnWaiting: true }),
     );
     if (mounted.current) {
       if (Exit.isSuccess(result)) {
+        toast.dismiss("load-earlier-messages");
         setOlder((previous) => [...result.value.messages, ...previous]);
         setEarlierPresentations((previous) => [
           ...(result.value.presentations?.entries ?? []),
@@ -56,7 +57,20 @@ export function useWorkspaceHistory(
           ...previous,
         ]);
         setCursor(result.value.older ?? "");
-      } else setError(requestError(result.cause));
+      } else {
+        toast.error("Couldn’t load earlier messages", {
+          id: "load-earlier-messages",
+          description: requestError(result.cause),
+          duration: 10000,
+          action: {
+            label: "Retry",
+            onClick: (event) => {
+              event.preventDefault();
+              void loadHistory(beforeLoad);
+            },
+          },
+        });
+      }
       setLoadingHistory(false);
     }
     historyLoading.current = false;

@@ -563,10 +563,12 @@ test("native date-time edits refuse Amsterdam's DST gap and serialize valid loca
   await page.getByRole("button", { name: "Submit answer", exact: true }).click();
   await page.getByText(/this time may not exist/).waitFor();
   assert.equal(f.replies.length, 0);
+  assert.equal(await page.getByText("Answer submitted", { exact: true }).count(), 0);
   assert.equal(await page.getByLabel("Date", { exact: true }).inputValue(), "2026-03-29");
   await page.getByLabel(/^When/).fill("2026-03-29T03:30");
   await page.getByRole("button", { name: "Submit answer", exact: true }).click();
   await page.getByLabel(/^When/).waitFor({ state: "hidden" });
+  await page.getByText("Answer submitted", { exact: true }).waitFor();
   assert.deepEqual(f.replies[0].answer, { when: "2026-03-29T01:30:00.000Z", date: "2026-03-29" });
 });
 
@@ -1272,6 +1274,8 @@ test("form bindings reset values and concurrent native replies retain their own 
   await page.getByRole("button", { name: /^Attention/ }).press("Enter");
   await page.getByRole("button", { name: "Review next" }).press("Enter");
   await page.waitForFunction(() => document.activeElement?.hasAttribute("data-native-permission"));
+  await page.getByRole("button", { name: "Reject", exact: true }).click();
+  await page.getByText("Permission denied", { exact: true }).waitFor();
   assert.equal(f.replies.length, 2);
   assert.deepEqual(
     f.replies.find((reply) => reply.id === "frm_slow"),
@@ -1387,7 +1391,12 @@ test("late inspector responses cannot replace a new selection and live updates i
   await page.goto(`${f.origin}/?issue=abra-slow&tab=Plan`);
   await request;
   await page.getByRole("button", { name: "Toggle work finder" }).click();
+  await page.route("**/api/work/resolve", (route) => route.abort(), { times: 1 });
   await page.getByRole("button", { name: /Another issue/ }).click();
+  const failure = page
+    .locator("[data-sonner-toast]")
+    .filter({ hasText: "Couldn’t open this work item" });
+  await failure.getByRole("button", { name: "Retry" }).click();
   await page.waitForURL((url) => url.searchParams.get("issue") === "abra-web");
   await page.getByLabel("Work details", { exact: true }).selectOption("Overview");
   await page.getByText("Details for Another issue", { exact: true }).waitFor();
@@ -2660,8 +2669,18 @@ test("historical generated cards reopen exact revisions and repair-response atta
   const page = await f.browser.newPage({ viewport: { width: 1440, height: 1000 } });
   await page.goto(f.origin);
   await page.getByText("Revised generated layout", { exact: true }).waitFor();
+  const requestedCursors: (string | null)[] = [];
+  await page.route("**/api/history?*", (route) => {
+    requestedCursors.push(new URL(route.request().url()).searchParams.get("cursor"));
+    return requestedCursors.length === 1 ? route.abort() : route.continue();
+  });
   await page.getByRole("button", { name: "Load earlier messages", exact: true }).click();
+  const failure = page
+    .locator("[data-sonner-toast]")
+    .filter({ hasText: "Couldn’t load earlier messages" });
+  await failure.getByRole("button", { name: "Retry" }).click();
   await page.getByText("Original generated layout", { exact: true }).waitFor();
+  assert.deepEqual(requestedCursors, ["older-view", "older-view"]);
   assert.equal(await page.locator('[data-surface-reference="retained-board/1"]').count(), 1);
   assert.equal(await page.locator('[data-surface-reference="retained-board/2"]').count(), 1);
   f.source.value = {

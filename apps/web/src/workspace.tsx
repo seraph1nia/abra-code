@@ -160,12 +160,7 @@ function Workspace({
     [router, viewport.rememberPosition],
   );
   const closeFinder = useCallback(() => setSidebar(false), [setSidebar]);
-  const navigation = useWorkspaceNavigation(
-    route,
-    viewport.rememberPosition,
-    closeFinder,
-    setError,
-  );
+  const navigation = useWorkspaceNavigation(route, viewport.rememberPosition, closeFinder);
   const { selected, tab, inspect, setTab, closeInspector, returnInspectorFocus } = navigation;
   const { scroller, transcript, bottom, rememberPosition } = viewport;
   const setDraft = useAtomSet(workspaceDraft(initial.session_id));
@@ -405,10 +400,7 @@ function Workspace({
                   variant="ghost"
                   className="load-history"
                   disabled={loadingHistory}
-                  onClick={() => {
-                    viewport.beforeHistory();
-                    void loadHistory();
-                  }}
+                  onClick={() => void loadHistory(viewport.beforeHistory)}
                 >
                   {loadingHistory ? "Loading…" : "Load earlier messages"}
                 </Button>
