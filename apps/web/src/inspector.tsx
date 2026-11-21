@@ -420,6 +420,15 @@ function Overview({
           </Button>
         ))}
       <Markdown className="prose" content={detail.description} />
+      {detail.thought_source && (
+        <section aria-label="Accepted thought">
+          <h3>Accepted thought</h3>
+          <p>
+            {detail.thought_source.reference.account} · {detail.thought_source.reference.name}
+          </p>
+          <blockquote className="whitespace-pre-wrap">{detail.thought_source.excerpt}</blockquote>
+        </section>
+      )}
       {work.execution_contract && <ExecutionContractSummary contract={work.execution_contract} />}
       {work.outcome && (
         <section aria-label="Independent work outcomes">

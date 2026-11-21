@@ -248,3 +248,65 @@ test("documented attended opt-in resolves without changing shipped defaults or r
   assert.deepEqual(await run(f.records.projects()), projects);
   assert.deepEqual(await run(f.records.execution(e.issue_id)), retained);
 });
+
+test("Memos credentials stay out of offline settings and process environments with zero projects", async (t) => {
+  const { memosConnection } = await import("../../src/config/memos.ts");
+  const { Redacted } = await import("effect");
+  const { execFileSync } = await import("node:child_process");
+  const root = await mkdtemp(join(tmpdir(), "abra-memos-config-"));
+  t.onTestFinished(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, "abracode.yaml");
+  const tokenFile = join(root, "credential");
+  const legacy = await run(resolveConfig(root, path, base));
+  await assert.rejects(run(memosConnection(legacy)), /Configure a Memos notebook/);
+  const settings =
+    base + `memos: {instance: https://notes.example.test/, token_file: ${tokenFile}}\n`;
+  const config = await run(resolveConfig(root, path, settings));
+  assert.deepEqual(config.repositories, []);
+  await assert.rejects(run(memosConnection(config)), /token file/);
+  const token = "pat-test-only-private-7a40";
+  await writeFile(tokenFile, token + "\n", { mode: 0o600 });
+  const yaml = (fields: string) =>
+    base + `memos: {instance: https://notes.example.test/, ${fields}}\n`;
+  const inline = await run(resolveConfig(root, path, yaml(`token: ${token}`)));
+  for (const configured of [config, inline]) {
+    const connection = await run(memosConnection(configured));
+    assert.equal(connection.instance, "https://notes.example.test");
+    assert.equal(Redacted.value(connection.token), token);
+    assert.equal(presentConfig(configured).memos.configured, true);
+    assert.ok(
+      !JSON.stringify([
+        configured,
+        connection,
+        presentConfig(configured),
+        hostConfiguration(configured),
+      ]).includes(token),
+    );
+  }
+  for (const invalid of [
+    "token: ''",
+    `token: '${token} invalid'`,
+    `token: ${token}, token_file: ${tokenFile}`,
+  ]) {
+    await assert.rejects(
+      run(resolveConfig(root, path, yaml(invalid))),
+      (error: Error) => error.message.includes("memos") && !error.message.includes(token),
+    );
+  }
+  assert.equal(
+    execFileSync(process.execPath, [
+      "-e",
+      "process.stdout.write(JSON.stringify(process.env))",
+    ]).includes(token),
+    false,
+  );
+  for (const origin of [
+    "https://u:p@notes.test",
+    "https://notes.test/?secret=abc",
+    "file:///tmp/token",
+  ]) {
+    await assert.rejects(
+      run(resolveConfig(root, path, settings.replace("https://notes.example.test/", origin))),
+    );
+  }
+});

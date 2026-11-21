@@ -24,6 +24,7 @@
     "./ui/input": "./src/ui/input.tsx",
     "./ui/label": "./src/ui/label.tsx",
     "./ui/native-select": "./src/ui/native-select.tsx",
+    "./ui/search-dialog": "./src/ui/search-dialog.tsx",
     "./ui/separator": "./src/ui/separator.tsx",
     "./ui/sheet": "./src/ui/sheet.tsx",
     "./ui/skeleton": "./src/ui/skeleton.tsx",

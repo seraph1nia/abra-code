@@ -77,3 +77,9 @@ retains that proof only after commit. A warm one-item insertion in the integrity
 regression visits zero historical edges and hydrates zero issues, with 1,000
 unrelated issues each depending on the same parent. Identical receipt replays
 still return their original key-to-issue mapping.
+
+## Personal thought references
+
+Format v11 adds an optional accepted thought source to an ordinary issue. Intake records the scoped Memos reference, digest of the selected wording and agreed excerpt in its transaction. Replaying the same intake uses the retained request even after an external edit. Worker intent includes the accepted excerpt alongside the goal.
+
+The separate `thought_saves` table maps a digest of the notebook, account and save request ID to a random upstream memo ID and the content digest. Only the original reservation attempts creation. After interruption, subsequent attempts read that upstream ID and compare the original wording. An unverified save remains unresolved. Notebook searches and detail reads go directly to Memos.

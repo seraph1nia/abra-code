@@ -14,6 +14,8 @@ export function observerResult<A, R>(
       (failure): Effect.Effect<never, Rpc.HandlerError<typeof visibility.methods.detail>> => {
         const message = diagnosticText(failure.message);
         const data = { code: failure.code };
+        if (failure.code.startsWith("MEMOS_") || failure.code === "ABRA_REQUIRED")
+          return Effect.fail(error("resource_unavailable", message, data));
         if (inbox) {
           if (failure.code === "INBOX_PROJECT")
             return Effect.fail(error("invalid_selection", message, data));

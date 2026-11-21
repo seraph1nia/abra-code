@@ -41,6 +41,7 @@ export function Composer({
     delivery: workspace.busy ? delivery : "queue",
     draft,
     selection: input.attachment?.selection,
+    thought: input.thought,
     clearSent,
     setDraft,
     refresh,
@@ -89,6 +90,14 @@ export function Composer({
           if (!pending && !admitting && isReady && draft.trim()) void send();
         }}
       >
+        {input.thought && (
+          <div className="selection-chip">
+            <span>Selected thought · {input.thought.name}</span>
+            <Button type="button" variant="ghost" onClick={() => edit({ thought: undefined })}>
+              Remove thought
+            </Button>
+          </div>
+        )}
         {input.attachment && (
           <div className="selection-chip">
             <details>

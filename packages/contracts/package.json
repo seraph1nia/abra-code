@@ -21,6 +21,7 @@
     "./presentation/work-state": "./src/presentation/work-state.ts",
     "./primitives": "./src/primitives.ts",
     "./validation/contracts": "./src/validation/contracts.ts",
+    "./visibility/thoughts": "./src/visibility/thoughts.ts",
     "./visibility/github-inbox": "./src/visibility/github-inbox.ts",
     "./visibility/attention": "./src/visibility/attention.ts",
     "./visibility/discovery-contracts": "./src/visibility/discovery-contracts.ts",

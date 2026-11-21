@@ -60,7 +60,7 @@ export function useWorkspaceNavigation(
         toast.dismiss("open-work-item");
         inspectorOrigin.current = origin;
         beforeNavigate();
-        void navigate({ search: searchForResource(result.value) });
+        void navigate({ to: "/", search: searchForResource(result.value) });
         closeFinder();
       }
       void openTarget();

@@ -1364,3 +1364,8 @@
     overflow-x: auto;
   }
 }
+
+.phone-navigation .search-trigger {
+  align-self: center;
+  min-height: 44px;
+}

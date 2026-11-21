@@ -1,3 +1,4 @@
+import { ThoughtReference } from "../visibility/thoughts.ts";
 import { LinkedCheckSchema } from "../workflow/message-contracts.ts";
 import { WorkSelectionSchema } from "./resources.ts";
 import { BindingCoverageSchema } from "./bindings.ts";
@@ -49,6 +50,7 @@ export const ReceiptSchema = Schema.Struct({
   answer: Schema.optionalKey(Schema.String),
   followups: Schema.optionalKey(Schema.Array(SelectionFollowupSchema)),
   capture: Schema.optionalKey(CapturedSelectionSchema),
+  thought: Schema.optionalKey(ThoughtReference),
   native_text: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(32768))),
   text: Schema.String,
   delivery: Schema.Literals(["queue", "steer"]),
@@ -103,6 +105,7 @@ export const ProjectsSchema = Schema.Array(
   Schema.Struct({ id: Schema.String, name: Schema.String, path: Schema.optional(Schema.String) }),
 );
 export const SubmissionSchema = Schema.Struct({
+  thought: Schema.optionalKey(ThoughtReference),
   selection: Schema.optionalKey(WorkSelectionSchema),
   request_id: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/)),
   text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32768)),
@@ -113,6 +116,7 @@ export const ReceiptQuerySchema = Schema.Struct({
   request_id: SubmissionSchema.fields.request_id,
 }).annotate({ parseOptions: { onExcessProperty: "error" }, reportInput: false });
 export const SubmissionOptionsSchema = Schema.Struct({
+  thought: SubmissionSchema.fields.thought,
   selection: SubmissionSchema.fields.selection,
   request_id: SubmissionSchema.fields.request_id,
   delivery: Schema.optionalKey(SubmissionSchema.fields.delivery),

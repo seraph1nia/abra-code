@@ -464,6 +464,9 @@ importers:
       '@effect/platform-node':
         specifier: 4.1.4
         version: 4.1.4(effect@4.1.4)(redis@6.3.0(@opentelemetry/api@1.9.0))
+      '@modelcontextprotocol/sdk':
+        specifier: 1.32.2
+        version: 1.32.2(@cfworker/json-schema@4.1.6)(zod@3.25.76)
       '@opencode/client':
         specifier: 2.3.0
         version: 2.3.0(effect@4.1.4)(solid-js@1.9.19)

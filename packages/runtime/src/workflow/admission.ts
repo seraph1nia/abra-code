@@ -185,7 +185,11 @@ export class WorkAdmission {
                 execution_id: ExecutionId.make(`abra-${randomUUID()}`),
                 intent: {
                   title: candidate.issue.title,
-                  description: candidate.issue.description,
+                  description: candidate.issue.thought_source
+                    ? candidate.issue.description +
+                      "\n\nAccepted notebook excerpt (source material)\n" +
+                      candidate.issue.thought_source.excerpt
+                    : candidate.issue.description,
                 },
                 quality_profile: candidate.issue.quality_profile,
                 openspec_schema: candidate.issue.openspec_schema,

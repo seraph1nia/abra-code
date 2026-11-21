@@ -5,7 +5,12 @@ import { ensure } from "../domain.ts";
 import { decodeSync } from "../decode.ts";
 import { WorkInputSchema, IssueSchema, normalizeIssue } from "./model.ts";
 
-const { request_id: _request, dependencies: _dependencies, ...workFields } = WorkInputSchema.fields;
+const {
+  request_id: _request,
+  dependencies: _dependencies,
+  thought_source: _singleThought,
+  ...workFields
+} = WorkInputSchema.fields;
 import { BatchDependencySchema } from "./batch-dependency.ts";
 export { BatchDependencySchema } from "./batch-dependency.ts";
 export const BatchTaskSchema = Schema.Struct({

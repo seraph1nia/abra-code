@@ -14,6 +14,7 @@ export async function installationRoot(prefix: string) {
 export async function installSource(home: string, options: { buildWeb?: boolean } = {}) {
   for (const path of [
     "package.json",
+    "compose.yaml",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
     "tsconfig.json",

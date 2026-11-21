@@ -1,3 +1,4 @@
+import { SearchTrigger } from "./search-trigger.tsx";
 import { Link, Outlet } from "@tanstack/react-router";
 import { useState } from "react";
 import type { AgentDefinitionView } from "@abracode/contracts/web/agent-settings";
@@ -176,6 +177,7 @@ export function Settings() {
           <span className="muted">Settings</span>
         </div>
         <nav aria-label="Main navigation">
+          <SearchTrigger />
           <Link to="/" className="settings-link">
             Back to workspace
           </Link>

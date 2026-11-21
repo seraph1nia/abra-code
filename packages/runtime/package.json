@@ -32,6 +32,7 @@
     "@ag-ui/core": "1.0.4",
     "@copilotkit/runtime": "1.88.0",
     "@effect/platform-node": "4.1.4",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@opencode/client": "2.3.0",
     "@opencode/plugin": "2.3.0",
     "@opencode/schema": "2.3.0",

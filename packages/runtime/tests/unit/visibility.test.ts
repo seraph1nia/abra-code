@@ -380,6 +380,8 @@ test("bounded supervision projection preserves record history and exposes read-o
     "overview",
     "report",
     "snapshot",
+    "thoughtDetail",
+    "thoughtList",
     "verification",
     "worker",
   ]);

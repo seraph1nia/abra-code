@@ -1,3 +1,4 @@
+import { roadExcerpt, roadQuestion, thoughtsJourney } from "./memos-thoughts.ts";
 import { inboxJourney } from "./github-inbox.ts";
 import { cockpitJourney } from "./cockpit.ts";
 import { nativeObservation } from "../helpers/native-observation.ts";
@@ -335,6 +336,9 @@ export function nativeTest(
         name: string;
         args: any;
       }> = [];
+      const roadDiscussion = journey === "memos-thoughts" && user.startsWith(roadQuestion);
+      if (roadDiscussion)
+        calls.push({ name: "abra_thought_get", args: JSON.parse(user.split("\n").at(-1)) });
       if (role === "supervisor" && user.startsWith("AbraCode workspace operation ")) {
         const operation = JSON.parse(user.slice("AbraCode workspace operation ".length));
         calls.push({ name: operation.tool, args: operation.args });
@@ -807,9 +811,16 @@ export function nativeTest(
             {
               delta: {
                 role: "assistant",
-                content: user.includes("browser-acceptance")
-                  ? "Observed the browser counter change from 0 to 1, captured and read scratch screenshot evidence, and closed the assigned browser. Completed assigned role."
-                  : "Completed assigned role.",
+                content:
+                  roadDiscussion &&
+                  messages.some(
+                    (m: any) =>
+                      m.role === "tool" && JSON.stringify(m.content).includes(roadExcerpt),
+                  )
+                    ? "I found the weekly planning thought."
+                    : user.includes("browser-acceptance")
+                      ? "Observed the browser counter change from 0 to 1, captured and read scratch screenshot evidence, and closed the assigned browser. Completed assigned role."
+                      : "Completed assigned role.",
               },
               finish_reason: "stop",
             },
@@ -1016,7 +1027,11 @@ export function nativeTest(
     );
     await run(git.run(Id.AbsolutePath.make(projects[1]), ["push", "origin", "main"]));
     await installSource(home, {
-      buildWeb: journey === "github-inbox" || journey === "workspace" || journey === "cockpit",
+      buildWeb:
+        journey === "memos-thoughts" ||
+        journey === "github-inbox" ||
+        journey === "workspace" ||
+        journey === "cockpit",
     });
     if (
       journey === "workspace" ||
@@ -1096,6 +1111,22 @@ export function nativeTest(
       join(home, "abracode.yaml"),
       `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture${journey === "research" ? ", variant: default" : ""} } ${journey === "github-inbox" ? ", overrides: { review: { providerID: fixture, id: gpt-specialist } }" : ""} }\nprofiles:\n  native-investigator: { role: research, model: { providerID: fixture, id: gpt-specialist } }\nworktree_root: ${root}/trees\nserver_url: http://127.0.0.1:${port}\nreconcile_interval_ms: 1000\n${journey === "finishing" ? "progress_timeout_ms: { explore: 500, apply: 1800000, review: 900000, research: 900000, operation: 300000 }\n" : ""}${journey === "simplify-loop" ? "supervision_mode: attended-automatic\n" : ""}max_executions: 8\ncommands:\n  forge: ${fakeForge}\n`,
     );
+    if (journey === "memos-thoughts") {
+      const instance = process.env.ABRACODE_TEST_MEMOS_ORIGIN,
+        token_file = process.env.ABRACODE_TEST_MEMOS_TOKEN_FILE;
+      assert.ok(
+        instance && /^http:\/\/127\.0\.0\.1:\d+$/u.test(instance) && token_file?.startsWith("/"),
+        "Use a disposable loopback Memos instance and temporary token file",
+      );
+      const personal = join(home, "abracode.yaml");
+      await writeFile(
+        personal,
+        (await readFile(personal, "utf8")) +
+          "memos: " +
+          JSON.stringify({ instance, token_file }) +
+          "\n",
+      );
+    }
     if (journey === "engineering")
       await writeFile(
         join(home, "abracode.yaml"),
@@ -1509,6 +1540,22 @@ export function nativeTest(
     }
     if (journey === "reply-recovery") {
       engineeringEvidence.push(await runReplyRecovery());
+      return;
+    }
+    if (journey === "memos-thoughts") {
+      engineeringEvidence.push(
+        await thoughtsJourney({
+          home,
+          project: projects[1],
+          session: supervisor.id,
+          evidence: evidenceDirectory,
+          invoke,
+          endpoint: {
+            url: `http://127.0.0.1:${port}`,
+            auth: { type: "basic", username: "opencode", password },
+          },
+        }),
+      );
       return;
     }
     if (journey === "github-inbox") {

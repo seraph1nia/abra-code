@@ -42,6 +42,9 @@ export class WebAdmissions {
     private runtime: Pick<NativeRuntime, "promptAdmission" | "prompt">,
     private locks: Locks,
     private capture?: (selection: WorkSelection) => Effect.Effect<string, CrewError>,
+    private verifyThought?: (
+      reference: NonNullable<Submission["thought"]>,
+    ) => Effect.Effect<void, CrewError>,
   ) {}
   /** Observe one retained identity. Missing evidence never admits or retries input. */
   receipt(session: SessionId, requestID: string) {
@@ -75,6 +78,7 @@ export class WebAdmissions {
             prior &&
             (prior.text !== input.text ||
               prior.delivery !== input.delivery ||
+              canonicalJSON(prior.thought) !== canonicalJSON(input.thought) ||
               canonicalJSON(prior.capture?.selection) !== canonicalJSON(input.selection))
           )
             return yield* new CrewError(
@@ -101,11 +105,32 @@ export class WebAdmissions {
                 "The question and excerpt exceed the native input bound.",
               );
           }
+          if (!prior && input.thought) {
+            if (!this.verifyThought)
+              return yield* new CrewError(
+                "SELECTION_UNAVAILABLE",
+                "Thought lookup is unavailable.",
+              );
+            yield* this.verifyThought(input.thought).pipe(
+              Effect.mapError((e) => new CrewError("SELECTION_THOUGHT", e.message)),
+            );
+            nativeText =
+              (nativeText ?? input.text) +
+              "\n\nSelected personal thought (resolve with abra_thought_get)\n" +
+              JSON.stringify(input.thought);
+            if (nativeText.length > 32768)
+              return yield* new CrewError(
+                "SELECTION_LIMIT",
+                "Shorten the question to attach this thought.",
+              );
+          }
           const receipt: SubmissionReceipt = prior ?? {
             request_id: input.request_id,
             delivery: input.delivery,
             text: input.text,
-            ...(capture && { capture, native_text: nativeText! }),
+            ...(capture && { capture }),
+            ...(input.thought && { thought: input.thought }),
+            ...(nativeText && { native_text: nativeText }),
             message_id: SessionMessage.ID.create(),
             status: "submitted",
             at: yield* timestamp,
@@ -173,6 +198,7 @@ export function registerWebGateway(
     new NativeRuntime(ctx, config),
     new FileLocks(AbsolutePath.make(join(config.home, ".abracode/locks"))),
     (selection) => captureSelection(controller.queries, selection),
+    (ref) => controller.thoughts.get(ref, "http").pipe(Effect.asVoid),
   );
   const receipts = (id: SessionId) =>
     store.entries(StoragePrefix.make(`web/receipt/${id}/`)).pipe(

@@ -6,11 +6,12 @@ import { sourceInstallationRoot } from "../installation.ts";
 import { CrewError } from "../domain.ts";
 import { provideProcess } from "../platform.ts";
 import { makeWorkspaceClient } from "../web/client.ts";
+import { connectDevNotebook } from "./dev-notebook.ts";
 
 const args = process.argv.slice(2);
 if (args.includes("--help")) {
   console.log(
-    "Usage: pnpm dev [--port 5173] [--backend-port 4098]\nStarts or restarts the native service, then serves Vite React HMR and automatic Effect HTTP backend reloads.",
+    "Usage: pnpm dev [--port 5173] [--backend-port 4098]\nStarts or restarts Docker Compose and the native service, then serves Vite React HMR and automatic Effect HTTP backend reloads.",
   );
 } else {
   const program = Effect.scoped(
@@ -51,6 +52,28 @@ if (args.includes("--help")) {
         killSignal: "SIGTERM" as const,
         forceKillAfter: "3 seconds" as const,
       };
+      const compose = yield* ChildProcess.make(
+        "docker",
+        [
+          "compose",
+          "-f",
+          "compose.yaml",
+          "up",
+          "-d",
+          "--force-recreate",
+          "--wait",
+          "--wait-timeout",
+          "60",
+        ],
+        options,
+      );
+      const composeCode = yield* compose.exitCode;
+      if (composeCode !== 0)
+        return yield* new CrewError(
+          "DEV_COMPOSE",
+          `Docker Compose startup failed (${composeCode})`,
+        );
+      yield* connectDevNotebook(home);
       const restart = yield* ChildProcess.make("pnpm", ["service:restart"], options);
       const restartCode = yield* restart.exitCode;
       if (restartCode !== 0)

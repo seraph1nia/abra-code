@@ -276,3 +276,50 @@ test("lost steer delivery remains on the original Abra session and identity", as
   assert.equal(recovered.status, "admitted");
   assert.deepEqual(seen, [[session, input.text, first.message_id, true]]);
 });
+
+test("memo handoff checks selected wording before admission and retains only the scoped reference", async () => {
+  const ref = {
+    instance: "https://notes.test",
+    account: "users/me",
+    name: "memos/second",
+    wording_hash: "b".repeat(64),
+  };
+  const store = new MemoryStore();
+  let available = false;
+  const prompts: string[] = [];
+  const admissions = new WebAdmissions(
+    store,
+    {
+      promptAdmission: () => Effect.succeed("consumed" as const),
+      prompt: (_session, text) =>
+        Effect.sync(() => {
+          prompts.push(text);
+        }),
+    },
+    new TestLocks(),
+    undefined,
+    (selected) => {
+      assert.deepEqual(selected, ref);
+      return available
+        ? Effect.void
+        : Effect.fail(new CrewError("MEMOS_CHANGED", "Reselect the changed memo."));
+    },
+  );
+  const question = { ...input, thought: ref };
+  await assert.rejects(Effect.runPromise(admissions.submit(session, question)), /Reselect/);
+  assert.equal(await Effect.runPromise(admissions.receipt(session, input.request_id)), null);
+  assert.equal(prompts.length, 0);
+  available = true;
+  const accepted = await Effect.runPromise(admissions.submit(session, question));
+  assert.deepEqual(accepted.thought, ref);
+  assert.ok(prompts[0]!.includes(JSON.stringify(ref)));
+  available = false;
+  assert.deepEqual(await Effect.runPromise(admissions.submit(session, question)), accepted);
+  await assert.rejects(
+    Effect.runPromise(
+      admissions.submit(session, { ...question, thought: { ...ref, name: "memos/first" } }),
+    ),
+    /different input/,
+  );
+  assert.equal(prompts.length, 1);
+});

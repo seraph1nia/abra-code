@@ -1,3 +1,4 @@
+import { ThoughtSource } from "@abracode/contracts/visibility/thoughts";
 import { InboxIndex, inboxTables, type SourceLink } from "./inbox-index.ts";
 import { DispatchSchema } from "../config/dispatch.ts";
 import {
@@ -73,6 +74,11 @@ type Row = Record<string, SQLOutputValue>;
 /** All ownership checks and writes are atomic, including across independent processes. */
 export interface WorkGraph {
   readonly inbox: InboxIndex;
+  hasRequest(id: RequestId): Effect.Effect<boolean, CrewError>;
+  reserveThought(
+    key: string,
+    digest: string,
+  ): Effect.Effect<{ id: string; fresh: boolean }, CrewError>;
   create(input: NewIssue, source?: SourceLink): Effect.Effect<Issue, CrewError>;
   createBatch(input: BatchInput): Effect.Effect<typeof BatchResultSchema.Type, CrewError>;
   show(id: IssueId): Effect.Effect<Issue, CrewError>;
@@ -155,7 +161,8 @@ export class SqliteWorkGraph implements WorkGraph {
               version === 7 ||
               version === 8 ||
               version === 9 ||
-              version === 10,
+              version === 10 ||
+              version === 11,
             "WORK_DATABASE_VERSION",
             `Unsupported work database version ${String(version)}`,
           );
@@ -196,9 +203,14 @@ export class SqliteWorkGraph implements WorkGraph {
             CREATE INDEX IF NOT EXISTS issues_status ON issues(status, priority, id);
           `);
           db.exec(inboxTables);
+          db.exec(
+            "CREATE TABLE IF NOT EXISTS thought_saves (request_key TEXT PRIMARY KEY, digest TEXT NOT NULL, memo_id TEXT NOT NULL UNIQUE)",
+          );
           const columns = db.prepare("PRAGMA table_info(issues)").all();
           if (!columns.some((c) => c.name === "scope_json"))
             db.exec("ALTER TABLE issues ADD COLUMN scope_json TEXT");
+          if (!columns.some((c) => c.name === "thought_source_json"))
+            db.exec("ALTER TABLE issues ADD COLUMN thought_source_json TEXT");
           if (!columns.some((c) => c.name === "report_reference_json"))
             db.exec("ALTER TABLE issues ADD COLUMN report_reference_json TEXT");
           if (!columns.some((c) => c.name === "quality_profile"))
@@ -236,7 +248,7 @@ export class SqliteWorkGraph implements WorkGraph {
           }
           const empty = !db.prepare("SELECT 1 FROM dependencies LIMIT 1").get();
           const versionStamp = graph.dataVersion();
-          db.exec("PRAGMA user_version = 10; COMMIT");
+          db.exec("PRAGMA user_version = 11; COMMIT");
           if (empty) graph.validatedVersion = versionStamp;
         } catch (error) {
           db.exec("ROLLBACK");
@@ -283,6 +295,11 @@ export class SqliteWorkGraph implements WorkGraph {
         ...row,
         scope,
         report_reference,
+        ...(row.thought_source_json != null && {
+          thought_source: Schema.decodeSync(Schema.fromJsonString(ThoughtSource))(
+            String(row.thought_source_json),
+          ),
+        }),
         quality_profile: row.quality_profile ?? undefined,
         openspec_schema: row.openspec_schema ?? undefined,
         require_plan_approval:
@@ -361,9 +378,13 @@ export class SqliteWorkGraph implements WorkGraph {
         const offset = query.offset ?? 0,
           limit = query.limit ?? 50;
         if (!total || offset >= total) return { entries: [], total, offset, limit };
+        const rank = search ? "(id = ?) DESC, (abracode_lower(id) = ?) DESC, " : "";
+        const rankValues = search ? [query.search!.trim(), search] : [];
         const rows = this.db
-          .prepare(`SELECT * FROM issues WHERE ${condition} ORDER BY priority, id LIMIT ? OFFSET ?`)
-          .all(...values, limit, offset);
+          .prepare(
+            `SELECT * FROM issues WHERE ${condition} ORDER BY ${rank}priority, id LIMIT ? OFFSET ?`,
+          )
+          .all(...values, ...rankValues, limit, offset);
         return {
           entries: this.hydrate(
             rows,
@@ -392,6 +413,35 @@ export class SqliteWorkGraph implements WorkGraph {
     this.db
       .prepare("INSERT INTO work_events (issue_id, kind, actor, reason, at) VALUES (?, ?, ?, ?, ?)")
       .run(id, kind, actor, reason, at);
+  }
+
+  hasRequest(id: RequestId) {
+    return sqlEffect(() =>
+      Boolean(this.db.prepare("SELECT 1 FROM issues WHERE request_id = ?").get(id)),
+    );
+  }
+
+  reserveThought(key: string, digest: string) {
+    return sqlEffect(() =>
+      this.transaction(() => {
+        const previous = this.db
+          .prepare("SELECT digest, memo_id FROM thought_saves WHERE request_key = ?")
+          .get(key);
+        if (previous) {
+          ensure(
+            previous.digest === digest,
+            "MEMOS_CONFLICT",
+            "This save request already belongs to different wording.",
+          );
+          return { id: String(previous.memo_id), fresh: false };
+        }
+        const id = randomUUID();
+        this.db
+          .prepare("INSERT INTO thought_saves(request_key, digest, memo_id) VALUES (?, ?, ?)")
+          .run(key, digest, id);
+        return { id, fresh: true };
+      }),
+    );
   }
 
   private insert(issue: Issue, input: string) {
@@ -423,11 +473,12 @@ export class SqliteWorkGraph implements WorkGraph {
       );
     this.db
       .prepare(
-        "UPDATE issues SET scope_json = ?, report_reference_json = ?, dispatch_json = ? WHERE id = ?",
+        "UPDATE issues SET scope_json = ?, report_reference_json = ?, thought_source_json = ?, dispatch_json = ? WHERE id = ?",
       )
       .run(
         issue.scope === undefined ? null : JSON.stringify(issue.scope),
         issue.report_reference === undefined ? null : JSON.stringify(issue.report_reference),
+        issue.thought_source === undefined ? null : JSON.stringify(issue.thought_source),
         issue.dispatch === undefined ? null : JSON.stringify(issue.dispatch),
         issue.id,
       );

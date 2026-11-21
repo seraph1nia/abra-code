@@ -2,6 +2,7 @@
 import { useAtom } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { Equal, Schema } from "effect";
+import { ThoughtReference } from "@abracode/contracts/visibility/thoughts";
 import { createContext } from "react";
 import {
   CapturedSelectionSchema as AttachmentSchema,
@@ -14,11 +15,13 @@ export const AttachSelection = createContext<(attachment: DraftAttachment) => vo
 const DraftSchema = Schema.Struct({
   text: Schema.String.check(Schema.isMaxLength(32768)),
   attachment: Schema.optionalKey(AttachmentSchema),
+  thought: Schema.optionalKey(ThoughtReference),
 });
 type Draft = typeof DraftSchema.Type;
 type Edit =
   | { text: string }
   | { attachment: DraftAttachment | undefined }
+  | { thought: ThoughtReference | undefined }
   | { clearSent: Submission };
 export const workspaceDraft = Atom.family((sessionID: string) => {
   const legacy = `abra-draft-${sessionID}`;
@@ -40,17 +43,20 @@ export const workspaceDraft = Atom.family((sessionID: string) => {
       if (
         "clearSent" in edit &&
         (prior.text.trim() !== edit.clearSent.text ||
+          !Equal.equals(prior.thought, edit.clearSent.thought) ||
           !Equal.equals(prior.attachment?.selection, edit.clearSent.selection))
       )
         return;
-      const value: Draft =
-        "clearSent" in edit
-          ? { text: "" }
-          : "text" in edit
-            ? { ...prior, text: edit.text.slice(0, 32768) }
-            : edit.attachment
-              ? { ...prior, attachment: edit.attachment }
-              : { text: prior.text };
+      let value: Draft;
+      if ("clearSent" in edit) value = { text: "" };
+      else if ("text" in edit) value = { ...prior, text: edit.text.slice(0, 32768) };
+      else if ("thought" in edit) {
+        const { thought: _old, ...rest } = prior;
+        value = edit.thought ? { ...rest, thought: edit.thought } : rest;
+      } else {
+        const { attachment: _old, ...rest } = prior;
+        value = edit.attachment ? { ...rest, attachment: edit.attachment } : rest;
+      }
       ctx.set(state, value);
       if (writeRetained(key, value)) {
         try {

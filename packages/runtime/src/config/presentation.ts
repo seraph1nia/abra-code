@@ -7,6 +7,7 @@ export const presentConfig = (config: Config) => ({
   config_path: config.config_path,
   config_digest: config.config_digest,
   home: config.home,
+  memos: { configured: Boolean(config.memos) },
   paths: {
     database: config.work_database,
     worktrees: config.worktree_root,

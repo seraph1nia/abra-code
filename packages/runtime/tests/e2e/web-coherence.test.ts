@@ -1188,6 +1188,23 @@ test("a finding from chat opens its exact file, survives Back and reload, and at
     () => document.activeElement?.getAttribute("aria-label") === "Message Abra",
   );
   assert.equal(await draft.inputValue(), "Explain this change");
+  const historyLength = await page.evaluate(() => history.length);
+  await draft.press("Control+k");
+  const palette = page.getByLabel("Search work and commands");
+  await palette.fill("diff");
+  await palette.press("Escape");
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute("aria-label") === "Message Abra",
+  );
+  assert.equal(await page.evaluate(() => history.length), historyLength);
+  await draft.press("Control+k");
+  await page.getByRole("option", { name: /Resume last inspection/ }).click();
+  await file.waitFor();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("option", { name: "Return to chat" }).click();
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute("aria-label") === "Message Abra",
+  );
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("link", { name: "Chat", exact: true }).click();
   await page.locator(".selection-chip summary").click();
@@ -3171,7 +3188,8 @@ test("phone retains the current form and reading position when a reply arrives i
   f.source.value = { ...f.source.value, messages: [...f.source.value.messages, message(30)] };
   await f.changed();
   await page.locator('[data-native-message-id="reading-30"]').waitFor({ state: "attached" });
-  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("option", { name: "Review pending decisions" }).click();
   await page.getByRole("log").waitFor();
   assert.ok(Math.abs((await anchor.evaluate((e) => e.getBoundingClientRect().top)) - offset) < 4);
   assert.equal(await page.getByLabel("Storage choice").inputValue(), "SQLite");
@@ -3237,6 +3255,122 @@ test("portrait composer and busy controls fit the visible height with wide trans
         () => document.documentElement.scrollWidth <= innerWidth && window.scrollY === 0,
       ),
     );
+  }
+  assert.equal(f.source.submissions, 0);
+});
+
+test("palette opens from Settings by touch or shortcut and keeps modal keyboard ownership", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  let bootstrap = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/bootstrap") bootstrap++;
+  });
+  await page.goto(f.origin + "/settings/repositories");
+  const search = page.getByRole("button", { name: "Search", exact: true });
+  await search.tap();
+  const input = page.getByLabel("Search work and commands");
+  await input.fill("open");
+  await input.press("ArrowDown");
+  assert.equal(await input.inputValue(), "open");
+  await input.press("Control+k");
+  assert.equal(await page.getByRole("dialog").count(), 1);
+  await input.press("Escape");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Search");
+  for (const key of ["Meta+k", "Control+k"]) {
+    await search.press(key);
+    await input.waitFor();
+    assert.equal(
+      await page.getByRole("option", { name: /Review pending|Resume last|Open Diff/ }).count(),
+      0,
+    );
+    await input.press("Escape");
+  }
+  assert.equal(bootstrap, 0);
+  await search.tap();
+  await input.fill("finder");
+  await input.press("Enter");
+  await page.getByRole("complementary", { name: "Work finder" }).waitFor();
+  await page.goBack();
+  await page.getByRole("heading", { name: "Repositories" }).waitFor();
+  await page.goForward();
+  await page.getByRole("button", { name: /Build a single workspace/ }).click();
+  await page.setViewportSize({ width: 980, height: 800 });
+  const sheet = page.getByRole("dialog", { name: /Work inspector/ });
+  await sheet.waitFor();
+  await page.keyboard.press("Control+k");
+  assert.equal(await page.getByRole("dialog", { name: "Search workspace" }).count(), 0);
+  assert.ok(await sheet.isVisible());
+});
+
+test("palette searches off-page tasks, rejects late matches and seeds editable finder filters", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const work = f.source.value.work.work[0];
+  const task = {
+    ...work,
+    issue_id: IssueId.make("archived-key"),
+    title: "Archived palette task",
+    issue_status: "closed" as const,
+  };
+  f.setDiscovery([work, task]);
+  const page = await f.browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.goto(f.origin + "/settings/repositories");
+  const trigger = page.getByRole("button", { name: "Search", exact: true });
+  const input = page.getByLabel("Search work and commands");
+  await trigger.click();
+  await input.fill("archiv");
+  await page.getByRole("option", { name: /Archived palette task.*closed/ }).waitFor();
+  await page.getByRole("option", { name: "See all results in Work" }).click();
+  const field = page.getByRole("textbox", { name: "Search work", exact: true });
+  await field.waitFor();
+  assert.equal(await field.inputValue(), "archiv");
+  await page.getByRole("button", { name: "Active", exact: true }).click();
+  await page.getByRole("combobox", { name: "Project" }).selectOption({ index: 1 });
+  await trigger.click();
+  await input.fill("archived-key");
+  await page.getByRole("option", { name: /Archived palette task/ }).waitFor();
+  assert.match(await page.getByRole("option").first().innerText(), /Archived palette task/);
+  await page.getByRole("option", { name: "See all results in Work" }).click();
+  await page.getByRole("button", { name: /Archived palette task/ }).waitFor();
+  assert.equal(await field.inputValue(), "archived-key");
+  assert.equal(await page.getByRole("combobox", { name: "Project" }).inputValue(), "");
+  assert.equal(
+    await page.getByRole("button", { name: "All", exact: true }).getAttribute("aria-pressed"),
+    "true",
+  );
+  await trigger.click();
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/work/find?*", async (route) => {
+    const term = new URL(route.request().url()).searchParams.get("search");
+    if (term === "palette") await pending;
+    if (term === "settings") return route.fulfill({ status: 503, body: "unavailable" });
+    await route.continue();
+  });
+  const requested = page.waitForRequest(
+    (request) => new URL(request.url()).searchParams.get("search") === "palette",
+  );
+  await input.fill("palette");
+  await requested;
+  await input.fill("no such work");
+  await page.getByText("No matching work.", { exact: true }).waitFor();
+  release();
+  await input.fill("settings");
+  await page.getByText("Work search is unavailable.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("option", { name: /Archived palette task/ }).count(), 0);
+  await page.getByRole("option", { name: "Open Settings" }).waitFor();
+  await input.fill("archived-key");
+  await page.getByRole("option", { name: /Archived palette task/ }).click();
+  await page.getByRole("heading", { name: task.title, exact: true }).waitFor();
+  for (const tab of ["Plan", "Diff", "Verification", "Reports"]) {
+    await trigger.click();
+    await input.fill(tab);
+    await page.getByRole("option", { name: "Open " + tab + " " + task.title }).click();
+    await page.waitForURL((url) => url.searchParams.get("tab") === tab);
   }
   assert.equal(f.source.submissions, 0);
 });

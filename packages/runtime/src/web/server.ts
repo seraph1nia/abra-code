@@ -1,3 +1,4 @@
+import { ThoughtPage, ThoughtDetail } from "@abracode/contracts/visibility/thoughts";
 import { InboxPage, InboxDetail } from "@abracode/contracts/visibility/github-inbox";
 import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
 import { VerificationViewSchema } from "@abracode/contracts/web/verification";
@@ -76,7 +77,9 @@ const refused = (error: CrewError) =>
   new WorkspaceError({
     code: error.code,
     message:
-      error.code === "REVIEW_STALE" || error.code === "REVIEW_REFUSED"
+      error.code === "REVIEW_STALE" ||
+      error.code === "REVIEW_REFUSED" ||
+      error.code.startsWith("MEMOS_")
         ? error.message
         : (resourceErrors.get(error.code) ??
           "Request could not be confirmed. Refresh before retrying."),
@@ -150,6 +153,14 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
       validated(read(query), schema);
   const work = HttpApiBuilder.group(api, "work", (handlers) =>
     handlers
+      .handle(
+        "thoughtList",
+        workRead((q) => backend.work.thoughtList(q), ThoughtPage),
+      )
+      .handle(
+        "thoughtDetail",
+        workRead((q) => backend.work.thoughtDetail(q), ThoughtDetail),
+      )
       .handle(
         "githubInbox",
         workRead((q) => backend.work.githubInbox(q), InboxPage),

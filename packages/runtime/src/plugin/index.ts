@@ -1,3 +1,4 @@
+import { ThoughtPage, ThoughtDetail } from "@abracode/contracts/visibility/thoughts";
 import { InboxPage, InboxDetail } from "@abracode/contracts/visibility/github-inbox";
 import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
 import { VerificationViewSchema } from "@abracode/contracts/web/verification";
@@ -157,6 +158,16 @@ export const createPlugin = (
         // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native RPC registration exposes an open error channel.
         const registration = yield* ctx.rpc.register(visibility, {
           binding: read(BindingReadSchema, (query) => observer.binding(query)),
+          thoughtList: read(ThoughtPage, (q) =>
+            central
+              ? c.thoughts.list(q, "http")
+              : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central Thoughts view")),
+          ),
+          thoughtDetail: read(ThoughtDetail, (q) =>
+            central
+              ? c.thoughts.get(q, "http")
+              : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central Thoughts view")),
+          ),
           githubInbox: read(
             InboxPage,
             (query) =>

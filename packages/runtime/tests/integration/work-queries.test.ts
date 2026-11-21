@@ -78,3 +78,29 @@ test("a legacy dangling dependency cannot become eligible through batched claim 
   );
   assert.equal((await run(graph.show(issue.id))).status, "open");
 });
+
+test("exact closed ID leads every title match before filtered pagination", async (t) => {
+  const { graph } = await workDatabase(t);
+  const exact = await run(graph.create({ ...goal("exact"), priority: 3 }));
+  const owner = Id.ExecutionId.make("exact-owner");
+  await run(graph.claim(exact.id, owner));
+  await run(graph.close(exact.id, owner));
+  const others = [];
+  for (let i = 0; i < 4; i++) {
+    others.push(
+      (await run(graph.create({ ...goal("prefix-" + i), title: "See " + exact.id, priority: 1 })))
+        .id,
+    );
+  }
+  const observed = [];
+  for (const offset of [0, 2, 4]) {
+    const page = await run(graph.find({ search: exact.id, state: "all", offset, limit: 2 }));
+    assert.equal(page.total, 5);
+    observed.push(...page.entries.map((entry) => entry.id));
+  }
+  assert.deepEqual(observed, [exact.id, ...others.sort()]);
+  assert.deepEqual(
+    (await run(graph.find({ search: exact.id, state: "closed" }))).entries.map((entry) => entry.id),
+    [exact.id],
+  );
+});

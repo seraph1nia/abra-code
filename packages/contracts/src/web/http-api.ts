@@ -1,3 +1,9 @@
+import {
+  ThoughtQuery,
+  ThoughtPage,
+  ThoughtReference,
+  ThoughtDetail,
+} from "../visibility/thoughts.ts";
 import { InboxQuery, InboxPage, InboxTarget, InboxDetail } from "../visibility/github-inbox.ts";
 import { EvidenceDataSchema, EvidenceQuerySchema } from "./worker-evidence.ts";
 import { VerificationViewSchema } from "./verification.ts";
@@ -179,6 +185,16 @@ export const workspaceApi = HttpApi.make("abra-workspace")
         success: BindingReadSchema,
         error,
       }),
+      HttpApiEndpoint.get("thoughtList", "/api/thoughts", {
+        query: ThoughtQuery.annotate(exact),
+        success: ThoughtPage,
+        error,
+      }),
+      HttpApiEndpoint.get("thoughtDetail", "/api/thoughts/detail", {
+        query: ThoughtReference.annotate(exact),
+        success: ThoughtDetail,
+        error,
+      }),
       HttpApiEndpoint.get("githubInbox", "/api/work/github", {
         query: InboxQuery,
         success: InboxPage,
@@ -337,6 +353,8 @@ export const workspaceApi = HttpApi.make("abra-workspace")
 /** Fixed retained-work reads. Types follow the HTTP owner, including decoded numeric queries. */
 export type WorkReadName =
   | "binding"
+  | "thoughtList"
+  | "thoughtDetail"
   | "githubInbox"
   | "githubItem"
   | "find"

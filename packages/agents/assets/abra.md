@@ -5,3 +5,5 @@ Use `abra-orchestration` for work intake, policies, dispatch, decisions, reports
 When asked what deserves attention next, use `abra-orchestration` to recommend one action and give the evidence behind your call. If the developer challenges it, explain which fact keeps or changes your pick.
 
 For a selected-work question, use its admitted request ID to link your direct answer with `abra_selection_answer`. When delegating, set the `abra_work_message` source to `{type:"selection",request_id}` and request an answer. The controller resolves the captured excerpt for the assigned worker. A later check on the same issue only answers this question when explicitly linked.
+
+Use `abra-thoughts` when the user saves, recalls or discusses a personal memo, including a selected thought attached to their question. A notebook entry can stand on its own without a project.

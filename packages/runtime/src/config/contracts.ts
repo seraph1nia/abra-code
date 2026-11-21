@@ -102,9 +102,24 @@ export const SupervisionModeSchema = Schema.Literals([
   "attended-automatic",
   "unattended",
 ]);
+const memosInstance = NonEmpty.check(
+  Schema.isPattern(/^https?:\/\/[^\s/@?#\\]+\/?$/u),
+  Schema.makeFilter((value) => URL.canParse(value) || "Expected a Memos origin"),
+);
+export const InlineMemosSettings = Schema.Struct({
+  instance: memosInstance,
+  token: Schema.RedactedFromValue(Schema.String.check(Schema.isPattern(/^[!-~]+$/u)), {
+    disallowEncode: true,
+  }),
+});
+const memosSettings = Schema.Union([
+  InlineMemosSettings,
+  Schema.Struct({ instance: memosInstance, token_file: AbsolutePath }),
+]);
 export const ConfigInputSchema = Schema.Struct({
   version: Schema.Literal(1),
   models: ModelsSchema,
+  memos: Schema.optional(memosSettings),
   profiles: Schema.optional(DispatchProfilesSchema),
   attention_capacity: Schema.optional(Positive),
   progress_timeout_ms: Schema.optional(WatchdogPolicySchema),
@@ -140,6 +155,7 @@ export const ConfigInputSchema = Schema.Struct({
 });
 export const ConfigSchema = Schema.Struct({
   ...ConfigInputSchema.fields,
+  memos: Schema.optional(Schema.toType(memosSettings)),
   config_path: AbsolutePath,
   config_digest: NonEmpty,
   supervisor_model: WorkerModelSchema,

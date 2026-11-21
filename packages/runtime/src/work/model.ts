@@ -1,3 +1,4 @@
+import { ThoughtSource } from "@abracode/contracts/visibility/thoughts";
 import { SchemaName } from "../openspec/schema-contracts.ts";
 import { DispatchSchema, normalizeDispatch } from "../config/dispatch.ts";
 import { IssueId, RepositoryId, RequestId, ExecutionId } from "../identities.ts";
@@ -20,6 +21,7 @@ export const IssueSchema = Schema.Struct({
   quality_profile: Schema.optional(QualityProfile),
   scope: Schema.optional(ScopeDraftSchema),
   report_reference: Schema.optional(ReportReferenceSchema),
+  thought_source: Schema.optional(ThoughtSource),
   id: IssueId,
   repository_id: RepositoryId,
   workflow_policy: PolicySchema,
@@ -39,6 +41,7 @@ export const WorkInputSchema = Schema.Struct({
   workflow_policy: Schema.optional(PolicySchema),
   scope: Schema.optional(ScopeDraftSchema),
   report_reference: Schema.optional(ReportReferenceSchema),
+  thought_source: Schema.optional(ThoughtSource),
   repository_id: RepositoryId,
   title: NonEmpty,
   description: NonEmpty,
@@ -100,6 +103,7 @@ export function normalizeIssue(value: unknown): NewIssue {
     workflow_policy,
     scope,
     report_reference,
+    ...(input.thought_source && { thought_source: input.thought_source }),
     repository_id,
     title: input.title.trim(),
     description: input.description.trim(),

@@ -19,10 +19,14 @@ models:
 #     dispatch: { research: { profile: fast-research } }
 # Task dispatch overrides those defaults; existing executions keep captured choices.
 # Defaults: full-openspec, manual scheduling, 2 workers/executions, approvals required.
-# Provider credentials belong in native auth storage or the environment, never here.
+# Model provider credentials belong in native auth storage or the environment, never here.
 # Optional: manual | attended-automatic | unattended. Omit to preserve legacy flags/budgets.
 # supervision_mode: attended-automatic
 # Posture grants no repair budget or approval; restart after changing it.
+# Optional external notebook. pnpm dev connects its local Memos notebook automatically.
+# memos:
+#   instance: https://notes.example.net
+#   token: "YOUR_MEMOS_PERSONAL_ACCESS_TOKEN"
 repositories: []
 # Add repositories through Abra, or edit declarations then run pnpm config:apply.
 # repositories:

@@ -6,9 +6,9 @@ For development, run:
 pnpm dev
 ```
 
-Open `http://127.0.0.1:5173`. Vite serves the TanStack Router frontend and React Fast Refresh preserves component state. `tsx watch` restarts the Effect HTTP adapter when backend source changes. Each `pnpm dev` launch starts or restarts the native OpenCode service and reuses the Abra session. Relaunch it when workers are idle to load native plugin changes. Ordinary HTTP reloads keep the native process running.
+Open `http://127.0.0.1:5173`. Vite serves the TanStack Router frontend and React Fast Refresh preserves component state. `tsx watch` restarts the Effect HTTP adapter when backend source changes. Each `pnpm dev` launch first recreates the root Docker Compose services and waits for Memos to be healthy, then starts or restarts the native OpenCode service and reuses the Abra session. Relaunch it when workers are idle to load native plugin changes. Ordinary HTTP reloads keep the native process running.
 
-Use `pnpm dev --port 5174 --backend-port 4099` to change the frontend/backend ports. The Vite proxy validates the browser's exact origin before translating it to the private backend origin. Ctrl+C stops both development servers and preserves native work. The workspace remains the TanStack Router index route; validated search parameters retain issue, inspector tab, file and diff scope through browser history and reload.
+Use `pnpm dev --port 5174 --backend-port 4099` to change the frontend/backend ports. The Vite proxy validates the browser's exact origin before translating it to the private backend origin. Ctrl+C stops both development servers. Memos and the native service keep running. The workspace remains the TanStack Router index route; validated search parameters retain issue, inspector tab, file and diff scope through browser history and reload.
 
 Build and open the single-session frontend from the installation root:
 
@@ -64,6 +64,12 @@ retains its same-ID recovery behavior. This also works for restored tabs and
 does not clear their separate unsent drafts.
 
 History is paginated using native identities. The backend accepts only cursors it issued for this session. Existing native text/tool observations are projected explicitly; provider replay blobs and hidden reasoning never enter the browser. Terminal/controller-originated turns appear through the same observation path.
+
+## Search work and commands
+
+Choose **Search** in the workspace header or Settings, or use ⌘K on macOS and Ctrl+K on Windows or Linux. On phones, tap Search beside the workspace destinations. Type a title or issue ID to search active and closed local work across all projects. Exact IDs rank first. **See all results in Work** carries your text into the full finder, where you can refine the project and state.
+
+Use the arrow keys to highlight a result and Enter to open it. Escape returns focus to where you opened Search. While inspecting a task, search for Plan, Diff, Verification or Reports to jump to its evidence. An empty search offers the last inspected item in this tab and session and, when a decision is waiting, **Review pending decisions** opens Attention. **Return to chat** focuses your current draft. Decision answers and chat messages still require explicit submission.
 
 ## Boundaries and decisions
 
@@ -332,3 +338,11 @@ While writing a prompt, follow an evidence link in a message to inspect the exac
 ### Preview a phone on desktop
 
 Open the current workspace in Chrome, open DevTools, and toggle the device toolbar (Ctrl+Shift+M, or Cmd+Shift+M on macOS). Choose Responsive, enable touch and set the viewport to 390 × 844. Type a draft in Chat, open Canvas, choose a task, visit Settings, then return to Chat. The draft should still be there. Try 375 × 812 and reduce the height to 450 pixels with the composer focused to approximate the space above a software keyboard. Restore the height and widen past 760 pixels to check the tablet layout. Actual keyboard animation, caret tracking and home-indicator insets need a physical phone.
+
+### Personal thoughts
+
+Open the Work finder from Canvas on your phone or from the workspace header on desktop and choose **Thoughts**. Recent private personal memos appear across all projects, including when you have no projects. Search literal text, an optional tag, and UTC creation dates. **Before** excludes the date you enter. Open a result to read the memo, follow **Open in Memos**, or go back to the same filtered page.
+
+**Ask Abra about this** attaches the selected memo to your existing chat draft. Edit your question and press Send. Abra checks the account, private scope and wording at submission and when reading the memo. If the wording changed, return to Thoughts and reselect the version you want to discuss.
+
+Programmatic callers can use the same workspace reads. `GET /api/thoughts?text=planning&tag=road&from=2026-11-01&until=2026-12-01` returns `entries` and, when another page exists, `next_cursor`. Send that value as `cursor` with the same filters. For detail, pass the returned reference fields (`instance`, `account`, `name`, `wording_hash`) as URL-encoded query parameters to `GET /api/thoughts/detail`. The workspace’s ordinary origin and session checks apply. The browser never needs a Memos access token.

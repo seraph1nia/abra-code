@@ -60,7 +60,7 @@ test("real in-memory finder pages preserve search, totals, ordering, dependencie
     for (const [sql] of prepare.mock.calls) {
       assert.doesNotMatch(sql, /^SELECT id FROM issues/);
       if (sql.includes("SELECT * FROM issues"))
-        assert.match(sql, /ORDER BY priority, id LIMIT \? OFFSET \?/);
+        assert.match(sql, /ORDER BY .*priority, id LIMIT \? OFFSET \?/);
     }
     const state = query.state ?? "active",
       search = query.search?.trim().toLowerCase() ?? "";

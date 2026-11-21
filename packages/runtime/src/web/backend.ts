@@ -322,6 +322,8 @@ export class NativeWebBackend implements WebBackend {
       this.use((client) => select(this.visibility(client))(input, this.location()));
   }
   readonly work: WorkQueries = {
+    thoughtList: this.workMethod((rpc) => rpc.thoughtList),
+    thoughtDetail: this.workMethod((rpc) => rpc.thoughtDetail),
     githubInbox: this.workMethod((rpc) => rpc.githubInbox),
     githubItem: this.workMethod((rpc) => rpc.githubItem),
     binding: this.workMethod((rpc) => rpc.binding),

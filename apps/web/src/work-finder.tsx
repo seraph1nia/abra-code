@@ -1,3 +1,5 @@
+import type { ThoughtReference } from "@abracode/contracts/visibility/thoughts";
+import { Thoughts } from "./thoughts.tsx";
 import { GithubInbox } from "./github-inbox.tsx";
 import { useEffect, useState } from "react";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
@@ -42,21 +44,28 @@ function SlotUsage({ label, usage }: { label: string; usage?: typeof CapacityUsa
 
 export function WorkFinder({
   shown,
+  initialQuery,
+  discuss,
   close,
   workspace,
   open,
   ask,
 }: {
   shown: boolean;
+  initialQuery?: string;
+  discuss: (ref: ThoughtReference) => void;
   close: () => void;
   workspace: WorkspaceSnapshot;
   open: (id: string, tab?: "Reports") => void;
   ask: (text: string) => void;
 }) {
-  const [search, setSearch] = useState("");
-  const [settled, setSettled] = useState("");
+  const [thoughts, setThoughts] = useState(false);
+  const [search, setSearch] = useState(initialQuery ?? "");
+  const [settled, setSettled] = useState(initialQuery ?? "");
   const [repository, setRepository] = useState("");
-  const [state, setState] = useState<NonNullable<WorkDiscovery["state"]>>("active");
+  const [state, setState] = useState<NonNullable<WorkDiscovery["state"]>>(
+    initialQuery ? "all" : "active",
+  );
   const [offset, setOffset] = useState(0);
   const [fleetOpen, setFleetOpen] = useState(false);
   useEffect(() => {
@@ -82,6 +91,9 @@ export function WorkFinder({
           <X aria-hidden="true" />
         </Button>
       </div>
+      <Button variant="outline" onClick={() => setThoughts(true)}>
+        Thoughts
+      </Button>
       <Input
         className="search"
         aria-label="Search work"
@@ -281,7 +293,8 @@ export function WorkFinder({
   );
   return (
     <aside className="sidebar" aria-label="Work finder" hidden={!shown}>
-      {shown && content}
+      {shown &&
+        (thoughts ? <Thoughts discuss={discuss} back={() => setThoughts(false)} /> : content)}
     </aside>
   );
 }

@@ -23,6 +23,9 @@ export class Controller {
   }
   validation = (...args: Parameters<ValidationCommands["command"]>) =>
     this.services.validation.command(...args);
+  get thoughts() {
+    return this.services.thoughts;
+  }
   get inbox() {
     return this.services.inbox;
   }

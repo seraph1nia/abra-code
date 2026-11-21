@@ -163,6 +163,7 @@ export class NativeAgentAdapter {
         request_id: options.request_id,
         text: input.text,
         delivery: options.delivery ?? "queue",
+        ...(options.thought && { thought: options.thought }),
         ...(options.selection && { selection: options.selection }),
       });
       if (receipt.status !== "admitted")

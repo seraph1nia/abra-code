@@ -1,3 +1,4 @@
+import { ThoughtSource } from "../visibility/thoughts.ts";
 import { FilePatchId } from "./resources.ts";
 import { Count } from "../primitives.ts";
 import { LeadAttentionSchema } from "../visibility/lead-observation.ts";
@@ -36,6 +37,7 @@ export const WorkSnapshotSchema = Schema.Struct({
 export const WorkOverviewSchema = Schema.Struct({
   work: WorkItemSchema,
   description: Schema.String,
+  thought_source: Schema.optional(ThoughtSource),
   errors: strings,
 });
 export const WorkDetailSchema = Schema.Struct({

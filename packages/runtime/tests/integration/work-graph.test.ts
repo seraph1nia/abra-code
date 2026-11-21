@@ -319,12 +319,38 @@ test("early SQLite schema upgrades preserve work, ownership and history", async 
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 10);
-    verify.exec("PRAGMA user_version = 11");
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 11);
+    verify.exec("PRAGMA user_version = 12");
   } finally {
     verify.close();
   }
-  await assert.rejects(run(SqliteWorkGraph.open(path)), /Unsupported work database version 11/);
+  await assert.rejects(run(SqliteWorkGraph.open(path)), /Unsupported work database version 12/);
+});
+
+test("schema 10 work replays after upgrading the optional thought source and save ledger", async (t) => {
+  const { graph, path, scope } = await database(t);
+  const old = await run(graph.create(goal("before-notebook")));
+  await run(Scope.close(scope, Exit.void));
+  const db = new DatabaseSync(path);
+  try {
+    db.exec(
+      "ALTER TABLE issues DROP COLUMN thought_source_json; DROP TABLE thought_saves; PRAGMA user_version = 10",
+    );
+  } finally {
+    db.close();
+  }
+  await run(
+    Effect.gen(function* () {
+      const migrated = yield* SqliteWorkGraph.open(path);
+      const replay = yield* migrated.create(goal("before-notebook"));
+      assert.equal(replay.id, old.id);
+      assert.equal(replay.thought_source, undefined);
+      const original = yield* migrated.reserveThought("request", "digest");
+      const retry = yield* migrated.reserveThought("request", "digest");
+      assert.equal(original.id, retry.id);
+      assert.equal(retry.fresh, false);
+    }),
+  );
 });
 
 test("workflow/scope/report identities are persisted and cannot rebind a request; legacy full-spec input retries compatibly", async (t) => {
@@ -509,7 +535,7 @@ for (const version of [3, 4, 5])
     );
     const verify = new DatabaseSync(path);
     try {
-      assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 10);
+      assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 11);
       assert.equal(
         verify.prepare("SELECT request_input FROM issues WHERE id = ?").get(issue.id)!
           .request_input,
@@ -611,7 +637,7 @@ test("schema-5 batch receipts keep original mapping while new task dispatch is d
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 10);
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 11);
     assert.equal(
       verify.prepare("SELECT request_input FROM work_batches").get()!.request_input,
       receipt,
@@ -704,7 +730,7 @@ test("version-6 migration preserves old request bytes while new schema/approval 
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 10);
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 11);
     assert.equal(
       verify.prepare("SELECT request_input FROM issues WHERE id = ?").get(old.id)!.request_input,
       original,

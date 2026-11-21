@@ -477,6 +477,9 @@ test("diagnostic message provenance cannot authorize lifecycle changes, and paus
       }),
     );
   for (const tool of [
+    "thought_get",
+    "thought_search",
+    "thought_save",
     "work_start",
     "work_control",
     "work_scope",
@@ -501,6 +504,30 @@ test("diagnostic message provenance cannot authorize lifecycle changes, and paus
     }),
     /diagnostic turn/,
   );
+  for (const name of ["thought_get", "thought_save", "thought_search"]) {
+    const tool = tools.get(name)!;
+    const invokeAs = (sessionID: Id.SessionId) =>
+      run(
+        tool.execute(
+          {},
+          {
+            sessionID,
+            agent: Agent.ID.make("abra"),
+            messageID: Id.MessageId.make("msg_foreground-assistant"),
+            id: Tool.CallID.make("call_notebook"),
+            progress: () => Effect.void,
+          },
+        ),
+      );
+    await assert.rejects(invokeAs(e.explore_session_id!), /WORKER_FORBIDDEN/);
+    await assert.rejects(invokeAs(Id.SessionId.make("ses_supervisor")), /MEMOS_UNCONFIGURED/);
+  }
+  const centralTools = new Map(tools);
+  tools.clear();
+  await run(registerTools(ctx, f.controller, f.onboarding, false, f.setup));
+  for (const name of ["thought_get", "thought_save", "thought_search"])
+    assert.equal(tools.has(name), false);
+  for (const [name, tool] of centralTools) tools.set(name, tool);
   const draft = { surface_id: "draft", source: 'root = Text("Draft")', validate_only: true };
   const draftResult = await invoke("render_ui", draft);
   assert.equal(

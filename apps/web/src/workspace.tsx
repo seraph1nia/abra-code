@@ -1,3 +1,7 @@
+import { AttentionPanel } from "./attention-panel-loader.tsx";
+import { Palette } from "./palette-loader.tsx";
+import type { PaletteActions } from "./workspace-palette.tsx";
+import { SearchTrigger } from "./search-trigger.tsx";
 import { Recap } from "./recap-loader.tsx";
 import { MessageContent, emptyAttachments, emptyDiagnostics } from "./message-content.tsx";
 import { Composer } from "./composer.tsx";
@@ -8,7 +12,7 @@ import { useWorkspaceNavigation } from "./workspace-state/navigation.ts";
 import { useTranscriptViewport } from "./workspace-state/viewport.ts";
 
 /* oxlint-disable effecttsgo/unstable-api-usage -- Workspace presentation consumes the typed Effect atom layer. */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { WorkspaceProvider } from "./workspace-provider.tsx";
 import { useAtomSet, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -32,15 +36,6 @@ const WorkFinder = deferred<React.ComponentProps<typeof import("./work-finder.ts
   "deferred-panel",
   ({ shown }) => shown,
 );
-const AttentionPanel = deferred<
-  React.ComponentProps<typeof import("./presentation/attention-panel.tsx").AttentionPanel>
->(
-  () =>
-    import("./presentation/attention-panel.tsx").then((module) => ({
-      default: module.AttentionPanel,
-    })),
-  "Current attention",
-);
 const Inspector = deferred<React.ComponentProps<typeof import("./inspector.tsx").Inspector>>(
   () => import("./inspector.tsx").then((module) => ({ default: module.Inspector })),
   "Work inspection",
@@ -58,7 +53,15 @@ import { Button } from "@abracode/presentation/ui/button";
 import { Badge } from "@abracode/presentation/ui/badge";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
 
-type LayoutProps = { route: WorkspaceSearch; active: boolean; phone: boolean };
+type LayoutProps = {
+  route: WorkspaceSearch;
+  active: boolean;
+  phone: boolean;
+  palette?: PaletteActions;
+  finderSeed?: { query: string; sequence: number };
+  focusChat: boolean;
+  didFocus: () => void;
+};
 
 export function Application(props: LayoutProps) {
   const initial = useAtomValue(bootstrapQuery);
@@ -77,6 +80,8 @@ export function Application(props: LayoutProps) {
   if (!snapshot)
     return (
       <main className="loading">
+        {props.palette && <Palette {...props.palette} />}
+        {!props.phone && <SearchTrigger />}
         <div className="brand-mark">a</div>
         <h1>AbraCode</h1>
         <output>
@@ -95,6 +100,10 @@ function Workspace({
   route,
   active,
   phone,
+  palette,
+  finderSeed,
+  focusChat,
+  didFocus,
 }: { initial: WorkspaceSnapshot } & LayoutProps) {
   useNativeToolRendering();
   const {
@@ -128,28 +137,29 @@ function Workspace({
   const inspecting = Boolean(resourceFromSearch(route) || route.surface);
   const phoneCanvas = phone && (inspecting || Boolean(route.view));
   const chatVisible = active && !phoneCanvas;
-  const lastInspection = useRef<WorkspaceSearch | undefined>(undefined);
   const memoryKey = "abra-canvas-v1-" + initial.session_id;
+  const [lastInspection, setLastInspection] = useState<WorkspaceSearch | undefined>(() => {
+    try {
+      const saved = workspaceSearch(JSON.parse(sessionStorage.getItem(memoryKey) ?? "{}"));
+      if (saved.surface || resourceFromSearch(saved)) return saved;
+    } catch {
+      /* Storage can be disabled in private browsing. */
+    }
+  });
+  if (active && inspecting && route !== lastInspection) setLastInspection(route);
   useEffect(() => {
     if (!active) return;
     if (route.view === "canvas") {
-      let next: WorkspaceSearch = lastInspection.current ?? { view: "finder" };
-      try {
-        const saved = workspaceSearch(JSON.parse(sessionStorage.getItem(memoryKey) ?? "{}"));
-        if (saved.surface || resourceFromSearch(saved)) next = saved;
-      } catch {
-        /* Storage can be disabled in private browsing. */
-      }
+      const next = lastInspection ?? { view: "finder" as const };
       void navigate({ search: next, replace: true });
     } else if (inspecting) {
-      lastInspection.current = route;
       try {
         sessionStorage.setItem(memoryKey, JSON.stringify(route));
       } catch {
         /* Direct links still work when storage is unavailable. */
       }
     }
-  }, [active, inspecting, memoryKey, navigate, route]);
+  }, [active, inspecting, memoryKey, navigate, lastInspection, route]);
   const viewport = useTranscriptViewport(
     messages,
     loadingHistory,
@@ -241,6 +251,14 @@ function Workspace({
     }
   }
 
+  useEffect(() => {
+    if (focusChat && chatVisible && !inspecting && !route.view && isReady) {
+      document
+        .querySelector<HTMLTextAreaElement>('[aria-label="Message Abra"]')
+        ?.focus({ preventScroll: true });
+      didFocus();
+    }
+  }, [focusChat, chatVisible, inspecting, route.view, isReady, didFocus]);
   function attach(attachment: DraftAttachment) {
     setDraft({ attachment });
     focusComposer();
@@ -252,6 +270,27 @@ function Workspace({
   }
   return (
     <OpenSurface.Provider value={navigation.openSurface}>
+      {palette && (
+        <Palette
+          {...palette}
+          workspace={workspace}
+          selected={selected}
+          resume={lastInspection}
+          chat={() => {
+            closeFinder();
+            palette.chat();
+          }}
+          inspect={open}
+          review={
+            attention || workAttention.some((entry) => entry.owner === "user")
+              ? () => {
+                  setAttentionOpen(true);
+                  void navigate({ to: "/", search: {} });
+                }
+              : undefined
+          }
+        />
+      )}
       <div
         role="presentation"
         style={{ "--canvas-width": canvasWidth + "%" } as React.CSSProperties}
@@ -280,6 +319,7 @@ function Workspace({
             >
               Work
             </Button>
+            {!phone && <SearchTrigger />}
             <h1>Abra</h1>
           </div>
           <div className="topbar-end">
@@ -340,6 +380,14 @@ function Workspace({
         </header>
         {(sidebar || finderOpened) && (
           <WorkFinder
+            key={finderSeed?.sequence}
+            initialQuery={finderSeed?.query}
+            discuss={(thought) => {
+              setDraft({ thought });
+              closeFinder();
+              if (route.view) closeInspector(document.querySelector('[aria-label="Message Abra"]'));
+              else focusComposer();
+            }}
             shown={sidebar}
             close={() => {
               setSidebar(false);

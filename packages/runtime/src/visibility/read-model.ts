@@ -690,6 +690,7 @@ export class Visibility {
         overview: {
           work,
           description: issue.description ?? "",
+          ...(issue.thought_source && { thought_source: issue.thought_source }),
           errors: task.execution_unavailable ? [task.execution_unavailable] : [],
         },
       };

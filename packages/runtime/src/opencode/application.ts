@@ -1,3 +1,4 @@
+import { PersonalThoughts } from "../work/thoughts.ts";
 import { GithubInbox } from "../work/github-inbox.ts";
 import { Forge } from "../git/forge.ts";
 import { InboxForge } from "../git/inbox.ts";
@@ -177,6 +178,7 @@ export function createWorkflow(
     sessions,
     transitions,
   });
+  const thoughts = new PersonalThoughts(config, work);
   const admission = new WorkAdmission({
     config,
     records,
@@ -251,6 +253,7 @@ export function createWorkflow(
     advancement.workMessage,
   );
   const controller = new Controller({
+    thoughts,
     inbox: new GithubInbox(
       new InboxForge(new Forge(git.runner, config.commands.forge)),
       work.inbox,

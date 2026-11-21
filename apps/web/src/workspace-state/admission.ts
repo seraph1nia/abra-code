@@ -14,6 +14,7 @@ export function useWorkspaceAdmission({
   isReady,
   draft,
   selection,
+  thought,
   clearSent,
   delivery,
   setDraft,
@@ -25,6 +26,7 @@ export function useWorkspaceAdmission({
   draft: string;
   delivery: Pending["delivery"];
   selection?: Pending["selection"];
+  thought?: Pending["thought"];
   clearSent: (input: Pending) => void;
   setDraft: (text: string) => void;
   refresh: () => void;
@@ -55,6 +57,7 @@ export function useWorkspaceAdmission({
         receipt.request_id !== pending.request_id ||
         receipt.text !== pending.text ||
         receipt.delivery !== pending.delivery ||
+        !Equal.equals(receipt.thought, pending.thought) ||
         !Equal.equals(receipt.capture?.selection, pending.selection)
       ) {
         setAdmitting(false);
@@ -70,7 +73,7 @@ export function useWorkspaceAdmission({
           sender.admitted = true;
           void sender.agent.detachActiveRun();
         }
-        if (pending.selection) clearSent(pending);
+        if (pending.selection || pending.thought) clearSent(pending);
         setPending(undefined);
         setAdmitting(false);
         admittingRef.current = false;
@@ -109,6 +112,7 @@ export function useWorkspaceAdmission({
       request_id: crypto.randomUUID(),
       text: draft.trim(),
       ...(selection && { selection }),
+      ...(thought && { thought }),
       delivery,
     };
     if (!submission.text) return;
@@ -122,7 +126,7 @@ export function useWorkspaceAdmission({
     admittingRef.current = true;
     setAdmitting(true);
     setPending(submission);
-    if (!submission.selection) setDraft("");
+    if (!submission.selection && !submission.thought) setDraft("");
     setError("");
     const sender = {
       agent: new HttpAgent({
@@ -143,12 +147,17 @@ export function useWorkspaceAdmission({
           forwardedProps: {
             request_id: submission.request_id,
             delivery: submission.delivery,
+            ...(submission.thought && { thought: submission.thought }),
             ...(submission.selection && { selection: submission.selection }),
           },
         },
         {
           onRunErrorEvent: ({ event }) => {
-            if (!submission.selection || !event.code?.startsWith("SELECTION_") || !mounted.current)
+            if (
+              (!submission.selection && !submission.thought) ||
+              !event.code?.startsWith("SELECTION_") ||
+              !mounted.current
+            )
               return;
             refused = true;
             setPending(undefined);

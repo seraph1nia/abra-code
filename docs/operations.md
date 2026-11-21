@@ -37,7 +37,7 @@ A location reload can unload the plugin's monitor; it does not delete sessions o
 
 ## Local web UI
 
-Use `pnpm dev` for development at `http://127.0.0.1:5173`. Vite provides frontend HMR and `tsx watch` reloads the Effect HTTP backend. `pnpm dev --port 5174 --backend-port 4099` changes the local ports. Each launch runs `pnpm service:restart` before starting the development servers. This starts a stopped native service or restarts the running one and reuses the retained Abra session. Launch when workers are idle because restarting interrupts active execution.
+Use `pnpm dev` for development at `http://127.0.0.1:5173`. Vite provides frontend HMR and `tsx watch` reloads the Effect HTTP backend. `pnpm dev --port 5174 --backend-port 4099` changes the local ports. Each launch recreates the services in the root `compose.yaml`, waits for Memos to be healthy, and runs `pnpm service:restart` before starting the development servers. Memos listens on loopback port 5230 by default. Ctrl+C leaves it running. Use `docker compose stop` to stop it while retaining its notebook. This starts a stopped native service or restarts the running one and reuses the retained Abra session. Launch when workers are idle because restarting interrupts active execution.
 
 Relaunch `pnpm dev` to load native plugin or controller edits from TypeScript source. After dependency or workspace-layout changes, run `pnpm install --frozen-lockfile --prod=false` first. Source-file reloads and Ctrl+C leave the native service running.
 

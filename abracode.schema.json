@@ -79,6 +79,44 @@
       "required": ["default"],
       "additionalProperties": false
     },
+    "memos": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "instance": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^https?:\\/\\/[^\\s/@?#\\\\]+\\/?$"
+            },
+            "token": {
+              "type": "string",
+              "pattern": "^[!-~]+$"
+            }
+          },
+          "required": ["instance", "token"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "instance": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^https?:\\/\\/[^\\s/@?#\\\\]+\\/?$"
+            },
+            "token_file": {
+              "$ref": "#/$defs/AbsolutePath"
+            }
+          },
+          "required": ["instance", "token_file"],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "profiles": {
       "anyOf": [
         {

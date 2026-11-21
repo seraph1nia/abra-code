@@ -1,3 +1,4 @@
+import { SearchTrigger } from "./search-trigger.tsx";
 import { Link } from "@tanstack/react-router";
 import { useLayoutEffect, type RefObject } from "react";
 import { resourceFromSearch, type WorkspaceSearch } from "./navigation.ts";
@@ -55,6 +56,7 @@ export default function PhoneNavigation({
         Canvas
       </Link>
       <Link to="/settings">Settings</Link>
+      <SearchTrigger compact />
     </nav>
   );
 }

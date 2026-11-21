@@ -4,14 +4,15 @@ import { expect, test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { installSource, installationRoot, command } from "../e2e/install.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
-import { Effect } from "effect";
+import { Effect, Redacted } from "effect";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Service } from "@opencode/client/effect/service";
 import { OpenCode } from "@opencode/client";
+import { readDevNotebook } from "../../src/config/memos.ts";
 import { runtimePaths } from "../../src/config/identity.ts";
 import { AbsolutePath } from "../../src/identities.ts";
 
@@ -39,12 +40,15 @@ test(
       ...process.env,
       ABRACODE_HOME: home,
       ABRACODE_CONFIG: "personal.yaml",
+      COMPOSE_PROJECT_NAME: basename(root).toLowerCase(),
+      ABRACODE_MEMOS_PORT: "0",
       XDG_CONFIG_HOME: join(root, "config"),
       XDG_DATA_HOME: join(root, "data"),
       XDG_STATE_HOME: join(root, "state"),
       XDG_CACHE_HOME: join(root, "cache"),
     };
     let child: ReturnType<typeof spawn> | undefined;
+    let composeStarted = false;
     let logs = "",
       result: Record<string, unknown> = { result: "failed" };
     const run = (script: string) =>
@@ -53,6 +57,8 @@ test(
         env,
         timeout: 30000,
       });
+    const compose = (...args: string[]) =>
+      command("docker", ["compose", "-f", "compose.yaml", ...args], { cwd: home, env });
     const nativeClient = async () => {
       const endpoint = await Effect.runPromise(
         Service.discover({
@@ -82,6 +88,26 @@ test(
       );
       const started = await run("start.ts");
       const originalPid = (await (await nativeClient()).server.info()).pid;
+      composeStarted = true;
+      await compose("up", "-d", "--wait", "--wait-timeout", "60");
+      const settings = {
+        home: AbsolutePath.make(home),
+        config_path: AbsolutePath.make(join(home, "personal.yaml")),
+      };
+      await command(
+        join(home, "node_modules/.bin/tsx"),
+        [
+          "--input-type=module",
+          "-e",
+          'import {Effect} from "effect"; import {connectDevNotebook} from "./src/cli/dev-notebook.ts"; await Effect.runPromise(connectDevNotebook(process.env.ABRACODE_HOME));',
+        ],
+        { cwd: join(home, "packages/runtime"), env },
+      );
+      const initialNotebook = await Effect.runPromise(readDevNotebook(settings));
+      assert.ok(initialNotebook);
+      const originalMemos = (await compose("ps", "-q", "memos")).stdout.trim();
+      assert.ok(originalMemos);
+      await compose("exec", "-T", "memos", "touch", "/var/opt/memos/dev-restart-fixture");
       child = spawn(
         "pnpm",
         ["dev", "--port", String(port), "--backend-port", String(backendPort)],
@@ -103,6 +129,20 @@ test(
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       const first = await (await fetch(`${origin}/api/bootstrap`)).json();
+      const restartedMemos = (await compose("ps", "-q", "memos")).stdout.trim();
+      assert.ok(restartedMemos && restartedMemos !== originalMemos);
+      await compose("exec", "-T", "memos", "test", "-f", "/var/opt/memos/dev-restart-fixture");
+      const memosOrigin = "http://" + (await compose("port", "memos", "5230")).stdout.trim();
+      assert.ok((await fetch(memosOrigin + "/api/instance/profile")).ok);
+      const connection = await Effect.runPromise(readDevNotebook(settings));
+      assert.equal(connection?.instance, memosOrigin);
+      assert.ok(
+        connection && Redacted.value(connection.token) === Redacted.value(initialNotebook.token),
+      );
+      const pageOfThoughts = await fetch(origin + "/api/thoughts");
+      assert.equal(pageOfThoughts.status, 200);
+      assert.deepEqual((await pageOfThoughts.json()).entries, []);
+
       assert.equal(first.session_id, started.stdout.match(/Abra: (ses_\S+)/)?.[1]);
       const native = await nativeClient();
       const devPid = (await native.server.info()).pid;
@@ -251,6 +291,7 @@ test(
         await browser.close();
       }
       await stop();
+      assert.equal((await compose("ps", "-q", "memos")).stdout.trim(), restartedMemos);
       assert.equal((await native.server.info()).pid, devPid);
       assert.equal(await fetch(`${origin}/api/bootstrap`).catch(() => undefined), undefined);
       assert.equal(
@@ -263,7 +304,11 @@ test(
       try {
         await run("stop.ts");
       } finally {
-        await removeFixture(root);
+        try {
+          if (composeStarted) await compose("down", "--volumes");
+        } finally {
+          await removeFixture(root);
+        }
       }
       if (process.env.ABRACODE_TEST_EVIDENCE_DIR) {
         const evidence = process.env.ABRACODE_TEST_EVIDENCE_DIR;

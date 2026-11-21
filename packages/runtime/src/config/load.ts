@@ -10,6 +10,7 @@ import { decode } from "../decode.ts";
 import { ConfigInputSchema, ConfigSchema, parseYaml } from "./contracts.ts";
 import { configurationPath, modelRoles } from "./identity.ts";
 import { remoteIdentity } from "../git/source.ts";
+import { readDevNotebook } from "./memos.ts";
 
 export const configDigest = (content: string) => createHash("sha256").update(content).digest("hex");
 
@@ -113,7 +114,7 @@ export function resolveConfig(
   );
 }
 
-export function loadConfig(home: string): Effect.Effect<Config, CrewError> {
+export function loadPersonalConfig(home: string): Effect.Effect<Config, CrewError> {
   return domainEffect(
     Effect.gen(function* () {
       home = yield* realpath(home);
@@ -134,3 +135,10 @@ export function loadConfig(home: string): Effect.Effect<Config, CrewError> {
     }),
   );
 }
+
+export const loadConfig = (home: string) =>
+  Effect.gen(function* () {
+    const config = yield* loadPersonalConfig(home);
+    if (!config.memos) config.memos = yield* readDevNotebook(config);
+    return config;
+  });

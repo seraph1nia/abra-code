@@ -2,7 +2,7 @@
 
 `abracode.yaml` is the ignored personal source for models, repository declarations and policies. Copy the tracked `abracode.example.yaml`; `abracode.schema.json` is generated from the same Effect input contract. Required fields are `version: 1` and `models.default`. Unknown keys, duplicate YAML keys, malformed values and duplicate repository identities are errors.
 
-`ABRACODE_HOME` selects the installation root; `ABRACODE_CONFIG` selects another YAML path relative to that root or an absolute path. Every reader/writer uses that selected file. A running service remains bound to its startup file; selecting another path requires stopping it and restarting with the new `ABRACODE_CONFIG`. Launch/auth/attach/apply refuse a mismatched service rather than using another file. Credentials remain in native authentication storage or environment variables. Protect alternate personal paths and their atomic sibling `<filename>.*.tmp` files with your own ignore rules.
+`ABRACODE_HOME` selects the installation root; `ABRACODE_CONFIG` selects another YAML path relative to that root or an absolute path. Every reader/writer uses that selected file. A running service remains bound to its startup file; selecting another path requires stopping it and restarting with the new `ABRACODE_CONFIG`. Launch/auth/attach/apply refuse a mismatched service rather than using another file. Model and GitHub credentials remain in native authentication storage or environment variables. Protect alternate personal paths and their atomic sibling `<filename>.*.tmp` files with your own ignore rules.
 
 `pnpm config:validate` validates offline; `pnpm config:show` displays effective safe settings and per-role provenance. Both support `--json`. Neither starts services, opens/creates databases, registers repositories, provisions tools, executes checks or calls providers. Live readiness remains unverified. `pnpm doctor` is a separate read-only environment check and uses an existing service for live observations when available.
 
@@ -334,3 +334,27 @@ nor answer a form, consume a round, admit work or change any lifecycle authority
 Coding Review runs one OpenCode pass after verification. Configure its model and reasoning effort under `models.overrides.review`, using a model and variant available in your own OpenCode inventory. Repository and task dispatch continue to take precedence. After a model configuration change, restart the service for new executions. The central frozen install supplies OCR, and the bundled `abra-open-code-review-delegate` skill supplies the Review procedure. Delegation uses your selected OpenCode provider and requires no separate OCR login.
 
 Ask Abra to “review PR #42 in this repository” for a private report on the captured GitHub patches. That assignment captures the repository's resolved Review model for its Research worker. The report identifies the observed PR revision and patch coverage.
+
+## Personal Memos notebook
+
+The root `compose.yaml` runs Memos 26.11.1 on `http://127.0.0.1:5230` by default. `pnpm dev` starts or recreates the container and waits for it to be healthy. Its named volume preserves accounts, tokens and memos. Set `ABRACODE_MEMOS_PORT` to change the host port. To run just the notebook from the project root, use the following command.
+
+```sh
+docker compose up -d --wait
+```
+
+On a fresh local notebook `pnpm dev` creates the account **abra** with password **abra-local-dev**, obtains a Memos-issued API token, and saves the connection in the installation’s ignored `.abracode/` directory with owner-only permissions. Later launches reuse the token. Personal YAML settings take precedence. An existing notebook with different credentials requires an explicit connection.
+
+For phone access on your trusted network, expose that loopback port through your private network gateway or authenticated HTTPS reverse proxy. Anyone who can reach this development notebook can use the documented login. Open the resulting URL on your phone, sign in, choose your personal notebook, set visibility to Private and save your thought. Tags are optional. Phone capture requires connectivity to Memos.
+
+To connect an independently managed notebook, create a personal access token in its Memos account settings. Put its value in your private `abracode.yaml` and restart AbraCode. The instance is the origin you use on your phone. The default personal YAML is ignored by Git.
+
+```yaml
+memos:
+  instance: https://notes.example.net
+  token: "YOUR_MEMOS_PERSONAL_ACCESS_TOKEN"
+```
+
+You can leave `repositories: []`. To rotate an inline token, update `memos.token` and restart AbraCode. If you already mount a secret file, you can use `token_file: /run/secrets/abracode-memos` instead of `token`. The service reads that file on each notebook operation, so file-backed tokens can be rotated while it runs. Removing an explicit connection and restarting restores the local development connection if one has been provisioned.
+
+In chat, “Save this thought: try a smaller weekly planning session” captures the wording. “Find my thoughts about weekly planning” searches the notebook. “Discuss the second idea” reads that selection. To accept coding work, specify the goal, repository and wording, for example “In project planner, add a weekly planning view. Use the sentence I selected as the requirement.” The issue retains the accepted excerpt and its source even if you edit the memo later.

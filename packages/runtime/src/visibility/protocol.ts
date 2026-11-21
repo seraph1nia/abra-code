@@ -1,4 +1,11 @@
 import {
+  ThoughtSource,
+  ThoughtQuery,
+  ThoughtPage,
+  ThoughtReference,
+  ThoughtDetail,
+} from "@abracode/contracts/visibility/thoughts";
+import {
   InboxQuery,
   InboxPage,
   InboxTarget,
@@ -146,7 +153,12 @@ const snapshot = Schema.Struct({
   closed_total: Schema.optional(Count),
   closed_page: Schema.optional(Count),
 });
-const overview = Schema.Struct({ work, description: Schema.String, errors: strings });
+const overview = Schema.Struct({
+  work,
+  description: Schema.String,
+  thought_source: Schema.optional(ThoughtSource),
+  errors: strings,
+});
 const detail = Schema.Struct({
   ...overview.fields,
   change: Schema.optional(ChangeName),
@@ -209,6 +221,16 @@ export const visibility = Rpc.define({
         parseOptions: { onExcessProperty: "error", reportInput: false },
       }),
       output: Schema.toStandardSchemaV1(BindingReadSchema),
+    },
+    thoughtList: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(ThoughtQuery),
+      output: Schema.toStandardSchemaV1(ThoughtPage),
+    },
+    thoughtDetail: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(ThoughtReference),
+      output: Schema.toStandardSchemaV1(ThoughtDetail),
     },
     githubInbox: {
       errors: observerErrors,

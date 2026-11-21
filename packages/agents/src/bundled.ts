@@ -43,6 +43,7 @@ export const definitions: readonly AgentDefinition[] = [
     instructions: [{ file: "abra.md" }],
     tools: rolePolicy("supervisor").tools,
     skills: [
+      "thoughts",
       "express",
       "orchestration",
       "project-onboarding",

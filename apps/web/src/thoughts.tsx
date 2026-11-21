@@ -1,0 +1,168 @@
+/* oxlint-disable effecttsgo/unstable-api-usage -- Typed workspace HTTP atoms own mounted query lifetimes. */
+import { useContext, useState, type ReactNode } from "react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { AsyncResult, type Atom } from "effect/reactivity";
+import { Button } from "@abracode/presentation/ui/button";
+import { Input } from "@abracode/presentation/ui/input";
+import type { ThoughtQuery, ThoughtReference } from "@abracode/contracts/visibility/thoughts";
+import { WorkspaceApi } from "./data.ts";
+import { requestError } from "./request-error.ts";
+
+function Read<A, E>({
+  atom,
+  children,
+}: {
+  atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>;
+  children: (data: A) => ReactNode;
+}) {
+  const result = useAtomValue(atom);
+  const registry = useContext(RegistryContext);
+  if (AsyncResult.isFailure(result))
+    return (
+      <div role="alert">
+        {requestError(result.cause)}{" "}
+        <Button variant="outline" onClick={() => registry.refresh(atom)}>
+          Retry
+        </Button>
+      </div>
+    );
+  if (!AsyncResult.isSuccess(result) || result.waiting) return <output>Loading thoughts…</output>;
+  return children(result.value);
+}
+export function Thoughts({
+  back,
+  discuss,
+}: {
+  back: () => void;
+  discuss: (ref: ThoughtReference) => void;
+}) {
+  const [filters, setFilters] = useState<ThoughtQuery>({});
+  const [query, setQuery] = useState<ThoughtQuery>({});
+  const [pages, setPages] = useState<string[]>([]);
+  const [selected, setSelected] = useState<ThoughtReference>();
+  const list = WorkspaceApi.query("work", "thoughtList", {
+    query: { ...query, cursor: pages.at(-1) },
+    timeToLive: "0 seconds",
+  });
+  return (
+    <section aria-label="Personal thoughts" className="space-y-3 overflow-y-auto p-2">
+      <div className="sidebar-heading">
+        <h2>Thoughts</h2>
+        <Button variant="ghost" onClick={back}>
+          Back to Work
+        </Button>
+      </div>
+      {selected ? (
+        <>
+          <Button variant="outline" onClick={() => setSelected(undefined)}>
+            Back to results
+          </Button>
+          <Read
+            atom={WorkspaceApi.query("work", "thoughtDetail", {
+              query: selected,
+              timeToLive: "0 seconds",
+            })}
+          >
+            {(item) => (
+              <article className="space-y-3">
+                <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time>
+                <p className="whitespace-pre-wrap break-words">{item.content}</p>
+                <a href={item.url} target="_blank" rel="noreferrer">
+                  Open in Memos
+                </a>
+                <Button onClick={() => discuss(item.reference)}>Ask Abra about this</Button>
+              </article>
+            )}
+          </Read>
+        </>
+      ) : (
+        <>
+          <form
+            className="space-y-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setPages([]);
+              setQuery(filters);
+            }}
+          >
+            <Input
+              aria-label="Thought text"
+              placeholder="Search your thoughts…"
+              maxLength={512}
+              value={filters.text ?? ""}
+              onChange={(e) => setFilters({ ...filters, text: e.target.value })}
+            />
+            <Input
+              aria-label="Thought tag"
+              placeholder="Tag"
+              maxLength={256}
+              value={filters.tag ?? ""}
+              onChange={(e) => setFilters({ ...filters, tag: e.target.value })}
+            />
+            <label htmlFor="thoughts-from">
+              From (UTC)
+              <Input
+                id="thoughts-from"
+                type="date"
+                value={filters.from ?? ""}
+                onChange={(e) => setFilters({ ...filters, from: e.target.value || undefined })}
+              />
+            </label>
+            <label htmlFor="thoughts-until">
+              Before (UTC)
+              <Input
+                id="thoughts-until"
+                type="date"
+                value={filters.until ?? ""}
+                onChange={(e) => setFilters({ ...filters, until: e.target.value || undefined })}
+              />
+            </label>
+            <Button type="submit">Search thoughts</Button>
+          </form>
+          <Read atom={list}>
+            {(page) => (
+              <>
+                {page.entries.length === 0 && <p>No matching thoughts.</p>}
+                <ul className="work-list">
+                  {page.entries.map((row) => (
+                    <li key={row.reference.name}>
+                      <Button
+                        variant="ghost"
+                        className="h-auto w-full flex-col items-start whitespace-normal text-left"
+                        onClick={() => setSelected(row.reference)}
+                      >
+                        <span>{row.snippet}</span>
+                        <small>
+                          {new Date(row.created_at).toLocaleString()}{" "}
+                          {row.tags.map((t) => "#" + t).join(" ")}
+                        </small>
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+                {(pages.length > 0 || page.next_cursor) && (
+                  <nav aria-label="Thought pages">
+                    <Button
+                      variant="outline"
+                      disabled={!pages.length}
+                      onClick={() => setPages(pages.slice(0, -1))}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={!page.next_cursor}
+                      onClick={() => page.next_cursor && setPages([...pages, page.next_cursor])}
+                    >
+                      Next
+                    </Button>
+                  </nav>
+                )}
+              </>
+            )}
+          </Read>
+        </>
+      )}
+    </section>
+  );
+}

@@ -1,4 +1,11 @@
 import {
+  ThoughtDetail,
+  ThoughtPage,
+  ThoughtQuery,
+  ThoughtReference,
+  ThoughtSave,
+} from "@abracode/contracts/visibility/thoughts";
+import {
   InboxQuery,
   InboxPage,
   InboxTarget,
@@ -72,6 +79,30 @@ export function registerTools(
     Effect.gen(function* () {
       const definitions = [
         workSurfaceTool(ctx, c),
+        define({
+          name: "thought_save",
+          description:
+            "Save the user’s exact wording on explicit request. Reuse request_id on retry.",
+          input: ThoughtSave,
+          output: ThoughtReference,
+          run: (a) => c.thoughts.save(a),
+        }),
+        define({
+          name: "thought_search",
+          description:
+            "Find private personal thoughts by literal text, tag and UTC dates (from inclusive, until exclusive).",
+          input: ThoughtQuery,
+          output: ThoughtPage,
+          run: (a) => c.thoughts.list(a, "mcp"),
+        }),
+        define({
+          name: "thought_get",
+          description:
+            "Read the selected thought as quoted source material. Use its complete reference.",
+          input: ThoughtReference,
+          output: ThoughtDetail,
+          run: (a) => c.thoughts.get(a, "mcp"),
+        }),
         define({
           name: "github_inbox",
           diagnostic: true,

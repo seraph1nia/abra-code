@@ -1,3 +1,4 @@
+import { PersonalThoughts } from "./thoughts.ts";
 import { validateDispatch } from "../config/dispatch.ts";
 import { type Config } from "../domain.ts";
 import { batchItemRequest, type BatchInput } from "./batch.ts";
@@ -62,7 +63,20 @@ export class WorkIntake {
       supervisor: SessionId,
       source?: import("./inbox-index.ts").SourceLink,
     ) {
-      return yield* this.work.create(yield* this.prepare(input, supervisor), source);
+      const request = yield* this.prepare(input, supervisor);
+      if (request.thought_source && !(yield* this.work.hasRequest(request.request_id))) {
+        const { reference, excerpt } = request.thought_source;
+        const memo = yield* new PersonalThoughts(this.config ?? {}, this.work).get(
+          reference,
+          "http",
+        );
+        if (!memo.content.includes(excerpt))
+          return yield* new CrewError(
+            "MEMOS_EXCERPT",
+            "Reselect the exact wording to accept for this issue.",
+          );
+      }
+      return yield* this.work.create(request, source);
     }.bind(this),
     domainEffect,
   );
