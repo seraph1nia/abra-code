@@ -18,6 +18,14 @@ import { type Coordination } from "./coordination.ts";
 export const consumesWorker = (e: ManagedExecution) =>
   e.current_phase !== "completed" &&
   (externalOwns(e) || !!e.capacity_reservation || (!!e.active_role && !e.capacity_observed_idle));
+// Admission covers claiming/provisioning and reserved native work. A durable
+// claim, worktree or approval can outlive every turn without owning a slot.
+export const consumesRetained = (e: ManagedExecution) =>
+  consumesWorker(e) ||
+  (!e.capacity_observed_idle &&
+    !e.capacity_wait &&
+    (e.current_phase === "claiming" || e.current_phase === "provisioning"));
+
 type Owners = ReadonlyMap<ExecutionId, IssueId>;
 export type CapacitySummary = {
   retained: Owners;
@@ -39,7 +47,7 @@ export function summarizeCapacity(executions: readonly ManagedExecution[]): Capa
     groups.set(key, owners);
   }
   for (const execution of executions) {
-    if (execution.current_phase === "completed") continue;
+    if (!consumesRetained(execution)) continue;
     retained.set(execution.execution_id, execution.issue_id);
     add(retainedByRepository, execution.repository_id, execution);
     if (!consumesWorker(execution)) continue;
@@ -76,11 +84,11 @@ export function capacitySummaryBlockers(
       message: `${label} capacity reached (${consuming.join(", ")})`,
     });
   };
-  if (newExecution) {
-    add("retained", "Global retained execution", summary.retained, config.max_executions);
+  if (newExecution || (own && !summary.retained.has(own))) {
+    add("retained", "Global execution slot", summary.retained, config.max_executions);
     add(
       "retained",
-      "Repository retained execution",
+      "Repository execution slot",
       summary.retainedByRepository.get(project.id),
       project.max_executions,
     );
@@ -185,9 +193,15 @@ export class Capacity {
             patch = {
               capacity_wait: removeOwnedField,
               capacity_observed_idle: false,
-              capacity_reservation: { role, generation: e.control_generation, status: "preparing" },
+              capacity_reservation: {
+                role,
+                generation: e.control_generation,
+                status: "preparing",
+                ...(request && { session_id: e[`${role}_session_id`], prompt_id: e.prompt_id }),
+              },
             };
           }
+          if (newExecution && blockers.length) return false;
           if (newExecution) yield* this.records.create(e, patch);
           else yield* this.records.commitOwned(e, patch);
           return blockers.length === 0;

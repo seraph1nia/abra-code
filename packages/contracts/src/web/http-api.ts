@@ -9,7 +9,7 @@ import { ReportExportSchema } from "../presentation/report-export-contract.ts";
 import { LeadEvidenceQuery, LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
 import { WorkerHistoryQuery, WorkerHistoryPageSchema } from "./worker-history.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Shared contracts for the pinned Effect 4.1.4 HTTP API implementation. */
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
 import { Form } from "@opencode/schema/form";
 import { Permission } from "@opencode/schema/permission";
@@ -69,6 +69,7 @@ import {
   ReceiptQuerySchema,
   ReceiptLookupSchema,
   WorkspaceSnapshotSchema,
+  ProjectsSchema,
   PresentationPageSchema,
   SurfaceEntrySchema,
 } from "./workspace-wire.ts";
@@ -115,6 +116,10 @@ export const workspaceApi = HttpApi.make("abra-workspace")
     HttpApiGroup.make("workspace").add(
       HttpApiEndpoint.get("agents", "/api/settings/agents", {
         success: AgentCatalogSchema,
+        error,
+      }),
+      HttpApiEndpoint.get("repositories", "/api/settings/repositories", {
+        success: ProjectsSchema,
         error,
       }),
       HttpApiEndpoint.post("prepareDiagrams", "/api/diagrams/prepare", {
@@ -164,7 +169,13 @@ export const workspaceApi = HttpApi.make("abra-workspace")
     ),
     HttpApiGroup.make("work").add(
       HttpApiEndpoint.get("binding", "/api/work/binding", {
-        query: BindingReadQuery,
+        // URL search parameters omit empty arrays on an all-work read.
+        query: Schema.Struct({
+          ...BindingReadQuery.fields,
+          issue_ids: BindingReadQuery.fields.issue_ids.pipe(
+            Schema.withDecodingDefaultKey(Effect.succeed([])),
+          ),
+        }).annotate(exact),
         success: BindingReadSchema,
         error,
       }),

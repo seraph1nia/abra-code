@@ -15,9 +15,9 @@ test("idle delivery and paused work retain claims/resources while releasing acti
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   f.config.max_workers = 1;
-  f.config.max_executions = 3;
+  f.config.max_executions = 1;
   const p = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
-  p.max_executions = 3;
+  p.max_executions = 1;
   await run(f.records.saveProject(p));
   const first = await run(delivered(f));
   assert.equal(first.capacity_reservation, undefined);
@@ -40,9 +40,13 @@ test("idle delivery and paused work retain claims/resources while releasing acti
   const retained = (await run(f.controller.ready())).find((r) => r.issue.id === "abra-4")!;
   assert.ok(
     retained.blocker_details.some(
-      (b) => b.capacity_kind === "retained" && b.consuming?.length === 3,
+      (b) =>
+        b.capacity_kind === "retained" && b.consuming?.length === 1 && b.consuming[0] === "abra-3",
     ),
   );
+  const resumed = await run(f.controller.control(Id.IssueId.make("abra-2"), "resume"));
+  assert.ok(resumed.capacity_wait?.reasons.some((reason) => reason.includes("execution slot")));
+  assert.deepEqual(resumed.capacity_wait?.consuming, [Id.IssueId.make("abra-3")]);
   assert.equal((await run(f.work.show(first.issue_id))).assignee, first.execution_id);
   assert.equal((await run(f.work.show(first.issue_id))).status, "in_progress");
 });

@@ -12,11 +12,13 @@ import { timestamp, type ChangeName, type SpecSchemaName } from "../identities.t
 import { verificationCommand } from "../config/contracts.ts";
 import { Effect, Option } from "effect";
 import { Agents } from "@abracode/agents";
+import { Skill } from "@opencode/schema/skill";
 import { workerRoles } from "../config/dispatch.ts";
 
 type NewExecution = {
   quality_profile?: QualityProfile;
   dispatch?: Dispatch;
+  privateReview?: boolean;
   openspec_schema?: SpecSchemaName;
   require_plan_approval?: true;
 } & Pick<
@@ -73,39 +75,49 @@ export function createExecution(
     diagnostic_turns: project.diagnostic_turns,
     repair_rounds: project.repair_rounds,
   } as const;
-  const { dispatch, require_plan_approval: _required, ...executionInput } = input;
+  const { dispatch, privateReview, require_plan_approval: _required, ...executionInput } = input;
   return Effect.gen(function* () {
     const at = yield* timestamp;
-    const catalog = yield* Effect.serviceOption(Agents);
-    const snapshot = config ? captureConfiguration(config, project.dispatch, dispatch) : undefined;
-    const definitions =
-      config && Option.isSome(catalog)
-        ? yield* Effect.forEach(workerRoles, (role) =>
-            catalog.value.get(config.workers[role]?.definition ?? role).pipe(
-              Effect.flatMap((agent) => agent.resolve(role)),
-              Effect.map((profile) => [role, profile] as const),
-              Effect.mapError(
-                (error) =>
-                  new CrewError(error.code, `workers.${role}.definition: ${error.message}`),
-              ),
+    const configuration =
+      config &&
+      (yield* Effect.gen(function* () {
+        const catalog = yield* Effect.serviceOption(Agents);
+        if (Option.isNone(catalog))
+          return yield* new CrewError(
+            "AGENTS_UNAVAILABLE",
+            "Configured worker selection requires the application catalog",
+          );
+        const snapshot = captureConfiguration(config, project.dispatch, dispatch);
+        if (privateReview) {
+          const research = snapshot.workers.research;
+          snapshot.workers.research = {
+            ...research,
+            required_skills: [
+              ...new Set([
+                ...(research.required_skills ?? []),
+                Skill.ID.make("abra-open-code-review-delegate"),
+              ]),
+            ],
+          };
+        }
+        const definitions = yield* Effect.forEach(workerRoles, (role) =>
+          catalog.value.get(config.workers[role]?.definition ?? role).pipe(
+            Effect.flatMap((agent) => agent.resolve(role)),
+            Effect.map((profile) => [role, profile] as const),
+            Effect.mapError(
+              (error) => new CrewError(error.code, `workers.${role}.definition: ${error.message}`),
             ),
-          )
-        : undefined;
+          ),
+        );
+        return {
+          ...snapshot,
+          agent_selection_version: 1 as const,
+          definitions: Object.fromEntries(definitions),
+        };
+      }));
     return {
       ...executionInput,
-      ...(snapshot
-        ? {
-            configuration_snapshot: {
-              ...snapshot,
-              ...(definitions
-                ? {
-                    agent_selection_version: 1 as const,
-                    definitions: Object.fromEntries(definitions),
-                  }
-                : {}),
-            },
-          }
-        : {}),
+      ...(configuration && { configuration_snapshot: configuration }),
       ...(input.setup || input.workflow_policy !== "full-openspec"
         ? {}
         : {

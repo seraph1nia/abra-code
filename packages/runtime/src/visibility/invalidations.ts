@@ -8,6 +8,23 @@ export const Invalidations = Context.Reference<{
 }>("abracode/Invalidations", {
   defaultValue: () => ({ committed: Effect.void, publish: () => Effect.void, take: Effect.never }),
 });
+/** Retry the barrier on this consumer so later hints coalesce during backoff. */
+export const publishInvalidations = <E, R, R2>(
+  events: typeof Invalidations.Service,
+  barrier: Effect.Effect<void, E, R>,
+  emit: (scope: ChangeScope) => Effect.Effect<void, never, R2>,
+) =>
+  events.take.pipe(
+    Effect.flatMap((scope) =>
+      barrier.pipe(
+        Effect.matchEffect({
+          onFailure: () => events.publish(scope).pipe(Effect.andThen(Effect.sleep("250 millis"))),
+          onSuccess: () => emit(scope),
+        }),
+      ),
+    ),
+    Effect.forever,
+  );
 /** Supported broad compatibility path for older callers. */
 export const committed = Effect.flatMap(Invalidations, (events) => events.committed);
 export const committedScope = (scope: ChangeScope) =>

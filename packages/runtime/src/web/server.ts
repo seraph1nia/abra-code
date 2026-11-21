@@ -2,6 +2,7 @@ import { InboxPage, InboxDetail } from "@abracode/contracts/visibility/github-in
 import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
 import { VerificationViewSchema } from "@abracode/contracts/web/verification";
 import { reviewGroup } from "@abracode/contracts/web/review-api";
+import { ProjectsSchema } from "@abracode/contracts/web/workspace-wire";
 import { AgentCatalogSchema } from "@abracode/contracts/web/agent-settings";
 import {
   ReviewListSchema,
@@ -95,6 +96,7 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
   const operations = HttpApiBuilder.group(api, "workspace", (handlers) =>
     handlers
       .handle("agents", () => validated(backend.agents, AgentCatalogSchema))
+      .handle("repositories", () => validated(backend.repositories, ProjectsSchema))
       .handle("prepareDiagrams", ({ payload }) =>
         validated(backend.prepareDiagrams(payload), DiagramPreparationSchema),
       )
@@ -422,6 +424,7 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
       HttpRouter.add("POST", "/api/copilotkit/agent/abra/connect", copilotRoute),
       HttpRouter.add("GET", "/", frontend),
       HttpRouter.add("GET", "/settings", frontend),
+      HttpRouter.add("GET", "/settings/repositories", frontend),
       HttpRouter.add(
         "GET",
         "/assets/:file",

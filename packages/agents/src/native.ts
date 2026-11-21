@@ -22,7 +22,9 @@ export const registerSkills = Effect.fn("OpenCodeAgents.skills")(function* (
   additional: readonly string[] = [],
 ) {
   const skills = yield* Effect.forEach(
-    [...new Set([...skillNames(central), ...additional])],
+    [...new Set([...skillNames(central), ...additional])].filter(
+      (name) => central || name !== "express",
+    ),
     (name) => readSkill(root, name),
   );
   yield* ctx.skill.transform((editor) => {

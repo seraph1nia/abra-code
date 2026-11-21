@@ -1,7 +1,7 @@
 {
   "version": 1,
   "distribution": "source clone; dependencies downloaded by the operator from their suppliers",
-  "lock_sha256": "64e91855a8e3d46891e985d0cfe8c7bd5d1e33ea013b09f2c198174ee2f145e0",
+  "lock_sha256": "7c62941c82c7869c8d98903d7382e52095b7431cabcc79a9e84133ca46791486",
   "packages": [
     {
       "id": "@0no-co/graphql.web@1.3.4",
@@ -24,6 +24,27 @@
       "uses": ["contributor-build", "web-client"],
       "fingerprint": "cb06b21b0ae17400baaef8ea7ef0929503e49e655740c365bda24677cc9003e9",
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
+    },
+    {
+      "id": "@a2ui/agent@0.1.0",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/a2ui-project/a2ui",
+      "author": {
+        "name": "Google"
+      },
+      "registry": "https://registry.npmjs.org/%40a2ui%2Fagent/0.1.0",
+      "integrity": "sha512-qpqMN+uQU+vA8JEjtIJsGT6qJJ0FZCnOKSRB6HBhleqnlsasjAiNIMSJfwX/lANv13cnEF10CgMiQGDLSyjnLQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@a2ui/agent@0.1.0/LICENSE",
+          "sha256": "8c8b5b632d56c4c1658296963c693db5396772a33caaddb9a22593c4155c437a"
+        }
+      ],
+      "uses": ["application-runtime"],
+      "fingerprint": "b2a7c0c447757096e45cd34b70336191e03045499ca123440ccf5b8b343f773c",
+      "disposition": "reviewed: Apache-2.0 notice retained for server-side dependency"
     },
     {
       "id": "@a2ui/markdown-it@0.2.2",
@@ -707,6 +728,114 @@
       "uses": ["application-runtime"],
       "fingerprint": "30b77b66c5a35f89bdaa212c882729877ad8a2dff6a8b0b25ec2888eac8ae717",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
+    },
+    {
+      "id": "@alibaba-group/ocr-darwin-arm64@1.13.13",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/alibaba/open-code-review",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40alibaba-group%2Focr-darwin-arm64/1.13.13",
+      "integrity": "sha512-39tt+4GKz4QA6tDmH5wzhh0ifenwTzJjMZu0FM8IqSeTRveIGH8BMIagODCyzVRd7CRJ6qsyfCSOSc+vFnwVKA==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["application-runtime"],
+      "fingerprint": "3448846e9bd9161791063435858f3317d2a311e29940835ae5d23be3a65b9939",
+      "disposition": "reviewed: Apache-2.0 OCR CLI and platform executables installed from the supplier; upstream license retained with the adapted skill"
+    },
+    {
+      "id": "@alibaba-group/ocr-darwin-x64@1.13.13",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/alibaba/open-code-review",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40alibaba-group%2Focr-darwin-x64/1.13.13",
+      "integrity": "sha512-0zYPKJFA7BTx4bN8E/39USqVmFslD9HdDHWriBiGnbuO8Sa0WBMxFaYs4nK/EacElhkWMbH9wBJD978l9DO50A==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["application-runtime"],
+      "fingerprint": "8ae64be5d8f5ad0deec5ba1a950e054c3d840202963ab13f614e05fc46dee496",
+      "disposition": "reviewed: Apache-2.0 OCR CLI and platform executables installed from the supplier; upstream license retained with the adapted skill"
+    },
+    {
+      "id": "@alibaba-group/ocr-linux-arm64@1.13.13",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/alibaba/open-code-review",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40alibaba-group%2Focr-linux-arm64/1.13.13",
+      "integrity": "sha512-/FJDE26WxvpG4FkkSIyyv7HLz/q/oTsgZLp2c+idhdgfbRUONFFjA0xtbG7NYEMqM5IVsdrsQOtI8T01MQvZJg==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["application-runtime"],
+      "fingerprint": "4b2cb173a6de4f4820e21cdc2ffad2a0617f881fcf32fc38da43b0645838e754",
+      "disposition": "reviewed: Apache-2.0 OCR CLI and platform executables installed from the supplier; upstream license retained with the adapted skill"
+    },
+    {
+      "id": "@alibaba-group/ocr-linux-x64@1.13.13",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/alibaba/open-code-review",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40alibaba-group%2Focr-linux-x64/1.13.13",
+      "integrity": "sha512-Occ+Yra/2c+wMEHmBhFtVa6dZz7O6U17AAA2B9FICpnNhWskqgJ6nxfxHCEXQDfoC9eB2fS3WxPjpi4aW4s9tA==",
+      "installed": true,
+      "category": "supplier-installed-executable",
+      "evidence": [
+        {
+          "source": "https://raw.githubusercontent.com/alibaba/open-code-review/445ad9dea3057346986197385858a1a281253cc9/LICENSE",
+          "sha256": "1945665fdb6968a66ea29438ddee0aee23035365c862e5c4a75b62b303340acf"
+        }
+      ],
+      "uses": ["application-runtime"],
+      "fingerprint": "162194936532459ddde85140c567562bdef87cc45c6b4aee6ea536bdaa79212f",
+      "disposition": "reviewed: Apache-2.0 OCR CLI and platform executables installed from the supplier; upstream license retained with the adapted skill"
+    },
+    {
+      "id": "@alibaba-group/ocr-win32-arm64@1.13.13",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/alibaba/open-code-review",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40alibaba-group%2Focr-win32-arm64/1.13.13",
+      "integrity": "sha512-uAWCRRylqgwGNj+eg0/Mf7O7/6mOpF+MH0SVuoqZYMzrlpAeVVWkhp1OrWsT0RV6nLMiJSa7KHj4ZU9xCX51KA==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["application-runtime"],
+      "fingerprint": "a8d2f6cd1793c5b4707e5f699788816ff5dfe6425d1382d12a62168510ff5d80",
+      "disposition": "reviewed: Apache-2.0 OCR CLI and platform executables installed from the supplier; upstream license retained with the adapted skill"
+    },
+    {
+      "id": "@alibaba-group/ocr-win32-x64@1.13.13",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/alibaba/open-code-review",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40alibaba-group%2Focr-win32-x64/1.13.13",
+      "integrity": "sha512-CV1fU4cUS/Y891fd2e7OIm6IKGWzOpI+YvgjC/ARst8CcukbuXDeYkIcBZJoiAeV+BAskQ1U3UAux4ATPr56OA==",
+      "installed": false,
+      "category": "optional-platform-not-installed",
+      "evidence": [],
+      "uses": ["application-runtime"],
+      "fingerprint": "33f65f9d00ec6577a5f6420de445a7b0d86cd071fc0d72a12492d238d8617a57",
+      "disposition": "reviewed: Apache-2.0 OCR CLI and platform executables installed from the supplier; upstream license retained with the adapted skill"
+    },
+    {
+      "id": "@alibaba-group/open-code-review@1.13.13",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/alibaba/open-code-review",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40alibaba-group%2Fopen-code-review/1.13.13",
+      "integrity": "sha512-MjL3tgRFIGDj7QgQ91l3zRW1KImSdG15IucnvC2Qv/jJPks+Uf0UGyt0N070MB+co8ziF8C/syLvGnUK/aTwXw==",
+      "installed": true,
+      "category": "supplier-installed-executable",
+      "evidence": [
+        {
+          "source": "npm:@alibaba-group/open-code-review@1.13.13/LICENSE",
+          "sha256": "1945665fdb6968a66ea29438ddee0aee23035365c862e5c4a75b62b303340acf"
+        }
+      ],
+      "uses": ["application-runtime"],
+      "fingerprint": "448f355c36208fc873567a0075716833dbc42ec5b45b86b9bf05ebee1c1d4160",
+      "disposition": "reviewed: Apache-2.0 OCR CLI and platform executables installed from the supplier; upstream license retained with the adapted skill"
     },
     {
       "id": "@antfu/install-pkg@2.1.0",
@@ -11773,6 +11902,25 @@
       "uses": ["application-runtime"],
       "fingerprint": "441c5183b1bc9631f5055c84fdc8be7c26f0a0ed263ff9de49a5312fe3fde2fc",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
+    },
+    {
+      "id": "antlr4ng@3.0.16",
+      "license": "BSD-3-Clause",
+      "repository": "https://github.com/mike-lischke/antlr4ng",
+      "author": null,
+      "registry": "https://registry.npmjs.org/antlr4ng/3.0.16",
+      "integrity": "sha512-DQuJkC7kX3xunfF4K2KsWTSvoxxslv+FQp/WHQZTJSsH2Ec3QfFmrxC3Nky2ok9yglXn6nHM4zUaVDxcN5f6kA==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:antlr4ng@3.0.16/LICENSE.txt",
+          "sha256": "3139ca3e201fab2344c1b31cfe030c17a1a525bc23801ccf71f86a55eb14c638"
+        }
+      ],
+      "uses": ["application-runtime"],
+      "fingerprint": "0db8579e11cca8685bf67c11d6cb7a86f40bf8b3ce11a55c76456dbf62350065",
+      "disposition": "reviewed: BSD-3-Clause notice retained for server-side dependency"
     },
     {
       "id": "argparse@2.0.1",
@@ -28917,7 +29065,7 @@
     },
     {
       "file": "packages/agents/assets/skills/verification/SKILL.md",
-      "sha256": "59ce33db36528b9a37079f039f7b2c84687418b1fb85b336732b3a5b6c2acebd",
+      "sha256": "23ac2be116d30c1a1011c8a1114c73c03cb23ff840089b55c6155abc60bf53bc",
       "license": "MIT",
       "upstream": "https://github.com/cursor/plugins/tree/0317eb8b858c991c57721358daaee19dbe8c814d/pstack",
       "notice": "licenses/pstack.txt",
@@ -29074,6 +29222,14 @@
       "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v2.0.0",
       "notice": "licenses/openspec.txt",
       "modifications": "AbraCode compact schema fork: three-artifact planning with verification guidance; upstream copyright retained in notice"
+    },
+    {
+      "file": "packages/agents/assets/skills/open-code-review-delegate/SKILL.md",
+      "sha256": "5d72f2a24fb9051d4ae9295c189beccd1b3fe9cc6cf83f7125116dd9f2cec26a",
+      "license": "Apache-2.0",
+      "upstream": "https://github.com/alibaba/open-code-review/blob/445ad9dea3057346986197385858a1a281253cc9/skills/open-code-review-delegate/SKILL.md",
+      "notice": "licenses/open-code-review.txt",
+      "modifications": "Adapted for controller-bound net patches and private PR review in OpenCode."
     }
   ],
   "assets": [
@@ -29083,7 +29239,7 @@
     },
     {
       "file": "THIRD_PARTY_NOTICES.md",
-      "sha256": "b535bcfebca03ee4f8cf717271faef8910eca32844b513776e660314e9fa67a7"
+      "sha256": "c456693cbdab689d3a977ac14941381dd4876320ed1b05696e8de5a46b9be01c"
     },
     {
       "file": "licenses/openspec.txt",

@@ -19,6 +19,7 @@ export type InspectorTab = (typeof inspectorTabs)[number];
 export const activitySections = ["sessions", "communication", "checks", "leads"] as const;
 export type ActivitySection = (typeof activitySections)[number];
 export type WorkspaceSearch = {
+  view?: "finder" | "canvas";
   surface?: typeof SurfaceDestinationSchema.Type;
   issue?: string;
   tab?: InspectorTab;
@@ -78,7 +79,9 @@ export function workspaceSearch(value: Record<string, unknown>): WorkspaceSearch
         ...searchForResource(resource),
         ...(resource.action === "open_artifact" && value.canvas === true ? { canvas: true } : {}),
       }
-    : result;
+    : !result.issue && (value.view === "finder" || value.view === "canvas")
+      ? { view: value.view }
+      : result;
 }
 export function resourceFromSearch(search: WorkspaceSearch): ResourceSelection | undefined {
   if (search.resource) return search.resource;

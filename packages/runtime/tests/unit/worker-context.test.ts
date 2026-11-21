@@ -1,3 +1,4 @@
+import { legacyContext } from "../helpers/legacy-context.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -169,7 +170,7 @@ test("request validation blocks missing tools, accepts patch and fences replaced
   assert.equal(diag.contexts[0].status?.stage, "blocked");
   assert.equal(
     await run(contexts.request(e, "explore", e.explore_session_id!, ctx.environment.model, names)),
-    ctx.guidance.content,
+    "", // The managed native profile already supplies its static guidance.
   );
   const statusBefore = await run(
     f.records.store.get(Id.StorageKey.make(`worker-context-status/${e.execution_id}/explore`)),
@@ -207,7 +208,10 @@ test("legacy and malformed provenance stay explicit while context summaries rema
   t.onTestFinished(() => run(f.close()));
   const { id: issue } = await run(f.work.create(workGoal("legacy-context")));
   const e = await run(f.controller.start(issue));
-  const context = await run(readWorkerContext(f.records.store, e.worker_context_id!));
+  const context = legacyContext(
+    await run(readWorkerContext(f.records.store, e.worker_context_id!)),
+    join(f.root, "packages/agents/assets"),
+  );
   await run(
     f.records.store.set(Id.StorageKey.make(`worker-context/${context.prompt_id}`), {
       ...context,
@@ -306,7 +310,10 @@ test("policy incompatibility is retained as a blocker without replacing captured
   t.onTestFinished(() => run(f.close()));
   const { id: issue } = await run(f.work.create(workGoal("policy-drift")));
   const e = await run(f.controller.start(issue));
-  const context = await run(readWorkerContext(f.records.store, e.worker_context_id!));
+  const context = legacyContext(
+    await run(readWorkerContext(f.records.store, e.worker_context_id!)),
+    join(f.root, "packages/agents/assets"),
+  );
   const prior = { ...context, policy: "previous-policy-version" };
   await run(f.records.store.set(Id.StorageKey.make(`worker-context/${context.prompt_id}`), prior));
   const contexts = new WorkerContexts(f.records, f.config);
@@ -393,7 +400,10 @@ test("browser context derives distinct session names and evidence directories wi
 
 test("browser prerequisites are optional unless explicitly required, without dropping development shell requirements", async () => {
   for (const role of ["explore", "apply", "review", "research"] as const) {
-    const defaults = engineeringSkillIds(role, "lightweight-fix").map((id) => ({
+    const defaults = [
+      ...engineeringSkillIds(role, "lightweight-fix"),
+      ...(role === "review" ? [Skill.ID.make("abra-open-code-review-delegate")] : []),
+    ].map((id) => ({
       id,
       name: Skill.Name.make(id),
       path: Id.AbsolutePath.make(`/installed/${id}.md`),

@@ -1,3 +1,4 @@
+import { indexEffect } from "../work/inbox-index.ts";
 import { removeOwnedField } from "../storage/store.ts";
 import type { Records } from "../storage/store.ts";
 import type { WorkGraph } from "../work/graph.ts";
@@ -190,6 +191,9 @@ export class WorkAdmission {
                 openspec_schema: candidate.issue.openspec_schema,
                 require_plan_approval: candidate.issue.require_plan_approval,
                 dispatch: candidate.issue.dispatch,
+                privateReview:
+                  candidate.issue.workflow_policy === "research-only" &&
+                  (yield* indexEffect(() => this.c.work.inbox.isPrivateReview(id))),
                 workflow_policy: candidate.issue.workflow_policy,
                 current_phase: "claiming",
                 branch: BranchName.make(`work/${id}`),

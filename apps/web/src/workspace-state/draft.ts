@@ -1,7 +1,7 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- One session draft per application registry. */
 import { useAtom } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
-import { Schema } from "effect";
+import { Equal, Schema } from "effect";
 import { createContext } from "react";
 import {
   CapturedSelectionSchema as AttachmentSchema,
@@ -40,7 +40,7 @@ export const workspaceDraft = Atom.family((sessionID: string) => {
       if (
         "clearSent" in edit &&
         (prior.text.trim() !== edit.clearSent.text ||
-          JSON.stringify(prior.attachment?.selection) !== JSON.stringify(edit.clearSent.selection))
+          !Equal.equals(prior.attachment?.selection, edit.clearSent.selection))
       )
         return;
       const value: Draft =

@@ -8,6 +8,8 @@ export const reconcileDuration = Metric.histogram("abracode.reconcile.duration_m
 });
 export const observerRequest = (
   method:
+    | "githubInbox"
+    | "githubItem"
     | "snapshot"
     | "overview"
     | "detail"

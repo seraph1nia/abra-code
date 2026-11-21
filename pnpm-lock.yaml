@@ -192,6 +192,9 @@ importers:
         specifier: 3.25.76
         version: 3.25.76
     devDependencies:
+      '@alibaba-group/open-code-review':
+        specifier: 1.13.13
+        version: 1.13.13
       '@effect/tsgo':
         specifier: 0.69.0
         version: 0.69.0
@@ -434,6 +437,9 @@ importers:
 
   packages/runtime:
     dependencies:
+      '@a2ui/agent':
+        specifier: 0.1.0
+        version: 0.1.0
       '@abracode/agents':
         specifier: workspace:*
         version: link:../agents
@@ -526,6 +532,9 @@ packages:
     peerDependenciesMeta:
       graphql:
         optional: true
+
+  '@a2ui/agent@0.1.0':
+    resolution: {integrity: sha512-qpqMN+uQU+vA8JEjtIJsGT6qJJ0FZCnOKSRB6HBhleqnlsasjAiNIMSJfwX/lANv13cnEF10CgMiQGDLSyjnLQ==}
 
   '@a2ui/markdown-it@0.2.2':
     resolution: {integrity: sha512-oj58ybxIPwnRzN2NpvgxrOOwDlZuBKoEtW5U6wRs6SOq1dDjk/zAAkRtb0U52WPSu01gHJOFSGEkuE+Xe09dcQ==}
@@ -718,6 +727,41 @@ packages:
   '@ai-sdk/provider@3.0.8':
     resolution: {integrity: sha512-oGMAgGoQdBXbZqNG0Ze56CHjDZ1IDYOwGYxYjO5KLSlz5HiNQ9udIXsPZ61VWaHGZ5XW/jyjmr6t2xz2jGVwbQ==}
     engines: {node: '>=18'}
+
+  '@alibaba-group/ocr-darwin-arm64@1.13.13':
+    resolution: {integrity: sha512-39tt+4GKz4QA6tDmH5wzhh0ifenwTzJjMZu0FM8IqSeTRveIGH8BMIagODCyzVRd7CRJ6qsyfCSOSc+vFnwVKA==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@alibaba-group/ocr-darwin-x64@1.13.13':
+    resolution: {integrity: sha512-0zYPKJFA7BTx4bN8E/39USqVmFslD9HdDHWriBiGnbuO8Sa0WBMxFaYs4nK/EacElhkWMbH9wBJD978l9DO50A==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@alibaba-group/ocr-linux-arm64@1.13.13':
+    resolution: {integrity: sha512-/FJDE26WxvpG4FkkSIyyv7HLz/q/oTsgZLp2c+idhdgfbRUONFFjA0xtbG7NYEMqM5IVsdrsQOtI8T01MQvZJg==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@alibaba-group/ocr-linux-x64@1.13.13':
+    resolution: {integrity: sha512-Occ+Yra/2c+wMEHmBhFtVa6dZz7O6U17AAA2B9FICpnNhWskqgJ6nxfxHCEXQDfoC9eB2fS3WxPjpi4aW4s9tA==}
+    cpu: [x64]
+    os: [linux]
+
+  '@alibaba-group/ocr-win32-arm64@1.13.13':
+    resolution: {integrity: sha512-uAWCRRylqgwGNj+eg0/Mf7O7/6mOpF+MH0SVuoqZYMzrlpAeVVWkhp1OrWsT0RV6nLMiJSa7KHj4ZU9xCX51KA==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@alibaba-group/ocr-win32-x64@1.13.13':
+    resolution: {integrity: sha512-CV1fU4cUS/Y891fd2e7OIm6IKGWzOpI+YvgjC/ARst8CcukbuXDeYkIcBZJoiAeV+BAskQ1U3UAux4ATPr56OA==}
+    cpu: [x64]
+    os: [win32]
+
+  '@alibaba-group/open-code-review@1.13.13':
+    resolution: {integrity: sha512-MjL3tgRFIGDj7QgQ91l3zRW1KImSdG15IucnvC2Qv/jJPks+Uf0UGyt0N070MB+co8ziF8C/syLvGnUK/aTwXw==}
+    engines: {node: '>=14'}
+    hasBin: true
 
   '@antfu/install-pkg@2.1.0':
     resolution: {integrity: sha512-sdg9NxU3zR4Mnawfbc/x6GB5Wf17WYud5qOuEuxXjaKpYpMkISSJEjItGebXJ2bQ4DIcly4NYH23mtkGJjvKUw==}
@@ -3732,6 +3776,9 @@ packages:
   ansi-styles@6.2.3:
     resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
     engines: {node: '>=12'}
+
+  antlr4ng@3.0.16:
+    resolution: {integrity: sha512-DQuJkC7kX3xunfF4K2KsWTSvoxxslv+FQp/WHQZTJSsH2Ec3QfFmrxC3Nky2ok9yglXn6nHM4zUaVDxcN5f6kA==}
 
   argparse@2.0.1:
     resolution: {integrity: sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q==}
@@ -6800,6 +6847,11 @@ snapshots:
     optionalDependencies:
       graphql: 16.15.0
 
+  '@a2ui/agent@0.1.0':
+    dependencies:
+      '@a2ui/web_core': 0.15.0
+      antlr4ng: 3.0.16
+
   '@a2ui/markdown-it@0.2.2(@a2ui/web_core@0.15.0)':
     dependencies:
       '@a2ui/web_core': 0.15.0
@@ -7031,6 +7083,33 @@ snapshots:
   '@ai-sdk/provider@3.0.8':
     dependencies:
       json-schema: 0.4.0
+
+  '@alibaba-group/ocr-darwin-arm64@1.13.13':
+    optional: true
+
+  '@alibaba-group/ocr-darwin-x64@1.13.13':
+    optional: true
+
+  '@alibaba-group/ocr-linux-arm64@1.13.13':
+    optional: true
+
+  '@alibaba-group/ocr-linux-x64@1.13.13':
+    optional: true
+
+  '@alibaba-group/ocr-win32-arm64@1.13.13':
+    optional: true
+
+  '@alibaba-group/ocr-win32-x64@1.13.13':
+    optional: true
+
+  '@alibaba-group/open-code-review@1.13.13':
+    optionalDependencies:
+      '@alibaba-group/ocr-darwin-arm64': 1.13.13
+      '@alibaba-group/ocr-darwin-x64': 1.13.13
+      '@alibaba-group/ocr-linux-arm64': 1.13.13
+      '@alibaba-group/ocr-linux-x64': 1.13.13
+      '@alibaba-group/ocr-win32-arm64': 1.13.13
+      '@alibaba-group/ocr-win32-x64': 1.13.13
 
   '@antfu/install-pkg@2.1.0':
     dependencies:
@@ -10223,6 +10302,8 @@ snapshots:
   ansi-styles@5.2.0: {}
 
   ansi-styles@6.2.3: {}
+
+  antlr4ng@3.0.16: {}
 
   argparse@2.0.1: {}
 

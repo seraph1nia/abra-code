@@ -321,6 +321,8 @@ export class Visibility {
         );
         return {
           entries,
+          ...(page.capacity && { capacity: page.capacity }),
+          ...(page.project_capacity && { project_capacity: page.project_capacity }),
           total: page.total,
           offset: page.offset,
           limit: page.limit,
@@ -396,6 +398,7 @@ export class Visibility {
         );
         const unavailable = results.some((entry) => entry.status !== "available");
         return {
+          ...(population?.capacity && { capacity: population.capacity }),
           work: selected.rows,
           coverage: {
             ...selected.coverage,

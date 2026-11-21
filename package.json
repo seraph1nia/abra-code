@@ -66,6 +66,7 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@alibaba-group/open-code-review": "1.13.13",
     "@effect/tsgo": "0.69.0",
     "@fission-ai/openspec": "2.0.0",
     "@opencode/cli": "2.3.0",

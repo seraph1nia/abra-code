@@ -100,6 +100,11 @@ export class NativeWebBackend implements WebBackend {
       this.gateway(client).agents({ session_id: this.sessionID }, this.location()),
     ),
   );
+  readonly repositories = Effect.suspend(() =>
+    this.use((client) =>
+      this.gateway(client).projects({ session_id: this.sessionID }, this.location()),
+    ),
+  );
   private location() {
     return { location: { directory: this.home } };
   }

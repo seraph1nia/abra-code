@@ -25,6 +25,9 @@ const worker = (
   instructions: [{ file: `${id}.md` }],
   tools: rolePolicy(id).tools,
   skills: [
+    ...(id === "review" || id === "research"
+      ? [{ name: "open-code-review-delegate", preload: id === "review" }]
+      : []),
     { name: "openspec-execution" },
     { name: "browser" },
     ...engineeringSkills.map(({ name }) => ({ name })),
@@ -40,6 +43,7 @@ export const definitions: readonly AgentDefinition[] = [
     instructions: [{ file: "abra.md" }],
     tools: rolePolicy("supervisor").tools,
     skills: [
+      "express",
       "orchestration",
       "project-onboarding",
       "recovery",

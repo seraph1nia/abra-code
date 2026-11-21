@@ -91,5 +91,14 @@ export const entryExists = (path: PathLike) =>
       ),
     ),
   );
+/** Present retained entries must have the expected kind before lifecycle adoption. */
+export const retainedEntry = (path: string, kind: "file" | "directory") =>
+  Effect.gen(function* () {
+    if (!(yield* entryExists(path))) return false;
+    const stat = yield* lstat(path);
+    if (!(kind === "directory" ? stat.isDirectory() : stat.isFile()))
+      return yield* new CrewError("RETAINED_PATH", `Expected a retained ${kind} at ${path}`);
+    return true;
+  });
 export const readdirIfPresent = (path: PathLike) =>
   readdir(path).pipe(Effect.catchIf(missing, () => Effect.succeed([])));

@@ -14,7 +14,7 @@ import { CrewError } from "../domain.ts";
 import { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
 import { MessagesPageSchema } from "../workflow/message-contracts.ts";
 import { observerRequest } from "../observability.ts";
-import { Invalidations } from "../visibility/invalidations.ts";
+import { Invalidations, publishInvalidations } from "../visibility/invalidations.ts";
 import { observerResult } from "../visibility/errors.ts";
 import { decodeJSON } from "../decode.ts";
 import {
@@ -148,23 +148,30 @@ export const createPlugin = (
               (method ? observerRequest(method) : Effect.void).pipe(
                 Effect.andThen(() => handler(input)),
                 Effect.flatMap((value) =>
-                  decodeJSON(schema, JSON.stringify(value), "Observer response"),
+                  decodeJSON(schema, JSON.stringify(value), "Observer response").pipe(Effect.orDie),
                 ),
               ),
               error,
+              method === "githubInbox" || method === "githubItem",
             ).pipe(provide);
         // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native RPC registration exposes an open error channel.
         const registration = yield* ctx.rpc.register(visibility, {
           binding: read(BindingReadSchema, (query) => observer.binding(query)),
-          githubInbox: read(InboxPage, (query) =>
-            central
-              ? c.inbox.list(query)
-              : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central work inbox")),
+          githubInbox: read(
+            InboxPage,
+            (query) =>
+              central
+                ? c.inbox.list(query)
+                : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central work inbox")),
+            "githubInbox",
           ),
-          githubItem: read(InboxDetail, (query) =>
-            central
-              ? c.inbox.detail(query)
-              : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central work inbox")),
+          githubItem: read(
+            InboxDetail,
+            (query) =>
+              central
+                ? c.inbox.detail(query)
+                : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central work inbox")),
+            "githubItem",
           ),
           find: read(WorkPageSchema, (query) => observer.find(query)),
           leads: read(LeadEvidencePageSchema, (query) => c.queries.leadEvidence(query)),
@@ -210,22 +217,17 @@ export const createPlugin = (
           detail: read(WorkDetailSchema, ({ issue_id }) => observer.detail(issue_id), "detail"),
         });
         const invalidations = Context.get(services, Invalidations);
-        yield* invalidations.take.pipe(
-          Effect.flatMap((scope) =>
-            observer.invalidateFinder(scope).pipe(
-              Effect.andThen(c.queries.afterCommit()),
-              Effect.andThen(
-                // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native emit declares unknown errors; immediate mapping/ignore isolates publication from commits.
-                registration.events.emit("changed", { home: config.home, scope }).pipe(
-                  Effect.mapError(() => new Error("Invalidation publication failed")),
-                  Effect.ignore,
-                ),
+        yield* publishInvalidations(invalidations, c.queries.afterCommit(), (scope) =>
+          observer.invalidateFinder(scope).pipe(
+            Effect.andThen(
+              // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native emit declares unknown errors; immediate mapping/ignore isolates publication from commits.
+              registration.events.emit("changed", { home: config.home, scope }).pipe(
+                Effect.mapError(() => new Error("Invalidation publication failed")),
+                Effect.ignore,
               ),
             ),
           ),
-          Effect.forever,
-          Effect.forkScoped,
-        );
+        ).pipe(Effect.forkScoped);
         yield* Queue.take(finderRequests).pipe(
           Effect.andThen(observer.refreshFinder),
           Effect.forever,

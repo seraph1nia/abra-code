@@ -65,16 +65,16 @@ Pending CI, required review, approval forms, declared dependencies, capacity and
 
 ### Requirement: Separate compute capacity from retained resources
 
-The system SHALL expose independent global and repository limits for active native worker turns and retained incomplete executions. Idle approval, external wait and blocked work SHALL release active-worker capacity while retaining issue claims and counting toward retained-resource limits. Role-specific limits and uncertain admitted-worker reservations SHALL remain conservative.
+The system SHALL expose independent global and repository limits for active native worker turns and admitted executions. Confirmed idle input, approval and pause states SHALL release both slots and preserve the claim and worktree. Initial provisioning, worker reservations and external writer custody SHALL consume execution slots. Every returning worker SHALL reacquire capacity before native admission. Role-specific limits and uncertain admitted-worker reservations SHALL remain conservative.
 
 #### Scenario: Held PR frees a worker slot
 
-- **WHEN** an execution is idle awaiting merge approval and retained-resource capacity remains available
+- **WHEN** an execution is idle awaiting merge approval and the configured execution limit is one
 - **THEN** another eligible ticket can start within active-worker limits without releasing the held ticket's claim
 
 #### Scenario: Retained-resource limit is exhausted
 
-- **WHEN** incomplete executions reach the configured retained-resource limit
+- **WHEN** admitted executions reach the configured execution limit
 - **THEN** readiness reports that specific blocker even when active-worker slots are available
 
 #### Scenario: Upgrade preserves the previous resource ceiling

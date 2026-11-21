@@ -4,7 +4,7 @@ import { test } from "vite-plus/test";
 import { Effect } from "effect";
 import { CrewError } from "../../src/domain.ts";
 import { IssueId, MessageId, SessionId, StorageKey } from "../../src/identities.ts";
-import { SurfacePublications } from "../../src/web/surface-publications.ts";
+import { checkSurfaceDraft, SurfacePublications } from "../../src/web/surface-publications.ts";
 import { validateSurface, catalogId } from "../../src/web/surfaces.ts";
 import { WorkspaceFixture } from "../helpers/web.ts";
 import { MemoryStore, TestLocks } from "../fixtures.ts";
@@ -48,6 +48,23 @@ function fixture() {
     reads: () => reads,
   };
 }
+
+test("draft checks leave publication state empty and a fresh publication rechecks issue availability", async () => {
+  const f = fixture();
+  const request = source("msg_draft", "Draft");
+  await run(checkSurfaceDraft(request.surface, f.observe));
+  await run(checkSurfaceDraft(request.surface, f.observe));
+  assert.equal(f.store.values.size, 0);
+  const missing = Effect.map(f.observe, (snapshot) => ({ ...snapshot, work: [] }));
+  for (const operation of [
+    checkSurfaceDraft(request.surface, missing),
+    f.owner.publish(request, missing),
+  ]) {
+    await assert.rejects(run<unknown, CrewError>(operation), /abra-web is unavailable/);
+    assert.equal(f.store.values.size, 0);
+  }
+  assert.equal((await run(f.owner.publish(request, f.observe))).revision, 1);
+});
 
 test("cyclic, excessive, executable and unsafe replacements preserve the published revision", async () => {
   const f = fixture();
@@ -383,7 +400,7 @@ test("unfiltered snapshot siblings retain all observed work and explicit referen
   assert.deepEqual(await run(f.owner.read(session, "mixed", 1)), captured);
   await assert.rejects(
     run(f.owner.publish({ ...input, message_id: MessageId.make("msg_missing") }, f.observe)),
-    /unavailable work/,
+    /Work item abra-web is unavailable/,
   );
   assert.deepEqual(await run(f.owner.read(session, "mixed", 1)), captured);
 });

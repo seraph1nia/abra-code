@@ -19,6 +19,8 @@ test(
   async (t) => {
     const f = await run(fixture);
     t.onTestFinished(() => run(f.close()));
+    const agent = Agent.ID.make("diagram-specialist");
+    f.config.workers.explore = { agent };
     const { id: issue } = await run(f.work.create(workGoal("diagram-verifier")));
     const e = await run(f.controller.start(issue, Id.SessionId.make("ses_diagram-parent")));
     let tool: Tool.Info | undefined;
@@ -39,7 +41,7 @@ test(
     );
     const context: Tool.Context = {
       sessionID: e.explore_session_id!,
-      agent: Agent.ID.make("build"),
+      agent,
       messageID: Id.MessageId.make("msg_verify-assistant"),
       id: Tool.CallID.make("verify"),
       progress: () => Effect.void,

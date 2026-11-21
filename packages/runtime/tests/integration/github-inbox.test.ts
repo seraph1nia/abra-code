@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
-import { test } from "vite-plus/test";
-import { Effect } from "effect";
+import { test, vi } from "vite-plus/test";
+import { Deferred, Effect } from "effect";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { Git } from "../../src/git/repository.ts";
-import { GitRemote, RepositoryId, SessionId, RequestId, StorageKey } from "../../src/identities.ts";
+import {
+  GitRemote,
+  ProviderId,
+  ModelId,
+  RepositoryId,
+  SessionId,
+  RequestId,
+  StorageKey,
+} from "../../src/identities.ts";
 import { CrewError } from "../../src/domain.ts";
 import type { Runner } from "../../src/process.ts";
 import type { InboxQuery, InboxTarget } from "@abracode/contracts/visibility/github-inbox";
@@ -24,6 +32,15 @@ async function setup(t: Parameters<typeof workDatabase>[0]) {
     f.records.store.set(StorageKey.make("project/api"), {
       ...project,
       remote: GitRemote.make(url),
+      dispatch: {
+        review: {
+          model: {
+            providerID: ProviderId.make("fixture"),
+            id: ModelId.make("cheap-review"),
+            variant: "low",
+          },
+        },
+      },
       delivery: "branch",
     }),
   );
@@ -39,6 +56,8 @@ async function setup(t: Parameters<typeof workDatabase>[0]) {
     changed: false,
     afterFiles: false,
     partial: false,
+    malformed: false,
+    repositoryURL: "",
   };
   const calls: string[][] = [];
   const pageInfo = { hasNextPage: false, endCursor: null };
@@ -61,6 +80,7 @@ async function setup(t: Parameters<typeof workDatabase>[0]) {
       assert.equal(argv[argv.indexOf("--hostname") + 1], "github.com");
       if (argv[0] === "auth") return Effect.succeed(account.token);
       calls.push(argv);
+      if (account.malformed) return Effect.succeed("{");
       if (account.fail) return Effect.fail(new CrewError("COMMAND_FAILED", account.fail));
       const query = argv.find((a) => a.startsWith("query=")) ?? "";
       const pr = query.includes("pullRequest");
@@ -90,7 +110,7 @@ async function setup(t: Parameters<typeof workDatabase>[0]) {
             viewer: { id: account.id },
             repository: {
               id: name === "api" ? "repo" : name,
-              url: origin,
+              url: account.repositoryURL || origin,
               ...(detail
                 ? {
                     item: {
@@ -180,7 +200,14 @@ test("warm inbox shares bounded reads, resolves private review and keeps remote 
   const issue = await run(c.inbox.assign(target(), session));
   const review = await run(c.inbox.assign(target(true), session));
   assert.equal((await run(graph.show(review))).workflow_policy, "research-only");
-  assert.match((await run(graph.show(review))).description, /\+one/);
+  const requested = await run(graph.show(review));
+  assert.deepEqual(requested.dispatch?.research?.model, {
+    providerID: "fixture",
+    id: "cheap-review",
+    variant: "low",
+  });
+  assert.match(requested.scope!.constraints!.join(" "), /abra-open-code-review-delegate/);
+  assert.match(requested.description, /\+one/);
   assert.equal(await run(c.inbox.assign(target(true), session)), review);
   assert.equal((await list({ role: "pickup" })).entries[0]?.links[0]?.issue_id, issue);
   assert.equal((await list({ role: "review" })).entries[0]?.author, "colleague");
@@ -392,4 +419,129 @@ test("v9 work and pre-existing publication records retain their identity alongsi
     index.links(summary, [published]).map((l) => l.role),
     ["review", "delivery"],
   );
+});
+
+for (const failure of ["HTTP 403 rate limit", "HTTP 404"])
+  test(`a waiting inventory read honors a new cooldown (${failure})`, async (t) => {
+    const { c, account, calls, list } = await setup(t);
+    const remote = c.inbox["remote"];
+    const read = remote.page.bind(remote);
+    const gate = Deferred.makeUnsafe<void>();
+    remote.page = (...args) => Deferred.await(gate).pipe(Effect.andThen(() => read(...args)));
+    account.fail = failure;
+    const requests = Promise.all(
+      ["one", "two", "three"].map((label) => list({ kind: "issue", label })),
+    );
+    try {
+      await t.expect.poll(() => c.inbox["running"].size).toBe(3);
+    } finally {
+      await run(Deferred.succeed(gate, undefined));
+    }
+    const pages = await requests;
+    assert.equal(calls.length, 2);
+    assert.equal(pages[2]?.coverage[0]?.status, "unavailable");
+  });
+
+test("overlapping PR views share a read while assignment verifies its own revisions", async (t) => {
+  const { c, graph, target, account } = await setup(t);
+  const pr = target(true);
+  const remote = c.inbox["remote"];
+  const read = remote.detail.bind(remote);
+  const firstRead = Deferred.makeUnsafe<void>();
+  const release = Deferred.makeUnsafe<void>();
+  let count = 0;
+  remote.detail = (...args) => {
+    count++;
+    const observation = read(...args);
+    if (count !== 1) return observation;
+    return observation.pipe(
+      Effect.tap(() =>
+        Deferred.succeed(firstRead, undefined).pipe(Effect.andThen(Deferred.await(release))),
+      ),
+    );
+  };
+  const credentials = vi.spyOn(remote, "partition");
+  const views = Promise.all([run(c.inbox.detail(pr)), run(c.inbox.detail(pr))]);
+  try {
+    await run(Deferred.await(firstRead));
+    await t.expect.poll(() => credentials.mock.calls.length).toBeGreaterThanOrEqual(2);
+    account.afterFiles = true;
+    account.changed = true;
+    const review = await run(c.inbox.assign(pr, session));
+    assert.match((await run(graph.show(review))).description, new RegExp("head " + "c".repeat(40)));
+  } finally {
+    await run(Deferred.succeed(release, undefined));
+  }
+  const results = await views;
+  assert.deepEqual(
+    results.map((r) => r.head),
+    ["a".repeat(40), "a".repeat(40)],
+  );
+  assert.equal((await run(c.inbox.detail(pr))).head, "c".repeat(40));
+  assert.equal(count, 3);
+});
+
+test("local index failures preserve remote state and roll back partial page and assignment writes", async (t) => {
+  const { c, graph, target, account } = await setup(t);
+  const db = graph["db"];
+  const issuePage = () => c.inbox.list({ kind: "issue" });
+  const assertCode = async <A>(effect: Effect.Effect<A, CrewError>, code: string) => {
+    const failure = await run(Effect.flip(effect));
+    assert.equal(failure.code, code);
+    assert.ok(failure.message.length < 2200);
+  };
+  db.exec(
+    "CREATE TRIGGER reject_scan BEFORE INSERT ON github_scans BEGIN SELECT RAISE(ABORT,'private SQL detail'); END",
+  );
+  await assertCode(issuePage(), "INBOX_STORAGE");
+  assert.equal(db.prepare("SELECT count(*) AS n FROM github_items").get()!.n, 0);
+  account.fail = "HTTP 403 rate limit";
+  await assertCode(issuePage(), "INBOX_STORAGE");
+  assert.equal(db.prepare("SELECT count(*) AS n FROM github_cooldowns").get()!.n, 0);
+  db.exec("DROP TRIGGER reject_scan");
+  account.fail = "";
+  assert.equal((await run(issuePage())).total, 1);
+  const existing = await run(c.inbox.assign(target(), session));
+  db.exec(
+    "CREATE TRIGGER reject_link BEFORE INSERT ON github_links BEGIN SELECT RAISE(ABORT,'private SQL detail'); END",
+  );
+  await assertCode(c.inbox.assign(target(true), session), "INBOX_STORAGE");
+  assert.deepEqual(
+    (await run(graph.list)).map((i) => i.id),
+    [existing],
+  );
+  db.exec("DROP TRIGGER reject_link");
+  const retried = await run(c.inbox.assign(target(true), session));
+  assert.equal(await run(c.inbox.assign(target(true), session)), retried);
+  db.exec("UPDATE github_items SET summary='{'");
+  await assertCode(issuePage(), "INVALID_DATA");
+  db.exec("UPDATE github_scans SET data='{'");
+  await assertCode(issuePage(), "INVALID_DATA");
+  assert.equal(db.prepare("SELECT data FROM github_scans").get()!.data, "{");
+  assert.equal(db.prepare("SELECT count(*) AS n FROM github_cooldowns").get()!.n, 0);
+  assert.equal(await run(c.inbox.assign(target(), session)), existing);
+});
+
+test("invalid projects, changed item identity and malformed remote detail retain their codes", async (t) => {
+  const { c, target, account } = await setup(t);
+  const bad = RepositoryId.make("missing");
+  assert.equal(
+    (await run(Effect.flip(c.inbox.list({ repository_id: bad })))).code,
+    "INBOX_PROJECT",
+  );
+  assert.equal(
+    (await run(Effect.flip(c.inbox.detail({ ...target(), repository_id: bad })))).code,
+    "INBOX_PROJECT",
+  );
+  assert.equal(
+    (await run(Effect.flip(c.inbox.detail({ ...target(), item_node: "other" })))).code,
+    "INBOX_IDENTITY",
+  );
+  account.malformed = true;
+  assert.equal((await run(Effect.flip(c.inbox.detail(target())))).code, "INVALID_DATA");
+  account.malformed = false;
+  account.repositoryURL = "unknown://invalid/repository";
+  assert.equal((await run(Effect.flip(c.inbox.detail(target())))).code, "REMOTE");
+  account.repositoryURL = "";
+  assert.equal((await run(c.inbox.detail(target()))).item_node, target().item_node);
 });

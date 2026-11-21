@@ -9,11 +9,12 @@ import { AbsolutePath, IssueId, Timestamp } from "../identities.ts";
 import { domainEffect } from "../effect.ts";
 import { defineTool } from "../opencode/tool-definition.ts";
 import { Visibility } from "../visibility/read-model.ts";
-import { SurfaceSchema, surfaceResources } from "./surfaces.ts";
+import { CrewError } from "../domain.ts";
+import { surfaceResources } from "./surfaces.ts";
 import { resolveOwnedResource } from "./resource-selection.ts";
-import { renderInstructions } from "./catalog.ts";
+import { ComponentId } from "./catalog.ts";
 import { SurfacePublicationSchema } from "./presentation-contracts.ts";
-import { SurfacePublications } from "./surface-publications.ts";
+import { checkSurfaceDraft, SurfacePublications } from "./surface-publications.ts";
 
 export function workSurfaceTool(ctx: Context, controller: Controller) {
   const publications = new SurfacePublications(
@@ -22,36 +23,62 @@ export function workSurfaceTool(ctx: Context, controller: Controller) {
   );
   return defineTool({
     name: "render_ui",
-    description: renderInstructions,
-    input: Schema.Struct({ surface: SurfaceSchema }),
-    output: SurfacePublicationSchema,
+    description:
+      "Publish one complete workspace view from Express source. Load abra-express for the catalog and examples. Set validate_only to check a draft.",
+    input: Schema.Struct({
+      surface_id: ComponentId,
+      source: Schema.NonEmptyString,
+      validate_only: Schema.optionalKey(Schema.Boolean),
+    }),
+    output: Schema.Union([
+      SurfacePublicationSchema,
+      Schema.Struct({ validated: Schema.Literal(true), surface_id: ComponentId }),
+    ]),
     diagnostic: true,
     run: (input, session, call) =>
-      publications.publish(
-        {
-          session_id: session,
-          message_id: call.messageID,
-          call_id: call.id,
-          surface: input.surface,
-        },
-        domainEffect(
+      Effect.gen(function* () {
+        const { compileWorkView } = yield* Effect.promise(() => import("./express.ts"));
+        const surface = yield* Effect.try({
+          try: () => compileWorkView(input.surface_id, input.source),
+          catch: (error) => new CrewError("UI_EXPRESS", CrewError.from(error).message),
+        });
+        const observe = domainEffect(
           Effect.gen(function* () {
-            for (const target of surfaceResources(input.surface))
-              yield* resolveOwnedResource(controller.queries, target);
-            const selection = bindingRequirements(input.surface);
+            for (const target of surfaceResources(surface))
+              yield* resolveOwnedResource(controller.queries, target).pipe(
+                Effect.mapError(
+                  (error) =>
+                    new CrewError(
+                      error.code,
+                      `${target.action} for ${target.issue_id}: ${error.message}`,
+                    ),
+                ),
+              );
+            const selection = bindingRequirements(surface);
             const binding = yield* new Visibility(controller).binding({
               issue_ids: selection.ids.map((id) => IssueId.make(id)),
               include_population: selection.unfiltered,
             });
             return {
-              home: controller.queries.settings.home,
               at: Timestamp.make(binding.observed_at),
               work: binding.work,
               binding_coverage: binding.coverage,
-              work_revision: binding.work_revision,
             };
           }),
-        ),
-      ),
+        );
+        if (input.validate_only) {
+          yield* checkSurfaceDraft(surface, observe);
+          return { validated: true as const, surface_id: input.surface_id };
+        }
+        return yield* publications.publish(
+          {
+            session_id: session,
+            message_id: call.messageID,
+            call_id: call.id,
+            surface,
+          },
+          observe,
+        );
+      }),
   });
 }

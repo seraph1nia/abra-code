@@ -130,7 +130,7 @@ test("upstream A2UI renders every work widget, replaces revisions and retains va
     "Task",
     "State",
     "Priority",
-    "Latest progress",
+    "Latest update",
   ]);
   assert.equal(await page.locator(".work-table tbody tr").count(), 2);
   assert.deepEqual(
@@ -282,11 +282,22 @@ test("live generated widgets resolve off-page tasks, share queries and label sta
     ],
   };
   const page = await f.browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  f.failedReads.add("binding");
   await page.goto(f.origin);
   await page.getByText("Other retained views (1)", { exact: true }).click();
+  const publication = page.locator(".surface-publication");
+  await page.getByText("Couldn’t load current work.").waitFor();
+  assert.equal(await publication.locator(".metrics dd").count(), 0);
+  assert.equal(await publication.locator("table").count(), 1, "Only the saved table is visible");
+  f.failedReads.delete("binding");
+  await page
+    .getByRole("alert")
+    .filter({ hasText: "Couldn’t load current work." })
+    .getByRole("button", { name: "Retry", exact: true })
+    .click();
   const live = page.locator('[data-work-widget="WorkTable"]').first();
   await live.getByRole("button", { name: "Closed task 54", exact: true }).waitFor();
-  assert.equal(f.calls.filter((call) => call.name === "binding").length, 1);
+  assert.equal(f.calls.filter((call) => call.name === "binding").length, 2);
   assert.match(await page.locator(".generated-surface").innerText(), /Original captured task/);
   const count = page.locator('[data-work-widget="StatusSummary"]');
   assert.match(await count.innerText(), /Complete selection/);
@@ -390,11 +401,8 @@ test("replaced live selections ignore a late read and show pending counts withou
   await page.goto(f.origin);
   await page.getByText("Other retained views (1)", { exact: true }).click();
   await pending;
-  await page
-    .locator('[data-work-widget="StatusSummary"]')
-    .getByText(/Pending data/)
-    .waitFor();
-  assert.match(await page.locator('[data-work-widget="StatusSummary"]').innerText(), /Unavailable/);
+  await page.getByText("Loading current work…").waitFor();
+  assert.equal(await page.locator(".metrics dd").count(), 0);
   f.source.value = { ...f.source.value, surfaces: [record(2, rows[1]!.issue_id)] };
   await f.changed();
   const table = page.locator('[data-work-widget="WorkTable"]');

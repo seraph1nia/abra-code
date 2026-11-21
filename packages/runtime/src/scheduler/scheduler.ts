@@ -4,6 +4,7 @@ import { decode } from "../decode.ts";
 import { Priority } from "../contracts.ts";
 import { RepositoryId, StorageKey, type IssueId } from "../identities.ts";
 import { type Records } from "../storage/store.ts";
+import { type ProjectSetup } from "../config/setup.ts";
 import { type Controller } from "../workflow/controller.ts";
 
 const Cursor = Schema.Struct({
@@ -26,12 +27,14 @@ export class Scheduler {
   constructor(
     private controller: Controller,
     private records: Records,
+    private setup: ProjectSetup,
   ) {}
   tick = Effect.fn("Scheduler.tick")(
     function* (this: Scheduler) {
-      if (!this.controller.queries.settings.autoSchedule) return [];
       return yield* this.turn.withPermits(1)(
         Effect.gen({ self: this }, function* () {
+          yield* this.setup.reconcileQueued();
+          if (!this.controller.queries.settings.autoSchedule) return [];
           const authority = yield* this.controller.queries.automaticAuthority();
           if (!authority.session_id) return [];
           let cursor = yield* decode(

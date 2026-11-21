@@ -27,9 +27,11 @@ test("research restarts from the saved phase before any worker admission intent 
     ),
   );
   const entered = Deferred.makeUnsafe<void>();
-  const preflight = f.runtime.preflight.bind(f.runtime);
-  f.runtime.preflight = () =>
-    Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never));
+  const commit = f.records.commitOwned.bind(f.records);
+  f.records.commitOwned = (execution, patch) =>
+    patch.session_intent && execution.current_phase === "researching"
+      ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
+      : commit(execution, patch);
   await run(
     Effect.scoped(
       Effect.gen(function* () {
@@ -39,7 +41,7 @@ test("research restarts from the saved phase before any worker admission intent 
       }),
     ),
   );
-  f.runtime.preflight = preflight;
+  f.records.commitOwned = commit;
   const before = await run(f.controller.get(issue.id));
   assert.equal(before.current_phase, "researching");
   assert.equal(before.active_role, undefined);

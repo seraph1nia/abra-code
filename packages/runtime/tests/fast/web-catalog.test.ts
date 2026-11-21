@@ -20,7 +20,6 @@ import {
 import { loadSurfaceRecord, compactSurface } from "../../src/web/surface-records.ts";
 import { WorkspaceStateJson, WorkspaceStateSchema } from "../../src/web/workspace-wire.ts";
 import { webGateway } from "../../src/web/protocol.ts";
-import { strictInput } from "../../src/opencode/tool-definition.ts";
 import { WorkspaceFixture } from "../helpers/web.ts";
 
 const surface = () => ({
@@ -65,7 +64,7 @@ test("Effect custom props and SDK catalog validation enforce the same owned cont
   assert.throws(() => sdk.validateComponent({ id: "root", component: "ReportLink" }));
 });
 
-test("publication and native tool schemas reject invalid component-specific props", () => {
+test("publication rejects invalid component-specific props", () => {
   for (const component of [
     { id: "root", component: "Text" },
     { id: "root", component: "Text", text: "text", issueIds: ["abra-web"] },
@@ -78,14 +77,10 @@ test("publication and native tool schemas reject invalid component-specific prop
     };
     assert.throws(() => validateSurface(value));
     assert.equal(Schema.decodeUnknownResult(SurfaceSchema)(value)._tag, "Failure");
-    const result = strictInput(Schema.Struct({ surface: SurfaceSchema }))["~standard"].validate({
-      surface: value,
-    });
-    assert.ok("issues" in result && result.issues);
   }
 });
 
-test("dashboard component IDs have actionable native validation and matching JSON Schema guidance", () => {
+test("compiled dashboard component IDs have actionable validation and matching JSON Schema guidance", () => {
   const ids = ["projects-heading", "abra-project", "common-project", "tickets-heading"];
   const dashboard = (names: string[]) => ({
     version: "1.0",
@@ -98,22 +93,21 @@ test("dashboard component IDs have actionable native validation and matching JSO
       ],
     },
   });
-  const tool = strictInput(Schema.Struct({ surface: SurfaceSchema }));
-  const result = tool["~standard"].validate({ surface: dashboard(ids) });
+  const standard = Schema.toStandardSchemaV1(SurfaceSchema);
+  const result = standard["~standard"].validate(dashboard(ids));
   assert.ok("issues" in result && result.issues);
   for (const index of [1, 2, 3, 4])
     assert.ok(
       result.issues.some(
         (issue) =>
           JSON.stringify(issue.path) ===
-            JSON.stringify(["surface", "createSurface", "components", index, "id"]) &&
+            JSON.stringify(["createSurface", "components", index, "id"]) &&
           /underscores/.test(issue.message),
       ),
     );
   const fixed = dashboard(ids.map((id) => id.replaceAll("-", "_")));
   assert.doesNotThrow(() => validateSurface(fixed));
-  assert.ok("value" in tool["~standard"].validate({ surface: fixed }));
-  const json = JSON.stringify(tool["~standard"].jsonSchema.input());
+  const json = JSON.stringify(Schema.toJsonSchemaDocument(SurfaceSchema));
   assert.match(json, /\^\[a-zA-Z\]\[a-zA-Z0-9_\]/);
 });
 

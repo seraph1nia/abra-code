@@ -1,7 +1,7 @@
 import type { Submission } from "@abracode/contracts/web/workspace-wire";
 import { randomUUID } from "node:crypto";
-import { Effect, Fiber, Schema, Stream } from "effect";
-import { Observable } from "rxjs";
+import { Cause, Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
+import { defer, Observable } from "rxjs";
 import {
   EventType,
   type Event,
@@ -96,13 +96,25 @@ const observable = (stream: Stream.Stream<Event, CrewError>) =>
   new Observable<BaseEvent>((observer) => {
     const fiber = Effect.runFork(
       stream.pipe(
-        Stream.runForEach((event) => Effect.sync(() => observer.next(EventSchema.parse(event)))),
-        Effect.match({
-          onSuccess: () => observer.complete(),
-          onFailure: (error) => observer.error(error),
-        }),
+        Stream.runForEach((event) =>
+          Effect.try({
+            try: () => EventSchema.parse(event),
+            catch: () => new CrewError("WEB_EVENT", "Invalid native observation event"),
+          }).pipe(Effect.tap((valid) => Effect.sync(() => observer.next(valid)))),
+        ),
       ),
     );
+    fiber.addObserver((exit) => {
+      if (observer.closed) return;
+      if (Exit.isSuccess(exit)) observer.complete();
+      else
+        observer.error(
+          Option.getOrElse(
+            Cause.findErrorOption(exit.cause),
+            () => new CrewError("WEB_OBSERVATION", "Native observation ended unexpectedly"),
+          ),
+        );
+    });
     return () => {
       Effect.runFork(Fiber.interrupt(fiber));
     };
@@ -161,85 +173,97 @@ export class NativeAgentAdapter {
       yield* this.source.notifyAdmission;
       return receipt;
     });
-    let terminal: NonNullable<NativeSessionView["completions"]>[number] | undefined;
-    const project = projection();
-    const observation = Stream.unwrap(
-      admitted.pipe(
-        Effect.map((receipt) =>
-          this.source.updates.pipe(
-            Stream.tap((event) =>
-              Effect.sync(() => {
-                if (event.type === "snapshot")
-                  terminal = event.native.completions?.find((turn) =>
-                    turn.inputs.includes(receipt.message_id),
-                  );
-              }),
+    return defer(() => {
+      let terminal: NonNullable<NativeSessionView["completions"]>[number] | undefined;
+      const project = projection();
+      const observation = Stream.unwrap(
+        admitted.pipe(
+          Effect.map((receipt) =>
+            this.source.updates.pipe(
+              Stream.tap((event) =>
+                Effect.sync(() => {
+                  if (event.type === "snapshot")
+                    terminal = event.native.completions?.find((turn) =>
+                      turn.inputs.includes(receipt.message_id),
+                    );
+                }),
+              ),
+              Stream.takeUntil(() => terminal !== undefined),
+              Stream.flatMap((event) => Stream.fromIterable(project(event))),
             ),
-            Stream.takeUntil(() => terminal !== undefined),
-            Stream.flatMap((event) => Stream.fromIterable(project(event))),
           ),
         ),
-      ),
-    );
-    const finish = Stream.unwrap(
-      Effect.sync(() =>
-        Stream.succeed(
-          terminal?.outcome === "succeeded"
-            ? ({ type: EventType.RUN_FINISHED, threadId: thread, runId: raw.runId } satisfies Event)
-            : ({
-                type: EventType.RUN_ERROR,
-                code: terminal ? "NATIVE_FAILURE" : "NATIVE_COMPLETION_UNAVAILABLE",
-                message:
-                  terminal?.error?.slice(0, 1024) ??
-                  (terminal
-                    ? "Native execution was interrupted"
-                    : "Native completion is not established; reconnect without resubmitting input"),
-              } satisfies Event),
+      );
+      const finish = Stream.unwrap(
+        Effect.sync(() =>
+          Stream.succeed(
+            terminal?.outcome === "succeeded"
+              ? ({
+                  type: EventType.RUN_FINISHED,
+                  threadId: thread,
+                  runId: raw.runId,
+                } satisfies Event)
+              : ({
+                  type: EventType.RUN_ERROR,
+                  code: terminal ? "NATIVE_FAILURE" : "NATIVE_COMPLETION_UNAVAILABLE",
+                  message:
+                    terminal?.error?.slice(0, 1024) ??
+                    (terminal
+                      ? "Native execution was interrupted"
+                      : "Native completion is not established; reconnect without resubmitting input"),
+                } satisfies Event),
+          ),
         ),
-      ),
-    );
-    return observable(
-      Stream.concat(
-        Stream.succeed({
-          type: EventType.RUN_STARTED,
-          threadId: thread,
-          runId: raw.runId,
-        } satisfies Event),
-        Stream.concat(observation, finish).pipe(
-          Stream.catch((error) =>
+      );
+      return observable(
+        Stream.concat(
+          Stream.succeed({
+            type: EventType.RUN_STARTED,
+            threadId: thread,
+            runId: raw.runId,
+          } satisfies Event),
+          Stream.concat(observation, finish).pipe(
+            Stream.catch((error) =>
+              Stream.succeed({
+                type: EventType.RUN_ERROR,
+                code: error.code,
+                message: error.message.slice(0, 1024),
+              } satisfies Event),
+            ),
+          ),
+        ),
+      );
+    });
+  }
+  connect(thread: string, agent = "abra") {
+    return defer(() => {
+      const project = projection(),
+        runId = randomUUID();
+      const observation = Stream.unwrap(
+        Effect.try({
+          try: () => {
+            this.assert(thread, agent);
+            return this.source.updates.pipe(
+              Stream.flatMap((event) => Stream.fromIterable(project(event))),
+            );
+          },
+          catch: CrewError.from,
+        }),
+      );
+      return observable(
+        Stream.concat(
+          Stream.succeed({ type: EventType.RUN_STARTED, threadId: thread, runId } satisfies Event),
+          Stream.concat(
+            observation,
             Stream.succeed({
-              type: EventType.RUN_ERROR,
-              code: error.code,
-              message: error.message.slice(0, 1024),
+              type: EventType.RUN_FINISHED,
+              threadId: thread,
+              runId,
             } satisfies Event),
           ),
         ),
-      ),
-    );
-  }
-  connect(thread: string, agent = "abra") {
-    const project = projection(),
-      runId = randomUUID();
-    const observation = Stream.unwrap(
-      Effect.try({
-        try: () => {
-          this.assert(thread, agent);
-          return this.source.updates.pipe(
-            Stream.flatMap((event) => Stream.fromIterable(project(event))),
-          );
-        },
-        catch: CrewError.from,
-      }),
-    );
-    return observable(
-      Stream.concat(
-        Stream.succeed({ type: EventType.RUN_STARTED, threadId: thread, runId } satisfies Event),
-        Stream.concat(
-          observation,
-          Stream.succeed({ type: EventType.RUN_FINISHED, threadId: thread, runId } satisfies Event),
-        ),
-      ),
-    );
+      );
+    });
   }
   async isRunning(thread: string) {
     this.assert(thread);

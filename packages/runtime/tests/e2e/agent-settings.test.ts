@@ -87,7 +87,10 @@ test("workspace links to read-only agent settings, including custom definitions 
     await page.getByText("Provided dynamically for each assignment", { exact: true }).isVisible(),
     true,
   );
-  assert.equal(await page.locator("input,textarea,select,[contenteditable=true]").count(), 0);
+  assert.equal(
+    await page.getByRole("main").locator("input,textarea,select,[contenteditable=true]").count(),
+    0,
+  );
   const response = await page.reload();
   assert.equal(response?.status(), 200);
   await page.getByText("1 agent defined", { exact: true }).waitFor();
@@ -95,7 +98,7 @@ test("workspace links to read-only agent settings, including custom definitions 
   await page.locator("summary").click();
   await page.getByRole("heading", { name: "Exploration guidance", exact: true }).waitFor();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
-  await page.getByRole("link", { name: "Back to workspace" }).click();
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
   await page.getByRole("textbox", { name: "Message Abra" }).waitFor();
   assert.deepEqual(mutations, []);
   assert.equal(f.source.submissions + f.source.stops + f.source.replies, 0);
@@ -122,4 +125,60 @@ test("settings handles unavailable catalogs, retry and an empty installation wit
     headers: { origin: f.origin },
   });
   assert.equal(post.status, 404);
+});
+
+test("settings lists every registered repository and preserves the section on reload and back", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const path = "/repositories/" + "long-checkout-name-".repeat(8);
+  f.source.value = {
+    ...f.source.value,
+    projects: [
+      { id: "web", name: "Web app", path },
+      { id: "archive", name: "archive" },
+    ],
+  };
+  const page = await f.browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto(`${f.origin}/settings`);
+  const nav = page.getByRole("navigation", { name: "Settings", exact: true });
+  await nav.getByRole("link", { name: "Repositories" }).click();
+  await page.getByText("2 repositories onboarded").waitFor();
+  const list = page.getByRole("main").getByRole("list");
+  assert.deepEqual(await list.locator("strong").allTextContents(), ["archive", "Web app"]);
+  await list.getByText("web", { exact: true }).waitFor();
+  await list.getByText(path, { exact: true }).waitFor();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  assert.equal(await nav.locator('a[aria-current="page"]').textContent(), "Repositories");
+  const response = await page.reload();
+  assert.equal(response?.status(), 200);
+  await page.getByText(path, { exact: true }).waitFor();
+  await nav.getByRole("link", { name: "Agents" }).click();
+  await page.getByRole("heading", { name: "Agents", exact: true }).waitFor();
+  await page.goBack();
+  await page.getByRole("heading", { name: "Repositories", exact: true }).waitFor();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const home = page.getByRole("link", { name: "AbraCode main chat" });
+  await home.locator(".brand-mark").click();
+  await page.getByRole("textbox", { name: "Message Abra" }).waitFor();
+  await page.goBack();
+  await home.getByText("AbraCode", { exact: true }).click();
+  await page.getByRole("textbox", { name: "Message Abra" }).waitFor();
+});
+
+test("repository settings retries a failed registry read and displays an empty registry", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  f.source.repositories = Effect.fail(new CrewError("PROJECTS_UNAVAILABLE", "Read failed"));
+  const page = await f.browser.newPage();
+  const requests: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/")) requests.push(path);
+  });
+  await page.goto(`${f.origin}/settings/repositories`);
+  await page.getByRole("alert").waitFor();
+  f.source.repositories = Effect.succeed([]);
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await page.getByText("No repositories have been onboarded yet.", { exact: true }).waitFor();
+  assert.deepEqual(new Set(requests), new Set(["/api/settings/repositories"]));
 });

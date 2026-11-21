@@ -26,7 +26,7 @@ import { Finalization } from "../workflow/finalization.ts";
 import { Scheduler } from "../scheduler/scheduler.ts";
 import { ConfigApplication } from "../config/application.ts";
 import { invalidationsLayer } from "../visibility/invalidations.ts";
-import { AbsolutePath } from "../identities.ts";
+import { AbsolutePath, Executable } from "../identities.ts";
 import { Context, Effect, Layer } from "effect";
 import { type Context as PluginContext } from "@opencode/plugin/effect/plugin";
 import { join } from "node:path";
@@ -114,7 +114,16 @@ export function createWorkflow(
     assets,
   );
   const messages = sessions.messages;
-  const checks = new CodingChecks(records, git, spec, sessions, coordination, queries, checkpoints);
+  const checks = new CodingChecks(
+    records,
+    git,
+    spec,
+    sessions,
+    coordination,
+    queries,
+    checkpoints,
+    Executable.make(join(config.home, "node_modules/.bin/ocr")),
+  );
   const transitions = new ExecutionTransitions(
     records,
     work,
@@ -185,6 +194,7 @@ export function createWorkflow(
     workspaces,
   });
   const recovery = new ExecutionRecovery({
+    capacity,
     authorizations,
     checkpoints,
     records,
@@ -246,6 +256,7 @@ export function createWorkflow(
       work.inbox,
       records,
       admission,
+      config,
     ),
     queries,
     admission,
@@ -269,22 +280,23 @@ export function createWorkflow(
     locks,
     config,
   );
+  const setup = new ProjectSetup({
+    config,
+    records,
+    git,
+    runtime,
+    delivery,
+    sources,
+    workspaces,
+    locks,
+  });
   return {
     controller,
-    scheduler: new Scheduler(controller, records),
+    scheduler: new Scheduler(controller, records, setup),
     config,
     onboarding,
     configuration: new ConfigApplication(config, records, onboarding),
-    setup: new ProjectSetup({
-      config,
-      records,
-      git,
-      runtime,
-      delivery,
-      sources,
-      workspaces,
-      locks,
-    }),
+    setup,
   };
 }
 export class Crew extends Context.Service<Crew, ReturnType<typeof createWorkflow>>()(

@@ -29,10 +29,55 @@ output:not([class~="inline-status"]) {
   width: 100%;
   max-width: 100%;
 }
-.generated-surface > .eyebrow {
-  margin-bottom: 20px;
+.work-read-status {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.work-read-status[role="alert"] {
+  padding: 10px 14px;
+  border-inline-start: 3px solid var(--warning);
+  background: var(--soft);
+  color: var(--ink);
+}
+.work-capacity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  margin-block: 12px;
+}
+.work-capacity dt {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.work-capacity dd {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.work-last-seen {
+  margin-block: 12px;
+}
+.work-setup-list > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  padding-block: 3px;
+}
+.work-setup-list dd {
+  color: var(--muted-foreground);
+}
+.work-last-seen summary {
+  cursor: pointer;
+}
+.work-last-seen button {
+  white-space: normal;
+  height: auto;
+  text-align: start;
 }
 .generated-surface a2ui-basic-row {
   flex-wrap: wrap;
@@ -69,16 +114,24 @@ output:not([class~="inline-status"]) {
 .metrics {
   display: flex;
   flex-wrap: wrap;
-  border: 1px solid var(--line);
-  border-radius: 9px;
+  gap: 6px 18px;
+  padding-block: 8px;
+  border-block: 1px solid var(--line);
+}
+.metrics > div {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
 }
 .metrics dt {
-  font-size: 12px;
-  text-transform: capitalize;
   color: var(--muted-foreground);
+  text-transform: capitalize;
+  font-size: 13px;
 }
 .metrics dd {
-  font-size: 27px;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .surface-widget {
   min-width: 0;
@@ -103,6 +156,25 @@ output:not([class~="inline-status"]) {
 .report-reference {
   font-size: 12px;
   margin: 9px 0;
+}
+.surface-widget[data-work-widget="WorkTable"] {
+  container-type: inline-size;
+}
+.work-table th[scope="row"] {
+  width: 32%;
+}
+.work-table th[scope="row"] button {
+  padding-inline: 0;
+  max-width: 100%;
+}
+.work-update summary {
+  cursor: pointer;
+}
+.work-update[open] p {
+  margin-top: 0.5rem;
+}
+.compact-priority {
+  display: none;
 }
 .work-table-scroll {
   max-width: 100%;
@@ -134,6 +206,49 @@ output:not([class~="inline-status"]) {
 .work-table td:nth-child(2) {
   white-space: nowrap;
 }
+@container (max-width: 42rem) {
+  .work-table {
+    display: block;
+    min-width: 0;
+  }
+  .work-table caption,
+  .work-table tbody {
+    display: block;
+  }
+  .work-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .work-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px;
+    border-top: 1px solid var(--line);
+    padding: 10px 12px;
+  }
+  .work-table tbody :is(th, td) {
+    border: 0;
+    padding: 0;
+  }
+  .work-table th[scope="row"],
+  .work-table td:last-child {
+    grid-column: 1 / -1;
+    width: auto;
+  }
+  .work-table td {
+    font-size: 12px;
+    color: var(--muted-foreground);
+  }
+  .work-table td:nth-child(2) {
+    white-space: normal;
+  }
+  .compact-priority {
+    display: inline;
+  }
+}
 .dependency-graph > li {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -143,25 +258,6 @@ output:not([class~="inline-status"]) {
 .dependency-graph ul {
   padding-left: 16px;
   list-style: disc;
-}
-.metrics > div {
-  flex: 1;
-  padding: 13px;
-  display: grid;
-  border-right: 1px solid var(--line);
-  min-width: 80px;
-}
-.metrics > div:last-child {
-  border: 0;
-}
-.metrics strong {
-  font-size: 27px;
-  font-weight: 450;
-}
-.metrics span {
-  text-transform: capitalize;
-  font-size: 12px;
-  color: var(--muted-foreground);
 }
 .kanban {
   display: grid;

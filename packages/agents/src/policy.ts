@@ -46,6 +46,7 @@ const policies = {
       "abra_mermaid_verify",
       "abra_spec",
       "abra_review_report",
+      "abra_review_changes",
       "shell",
     ],
     write_scope: "none",
@@ -93,6 +94,19 @@ export const policyIdentity = (role: ManagedRole) =>
   createHash("sha256")
     .update(JSON.stringify({ version: 2, role, ...policies[role] }))
     .digest("hex");
+// Existing Review sessions retain the original, narrower permission set and policy digest.
+const formerReviewPolicy = {
+  ...policies.review,
+  tools: policies.review.tools.filter((name) => name !== "abra_review_changes"),
+};
+const formerReviewIdentity = createHash("sha256")
+  .update(JSON.stringify({ version: 2, role: "review", ...formerReviewPolicy }))
+  .digest("hex");
+export const legacyReviewProfile = (profile?: StaticProfile) =>
+  profile?.role === "review" &&
+  !profile.permissions.some((p) => p.action === "abra_review_changes" && p.effect === "allow");
+export const compatiblePolicy = (role: ManagedRole, hash: string) =>
+  hash === policyIdentity(role) || (role === "review" && hash === formerReviewIdentity);
 export const protectedControlPath = (file: string, root: string, role: Role) => {
   const segments = relative(root, file).split(sep);
   return (
@@ -136,6 +150,7 @@ export function capabilityRequirements(
   role: Role,
   workflow: Policy,
   configured: CapabilityRequirements = {},
+  delegate = true,
 ) {
   const tools = ["read", "glob", "grep", "skill", ...reporting].map((name) => ({
     any_of: [ToolName.make(name)],
@@ -147,6 +162,7 @@ export function capabilityRequirements(
   else if (configured.required_skills?.includes(Skill.ID.make("abra-browser")))
     tools.push({ any_of: [ToolName.make("shell")] });
   if (role === "review") tools.push({ any_of: [ToolName.make("abra_review_report")] });
+  if (role === "review" && delegate) tools.push({ any_of: [ToolName.make("abra_review_changes")] });
   if (role === "research") tools.push({ any_of: [ToolName.make("abra_research_report")] });
   const configuredTools = configured.required_tools ?? [];
   const forbidden = configuredTools
@@ -169,6 +185,7 @@ export function capabilityRequirements(
     ...new Set([
       ...(workflow === "full-openspec" ? [Skill.ID.make("abra-openspec-execution")] : []),
       ...engineeringSkillIds(role, workflow),
+      ...(role === "review" && delegate ? [Skill.ID.make("abra-open-code-review-delegate")] : []),
       ...(configured.required_skills ?? []),
     ]),
   ];

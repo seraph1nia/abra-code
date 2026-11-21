@@ -6,7 +6,7 @@ import {
   awaitWorkerPlugin,
   type WorkerEnvironment,
 } from "./worker-environment.ts";
-import { nativePermissions, leadPermissions } from "./role-policy.ts";
+import { nativePermissions, leadPermissions, legacyReviewProfile } from "./role-policy.ts";
 import { workerBrowser } from "./browser.ts";
 import { provisionedEvidence } from "../workflow/evidence.ts";
 import {
@@ -437,7 +437,11 @@ export class NativeRuntime implements Runtime {
         ...nativePermissions(role, e.openspec_change, [
           ...projects.map((p) => p.path),
           workerBrowser(this.config.home, id).directory,
-        ]),
+        ]).filter(
+          (rule) =>
+            rule.action !== "abra_review_changes" ||
+            !legacyReviewProfile(e.configuration_snapshot?.definitions?.[role]),
+        ),
         ...(e.configuration_snapshot?.definitions?.[role]?.permissions
           .slice(1)
           .filter((p) => p.effect === "deny") ?? []),
@@ -846,6 +850,7 @@ export class NativeRuntime implements Runtime {
               effectiveProfile,
               skills.data,
               e.worktree_directory,
+              !legacyReviewProfile(e.configuration_snapshot?.definitions?.[role]),
             )),
       };
     }.bind(this),

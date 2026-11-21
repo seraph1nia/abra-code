@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "vite-plus/test";
 import {
+  compatiblePolicy,
   policyIdentity,
   nativePermissions,
   capabilityRequirements,
@@ -33,10 +34,14 @@ const baseline = {
 
 test("historical policy bytes, permission order/resources and engineering prerequisites remain exact", () => {
   for (const role of Object.keys(baseline) as (keyof typeof baseline)[]) {
-    assert.equal(policyIdentity(role), baseline[role][0]);
+    assert.ok(compatiblePolicy(role, baseline[role][0]));
+    if (role !== "review") assert.equal(policyIdentity(role), baseline[role][0]);
     const payload = {
-      permissions: nativePermissions(role, "assigned", ["/read-root"]),
-      requirements: role !== "supervisor" ? capabilityRequirements(role, "full-openspec") : null,
+      permissions: nativePermissions(role, "assigned", ["/read-root"]).filter(
+        (p) => p.action !== "abra_review_changes",
+      ),
+      requirements:
+        role !== "supervisor" ? capabilityRequirements(role, "full-openspec", {}, false) : null,
     };
     assert.equal(
       createHash("sha256").update(JSON.stringify(payload)).digest("hex"),

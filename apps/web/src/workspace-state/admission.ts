@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { HttpAgent } from "@ag-ui/client";
 import { useAtomSet } from "@effect/atom-react";
 import { readRetained, writeRetained } from "../retained-input.ts";
-import { Exit } from "effect";
+import { Equal, Exit } from "effect";
 import { SubmissionSchema } from "@abracode/contracts/web/workspace-wire";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { readReceipt } from "../data.ts";
@@ -55,7 +55,7 @@ export function useWorkspaceAdmission({
         receipt.request_id !== pending.request_id ||
         receipt.text !== pending.text ||
         receipt.delivery !== pending.delivery ||
-        JSON.stringify(receipt.capture?.selection) !== JSON.stringify(pending.selection)
+        !Equal.equals(receipt.capture?.selection, pending.selection)
       ) {
         setAdmitting(false);
         admittingRef.current = false;

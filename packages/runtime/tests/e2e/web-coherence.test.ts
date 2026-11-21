@@ -314,9 +314,14 @@ test("theme resolves before application loading and follows system changes witho
   await page.emulateMedia({ colorScheme: "dark" });
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
   assert.equal(await draft.inputValue(), "Keep theme edits");
-  await page.getByRole("button", { name: "Toggle work finder" }).click();
-  const dialog = page.getByRole("dialog");
+  await page.getByRole("link", { name: "Canvas", exact: true }).click();
+  const dialog = page.getByRole("complementary", { name: "Work finder" });
   await dialog.waitFor();
+  const capacity = dialog.getByRole("region", { name: "Capacity" });
+  await capacity.getByText("0 / 2", { exact: true }).waitFor();
+  await capacity.getByText("1 / 4", { exact: true }).waitFor();
+  await dialog.getByRole("combobox", { name: "Project", exact: true }).selectOption({ index: 1 });
+  await capacity.getByText("0 / 1", { exact: true }).waitFor();
   assert.equal(
     await dialog.evaluate((element) => getComputedStyle(element).fontFamily),
     await page.locator("body").evaluate((element) => getComputedStyle(element).fontFamily),
@@ -399,7 +404,8 @@ test("legacy report previews fit their host and retain opaque script sandboxing"
     );
   }
   await page.getByRole("button", { name: "Expand report", exact: true }).click();
-  await page.getByRole("dialog", { name: /Report canvas/ }).waitFor();
+  await page.getByRole("complementary", { name: "Work inspector" }).waitFor();
+  assert.equal(await page.getByRole("dialog").count(), 0);
   await assertFrame(".inspector iframe");
   await page.getByRole("button", { name: "Return to inspector", exact: true }).click();
   assert.equal(await page.locator(".report-canvas").count(), 0);
@@ -649,7 +655,12 @@ test("exact saved reports use frozen catalog bindings, preserve pending checks a
   for (const width of [1600, 375, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     for (const theme of ["light", "dark"]) {
+      if (width <= 760) await page.getByRole("link", { name: "Chat", exact: true }).click();
       await page.getByLabel("Color theme", { exact: true }).selectOption(theme);
+      if (width <= 760) {
+        await page.getByRole("link", { name: "Canvas", exact: true }).click();
+        await page.locator(".frozen-report").waitFor();
+      }
       assert.ok(
         await page
           .locator(".frozen-report .work-card strong")
@@ -716,8 +727,11 @@ test("exact saved reports use frozen catalog bindings, preserve pending checks a
   assert.equal(await desktopDraft.inputValue(), "Keep this draft while reading saved evidence");
   for (const width of [375, 390]) {
     await page.setViewportSize({ width, height: 844 });
-    await page.locator(".inspector-sheet").waitFor();
-    await page.locator('.inspector-sheet [data-report-section="checks"]').waitFor();
+    await page
+      .locator('.phone-navigation a[aria-current="page"]')
+      .filter({ hasText: "Canvas" })
+      .waitFor();
+    await page.locator('.inspector [data-report-section="checks"]').waitFor();
     await page.locator('[data-report-section="checks"]').scrollIntoViewIfNeeded();
     const checks = page.getByRole("region", { name: "Captured checks", exact: true });
     await checks.focus();
@@ -1068,8 +1082,14 @@ test("typed inspector URLs render Pierre, preserve navigation and theme across r
   await page.getByLabel("Color theme").selectOption("dark");
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
   await screenshot(page, "frontend-coherence-desktop-dark.png");
+  await page.setViewportSize({ width: 761, height: 844 });
+  await page.getByRole("dialog", { name: /Work inspector/ }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("dialog").waitFor();
+  await page
+    .locator('.phone-navigation a[aria-current="page"]')
+    .filter({ hasText: "Canvas" })
+    .waitFor();
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
   assert.equal(await page.getByLabel("Diff layout").count(), 0);
   assert.ok(
     await page
@@ -1082,11 +1102,13 @@ test("typed inspector URLs render Pierre, preserve navigation and theme across r
   );
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await screenshot(page, "frontend-coherence-mobile-diff.png");
-  await page.getByRole("button", { name: "Close inspector", exact: true }).click();
-  await page.getByRole("button", { name: "Toggle work finder" }).click();
-  await page.getByRole("dialog").waitFor();
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await page.getByRole("link", { name: "Canvas", exact: true }).click();
+  await page.waitForURL(/file=second.ts/);
+  await page.getByRole("link", { name: "Find other work" }).click();
+  await page.getByRole("complementary", { name: "Work finder" }).waitFor();
   await page.keyboard.press("Escape");
-  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page.getByRole("log").waitFor();
   // Native snapshot fallback must not cause a second browser bootstrap polling loop.
   await page.waitForTimeout(5500);
   assert.equal(bootstrapReads, 1);
@@ -1095,10 +1117,10 @@ test("typed inspector URLs render Pierre, preserve navigation and theme across r
   assert.deepEqual(errors, []);
 });
 
-test("a finding from chat opens its exact file, survives Back and reload, and never sends", async (t) => {
+test("a finding from chat opens its exact file, survives Back and reload, and attaches lines for one explicit send", async (t) => {
   const f = await fixture();
   t.onTestFinished(f.close);
-  const page = await f.browser.newPage({ viewport: { width: 1600, height: 900 } });
+  const page = await f.browser.newPage({ viewport: { width: 390, height: 844 } });
   const issue = f.source.value.work.work[0].issue_id;
   const feedback = feedbackFixture(false);
   const finding = {
@@ -1138,6 +1160,8 @@ test("a finding from chat opens its exact file, survives Back and reload, and ne
     ],
   };
   await page.goto(f.origin);
+  const draft = page.getByRole("textbox", { name: "Message Abra" });
+  await draft.fill("Explain this change");
   const result = page.locator('[data-tool-call-id="call_evidence"]');
   await result.getByText("Showing 2 of 4 findings.").waitFor();
   assert.equal(await result.locator('[data-presentation="finding"]').count(), 1);
@@ -1153,6 +1177,31 @@ test("a finding from chat opens its exact file, survives Back and reload, and ne
   await canvas.getByRole("heading", { name: "Finding · " + finding.id }).waitFor();
   await canvas.getByRole("button", { name: "Open source.ts in diff" }).waitFor();
   assert.equal(f.source.submissions, 0);
+  await canvas.getByRole("button", { name: "Open source.ts in diff" }).click();
+  const file = canvas.getByRole("region", { name: "source.ts", exact: true });
+  await file.getByText("Select lines in source.ts").click();
+  await file.getByLabel("First line").fill("1");
+  await file.getByRole("button", { name: "Ask Abra", exact: true }).click();
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute("aria-label") === "Message Abra",
+  );
+  assert.equal(await draft.inputValue(), "Explain this change");
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await page.locator(".selection-chip summary").click();
+  assert.match(await page.locator(".selection-chip pre").innerText(), /newValue/);
+  assert.equal(f.source.submissions, 0);
+  f.backend.submit = ({ selection, ...input }) => {
+    const receiptInput = {
+      ...input,
+      capture: { selection, excerpt: "export const newValue = 2;" },
+    };
+    return f.source.submit(receiptInput);
+  };
+  await page.getByRole("button", { name: "Send message" }).click();
+  await page.waitForFunction(() => !document.querySelector(".selection-chip"));
+  assert.equal(f.source.value.receipts.at(-1)?.capture?.selection.kind, "diff");
+  assert.equal(f.source.submissions, 1);
 });
 
 test("form bindings reset values and concurrent native replies retain their own results", async (t) => {
@@ -1235,7 +1284,7 @@ test("form bindings reset values and concurrent native replies retain their own 
 test("lost submission responses survive reload without automatic replay and reconcile the same identity", async (t) => {
   const f = await fixture();
   t.onTestFinished(f.close);
-  const page = await f.browser.newPage();
+  const page = await f.browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.route("**/api/copilotkit/agent/abra/run", (route) => route.abort());
   await page.goto(f.origin);
   await page.getByRole("textbox", { name: "Message Abra" }).fill("Keep this exact submission");
@@ -1243,6 +1292,10 @@ test("lost submission responses survive reload without automatic replay and reco
   await page.getByRole("button", { name: "Reconcile submission" }).waitFor();
   const before = await page.evaluate(() => localStorage.getItem("abra-pending-ses_webfixture"));
   assert.ok(before);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("heading", { name: "Agents" }).waitFor();
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await page.getByRole("button", { name: "Reconcile submission" }).waitFor();
   await page.reload();
   await page.getByRole("button", { name: "Reconcile submission" }).waitFor();
   assert.equal(f.source.submissions, 0);
@@ -1508,9 +1561,9 @@ test("native tool cards use CopilotKit render-only hooks, preserve order and ins
   await page.setViewportSize({ width: 390, height: 844 });
   await article.getByRole("button", { name: "Inspect task", exact: true }).focus();
   await page.keyboard.press("Enter");
-  await page.getByRole("dialog").waitFor();
+  await page.getByRole("complementary", { name: "Work inspector" }).waitFor();
   await page.keyboard.press("Escape");
-  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page.getByRole("log").waitFor();
   await page.waitForFunction(() => document.activeElement?.textContent === "Inspect task");
   assert.equal(
     await page.getByRole("textbox", { name: "Message Abra" }).inputValue(),
@@ -2483,15 +2536,12 @@ test("chat stays mounted while the finder searches retained pages, preserving dr
   for (const width of [375, 390]) {
     await page.setViewportSize({ width, height: 844 });
     await page.getByLabel("Color theme").selectOption(width === 375 ? "dark" : "light");
-    await page.getByRole("button", { name: "Toggle work finder" }).click();
-    await page.getByRole("dialog").waitFor();
+    await page.getByRole("link", { name: "Canvas", exact: true }).click();
+    await page.getByRole("link", { name: "Find other work" }).click();
+    await page.getByRole("complementary", { name: "Work finder" }).waitFor();
     await screenshot(page, `chat-primary-finder-${width}.png`);
     await page.keyboard.press("Escape");
-    await page.getByRole("dialog").waitFor({ state: "hidden" });
-    assert.equal(
-      await page.evaluate(() => document.activeElement?.getAttribute("aria-label")),
-      "Toggle work finder",
-    );
+    await page.getByRole("log").waitFor();
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     assert.equal(await composer.inputValue(), "Keep this draft while I inspect work");
     const stop = await page
@@ -2638,6 +2688,10 @@ test("historical generated cards reopen exact revisions and repair-response atta
   await canvas.getByText("Original generated layout", { exact: true }).waitFor();
   await page.reload();
   await canvas.getByText("Original generated layout", { exact: true }).waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await page.getByRole("link", { name: "Canvas", exact: true }).click();
+  await canvas.getByText("Original generated layout", { exact: true }).waitFor();
   for (const [session_id, revision] of [
     [f.source.sessionID, 99],
     ["ses_someone_else", 1],
@@ -2647,6 +2701,7 @@ test("historical generated cards reopen exact revisions and repair-response atta
     });
     await page.goto(f.origin + "/?" + params);
     await canvas.getByText(/unavailable|another Abra conversation/).waitFor();
+    await page.getByRole("link", { name: "Find other work" }).waitFor();
     assert.equal(await canvas.locator(".generated-surface").count(), 0);
   }
   await page.getByRole("button", { name: "Close inspector" }).click();
@@ -2735,7 +2790,7 @@ test("fleet and project totals distinguish native queue, capacity and dependency
   await page
     .getByRole("button", { name: /Build a single workspace.*Plan approval required/ })
     .waitFor();
-  await page.getByRole("button", { name: "Toggle work finder" }).click();
+  await page.getByRole("link", { name: "Canvas", exact: true }).click();
   await page.getByRole("button", { name: /Capacity pending task/ }).waitFor();
   assert.match(
     await page.getByRole("button", { name: /Capacity pending task/ }).innerText(),
@@ -2848,19 +2903,19 @@ test("an optional inspector chunk has local accessible loading/error states and 
     await held;
     await route.abort("failed");
   });
-  await page.goto(`${f.origin}/?issue=abra-web&tab=Overview`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("status").filter({ hasText: "Loading work inspection" }).waitFor();
+  await page.goto(f.origin);
   const composer = page.getByRole("textbox", { name: "Message Abra", exact: true });
   await composer.fill("Keep this draft while inspection is unavailable");
+  await page.goto(`${f.origin}/?issue=abra-web&tab=Overview`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("status").filter({ hasText: "Loading work inspection" }).waitFor();
   release();
   await page.getByRole("alert").filter({ hasText: "Work inspection could not load" }).waitFor();
-  assert.equal(await composer.inputValue(), "Keep this draft while inspection is unavailable");
+  assert.equal(await composer.count(), 0);
   assert.equal(f.source.submissions, 0);
   await screenshot(page, "deferred-inspector-error-375.png");
   await page.unroute("**/assets/inspector-*.js");
   await page.getByRole("button", { name: "Reload to retry", exact: true }).click();
   await page.getByText("Details for Build a single workspace", { exact: true }).waitFor();
-  // The narrow inspector is modal and correctly hides the mounted composer from AT.
   await page.setViewportSize({ width: 1440, height: 900 });
   assert.equal(await composer.inputValue(), "Keep this draft while inspection is unavailable");
   await screenshot(page, "deferred-inspector-recovered-desktop.png");
@@ -2985,4 +3040,184 @@ test("GitHub finder loads on demand, preserves drafts on inspection and exposes 
   const before = reads.length;
   await page.clock.fastForward(310000);
   assert.equal(reads.length, before);
+});
+
+test("phone destinations follow bookmarks and history at the 760px boundary", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const first = f.source.value.work.work[0];
+  f.setDiscovery([
+    first,
+    { ...first, issue_id: IssueId.make("abra-second"), title: "Second task" },
+  ]);
+  const page = await f.browser.newPage({ viewport: { width: 760, height: 844 } });
+  const nav = page.getByRole("navigation", { name: "Workspace", exact: true });
+  const current = nav.locator('[aria-current="page"]');
+  let bootstrapReads = 0;
+  await page.route("**/api/bootstrap", async (request) => {
+    bootstrapReads++;
+    await request.continue();
+  });
+  await page.goto(f.origin + "/settings/repositories");
+  await page.getByRole("heading", { name: "Repositories" }).waitFor();
+  assert.equal(await current.innerText(), "Settings");
+  await page.reload();
+  await page.getByRole("heading", { name: "Repositories" }).waitFor();
+  await page.getByRole("link", { name: "Agents", exact: true }).click();
+  await page.getByRole("heading", { name: "Agents" }).waitFor();
+  assert.equal(bootstrapReads, 0);
+  const chat = nav.getByRole("link", { name: "Chat", exact: true });
+  await chat.focus();
+  await chat.press("Enter");
+  await page.getByRole("log").waitFor();
+  assert.equal(await current.innerText(), "Chat");
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Canvas");
+  await page.keyboard.press("Enter");
+  await page.waitForURL(/view=finder/);
+  await page.getByRole("complementary", { name: "Work finder" }).waitFor();
+  assert.equal(await current.innerText(), "Canvas");
+  assert.equal(await page.getByRole("textbox", { name: "Message Abra" }).count(), 0);
+  await page.reload();
+  await page.getByRole("button", { name: /Build a single workspace/ }).click();
+  await page.getByRole("complementary", { name: "Work inspector" }).waitFor();
+  await page.getByRole("link", { name: "Find other work" }).click();
+  await page.getByRole("button", { name: /Second task/ }).click();
+  await page.getByRole("heading", { name: "Second task", exact: true }).waitFor();
+  const selection = page.url();
+  await nav.getByRole("link", { name: "Settings" }).click();
+  await page.getByRole("heading", { name: "Agents" }).waitFor();
+  await page.goBack();
+  await page.getByRole("complementary", { name: "Work inspector" }).waitFor();
+  assert.equal(page.url(), selection);
+  await page.goForward();
+  await page.getByRole("heading", { name: "Agents" }).waitFor();
+  await nav.getByRole("link", { name: "Canvas" }).click();
+  await page.waitForURL(selection);
+  await page.setViewportSize({ width: 761, height: 844 });
+  await page.getByRole("dialog", { name: /Work inspector/ }).waitFor();
+  assert.equal(await nav.count(), 0);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page.getByRole("heading", { name: "Second task", exact: true }).waitFor();
+  assert.equal(page.url(), selection);
+  await page.setViewportSize({ width: 760, height: 844 });
+  await nav.getByRole("link", { name: "Canvas" }).waitFor();
+  await page.getByRole("heading", { name: "Second task", exact: true }).waitFor();
+  await page.setViewportSize({ width: 761, height: 844 });
+  await page.getByRole("dialog").waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Toggle work finder" }).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("complementary", { name: "Work finder" }).waitFor();
+  assert.equal(f.source.submissions, 0);
+});
+
+test("phone retains the current form and reading position when a reply arrives in Settings", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const message = (i: number) => ({
+    id: "reading-" + i,
+    role: "assistant" as const,
+    text: "Reading position " + i + ". " + "Recorded observation. ".repeat(18),
+    at: f.source.value.at,
+  });
+  f.source.value = {
+    ...f.source.value,
+    messages: Array.from({ length: 30 }, (_, i) => message(i)),
+    forms: [
+      {
+        binding: "phone-current",
+        active: true,
+        form: {
+          id: Form.ID.make("frm_phone"),
+          sessionID: f.source.sessionID,
+          title: "Choose storage",
+          fields: [{ key: "answer", title: "Storage choice", type: "string", required: true }],
+        },
+      },
+    ],
+  };
+  const page = await f.browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto(f.origin);
+  await page.getByLabel("Message Abra").fill("Check before sending");
+  await page.getByRole("button", { name: /^Attention/ }).click();
+  await page.getByLabel("Storage choice").fill("SQLite");
+  const anchor = page.locator('[data-native-message-id="reading-12"]');
+  await anchor.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  const offset = await anchor.evaluate((element) => element.getBoundingClientRect().top);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("heading", { name: "Agents" }).waitFor();
+  f.source.value = { ...f.source.value, messages: [...f.source.value.messages, message(30)] };
+  await f.changed();
+  await page.locator('[data-native-message-id="reading-30"]').waitFor({ state: "attached" });
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await page.getByRole("log").waitFor();
+  assert.ok(Math.abs((await anchor.evaluate((e) => e.getBoundingClientRect().top)) - offset) < 4);
+  assert.equal(await page.getByLabel("Storage choice").inputValue(), "SQLite");
+  assert.equal(await page.getByLabel("Message Abra").inputValue(), "Check before sending");
+  assert.equal(f.replies.length, 0);
+});
+
+test("portrait composer and busy controls fit the visible height with wide transcript content", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  f.source.value = {
+    ...f.source.value,
+    busy: true,
+    messages: Array.from({ length: 18 }, (_, i) => ({
+      id: "wide-" + i,
+      role: "assistant" as const,
+      at: f.source.value.at,
+      text: "```txt\n" + "W".repeat(250) + "\n```",
+    })),
+  };
+  const page = await f.browser.newPage({ viewport: { width: 375, height: 812 } });
+  await page.goto(f.origin);
+  const draft = page.getByRole("textbox", { name: "Message Abra" });
+  await draft.fill("Long prompt\n".repeat(20));
+  for (const [width, height] of [
+    [375, 812],
+    [375, 450],
+    [390, 844],
+    [390, 460],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForFunction(
+      () =>
+        Math.abs(
+          document.querySelector(".workspace-shell")!.getBoundingClientRect().height - innerHeight,
+        ) < 2,
+    );
+    await draft.press("End");
+    for (const control of [
+      draft,
+      page.getByLabel("Message delivery"),
+      page.getByRole("button", { name: "Send message" }),
+      page.getByRole("button", { name: "Stop current Abra turn" }),
+    ]) {
+      const box = await control.boundingBox();
+      assert.ok(
+        box &&
+          box.y >= 0 &&
+          box.y + box.height <= height &&
+          box.x >= 0 &&
+          box.x + box.width <= width,
+        "Control outside " + width + " × " + height,
+      );
+    }
+    assert.ok(
+      await page.locator(".conversation-scroll").evaluate((el) => {
+        el.scrollTop = 15;
+        return el.scrollTop > 0 && el.clientHeight > 0 && el.scrollHeight > el.clientHeight;
+      }),
+    );
+    assert.ok(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth && window.scrollY === 0,
+      ),
+    );
+  }
+  assert.equal(f.source.submissions, 0);
 });

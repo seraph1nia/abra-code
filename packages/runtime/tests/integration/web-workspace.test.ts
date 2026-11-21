@@ -585,6 +585,11 @@ test("fixed binding HTTP read validates bounded references and never admits inpu
   );
   assert.equal(result.work[0]!.issue_id, id);
   assert.equal(result.coverage.total, 1);
+  const population = await Effect.runPromise(
+    web.client.work.binding({ query: { issue_ids: [], include_population: true } }),
+  );
+  assert.deepEqual(population.work, result.work);
+  assert.deepEqual(population.coverage.requested_ids, []);
   assert.equal(web.backend.submissions, 0);
   for (const query of [
     "issue_ids=../foreign",

@@ -1,6 +1,7 @@
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { Effect } from "effect";
+import { observerResult } from "../../src/visibility/errors.ts";
+import { Cause, Effect, Exit } from "effect";
 import { CrewError } from "../../src/domain.ts";
 import { nativeRpcError, readWorkReport } from "../../src/web/native-errors.ts";
 
@@ -68,4 +69,41 @@ test("report absence is distinct from an unknown task, damaged evidence and fail
     { content: "# Published" },
   );
   assert.equal(confirmations, 1);
+});
+
+test("inbox handler failures reach the client with their domain identity and safe text", async () => {
+  const factory = ((type: string, message: string, data: unknown) => ({
+    type,
+    message,
+    data,
+  })) as Parameters<typeof observerResult>[1];
+  for (const code of [
+    "INBOX_PROJECT",
+    "INBOX_ACCESS",
+    "INBOX_AUTH",
+    "INBOX_LIMIT",
+    "INBOX_READ",
+    "INBOX_IDENTITY",
+    "REMOTE",
+    "ABRA_REQUIRED",
+    "INVALID_DATA",
+    "INBOX_STORAGE",
+  ]) {
+    const error = new CrewError(code, "Bearer secret-value " + "x".repeat(2000));
+    const wire = await Effect.runPromise(
+      Effect.flip(observerResult(Effect.fail(error), factory, true)),
+    );
+    assert.equal(
+      wire.type,
+      code === "INBOX_PROJECT" ? "invalid_selection" : "resource_unavailable",
+    );
+    const decoded = nativeRpcError(wire);
+    assert.equal(decoded.code, code);
+    assert.ok(decoded.message.length <= 1500);
+    assert.doesNotMatch(decoded.message, /secret-value/);
+  }
+  const unexpected = await Effect.runPromiseExit(
+    observerResult(Effect.fail(new CrewError("UNEXPECTED", "bug")), factory, true),
+  );
+  assert.ok(Exit.isFailure(unexpected) && Cause.hasDies(unexpected.cause));
 });

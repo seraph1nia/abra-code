@@ -705,7 +705,28 @@ test("binding summaries resolve off-page retained tasks without fleet, worker or
     result.results.map((entry) => entry.status),
     ["available", "missing"],
   );
+  await run(f.controller.queries.refreshFinderReadiness());
   const all = await run(view.binding({ issue_ids: [id], include_population: true }));
+  assert.deepEqual(all.capacity, {
+    workers: 0,
+    worker_limit: f.config.max_workers,
+    retained: 0,
+    retained_limit: f.config.max_executions,
+    auto_schedule: f.config.auto_schedule,
+    setups: [],
+    setup_count: 0,
+  });
+  const { capacity, project_capacity, entries } = await run(
+    view.find({
+      repository_id: Id.RepositoryId.make("api"),
+      search: "nothing-matches-this",
+    }),
+  );
+  assert.equal(entries.length, 0);
+  assert.equal(capacity?.worker_limit, f.config.max_workers);
+  assert.equal(capacity?.retained, 0);
+  const registered = await run(f.records.project(Id.RepositoryId.make("api")));
+  assert.equal(project_capacity?.retained_limit, registered!.max_executions);
   assert.equal(all.work.length, 55);
   assert.equal(all.coverage.total, 55);
   assert.equal(unrelated, 0);

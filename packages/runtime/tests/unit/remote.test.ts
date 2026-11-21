@@ -1,3 +1,5 @@
+import { retainedExecution } from "../helpers/retained-execution.ts";
+import { summarizeCapacity } from "../../src/workflow/capacity.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import * as Id from "../../src/identities.ts";
 import { run } from "../effects.ts";
@@ -10,6 +12,7 @@ import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises
 import { join, resolve } from "node:path";
 import { fixture, repo } from "../fixtures.ts";
 import { remoteIdentity, RepositorySources } from "../../src/git/source.ts";
+import { Git } from "../../src/git/repository.ts";
 import { GitHubDelivery } from "../../src/git/delivery.ts";
 
 async function managed(f: import("effect").Effect.Success<typeof fixture>, missing = false) {
@@ -348,6 +351,43 @@ test("a complete interrupted clone is adopted and an ambiguous partial directory
   );
   assert.equal(await readFile(join(partial, "keep.txt"), "utf8"), "keep");
 });
+test("authorized setup waits without a slot and prepares once on manual scheduling ticks", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const { project } = await managed(f, true);
+  const session = Id.SessionId.make("ses_supervisor");
+  f.config.commands.openspec = Id.Executable.make(resolve("node_modules/.bin/openspec"));
+  f.config.max_executions = 1;
+  f.config.auto_schedule = false;
+  const { execution } = await retainedExecution({ repository_id: project.id });
+  await run(f.records.create(execution));
+  const prepare = () => run(f.setup.run(project.id, "prepare", session, true));
+  const queued = await prepare();
+  assert.ok("current_phase" in queued && queued.current_phase === "queued");
+  assert.match(queued.error_or_recovery_reason!, /global/);
+  assert.equal(summarizeCapacity([execution, queued]).retained.size, 1);
+  assert.equal(queued.worktree_directory, undefined);
+  assert.deepEqual(await prepare(), queued);
+  await run(f.scheduler.tick());
+  assert.equal((await run(f.records.setup(project.id)))!.revision, queued.revision);
+  f.config.max_executions = 2;
+  await run(f.records.saveProject({ ...project, max_executions: 1 }));
+  await run(f.scheduler.tick());
+  const localWait = (await run(f.records.setup(project.id)))!;
+  assert.equal(localWait.current_phase, "queued");
+  assert.match(localWait.error_or_recovery_reason!, /repository/);
+  const latest = (await run(f.records.project(project.id)))!;
+  await run(f.records.saveProject({ ...latest, max_executions: 2 }));
+  await run(f.scheduler.tick());
+  const prepared = (await run(f.records.setup(project.id)))!;
+  assert.equal(prepared.execution_id, queued.execution_id);
+  assert.equal(prepared.current_phase, "planning");
+  assert.equal(prepared.error_or_recovery_reason, undefined);
+  assert.equal(prepared.pull_request_reference, undefined);
+  await run(f.scheduler.tick());
+  assert.equal((await run(f.records.setup(project.id)))!.revision, prepared.revision);
+});
+
 test("OpenSpec setup uses an owned worktree and a durable human merge gate before cleanup", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
@@ -524,4 +564,33 @@ test("setup refuses changed content before delivery and retains resources after 
     setup.run(Id.RepositoryId.make("remote"), "finish", Id.SessionId.make("ses_supervisor"), false),
   );
   assert.ok("current_phase" in done && done.current_phase === "completed");
+});
+
+test("base retains only decoded SHA-1 and SHA-256 fetch results", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
+  let oid = "invalid";
+  const refs: string[] = [];
+  const sources = new RepositorySources(
+    new Git({
+      run: (_bin, args) => {
+        if (args.includes("update-ref")) refs.push(args.at(-1)!);
+        return Effect.succeed(args.includes("rev-parse") ? oid : "");
+      },
+    }),
+    f.config.repository_root,
+  );
+  const base = () =>
+    sources.base(
+      { ...project, branch_policy: "fixed", target_branch: Id.BranchName.make("main") },
+      Id.ExecutionId.make("base-test"),
+    );
+  assert.equal((await run(Effect.flip(base()))).code, "INVALID_DATA");
+  assert.deepEqual([...refs], []);
+  for (const length of [40, 64]) {
+    oid = "a".repeat(length);
+    assert.equal((await run(base())).commit, oid);
+  }
+  assert.deepEqual(refs, ["a".repeat(40), "a".repeat(64)]);
 });

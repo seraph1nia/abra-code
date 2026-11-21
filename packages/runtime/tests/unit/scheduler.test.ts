@@ -58,7 +58,7 @@ test("highest priority wins; cursor crash does not duplicate a retained claim on
   assert.equal(f.runtime.creates, 1);
   assert.equal(f.seed.countEvents("claimed"), 1);
   f.records.store.set = set;
-  const resumed = new Scheduler(f.controller, f.records);
+  const resumed = new Scheduler(f.controller, f.records, f.setup);
   await run(resumed.tick());
   assert.equal(f.runtime.creates, 1);
   await run(f.controller.control(first.issue_id, "pause"));
@@ -69,7 +69,7 @@ test("highest priority wins; cursor crash does not duplicate a retained claim on
   // A fresh scheduler keeps the confirmed fairness cursor, while the actual
   // retained executions and graph claims continue to own duplicate prevention.
   await run(f.controller.control(Id.IssueId.make("api-one"), "pause"));
-  await run(new Scheduler(f.controller, f.records).tick());
+  await run(new Scheduler(f.controller, f.records, f.setup).tick());
   assert.equal(
     (await run(f.controller.get(Id.IssueId.make("frontend-one")))).active_role,
     "explore",

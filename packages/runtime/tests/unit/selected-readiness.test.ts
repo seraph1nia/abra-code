@@ -98,7 +98,8 @@ test("selected controller reads hydrate only requested work at both population s
     for (const scan of [projects, executions, setups]) scan.mockClear();
     f.config.max_workers = 1;
     const active = await run(f.controller.start(single.issue.id));
-    verify([single.issue.id], 0, 3, [1, 3, 3]);
+    // Configured admission also supplies this issue to its definition preparation.
+    verify([single.issue.id], 0, 4, [1, 3, 3]);
     await assert.rejects(run(f.controller.start(one.tasks[0]!.issue.id)), { code: "NOT_READY" });
     verify([one.tasks[0]!.issue.id], 0, 1);
     f.config.max_workers = 2;

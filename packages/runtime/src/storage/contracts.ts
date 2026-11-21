@@ -51,7 +51,7 @@ import {
 import { OperationIntentSchema, DeliveryWaitSchema } from "../workflow/operation-contracts.ts";
 export { OperationIntentSchema, DeliveryWaitSchema } from "../workflow/operation-contracts.ts";
 import { RoundSchema, ScopeDispositionSchema } from "../workflow/correction-contracts.ts";
-import { SpecVerificationSchema } from "../workflow/review-contracts.ts";
+import { PatchAssessment, SpecVerificationSchema } from "../workflow/review-contracts.ts";
 import { ScopeRecordSchema } from "../work/scope.ts";
 import {
   VisualBuildsSchema,
@@ -262,6 +262,18 @@ const fields = {
   verification_receipt: Schema.optional(
     Schema.Struct({ fingerprint: Fingerprint, commands: VerificationSchema, at: Timestamp }),
   ),
+  review_coverage: Schema.optional(
+    Schema.Struct({
+      session_id: SessionId,
+      generation: Count,
+      fingerprint: Fingerprint,
+      prompt_id: MessageId,
+      unavailable: Schema.Array(RelativePath),
+      through: Count,
+      complete: Schema.Boolean,
+      limited: Schema.Boolean,
+    }),
+  ),
   review_receipt: Schema.optional(
     Schema.Struct({
       fingerprint: Fingerprint,
@@ -269,6 +281,7 @@ const fields = {
       findings: Schema.String,
       scope_status: Schema.optional(ScopeDispositionSchema),
       spec_verification: Schema.optional(SpecVerificationSchema),
+      patch_assessments: Schema.optional(PatchAssessment),
       session_id: SessionId,
     }),
   ),
@@ -427,6 +440,16 @@ export const SetupRecordSchema = Schema.Struct({
       e.delivery_policy !== e.effective_policy.delivery
     )
       return "Setup authority differs from its retained policy snapshot";
+    if (
+      e.current_phase === "queued" &&
+      (!e.supervisor_session_id ||
+        e.base_commit ||
+        e.worktree_directory ||
+        e.operation ||
+        e.capacity_reservation ||
+        e.active_role)
+    )
+      return "Queued setup requires its requesting supervisor and must precede provisioning";
     if (e.current_phase === "cleaning" && !e.delivery_receipt)
       return "Setup preservation receipt is missing";
     if (["awaiting_merge", "cleaning"].includes(e.current_phase))

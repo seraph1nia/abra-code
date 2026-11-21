@@ -11,6 +11,7 @@ import {
   SessionId,
 } from "../identities.ts";
 
+import { consumesRetained } from "../workflow/capacity.ts";
 import { createExecution } from "../workflow/execution.ts";
 
 import { Clock, Effect } from "effect";
@@ -90,26 +91,65 @@ export class ProjectSetup {
       initialize: boolean,
     ) {
       identifier(id);
-      return yield* this.c.locks
-        .with(
-          LockKey.make(`setup-${id}`),
-          () => this.runInternal(id, action, supervisor, initialize),
-          { waitSeconds: 0 },
-        )
-        .pipe(
-          Effect.tapError((error) =>
-            Effect.gen({ self: this }, function* () {
-              const e = yield* this.c.records.setup(id);
-              if (e && e.current_phase !== "completed") {
-                e.error_or_recovery_reason = error.message;
-                if (e.operation) e.operation = { ...e.operation, status: "uncertain" };
-                yield* this.save(e, ["error_or_recovery_reason", "operation"]);
-              }
-            }),
+      return yield* this.c.locks.with(
+        LockKey.make(`setup-${id}`),
+        () =>
+          this.runInternal(id, action, supervisor, initialize).pipe(
+            Effect.tapError((error) => this.recordFailure(id, error.message)),
           ),
-        );
+        { waitSeconds: 0 },
+      );
     }.bind(this),
     completedProgress("setup"),
+  );
+  private recordFailure(id: RepositoryId, message: string) {
+    return Effect.gen({ self: this }, function* () {
+      const e = yield* this.c.records.setup(id);
+      if (e && e.current_phase !== "completed" && e.current_phase !== "queued") {
+        e.error_or_recovery_reason = message;
+        if (e.operation) e.operation = { ...e.operation, status: "uncertain" };
+        yield* this.save(e, ["error_or_recovery_reason", "operation"]);
+      }
+    });
+  }
+  reconcileQueued = Effect.fn("ProjectSetup.reconcileQueued")(
+    function* (this: ProjectSetup) {
+      const queued = (yield* this.c.records.setupScan()).values
+        .filter((e) => e.current_phase === "queued")
+        .sort(
+          (a, b) =>
+            a.updated_at.localeCompare(b.updated_at) ||
+            a.repository_id.localeCompare(b.repository_id),
+        );
+      for (const request of queued) {
+        const id = request.repository_id;
+        yield* this.c.locks
+          .with(
+            LockKey.make(`setup-${id}`),
+            () =>
+              Effect.gen({ self: this }, function* () {
+                const current = yield* this.c.records.setup(id);
+                if (
+                  current?.current_phase !== "queued" ||
+                  current.execution_id !== request.execution_id ||
+                  !current.supervisor_session_id
+                )
+                  return;
+                yield* this.runInternal(id, "prepare", current.supervisor_session_id, true).pipe(
+                  Effect.tapError((error) => this.recordFailure(id, error.message)),
+                );
+              }),
+            { waitSeconds: 0 },
+          )
+          .pipe(
+            Effect.catch((error) =>
+              error.code === "LOCKED"
+                ? Effect.void
+                : Effect.logError("AbraCode queued setup", id, error),
+            ),
+          );
+      }
+    }.bind(this),
   );
   private runInternal = Effect.fn("ProjectSetup.runInternal")(
     function* (
@@ -123,8 +163,16 @@ export class ProjectSetup {
       if (!registered)
         return yield* new CrewError("PROJECT_MISSING", "Repository is not registered");
       let e: SetupExecution | undefined = yield* this.c.records.setup(id);
-      if (!e) {
-        if (!(action === "prepare" && initialize))
+      if (e && e.delivery_policy !== registered.delivery)
+        return yield* new CrewError(
+          "POLICY_DRIFT",
+          "Setup delivery policy changed; preserve resources and repair",
+        );
+      if (!e || e.current_phase === "queued") {
+        const waiting = e;
+        if (waiting && action !== "prepare")
+          return yield* new CrewError("SETUP_PHASE", "Setup is queued for preparation");
+        if (!waiting && !(action === "prepare" && initialize))
           return yield* new CrewError(
             "OPENSPEC_AUTHORIZATION",
             "Prepare setup with initialize_openspec:true only when initialization is authorized",
@@ -132,22 +180,29 @@ export class ProjectSetup {
         e = yield* this.c.records.coordinateCommit(() =>
           domainEffect(
             Effect.gen({ self: this }, function* () {
-              const retained = [
-                ...(yield* this.c.records.executions()),
-                ...(yield* this.c.records.setupScan()).values,
-              ].filter((x) => x.current_phase !== "completed");
-              if (!(retained.length < this.c.config.max_executions))
+              const [executions, setups] = yield* Effect.all(
+                [this.c.records.executionScan(), this.c.records.setupScan()],
+                { concurrency: 2 },
+              );
+              if (executions.diagnostics.length || setups.diagnostics.length)
                 return yield* new CrewError(
-                  "CAPACITY",
-                  "Global retained execution capacity reached",
+                  "CAPACITY_UNKNOWN",
+                  "Cannot verify capacity while execution records are unreadable",
                 );
-              if (
-                !(retained.filter((x) => x.repository_id === id).length < registered.max_executions)
-              )
-                return yield* new CrewError(
-                  "CAPACITY",
-                  "Repository retained execution capacity reached",
-                );
+              const retained = [...executions.values, ...setups.values].filter(consumesRetained);
+              const reason =
+                retained.length >= this.c.config.max_executions
+                  ? "Waiting for global execution slot capacity"
+                  : retained.filter((x) => x.repository_id === id).length >=
+                      registered.max_executions
+                    ? "Waiting for repository execution slot capacity"
+                    : undefined;
+              if (waiting) {
+                if (reason === waiting.error_or_recovery_reason && reason) return waiting;
+                waiting.error_or_recovery_reason = reason;
+                waiting.current_phase = reason ? "queued" : "provisioning";
+                return yield* this.save(waiting, ["current_phase", "error_or_recovery_reason"]);
+              }
               const executionID = ExecutionId.make(`abra-setup-${randomUUID()}`);
               const setup = yield* createExecution(
                 registered,
@@ -156,7 +211,7 @@ export class ProjectSetup {
                   repository_id: id,
                   execution_id: executionID,
                   workflow_policy: "full-openspec",
-                  current_phase: "provisioning",
+                  current_phase: reason ? "queued" : "provisioning",
                   setup: true,
                   branch: BranchName.make(`setup/${executionID}`),
                   openspec_change: "",
@@ -164,17 +219,14 @@ export class ProjectSetup {
                 },
                 this.c.config,
               );
+              setup.error_or_recovery_reason = reason;
               yield* this.c.records.create(setup);
               return setup;
             }),
           ),
         );
       }
-      if (!(e.delivery_policy === registered.delivery))
-        return yield* new CrewError(
-          "POLICY_DRIFT",
-          "Setup delivery policy changed; preserve resources and repair",
-        );
+      if (e.current_phase === "queued") return e;
       const p = { ...registered, target_branch: e.target_branch ?? registered.target_branch };
       if (e.current_phase === "completed") return e;
       const operation = {

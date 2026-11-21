@@ -128,7 +128,7 @@ export function Composer({
           maxLength={32768}
           disabled={!isReady || admitting || Boolean(pending)}
         />
-        <div className="composer-controls">
+        <div className="composer-controls" data-busy={workspace.busy}>
           <span className="muted">{workspace.model ?? "Using the current model"}</span>
           <div>
             {workspace.busy && (
@@ -149,6 +149,7 @@ export function Composer({
               <Button
                 variant="outline"
                 type="button"
+                aria-label="Stop current Abra turn"
                 disabled={stopResult.waiting}
                 onClick={() => {
                   void stop({ payload: {} }).then((result) => {
@@ -157,7 +158,8 @@ export function Composer({
                   });
                 }}
               >
-                <Square aria-hidden="true" /> Stop current Abra turn
+                <Square aria-hidden="true" /> Stop
+                <span className="stop-detail"> current Abra turn</span>
               </Button>
             )}
             <Button

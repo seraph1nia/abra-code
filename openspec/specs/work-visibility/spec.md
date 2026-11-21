@@ -54,8 +54,8 @@ Readiness and operator views SHALL distinguish active-worker limits, role limits
 
 #### Scenario: Worker capacity is available but retained limit is full
 
-- **WHEN** all worker turns are idle and the retained-execution limit is reached
-- **THEN** queued work displays the retained-resource blocker and the executions consuming it
+- **WHEN** repository setups in preparation occupy all execution slots and worker turns are idle
+- **THEN** queued work displays the execution-slot blocker and its owners. The Work finder shows used and configured slots globally and for the selected repository
 
 ### Requirement: Retain native observer behavior
 

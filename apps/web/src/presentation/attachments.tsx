@@ -11,6 +11,7 @@ import {
 import type { SurfaceRecord } from "@abracode/contracts/web/contracts";
 import type { PresentationAttachmentSchema } from "@abracode/contracts/presentation/contracts";
 import { useContext, useMemo, useSyncExternalStore, type ComponentProps } from "react";
+import { phaseLabel } from "@abracode/contracts/presentation/work-state";
 import { SessionId } from "@abracode/contracts/identities";
 import { useCanvasRead } from "../canvas-refresh.tsx";
 import { OpenSurface, type WorkspaceSearch } from "../navigation.ts";
@@ -166,17 +167,7 @@ export function ExactSurface({
             entry.surface.createSurface.surfaceId !== target.surface_id
           )
             return <output>This exact layout is unavailable.</output>;
-          const live = bindingRequirements(entry.surface, "live");
-          return (
-            <>
-              <p className="muted">
-                {live.unfiltered || live.ids.length
-                  ? "Live widgets show current work. Snapshot widgets show captured values."
-                  : "Captured layout and values."}
-              </p>
-              <BoundSurface record={entry} inspect={inspect} />
-            </>
-          );
+          return <BoundSurface record={entry} inspect={inspect} />;
         }}
       </RequestState>
     </div>
@@ -264,18 +255,95 @@ function LiveSurface({
   };
   return (
     <>
-      {AsyncResult.isFailure(result) && (
-        <div role="alert">
-          {previous ? "Showing the last successful binding." : "Live data unavailable."}{" "}
-          <Button variant="outline" onClick={refresh}>
+      <div className="work-read-status" role={AsyncResult.isFailure(result) ? "alert" : "status"}>
+        <span>
+          {AsyncResult.isFailure(result)
+            ? previous
+              ? "Refresh failed. Showing work as of "
+              : "Couldn’t load current work."
+            : previous
+              ? "Work updated "
+              : "Loading current work…"}
+          {previous && (
+            <time dateTime={previous.observed_at}>
+              {new Date(previous.observed_at).toLocaleString()}
+            </time>
+          )}
+        </span>
+        {AsyncResult.isFailure(result) && (
+          <Button variant="outline" onClick={refresh} disabled={result.waiting}>
             Retry
           </Button>
-        </div>
+        )}
+      </div>
+      {previous?.capacity && (
+        <dl className="work-capacity" aria-label="Workspace capacity">
+          <div>
+            <dt>Worker slots in use</dt>
+            <dd>
+              {previous.capacity.workers} / {previous.capacity.worker_limit}
+            </dd>
+          </div>
+          <div>
+            <dt>Execution slots in use</dt>
+            <dd>
+              {previous.capacity.retained} / {previous.capacity.retained_limit}
+            </dd>
+          </div>
+          <div>
+            <dt>Task starts</dt>
+            <dd>{previous.capacity.auto_schedule ? "Automatic" : "Manual"}</dd>
+          </div>
+        </dl>
+      )}
+      {!!previous?.capacity?.setup_count && (
+        <details className="work-last-seen" open>
+          <summary>Repository setup ({previous.capacity.setup_count})</summary>
+          <dl className="work-setup-list">
+            {previous.capacity.setups.map(({ repository_id, phase }) => (
+              <div key={repository_id}>
+                <dt>{repository_id}</dt>
+                <dd>
+                  {phase === "unrequested"
+                    ? "OpenSpec setup needed"
+                    : phase === "queued"
+                      ? "Queued for capacity"
+                      : phase === "planning"
+                        ? "Prepared for delivery"
+                        : phase === "awaiting_merge"
+                          ? "Awaiting merge"
+                          : phaseLabel(phase)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {previous.capacity.setup_count > previous.capacity.setups.length && (
+            <small>Showing the first {previous.capacity.setups.length} repositories.</small>
+          )}
+        </details>
+      )}
+      {AsyncResult.isFailure(result) && !previous && record.snapshot.length > 0 && (
+        <details className="work-last-seen">
+          <summary>Tasks saved with this view · {new Date(record.at).toLocaleString()}</summary>
+          <ul>
+            {record.snapshot.map((task) => (
+              <li key={task.issue_id}>
+                <Button
+                  variant="link"
+                  onClick={() => inspect({ action: "open_task", issue_id: task.issue_id })}
+                >
+                  {task.title}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       <WorkViews
         records={[record]}
         work={previous?.work ?? []}
         liveCoverage={coverage}
+        hideLiveWidgets={!previous}
         inspect={inspect}
         actions={(record) => <SaveSurfaceButton record={record} inspect={inspect} />}
       />

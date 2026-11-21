@@ -16,6 +16,7 @@ overrides:
 
 allowBuilds:
   "@scarf/scarf": false
+  "@alibaba-group/open-code-review": false
   "@opencode/cli": true
   agent-browser: true
   esbuild: true

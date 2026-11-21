@@ -11,12 +11,20 @@ import {
   type Role,
   type WorkerModel,
 } from "../domain.ts";
-import { AbsolutePath, MessageId, SessionId, StorageKey, timestamp } from "../identities.ts";
+import { Count, RoleSchema } from "../contracts.ts";
+import {
+  AbsolutePath,
+  ExecutionId,
+  MessageId,
+  SessionId,
+  StorageKey,
+  timestamp,
+} from "../identities.ts";
 import { type Records, type Store } from "../storage/store.ts";
 import { decode } from "../decode.ts";
 import { domainEffect } from "../effect.ts";
 import { pathExists, readFile } from "../filesystem.ts";
-import { policyIdentity } from "../opencode/role-policy.ts";
+import { policyIdentity, compatiblePolicy } from "../opencode/role-policy.ts";
 import { workerBrowser } from "../opencode/browser.ts";
 import {
   digestText,
@@ -33,6 +41,22 @@ import {
 } from "./worker-context-contracts.ts";
 import { workerPrompt } from "./prompts.ts";
 import { isActiveWorker } from "./worker-assignment.ts";
+
+const preparationBinding = {
+  execution: ExecutionId,
+  generation: Count,
+  role: RoleSchema,
+  session: SessionId,
+  prompt: MessageId,
+};
+const PreparationReceipt = Schema.Union([
+  Schema.Struct({ ...preparationBinding, stage: Schema.Literal("started") }),
+  Schema.Struct({
+    ...preparationBinding,
+    stage: Schema.Literal("complete"),
+    prepared: PreparedAgent,
+  }),
+]);
 
 const contextKey = (id: MessageId) => StorageKey.make(`worker-context/${id}`);
 const statusKey = (e: Execution, role: Role) =>
@@ -67,7 +91,7 @@ export const compatibleContext = (
       "CONTEXT_ASSIGNMENT",
       "Captured instructions do not match the retained admission; inspect native evidence before an explicit new turn",
     );
-  if (context.policy !== policyIdentity(context.role))
+  if (!compatiblePolicy(context.role, context.policy))
     throw new CrewError(
       "CONTEXT_POLICY",
       "Captured role policy is incompatible; inspect retained admission evidence, then request an explicit new turn without replaying an admitted prompt",
@@ -83,7 +107,12 @@ export class WorkerContexts {
   prepareAgent = Effect.fn("WorkerContexts.prepareAgent")(
     function* (this: WorkerContexts, e: Execution, role: Role, issue: Issue, prompt: MessageId) {
       const captured = e.configuration_snapshot?.definitions?.[role];
-      if (e.configuration_snapshot?.agent_selection_version !== 1 || !captured) return;
+      if (e.configuration_snapshot?.agent_selection_version !== 1) return;
+      if (!captured)
+        return yield* new CrewError(
+          "PREPARATION_ASSIGNMENT",
+          "Configured assignment has no captured definition for its role",
+        );
       const session = e.session_intent?.id ?? e[`${role}_session_id`];
       if (!session)
         return yield* new CrewError(
@@ -98,57 +127,43 @@ export class WorkerContexts {
         session,
         prompt,
       };
-      const receipt = yield* this.records.coordinateCommit(() =>
-        this.records.store
-          .get(key)
-          .pipe(
-            Effect.tap((existing) =>
-              existing === undefined
-                ? this.records.store.set(key, { ...binding, stage: "started" })
-                : Effect.void,
-            ),
-          ),
+      // Resolve the prerequisite while holding the short claim lock, only for a new attempt.
+      const claim = yield* this.records.coordinateCommit(() =>
+        Effect.gen({ self: this }, function* () {
+          const existing = yield* this.records.store.get(key);
+          if (existing !== undefined) return { stage: "retained", receipt: existing } as const;
+          const catalog = yield* Effect.serviceOption(Agents);
+          if (Option.isNone(catalog))
+            return yield* new CrewError(
+              "AGENTS_UNAVAILABLE",
+              "Prepared assignment requires the application catalog",
+            );
+          yield* this.records.store.set(key, { ...binding, stage: "started" });
+          return { stage: "fresh", catalog: catalog.value } as const;
+        }),
       );
-      if (receipt !== undefined) {
-        const decoded = yield* decode(
-          Schema.Struct({
-            execution: Schema.String,
-            generation: Schema.Finite,
-            role: Schema.String,
-            session: Schema.String,
-            prompt: Schema.String,
-            stage: Schema.Literals(["started", "complete"]),
-            prepared: Schema.optional(PreparedAgent),
-          }),
-          receipt,
-          key,
-        );
+      if (claim.stage === "retained") {
+        const decoded = yield* decode(PreparationReceipt, claim.receipt, key);
         if (
           decoded.execution !== e.execution_id ||
           decoded.generation !== e.control_generation ||
           decoded.role !== role ||
           decoded.session !== session ||
           decoded.prompt !== prompt ||
-          (decoded.prepared && decoded.prepared.profile.revision !== captured.revision)
+          (decoded.stage === "complete" && decoded.prepared.profile.revision !== captured.revision)
         )
           return yield* new CrewError(
             "PREPARATION_ASSIGNMENT",
             "Preparation receipt conflicts with the retained assignment",
           );
-        if (decoded.stage === "complete" && decoded.prepared) return decoded.prepared;
+        if (decoded.stage === "complete") return decoded.prepared;
         return yield* new CrewError(
           "PREPARATION_UNCERTAIN",
           "Definition preparation started without a complete capture; preserve this unadmitted identity and request an explicit fresh assignment",
         );
       }
-      const catalog = yield* Effect.serviceOption(Agents);
-      if (Option.isNone(catalog))
-        return yield* new CrewError(
-          "AGENTS_UNAVAILABLE",
-          "Prepared assignment requires the application catalog",
-        );
       const selected = e.configuration_snapshot!.workers[role];
-      const prepared = yield* catalog.value
+      const prepared = yield* claim.catalog
         .prepare(captured.definition, {
           role,
           workflow: e.workflow_policy,
@@ -406,13 +421,12 @@ export class WorkerContexts {
           "STALE_CONTEXT",
           "Captured context does not match the active admission",
         );
-      const blocked =
-        context.policy !== policyIdentity(role)
-          ? new CrewError(
-              "CONTEXT_POLICY",
-              "Captured policy is incompatible; inspect retained prompt evidence and explicitly request a new turn",
-            )
-          : toolBlocker(context, names);
+      const blocked = !compatiblePolicy(role, context.policy)
+        ? new CrewError(
+            "CONTEXT_POLICY",
+            "Captured policy is incompatible; inspect retained prompt evidence and explicitly request a new turn",
+          )
+        : toolBlocker(context, names);
       const observation = {
         model,
         names,

@@ -1,7 +1,8 @@
 import { Schema } from "effect";
-import { IssueId } from "../identities.ts";
+import { IssueId, RepositoryId } from "../identities.ts";
 import { WorkSummarySchema } from "../visibility/work-summary.ts";
-import { Count } from "../primitives.ts";
+import { CapacityUsageSchema } from "../visibility/discovery-contracts.ts";
+import { Count, PhaseSchema } from "../primitives.ts";
 import type { WorkSurface } from "./surfaces.ts";
 
 export const maximumBindingRows = 100;
@@ -98,6 +99,19 @@ export const BindingReadQuery = Schema.Struct({
   include_population: Schema.optional(Schema.Boolean),
 }).annotate({ parseOptions: { onExcessProperty: "error" }, reportInput: false });
 export const BindingReadSchema = Schema.Struct({
+  capacity: Schema.optionalKey(
+    Schema.Struct({
+      ...CapacityUsageSchema.fields,
+      auto_schedule: Schema.Boolean,
+      setup_count: Count,
+      setups: Schema.Array(
+        Schema.Struct({
+          repository_id: RepositoryId,
+          phase: Schema.Union([PhaseSchema, Schema.Literal("unrequested")]),
+        }),
+      ).check(Schema.isMaxLength(10)),
+    }),
+  ),
   work: Schema.Array(WorkSummarySchema).check(Schema.isMaxLength(maximumBindingRows)),
   coverage: BindingCoverageSchema,
   results: Schema.Array(

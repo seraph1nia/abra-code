@@ -1,6 +1,7 @@
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { Effect } from "effect";
+import { TestClock } from "effect/testing";
+import { Effect, Scope, Exit, Fiber, Layer } from "effect";
 import { ExecutionId, IssueId, MessageId, ObligationKey } from "../../src/identities.ts";
 import {
   mergeChanges,
@@ -12,6 +13,7 @@ import { nativeChangeScope } from "../../src/web/change-scopes.ts";
 import {
   Invalidations,
   invalidationsLayer,
+  publishInvalidations,
   committed,
   committedScope,
 } from "../../src/visibility/invalidations.ts";
@@ -175,4 +177,39 @@ test("selective work reactivity includes off-page identities and ignores transcr
     `work:${issue}`,
   ]);
   assert.deepEqual(workInvalidationKeys({ all: true }), ["work-observed", "work-finder"]);
+});
+
+test("post-commit barrier retries merged scopes and releases a sleeping publisher", async () => {
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const events = yield* Invalidations;
+      const lifetime = yield* Scope.make();
+      let passes = 0;
+      const published: import("@abracode/contracts/web/changes").ChangeScope[] = [];
+      const fiber = yield* publishInvalidations(
+        events,
+        Effect.suspend(() => (++passes === 2 ? Effect.void : Effect.fail("busy"))),
+        (scope) =>
+          Effect.sync(() => {
+            published.push(scope);
+          }),
+      ).pipe(Effect.forkIn(lifetime));
+      yield* events.publish({ issues: [issue] });
+      yield* TestClock.adjust("0 millis");
+      assert.equal(passes, 1);
+      yield* events.publish({ finder: true });
+      assert.equal(published.length, 0);
+      yield* TestClock.adjust("250 millis");
+      assert.equal(published.length, 1);
+      assert.deepEqual(published[0]?.issues, [issue]);
+      assert.equal(published[0]?.finder, true);
+      yield* events.publish({ attention: true });
+      yield* TestClock.adjust("0 millis");
+      assert.equal(passes, 3);
+      yield* Scope.close(lifetime, Exit.void);
+      assert.ok(Exit.isFailure(yield* Fiber.await(fiber)));
+      yield* TestClock.adjust("1 second");
+      assert.equal(passes, 3);
+    }).pipe(Effect.provide(Layer.merge(invalidationsLayer, TestClock.layer())), Effect.scoped),
+  );
 });

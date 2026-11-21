@@ -14,13 +14,13 @@ import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 const parent = Id.SessionId.make("ses_legacy-parent"),
   issue = Id.IssueId.make("legacy-report");
-async function prepare(status: VisualBuild["status"] = "published") {
+async function prepare(status: VisualBuild["status"] = "published", embedded?: string) {
   const f = await run(fixture);
   f.seed.named(issue);
   const e = await run(f.controller.start(issue, parent));
   await run(f.controller.recordSupervisor(parent));
   const snapshot = await run(captureReportSnapshot(f.work, e));
-  const html = `<!doctype html><html><body><script type="application/json" id="abracode-report-data">${snapshotJSON(snapshot)}</script><script type="application/json" id="abracode-license-notices">{}</script></body></html>`;
+  const html = `<!doctype html><html><body><script type="application/json" id="abracode-report-data">${embedded ?? snapshotJSON(snapshot)}</script><script type="application/json" id="abracode-license-notices">{}</script></body></html>`;
   const request = { request_id: Id.RequestId.make("original-legacy") };
   const directory = join(f.config.home, ".abracode/reports/generated", issue, request.request_id);
   await mkdir(directory, { recursive: true });
@@ -180,4 +180,12 @@ test("record writes allow report progress and preserve the prior record on histo
     assert.equal((await run(Effect.flip(update(reports)))).code, "REPORT_HISTORY");
     assert.deepEqual(await run(f.records.execution(issue)), before);
   }
+});
+
+test("legacy report reads diagnose corrupt embedded JSON even when its file digest matches", async (t) => {
+  const { f, reports, request, path, html } = await prepare("published", "{");
+  t.onTestFinished(() => run(f.close()));
+  const failure = await run(Effect.flip(reports().readArtifact(issue, request.request_id)));
+  assert.equal(failure.code, "REPORT_HTML");
+  assert.equal(await readFile(path, "utf8"), html);
 });

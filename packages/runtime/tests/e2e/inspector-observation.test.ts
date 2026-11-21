@@ -241,7 +241,10 @@ test("Verification uses one responsive canvas and keyboard resizing preserves th
   );
   await page.goForward();
   await page.setViewportSize({ width: 390, height: 830 });
-  await page.getByRole("dialog").getByLabel("Work details", { exact: true }).waitFor();
+  await page
+    .getByRole("complementary", { name: "Work inspector" })
+    .getByLabel("Work details", { exact: true })
+    .waitFor();
   await page.getByRole("button", { name: "Close inspector", exact: true }).click();
   assert.equal(await page.getByLabel("Message Abra").inputValue(), "Keep this question");
   assert.ok(!f.calls.some((c) => ["document", "diff", "worker-history"].includes(c.name)));

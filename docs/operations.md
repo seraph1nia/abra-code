@@ -37,9 +37,9 @@ A location reload can unload the plugin's monitor; it does not delete sessions o
 
 ## Local web UI
 
-Use `pnpm dev` for development at `http://127.0.0.1:5173`. Vite provides frontend HMR and `tsx watch` reloads the Effect HTTP backend. `pnpm dev --port 5174 --backend-port 4099` changes the local ports. Native service/work lifetimes are independent of these development servers.
+Use `pnpm dev` for development at `http://127.0.0.1:5173`. Vite provides frontend HMR and `tsx watch` reloads the Effect HTTP backend. `pnpm dev --port 5174 --backend-port 4099` changes the local ports. Each launch runs `pnpm service:restart` before starting the development servers. This starts a stopped native service or restarts the running one and reuses the retained Abra session. Launch when workers are idle because restarting interrupts active execution.
 
-The source installation loads plugin TypeScript directly; rebuilding is unnecessary for native plugin/controller edits. Restart the native service explicitly with `pnpm service:restart` when workers are idle, then continue `pnpm dev`. Dependency or workspace-layout changes require `pnpm install --frozen-lockfile --prod=false` followed by a native-service restart. Restarting `pnpm dev` alone reuses the existing native process and cannot clear its package-resolution state. Development never automatically restarts the native service on source changes.
+Relaunch `pnpm dev` to load native plugin or controller edits from TypeScript source. After dependency or workspace-layout changes, run `pnpm install --frozen-lockfile --prod=false` first. Source-file reloads and Ctrl+C leave the native service running.
 
 Run `pnpm web:build` and `pnpm web` from the installation root. This opens the single-session CopilotKit v2 workspace at `http://127.0.0.1:4097`. `pnpm web --port 4098 --no-open` prints another local URL. Provider authentication still uses `pnpm auth` and the frontend uses existing model configuration.
 
@@ -121,6 +121,15 @@ Every attempt rechecks controller
 readiness and capacity, and a failed attempt does not prevent other eligible work.
 Each tick makes at most as many attempts as there were open issues at its start. The existing single scheduler-leader lock
 owns the cursor across processes.
+
+An explicitly requested repository setup that reaches an execution slot limit
+returns a setup record with phase `queued` and the reason. It holds no worktree
+or worker slot. The central monitor rechecks queued preparations on its normal
+cycle even with manual task starts, considering older requests first. Once both
+global and repository limits allow it, the same setup reserves its slot and
+prepares the worktree. Delivery and merge still use their separate setup actions.
+Registration alone schedules nothing. A capacity refusal from a version before
+the queue existed needs one new prepare request.
 
 `abra_work_ready` distinguishes dependency, active-worker, retained-execution,
 role-capacity and missing-supervisor-authority blockers. Uncertain native

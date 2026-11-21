@@ -185,6 +185,47 @@ export class WorkerSessions {
     }.bind(this),
     domainEffect,
   );
+  /** An open obligation can outlast the turn that raised it. Observe without waking it. */
+  releaseWaitingTurn = Effect.fn("WorkerSessions.releaseWaitingTurn")(
+    function* (this: WorkerSessions, e: Execution) {
+      const session = this.sessionID(e);
+      const reservation = e.capacity_reservation;
+      if (!session || !e.prompt_id || (!reservation && e.capacity_observed_idle)) return;
+      if (
+        reservation &&
+        (reservation.session_id !== session || reservation.prompt_id !== e.prompt_id)
+      )
+        return;
+      const revision = e.revision;
+      const observed = yield* this.runtime.session(session, e.prompt_id).pipe(Effect.result);
+      // Keep the open question and its reservation when native evidence is unavailable.
+      if (observed._tag === "Failure") return;
+      const state = observed.success;
+      if (state.busy || state.completion_pending || !state.outcome) return;
+      if (state.assignment?.id !== e.prompt_id || !state.assignment.outcome) return;
+      const requests = messageRequests(e.messages).filter(
+        (m) => m.generation === e.control_generation && m.assignment_id === e.prompt_id,
+      );
+      if (
+        requests.some(
+          (m) =>
+            m.status === "admission_uncertain" ||
+            m.response_recovery?.status === "admission_uncertain" ||
+            (reservation?.status === "preparing" &&
+              (m.status === "pending" || m.response_recovery?.status === "pending")),
+        )
+      )
+        return;
+      yield* this.coordination.with(() =>
+        Effect.gen({ self: this }, function* () {
+          // A concurrent steer or control change invalidates this native observation.
+          const current = yield* this.records.execution(e.issue_id);
+          if (current?.revision === revision) yield* this.records.commitOwned(e, idleCapacity);
+        }),
+      );
+    }.bind(this),
+    domainEffect,
+  );
   /** Observe completion only: an explicit checkpoint never recovers prompt admission. */
   requireCompleted = Effect.fn("WorkerSessions.requireCompleted")(
     function* (this: WorkerSessions, e: Execution) {

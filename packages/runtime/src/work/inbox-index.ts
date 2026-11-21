@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import {
   InboxSummary,
   InboxLink,
@@ -7,7 +7,7 @@ import {
   type InboxQuery,
 } from "@abracode/contracts/visibility/github-inbox";
 import { IssueId, type RepositoryId } from "../identities.ts";
-import { ensure } from "../domain.ts";
+import { CrewError, ensure } from "../domain.ts";
 import { decodeSync } from "../decode.ts";
 
 export const inboxTables = `
@@ -50,8 +50,37 @@ const Scan = Schema.Struct({
   denied: Schema.Boolean,
 });
 export type Scan = typeof Scan.Type;
+/** The graph also calls source/link inside its own synchronous SQL transaction. */
+function indexFailure(cause: unknown): CrewError {
+  if (cause instanceof CrewError) return cause;
+  if (
+    typeof cause === "object" &&
+    cause !== null &&
+    "code" in cause &&
+    (String(cause.code).startsWith("ERR_SQLITE") || cause.code === "ERR_INVALID_STATE")
+  )
+    return new CrewError("INBOX_STORAGE", "The local GitHub inbox database operation failed");
+  throw cause;
+}
+export const indexEffect = <A>(action: () => A) => Effect.try({ try: action, catch: indexFailure });
 export class InboxIndex {
   constructor(private db: DatabaseSync) {}
+  private transaction(action: () => void) {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      action();
+      this.db.exec("COMMIT");
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
+  }
+  failedScan(stream: string, scan: Scan, limitedCredential?: string) {
+    this.transaction(() => {
+      if (limitedCredential) this.backoff(limitedCredential, scan.retry, scan.error!);
+      this.save(stream, scan);
+    });
+  }
   needsLabelScan(partition: string, kind: string) {
     return !!this.db
       .prepare(
@@ -61,7 +90,7 @@ export class InboxIndex {
   }
   scan(key: string): Scan | undefined {
     const row = this.db.prepare("SELECT data FROM github_scans WHERE stream=?").get(key);
-    return row ? decodeSync(Scan, JSON.parse(String(row.data)), "GitHub scan") : undefined;
+    return row ? decodeSync(Schema.fromJsonString(Scan), row.data, "GitHub scan") : undefined;
   }
   save(key: string, state: Scan) {
     this.db
@@ -76,8 +105,7 @@ export class InboxIndex {
     now: number,
     sweep?: { kind: string; start: number },
   ) {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
+    this.transaction(() => {
       const upsert = this.db.prepare(`INSERT INTO github_items VALUES(?,?,?,?,?,?,?,?,?)
       ON CONFLICT(partition,node) DO UPDATE SET state=excluded.state,updated=excluded.updated,seen=excluded.seen,summary=excluded.summary
       WHERE excluded.updated>=github_items.updated`);
@@ -105,11 +133,7 @@ export class InboxIndex {
         )
         .run(now - 30 * dayMs);
       this.save(key, scan);
-      this.db.exec("COMMIT");
-    } catch (e) {
-      this.db.exec("ROLLBACK");
-      throw e;
-    }
+    });
   }
   cooldown(scope: string, now: number) {
     const row = this.db
@@ -123,35 +147,43 @@ export class InboxIndex {
       .run(scope, retry, error);
   }
   revoke(partition: string, retry: number, message: string) {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
+    this.transaction(() => {
       this.db.prepare("DELETE FROM github_items WHERE partition=?").run(partition);
       this.db
         .prepare("DELETE FROM github_scans WHERE json_extract(stream,'$[0]')=?")
         .run(partition);
       this.backoff(partition, retry, message);
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+    });
+  }
+  isPrivateReview(issue: IssueId) {
+    return !!this.db
+      .prepare("SELECT 1 FROM github_links WHERE issue_id=? AND role='review'")
+      .get(issue);
   }
   source(link: SourceLink) {
-    const row = this.db
-      .prepare("SELECT issue_id,intent FROM github_links WHERE source=?")
-      .get(link.source);
-    if (!row) return;
-    ensure(
-      row.intent === link.intent,
-      "INBOX_INTENT",
-      "This GitHub item already has an assignment with different instructions",
-    );
-    return IssueId.make(String(row.issue_id));
+    try {
+      const row = this.db
+        .prepare("SELECT issue_id,intent FROM github_links WHERE source=?")
+        .get(link.source);
+      if (!row) return;
+      ensure(
+        row.intent === link.intent,
+        "INBOX_INTENT",
+        "This GitHub item already has an assignment with different instructions",
+      );
+      return decodeSync(IssueId, row.issue_id, "GitHub source link");
+    } catch (cause) {
+      throw indexFailure(cause);
+    }
   }
   link(issue: IssueId, link: SourceLink) {
-    this.db
-      .prepare("INSERT INTO github_links VALUES(?,?,?,?,?)")
-      .run(link.source, issue, link.role, link.revision ?? null, link.intent);
+    try {
+      this.db
+        .prepare("INSERT INTO github_links VALUES(?,?,?,?,?)")
+        .run(link.source, issue, link.role, link.revision ?? null, link.intent);
+    } catch (cause) {
+      throw indexFailure(cause);
+    }
   }
   links(item: InboxSummary, deliveries: readonly DeliveryLink[]) {
     const row = this.db
@@ -237,7 +269,7 @@ export class InboxIndex {
       )
       .all(...args, query.offset ?? 0)
       .map((row) => {
-        const item = decodeSync(InboxSummary, JSON.parse(String(row.summary)), "GitHub summary");
+        const item = decodeSync(Schema.fromJsonString(InboxSummary), row.summary, "GitHub summary");
         return {
           ...item,
           links: this.projectLinks(

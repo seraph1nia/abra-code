@@ -45,7 +45,12 @@ export function classifyUses(lock) {
     visit(
       name,
       ref,
-      ["@opencode/cli", "@fission-ai/openspec", "agent-browser"].includes(name)
+      [
+        "@alibaba-group/open-code-review",
+        "@opencode/cli",
+        "@fission-ai/openspec",
+        "agent-browser",
+      ].includes(name)
         ? "application-runtime"
         : "contributor-build",
     );

@@ -27,6 +27,7 @@ export const queryOptions = (issue: string) => ({
 });
 export const bootstrapQuery = WorkspaceApi.query("workspace", "bootstrap", {});
 export const agentsQuery = WorkspaceApi.query("workspace", "agents", { timeToLive: "30 seconds" });
+export const repositoriesQuery = WorkspaceApi.query("workspace", "repositories", {});
 /** An uncached exact read; missing admission evidence must be checked afresh. */
 export const readReceipt = WorkspaceApi.runtime.fn((request_id: string) =>
   Effect.flatMap(WorkspaceApi, (client) => client.workspace.receipt({ query: { request_id } })),

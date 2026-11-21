@@ -13,7 +13,7 @@ import {
 import { answerSelection } from "../workflow/selected-requests.ts";
 import { NativeStore } from "../storage/store.ts";
 import { FileLocks } from "../storage/lock.ts";
-import { AbsolutePath } from "../identities.ts";
+import { AbsolutePath, RelativePath } from "../identities.ts";
 import { join } from "node:path";
 import { nativeReviews, reviewTool, type NativeReviewOwner } from "../web/review-tool.ts";
 import { mermaidVerifierTool } from "./diagram-tool.ts";
@@ -450,6 +450,7 @@ export function registerTools(
                   (p) =>
                     domainEffect(
                       Effect.gen(function* () {
+                        const currentSetup = yield* c.queries.setup(p.id);
                         return {
                           ...p,
                           effective_capacity: {
@@ -458,13 +459,17 @@ export function registerTools(
                           },
                           setup_blockers: [
                             ...(!p.openspec
-                              ? ["OpenSpec configuration is missing; use abra_project_setup"]
+                              ? [
+                                  currentSetup?.current_phase === "queued"
+                                    ? `Setup queued. ${currentSetup.error_or_recovery_reason ?? "Waiting for capacity"}.`
+                                    : "OpenSpec configuration is missing; use abra_project_setup",
+                                ]
                               : []),
                             ...(!p.verification.length
                               ? ["Verification commands are missing"]
                               : []),
                           ],
-                          setup: yield* c.queries.setup(p.id),
+                          setup: currentSetup,
                         };
                       }),
                     ),
@@ -477,7 +482,7 @@ export function registerTools(
           name: "project_setup",
           output: toolOutputs.project_setup,
           description:
-            "Prepare an explicitly authorized OpenSpec setup in a native worktree, deliver its branch/PR, request human merge approval, or verify delivery and retire resources. Does not alter issues.",
+            "Prepare an explicitly authorized OpenSpec setup. A queued prepare waits for capacity and resumes automatically. Deliver its branch/PR, request merge approval or finish cleanup with separate actions.",
           input: Schema.Struct({
             id: RepositoryId,
             action: Schema.Literals(["prepare", "deliver", "approve", "finish"]),
@@ -722,6 +727,18 @@ export function registerTools(
             ),
         }),
         define({
+          name: "review_changes",
+          worker: true,
+          description:
+            "Read a page of OCR-filtered verified net patches and rules for the assigned Review. Begin with {} and follow next_offset. Use file for a specific excluded patch needed to assess acceptance.",
+          input: Schema.Struct({
+            offset: Schema.optional(Count),
+            file: Schema.optional(RelativePath),
+          }),
+          output: toolOutputs.review_changes,
+          run: (a, s) => c.reviewChanges(s, a.offset, a.file),
+        }),
+        define({
           name: "review_report",
           output: toolOutputs.review_report,
           description:
@@ -729,7 +746,14 @@ export function registerTools(
           input: ReviewReportSchema,
           worker: true,
           run: (a, s) =>
-            c.reviewReport(s, a.passed, a.findings, a.scope_status, a.spec_verification),
+            c.reviewReport(
+              s,
+              a.passed,
+              a.findings,
+              a.scope_status,
+              a.spec_verification,
+              a.patch_assessments,
+            ),
         }),
       ];
       yield* ctx.tool.transform((editor) => {

@@ -46,6 +46,7 @@ type WorkViewContext = {
   record: Pick<SurfaceRecord, "surface" | "snapshot" | "revision" | "at" | "coverage">;
   work: readonly WorkItem[];
   liveCoverage?: BindingCoverage;
+  hideLiveWidgets?: boolean;
   inspect?: Inspect;
   frozen?: boolean;
   evidence?: ReportSnapshot;
@@ -82,11 +83,13 @@ export function WorkViews({
   inspect,
   actions,
   liveCoverage,
+  hideLiveWidgets,
 }: {
   records: readonly SurfaceEntry[];
   work: readonly WorkItem[];
   inspect: Inspect;
   liveCoverage?: BindingCoverage;
+  hideLiveWidgets?: boolean;
   actions?: (record: SurfaceRecord) => ReactNode;
 }) {
   return (
@@ -102,6 +105,7 @@ export function WorkViews({
               record={record}
               work={work}
               liveCoverage={liveCoverage}
+              hideLiveWidgets={hideLiveWidgets}
               inspect={inspect}
             />
             {actions?.(record)}
@@ -141,6 +145,7 @@ export function GeneratedSurface({
   preparedDiagrams,
   diagramRequest,
   liveCoverage,
+  hideLiveWidgets,
 }: WorkViewContext) {
   const request = useMemo(
     () =>
@@ -164,9 +169,6 @@ export function GeneratedSurface({
   const { rendered, error } = view;
   return (
     <section className="generated-surface" data-a2ui-renderer="upstream">
-      <div className="eyebrow">
-        Generated work view <span>rev {rendered?.record.revision ?? record.revision}</span>
-      </div>
       {diagrams.retry && (
         <Button variant="outline" disabled={diagrams.pending} onClick={diagrams.retry}>
           Retry diagrams
@@ -184,6 +186,7 @@ export function GeneratedSurface({
             preparedDiagrams: diagrams.assets,
             diagramMessage: diagrams.message,
             liveCoverage,
+            hideLiveWidgets,
           }}
         >
           <MarkdownComponentContext.Provider value={PlainText}>
@@ -210,6 +213,7 @@ function BoundWidget({ name, props }: Pick<Parameters<typeof WorkWidget>[0], "na
         liveCoverage: context.liveCoverage,
         inspect: context.inspect,
         frozen: context.frozen,
+        hideLiveWidgets: context.hideLiveWidgets,
         evidence: context.evidence,
         preparedDiagrams: context.preparedDiagrams,
         diagramMessage: context.diagramMessage,

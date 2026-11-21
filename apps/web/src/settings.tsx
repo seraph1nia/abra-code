@@ -1,7 +1,7 @@
-import { Link } from "@tanstack/react-router";
+import { Link, Outlet } from "@tanstack/react-router";
 import { useState } from "react";
 import type { AgentDefinitionView } from "@abracode/contracts/web/agent-settings";
-import { agentsQuery } from "./data.ts";
+import { agentsQuery, repositoriesQuery } from "./data.ts";
 import { RequestState } from "./request-state.tsx";
 import { Markdown } from "./markdown.tsx";
 
@@ -166,10 +166,12 @@ export function Settings() {
     <div className="settings-page">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            a
-          </div>
-          <strong>AbraCode</strong>
+          <Link to="/" className="settings-link brand-home" aria-label="AbraCode main chat">
+            <span className="brand-mark" aria-hidden="true">
+              a
+            </span>
+            <strong>AbraCode</strong>
+          </Link>
           <span className="topbar-divider" />
           <span className="muted">Settings</span>
         </div>
@@ -179,41 +181,92 @@ export function Settings() {
           </Link>
         </nav>
       </header>
-      <main className="settings-content">
-        <div className="settings-heading">
-          <div>
-            <p className="settings-eyebrow">Configuration</p>
-            <h1>Agents</h1>
-          </div>
-          <span className="agent-mode">Read only</span>
-        </div>
-        <p className="muted settings-intro">
-          Agent definitions loaded by this installation. Expand an agent to inspect its
-          configuration. Changes are made in code.
-        </p>
-        <RequestState query={agentsQuery}>
-          {({ agents }) =>
-            agents.length ? (
-              <>
-                <p className="agent-count">
-                  {agents.length} {agents.length === 1 ? "agent" : "agents"} defined
-                </p>
-                <div className="agent-list">
-                  {agents.map((agent) => (
-                    <AgentDetails key={agent.id} agent={agent} />
-                  ))}
-                </div>
-                <p className="muted settings-note">
-                  Instructions show the authored Markdown. Tools and skills describe declarations;
-                  effective permissions and task context are determined for each assignment.
-                </p>
-              </>
-            ) : (
-              <p className="settings-empty">No agents are defined in this installation.</p>
-            )
-          }
-        </RequestState>
-      </main>
+      <div className="settings-layout">
+        <nav className="settings-nav" aria-label="Settings">
+          <Link className="settings-link" to="/settings" activeOptions={{ exact: true }}>
+            Agents
+          </Link>
+          <Link className="settings-link" to="/settings/repositories">
+            Repositories
+          </Link>
+        </nav>
+        <main className="settings-content">
+          <Outlet />
+        </main>
+      </div>
     </div>
+  );
+}
+
+export function AgentSettings() {
+  return (
+    <>
+      <div className="settings-heading">
+        <h1>Agents</h1>
+        <span className="agent-mode">Read only</span>
+      </div>
+      <p className="muted settings-intro">
+        Agent definitions loaded by this installation. Expand an agent to inspect its configuration.
+        Changes are made in code.
+      </p>
+      <RequestState query={agentsQuery}>
+        {({ agents }) =>
+          agents.length ? (
+            <>
+              <p className="settings-count">
+                {agents.length} {agents.length === 1 ? "agent" : "agents"} defined
+              </p>
+              <div className="agent-list">
+                {agents.map((agent) => (
+                  <AgentDetails key={agent.id} agent={agent} />
+                ))}
+              </div>
+              <p className="muted settings-note">
+                Instructions show the authored Markdown. Tools and skills describe declarations;
+                effective permissions and task context are determined for each assignment.
+              </p>
+            </>
+          ) : (
+            <p className="settings-empty">No agents are defined in this installation.</p>
+          )
+        }
+      </RequestState>
+    </>
+  );
+}
+
+export function RepositorySettings() {
+  return (
+    <>
+      <div className="settings-heading">
+        <h1>Repositories</h1>
+        <span className="agent-mode">Read only</span>
+      </div>
+      <RequestState query={repositoriesQuery}>
+        {(repositories) =>
+          repositories.length ? (
+            <>
+              <p className="settings-count">
+                {repositories.length} {repositories.length === 1 ? "repository" : "repositories"}{" "}
+                onboarded
+              </p>
+              <ul className="settings-repositories">
+                {repositories
+                  .toSorted((a, b) => a.id.localeCompare(b.id))
+                  .map((repository) => (
+                    <li key={repository.id}>
+                      <strong>{repository.name}</strong>
+                      {repository.name !== repository.id && <code>{repository.id}</code>}
+                      {repository.path && <code>{repository.path}</code>}
+                    </li>
+                  ))}
+              </ul>
+            </>
+          ) : (
+            <p className="settings-empty">No repositories have been onboarded yet.</p>
+          )
+        }
+      </RequestState>
+    </>
   );
 }

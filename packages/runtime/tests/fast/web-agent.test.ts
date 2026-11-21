@@ -129,6 +129,58 @@ test("AG-UI observation is interruptible and disconnect never stops native work"
   assert.equal(backend.submissions, 0);
 });
 
+test("observation failure terminates once, releases its stream and hides producer data", async () => {
+  for (const updates of [
+    Stream.succeed({
+      type: "custom" as const,
+      event: { type: EventType.RUN_STARTED } as import("@ag-ui/core").Event,
+    }),
+    Stream.die(new Error("secret fixture detail")),
+    Stream.empty,
+  ]) {
+    const backend = new WorkspaceFixture();
+    let releases = 0;
+    const adapter = new NativeAgentAdapter({
+      sessionID: backend.sessionID,
+      current: Effect.succeed({ busy: false }),
+      submit: () => Effect.die("unexpected submission"),
+      receipt: () => Effect.succeed(null),
+      stop: backend.stop,
+      notifyAdmission: Effect.void,
+      updates: updates.pipe(
+        Stream.ensuring(
+          Effect.sync(() => {
+            releases++;
+          }),
+        ),
+      ),
+    });
+    const terminals: unknown[] = [];
+    await new Promise<void>((resolve) => {
+      adapter.connect(backend.sessionID).subscribe({
+        complete: () => {
+          terminals.push("complete");
+          resolve();
+        },
+        error: (error) => {
+          terminals.push(error);
+          resolve();
+        },
+      });
+    });
+    assert.equal(terminals.length, 1);
+    if (updates === Stream.empty) assert.equal(terminals[0], "complete");
+    else {
+      assert.ok(terminals[0] instanceof CrewError);
+      assert.match(terminals[0].code, /^WEB_(EVENT|OBSERVATION)$/);
+      assert.doesNotMatch(terminals[0].message, /secret/);
+      assert.ok(terminals[0].message.length < 1024);
+    }
+    assert.equal(releases, 1);
+    assert.equal(backend.stops, 0);
+  }
+});
+
 test("run-specific Stop refuses an unsafe substitute; current Abra Stop stays explicit", async () => {
   const backend = new WorkspaceFixture();
   const runner = new AbraRunner(backend, { notify: () => Effect.void, updates: Stream.never });
@@ -462,6 +514,13 @@ test("transport completion follows each admitted input across queue, steer, fail
   assert.equal(queued.at(-1)?.type, EventType.RUN_FINISHED);
   assert.equal(steered.at(-1)?.type, EventType.RUN_FINISHED);
   assert.equal(prompts, 3);
+  const sameRun = adapter.run("ses_causal", "abra", input("queued"));
+  const collect = () => lastValueFrom(sameRun.pipe(toArray()));
+  const peers = await Promise.all([collect(), collect()]);
+  for (const observation of [...peers, await collect()]) {
+    assert.deepEqual(observation, queued);
+  }
+  assert.equal(prompts, 3);
   // Idle with no matching delivered identity is never sufficient, even if the input is visible.
   const unrelated = await lastValueFrom(
     new NativeAgentAdapter(source([observed(["msg_unrelated"])]))
@@ -581,13 +640,15 @@ test("native streaming shares one subscription/fallback across observers and rel
       const runner = new AbraRunner(backend, feed);
       const first: import("@ag-ui/core").BaseEvent[] = [],
         second: import("@ag-ui/core").BaseEvent[] = [];
-      const a = runner
-        .connect({ threadId: backend.sessionID, agentId: "abra" })
-        .subscribe((event) => first.push(event));
-      const b = runner
-        .connect({ threadId: backend.sessionID, agentId: "abra" })
-        .subscribe((event) => second.push(event));
+      const connection = runner.connect({ threadId: backend.sessionID, agentId: "abra" });
+      const a = connection.subscribe((event) => first.push(event));
       yield* TestClock.adjust("0 millis");
+      const b = connection.subscribe((event) => second.push(event));
+      yield* TestClock.adjust("0 millis");
+      for (const events of [first, second]) {
+        assert.ok(events.some((event) => event.type === EventType.MESSAGES_SNAPSHOT));
+        assert.ok(events.some((event) => event.type === EventType.STATE_SNAPSHOT));
+      }
       let seq = 0;
       const push = (type: string, data: object, ephemeral = false) =>
         PubSub.publish(signals, {

@@ -478,9 +478,19 @@ test("concurrent preparation claims one durable receipt and never invokes its pr
     session_intent: { role: "explore" as const, id: e.explore_session_id!, prompt },
   };
   const contexts = new WorkerContexts(f.records, f.config);
-  const prepare = contexts
-    .prepareAgent(prospective, "explore", await run(f.work.show(issue)), prompt)
-    .pipe(Effect.provideService(Agents, agents));
+  const preparation = contexts.prepareAgent(
+    prospective,
+    "explore",
+    await run(f.work.show(issue)),
+    prompt,
+  );
+  assert.equal((await Effect.runPromise(Effect.flip(preparation))).code, "AGENTS_UNAVAILABLE");
+  assert.equal(
+    await run(f.records.store.get(Id.StorageKey.make(`agent-preparation/${prompt}`))),
+    undefined,
+  );
+  assert.equal(providers, 0);
+  const prepare = preparation.pipe(Effect.provideService(Agents, agents));
   await run(
     Effect.gen(function* () {
       const first = yield* prepare.pipe(Effect.forkScoped);
@@ -491,6 +501,35 @@ test("concurrent preparation claims one durable receipt and never invokes its pr
       assert.deepEqual(yield* prepare, captured);
     }),
   );
+  assert.deepEqual(await Effect.runPromise(preparation), await run(prepare));
+  const key = Id.StorageKey.make(`agent-preparation/${prompt}`);
+  const binding = {
+    execution: e.execution_id,
+    generation: e.control_generation,
+    role: "explore",
+    session: prospective.session_intent.id,
+    prompt,
+  };
+  for (const [receipt, expected] of [
+    [{ ...binding, stage: "complete" }, "INVALID_DATA"],
+    [{ ...binding, generation: -1, stage: "started" }, "INVALID_DATA"],
+    [{ ...binding, role: "review", stage: "started" }, "PREPARATION_ASSIGNMENT"],
+    [{ ...binding, stage: "started" }, "PREPARATION_UNCERTAIN"],
+  ] as const) {
+    await run(f.records.store.set(key, receipt));
+    assert.equal((await run(Effect.flip(prepare))).code, expected);
+    assert.deepEqual(await run(f.records.store.get(key)), receipt);
+  }
   assert.equal(providers, 1);
   assert.equal(f.runtime.prompts, 1, "preparation itself never admits a new prompt");
+});
+
+test("fresh configured execution requires a catalog before it claims an assignment", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const { id } = await run(f.work.create(workGoal("missing-catalog")));
+  const error = await Effect.runPromise(Effect.flip(f.controller.start(id)));
+  assert.equal(error.code, "AGENTS_UNAVAILABLE");
+  assert.equal(await run(f.records.execution(id)), undefined);
+  assert.equal(f.runtime.creates, 0);
 });

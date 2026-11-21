@@ -24,7 +24,7 @@ export const awaitPluginActivation = (
         return Effect.fail(
           new CrewError(
             "PLUGIN_ACTIVATION",
-            `AbraCode plugin failed to activate: ${plugin.state.error.slice(0, 2048)}${plugin.state.ref ? ` (native diagnostic: ${plugin.state.ref})` : ""}. Inspect native plugin diagnostics, correct the load error, then run pnpm service:restart. Restarting pnpm dev reuses the native service.`,
+            `AbraCode plugin failed to activate: ${plugin.state.error.slice(0, 2048)}${plugin.state.ref ? ` (native diagnostic: ${plugin.state.ref})` : ""}. Inspect native plugin diagnostics, correct the load error, then run pnpm service:restart or relaunch pnpm dev.`,
           ),
         );
       return Effect.succeed(plugin?.id === "abracode" && plugin.state.status === "active");
@@ -36,7 +36,7 @@ export const awaitPluginActivation = (
         Effect.fail(
           new CrewError(
             "PLUGIN_ACTIVATION",
-            "AbraCode plugin did not activate within 15 seconds; inspect native plugin diagnostics. After correcting the load error, run pnpm service:restart. Restarting pnpm dev reuses the native service.",
+            "AbraCode plugin did not activate within 15 seconds. Inspect native plugin diagnostics, correct the load error, then run pnpm service:restart or relaunch pnpm dev.",
           ),
         ),
     }),

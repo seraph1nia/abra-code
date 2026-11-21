@@ -31,6 +31,28 @@ import { WorkItemSchema } from "./wire.ts";
 import { compactSurface, loadSurfaceRecord } from "./surface-records.ts";
 import type { SurfaceRecord } from "./contracts.ts";
 
+type SurfaceObservation = Effect.Effect<
+  {
+    at: Timestamp;
+    work: readonly (typeof WorkItemSchema.Type)[];
+    binding_coverage?: BindingCoverage;
+  },
+  CrewError
+>;
+
+/** Check content against this observation before capturing it in a new revision. */
+export function checkSurfaceDraft(surface: WorkSurface, observe: SurfaceObservation) {
+  return Effect.gen(function* () {
+    const snapshot = yield* observe;
+    yield* Effect.try({
+      try: () => validateSurface(surface, new Set(snapshot.work.map((work) => work.issue_id))),
+      catch: (error) => new CrewError("UI_SURFACE", CrewError.from(error).message),
+    });
+    yield* verifyDiagrams(collectDiagrams(surface.createSurface.components));
+    return snapshot;
+  });
+}
+
 const positive = Schema.Int.check(Schema.isGreaterThan(0));
 const PublicationSchema = Schema.Struct({
   schema_version: Schema.Literal(1),
@@ -329,14 +351,7 @@ export class SurfacePublications {
   }
   publish(
     input: { session_id: SessionId; message_id: MessageId; call_id: string; surface: WorkSurface },
-    observe: Effect.Effect<
-      {
-        at: Timestamp;
-        work: readonly (typeof WorkItemSchema.Type)[];
-        binding_coverage?: BindingCoverage;
-      },
-      CrewError
-    >,
+    observe: SurfaceObservation,
   ) {
     return this.locks.with(LockKey.make("web-surfaces"), () =>
       domainEffect(
@@ -397,13 +412,7 @@ export class SurfacePublications {
                 "At most 16 retained surfaces per Abra conversation",
               );
           }
-          const snapshot = yield* observe;
-          yield* Effect.try({
-            try: () =>
-              validateSurface(surface, new Set(snapshot.work.map((work) => work.issue_id))),
-            catch: () => new CrewError("UI_SURFACE", "Surface references unavailable work"),
-          });
-          yield* verifyDiagrams(collectDiagrams(surface.createSurface.components));
+          const snapshot = yield* checkSurfaceDraft(surface, observe);
           const selected = selectBindingRows(
             bindingRequirements(surface),
             snapshot.work,

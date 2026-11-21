@@ -1,4 +1,4 @@
-import { cp } from "node:fs/promises";
+import { cp, symlink } from "node:fs/promises";
 import { removeFixture } from "./helpers/resources.ts";
 import { capabilityRequirements } from "../src/opencode/role-policy.ts";
 import { workerProfile } from "../src/config/snapshot.ts";
@@ -221,6 +221,7 @@ export function writePlan(path: string, change: string, done = false) {
   );
 }
 export class FakeRuntime implements Runtime {
+  consumeReviewPages = true;
   managementSession(id: Id.SessionId, _parent: Id.SessionId, model: WorkerModel, lead: string) {
     return domainEffect(
       Effect.sync(() => {
@@ -606,6 +607,15 @@ export const fixture = domainEffect(
           join(root, "packages/agents/assets", `${role}.md`),
           yield* readFile(join(process.cwd(), "packages/agents/assets", `${role}.md`), "utf8"),
         );
+      yield* mkdir(join(root, "node_modules/.bin"), { recursive: true });
+      yield* Effect.tryPromise({
+        try: () =>
+          symlink(
+            join(process.cwd(), "node_modules/.bin/ocr"),
+            join(root, "node_modules/.bin/ocr"),
+          ),
+        catch: CrewError.from,
+      });
       const runner = new ProcessRunner();
       const git = new Git(runner);
       const store = new MemoryStore();
@@ -651,6 +661,22 @@ export const fixture = domainEffect(
         locks,
         join(root, "packages/agents/assets"),
       );
+      const admitPrompt = runtime.prompt.bind(runtime);
+      runtime.prompt = (id, text, prompt) =>
+        admitPrompt(id, text, prompt).pipe(
+          Effect.andThen(
+            Effect.gen(function* () {
+              if (
+                !runtime.consumeReviewPages ||
+                !text.startsWith("You are the AbraCode review for issue")
+              )
+                return;
+              let offset: number | undefined = 0;
+              while (offset !== undefined)
+                offset = (yield* controller.reviewChanges(id, offset)).next_offset;
+            }),
+          ),
+        );
       return {
         root,
         git,

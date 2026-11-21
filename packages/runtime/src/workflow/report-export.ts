@@ -9,7 +9,7 @@ import { CrewError, ensure } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { canonicalJSON } from "../presentation/identity.ts";
 import { validateReportDocument, type ReportDocument } from "../presentation/report-document.ts";
-import { reportHash, validatePortableHTML } from "./report-build.ts";
+import { embeddedReportJSON, reportHash, validatePortableHTML } from "./report-build.ts";
 import type { Runner } from "../process.ts";
 
 export interface DocumentRenderer {
@@ -27,7 +27,7 @@ export function validateDocumentHTML(html: string, document: ReportDocument) {
     /\bid=["']?abracode-report-document(?:["'\s]|$)/i.test(match[1]!),
   );
   ensure(
-    payload && canonicalJSON(JSON.parse(payload[2]!)) === canonicalJSON(document),
+    payload && canonicalJSON(embeddedReportJSON(payload[2]!)) === canonicalJSON(document),
     "REPORT_HTML",
     "Export does not retain the exact canonical document",
   );

@@ -716,6 +716,13 @@ export function nativeTest(
             "unavailable-proof.json is absent and the configured source check cannot establish the additional claimed runtime observation.",
         };
       }
+      if (role === "review")
+        calls.unshift(
+          { name: "skill", args: { id: "abra-open-code-review-delegate" } },
+          { name: "abra_review_changes", args: { offset: 0 } },
+        );
+      if (role === "research" && user.includes("Use its private PR procedure"))
+        calls.unshift({ name: "skill", args: { id: "abra-open-code-review-delegate" } });
       await simplifyCalls(user, role, calls);
       planningWorkerCalls(user, role, calls);
       calls.unshift(...browserCalls(user, role, `http://127.0.0.1:${address.port}`, messages));
@@ -1087,7 +1094,7 @@ export function nativeTest(
     });
     await writeFile(
       join(home, "abracode.yaml"),
-      `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture${journey === "research" ? ", variant: default" : ""} } }\nprofiles:\n  native-investigator: { role: research, model: { providerID: fixture, id: gpt-specialist } }\nworktree_root: ${root}/trees\nserver_url: http://127.0.0.1:${port}\nreconcile_interval_ms: 1000\n${journey === "finishing" ? "progress_timeout_ms: { explore: 500, apply: 1800000, review: 900000, research: 900000, operation: 300000 }\n" : ""}${journey === "simplify-loop" ? "supervision_mode: attended-automatic\n" : ""}max_executions: 8\ncommands:\n  forge: ${fakeForge}\n`,
+      `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture${journey === "research" ? ", variant: default" : ""} } ${journey === "github-inbox" ? ", overrides: { review: { providerID: fixture, id: gpt-specialist } }" : ""} }\nprofiles:\n  native-investigator: { role: research, model: { providerID: fixture, id: gpt-specialist } }\nworktree_root: ${root}/trees\nserver_url: http://127.0.0.1:${port}\nreconcile_interval_ms: 1000\n${journey === "finishing" ? "progress_timeout_ms: { explore: 500, apply: 1800000, review: 900000, research: 900000, operation: 300000 }\n" : ""}${journey === "simplify-loop" ? "supervision_mode: attended-automatic\n" : ""}max_executions: 8\ncommands:\n  forge: ${fakeForge}\n`,
     );
     if (journey === "engineering")
       await writeFile(

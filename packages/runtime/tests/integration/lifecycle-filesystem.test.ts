@@ -1,6 +1,6 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Injects the pinned platform filesystem at the existing lifecycle test seam. */
 import assert from "node:assert/strict";
-import { unlink, writeFile } from "node:fs/promises";
+import { mkdir, readlink, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Effect, FileSystem } from "effect";
@@ -12,6 +12,7 @@ import { Workspaces } from "../../src/git/workspaces.ts";
 import * as Id from "../../src/identities.ts";
 import { OpenSpec } from "../../src/openspec/adapter.ts";
 import { createExecution } from "../../src/workflow/execution.ts";
+import { retainedExecution } from "../helpers/retained-execution.ts";
 import { run } from "../effects.ts";
 import { fixture } from "../fixtures.ts";
 
@@ -142,4 +143,84 @@ test("worktree orphan listings distinguish missing and unreadable roots before p
   await run(provision);
   assert.equal(create.mock.calls.length, 1);
   assert.ok(e.worktree_directory);
+});
+
+test("clone recovery and OpenSpec creation preserve failed probes and dangling entries", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const repository = Id.RepositoryId.make("recover");
+  const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
+  const sources = new RepositorySources(f.git, f.config.repository_root);
+  const directory = join(f.config.repository_root, repository);
+  await mkdir(directory, { recursive: true });
+  const clone = () => sources.clone(repository, project.remote).pipe(Effect.asVoid);
+  const git = vi.spyOn(f.git, "run");
+  const { execution } = await retainedExecution({
+    worktree_directory: project.path,
+    openspec_schema: Id.SpecSchemaName.make("spec-driven"),
+  });
+  const changeDir = join(project.path, "openspec/changes", execution.openspec_change);
+  await mkdir(join(project.path, "openspec/changes"), { recursive: true });
+  const commands: string[] = [];
+  const spec = new OpenSpec(
+    {
+      run: (_bin, args) => {
+        commands.push(args[0]!);
+        return Effect.succeed(
+          JSON.stringify({
+            change: {
+              id: execution.openspec_change,
+              path: changeDir,
+              metadataPath: "meta",
+              schema: execution.openspec_schema,
+            },
+          }),
+        );
+      },
+    },
+    Id.Executable.make("openspec"),
+  );
+  for (const [path, action] of [
+    [join(directory, "checkout"), clone],
+    [join(directory, "clone.json"), clone],
+    [join(directory, "pending"), clone],
+    [changeDir, () => spec.create(execution)],
+  ] as const) {
+    await run(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        for (const code of ["EACCES", "EIO"]) {
+          const failure = yield* Effect.flip(
+            action().pipe(
+              Effect.provideService(FileSystem.FileSystem, {
+                ...fs,
+                access: (entry, options) =>
+                  entry === path
+                    ? Effect.fail(
+                        systemError({
+                          _tag: "Unknown",
+                          module: "FileSystem",
+                          method: "access",
+                          cause: Object.assign(Error("probe failed"), { code }),
+                        }),
+                      )
+                    : fs.access(entry, options),
+              }),
+            ),
+          );
+          assert.equal(failure.code, code);
+        }
+      }).pipe(Effect.provide(NodeFileSystem.layer)),
+    );
+    await symlink("missing-target", path);
+    assert.equal((await run(Effect.flip(action()))).code, "RETAINED_PATH");
+    assert.equal(await readlink(path), "missing-target");
+    await unlink(path);
+  }
+  assert.deepEqual(commands, []);
+  assert.equal(git.mock.calls.length, 0);
+  await run(spec.create(execution));
+  assert.deepEqual(commands, ["new"]);
+  await run(clone());
+  assert.ok(git.mock.calls.some(([, args]) => args.includes("clone")));
 });

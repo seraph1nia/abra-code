@@ -4,25 +4,37 @@ import {
   createRouter,
   lazyRouteComponent,
   Link,
-  Outlet,
 } from "@tanstack/react-router";
-import { Application } from "./workspace.tsx";
+import { WorkspaceShell } from "./workspace-shell.tsx";
 import { workspaceSearch } from "./navigation.ts";
 
-const rootRoute = createRootRoute({ component: Outlet });
+const rootRoute = createRootRoute({ component: WorkspaceShell });
 const workspaceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   validateSearch: workspaceSearch,
-  component: Application,
+  component: () => null,
 });
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
   component: lazyRouteComponent(() => import("./settings.tsx"), "Settings"),
 });
+const agentSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/",
+  component: lazyRouteComponent(() => import("./settings.tsx"), "AgentSettings"),
+});
+const repositorySettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "repositories",
+  component: lazyRouteComponent(() => import("./settings.tsx"), "RepositorySettings"),
+});
 export const router = createRouter({
-  routeTree: rootRoute.addChildren([workspaceRoute, settingsRoute]),
+  routeTree: rootRoute.addChildren([
+    workspaceRoute,
+    settingsRoute.addChildren([agentSettingsRoute, repositorySettingsRoute]),
+  ]),
   defaultNotFoundComponent: () => (
     <main className="loading">
       <h1>Page not found</h1>

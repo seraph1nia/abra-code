@@ -222,7 +222,10 @@ export class Advancement {
       if (terminal(e)) return e;
       const p = yield* this.project(e);
       yield* this.c.git.validate(p, e);
-      if (yield* this.c.obligations.recheck(e)) return e;
+      if (yield* this.c.obligations.recheck(e)) {
+        yield* this.c.sessions.releaseWaitingTurn(e);
+        return e;
+      }
       if (
         messageRequests(e.messages).some(
           (m) =>
@@ -382,6 +385,8 @@ export class Advancement {
     domainEffect,
   );
   private verify = (...args: Parameters<CodingChecks["verify"]>) => this.c.checks.verify(...args);
+  reviewChanges = (...args: Parameters<CodingChecks["reviewChanges"]>) =>
+    this.c.checks.reviewChanges(...args);
   reviewReport = (...args: Parameters<CodingChecks["reviewReport"]>) =>
     this.c.checks.reviewReport(...args);
   approve = Effect.fn("Advancement.approve")(
@@ -615,6 +620,8 @@ export class Advancement {
                 "Cannot resume work owned by another execution",
               );
             if (issue.status === "blocked") yield* this.c.work.resume(e.issue_id, e.execution_id);
+            if ((phase === "claiming" || phase === "provisioning") && !e.capacity_reservation)
+              changes.capacity_observed_idle = true;
             yield* this.c.transitions.move(e, phase, changes);
             if (
               e.capacity_wait ||

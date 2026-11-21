@@ -1,6 +1,7 @@
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import * as Id from "../../src/identities.ts";
+import { toolPresentation } from "../../src/web/tool-presentation.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Clock, Effect } from "effect";
@@ -499,6 +500,37 @@ test("diagnostic message provenance cannot authorize lifecycle changes, and paus
       request_id: "diagnostic-must-not-render",
     }),
     /diagnostic turn/,
+  );
+  const draft = { surface_id: "draft", source: 'root = Text("Draft")', validate_only: true };
+  const draftResult = await invoke("render_ui", draft);
+  assert.equal(
+    toolPresentation(
+      "abra_render_ui",
+      draft,
+      [{ type: "text", text: draftResult.content as string }],
+      undefined,
+    ),
+    undefined,
+  );
+  assert.deepEqual(JSON.parse(draftResult.content as string).result, {
+    surface_id: "draft",
+    validated: true,
+  });
+  await assert.rejects(
+    run(
+      tools.get("render_ui")!.execute(draft, {
+        sessionID: e.explore_session_id!,
+        agent: Agent.ID.make("abra"),
+        messageID: Id.MessageId.make("msg_worker-draft"),
+        id: Tool.CallID.make("call_worker-draft"),
+        progress: () => Effect.void,
+      }),
+    ),
+    /WORKER_FORBIDDEN/,
+  );
+  await assert.rejects(
+    invoke("render_ui", { ...draft, source: `root = WorkTable(${"x".repeat(4096)}=true)` }),
+    (error: Error) => error.message.includes("UI_EXPRESS") && error.message.length < 1600,
   );
   await invoke("work_report", { issue_id: e.issue_id, action: "artifacts" });
   assert.equal((await run(f.controller.get(e.issue_id))).visual_reports, undefined);

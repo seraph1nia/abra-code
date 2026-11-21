@@ -2,13 +2,13 @@ import { Recap } from "./recap-loader.tsx";
 import { MessageContent, emptyAttachments, emptyDiagnostics } from "./message-content.tsx";
 import { Composer } from "./composer.tsx";
 import { workspaceDraft, AttachSelection, type DraftAttachment } from "./workspace-state/draft.ts";
-import { Link, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { ArrowUpRight, Sparkles, Settings, SunMoon } from "@abracode/presentation/icons";
 import { useWorkspaceNavigation } from "./workspace-state/navigation.ts";
 import { useTranscriptViewport } from "./workspace-state/viewport.ts";
 
 /* oxlint-disable effecttsgo/unstable-api-usage -- Workspace presentation consumes the typed Effect atom layer. */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WorkspaceProvider } from "./workspace-provider.tsx";
 import { useAtomSet, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -46,14 +46,21 @@ const Inspector = deferred<React.ComponentProps<typeof import("./inspector.tsx")
   "Work inspection",
   "deferred-panel",
 );
-import { OpenSurface, workspaceSearch, resourceFromSearch } from "./navigation.ts";
+import {
+  OpenSurface,
+  workspaceSearch,
+  resourceFromSearch,
+  type WorkspaceSearch,
+} from "./navigation.ts";
 import { useNativeToolRendering } from "./presentation/tools.tsx";
 import { useTheme } from "./theme.tsx";
 import { Button } from "@abracode/presentation/ui/button";
 import { Badge } from "@abracode/presentation/ui/badge";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
 
-export function Application() {
+type LayoutProps = { route: WorkspaceSearch; active: boolean; phone: boolean };
+
+export function Application(props: LayoutProps) {
   const initial = useAtomValue(bootstrapQuery);
   const retry = useAtomRefresh(bootstrapQuery);
   const [connected, setConnected] = useState<WorkspaceSnapshot>();
@@ -79,11 +86,16 @@ export function Application() {
     );
   return (
     <WorkspaceProvider>
-      <Workspace key={snapshot.session_id} initial={snapshot} />
+      <Workspace key={snapshot.session_id} initial={snapshot} {...props} />
     </WorkspaceProvider>
   );
 }
-function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
+function Workspace({
+  initial,
+  route,
+  active,
+  phone,
+}: { initial: WorkspaceSnapshot } & LayoutProps) {
   useNativeToolRendering();
   const {
     workspace,
@@ -100,7 +112,7 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
     loadHistory,
   } = useWorkspace(initial);
   const [finder, setFinder] = useState({ open: false, opened: false });
-  const sidebar = finder.open;
+  const sidebar = Boolean(route.view === "finder" || (!phone && finder.open));
   const finderOpened = finder.opened;
   const setSidebar = useCallback(
     (open: boolean) => setFinder((previous) => ({ open, opened: previous.opened || open })),
@@ -111,14 +123,49 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
   const [attentionOpen, setAttentionOpen] = useState(false);
   const [retainedViews, setRetainedViews] = useState(false);
   const { theme, setTheme } = useTheme();
-  const route = useSearch({ from: "/" });
+  const navigate = useNavigate({ from: "/" });
+  const router = useRouter();
+  const inspecting = Boolean(resourceFromSearch(route) || route.surface);
+  const phoneCanvas = phone && (inspecting || Boolean(route.view));
+  const chatVisible = active && !phoneCanvas;
+  const lastInspection = useRef<WorkspaceSearch | undefined>(undefined);
+  const memoryKey = "abra-canvas-v1-" + initial.session_id;
+  useEffect(() => {
+    if (!active) return;
+    if (route.view === "canvas") {
+      let next: WorkspaceSearch = lastInspection.current ?? { view: "finder" };
+      try {
+        const saved = workspaceSearch(JSON.parse(sessionStorage.getItem(memoryKey) ?? "{}"));
+        if (saved.surface || resourceFromSearch(saved)) next = saved;
+      } catch {
+        /* Storage can be disabled in private browsing. */
+      }
+      void navigate({ search: next, replace: true });
+    } else if (inspecting) {
+      lastInspection.current = route;
+      try {
+        sessionStorage.setItem(memoryKey, JSON.stringify(route));
+      } catch {
+        /* Direct links still work when storage is unavailable. */
+      }
+    }
+  }, [active, inspecting, memoryKey, navigate, route]);
   const viewport = useTranscriptViewport(
     messages,
     loadingHistory,
-    `${resourceFromSearch(route)?.issue_id ?? ""}/${sidebar}`,
+    `${resourceFromSearch(route)?.issue_id ?? ""}/${sidebar}/${chatVisible}`,
+  );
+  useEffect(
+    () => router.subscribe("onBeforeNavigate", viewport.rememberPosition),
+    [router, viewport.rememberPosition],
   );
   const closeFinder = useCallback(() => setSidebar(false), [setSidebar]);
-  const navigation = useWorkspaceNavigation(viewport.rememberPosition, closeFinder, setError);
+  const navigation = useWorkspaceNavigation(
+    route,
+    viewport.rememberPosition,
+    closeFinder,
+    setError,
+  );
   const { selected, tab, inspect, setTab, closeInspector, returnInspectorFocus } = navigation;
   const { scroller, transcript, bottom, rememberPosition } = viewport;
   const setDraft = useAtomSet(workspaceDraft(initial.session_id));
@@ -167,6 +214,15 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
     const target = resourceFromSearch(workspaceSearch({ issue: id, tab: nextTab }));
     if (target) inspect(target);
   }
+  useEffect(() => {
+    if (!phoneCanvas) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) closeInspector();
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [phoneCanvas, closeInspector]);
+
   function focusForm(id: string) {
     if (!workspace.forms.some((item) => item.active && item.form.id === id)) {
       setError(
@@ -178,48 +234,53 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
     navigation.focusForm(id);
   }
 
+  function focusComposer() {
+    const composer = document.querySelector<HTMLTextAreaElement>('[aria-label="Message Abra"]');
+    if (
+      phoneCanvas ||
+      (inspecting && (route.canvas || matchMedia("(max-width: 1250px)").matches))
+    ) {
+      closeInspector(composer);
+    } else {
+      composer?.focus();
+    }
+  }
+
   function attach(attachment: DraftAttachment) {
     setDraft({ attachment });
-    const composer = document.querySelector<HTMLTextAreaElement>('[aria-label="Message Abra"]');
-    if (document.querySelector('[role="dialog"] .inspector')) {
-      closeInspector(composer);
-      return;
-    }
-    requestAnimationFrame(() =>
-      document.querySelector<HTMLTextAreaElement>('[aria-label="Message Abra"]')?.focus(),
-    );
+    focusComposer();
   }
 
   function ask(text: string) {
     setDraft({ text });
-    requestAnimationFrame(() =>
-      document.querySelector<HTMLTextAreaElement>('[aria-label="Message Abra"]')?.focus(),
-    );
+    focusComposer();
   }
   return (
     <OpenSurface.Provider value={navigation.openSurface}>
       <div
         role="presentation"
         style={{ "--canvas-width": canvasWidth + "%" } as React.CSSProperties}
-        className={`workspace ${selected || route.surface ? "inspecting" : ""} ${sidebar ? "finding" : ""}`}
+        className={`workspace ${phoneCanvas ? "phone-canvas" : ""} ${selected || route.surface ? "inspecting" : ""} ${sidebar ? "finding" : ""}`}
         onKeyDown={(event) => {
           if ((event.ctrlKey || event.metaKey) && event.key === "f") viewport.onReadingIntent();
-          if (event.key === "Escape" && !event.defaultPrevented) {
+          if (event.key === "Escape" && !phoneCanvas && !event.defaultPrevented) {
             rememberPosition();
             setSidebar(false);
-            if (!sidebar) closeInspector();
+            if (!sidebar || route.view) closeInspector();
           }
         }}
       >
-        <header className="topbar">
+        <header className="topbar" hidden={phoneCanvas}>
           <div className="brand">
             <Button
               variant="ghost"
+              hidden={phone}
               aria-label="Toggle work finder"
               aria-expanded={sidebar}
               onClick={() => {
                 rememberPosition();
-                setSidebar(!sidebar);
+                if (route.view) closeInspector();
+                else setSidebar(!sidebar);
               }}
             >
               Work
@@ -253,6 +314,7 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
               </Badge>
             </Button>
             <Link
+              hidden={phone}
               to="/settings"
               className="settings-link header-icon"
               aria-label="Settings"
@@ -284,13 +346,21 @@ function Workspace({ initial }: { initial: WorkspaceSnapshot }) {
         {(sidebar || finderOpened) && (
           <WorkFinder
             shown={sidebar}
-            close={() => setSidebar(false)}
+            close={() => {
+              setSidebar(false);
+              if (route.view) closeInspector();
+            }}
             workspace={workspace}
             open={open}
             ask={ask}
           />
         )}
-        <main className="main-pane">
+        {phone && inspecting && (
+          <Link className="phone-find-work" to="/" search={{ view: "finder" }}>
+            Find other work
+          </Link>
+        )}
+        <main className="main-pane" hidden={phoneCanvas}>
           <Recap
             key={workspace.session_id}
             session={workspace.session_id}

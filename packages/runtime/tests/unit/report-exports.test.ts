@@ -46,7 +46,17 @@ test("HTML exports are immutable, keyed by document and exporter and repaired wi
   });
   await assert.rejects(run(unprepared.create(json, hash)), /report:prepare/);
   assert.deepEqual(await run(unprepared.read(hash, exporter)), first);
-  await rm(join(directory, "receipt.json"));
+  const receiptPath = join(directory, "receipt.json");
+  await writeFile(receiptPath, "{");
+  for (const effect of [owner().read(hash, exporter), owner().create(json, hash)])
+    assert.equal((await run(Effect.flip(effect))).code, "INVALID_DATA");
+  assert.equal(await readFile(receiptPath, "utf8"), "{");
+  await rm(receiptPath);
+  const malformed = first.html.replace(/>[^<]*<\/script>/, ">{</script>");
+  await writeFile(path, malformed);
+  assert.equal((await run(Effect.flip(owner().create(json, hash)))).code, "REPORT_HTML");
+  assert.equal(await readFile(path, "utf8"), malformed);
+  await writeFile(path, first.html);
   assert.deepEqual(await run(owner().create(json, hash)), first);
   assert.equal(builds, 1);
   assert.equal((await lstat(path)).ino, inode);

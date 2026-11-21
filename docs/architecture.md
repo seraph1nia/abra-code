@@ -118,7 +118,7 @@ receipts; worker completion owns its capacity observations. Their commits cannot
 overwrite concurrent progress, questions, failure incidents or report evidence.
 Remaining writer migrations are tracked by the refactor's task 4.1.
 
-Active native-turn capacity is separate from retained incomplete execution/worktree capacity. Pending or uncertain admission reserves compute conservatively; confirmed idle/stop releases compute while retaining the issue claim and resources. Approval/CI waits consume retained capacity. Explicit `max_executions` enables multiple retained tickets without increasing model concurrency; omitted limits preserve the old resource ceiling. Every role admission rechecks global, repository and role budgets atomically. Each worker handoff confirms owned sessions are idle.
+Worker reservations and initial provisioning consume execution slots. Idle claims, worktrees and pending approvals can outlive their slots. Each new worker turn checks global, repository and role limits under the controller lock. A worker asking for input releases its reservation once the controller confirms that the assignment has stopped. An external writer or uncertain native admission continues to hold its slots. Omitted execution limits inherit the worker limit at the same scope.
 
 Native events trigger deterministic reconciliation. A 30-second fallback handles dropped events/crashes. Synthetic Supervisor messages do not trigger new model turns or recursively enter the worker event handler. Worker history remains after resource retirement.
 

@@ -144,16 +144,13 @@ verification:
 
 Deadlines and output limits must be positive integers. Ordinary Git/discovery commands retain their 120-second deadline. Output retention defaults to 8 MiB separately for stdout and stderr; diagnostic tails are bounded at 8 KiB. Only adapters explicitly handling documented semantic exits may allow nonzero exits; verification still requires exit zero. Later project edits do not change an active execution's snapshotted commands.
 
-## Active versus retained capacity
+## Worker and execution slots
 
-The shipped omitted `max_executions` value preserves the corresponding old `max_workers` ceiling. To permit idle PRs or paused work while one worker runs, deliberately raise retained capacity globally and in the project registration:
+Open **Work** to see workspace usage and limits. Selecting a project adds its local counts. Search and task filters do not change these totals.
 
-```yaml
-max_workers: 1
-max_executions: 4
-```
+`max_workers` limits concurrent worker reservations. `max_executions` limits admitted executions, including setup preparation and work being claimed or provisioned. One active worker normally uses one of each slot. A repository setup in preparation uses one execution slot and zero workers. Each limit applies both globally and per repository. If omitted, `max_executions` inherits the corresponding worker limit.
 
-Register the repository with `max_workers: 1, max_executions: 4` as well. The controller still admits one active turn globally and per repository; idle work retains claims and counts toward four retained executions. Pending/uncertain native admission continues to reserve its worker slot until native evidence confirms idle/stop. Explore and Review budgets apply independently. Readiness identifies the active, retained or role limit and the executions consuming it. `pnpm doctor` and `abra_project_list` show effective limits.
+A confirmed pause, idle approval or idle input wait preserves the claim, worktree and conversation while using zero slots. If a worker asks a question mid-turn, its reservation lasts until the controller confirms native completion. Starting the next turn checks the execution, worker and role limits again. External writer custody and uncertain native submissions continue to consume capacity.
 
 ## GitHub delivery policy
 
@@ -331,3 +328,9 @@ configured/allowed/consumed/remaining counts. Manual supervision reports zero
 allowance even when repair rounds are configured. Legacy records report original
 provenance unavailable. These reads neither validate current schema availability
 nor answer a form, consume a round, admit work or change any lifecycle authority.
+
+### Diff-focused coding and private PR reviews
+
+Coding Review runs one OpenCode pass after verification. Configure its model and reasoning effort under `models.overrides.review`, using a model and variant available in your own OpenCode inventory. Repository and task dispatch continue to take precedence. After a model configuration change, restart the service for new executions. The central frozen install supplies OCR, and the bundled `abra-open-code-review-delegate` skill supplies the Review procedure. Delegation uses your selected OpenCode provider and requires no separate OCR login.
+
+Ask Abra to “review PR #42 in this repository” for a private report on the captured GitHub patches. That assignment captures the repository's resolved Review model for its Research worker. The report identifies the observed PR revision and patch coverage.

@@ -49,6 +49,7 @@ export interface ExecutionCommands {
   recordSupervisor(session: SessionId): Result<void>;
   recordWorkerTools(session: SessionId, model: WorkerModel, names: ToolName[]): Result<void>;
   recordWorkerFailure: WorkerSessions["recordFailure"];
+  reviewChanges: CodingChecks["reviewChanges"];
   reviewReport: CodingChecks["reviewReport"];
   control(
     id: IssueId,

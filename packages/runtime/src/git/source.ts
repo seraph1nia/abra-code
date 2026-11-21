@@ -10,14 +10,13 @@ import {
 
 import { domainEffect } from "../effect.ts";
 import { Effect, Schema } from "effect";
-import { decodeJSON } from "../decode.ts";
+import { decode, decodeJSON } from "../decode.ts";
 import { PackageSchema } from "../config/contracts.ts";
 import { NonEmpty } from "../contracts.ts";
-import { access, mkdir, readFile, rename, writeFile } from "../filesystem.ts";
+import { retainedEntry, mkdir, readFile, rename, writeFile } from "../filesystem.ts";
 import { isAbsolute, join, resolve } from "node:path";
 import { CrewError, ensure, identifier, type Project } from "../domain.ts";
 import { Git } from "./repository.ts";
-const exists = (path: AbsolutePath) => access(path).pipe(Effect.isSuccess);
 // Identity is separate from the transport URL: HTTPS and SSH may name the same repository.
 export function remoteIdentity(remote: GitRemote, cwd?: AbsolutePath): RemoteIdentity {
   ensure(remote.length > 0 && !remote.startsWith("-"), "REMOTE", "Invalid remote");
@@ -71,8 +70,8 @@ export class RepositorySources {
       const path = AbsolutePath.make(join(directory, "checkout"));
       const pending = AbsolutePath.make(join(directory, "pending"));
       const intent = AbsolutePath.make(join(directory, "clone.json"));
-      if (!(yield* exists(path))) {
-        if (yield* exists(intent)) {
+      if (!(yield* retainedEntry(path, "directory"))) {
+        if (yield* retainedEntry(intent, "file")) {
           const saved = yield* decodeJSON(
             Schema.Struct({ remote: NonEmpty }),
             yield* readFile(intent, "utf8"),
@@ -81,14 +80,14 @@ export class RepositorySources {
           if (!(saved.remote === identity))
             return yield* new CrewError("PROJECT_REBIND", "Clone intent belongs to another remote");
         } else {
-          if (yield* exists(pending))
+          if (yield* retainedEntry(pending, "directory"))
             return yield* new CrewError(
               "CLONE_AMBIGUOUS",
               "Unowned partial clone; preserve it and inspect manually",
             );
           yield* writeFile(intent, JSON.stringify({ remote: identity }), { flag: "wx" });
         }
-        if (!(yield* exists(pending)))
+        if (!(yield* retainedEntry(pending, "directory")))
           yield* this.git.run(directory, ["clone", "--origin", "origin", "--", remote, pending]);
         // A complete interrupted clone can be adopted. Invalid partial directories are retained.
         const candidate = yield* this.git.identity(pending);
@@ -124,8 +123,10 @@ export class RepositorySources {
       yield* this.git.run(path, ["check-ref-format", `refs/heads/${target}`]);
       const ref = `refs/remotes/origin/${target}`;
       yield* this.git.run(path, ["fetch", "--no-tags", "origin", `+refs/heads/${target}:${ref}`]);
-      const commit = Commit.make(
+      const commit = yield* decode(
+        Commit,
         yield* this.git.run(path, ["rev-parse", "--verify", `${ref}^{commit}`]),
+        "Fetched Git commit",
       );
       return { target_branch: target, commit };
     }.bind(this),

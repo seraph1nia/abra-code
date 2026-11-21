@@ -11,7 +11,12 @@ import { AsyncResult, type Atom } from "effect/reactivity";
 import { Alert, AlertDescription } from "@abracode/presentation/ui/alert";
 import { Button } from "@abracode/presentation/ui/button";
 import { Skeleton } from "@abracode/presentation/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@abracode/presentation/ui/tooltip";
+import {
+  Tooltip,
+  TooltipProvider,
+  TooltipContent,
+  TooltipTrigger,
+} from "@abracode/presentation/ui/tooltip";
 
 export function RequestState<A, E>({
   query,
@@ -54,21 +59,23 @@ export function RequestState<A, E>({
           <output className="inline-status">Updating…</output>
         )}
         {!group && showRefresh && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Refresh retained evidence"
-                  onClick={refreshEvidence}
-                >
-                  <RefreshCw aria-hidden="true" />
-                </Button>
-              }
-            />
-            <TooltipContent>Refresh this view</TooltipContent>
-          </Tooltip>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Refresh retained evidence"
+                    onClick={refreshEvidence}
+                  >
+                    <RefreshCw aria-hidden="true" />
+                  </Button>
+                }
+              />
+              <TooltipContent>Refresh this view</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
       </div>
       {AsyncResult.isFailure(result) && (

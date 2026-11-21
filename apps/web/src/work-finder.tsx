@@ -1,17 +1,44 @@
 import { GithubInbox } from "./github-inbox.tsx";
 import { useEffect, useState } from "react";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
-import type { WorkDiscovery } from "@abracode/contracts/visibility/discovery-contracts";
+import type {
+  CapacityUsageSchema,
+  WorkDiscovery,
+} from "@abracode/contracts/visibility/discovery-contracts";
 import { RepositoryId } from "@abracode/contracts/identities";
 import { phaseLabel } from "@abracode/contracts/presentation/work-state";
 import { fleetLabels } from "@abracode/contracts/visibility/fleet";
 import { queries } from "./work-data.ts";
 import { RequestState } from "./request-state.tsx";
-import { useMediaQuery } from "./use-media-query.ts";
 import { Button } from "@abracode/presentation/ui/button";
 import { Input } from "@abracode/presentation/ui/input";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
-import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@abracode/presentation/ui/sheet";
+
+function SlotUsage({ label, usage }: { label: string; usage?: typeof CapacityUsageSchema.Type }) {
+  return (
+    <div className="finder-slots">
+      <strong>{label}</strong>
+      {usage ? (
+        <dl>
+          <div>
+            <dt>Workers</dt>
+            <dd>
+              {usage.workers} / {usage.worker_limit}
+            </dd>
+          </div>
+          <div>
+            <dt>Execution slots</dt>
+            <dd>
+              {usage.retained} / {usage.retained_limit}
+            </dd>
+          </div>
+        </dl>
+      ) : (
+        <small>Usage unavailable</small>
+      )}
+    </div>
+  );
+}
 
 export function WorkFinder({
   shown,
@@ -26,7 +53,6 @@ export function WorkFinder({
   open: (id: string, tab?: "Reports") => void;
   ask: (text: string) => void;
 }) {
-  const mobile = useMediaQuery("(max-width: 760px)");
   const [search, setSearch] = useState("");
   const [settled, setSettled] = useState("");
   const [repository, setRepository] = useState("");
@@ -105,6 +131,11 @@ export function WorkFinder({
         <RequestState query={queries.find(query)}>
           {(page) => (
             <>
+              <section className="finder-capacity" aria-label="Capacity">
+                <SlotUsage label="Workspace capacity" usage={page.capacity} />
+                {repository && <SlotUsage label="Selected project" usage={page.project_capacity} />}
+                <small>Idle work waiting for input uses no slots.</small>
+              </section>
               <p className="muted">
                 {page.total} matching task{page.total === 1 ? "" : "s"}
                 {state === "active" && " · Active work includes queued and waiting tasks."}
@@ -248,30 +279,6 @@ export function WorkFinder({
       </div>
     </>
   );
-  if (mobile)
-    return (
-      <Sheet
-        open={shown}
-        onOpenChange={(open) => {
-          if (!open) close();
-        }}
-      >
-        <SheetContent
-          side="left"
-          showCloseButton={false}
-          className="p-0 data-[side=left]:w-[min(340px,100vw)] gap-0"
-          finalFocus={() =>
-            document.querySelector<HTMLButtonElement>('[aria-label="Toggle work finder"]') ?? false
-          }
-        >
-          <SheetTitle className="sr-only">Work finder</SheetTitle>
-          <SheetDescription className="sr-only">
-            Search retained work without leaving Abra.
-          </SheetDescription>
-          <div className="sidebar mobile-sidebar">{content}</div>
-        </SheetContent>
-      </Sheet>
-    );
   return (
     <aside className="sidebar" aria-label="Work finder" hidden={!shown}>
       {shown && content}

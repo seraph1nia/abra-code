@@ -20,7 +20,6 @@ import type { Endpoint } from "@opencode/client/effect/service";
 import { AbsolutePath, IssueId, RequestId, ContentHash, SessionId } from "../../src/identities.ts";
 import { NativeWebBackend } from "../../src/web/backend.ts";
 import { workspaceServer } from "../../src/web/server.ts";
-import { catalogId } from "../../src/web/surfaces.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 
 type Native = ReturnType<typeof OpenCode.make>;
@@ -413,20 +412,20 @@ export async function workspaceJourney(input: {
       await nativeCard().locator("xpath=ancestor::*[@data-native-renderer='copilotkit']").count(),
       1,
     );
-    await command("abra_render_ui", {
-      surface: {
-        version: "1.0",
-        createSurface: {
-          surfaceId: "workspace-board",
-          catalogId,
-          components: [
-            { id: "root", component: "Column", children: ["heading", "board"] },
-            { id: "heading", component: "Text", text: "Native workspace coding journey" },
-            { id: "board", component: "Kanban", issueIds: [issue], mode: "live" },
-          ],
-        },
-      },
-    });
+    const board = {
+      surface_id: "workspace-board",
+      source: `root = Column([Text("Native workspace coding journey"), Kanban(issueIds=[${JSON.stringify(issue)}], mode="live")])`,
+    };
+    const checked = await command("abra_render_ui", { ...board, validate_only: true });
+    assert.deepEqual(checked, { validated: true, surface_id: board.surface_id });
+    await assert.rejects(
+      command("abra_render_ui", { ...board, source: "root = UnknownWidget()" }),
+      /UnknownWidget/,
+    );
+    await assert.rejects(command("abra_render_ui", { surface: {} }), /surface_id|source|required/i);
+    assert.equal((await Effect.runPromise(backend.snapshot)).surfaces.length, 0);
+    const published = await command("abra_render_ui", board);
+    assert.equal(published.revision, 1);
     await page.getByText("Native workspace coding journey", { exact: true }).waitFor();
     const openLayout = async (revision: number) => {
       await page
@@ -549,48 +548,22 @@ export async function workspaceJourney(input: {
       "Timeline",
       "DecisionSummary",
     ];
+    const workViews = widgets.map((widget, i) => {
+      const id = widget === "WorkTable" ? population.offPage.id : issue;
+      return `${widget}(issueIds=[${JSON.stringify(id)}], mode="${i % 2 ? "snapshot" : "live"}")`;
+    });
+    const diagrams = diagramFixtures.map(
+      (d) => `Mermaid(${JSON.stringify(d.title)}, ${JSON.stringify(d.source)})`,
+    );
     await command("abra_render_ui", {
-      surface: {
-        version: "1.0",
-        createSurface: {
-          surfaceId: "workspace-board",
-          catalogId,
-          components: [
-            {
-              id: "root",
-              component: "Column",
-              children: [
-                "heading",
-                "views",
-                "report",
-                "changes",
-                ...diagramFixtures.map((_, i) => `diagram${i}`),
-              ],
-            },
-            { id: "heading", component: "Text", text: "Revised upstream work view" },
-            ...diagramFixtures.map((d, i) => ({ id: `diagram${i}`, component: "Mermaid", ...d })),
-            {
-              id: "views",
-              component: "Row",
-              children: ["snapshotAll", ...widgets.map((_, i) => `widget${i}`)],
-            },
-            { id: "snapshotAll", component: "WorkTable", mode: "snapshot" },
-            ...widgets.map((component, i) => ({
-              id: `widget${i}`,
-              component,
-              issueIds: component === "WorkTable" ? [population.offPage.id] : [issue],
-              mode: i % 2 ? "snapshot" : "live",
-            })),
-            { id: "report", component: "ReportLink", issueId: issue },
-            {
-              id: "changes",
-              component: "ResourceLink",
-              label: "Inspect execution changes",
-              target: { action: "open_changes", issue_id: issue },
-            },
-          ],
-        },
-      },
+      surface_id: board.surface_id,
+      source: `root = Column([
+        Text("Revised upstream work view"),
+        Row([WorkTable(mode="snapshot"), ${workViews.join(", ")}]),
+        ReportLink(${JSON.stringify(issue)}),
+        ResourceLink("Inspect execution changes", {action:"open_changes", issue_id:${JSON.stringify(issue)}}),
+        ${diagrams.join(", ")}
+      ])`,
     });
     await page
       .locator(".transcript")
@@ -666,21 +639,8 @@ export async function workspaceJourney(input: {
     );
     await assert.rejects(
       command("abra_render_ui", {
-        surface: {
-          version: "1.0",
-          createSurface: {
-            surfaceId: "workspace-board",
-            catalogId,
-            components: [
-              {
-                id: "root",
-                component: "ResourceLink",
-                label: "Foreign session",
-                target: { action: "open_session", issue_id: issue, session_id: input.session },
-              },
-            ],
-          },
-        },
+        surface_id: board.surface_id,
+        source: `root = ResourceLink("Foreign session", {action:"open_session", issue_id:${JSON.stringify(issue)}, session_id:${JSON.stringify(input.session)}})`,
       }),
       /retained execution|does not own/i,
     );

@@ -225,6 +225,12 @@ test("incomplete scoped work creates a durable clarification before any worker; 
 test("lightweight uses short scope, checks and independent Review with no OpenSpec archive", async (t) => {
   const { f, issue } = await setup("lightweight-fix");
   t.onTestFinished(() => run(f.close()));
+  const cheap = {
+    ...f.config.models.default,
+    id: Id.ModelId.make("cheap-review"),
+    variant: Id.ModelVariant.make("low"),
+  };
+  f.config.workers.review = { model: cheap };
   f.spec.implemented = () =>
     Effect.fail(new CrewError("UNEXPECTED_SPEC", "No fictional OpenSpec tasks"));
   let e = await run(f.controller.start(issue.id));
@@ -235,6 +241,8 @@ test("lightweight uses short scope, checks and independent Review with no OpenSp
   assert.equal(e.current_phase, "verifying");
   assert.ok(e.verification_receipt);
   assert.ok(e.review_session_id);
+  assert.deepEqual(f.runtime.sessions.get(e.review_session_id)!.model, cheap);
+  assert.equal((await run(f.controller.get(issue.id))).review_coverage?.complete, true);
   await run(
     f.controller.reviewReport(e.review_session_id!, true, "Acceptance checked independently"),
   );

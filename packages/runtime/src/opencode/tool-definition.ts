@@ -106,11 +106,14 @@ export function defineTool<I, O>(d: {
                   message: `${error.code}: ${diagnosticText(error.message)}`,
                   metadata: {
                     code: error.code,
-                    action: d.name.startsWith("project")
-                      ? "Inspect project_list and the onboarding/recovery runbook; preserve resources."
-                      : d.name === "work_create"
-                        ? "Inspect work_list; reuse the same request_id after repair."
-                        : "Inspect work_status and the recovery runbook; preserve resources.",
+                    action:
+                      d.name === "render_ui"
+                        ? "Use abra-express to correct the indicated draft or reference. Retry unavailable verification when it recovers."
+                        : d.name.startsWith("project")
+                          ? "Inspect project_list and the onboarding/recovery runbook; preserve resources."
+                          : d.name === "work_create"
+                            ? "Inspect work_list; reuse the same request_id after repair."
+                            : "Inspect work_status and the recovery runbook; preserve resources.",
                   },
                 }),
             ),

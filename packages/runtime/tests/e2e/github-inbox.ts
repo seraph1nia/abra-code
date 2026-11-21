@@ -68,6 +68,10 @@ export async function inboxJourney(input: {
     async () => (await status(review)).current_phase === "completed" || undefined,
     60000,
   );
+  const worker = (await status(review)).configuration_snapshot.workers.research;
+  assert.equal(worker.model.id, "gpt-specialist");
+  assert.ok(worker.required_skills.includes("abra-open-code-review-delegate"));
+  assert.equal(await input.invoke("abra_github_assign", pr), review);
   await input.invoke("abra_work_start", { issue_id: local });
   const published = await input.eventually(
     async () => (await status(local)).pull_request_reference || undefined,

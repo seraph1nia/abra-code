@@ -1,3 +1,6 @@
+import { ExpressPromptGenerator } from "@a2ui/agent";
+import { catalog } from "../../src/web/catalog.ts";
+import { compileWorkView } from "../../src/web/express.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -49,7 +52,9 @@ test("portable registration preserves local skills without a developer skill dir
           ),
       },
     } as unknown as Context;
-    await run(registerSkills(ctx, skills, central).pipe(Effect.provide(platformLayer)));
+    await run(
+      registerSkills(ctx, skills, central, ["express"]).pipe(Effect.provide(platformLayer)),
+    );
     assert.equal(inventory.get(local.id), local);
     for (const name of expected.apply) {
       const skill = inventory.get(`abra-${name}`);
@@ -57,10 +62,25 @@ test("portable registration preserves local skills without a developer skill dir
       assert.ok(skill.content.includes("Adapted from"));
       assert.ok(!/\]\((?:\.\/)?(?:references|DEEPENING|DESIGN-IT-TWICE)/.test(skill.content));
     }
+    assert.equal(inventory.has("abra-express"), central);
+    const express = inventory.get("abra-express");
+    if (express) {
+      const signatures = new ExpressPromptGenerator([catalog])
+        .generateCatalogInstructions()
+        .split("\n")
+        .filter((line) => line.startsWith("• "));
+      assert.deepEqual(
+        express.content.split("\n").filter((line) => line.startsWith("• ")),
+        signatures,
+      );
+      const examples = [...express.content.matchAll(/```express\n([\s\S]*?)```/g)];
+      assert.equal(examples.length, 2);
+      for (const [, example] of examples) compileWorkView("example", example);
+    }
     assert.equal(inventory.has("abra-orchestration"), central);
     assert.ok(inventory.has("abra-openspec-execution"));
     assert.ok(!inventory.has("abra-testing"));
-    assert.equal(inventory.size, central ? 11 : 8);
+    assert.equal(inventory.size, central ? 13 : 9);
   }
 });
 
@@ -108,6 +128,7 @@ test("new admissions select the role matrix additively and load only relevant pr
     assert.deepEqual(req.skills, [
       ...(workflow === "full-openspec" ? ["abra-openspec-execution"] : []),
       ...expected[role].map((name) => `abra-${name}`),
+      ...(role === "review" ? ["abra-open-code-review-delegate"] : []),
       "local-fixture",
     ]);
     const inventory = req.skills.map((id) => ({

@@ -110,6 +110,8 @@ export class Controller {
     this.services.execution.start(...args);
   advance = (...args: Parameters<ExecutionCommands["advance"]>) =>
     this.services.execution.advance(...args);
+  reviewChanges = (...args: Parameters<ExecutionCommands["reviewChanges"]>) =>
+    this.services.execution.reviewChanges(...args);
   reviewReport = (...args: Parameters<ExecutionCommands["reviewReport"]>) =>
     this.services.execution.reviewReport(...args);
   approve = (...args: Parameters<ExecutionCommands["approve"]>) =>

@@ -67,6 +67,7 @@ export interface WebBackend {
   };
   prepareDiagrams(input: PrepareDiagramSelection): Effect.Effect<DiagramPreparation, CrewError>;
   readonly agentStatus?: Effect.Effect<{ busy: boolean }, CrewError>;
+  readonly repositories: Effect.Effect<WorkspaceSnapshot["projects"], CrewError>;
   readonly agents: Effect.Effect<AgentCatalog, CrewError>;
   readonly snapshot: Effect.Effect<WorkspaceSnapshot, CrewError>;
   observe(scope: ChangeScope): Effect.Effect<WorkspaceSnapshot, CrewError>;

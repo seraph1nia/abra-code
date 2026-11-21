@@ -6,7 +6,7 @@ For development, run:
 pnpm dev
 ```
 
-Open `http://127.0.0.1:5173`. Vite serves the TanStack Router frontend and React Fast Refresh preserves component state. `tsx watch` restarts the Effect HTTP adapter when backend source changes. The native OpenCode service and its work stay independently owned; ordinary HTTP reloads reuse its existing Abra session. Changes to code loaded inside the native plugin require its normal controlled service restart.
+Open `http://127.0.0.1:5173`. Vite serves the TanStack Router frontend and React Fast Refresh preserves component state. `tsx watch` restarts the Effect HTTP adapter when backend source changes. Each `pnpm dev` launch starts or restarts the native OpenCode service and reuses the Abra session. Relaunch it when workers are idle to load native plugin changes. Ordinary HTTP reloads keep the native process running.
 
 Use `pnpm dev --port 5174 --backend-port 4099` to change the frontend/backend ports. The Vite proxy validates the browser's exact origin before translating it to the private backend origin. Ctrl+C stops both development servers and preserves native work. The workspace remains the TanStack Router index route; validated search parameters retain issue, inspector tab, file and diff scope through browser history and reload.
 
@@ -19,11 +19,13 @@ pnpm web
 
 The default URL is `http://127.0.0.1:4097`. `pnpm web --port 4098 --no-open` selects another port and prints its URL. Keep the foreground process open. Closing a tab detaches its observer; stopping this process closes its listener and streams. Native Abra, workers, worktrees and work history continue in the existing background service. Provider login remains `pnpm auth`. The frontend uses the existing session's model and existing worker configuration, with no additional model configuration or CopilotKit account.
 
-The workspace keeps Abra chat and its composer mounted. Work opens a collapsible finder with retained search/history pages; inspection opens beside chat or in a narrow-screen sheet. The single header contains Work, Abra, connection status, the attention count, Settings and a keyboard-accessible appearance selector. Choose System, Light or Dark while reading or composing. Review next opens the first answerable native form or permission. Attention lists all retained obligations and any coverage limits. Collapsing the list preserves edits for that binding. The device recap tracks reading history separately. Chat prose wraps near 70 characters, with extra room for code and tables. Generated layouts and report attachments appear with their producing messages rather than replacing chat with a separate view mode. All instructions, including worker instructions and work-control requests, go through Abra. Work-control buttons fill a request in the main composer; sending it queues a normal native input. Stop current Abra turn is distinct from Pause work. Native OpenCode cannot stop an arbitrarily selected historical run, so the adapter refuses that operation.
+The workspace keeps Abra chat and its composer mounted. Work opens a collapsible finder with retained search/history pages; inspection opens beside chat on desktop, in a sheet on tablets, and in Canvas on phones. The desktop header contains Work, Abra, connection status, the attention count, Settings and a keyboard-accessible appearance selector. Choose System, Light or Dark while reading or composing. Review next opens the first answerable native form or permission. Attention lists all retained obligations and any coverage limits. Collapsing the list preserves edits for that binding. The device recap tracks reading history separately. Chat prose wraps near 70 characters, with extra room for code and tables. Generated layouts and report attachments appear with their producing messages rather than replacing chat with a separate view mode. All instructions, including worker instructions and work-control requests, go through Abra. Work-control buttons fill a request in the main composer; sending it queues a normal native input. Stop current Abra turn is distinct from Pause work. Native OpenCode cannot stop an arbitrarily selected historical run, so the adapter refuses that operation.
 
 See [the frontend architecture](frontend.md) for state ownership, shared components, CSS, native forms and Pierre diff rendering.
 
-## Agent settings
+## Settings
+
+The Settings sidebar opens **Agents** by default. Choose **Repositories** or visit `/settings/repositories` to see every onboarded repository, including those with no tasks. The read-only list shows the registered ID and checkout path when available. Refresh reads the current list through the authenticated `abracode-web.projects` RPC.
 
 Open **Settings** from the workspace header, or visit `/settings`, to inspect the installation's agent definitions. The read-only list includes bundled and custom agents from the injected `Agents` Effect service. Expand a definition to see its revision, native mode, roles, model reference, declared tools and custom tools, skills and preloads, capability requirements, additional denials, instruction source references and inline instructions. File contents and assignment-specific context are not loaded by this view.
 
@@ -73,9 +75,18 @@ The attention dock renders native string, choice, numeric, integer, boolean, mul
 
 The supervisor-only `abra_render_ui` tool publishes **A2UI 1.0** complete `createSurface` revisions with inline components and `id: "root"`, using catalog ID `https://abracode.local/catalog/work/v2/catalog.json`. Effect schemas own custom component props. The shared catalog builder generates JSON Schema, adds the A2UI catalog structure and reuses the upstream Column, Row and Text definitions. The server and browser load the same document through the official SDK; the frontend build exports `catalog/work-v2.json` plus the retained `catalog/work-v1.json` discovery document. Catalog identifiers are identifiers, not fetched URLs.
 
-Component IDs start with an ASCII letter and contain only letters, digits or underscores, up to 101 characters. Use `projects_heading` in both the component definition and its parent's children. Surface IDs remain separate and may contain hyphens. The native tool schema includes the component ID pattern and validation identifies the offending ID or component property.
+The Supervisor loads the on-demand `abra-express` skill for component signatures and examples. Call `abra_render_ui` with a stable `surface_id` and an untagged Express `source`. For example, the following arguments publish a live work board.
 
-The catalog supports Column, Row, Text, Mermaid, WorkTable, StatusSummary, Kanban, DependencyGraph, Timeline, DecisionSummary, ReportLink, ResourceLink and ReportEvidence. The upstream `MessageProcessor` and `@a2ui/react` render surfaces; custom work widgets receive application context for live work, retained snapshots and inspector navigation. Text remains literal text. Layout references use the A2UI 1.0 flat component adjacency list. Work references bind existing issue IDs. Views use live read-model data or a clearly labelled retained snapshot. Selection and report links open the inspector. New validated revisions retain immutable captured layouts and exact message/call associations before updating the latest-view index. Historical cards load their own revision through `/api/surface`; they do not silently resolve to a newer layout. Catalog IDs, size, depth, component identities, cycles and work references are bounded; HTML, executable callbacks, arbitrary URLs and approval components are rejected. The model receives schema-derived tool/catalog instructions; no browser component is injected into its native tool loop.
+```json
+{
+  "surface_id": "work-board",
+  "source": "root = Column([Text(\"Current work\"), Kanban(mode=\"live\")])"
+}
+```
+
+Set `validate_only` to `true` to check the same source and bindings. A valid draft returns `{ "validated": true, "surface_id": "work-board" }`. Publishing checks current references again, assigns a revision and attaches the view to the producing message. Failed checks report the offending expression or reference when available.
+
+The catalog supports Column, Row, Text, Mermaid, WorkTable, StatusSummary, Kanban, DependencyGraph, Timeline, DecisionSummary, ReportLink, ResourceLink and ReportEvidence. The upstream `MessageProcessor` and `@a2ui/react` render surfaces; custom work widgets receive application context for live work, retained snapshots and inspector navigation. Text remains literal text. Layout references use the A2UI 1.0 flat component adjacency list. Work references bind existing issue IDs. Views use live read-model data or a clearly labelled retained snapshot. Selection and report links open the inspector. New validated revisions retain immutable captured layouts and exact message/call associations before updating the latest-view index. Historical cards load their own revision through `/api/surface`; they do not silently resolve to a newer layout. Catalog IDs, size, depth, component identities, cycles and work references are bounded; HTML, executable callbacks, arbitrary URLs and approval components are rejected. The model receives catalog-derived Express signatures; no browser component is injected into its native tool loop.
 
 Surfaces travel in the existing AG-UI workspace snapshots, including reconnect/bootstrap. There is no separate A2UI server or streaming endpoint. CopilotKit's automatic A2UI tool middleware stays disabled because OpenCode owns the tool loop. Application state and native RPC results use shared Effect contracts; AG-UI events use upstream types and runtime validators. The frontend retains its last valid state when a streamed payload is malformed.
 
@@ -288,7 +299,7 @@ Save snapshot retains the selected task, surface revision and request ID in brow
 
 In Diff, highlight lines on one side or open **Select lines** to enter a range with the keyboard. **Ask Abra about selection** attaches one excerpt to the main draft. You can inspect another issue before sending. A changed source leaves the draft editable. A lost response uses the same request and its original capture. Expand the sent selection to read the excerpt, Abra's explicitly linked answer or a worker's acknowledgement and recheck. Opening a captured question works after the worktree retires.
 
-The Verification tab shows the task scope, prior check receipts, independently attributed Review findings, and links to the bound decision. Expand a screenshot to load its exact retained bytes and provenance. The desktop canvas width slider supports arrow keys. The same route opens a sheet on narrow screens.
+The Verification tab shows the task scope, prior check receipts, independently attributed Review findings, and links to the bound decision. Expand a screenshot to load its exact retained bytes and provenance. The desktop canvas width slider supports arrow keys. The same route opens the tablet inspector sheet or the phone Canvas.
 
 Since your last inspection compares material results and decisions for up to 20 recently inspected tasks on this device, scoped to the Abra session. Unobserved tasks have partial coverage. Opening the result advances its local reading position. Human-owned obligations remain in Attention until settled. While Abra is busy, choose Queue for Abra or Steer current Abra turn before sending. Stop current Abra turn acts on the conversation. Issue-specific pause, resume and advance requests still go through the controller.
 
@@ -303,3 +314,21 @@ A generated comparison, board or diagram opens from its producing call. The addr
 Open Work or ask Abra “What's open across my projects?” to read the shared inbox. Its default includes all open GitHub issues and PRs. Use GitHub filters for labels, item kind, remote state or Abra role. Open an item for recent discussion and linked work. Ask Abra to pick up an issue or privately review a PR, then send the prepared request. The recorded work and GitHub states can advance independently.
 
 SQLite keeps summaries and page progress across restarts. First access starts filling the index, with at most two inventory calls at once. A warm view reads the index immediately. After five minutes, visible views request an incremental refresh covering closures and reopens. Hidden views suspend periodic reads. Refresh GitHub requests an earlier observation within rate-limit backoff. Coverage and observation times identify partial or stale results. Closed history loads on demand. Selected detail uses a bounded five-minute memory cache. Unlinked closed summaries expire after 30 days, while task links and accepted evidence remain durable.
+
+### Asking what to work on next
+
+Try this in a disposable registered project with an open release PR and a separate queued task. Give the PR a title that identifies the release so you can check which item Abra refers to.
+
+1. Ask “The release is my priority. What should I work on next?” Look for one action you can take, a task ID or PR link, and the fact that makes it worth doing first. If the inbox is incomplete, the answer should identify the gap.
+2. Say “The release moved to Friday. Does that change your pick?” Abra should explain which premise changed and why the same item or a different one deserves attention. You can check the work list after both turns to confirm that advice alone created no assignment.
+3. Ask “Privately review that release PR for upgrade risks.” The resulting local review should reference the same repository and PR and carry that focus. Repeat the request to check that it returns the existing assignment. If two release PRs fit the reference, Abra should ask which one you mean.
+
+## Phone workspace
+
+At 760 CSS pixels and below, the top bar opens **Chat**, **Canvas**, or **Settings**. Opening the workspace starts in Chat. Canvas opens the Work finder on first use and recalls the last inspected item for this tab and Abra session. Use **Find other work** to choose another task. Bookmark the finder at `/?view=finder`, or copy the URL while looking at a file, report or generated view to reopen that selection. Settings opens Agents, with Repositories at `/settings/repositories`. Browser Back and Forward follow these destinations.
+
+While writing a prompt, follow an evidence link in a message to inspect the exact file or revision. Select the relevant lines and choose **Ask Abra**. Chat reopens with the selection attached and the cursor in the original draft. Edit the prompt and press **Send** when ready.
+
+### Preview a phone on desktop
+
+Open the current workspace in Chrome, open DevTools, and toggle the device toolbar (Ctrl+Shift+M, or Cmd+Shift+M on macOS). Choose Responsive, enable touch and set the viewport to 390 × 844. Type a draft in Chat, open Canvas, choose a task, visit Settings, then return to Chat. The draft should still be there. Try 375 × 812 and reduce the height to 450 pixels with the composer focused to approximate the space above a software keyboard. Restore the height and widen past 760 pixels to check the tablet layout. Actual keyboard animation, caret tracking and home-indicator insets need a physical phone.

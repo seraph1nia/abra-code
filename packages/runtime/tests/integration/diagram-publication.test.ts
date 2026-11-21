@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { test } from "vite-plus/test";
+import { test, vi } from "vite-plus/test";
 import { Effect } from "effect";
 import { MemoryStore, TestLocks, fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import * as Id from "../../src/identities.ts";
-import { SurfacePublications } from "../../src/web/surface-publications.ts";
+import { checkSurfaceDraft, SurfacePublications } from "../../src/web/surface-publications.ts";
 import { validateSurface, catalogId } from "../../src/web/surfaces.ts";
 import { Reports } from "../../src/workflow/reports.ts";
 
@@ -45,6 +45,21 @@ test(
       run(owner.publish(request("msg_invalid", "flowchart LR\nA -->"), observation)),
       /DIAGRAM|Parse error|syntax/,
     );
+    await assert.rejects(
+      run(checkSurfaceDraft(request("msg_draft", "flowchart LR\nA -->").surface, observation)),
+      /DIAGRAM|Parse error|syntax/,
+    );
+    const { diagramPreparer } = await import("@abracode/report-export/preparation");
+    const unavailable = vi
+      .spyOn(diagramPreparer, "prepare")
+      .mockRejectedValue(Object.assign(new Error("missing compiler"), { code: "ENOENT" }));
+    try {
+      const draft = request("msg_unavailable", "flowchart LR\nA --> B");
+      await assert.rejects(run(checkSurfaceDraft(draft.surface, observation)), /root: unavailable/);
+      await assert.rejects(run(owner.publish(draft, observation)), /root: unavailable/);
+    } finally {
+      unavailable.mockRestore();
+    }
     const retained = await run(owner.read(session, "diagram-board", 1));
     assert.equal(
       retained.surface.createSurface.components[0]!.source,

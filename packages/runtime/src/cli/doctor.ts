@@ -20,7 +20,7 @@ await Effect.runPromise(
     const runner = new ProcessRunner();
     const browser = join(config.home, "node_modules/.bin/agent-browser");
     yield* Console.log(
-      `Capacity: ${config.max_workers} active workers; ${config.max_executions ?? config.max_workers} retained executions`,
+      `Capacity: ${config.max_workers} active workers; ${config.max_executions ?? config.max_workers} execution slots`,
     );
     const endpoint = yield* Service.discover({
       file: join(config.home, ".abracode/state/opencode/service.json"),

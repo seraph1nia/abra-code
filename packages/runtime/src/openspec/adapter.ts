@@ -10,7 +10,7 @@ import { Executable, ArtifactId, RelativePath, type AbsolutePath } from "../iden
 import { domainEffect } from "../effect.ts";
 import { Effect, Schema } from "effect";
 
-import { access, entryExists, readdir, readdirIfPresent } from "../filesystem.ts";
+import { retainedEntry, entryExists, readdir, readdirIfPresent } from "../filesystem.ts";
 import { join } from "node:path";
 import { CrewError, type Execution } from "../domain.ts";
 import { json, type Runner } from "../process.ts";
@@ -109,7 +109,7 @@ export class OpenSpec {
         "Selected schema definition, resolution source or templates changed; restore the retained inputs before continuing. A new schema requires separately planned work.",
       );
       const directory = join(yield* this.cwd(e), "openspec/changes", e.openspec_change);
-      if (yield* access(directory).pipe(Effect.isSuccess))
+      if (yield* retainedEntry(directory, "directory"))
         ensure(
           (yield* this.status(e)).schemaName === binding.name,
           "SCHEMA_IDENTITY",
@@ -173,13 +173,13 @@ export class OpenSpec {
       const binding = e.openspec_schema_binding;
       let name = binding?.state === "bound" ? binding.name : e.openspec_schema;
       const dir = join(yield* this.cwd(e), "openspec/changes", e.openspec_change);
-      if (yield* access(dir).pipe(Effect.isSuccess)) {
-        if (name)
-          ensure(
-            (yield* this.status(e)).schemaName === name,
-            "SCHEMA_IDENTITY",
-            "Existing change metadata names another schema; preserve it and inspect the original execution",
-          );
+      if (yield* retainedEntry(dir, "directory")) {
+        const status = yield* this.status(e);
+        ensure(
+          status.changeName === e.openspec_change && (!name || status.schemaName === name),
+          "SCHEMA_IDENTITY",
+          "Existing change metadata names another schema; preserve it and inspect the original execution",
+        );
         return;
       }
       name ??= yield* this.legacyRevisionSchema(e);

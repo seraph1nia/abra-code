@@ -43,6 +43,8 @@ import { domainEffect } from "../effect.ts";
 import {
   CrewError,
   type Config,
+  type Project,
+  type SetupExecution,
   type Execution,
   type Role,
   type ReadinessBlocker,
@@ -64,9 +66,23 @@ import {
 } from "../visibility/lead-observation.ts";
 import { scanLeads, type LeadRecord } from "./lead-contracts.ts";
 import type { WorkDiscovery } from "@abracode/contracts/visibility/discovery-contracts";
+function setupOverview(projects: readonly Project[], setups: readonly SetupExecution[]) {
+  const byRepo = new Map(setups.map((setup) => [setup.repository_id, setup]));
+  const pending = projects.flatMap<{
+    repository_id: RepositoryId;
+    phase: SetupExecution["current_phase"] | "unrequested";
+  }>((project) => {
+    const phase = byRepo.get(project.id)?.current_phase;
+    if (phase && phase !== "completed") return [{ repository_id: project.id, phase }];
+    return project.openspec ? [] : [{ repository_id: project.id, phase: "unrequested" as const }];
+  });
+  return { setup_count: pending.length, setups: pending.slice(0, 10) };
+}
+
 type FinderCapacity = {
   revision: string | undefined;
   capacity: CapacitySummary;
+  setupOverview: ReturnType<typeof setupOverview>;
   recordsUnavailable: boolean;
   authority?: ReadinessBlocker;
 };
@@ -962,7 +978,21 @@ export class Queries {
         retained_source: bundle.source,
       };
     });
-  /** Bounded identifiers and total only; no fleet readiness or native worker inspection. */
+  private slotUsage(cached: FinderCapacity, project?: Project) {
+    const { capacity } = cached;
+    const limits = project ?? this.config;
+    return {
+      workers: project
+        ? (capacity.activeByRepository.get(project.id)?.size ?? 0)
+        : capacity.active.size,
+      worker_limit: limits.max_workers,
+      retained: project
+        ? (capacity.retainedByRepository.get(project.id)?.size ?? 0)
+        : capacity.retained.size,
+      retained_limit: limits.max_executions,
+    };
+  }
+  /** Use the existing capacity observation only while its record revision still matches. */
   bindingPopulation = () =>
     this.capture((work_revision) =>
       Effect.gen({ self: this }, function* () {
@@ -971,7 +1001,19 @@ export class Queries {
           first.total > 50
             ? yield* this.work.find({ state: "all", offset: 50, limit: 50 })
             : undefined;
+        const cached = this.finderCapacity;
+        const capacity =
+          cached &&
+          !cached.recordsUnavailable &&
+          cached.revision === (yield* this.records.observationRevision)
+            ? {
+                ...this.slotUsage(cached),
+                auto_schedule: this.config.auto_schedule,
+                ...cached.setupOverview,
+              }
+            : undefined;
         return {
+          capacity,
           ids: [...first.entries, ...(second?.entries ?? [])].map((issue) => issue.id),
           total: first.total,
           work_revision,
@@ -1006,6 +1048,7 @@ export class Queries {
       const retained = bundle
         ? {
             revision: bundle.recordsRevision,
+            setupOverview: setupOverview(bundle.projects, bundle.setups),
             capacity: summarizeCapacity([...bundle.executions, ...bundle.setups]),
             recordsUnavailable: bundle.diagnostics.length > 0,
           }
@@ -1021,6 +1064,7 @@ export class Queries {
             ).pipe(
               Effect.map(({ revision, projects, executions, setups }) => ({
                 revision,
+                setupOverview: setupOverview(projects.values, setups.values),
                 capacity: summarizeCapacity([...executions.values, ...setups.values]),
                 recordsUnavailable: [projects, executions, setups].some(
                   ({ diagnostics }) => diagnostics.length > 0,
@@ -1057,7 +1101,8 @@ export class Queries {
       const retained = yield* this.capture((workRevision) =>
         Effect.gen({ self: this }, function* () {
           const page = yield* this.work.find(query);
-          const repositories = [...new Set(page.entries.map((issue) => issue.repository_id))];
+          const repositories = new Set(page.entries.map((issue) => issue.repository_id));
+          if (query.repository_id) repositories.add(query.repository_id);
           const observed = yield* Effect.all(
             {
               related: this.work.taskEvidence(page.entries),
@@ -1093,8 +1138,15 @@ export class Queries {
         ? yield* this.declarations()
         : undefined;
       const projects = new Map(retained.projects);
+      const selected = query.repository_id && projects.get(query.repository_id);
+      const observedCapacity = retained.summary?.recordsUnavailable ? undefined : retained.summary;
       return {
         ...retained.page,
+        capacity: observedCapacity && this.slotUsage(observedCapacity),
+        project_capacity:
+          observedCapacity && selected?._tag === "Success" && selected.success
+            ? this.slotUsage(observedCapacity, selected.success)
+            : undefined,
         entries: retained.page.entries.map((issue, index) => {
           const result = retained.executions[index]!;
           const execution = result._tag === "Success" ? result.success : undefined;

@@ -1,5 +1,13 @@
+import { readReviewChanges } from "../git/review-changes.ts";
 import { progress } from "../opencode/progress.ts";
-import { Executable, ActivityId, timestamp, IssueId, SessionId } from "../identities.ts";
+import {
+  Executable,
+  ActivityId,
+  timestamp,
+  IssueId,
+  SessionId,
+  RelativePath,
+} from "../identities.ts";
 
 import type { CheckpointEvidence } from "./authorization.ts";
 import { Clock, Effect } from "effect";
@@ -17,6 +25,7 @@ import { isActiveWorker } from "./worker-assignment.ts";
 import { activeSynchronization } from "./synchronization.ts";
 import {
   ReviewReportSchema,
+  type PatchAssessment,
   reviewScope,
   specVerificationPassed,
   type SpecVerification,
@@ -31,6 +40,7 @@ export class CodingChecks {
     private coordination: Coordination,
     private queries: Queries,
     private checkpoints: CheckpointEvidence,
+    private ocr: Executable,
   ) {}
   private launch = (e: Execution, role: "review") => this.sessions.launch(e, role);
   private get = (id: IssueId) => this.queries.get(id);
@@ -175,10 +185,85 @@ export class CodingChecks {
           at,
         },
         review_receipt: removeOwnedField,
+        review_coverage: removeOwnedField,
       });
       synchronizeExecution(e, verified);
       yield* this.launch(e, "review");
       return e;
+    }.bind(this),
+    domainEffect,
+  );
+  reviewChanges = Effect.fn("CodingChecks.reviewChanges")(
+    function* (this: CodingChecks, session: SessionId, offset = 0, selected?: RelativePath) {
+      const e = yield* this.records.workerAssignment(session);
+      if (
+        !e?.worktree_directory ||
+        !e.base_commit ||
+        !e.worker_context_id ||
+        !e.verification_receipt ||
+        !isActiveWorker(e, session, { role: "review" })
+      )
+        return yield* new CrewError("REVIEW_ROLE", "Assigned Review of verified content required");
+      const prompt = e.worker_context_id;
+      const fingerprint = e.verification_receipt.fingerprint;
+      yield* this.git.validate(yield* this.queries.effectiveProject(e), e);
+      if (fingerprint !== (yield* this.git.fingerprint(e.worktree_directory)))
+        return yield* new CrewError("REVIEW_STALE", "Verified content changed before review");
+      const page = yield* readReviewChanges(
+        this.git,
+        this.ocr,
+        e.worktree_directory,
+        e.base_commit,
+        offset,
+        selected,
+      );
+      if (fingerprint !== (yield* this.git.fingerprint(e.worktree_directory)))
+        return yield* new CrewError("REVIEW_STALE", "Verified content changed during review");
+      yield* this.coordination.with(() =>
+        Effect.gen({ self: this }, function* () {
+          const current = yield* this.get(e.issue_id);
+          if (
+            !isActiveWorker(current, session, {
+              role: "review",
+              generation: e.control_generation,
+            }) ||
+            current.worker_context_id !== prompt ||
+            current.verification_receipt?.fingerprint !== fingerprint
+          )
+            return yield* new CrewError(
+              "REVIEW_STALE",
+              "Review assignment changed during the diff read",
+            );
+
+          const prior = current.review_coverage;
+          const same =
+            prior?.session_id === session &&
+            prior.generation === e.control_generation &&
+            prior.prompt_id === prompt &&
+            prior.fingerprint === fingerprint;
+          const through = same ? prior.through : 0;
+          if (offset > through)
+            return yield* new CrewError("REVIEW_OFFSET", "Read the preceding review page first");
+          const end = selected ? through : offset + page.changes.length;
+          current.review_coverage = {
+            session_id: session,
+            generation: e.control_generation,
+            fingerprint,
+            prompt_id: prompt,
+            unavailable: [
+              ...new Set([
+                ...(same ? prior.unavailable : []),
+                ...page.changes.filter((f) => f.unavailable).map((f) => f.path),
+              ]),
+            ],
+            through: Math.max(end, through),
+            complete: (same && prior.complete) || (!selected && page.next_offset === undefined),
+            limited: (same && prior.limited) || page.inventory_limited,
+          };
+          yield* this.records.saveOwned(current, ["review_coverage"]);
+        }),
+      );
+      return page;
     }.bind(this),
     domainEffect,
   );
@@ -190,6 +275,7 @@ export class CodingChecks {
       findings: string,
       scope_status?: typeof import("./correction-contracts.ts").ScopeDispositionSchema.Type,
       spec_verification?: SpecVerification,
+      patch_assessments?: typeof PatchAssessment.Type,
     ) {
       const assigned = yield* this.records.workerAssignment(session);
       if (!assigned?.worktree_directory || assigned.review_session_id !== session)
@@ -213,7 +299,7 @@ export class CodingChecks {
               );
             const report = yield* decode(
               ReviewReportSchema,
-              { passed, findings, scope_status, spec_verification },
+              { passed, findings, scope_status, spec_verification, patch_assessments },
               "Review report",
             );
             if (e.workflow_policy === "full-openspec" && !report.spec_verification)
@@ -230,6 +316,31 @@ export class CodingChecks {
                 "REVIEW_CONTRADICTION",
                 "A passing Review cannot contain failed/unverified assessments or unresolved scope conflicts",
               );
+            if (report.passed && e.worker_context_id) {
+              const context = yield* this.queries.capturedWorkerPrompt(e);
+              if (
+                context.environment.tools.some((group) =>
+                  group.any_of.some((name) => name === "abra_review_changes"),
+                )
+              ) {
+                const coverage = e.review_coverage;
+                if (
+                  !coverage?.complete ||
+                  coverage.limited ||
+                  coverage.prompt_id !== e.worker_context_id ||
+                  coverage.unavailable.some(
+                    (path) => !report.patch_assessments?.some((a) => a.path === path),
+                  ) ||
+                  coverage.fingerprint !== fingerprint ||
+                  coverage.session_id !== session ||
+                  coverage.generation !== e.control_generation
+                )
+                  return yield* new CrewError(
+                    "REVIEW_COVERAGE",
+                    "Read all verified review pages and resolve missing patch evidence before passing Review",
+                  );
+              }
+            }
             e.review_receipt = {
               ...report,
               scope_status: reviewScope(report),

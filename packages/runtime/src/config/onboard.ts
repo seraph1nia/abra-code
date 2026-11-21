@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { type Locks } from "../storage/lock.ts";
 import { domainEffect } from "../effect.ts";
 import { Effect } from "effect";
-import { access, readFile, readdir } from "../filesystem.ts";
+import { retainedEntry, access, readFile, readdir } from "../filesystem.ts";
 import { join } from "node:path";
 import { CrewError, identifier, type Project, type OnboardInput } from "../domain.ts";
 import { type Records } from "../storage/store.ts";
@@ -60,7 +60,7 @@ export class Onboarding {
           return yield* new CrewError("PROJECT_REBIND", "Stable repository IDs cannot be rebound");
       }
       const managed = input.managed ?? previous?.managed ?? !input.path;
-      if (managed && previous && !(yield* exists(previous.path))) {
+      if (managed && previous && !(yield* retainedEntry(previous.path, "directory"))) {
         const active = (yield* this.records.executions()).some(
           (e) => e.repository_id === input.id && e.current_phase !== "completed",
         );

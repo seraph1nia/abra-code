@@ -1,7 +1,7 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Scoped browser observation and typed HTTP atoms. */
 import { useCallback, useRef } from "react";
 import { useAtomSet } from "@effect/atom-react";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { Exit } from "effect";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import { resolveResource } from "../data.ts";
@@ -13,11 +13,11 @@ import {
   type WorkspaceSearch,
 } from "../navigation.ts";
 export function useWorkspaceNavigation(
+  route: WorkspaceSearch,
   beforeNavigate: () => void,
   closeFinder: () => void,
   setError: (text: string) => void,
 ) {
-  const route = useSearch({ from: "/" });
   const navigate = useNavigate({ from: "/" });
   const resolve = useAtomSet(resolveResource, { mode: "promiseExit" });
   const selectionRequest = useRef(0);
@@ -25,7 +25,8 @@ export function useWorkspaceNavigation(
   const returnInspectorFocus = () => {
     const origin = inspectorOrigin.current;
     return (
-      (origin?.isConnected ? origin : null) ??
+      (origin?.checkVisibility() ? origin : null) ??
+      document.querySelector<HTMLElement>(".phone-navigation a") ??
       document.querySelector<HTMLElement>('[aria-label="Toggle work finder"]') ??
       false
     );

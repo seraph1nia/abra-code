@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { RelativePath } from "../identities.ts";
 import { NonEmpty } from "../contracts.ts";
 import { ScopeDispositionSchema } from "./correction-contracts.ts";
 
@@ -21,9 +22,17 @@ export const SpecVerificationSchema = Schema.Struct({
 });
 export type SpecVerification = typeof SpecVerificationSchema.Type;
 
+export const PatchAssessment = Schema.Array(
+  Schema.Struct({
+    path: RelativePath,
+    basis: Schema.Literals(["not_material", "verified_elsewhere"]),
+    evidence: text,
+  }),
+).check(Schema.isMaxLength(500));
 export const ReviewReportSchema = Schema.Struct({
   passed: Schema.Boolean,
   findings: NonEmpty,
+  patch_assessments: Schema.optional(PatchAssessment),
   scope_status: Schema.optional(ScopeDispositionSchema),
   spec_verification: Schema.optional(SpecVerificationSchema),
 });

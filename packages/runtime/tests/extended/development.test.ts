@@ -26,7 +26,7 @@ async function unusedPort() {
 }
 
 test(
-  "pnpm dev serves TanStack Router, preserves React state through HMR and reloads the Effect backend",
+  "pnpm dev restarts the native service once, preserves React state through HMR and reloads the Effect backend",
   { timeout: 180000 },
   async () => {
     const root = await installationRoot("abracode-development-");
@@ -53,6 +53,16 @@ test(
         env,
         timeout: 30000,
       });
+    const nativeClient = async () => {
+      const endpoint = await Effect.runPromise(
+        Service.discover({
+          file: runtimePaths(AbsolutePath.make(home)).service,
+          version: "2.3.0",
+        }).pipe(Effect.provide(NodeFileSystem.layer)),
+      );
+      assert.ok(endpoint);
+      return OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+    };
     let exited: Promise<void>;
     const stop = async () => {
       if (!child || child.exitCode !== null || child.signalCode !== null) return;
@@ -70,7 +80,8 @@ test(
         join(home, "personal.yaml"),
         "version: 1\nmodels: {default: {providerID: example, id: example}}\n",
       );
-      // Use the public pnpm entry point, including both owned process lifetimes.
+      const started = await run("start.ts");
+      const originalPid = (await (await nativeClient()).server.info()).pid;
       child = spawn(
         "pnpm",
         ["dev", "--port", String(port), "--backend-port", String(backendPort)],
@@ -92,14 +103,10 @@ test(
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       const first = await (await fetch(`${origin}/api/bootstrap`)).json();
-      const endpoint = await Effect.runPromise(
-        Service.discover({
-          file: runtimePaths(AbsolutePath.make(home)).service,
-          version: "2.3.0",
-        }).pipe(Effect.provide(NodeFileSystem.layer)),
-      );
-      assert.ok(endpoint);
-      const native = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+      assert.equal(first.session_id, started.stdout.match(/Abra: (ses_\S+)/)?.[1]);
+      const native = await nativeClient();
+      const devPid = (await native.server.info()).pid;
+      assert.notEqual(devPid, originalPid);
       const nativeForm = await native.session.form.create({
         sessionID: first.session_id,
         title: "Development retained edits",
@@ -158,6 +165,7 @@ test(
         await page
           .getByRole("textbox", { name: "Message Abra" })
           .fill("Keep this draft through HMR");
+        await page.getByRole("button", { name: "Review next" }).click();
         await page
           .getByLabel("Retained form text", { exact: false })
           .fill("Keep native form edits");
@@ -243,6 +251,7 @@ test(
         await browser.close();
       }
       await stop();
+      assert.equal((await native.server.info()).pid, devPid);
       assert.equal(await fetch(`${origin}/api/bootstrap`).catch(() => undefined), undefined);
       assert.equal(
         await fetch(`http://127.0.0.1:${backendPort}/api/bootstrap`).catch(() => undefined),

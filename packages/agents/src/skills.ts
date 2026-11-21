@@ -7,8 +7,16 @@ import { engineeringSkills } from "./engineering-skills.ts";
 
 export const skillNames = (central: boolean) => [
   ...(central
-    ? ["orchestration", "openspec-execution", "project-onboarding", "recovery", "browser"]
+    ? [
+        "express",
+        "orchestration",
+        "openspec-execution",
+        "project-onboarding",
+        "recovery",
+        "browser",
+      ]
     : ["openspec-execution", "browser"]),
+  "open-code-review-delegate",
   ...engineeringSkills.map((s) => s.name),
 ];
 export const readSkill = Effect.fn("Agents.readSkill")(function* (root: string, name: string) {

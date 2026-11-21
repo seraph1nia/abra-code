@@ -61,6 +61,7 @@ test("capability prerequisites are additive, bounded and cannot grant tools", ()
   assert.deepEqual(capabilityRequirements("review", "full-openspec").skills, [
     "abra-openspec-execution",
     ...engineeringSkillIds("review", "full-openspec"),
+    "abra-open-code-review-delegate",
   ]);
 });
 

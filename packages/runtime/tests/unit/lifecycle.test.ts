@@ -326,7 +326,7 @@ test("scheduler is opt-in and respects global/per-project capacity", async (t) =
   f.seed.named(Id.IssueId.make("abra-1"));
   f.seed.named(Id.IssueId.make("abra-2"));
   f.seed.named(Id.IssueId.make("abra-3"), Id.RepositoryId.make("frontend"));
-  const scheduler = new Scheduler(f.controller, f.records);
+  const scheduler = new Scheduler(f.controller, f.records, f.setup);
   assert.equal((await run(scheduler.tick())).length, 0);
   f.config.auto_schedule = true;
   const supervisor = Id.SessionId.make("ses_supervisor");

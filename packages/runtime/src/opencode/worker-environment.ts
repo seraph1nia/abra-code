@@ -39,8 +39,9 @@ export function resolveSkills(
   configured: CapabilityRequirements | undefined,
   inventory: readonly Skill.Info[],
   directory: string,
+  delegate = true,
 ) {
-  const required = capabilityRequirements(role, workflow, configured);
+  const required = capabilityRequirements(role, workflow, configured, delegate);
   return resolveRequirementSkills(
     role,
     required.skills.map((id) => ({

@@ -1,3 +1,4 @@
+import { legacyContext } from "../helpers/legacy-context.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -21,7 +22,7 @@ for (const admitted of [false, true]) {
     const e = await run(f.controller.start(issue));
     const original = await run(readWorkerContext(f.records.store, e.worker_context_id!));
     const legacy: WorkerContext = {
-      ...original,
+      ...legacyContext(original, f.root + "/packages/agents/assets"),
       environment: {
         ...original.environment,
         skills: original.environment.skills.filter(

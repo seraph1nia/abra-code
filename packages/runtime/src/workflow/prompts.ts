@@ -1,8 +1,13 @@
 import { type Execution, type Issue, type Role } from "../domain.ts";
+import { legacyReviewProfile } from "../opencode/role-policy.ts";
 import { engineeringGuidance } from "../opencode/engineering-skills.ts";
 export function workerPrompt(e: Execution, issue: Issue, role: Role) {
   const common = `You are the AbraCode ${role} for issue ${issue.id}: ${issue.title}.\n${issue.description ?? ""}\n${e.retry_instructions ? `Recovery feedback: ${e.retry_instructions}\n` : ""}Control generation: ${e.control_generation}. Retained answers: ${JSON.stringify((e.decisions ?? []).filter((d) => d.status === "answered").map((d) => ({ key: d.key, answer: d.answer })))}.\nBase commit: ${e.base_commit}.\nWorktree: ${e.worktree_directory}\nOpenSpec change: ${e.openspec_change}.\nRetained schema: ${e.openspec_schema_binding?.state === "bound" ? e.openspec_schema_binding.name : "original metadata; historical content evidence unavailable"}. Human plan approval required: ${e.plan_approval_required}.\nRead repository AGENTS.md, the registered role instructions and abra-openspec-execution for policy-specific procedures. Remain in the assigned role/worktree.\n${engineeringGuidance(role, e.workflow_policy)}`;
 
+  const reviewGuide =
+    role === "review" && !legacyReviewProfile(e.configuration_snapshot?.definitions?.review)
+      ? "Load abra-open-code-review-delegate and use abra_review_changes for the verified diff. "
+      : "";
   if (role === "research")
     return (
       common +
@@ -11,6 +16,7 @@ export function workerPrompt(e: Execution, issue: Issue, role: Role) {
   if (e.workflow_policy === "lightweight-fix")
     return (
       common +
+      reviewGuide +
       `Approved short scope: ${JSON.stringify(e.scope?.contract)}. ${role === "apply" ? "Implement this scope and run configured checks." : "Review implementation and proof read-only against this scope and submit the review report."}`
     );
   const task = {
@@ -21,5 +27,5 @@ export function workerPrompt(e: Execution, issue: Issue, role: Role) {
     review:
       "Review this approved change and current implementation/proof read-only. Submit abra_review_report with full-spec verification evidence.",
   };
-  return common + task[role];
+  return common + reviewGuide + task[role];
 }

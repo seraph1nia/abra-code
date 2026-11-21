@@ -1,3 +1,4 @@
+import { ReviewChangesPage } from "../git/review-changes.ts";
 import { EvidenceDataSchema, EvidenceReceiptSchema } from "@abracode/contracts/web/worker-evidence";
 import { SessionObservationSchema } from "./session-observation-contracts.ts";
 import { ExecutionContractSchema } from "../visibility/execution-contract.ts";
@@ -212,5 +213,6 @@ export const toolOutputs = {
   work_finish: Schema.Union([deliveryExecution, OperationInProgressSchema]),
   work_reconcile: Schema.Array(execution),
   spec: Schema.Union([SpecStatusSchema, ApplyStatusSchema, InstructionsSchema]),
+  review_changes: ReviewChangesPage,
   review_report: execution,
 };

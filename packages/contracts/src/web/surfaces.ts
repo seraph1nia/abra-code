@@ -18,6 +18,8 @@ import {
 } from "./catalog.ts";
 export { catalogId, componentNames } from "./catalog.ts";
 
+export const maxSurfaceBytes = 384 * 1024;
+
 /** The owned publication interface is a bounded, complete A2UI surface revision. */
 const PublicationSchema = Schema.Struct({
   version: Schema.Literal("1.0"),
@@ -80,7 +82,7 @@ export function validateSurface(value: unknown, workIds?: ReadonlySet<string>): 
   CreateSurfaceMessageSchema.parse(value);
   const surface = Schema.decodeUnknownSync(PublicationSchema)(value, { onExcessProperty: "error" });
   const old = surface.createSurface.catalogId === previousCatalogId;
-  if (new TextEncoder().encode(JSON.stringify(value)).length > (old ? 65536 : 384 * 1024))
+  if (new TextEncoder().encode(JSON.stringify(value)).length > (old ? 65536 : maxSurfaceBytes))
     throw new Error(old ? "Surface exceeds the 64 KiB limit" : "Surface exceeds the 384 KiB limit");
   if (old && surface.createSurface.components.some((c) => c.component === "Mermaid"))
     throw new Error("Mermaid requires the v2 catalog");
@@ -105,8 +107,9 @@ export function validateSurface(value: unknown, workIds?: ReadonlySet<string>): 
     components.set(id, c);
   }
   const refs = referencedWorkIds(surface);
-  if (new Set(refs).size > 100 || (workIds && refs.some((id) => !workIds.has(id))))
-    throw new Error("Unknown or excessive work references");
+  if (new Set(refs).size > 100) throw new Error("Select at most 100 distinct work items");
+  const missing = workIds && refs.find((id) => !workIds.has(id));
+  if (missing) throw new Error(`Work item ${missing} is unavailable. Select an existing issue ID`);
   const seen = new Set<string>();
   function visit(id: string, depth: number) {
     const c = components.get(id);

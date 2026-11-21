@@ -28,6 +28,11 @@ test("workspace consumers share one Effect, React and A2UI runtime identity unde
     assert.ok(values.every((value) => value === values[0]));
   }
   const require = createRequire(resolve("packages/runtime/package.json"));
+  const agentRequire = createRequire(require.resolve("@a2ui/agent"));
+  assert.equal(
+    await realpath(agentRequire.resolve("@a2ui/web_core")),
+    await realpath(require.resolve("@a2ui/web_core")),
+  );
   const zod = JSON.parse(await readFile(require.resolve("zod/package.json"), "utf8"));
   assert.equal(zod.version, "3.25.76");
   const core = JSON.parse(await readFile(require.resolve("@ag-ui/core/package.json"), "utf8"));

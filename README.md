@@ -40,7 +40,7 @@ pnpm start
 
 `pnpm start` starts/discovers the dedicated service and opens **Abra** in an interactive terminal. Repeated launches reuse that service and conversation. `pnpm service:start` starts only the background service and bootstraps Abra, which allows authentication before the first model request. Existing native provider credentials can make `pnpm auth` unnecessary. Credentials belong in native auth storage or environment variables, never in the YAML.
 
-For development, run `pnpm dev` and open `http://127.0.0.1:5173`. Vite provides React Fast Refresh and TanStack Router; `tsx watch` reloads the Effect HTTP backend while reusing the native Abra session.
+For development, run `pnpm dev` when workers are idle and open `http://127.0.0.1:5173`. Each launch starts or restarts the native OpenCode service and reuses the Abra session. Vite provides React Fast Refresh and `tsx watch` reloads the Effect HTTP backend.
 
 For browser access, run `pnpm web:build` and `pnpm web`. The CopilotKit v2 workspace opens at `http://127.0.0.1:4097` and shares the existing Abra session, work graph and native approvals. It includes work navigation, an inspector and bounded A2UI v1 work views. Use `pnpm web --port 4098 --no-open` to print another local URL. Closing the frontend leaves native work running. See [workspace operation and architecture](docs/web-workspace.md).
 

@@ -15,6 +15,7 @@ import type { ReportSnapshot } from "@abracode/contracts/presentation/report-evi
 
 type Binding = WorkBinding & {
   evidence?: ReportSnapshot;
+  hideLiveWidgets?: boolean;
   diagramMessage?: string;
   preparedDiagrams?: readonly PreparedReportDiagram[];
   inspect?: (target: ResourceSelection) => void;
@@ -22,7 +23,18 @@ type Binding = WorkBinding & {
 const statuses = ["open", "in_progress", "blocked", "closed", "unavailable"] as const;
 const words = (text: string) => text.replaceAll("_", " ");
 const observedState = (work: WorkSummary) =>
-  work.phase ? `${phaseLabel(work.phase)} · ${words(work.issue_status)}` : words(work.issue_status);
+  work.phase ? phaseLabel(work.phase) : words(work.issue_status);
+
+function UpdateText({ text }: { text: string }) {
+  if (text.length <= 150) return <>{text}</>;
+  const space = text.lastIndexOf(" ", 140);
+  return (
+    <details className="work-update">
+      <summary>{text.slice(0, space > 80 ? space : 140)}…</summary>
+      <p>{text}</p>
+    </details>
+  );
+}
 
 /** Presentation has no router, query client, model tool or controller dependency. */
 export function WorkWidget({
@@ -48,6 +60,8 @@ export function WorkWidget({
         message={binding.diagramMessage}
       />
     );
+  const usesWork = name !== "ReportEvidence" && name !== "ResourceLink" && name !== "ReportLink";
+  if (usesWork && props.mode !== "snapshot" && binding.hideLiveWidgets) return null;
   const { selected, total, label, incomplete } = bindWork(props, binding);
   const source = props.mode === "snapshot" ? binding.captured : binding.work;
   const navigate = (target: ResourceSelection, text: ReactNode, className?: string) =>
@@ -89,16 +103,20 @@ export function WorkWidget({
     case "StatusSummary":
       content = (
         <dl className="metrics">
-          {statuses.map((status) => (
-            <div key={status}>
-              <dt>{words(status)}</dt>
-              <dd>
-                {incomplete && !selected.length
-                  ? "Unavailable"
-                  : `${selected.filter((work) => work.issue_status === status).length}${incomplete ? " (partial)" : ""}`}
-              </dd>
-            </div>
-          ))}
+          {statuses
+            .filter(
+              (status) =>
+                status !== "unavailable" || selected.some((item) => item.issue_status === status),
+            )
+            .map((status) => (
+              <div key={status}>
+                <dt>{words(status)}</dt>
+                <dd>
+                  {selected.filter((work) => work.issue_status === status).length}
+                  {incomplete && " (partial)"}
+                </dd>
+              </div>
+            ))}
         </dl>
       );
       break;
@@ -112,7 +130,7 @@ export function WorkWidget({
                 <th scope="col">Task</th>
                 <th scope="col">State</th>
                 <th scope="col">Priority</th>
-                <th scope="col">Latest progress</th>
+                <th scope="col">Latest update</th>
               </tr>
             </thead>
             <tbody>
@@ -126,8 +144,13 @@ export function WorkWidget({
                     )}
                   </th>
                   <td>{observedState(work)}</td>
-                  <td>{work.priority}</td>
-                  <td>{work.progress?.summary ?? "No progress observation retained"}</td>
+                  <td>
+                    <span className="compact-priority">Priority </span>
+                    {work.priority}
+                  </td>
+                  <td>
+                    <UpdateText text={work.error ?? work.progress?.summary ?? "—"} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -174,7 +197,7 @@ export function WorkWidget({
                       event.issue.title,
                     )}
                   </div>
-                  <p>{event.detail}</p>
+                  <UpdateText text={event.detail} />
                 </li>
               ))}
             </ol>
@@ -243,6 +266,9 @@ export function WorkWidget({
     case "DecisionSummary":
       content = (
         <div>
+          {selected.length > 0 && !selected.some((work) => work.decisions?.length) && (
+            <p className="muted">No decisions in the observed tasks.</p>
+          )}
           {selected.flatMap((work) =>
             (work.decisions ?? []).map((decision) => (
               <div key={`${work.issue_id}:${decision.generation}:${decision.key}`}>
@@ -286,11 +312,16 @@ export function WorkWidget({
   }
   return (
     <section className="surface-widget" data-work-widget={name}>
-      <div className="surface-binding">
-        {name === "ResourceLink" || name === "ReportLink" ? "Current app navigation" : label}
-        {binding.frozen && binding.inspect && " · Links inspect current app resources"}
-      </div>
-      {content}
+      {(binding.frozen ||
+        props.mode === "snapshot" ||
+        incomplete ||
+        (usesWork && props.issueIds !== undefined)) && (
+        <div className="surface-binding">
+          {name === "ResourceLink" || name === "ReportLink" ? "Current app navigation" : label}
+          {binding.frozen && binding.inspect && " · Links inspect current app resources"}
+        </div>
+      )}
+      {usesWork && !selected.length && incomplete ? null : content}
       {name !== "ResourceLink" && name !== "ReportLink" && total > selected.length && (
         <output>
           Showing {selected.length} of {total} matching work observations.

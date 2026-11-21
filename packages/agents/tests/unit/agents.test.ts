@@ -60,6 +60,10 @@ test("public catalog constructs six separate common-tag contexts with owned guid
         assert.ok(!prepared.profile.system.includes("---"));
         assert.ok(!prepared.profile.system.includes("private task facts"));
         assert.ok(validProfile(prepared.profile));
+        if (definition.id === "abra") {
+          assert.match(prepared.profile.system, /what deserves attention next.*abra-orchestration/);
+          assert.ok(prepared.profile.skills.some((skill) => skill.id === "abra-orchestration"));
+        }
         assert.ok(!prepared.profile.skills.some((skill) => skill.id === "abra-testing"));
         assert.equal(prepared.profile.mode, definition.id === "abra" ? "primary" : "subagent");
         if (definition.id === "review")

@@ -218,7 +218,7 @@ async function inspect(id) {
     integrity: resolution?.integrity ?? null,
     installed: !!local,
     category: local
-      ? /^(?:@opencode\/cli|agent-browser|@effect\/tsgo-|@voidzero-dev\/vite-plus-.*(?:gnu|musl))/.test(
+      ? /^(?:@alibaba-group\/(?:ocr-|open-code-review)|@opencode\/cli|agent-browser|@effect\/tsgo-|@voidzero-dev\/vite-plus-.*(?:gnu|musl))/.test(
           name,
         )
         ? "supplier-installed-executable"

@@ -12,7 +12,7 @@ export function useTranscriptViewport(
   const viewAnchor = useRef<{ element: HTMLElement; offset: number } | undefined>(undefined);
   const rememberPosition = useCallback(() => {
     const container = scroller.current;
-    if (!container) return;
+    if (!container?.clientHeight) return;
     // Read actual geometry: a programmatic/browser scroll can precede onScroll delivery.
     nearBottom.current = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
     if (nearBottom.current) return;
@@ -27,7 +27,7 @@ export function useTranscriptViewport(
   function restorePosition() {
     const container = scroller.current,
       anchor = viewAnchor.current;
-    if (container && anchor?.element.isConnected && !historyAnchor.current)
+    if (container?.clientHeight && anchor?.element.isConnected && !historyAnchor.current)
       container.scrollTop +=
         anchor.element.getBoundingClientRect().top -
         container.getBoundingClientRect().top -
@@ -64,7 +64,7 @@ export function useTranscriptViewport(
   }, [firstID, loadingHistory]);
   const onScroll = () => {
     const element = scroller.current;
-    if (element)
+    if (element?.clientHeight)
       nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
   };
   const beforeHistory = () => {

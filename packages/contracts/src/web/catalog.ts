@@ -203,12 +203,3 @@ export const ComponentSchema = Schema.Record(Schema.String, Schema.Json).check(
     },
   ),
 );
-
-export const renderInstructions =
-  `Render a complete A2UI 1.0 createSurface revision using catalogId ${catalogId}. ` +
-  workCatalogDocument.instructions +
-  ` ${componentIdentifierHelp} Surface IDs may contain hyphens. ` +
-  " Column/Row require children (component IDs); Text requires text. " +
-  Object.values(workComponents)
-    .map(({ name, description }) => `${name}: ${description}`)
-    .join(" ");

@@ -661,6 +661,10 @@ with an explicit limit marker; tool arguments/results retain 4096/8192 character
 limits. See `native-agui-stream.test.ts`, `web-transcript.test.ts` and the
 [AG-UI event contract](https://docs.ag-ui.com/concepts/events).
 
+### Server-side Express compilation
+
+The runtime pins `@a2ui/agent` 0.1.0 and shares `@a2ui/web_core` 0.15.0 with the work catalog. Its public `ExpressParser(catalog, surfaceId, "v1.0").compile(source, true)` consumes an untagged complete body and emits wire messages. Abra accepts one matching work-catalog creation and validates the complete message with its surface decoder. The SDK reports syntax locations and component-property corrections on compiler errors.
+
 ### Custom A2UI publication contract
 
 AbraCode supports the fixed native `abra_render_ui` publication tool, complete
@@ -715,3 +719,9 @@ separate review catalog; its controls never enter the saved evidence catalog.
 ## GitHub inbox
 
 The native inbox uses the configured `gh` executable. A local `gh auth token --hostname HOST` lookup partitions cached responses by active credential. Only its digest enters the partition key. Inventory and detail use `gh api --hostname HOST graphql` with fixed queries, repository variables and returned repository/item identity checks. The issue and pull-request connections each page 50 summaries ordered by update time. A selected item adds its body and ten recent comments. Label and discussion truncation are reported. Review reads the REST changed-files endpoint in pages of 100, bounded by 3,000 files and 64 KiB of patch evidence, between matching PR base and head reads. [GitHub repository connections](https://docs.github.com/en/graphql/reference/repos#repository) · [GitHub changed files](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests-files)
+
+## Open Code Review delegation
+
+Coding Review uses the centrally pinned `@alibaba-group/open-code-review@1.13.13` executable. The controller invokes `delegate preview --format json` for the workspace and, when needed, the pinned base-to-HEAD range. The final worktree supplies `delegate rule --format json -- <paths...>`. Both boundaries decode schema version 1. The OpenCode worker supplies the model and its credentials. [Pinned CLI implementation](https://github.com/alibaba/open-code-review/blob/445ad9dea3057346986197385858a1a281253cc9/cmd/opencodereview/delegate_cmd.go)
+
+The `abra_review_changes` worker tool binds paged patches to the assigned session, generation and verified fingerprint. The controller reconciles OCR selection against the net Git comparison, includes unclassified paths, and discloses OCR exclusions. Pass `file` for a supplemental changed-file patch. Each ordinary page returns up to 32 entries and 64 KiB of patch text. The shared comparison inventories up to 500 files. A new coding Review needs complete page coverage to pass. Explicit private PR review uses the registered inbox's revision-bound GitHub patch reader and the resolved Review model.

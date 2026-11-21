@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { join, resolve, relative } from "node:path";
 import { type ReportSnapshot } from "../presentation/report-evidence.ts";
 import { AbsolutePath, ContentHash } from "../identities.ts";
-import { ensure } from "../domain.ts";
+import { CrewError, ensure } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { lstat, mkdir, realpath } from "../filesystem.ts";
 export const reportHash = (text: string) =>
@@ -84,13 +84,20 @@ export function validatePortableHTML(html: string) {
     );
   }
 }
+export function embeddedReportJSON(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new CrewError("REPORT_HTML", "Embedded report data is invalid JSON");
+  }
+}
 export function validateReportHTML(html: string, snapshot: ReportSnapshot) {
   validatePortableHTML(html);
   const data = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)].find((match) =>
     /\bid=["']?abracode-report-data(?:["'\s]|$)/i.test(match[1]!),
   );
   ensure(
-    data && JSON.stringify(JSON.parse(data[2]!)) === JSON.stringify(snapshot),
+    data && JSON.stringify(embeddedReportJSON(data[2]!)) === JSON.stringify(snapshot),
     "REPORT_HTML",
     "HTML does not retain the captured snapshot",
   );

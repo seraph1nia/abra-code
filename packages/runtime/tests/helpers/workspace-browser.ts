@@ -79,6 +79,10 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
                   .includes(input.search.toLowerCase())),
           );
           return {
+            capacity: { workers: 0, worker_limit: 2, retained: 1, retained_limit: 4 },
+            ...(input.repository_id && {
+              project_capacity: { workers: 0, worker_limit: 1, retained: 1, retained_limit: 2 },
+            }),
             entries: matches.slice(offset, offset + limit),
             total: matches.length,
             offset,
@@ -260,6 +264,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
       return result.pipe(Effect.flatMap((value) => decode(schema, value, "Fixture work read")));
     };
   const backend: WebBackend = {
+    repositories: Effect.suspend(() => source.repositories),
     agents: Effect.suspend(() => source.agents),
     get reviews() {
       return source.reviews;

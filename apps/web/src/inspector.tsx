@@ -64,6 +64,7 @@ export function Inspector(
   const route = useSearch({ from: "/" });
   const canvas = route.canvas === true;
   const overlay = useMediaQuery("(max-width: 1250px)") || canvas;
+  const phone = useMediaQuery("(max-width: 760px)");
   const content = props.surface ? (
     <aside className="inspector" aria-label="Work inspector">
       <header className="inspector-header">
@@ -82,7 +83,7 @@ export function Inspector(
   ) : (
     <UnloadedInspector {...props} issue={props.issue} />
   );
-  if (!overlay) return <CanvasRefreshProvider>{content}</CanvasRefreshProvider>;
+  if (phone || !overlay) return <CanvasRefreshProvider>{content}</CanvasRefreshProvider>;
   return (
     <Sheet
       open

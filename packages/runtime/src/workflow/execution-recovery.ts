@@ -18,9 +18,11 @@ import { Clock, Effect } from "effect";
 import { CrewError, terminal, type Execution, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { synchronizeExecution } from "../storage/store.ts";
-import { phaseRole } from "./roles.ts";
+import type { Capacity } from "./capacity.ts";
+import { initialRole, phaseRole } from "./roles.ts";
 import type { Authorizations, CheckpointEvidence } from "./authorization.ts";
 interface Dependencies {
+  readonly capacity: Capacity;
   readonly authorizations: Authorizations;
   readonly checkpoints: CheckpointEvidence;
   readonly records: Records;
@@ -85,6 +87,21 @@ export class ExecutionRecovery {
         if ((yield* Clock.currentTimeMillis) < e.delivery_wait.next_check_at) return e;
       }
       let issue = yield* this.c.work.show(e.issue_id);
+      if (
+        (e.current_phase === "claiming" || e.current_phase === "provisioning") &&
+        !e.capacity_reservation
+      ) {
+        if (e.capacity_wait && (yield* Clock.currentTimeMillis) < e.capacity_wait.next_check_at)
+          return e;
+        if (
+          !(yield* this.c.capacity.reserve(
+            e,
+            initialRole(e.workflow_policy),
+            yield* this.project(e),
+          ))
+        )
+          return e;
+      }
       if (e.current_phase === "claiming") {
         if (issue.status === "open" && !issue.assignee) {
           if (!(yield* this.c.work.explainSelected([e.issue_id])).ready.length)
@@ -137,7 +154,10 @@ export class ExecutionRecovery {
         return { action: "checkpoint", execution: e } as const;
       if (e.current_phase === "awaiting_merge" && !(yield* this.c.finishing.prepare(e, p)))
         return e;
-      if (yield* this.c.obligations.recheck(e)) return e;
+      if (yield* this.c.obligations.recheck(e)) {
+        yield* this.c.sessions.releaseWaitingTurn(e);
+        return e;
+      }
       if (e.current_phase === "awaiting_plan_approval" || e.current_phase === "awaiting_merge") {
         if (
           e.current_phase === "awaiting_merge" &&
@@ -196,7 +216,10 @@ export class ExecutionRecovery {
         yield* this.launch(e, role);
         return e;
       }
-      if (yield* this.c.obligations.recheck(e)) return e;
+      if (yield* this.c.obligations.recheck(e)) {
+        yield* this.c.sessions.releaseWaitingTurn(e);
+        return e;
+      }
       if (e.current_phase === "planning" && e.workflow_policy !== "full-openspec")
         return { action: "checkpoint", execution: e } as const;
       if (e.active_role) {

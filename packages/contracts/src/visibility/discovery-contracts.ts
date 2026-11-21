@@ -12,7 +12,15 @@ export const WorkDiscoveryQuery = Schema.Struct({
   limit: Schema.optional(Count.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(50))),
 });
 export type WorkDiscovery = typeof WorkDiscoveryQuery.Type;
+export const CapacityUsageSchema = Schema.Struct({
+  workers: Count,
+  worker_limit: Count,
+  retained: Count,
+  retained_limit: Count,
+});
 export const WorkPageSchema = Schema.Struct({
+  capacity: Schema.optionalKey(CapacityUsageSchema),
+  project_capacity: Schema.optionalKey(CapacityUsageSchema),
   entries: Schema.Array(WorkSummarySchema).check(Schema.isMaxLength(50)),
   total: Count,
   offset: Count,

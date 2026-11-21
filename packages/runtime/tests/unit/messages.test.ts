@@ -494,6 +494,60 @@ test("message routing rejects mismatched session, role and response identity", a
   });
 });
 
+test("an outstanding question releases both slots after exact native completion and the answer waits to reacquire", async (t) => {
+  const { f, e, request } = await assigned(t);
+  f.config.max_executions = 1;
+  const key = Id.ObligationKey.make("input-needed");
+  const session = e.explore_session_id!;
+  const other = Id.IssueId.make("other-work");
+  f.seed.named(other);
+  await run(
+    f.controller.workerQuestion(session, {
+      key,
+      generation: e.control_generation,
+      scope: "Verification",
+      owner: "supervisor",
+      question: "Which check applies?",
+    }),
+  );
+  await run(f.controller.reconcile(e.issue_id));
+  assert.ok((await run(f.controller.get(e.issue_id))).capacity_reservation);
+  f.runtime.success(session);
+  const native = f.runtime.sessions.get(session)!;
+  native.assignment = { id: e.prompt_id!, outcome: "succeeded" };
+  const observe = f.runtime.session.bind(f.runtime);
+  f.runtime.session = (id, assignment?: Id.MessageId) =>
+    assignment
+      ? Effect.fail(new CrewError("SESSION_MISSING", "Native read unavailable"))
+      : observe(id);
+  await run(f.controller.reconcile(e.issue_id));
+  assert.ok((await run(f.controller.get(e.issue_id))).capacity_reservation);
+  f.runtime.session = observe;
+  native.completion_pending = true;
+  await run(f.controller.reconcile(e.issue_id));
+  assert.ok((await run(f.controller.get(e.issue_id))).capacity_reservation);
+  native.completion_pending = false;
+  await run(f.controller.reconcile(e.issue_id));
+  assert.equal((await run(f.controller.get(e.issue_id))).capacity_reservation, undefined);
+  await run(f.controller.start(other));
+  await run(
+    f.controller.decision(
+      e.issue_id,
+      key,
+      e.control_generation,
+      request.sender,
+      "answer",
+      "Use the smoke check.",
+    ),
+  );
+  await run(f.controller.reconcile(e.issue_id));
+  assert.ok((await run(f.controller.get(e.issue_id))).capacity_wait?.consuming.includes(other));
+  assert.equal(f.runtime.prompts, 2);
+  await run(f.controller.control(other, "pause"));
+  await run(f.controller.reconcile(e.issue_id));
+  assert.equal(f.runtime.prompts, 3);
+});
+
 test("answered worker questions retain one obligation and use a follow-up intent without replacing the assignment", async (t) => {
   const { f, e, request } = await assigned(t);
   const key = Id.ObligationKey.make("which-check");

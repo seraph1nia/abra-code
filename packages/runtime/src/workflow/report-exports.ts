@@ -5,7 +5,7 @@ import { CrewError, ensure } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { AbsolutePath, ContentHash, LockKey } from "../identities.ts";
 import type { Locks } from "../storage/lock.ts";
-import { decode } from "../decode.ts";
+import { decodeJSON } from "../decode.ts";
 import { canonicalJSON } from "../presentation/identity.ts";
 import { readReportDocument } from "../presentation/report-document.ts";
 import { reportHash, maximumHTMLBytes } from "./report-build.ts";
@@ -30,11 +30,7 @@ export class ReportExports {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
         const raw = yield* this.file(document, exporter, "receipt.json").read();
-        const receipt = yield* decode(
-          ReportExportSchema,
-          JSON.parse(raw.text),
-          "HTML export receipt",
-        );
+        const receipt = yield* decodeJSON(ReportExportSchema, raw.text, "HTML export receipt");
         ensure(
           receipt.document_hash === document && receipt.exporter_hash === exporter,
           "REPORT_IDENTITY",
