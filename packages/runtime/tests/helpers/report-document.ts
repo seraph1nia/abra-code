@@ -1,7 +1,4 @@
-import {
-  validateReportDocument,
-  reportRendererVersion,
-} from "../../src/presentation/report-document.ts";
+import { validateReportDocument, reportCatalogs } from "../../src/presentation/report-document.ts";
 import { catalogId } from "../../src/web/catalog.ts";
 import { WorkspaceFixture } from "./web.ts";
 
@@ -24,8 +21,7 @@ export function reportDocument() {
     title: "Saved evidence",
     captured_at: "2026-11-15T10:00:00.000Z",
     catalog_id: catalogId,
-    catalog_version: 2,
-    renderer_compatibility: reportRendererVersion,
+    ...reportCatalogs[catalogId],
     provenance: {
       issue_id: "abra-web",
       execution_id: "execution-web",

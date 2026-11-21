@@ -16,11 +16,25 @@ import { Count, Commit } from "../primitives.ts";
 import { WorkSummarySchema } from "../visibility/work-summary.ts";
 import { ReportSnapshotSchema, LegacyReportSnapshotSchema } from "./report-evidence.ts";
 import { SurfaceSchema, validateSurface } from "../web/surfaces.ts";
-import { catalogId, previousCatalogId, ComponentId } from "../web/catalog.ts";
+import {
+  catalogId,
+  catalogV1Id,
+  catalogV2Id,
+  catalogV3Id,
+  catalogV4Id,
+  catalogIds,
+  ComponentId,
+} from "../web/catalog.ts";
 
 export const maximumDocumentBytes = 1024 * 1024;
-export const reportRendererVersion = "abracode-react/v2";
-export const reportCatalogVersion = 2;
+export const reportRendererVersion = "abracode-react/v5";
+export const reportCatalogs = {
+  [catalogV1Id]: { catalog_version: 1, renderer_compatibility: "abracode-react/v1" },
+  [catalogV2Id]: { catalog_version: 2, renderer_compatibility: "abracode-react/v2" },
+  [catalogV3Id]: { catalog_version: 3, renderer_compatibility: "abracode-react/v3" },
+  [catalogV4Id]: { catalog_version: 4, renderer_compatibility: "abracode-react/v4" },
+  [catalogId]: { catalog_version: 5, renderer_compatibility: reportRendererVersion },
+} as const;
 export type ReportProducer = typeof ReportProducerSchema.Type;
 const text = Schema.String.check(Schema.isMaxLength(16384));
 const positive = ReportRevisionSchema;
@@ -47,9 +61,15 @@ export const ReportDocumentSchema = Schema.Struct({
   revision: positive,
   title: text.check(Schema.isNonEmpty()),
   captured_at: Timestamp,
-  catalog_id: Schema.Literals([catalogId, previousCatalogId]),
-  catalog_version: Schema.Literals([1, 2]),
-  renderer_compatibility: Schema.Literals(["abracode-react/v1", reportRendererVersion]),
+  catalog_id: Schema.Literals(catalogIds),
+  catalog_version: Schema.Literals([1, 2, 3, 4, 5]),
+  renderer_compatibility: Schema.Literals([
+    "abracode-react/v1",
+    "abracode-react/v2",
+    "abracode-react/v3",
+    "abracode-react/v4",
+    reportRendererVersion,
+  ]),
   provenance: Schema.Struct({
     issue_id: IssueId,
     execution_id: ExecutionId,
@@ -71,15 +91,15 @@ export const ReportDocumentSchema = Schema.Struct({
   limitations: Schema.Array(text).check(Schema.isMaxLength(64)),
 }).check(
   Schema.makeFilter((document) => {
-    const old = document.catalog_id === previousCatalogId;
+    const identity = reportCatalogs[document.catalog_id];
     if (
-      document.catalog_version !== (old ? 1 : 2) ||
-      document.renderer_compatibility !== (old ? "abracode-react/v1" : reportRendererVersion) ||
+      document.catalog_version !== identity.catalog_version ||
+      document.renderer_compatibility !== identity.renderer_compatibility ||
       document.surface.createSurface.catalogId !== document.catalog_id
     )
       return "Inconsistent report catalog/renderer identity";
     if (
-      old &&
+      document.catalog_id === catalogV1Id &&
       document.data.evidence &&
       !Schema.is(LegacyReportSnapshotSchema)(document.data.evidence)
     )
@@ -137,13 +157,11 @@ export function readReportDocument(
       reason: "This report format version is not supported by this viewer.",
     };
   if (
-    !(
-      (raw.catalog_id === catalogId &&
-        raw.catalog_version === reportCatalogVersion &&
-        raw.renderer_compatibility === reportRendererVersion) ||
-      (raw.catalog_id === previousCatalogId &&
-        raw.catalog_version === 1 &&
-        raw.renderer_compatibility === "abracode-react/v1")
+    !catalogIds.some(
+      (id) =>
+        id === raw.catalog_id &&
+        raw.catalog_version === reportCatalogs[id].catalog_version &&
+        raw.renderer_compatibility === reportCatalogs[id].renderer_compatibility,
     )
   )
     return {

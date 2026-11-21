@@ -8,7 +8,7 @@ import {
   diagramBudget,
   diagramSourcePolicy,
 } from "@abracode/contracts/presentation/diagrams";
-import { catalogId, previousCatalogId } from "../../src/web/catalog.ts";
+import { catalogId, catalogV1Id } from "../../src/web/catalog.ts";
 import { validateSurface } from "../../src/web/surfaces.ts";
 import {
   validateReportDocument,
@@ -46,7 +46,7 @@ test("diagram catalog accepts 32 literal placements and refuses unsafe or excess
   assert.throws(() =>
     validateSurface({
       ...board(1),
-      createSurface: { ...board(1).createSurface, catalogId: previousCatalogId },
+      createSurface: { ...board(1).createSurface, catalogId: catalogV1Id },
     }),
   );
   for (const extra of [
@@ -114,12 +114,12 @@ test("historical documents retain their original compatibility and eight-diagram
   const current = reportDocument();
   const legacy = {
     ...current,
-    catalog_id: previousCatalogId,
+    catalog_id: catalogV1Id,
     catalog_version: 1,
     renderer_compatibility: "abracode-react/v1",
     surface: {
       ...current.surface,
-      createSurface: { ...current.surface.createSurface, catalogId: previousCatalogId },
+      createSurface: { ...current.surface.createSurface, catalogId: catalogV1Id },
     },
   };
   const json = JSON.stringify(legacy);

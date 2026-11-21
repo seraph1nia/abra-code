@@ -11,6 +11,7 @@ import {
 import { readRetained, writeRetained } from "../retained-input.ts";
 
 export type DraftAttachment = typeof AttachmentSchema.Type;
+export const PrepareSurfaceMessage = createContext<((text: string) => void) | undefined>(undefined);
 export const AttachSelection = createContext<(attachment: DraftAttachment) => void>(() => {});
 const DraftSchema = Schema.Struct({
   text: Schema.String.check(Schema.isMaxLength(32768)),
@@ -20,6 +21,7 @@ const DraftSchema = Schema.Struct({
 type Draft = typeof DraftSchema.Type;
 type Edit =
   | { text: string }
+  | { append: string }
   | { attachment: DraftAttachment | undefined }
   | { thought: ThoughtReference | undefined }
   | { clearSent: Submission };
@@ -49,6 +51,7 @@ export const workspaceDraft = Atom.family((sessionID: string) => {
         return;
       let value: Draft;
       if ("clearSent" in edit) value = { text: "" };
+      else if ("append" in edit) value = { ...prior, text: [prior.text, edit.append].filter(Boolean).join("\n").slice(0, 32768) };
       else if ("text" in edit) value = { ...prior, text: edit.text.slice(0, 32768) };
       else if ("thought" in edit) {
         const { thought: _old, ...rest } = prior;

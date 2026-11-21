@@ -6,6 +6,7 @@ import {
   readReportDocument,
   validateReportDocument,
 } from "../../src/presentation/report-document.ts";
+import { catalogV2Id, catalogV3Id, catalogV4Id } from "../../src/web/catalog.ts";
 import { ReportArtifactReceiptSchema } from "../../src/workflow/report-contracts.ts";
 
 test("canonical JSON retains exact layout, captured values, source revision and pending evidence", () => {
@@ -17,6 +18,27 @@ test("canonical JSON retains exact layout, captured values, source revision and 
   assert.equal(document.surface.createSurface.components[1].mode, "live");
   assert.equal(document.data.work[0].title, "Frozen task title");
   assert.equal(document.data.snapshot_work?.[0].title, "Older snapshot task title");
+});
+
+test("v2 through v4 reports retain their original catalog and renderer identity", () => {
+  const current = reportDocument();
+  for (const [id, version] of [
+    [catalogV2Id, 2],
+    [catalogV3Id, 3],
+    [catalogV4Id, 4],
+  ] as const) {
+    const document = {
+      ...current,
+      catalog_id: id,
+      catalog_version: version,
+      renderer_compatibility: `abracode-react/v${version}`,
+      surface: {
+        ...current.surface,
+        createSurface: { ...current.surface.createSurface, catalogId: id },
+      },
+    };
+    assert.deepEqual(readReportDocument(JSON.stringify(document)), { supported: true, document });
+  }
 });
 
 test("document validation bounds UTF-8 bytes and refuses uncaptured resources or mismatched provenance", () => {
@@ -74,7 +96,7 @@ test("unknown format/catalog/renderer versions remain unmodified and individuall
   const document = reportDocument();
   for (const update of [
     { format_version: 2 },
-    { catalog_version: 3 },
+    { catalog_version: 99 },
     { catalog_id: "https://future.invalid/catalog" },
     { renderer_compatibility: "future-renderer" },
   ]) {
@@ -114,7 +136,7 @@ test("receipt union distinguishes immutable JSON from retained untagged HTML wit
     path: "/fixture/index.json",
   };
   assert.deepEqual(Schema.decodeUnknownSync(ReportArtifactReceiptSchema)(json), json);
-  const future = { ...json, catalog_version: 3, renderer_compatibility: "future-renderer" };
+  const future = { ...json, catalog_version: 99, renderer_compatibility: "future-renderer" };
   assert.deepEqual(Schema.decodeUnknownSync(ReportArtifactReceiptSchema)(future), future);
 });
 

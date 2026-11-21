@@ -1,3 +1,12 @@
+import { contentDefinitions, contentNames } from "./content-components.ts";
+export { contentNames, contentProps, type ContentName } from "./content-components.ts";
+import { chartComponents, isChartComponent, v3BarChart } from "./charts.ts";
+export {
+  chartComponents,
+  isChartComponent,
+  type ChartInput,
+  type ChartComponentName,
+} from "./charts.ts";
 import { DiagramSchema } from "../presentation/diagrams.ts";
 import { Schema } from "effect";
 import { IssueId } from "../identities.ts";
@@ -10,10 +19,15 @@ import {
   STRICT_VALIDATION,
 } from "@a2ui/web_core/v1_0";
 
-export const previousCatalogId = "https://abracode.local/catalog/work/v1/catalog.json";
-export const catalogId = "https://abracode.local/catalog/work/v2/catalog.json";
+export const catalogV1Id = "https://abracode.local/catalog/work/v1/catalog.json";
+export const catalogV2Id = "https://abracode.local/catalog/work/v2/catalog.json";
+export const catalogV3Id = "https://abracode.local/catalog/work/v3/catalog.json";
+export const catalogV4Id = "https://abracode.local/catalog/work/v4/catalog.json";
+export const catalogId = "https://abracode.local/catalog/work/v5/catalog.json";
+export const catalogIds = [catalogV1Id, catalogV2Id, catalogV3Id, catalogV4Id, catalogId] as const;
 export const legacyCatalogId = "https://abracode.local/catalog/v1";
-export const basicComponentNames = ["Column", "Row", "Text"] as const;
+export const basicComponentNames = [...basicCatalog.components.keys()];
+const historicalBasicNames = ["Column", "Row", "Text"] as const;
 export { ComponentId } from "./surface-destination.ts";
 const issueIds = Schema.Array(IssueId).check(Schema.isMaxLength(100));
 const workFields = {
@@ -31,6 +45,7 @@ function component<const N extends string, S extends Schema.Struct<Schema.Struct
 
 /** Owned props are defined once; the SDK's Zod models are derived from the exported JSON. */
 export const workComponents = {
+  ...chartComponents,
   Mermaid: component(
     "Mermaid",
     DiagramSchema,
@@ -85,26 +100,32 @@ export const workComponents = {
 } as const;
 export type WorkComponentName = keyof typeof workComponents;
 export const workComponentNames = Object.values(workComponents).map((c) => c.name);
-export const componentNames = [...basicComponentNames, ...workComponentNames];
+const historicalNames = [...historicalBasicNames, ...workComponentNames];
+export const componentNames = [...basicComponentNames, ...contentNames, ...workComponentNames];
 export type WorkProps<N extends WorkComponentName> = (typeof workComponents)[N]["props"]["Type"];
 
 const basic = basicCatalog
   .derive({
     catalogId,
-    components: basicComponentNames,
+    components: historicalBasicNames,
     functions: [],
   })
   .toJson();
 const object = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json));
 const basicDefinitions = object(basic.components);
 const definitions = object(basic.$defs);
-const customDocuments = Object.values(workComponents).map(({ name, props, description }) => {
+function customDocument({
+  name,
+  props,
+  description,
+}: (typeof workComponents)[WorkComponentName] | typeof v3BarChart) {
   const document = Schema.toJsonSchemaDocument(
     Schema.Struct({ component: Schema.Literal(name), ...props.fields }),
     { onExcessProperty: "error" },
   );
   return { name, schema: { ...document.schema, description }, definitions: document.definitions };
-});
+}
+const customDocuments = Object.values(workComponents).map(customDocument);
 const customDefinitions = Object.fromEntries(customDocuments.map((doc) => [doc.name, doc.schema]));
 const sharedDefinitions = {
   ...definitions,
@@ -112,7 +133,7 @@ const sharedDefinitions = {
 };
 
 /** Deterministic generated artifact shared by the native tool, server and browser. */
-export const workCatalogDocument = {
+const previousDocument = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: catalogId,
   catalogId,
@@ -134,35 +155,90 @@ export const workCatalogDocument = {
   $defs: {
     ...sharedDefinitions,
     anyComponent: {
-      oneOf: componentNames.map((name) => ({ $ref: `#/components/${name}` })),
+      oneOf: historicalNames.map((name) => ({ $ref: `#/components/${name}` })),
       discriminator: { propertyName: "component" },
     },
     anyFunction: { not: {} },
   },
 };
-/** Retained v1 discovery document excludes the new component. */
-export const previousCatalogDocument = {
-  ...workCatalogDocument,
-  $id: previousCatalogId,
-  catalogId: previousCatalogId,
-  components: Object.fromEntries(
-    Object.entries(workCatalogDocument.components).filter(([name]) => name !== "Mermaid"),
-  ),
+function historicalCatalog(id: Exclude<(typeof catalogIds)[number], typeof catalogId>) {
+  const names = historicalNames.filter((name) =>
+    isChartComponent(name)
+      ? id === catalogV3Id && ["LineChart", "BarChart", "PieChart"].includes(name)
+      : id !== catalogV1Id || name !== "Mermaid",
+  );
+  return {
+    ...previousDocument,
+    $id: id,
+    catalogId: id,
+    components: Object.fromEntries(
+      names.map((name) => [
+        name,
+        name === "BarChart"
+          ? customDocument(v3BarChart).schema
+          : previousDocument.components[name],
+      ]),
+    ),
+    $defs: {
+      ...previousDocument.$defs,
+      anyComponent: {
+        ...previousDocument.$defs.anyComponent,
+        oneOf: names.map((name) => ({ $ref: `#/components/${name}` })),
+      },
+    },
+  };
+}
+const upstream = basicCatalog.toJson();
+export const workCatalogDocument = {
+  ...previousDocument,
+  instructions:
+    "Use root as the root component ID. Basic controls bind to the surface data model. " +
+    "Button events prepare a message for the user. openUrl requires a user gesture and an HTTP(S) destination. " +
+    "Use embedded media for offline reports. Work widgets default to live data; mode snapshot uses retained work. " +
+    "Omit issueIds to select all work. Use ResourceLink for owned workspace navigation.",
+  components: {
+    ...Object.fromEntries(Object.entries(object(upstream.components)).map(([name, schema]) => {
+      const definition = object(schema);
+      return [name, { ...definition, ...(definition.allOf
+        ? { unevaluatedProperties: false }
+        : { additionalProperties: false }) }];
+    })),
+    ...contentDefinitions,
+    ...customDefinitions,
+  },
+  functions: object(upstream.functions),
   $defs: {
-    ...workCatalogDocument.$defs,
+    ...sharedDefinitions,
+    anyFunction: object(upstream.$defs).anyFunction,
     anyComponent: {
-      ...workCatalogDocument.$defs.anyComponent,
-      oneOf: componentNames
-        .filter((name) => name !== "Mermaid")
-        .map((name) => ({ $ref: `#/components/${name}` })),
+      ...previousDocument.$defs.anyComponent,
+      oneOf: componentNames.map((name) => ({ $ref: `#/components/${name}` })),
     },
   },
 };
+export const workCatalogs = {
+  [catalogV1Id]: historicalCatalog(catalogV1Id),
+  [catalogV2Id]: historicalCatalog(catalogV2Id),
+  [catalogV3Id]: historicalCatalog(catalogV3Id),
+  [catalogV4Id]: { ...previousDocument, $id: catalogV4Id, catalogId: catalogV4Id },
+  [catalogId]: workCatalogDocument,
+};
 export const catalog = Catalog.fromJson(workCatalogDocument);
 
-/** Attach implementations without changing the shared catalog or adding functions. */
+// The pinned SDK also opens mailto and tel. The v1 guide requires HTTP(S).
+const basicFunctions = [...basicCatalog.functions.values()].map((fn) => fn.name === "openUrl"
+  ? { ...fn, execute(args: Record<string, unknown>) {
+      if (typeof window === "undefined" || typeof args.url !== "string")
+        throw new Error("openUrl requires a browser URL");
+      const url = new URL(args.url, window.location.href);
+      if (url.protocol !== "https:" && url.protocol !== "http:")
+        throw new Error("openUrl requires HTTP or HTTPS");
+      window.open(url.href, "_blank", "noopener,noreferrer");
+    } }
+  : fn);
+
 export function implementedCatalog<T extends ComponentApi>(entries: readonly T[]) {
-  return new Catalog(catalogId, "1.0", entries, [], {
+  return new Catalog(catalogId, "1.0", entries, basicFunctions, {
     schemaUri: workCatalogDocument.$schema,
     schemaId: catalogId,
     title: workCatalogDocument.title,

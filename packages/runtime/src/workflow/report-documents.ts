@@ -17,12 +17,11 @@ import { reportHash } from "./report-build.ts";
 import { canonicalJSON } from "../presentation/identity.ts";
 import {
   maximumDocumentBytes,
-  reportRendererVersion,
   validateReportDocument,
   type ReportDocument,
 } from "../presentation/report-document.ts";
 import type { ReportSnapshot } from "../presentation/report-evidence.ts";
-import { workCatalogDocument } from "../web/catalog.ts";
+import { workCatalogs } from "../web/catalog.ts";
 import type { VisualBuild, VisualRenderRequestSchema } from "./report-contracts.ts";
 
 type Request = typeof VisualRenderRequestSchema.Type;
@@ -206,7 +205,8 @@ export class ReportDocuments {
                     input_hash: hash,
                     document_hash: hash,
                     template_hash: reportHash(
-                      canonicalJSON(workCatalogDocument) + reportRendererVersion,
+                      canonicalJSON(workCatalogs[document.catalog_id]) +
+                        document.renderer_compatibility,
                     ),
                     document_input: document,
                     status: "pending",

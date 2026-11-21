@@ -630,3 +630,89 @@ output:not([class~="inline-status"]) {
   align-items: center;
   gap: 1rem;
 }
+
+.catalog-chart {
+  margin: 0;
+  min-width: 0;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+.catalog-chart figcaption {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.chart-beside {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.chart-beside > * {
+  flex: 1 1 9rem;
+  min-width: 0;
+}
+.chart-values {
+  margin: 0;
+  font-size: 13px;
+}
+.chart-values > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.chart-swatch {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: 50%;
+  margin-inline-end: 0.5em;
+}
+.chart-values dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.chart-table :is(th, td) {
+  text-align: start;
+  padding: 0.2rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+}
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  list-style: none;
+  gap: 0.25rem 0.6rem;
+  padding: 0;
+  margin: 0.25rem 0;
+  font-size: 13px;
+}
+
+.catalog-table-scroll, .catalog-code pre {
+  max-width: 100%;
+  overflow: auto;
+}
+.catalog-table-scroll table { border-collapse: collapse; width: 100%; }
+.catalog-table-scroll :is(th, td) { border-bottom: 1px solid var(--border); padding: .4rem .6rem; text-align: start; }
+.catalog-table-scroll caption, .catalog-code figcaption { color: var(--muted-foreground); text-align: start; }
+.catalog-disclosure summary { cursor: pointer; font-weight: 600; }
+.catalog-facts > div { display: flex; flex-wrap: wrap; gap: .25rem 1rem; }
+.catalog-facts dt { font-weight: 600; }
+.catalog-facts dd { margin: 0; overflow-wrap: anywhere; }
+.catalog-code pre { padding: .75rem; white-space: pre; background: var(--muted); border-radius: var(--radius); }
+.catalog-code, .catalog-facts, .catalog-disclosure, .catalog-table-scroll { margin: .5rem; min-width: 0; }
+.catalog-player, .catalog-image { display: block; width: 100%; max-width: 100%; }
+.catalog-image[data-variant="icon"] { width: 24px; height: 24px; }
+.catalog-image[data-variant="avatar"] { width: 40px; height: 40px; border-radius: 50%; }
+.catalog-image[data-variant="smallFeature"] { max-width: 100px; }
+.catalog-image[data-variant="mediumFeature"] { max-width: 300px; }
+.catalog-image[data-variant="largeFeature"] { max-height: 400px; }
+.catalog-image[data-variant="header"] { height: 200px; }

@@ -269,6 +269,10 @@ deferred-feature, Back/focus and 375/390px acceptance remains pending.
 
 ### Versioned diagram data
 
+Work catalog v4 and `abracode-react/v4` add stacked bars, histograms, scatter plots, heatmaps and Gantt charts. Retained v3 charts use their original schema.
+
+Work catalog v3 and `abracode-react/v3` add literal TanStack charts to workspace views and portable reports. The v2 catalog and renderer identity remain supported.
+
 Work catalog v2 and `abracode-react/v2` add literal Mermaid components and larger bounded collections. Retained v1 surfaces/documents keep their original IDs, byte limits, eight-diagram evidence contract and source safety policy. Readers check catalog, renderer and surface identity together. No upgrade rewrites saved JSON or interprets an unsupported diagram as a partial successful view.
 
 ### Interactive reviews

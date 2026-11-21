@@ -1,3 +1,4 @@
+import { PrepareSurfaceMessage } from "../workspace-state/draft.ts";
 import { ReviewAttachment, ReviewsForSource } from "./interactive-review-loader.tsx";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect HTTP atoms own shared generated-binding queries. */
 import { RegistryContext } from "@effect/atom-react";
@@ -188,12 +189,14 @@ function BoundSurface({ record, inspect }: { record: SurfaceRecord; inspect: Ins
   );
 }
 function BoundSurfaceContent({ record, inspect }: { record: SurfaceRecord; inspect: Inspect }) {
+  const prepareMessage = useContext(PrepareSurfaceMessage);
   const selection = bindingRequirements(record.surface, "live");
   return selection.unfiltered || selection.ids.length ? (
     <LiveSurface record={record} inspect={inspect} selection={selection} />
   ) : (
     <WorkViews
       records={[record]}
+      prepareMessage={prepareMessage}
       work={[]}
       inspect={inspect}
       actions={(record) => <SaveSurfaceButton record={record} inspect={inspect} />}
@@ -232,6 +235,7 @@ function LiveSurface({
 }) {
   const query = bindingQuery(selection);
   const { refresh } = useCanvasRead(query);
+  const prepareMessage = useContext(PrepareSurfaceMessage);
   const registry = useContext(RegistryContext);
   const reader = useMemo(() => liveBindingStore(registry, query), [registry, query]);
   const result = useSyncExternalStore(reader.subscribe, reader.read);
@@ -341,6 +345,7 @@ function LiveSurface({
       )}
       <WorkViews
         records={[record]}
+      prepareMessage={prepareMessage}
         work={previous?.work ?? []}
         liveCoverage={coverage}
         hideLiveWidgets={!previous}

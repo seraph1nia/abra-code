@@ -1,3 +1,6 @@
+import { CatalogMedia } from "./catalog-media.tsx";
+import { contentImplementation } from "./catalog-content.tsx";
+import { CatalogIcon } from "./catalog-icon.tsx";
 import { SurfaceOwner } from "./surface-owner.ts";
 import { usePreparedDiagrams, type DiagramRequest } from "./diagrams.tsx";
 import { Button } from "./ui/button.tsx";
@@ -5,6 +8,8 @@ import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
 import type { BindingCoverage } from "@abracode/contracts/web/bindings";
 import {
   createContext,
+  lazy,
+  Suspense,
   useContext,
   useEffect,
   useMemo,
@@ -34,8 +39,11 @@ import type { WebWorkItem as WorkItem } from "@abracode/contracts/web/wire";
 import { surfaceValidation, toSdkSurface, validateSurface } from "@abracode/contracts/web/surfaces";
 import {
   basicComponentNames,
+  contentNames,
   catalog,
   implementedCatalog,
+  isChartComponent,
+  chartComponents,
   workComponents,
   workComponentNames,
   type WorkComponentName,
@@ -49,6 +57,7 @@ type WorkViewContext = {
   hideLiveWidgets?: boolean;
   inspect?: Inspect;
   frozen?: boolean;
+  prepareMessage?: (text: string) => void;
   evidence?: ReportSnapshot;
   preparedDiagrams?: readonly PreparedReportDiagram[];
   diagramMessage?: string;
@@ -56,9 +65,19 @@ type WorkViewContext = {
 };
 const ViewContext = createContext<WorkViewContext | undefined>(undefined);
 
-function bindWidget<N extends WorkComponentName>(name: N) {
+const CatalogChart = lazy(() => import("./charts.tsx"));
+
+function bindWidget(name: WorkComponentName) {
   const api = catalog.components.get(name);
   if (!api) throw new Error(`Missing catalog component ${name}`);
+  if (isChartComponent(name)) {
+    const decode = chartComponents[name].decode;
+    return createComponentImplementation(api, ({ props }) => (
+      <Suspense fallback={<output>Loading chart…</output>}>
+        <CatalogChart {...decode(props)} />
+      </Suspense>
+    ));
+  }
   return createComponentImplementation(api, ({ props }) => {
     const decoded = Schema.decodeUnknownSync(workComponents[name].props)(props);
     return <BoundWidget name={name} props={decoded} />;
@@ -69,8 +88,15 @@ export const reactWorkCatalog = implementedCatalog<ReactCatalogComponent>([
     const api = catalog.components.get(name);
     const implementation = basicCatalog.components.get(name);
     if (!api || !implementation) throw new Error(`Missing basic component ${name}`);
+    if (name === "Video" || name === "AudioPlayer" || name === "Image")
+      return createComponentImplementation(api, function Media({ props }) {
+        const view = useContext(ViewContext);
+        return <CatalogMedia kind={name} props={props} frozen={!!view?.frozen} />;
+      });
+    if (name === "Icon") return createComponentImplementation(api, ({ props }) => <CatalogIcon name={props.name} />);
     return { ...implementation, schema: api.schema };
   }),
+  ...contentNames.map(contentImplementation),
   ...workComponentNames.map(bindWidget),
 ]);
 
@@ -82,6 +108,7 @@ export function WorkViews({
   work,
   inspect,
   actions,
+  prepareMessage,
   liveCoverage,
   hideLiveWidgets,
 }: {
@@ -90,6 +117,7 @@ export function WorkViews({
   inspect: Inspect;
   liveCoverage?: BindingCoverage;
   hideLiveWidgets?: boolean;
+  prepareMessage?: (text: string) => void;
   actions?: (record: SurfaceRecord) => ReactNode;
 }) {
   return (
@@ -103,6 +131,7 @@ export function WorkViews({
           <div key={record.surface.createSurface.surfaceId} className="surface-publication">
             <GeneratedSurface
               record={record}
+              prepareMessage={prepareMessage}
               work={work}
               liveCoverage={liveCoverage}
               hideLiveWidgets={hideLiveWidgets}
@@ -141,6 +170,7 @@ export function GeneratedSurface({
   work,
   inspect,
   frozen,
+  prepareMessage,
   evidence,
   preparedDiagrams,
   diagramRequest,
@@ -167,6 +197,18 @@ export function GeneratedSurface({
   useEffect(() => owner.replace(record), [owner, record]);
   useEffect(() => owner.committed(view), [owner, view]);
   const { rendered, error } = view;
+  const [feedback, setFeedback] = useState<{ surface: Rendered; text: string }>();
+  useEffect(() => {
+    if (!rendered) return;
+    const action = rendered.surface.onAction.subscribe(({ name, userMessage, context }) => {
+      const message = userMessage || name;
+      const text = Object.keys(context).length ? `${message}\n${JSON.stringify(context)}` : message;
+      if (prepareMessage) prepareMessage(text);
+      else setFeedback({ surface: rendered, text: `Report interaction: ${text}` });
+    });
+    const failure = rendered.surface.onError.subscribe(({ message }) => setFeedback({ surface: rendered, text: message }));
+    return () => { action.unsubscribe(); failure.unsubscribe(); };
+  }, [rendered, prepareMessage]);
   return (
     <section className="generated-surface" data-a2ui-renderer="upstream">
       {diagrams.retry && (
@@ -174,6 +216,7 @@ export function GeneratedSurface({
           Retry diagrams
         </Button>
       )}
+      {feedback && feedback.surface === rendered && <output>{feedback.text}</output>}
       {error && <output className="error">{error}</output>}
       {rendered && (
         <ViewContext.Provider

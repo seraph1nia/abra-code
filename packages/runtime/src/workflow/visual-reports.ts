@@ -12,7 +12,7 @@ import { validateSurface } from "../web/surfaces.ts";
 import { presentationHash } from "../presentation/identity.ts";
 import { catalogId } from "../web/catalog.ts";
 import {
-  reportRendererVersion,
+  reportCatalogs,
   validateReportDocument,
   readReportDocument,
   type ReportProducer,
@@ -109,11 +109,7 @@ export class VisualReports {
                   title: request.title ?? snapshot.title,
                   captured_at: Timestamp.make(current.observed_at),
                   catalog_id: source.surface.createSurface.catalogId,
-                  catalog_version: source.surface.createSurface.catalogId === catalogId ? 2 : 1,
-                  renderer_compatibility:
-                    source.surface.createSurface.catalogId === catalogId
-                      ? reportRendererVersion
-                      : "abracode-react/v1",
+                  ...reportCatalogs[source.surface.createSurface.catalogId],
                   provenance: {
                     issue_id: issue,
                     execution_id: e.execution_id,
@@ -464,8 +460,7 @@ export class VisualReports {
                     title: snapshot.title,
                     captured_at: snapshot.observed_at,
                     catalog_id: catalogId,
-                    catalog_version: 2,
-                    renderer_compatibility: reportRendererVersion,
+                    ...reportCatalogs[catalogId],
                     provenance: {
                       issue_id: issue,
                       execution_id: e.execution_id,

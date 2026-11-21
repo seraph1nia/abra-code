@@ -18,6 +18,8 @@ Browser primitives in `apps/web/src/components/ui/` adapt shadcn/ui Base Nova co
 
 ## Installed components
 
+The chart components use TanStack Charts 1.5.0, Copyright (c) 2026-present Tanner Linsley. [MIT license](licenses/texts/a09cf172b475f76e0cb456e3cd346b1aa3fe5169ae5454f9f7fbe98b3e93c85f.txt). The inventory also retains the individual D3 dependency notices distributed with the web client and saved reports.
+
 Full pinned provenance and review dispositions: [inventory](licenses/inventory.json). Dependency binaries are downloaded by the operator from their suppliers; they are not included in the source clone. Preserve these notices when distributing derived bundles.
 
 OpenTUI 0.8.4 platform binaries declare MIT AND LGPL-2.1-or-later and include FFmpeg notices. The source clone and offline report artifacts exclude these binaries. Preserve the supplier notices; redistributing binaries needs a separate review of corresponding source and linking requirements.

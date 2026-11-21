@@ -1,3 +1,4 @@
+import { analysisCharts } from "../helpers/chart-fixtures.ts";
 import { workspaceBrowserFixture } from "../helpers/workspace-browser.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Shipped browser assets and disposable Effect HTTP fixture. */
 import { test } from "vite-plus/test";
@@ -7,7 +8,7 @@ import { join } from "node:path";
 import { Effect, Exit, Scope } from "effect";
 import { WorkspaceFixture } from "../helpers/web.ts";
 import { workspaceServer } from "../../src/web/server.ts";
-import { catalogId, workComponentNames } from "../../src/web/catalog.ts";
+import { catalogId, workComponentNames, type WorkComponentName } from "../../src/web/catalog.ts";
 import { validateSurface } from "../../src/web/surfaces.ts";
 import { IssueId, ObligationKey } from "../../src/identities.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
@@ -71,6 +72,37 @@ test("upstream A2UI renders every work widget, replaces revisions and retains va
     await browser.close();
     await Effect.runPromise(Scope.close(scope, Exit.void));
   });
+  const chartData = [
+    { label: "Open", value: 2 },
+    { label: "Closed", value: 5 },
+  ];
+  function widgetProps(component: WorkComponentName) {
+    switch (component) {
+      case "Histogram":
+      case "ScatterPlot":
+      case "Heatmap":
+      case "GanttChart":
+        return analysisCharts[component];
+      case "LineChart":
+      case "BarChart":
+        return { title: component, data: chartData };
+      case "PieChart":
+        return { title: component, data: chartData, orientation: "horizontal" };
+      case "Mermaid":
+        return { title: "Diagram", source: "flowchart LR\nA --> B" };
+      case "ReportLink":
+        return { issueId: "abra-web" };
+      case "ResourceLink":
+        return {
+          label: "Inspect captured changes",
+          target: { action: "open_changes", issue_id: "abra-web" },
+        };
+      case "ReportEvidence":
+        return { section: "checks" };
+      default:
+        return { issueIds: ["abra-web", "abra-first"], mode: "snapshot" };
+    }
+  }
   const record = (revision: number) => ({
     session_id: backend.sessionID,
     tool_call_id: "native-call",
@@ -88,24 +120,41 @@ test("upstream A2UI renders every work widget, replaces revisions and retains va
           {
             id: "widgets",
             component: "Row",
-            children: workComponentNames.map((_, i) => `widget${i}`),
+            children: [
+              ...workComponentNames.map((_, i) => `widget${i}`),
+              "horizontal",
+              "stacked",
+              "segments",
+              "horizontalSegments",
+              "identical",
+            ],
           },
           ...workComponentNames.map((component, i) => ({
-            id: `widget${i}`,
+            ...widgetProps(component),
             component,
-            ...(component === "Mermaid"
-              ? { title: "Diagram", source: "flowchart LR\nA --> B" }
-              : component === "ReportLink"
-                ? { issueId: "abra-web" }
-                : component === "ResourceLink"
-                  ? {
-                      label: "Inspect captured changes",
-                      target: { action: "open_changes", issue_id: "abra-web" },
-                    }
-                  : component === "ReportEvidence"
-                    ? { section: "checks" }
-                    : { issueIds: ["abra-web", "abra-first"], mode: "snapshot" }),
+            id: `widget${i}`,
           })),
+          {
+            id: "horizontal",
+            component: "BarChart",
+            title: "Horizontal bars",
+            data: chartData,
+            orientation: "horizontal",
+          },
+          { id: "stacked", component: "PieChart", title: "Stacked pie", data: chartData },
+          {
+            ...analysisCharts.Histogram,
+            id: "identical",
+            title: "Identical times",
+            data: [0, 0, 0],
+          },
+          analysisCharts.BarChart,
+          {
+            ...analysisCharts.BarChart,
+            id: "horizontalSegments",
+            title: "Horizontal backlog",
+            orientation: "horizontal",
+          },
         ],
       },
     }),
@@ -117,6 +166,72 @@ test("upstream A2UI renders every work widget, replaces revisions and retains va
   await page.goto(web.origin);
   await page.getByText("Other retained views (1)", { exact: true }).click();
   await page.getByText("Upstream revision 1", { exact: true }).waitFor();
+  for (const title of ["LineChart", "BarChart", "PieChart", "Horizontal bars", "Stacked pie"]) {
+    const figure = page.getByRole("figure", { name: title, exact: true });
+    await figure.locator("svg").waitFor();
+    if (title.includes("pie") || title === "PieChart") {
+      assert.ok((await figure.locator("path[d]").count()) >= 2);
+      assert.deepEqual(await figure.locator("dt").allTextContents(), ["Open", "Closed"]);
+      assert.equal(await figure.locator(".chart-beside").count(), title === "PieChart" ? 1 : 0);
+    } else if (title === "LineChart") {
+      assert.equal(await figure.locator("circle").count(), 2);
+    } else {
+      const bars = await figure
+        .locator("svg rect")
+        .evaluateAll((nodes) =>
+          nodes
+            .filter((node) => node.getAttribute("fill") === "var(--primary)")
+            .map((node) => node.getBoundingClientRect()),
+        );
+      assert.equal(bars.length, 2);
+      assert.equal(bars[0].x === bars[1].x, title === "Horizontal bars");
+    }
+  }
+  const figure = (name: string) => page.getByRole("figure", { name, exact: true });
+  for (const [title, horizontal] of [
+    ["Backlog", false],
+    ["Horizontal backlog", true],
+  ] as const) {
+    const bars = figure(title).locator(".ts-chart__bar rect");
+    await bars.first().waitFor();
+    const [first, second, third] = await bars.evaluateAll((nodes) =>
+      nodes.map((node) => node.getBoundingClientRect()),
+    );
+    assert.equal(horizontal ? first.y : first.x, horizontal ? second.y : second.x);
+    assert.notEqual(horizontal ? first.y : first.x, horizontal ? third.y : third.x);
+    assert.ok(Math.abs(horizontal ? first.right - second.left : first.top - second.bottom) < 1);
+    assert.deepEqual(await figure(title).getByRole("listitem").allTextContents(), [
+      "Open",
+      "Blocked",
+    ]);
+  }
+  const histogram = figure("Cycle times");
+  await histogram.locator(".ts-chart__rect rect").first().waitFor();
+  assert.equal(
+    await histogram
+      .locator("tbody tr td:last-child")
+      .evaluateAll((nodes) => nodes.reduce((sum, node) => sum + Number(node.textContent), 0)),
+    5,
+  );
+  const identical = figure("Identical times");
+  await identical.locator(".ts-chart__bar rect").waitFor();
+  assert.deepEqual(await identical.locator("tbody td").allTextContents(), ["0", "3"]);
+  assert.equal(await figure("Review time").locator("svg circle").count(), 2);
+  const cells = await figure("Failures")
+    .locator(".ts-chart__rect rect")
+    .evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).fill));
+  assert.equal(cells.length, 3);
+  assert.equal(new Set(cells).size, 3);
+  const lanes = await figure("Task intervals")
+    .locator(".ts-chart__rect rect")
+    .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect()));
+  assert.equal(lanes.length, 2);
+  assert.ok(
+    lanes[0].left < lanes[1].left &&
+      lanes[1].left < lanes[0].right &&
+      lanes[0].right < lanes[1].right,
+  );
+  assert.notEqual(lanes[0].y, lanes[1].y);
   assert.deepEqual(
     await page.locator(".topbar h1").evaluate((element) => {
       const style = getComputedStyle(element);
@@ -413,5 +528,74 @@ test("replaced live selections ignore a late read and show pending counts withou
   assert.equal(await table.getByText("Live selection 53", { exact: true }).count(), 1);
   await page.close();
   assert.equal(f.source.stops, 0);
+  assert.equal(f.source.submissions, 0);
+});
+
+test("work catalog renders the basic components, binds local inputs and prepares button events", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const field = { "@path": "/note" };
+  const entries = [
+    { id: "card", component: "Card", child: "table" },
+    { id: "list", component: "List", children: { componentId: "item", path: "/items" } },
+    { id: "facts", component: "KeyValueList", entries: [{ label: "Branch", value: "trunk" }] },
+    { id: "details", component: "Disclosure", label: "View code", child: "code" },
+    { id: "tabs", component: "Tabs", tabs: [{ title: "First tab", child: "icon" }, { title: "Second tab", child: "tabText" }] },
+    { id: "modal", component: "Modal", trigger: "trigger", content: "modalText" },
+    { id: "line", component: "Divider" },
+    { id: "image", component: "Image", url: "data:image/gif;base64,R0lGODlhAQABAAAAACw=", description: "Catalog image" },
+    { id: "video", component: "Video", url: "data:video/mp4;base64," },
+    { id: "audio", component: "AudioPlayer", url: "data:audio/wav;base64,", description: "Sound" },
+    { id: "entry", component: "TextField", label: "Change note", value: field },
+    { id: "echo", component: "Text", text: field },
+    { id: "check", component: "CheckBox", label: "Enabled", value: { "@path": "/enabled" } },
+    { id: "choice", component: "ChoicePicker", value: { "@path": "/choices" }, options: [{ label: "Alpha", value: "a" }] },
+    { id: "slider", component: "Slider", value: { "@path": "/count" }, max: 10 },
+    { id: "formatted", component: "Text", text: { "@call": "formatNumber", args: { value: { "@path": "/count" }, decimals: 2 } } },
+    { id: "date", component: "DateTimeInput", value: { "@path": "/date" }, enableDate: true },
+    { id: "button", component: "Button", child: "actionLabel", action: { event: { name: "review", userMessage: field } } },
+  ];
+  const surface = validateSurface({ version: "1.0", createSurface: {
+    catalogId, surfaceId: "basic", dataModel: { note: "Initial note", count: 3, enabled: false, date: "2026-11-21", choices: [], items: [{ value: "List row" }] },
+    components: [
+      { id: "root", component: "Column", children: ["row"] },
+      { id: "row", component: "Row", children: entries.map(entry => entry.id) }, ...entries,
+      { id: "table", component: "Table", caption: "Option costs", columns: ["Option", "Cost"], rows: [["A", "Low"]] },
+      { id: "item", component: "Text", text: { "@path": "value" } },
+      { id: "code", component: "CodeBlock", code: "if (ready) {\n  run();\n}", language: "JS" },
+      { id: "icon", component: "Icon", name: "settings" },
+      { id: "tabText", component: "Text", text: "Other tab content" },
+      { id: "trigger", component: "Text", text: "Open dialog" },
+      { id: "modalText", component: "Text", text: "Dialog content" },
+      { id: "actionLabel", component: "Text", text: "Prepare reply" },
+    ] } });
+  f.source.value = { ...f.source.value, surfaces: [{ session_id: f.source.sessionID, tool_call_id: "basic", revision: 1, at: f.source.value.at, snapshot: [], surface }] };
+  const page = await f.browser.newPage();
+  await page.goto(f.origin);
+  await page.getByText("Other retained views (1)", { exact: true }).click();
+  const view = page.locator(".generated-surface");
+  await view.getByRole("table", { name: "Option costs" }).getByRole("cell", { name: "Low" }).waitFor();
+  await view.getByText("trunk").waitFor();
+  await view.getByText("List row").waitFor();
+  await view.getByText("View code").click();
+  assert.equal(await view.locator("pre code").textContent(), "if (ready) {\n  run();\n}");
+  await view.getByRole("img", { name: "settings" }).waitFor();
+  await view.getByText("Second tab").click();
+  await view.getByText("Other tab content").waitFor();
+  await view.getByText("Open dialog").click();
+  await view.getByRole("dialog").getByText("Dialog content").waitFor();
+  await view.getByRole("button", { name: "Close" }).click();
+  await view.getByRole("img", { name: "Catalog image" }).waitFor();
+  assert.equal(await view.locator("audio[controls], video[controls]").count(), 2);
+  await view.locator("input[type=date]").waitFor();
+  await view.getByText("3.00", {exact:true}).waitFor();
+  await view.getByRole("slider").press("ArrowRight");
+  await view.getByText("4.00", {exact:true}).waitFor();
+  await view.getByText("Enabled", {exact:true}).click();
+  await view.getByText("Alpha", {exact:true}).click();
+  await view.locator("input[type=text]").fill("Review the table");
+  await view.getByText("Review the table", { exact:true }).waitFor();
+  await view.getByRole("button", { name: "Prepare reply" }).click();
+  assert.equal(await page.getByRole("textbox", { name: "Message Abra" }).inputValue(), "Review the table");
   assert.equal(f.source.submissions, 0);
 });

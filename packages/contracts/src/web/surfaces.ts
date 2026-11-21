@@ -1,3 +1,4 @@
+import { validateChart, chartComponents, v3BarChart } from "./charts.ts";
 import { collectDiagrams, diagramBudget } from "../presentation/diagrams.ts";
 import { Schema } from "effect";
 import { ResourceSelectionSchema } from "./resources.ts";
@@ -9,7 +10,12 @@ import {
 } from "@a2ui/web_core/v1_0";
 import {
   catalogId,
-  previousCatalogId,
+  catalogV1Id,
+  catalogIds,
+  catalogV3Id,
+  workCatalogs,
+  contentProps,
+  isChartComponent,
   ComponentId,
   ComponentSchema,
   legacyCatalogId,
@@ -25,7 +31,8 @@ const PublicationSchema = Schema.Struct({
   version: Schema.Literal("1.0"),
   createSurface: Schema.Struct({
     surfaceId: ComponentId,
-    catalogId: Schema.Literals([catalogId, previousCatalogId]),
+    catalogId: Schema.Literals(catalogIds),
+    dataModel: Schema.optionalKey(Schema.Record(Schema.String, Schema.Json)),
     components: Schema.Array(ComponentSchema).check(Schema.isMinLength(1), Schema.isMaxLength(100)),
   }),
 }).annotate({ parseOptions: { onExcessProperty: "error" }, reportInput: false });
@@ -81,23 +88,39 @@ export function surfaceResources(surface: WorkSurface) {
 export function validateSurface(value: unknown, workIds?: ReadonlySet<string>): WorkSurface {
   CreateSurfaceMessageSchema.parse(value);
   const surface = Schema.decodeUnknownSync(PublicationSchema)(value, { onExcessProperty: "error" });
-  const old = surface.createSurface.catalogId === previousCatalogId;
+  const old = surface.createSurface.catalogId === catalogV1Id;
   if (new TextEncoder().encode(JSON.stringify(value)).length > (old ? 65536 : maxSurfaceBytes))
     throw new Error(old ? "Surface exceeds the 64 KiB limit" : "Surface exceeds the 384 KiB limit");
   if (old && surface.createSurface.components.some((c) => c.component === "Mermaid"))
     throw new Error("Mermaid requires the v2 catalog");
   const budget = diagramBudget(collectDiagrams(surface.createSurface.components));
   if (budget) throw new Error(budget);
+  const version = surface.createSurface.catalogId;
+  if (version !== catalogId && surface.createSurface.dataModel !== undefined)
+    throw new Error("Surface data requires the v5 catalog");
   const components = new Map<string, WorkComponent>();
   for (const c of surface.createSurface.components) {
     const id = Schema.decodeUnknownSync(ComponentId)(c.id);
     if (components.has(id)) throw new Error("Repeated component identity");
+    if (typeof c.component !== "string" || !Object.hasOwn(workCatalogs[version].components, c.component))
+      throw new Error(`${c.component} is unavailable in this catalog version`);
+    if (c.component === "Table") {
+      const { columns, rows } = Schema.decodeUnknownSync(contentProps.Table)(c);
+      if (rows.some(row => row.length !== columns.length)) throw new Error("Each table row needs one cell per column");
+    }
+    if (isChartComponent(c.component)) {
+      if (version === catalogV3Id && c.component === "BarChart") {
+        const { component: _component, id: _id, ...props } = c;
+        Schema.decodeUnknownSync(v3BarChart.props)(props, { onExcessProperty: "error" });
+      }
+      validateChart(chartComponents[c.component].decode(c));
+    }
     if (c.component === "ResourceLink")
       Schema.decodeUnknownSync(ResourceSelectionSchema)(c.target, { onExcessProperty: "error" });
-    // This publication interface intentionally retains the existing static layouts/text.
-    if (c.component === "Text" && (typeof c.text !== "string" || c.text.length > 4096))
+    if (c.component === "Text" && (typeof c.text === "string" ? c.text.length > 4096 : version !== catalogId))
       throw new Error("Text requires bounded literal text");
     if (
+      version !== catalogId &&
       (c.component === "Column" || c.component === "Row") &&
       (!Array.isArray(c.children) ||
         c.children.length > 100 ||

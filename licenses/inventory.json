@@ -1,7 +1,7 @@
 {
   "version": 1,
   "distribution": "source clone; dependencies downloaded by the operator from their suppliers",
-  "lock_sha256": "7d61e242ce68f3f89d0f5f78288e14cd1126825e1bbe0df3e2fd52219ab94323",
+  "lock_sha256": "293f3d717ed00f3079a0606e50ce5a1a4ec022c5e9e35ee156858c1f30ed3ea9",
   "packages": [
     {
       "id": "@0no-co/graphql.web@1.3.4",
@@ -8631,6 +8631,25 @@
       "disposition": "reviewed: MIT supplier declarations and actual license/notice texts inspected; preserve retained copyright and bundled-theme notices in derived browser assets"
     },
     {
+      "id": "@tanstack/charts@1.5.0",
+      "license": "MIT",
+      "repository": "https://github.com/TanStack/charts",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40tanstack%2Fcharts/1.5.0",
+      "integrity": "sha512-V6zu8kuTE4lYjZ7MCdSzfI5cwdtj+FKQ4Pr5NwdK+OZ5D4fjegSE7CdVOmk960U8zmgYFabow4hi1wwfqJzUBQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@tanstack/charts@1.5.0/LICENSE",
+          "sha256": "a09cf172b475f76e0cb456e3cd346b1aa3fe5169ae5454f9f7fbe98b3e93c85f"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "ca1bf27c6229b76367442ae107c74f5cb4dbe5a19606f12b98a1ce9c93f67d42",
+      "disposition": "reviewed: MIT supplier terms and attribution retained in the inventory and distributed notices"
+    },
+    {
       "id": "@tanstack/devtools-event-client@0.4.4",
       "license": "MIT",
       "repository": "https://github.com/TanStack/devtools",
@@ -9268,7 +9287,13 @@
           "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "25012ca79d21d7f39a8b04e7936424abe275c9f720318b15753ec37bd1d194ae",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -9306,7 +9331,13 @@
           "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "0db343ec165edd1ae47d07209153aded916e14f6eb7407655682e2a845cb9266",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -9325,7 +9356,13 @@
           "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "2eab2f9b052e1e47e2c4e83970600c63f2c2766aa60e2902735c372e302389cc",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -9349,6 +9386,25 @@
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
     {
+      "id": "@types/d3-path@1.0.11",
+      "license": "MIT",
+      "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40types%2Fd3-path/1.0.11",
+      "integrity": "sha512-4pQMp8ldf7UaB/gR8Fvvy69psNHkTpD/pVw3vmEi8iZAB9EPMBruB1JvHO4BIq9QkUUd2lV1F5YXpMNj7JPBpw==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@types/d3-path@1.0.11/LICENSE",
+          "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "edf8429c4123b26722466c5485ac8d7039ed68c8f5286bbec062a9e64a19c208",
+      "disposition": "reviewed: MIT supplier terms and attribution retained in the inventory and distributed notices"
+    },
+    {
       "id": "@types/d3-path@3.1.1",
       "license": "MIT",
       "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
@@ -9363,7 +9419,13 @@
           "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "a83c12079c728f7825c01bc8667b56326d80de5385c115050157e4842c77748f",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -9425,6 +9487,25 @@
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
     {
+      "id": "@types/d3-sankey@0.12.5",
+      "license": "MIT",
+      "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40types%2Fd3-sankey/0.12.5",
+      "integrity": "sha512-/3RZSew0cLAtzGQ+C89hq/Rp3H20QJuVRSqFy6RKLe7E0B8kd2iOS1oBsodrgds4PcNVpqWhdUEng/SHvBcJ6Q==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@types/d3-sankey@0.12.5/LICENSE",
+          "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "ce97b86c1cb7c65b00ec202878262bc2de3d72a656896bf9ee42885bb7742b0d",
+      "disposition": "reviewed: MIT supplier terms and attribution retained in the inventory and distributed notices"
+    },
+    {
       "id": "@types/d3-scale-chromatic@3.1.0",
       "license": "MIT",
       "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
@@ -9482,6 +9563,25 @@
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
     {
+      "id": "@types/d3-shape@1.3.12",
+      "license": "MIT",
+      "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+      "author": null,
+      "registry": "https://registry.npmjs.org/%40types%2Fd3-shape/1.3.12",
+      "integrity": "sha512-8oMzcd4+poSLGgV0R1Q1rOlx/xdmozS4Xab7np0eamFFUYq71AU9pOCJEFnkXW2aI/oXdVYJzw6pssbSut7Z9Q==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:@types/d3-shape@1.3.12/LICENSE",
+          "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "17c36642e68fc23ccb2a4fa2c709c1ad47ccbf3b4bd20e4c1f58de7b80b3324c",
+      "disposition": "reviewed: MIT supplier terms and attribution retained in the inventory and distributed notices"
+    },
+    {
       "id": "@types/d3-shape@3.2.0",
       "license": "MIT",
       "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
@@ -9496,7 +9596,13 @@
           "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "cd1089d9db40510d2cce33104fc3281700e492dbe5d7a62cf998d2b226eb18be",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -9762,7 +9868,13 @@
           "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "2a3eaa553298c3886cd14438742a481afd0ce781bf580ca2c53722f5c31378ec",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -13695,9 +13807,37 @@
           "sha256": "0747bebeb06b10954913149be9b9a8bdf6fad3e6fdcbd9f9524e7a94c13d2cea"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "70ca5e74d05e56c7cff516a340c03dad0d699a8513e1296ee0cc93463f590c6c",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
+    },
+    {
+      "id": "d3-array@3.2.4",
+      "license": "ISC",
+      "repository": "https://github.com/d3/d3-array",
+      "author": {
+        "url": "http://bost.ocks.org/mike",
+        "name": "Mike Bostock"
+      },
+      "registry": "https://registry.npmjs.org/d3-array/3.2.4",
+      "integrity": "sha512-tdQAmyA18i4J7wprpYq8ClcxZy3SC31QMeByyCFyRt7BVHdREQZ5lpzoe5mFEYZUWe+oq8HBvk9JjpibyEV4Jg==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:d3-array@3.2.4/LICENSE",
+          "sha256": "3e6849627f74ff73c257a3ae1efb574015d94fc1035c05ec3c15805165efcbc4"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "a80d453ee666dfc65c222d56769330b7e6f2302f2043aaf1948332a84d8b95a3",
+      "disposition": "reviewed: ISC supplier terms and attribution retained in the inventory and distributed notices"
     },
     {
       "id": "d3-array@3.2.5",
@@ -13717,7 +13857,13 @@
           "sha256": "2a6d2d5f32ba0b755ddbc1c833f766e30cdbe6ebe9a6d4e3e24427721f0b63d3"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "ac912f699e83bc709b547e9cb3c9b406bd55e282d7da9923993ee4ee790f9b2d",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
@@ -13742,6 +13888,28 @@
       "uses": ["contributor-build", "report-authoring-build", "web-client"],
       "fingerprint": "7d932c02149b2ad27bac789c20d27a11ff1e07875660294193b9d2b539247c94",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
+    },
+    {
+      "id": "d3-brush@3.0.0",
+      "license": "ISC",
+      "repository": "https://github.com/d3/d3-brush",
+      "author": {
+        "url": "https://bost.ocks.org/mike",
+        "name": "Mike Bostock"
+      },
+      "registry": "https://registry.npmjs.org/d3-brush/3.0.0",
+      "integrity": "sha512-ALnjWlVYkXsVIGlOsuWH1+3udkYFI48Ljihfnh8FZPF2QS9o+PzGLBslO0PjzVoHLZ2KCVgAM8NVkXPJB2aNnQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:d3-brush@3.0.0/LICENSE",
+          "sha256": "e008c5e25a6be382593089c29bfabbc553c6378eee02895aec46ce396cc404ee"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "df73c1342916277e73d9870f16943717acf748ba9fe26b7602afae7f2a0aa0f2",
+      "disposition": "reviewed: ISC supplier terms and attribution retained in the inventory and distributed notices"
     },
     {
       "id": "d3-brush@3.0.1",
@@ -13805,9 +13973,37 @@
           "sha256": "2a6d2d5f32ba0b755ddbc1c833f766e30cdbe6ebe9a6d4e3e24427721f0b63d3"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "6aa3b4fc08361074528099d2b866b321b3b4151890afbb4d6947bb7518f84f7a",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
+    },
+    {
+      "id": "d3-contour@4.0.2",
+      "license": "ISC",
+      "repository": "https://github.com/d3/d3-contour",
+      "author": {
+        "url": "http://bost.ocks.org/mike",
+        "name": "Mike Bostock"
+      },
+      "registry": "https://registry.npmjs.org/d3-contour/4.0.2",
+      "integrity": "sha512-4EzFTRIikzs47RGmdxbeUvLWtGedDUNkTcmzoeyg4sP/dvCexO47AaQL7VKy/gul85TOxw+IBgA8US2xwbToNA==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:d3-contour@4.0.2/LICENSE",
+          "sha256": "e51cba0e4fa1d8c078e15319868f2b90188f413f9ce9dac1043b62db32901e93"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "4dd5ab3e8eb6983519e39f601c9bc538a99ee92323506a9d84e430763646a9b1",
+      "disposition": "reviewed: ISC supplier terms and attribution retained in the inventory and distributed notices"
     },
     {
       "id": "d3-contour@4.0.3",
@@ -13830,6 +14026,28 @@
       "uses": ["contributor-build", "report-authoring-build", "web-client"],
       "fingerprint": "cff727e81cd63ded8d9d8b9122f1baa7ae4526cab1e2066f689415fcfb68ebeb",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
+    },
+    {
+      "id": "d3-delaunay@6.0.4",
+      "license": "ISC",
+      "repository": "https://github.com/d3/d3-delaunay",
+      "author": {
+        "url": "https://bost.ocks.org/mike",
+        "name": "Mike Bostock"
+      },
+      "registry": "https://registry.npmjs.org/d3-delaunay/6.0.4",
+      "integrity": "sha512-mdjtIZ1XLAM8bm/hx3WwjfHt6Sggek7qH043O8KEjDXN40xi3vx/6pYSVTwLjEgiXQTbvaouWKynLBiUZ6SK6A==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:d3-delaunay@6.0.4/LICENSE",
+          "sha256": "582c3022bd01942336095f92b58a90b1be624dc547d987555c6c956512dd24c1"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "d60bfa985e06aa787e8a83e0cd97cd7ee585d17e56d207e2775219a9a59ccfa1",
+      "disposition": "reviewed: ISC supplier terms and attribution retained in the inventory and distributed notices"
     },
     {
       "id": "d3-delaunay@6.0.6",
@@ -13871,7 +14089,13 @@
           "sha256": "2a6d2d5f32ba0b755ddbc1c833f766e30cdbe6ebe9a6d4e3e24427721f0b63d3"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "addddb2c907257aec12f70ec920d64d64dd36c40bfe37e9506817706668eb442",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
@@ -13893,7 +14117,13 @@
           "sha256": "2a6d2d5f32ba0b755ddbc1c833f766e30cdbe6ebe9a6d4e3e24427721f0b63d3"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "2cc3790ba9809d2a242c40e7b39e2951a91b9fe24b0b71c3f7d7e44ed55e7c11",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
@@ -13937,7 +14167,13 @@
           "sha256": "82f2a38e51f9013690c0cea086e901b33e51b5f0c3ba837941d7a58073c72917"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "d1ecf625e380932e8b243f1a09b3032e8dba8416f564d25856ab2aa25f48b088",
       "disposition": "reviewed: BSD-3-Clause; preserve notices and non-endorsement terms"
     },
@@ -13962,6 +14198,28 @@
       "uses": ["contributor-build", "report-authoring-build", "web-client"],
       "fingerprint": "504fb879822ee669c8b531d44f8bbeef5d4de97387fe2d54c05eef0e30633051",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
+    },
+    {
+      "id": "d3-force@3.0.0",
+      "license": "ISC",
+      "repository": "https://github.com/d3/d3-force",
+      "author": {
+        "url": "https://bost.ocks.org/mike",
+        "name": "Mike Bostock"
+      },
+      "registry": "https://registry.npmjs.org/d3-force/3.0.0",
+      "integrity": "sha512-zxV/SsA+U4yte8051P4ECydjD/S+qeYtnaIyAs9tgHCqfguma/aAQDjo85A9Z6EKhBirHRJHXIgJUlffT4wdLg==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:d3-force@3.0.0/LICENSE",
+          "sha256": "e008c5e25a6be382593089c29bfabbc553c6378eee02895aec46ce396cc404ee"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "e4df64499b491e9ba182ba66d0ea6e28fc4bda3ea4283053280d2364ed25d49c",
+      "disposition": "reviewed: ISC supplier terms and attribution retained in the inventory and distributed notices"
     },
     {
       "id": "d3-force@3.0.1",
@@ -14003,9 +14261,37 @@
           "sha256": "2a6d2d5f32ba0b755ddbc1c833f766e30cdbe6ebe9a6d4e3e24427721f0b63d3"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "b9a324bdd480f776bd1306d97166de0da1c59c56d81231b2a6eac2fe3e6a19ef",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
+    },
+    {
+      "id": "d3-geo@3.1.1",
+      "license": "ISC",
+      "repository": "https://github.com/d3/d3-geo",
+      "author": {
+        "url": "https://bost.ocks.org/mike",
+        "name": "Mike Bostock"
+      },
+      "registry": "https://registry.npmjs.org/d3-geo/3.1.1",
+      "integrity": "sha512-637ln3gXKXOwhalDzinUgY83KzNWZRKbYubaG+fGVuc/dxO64RRljtCTnf5ecMyE1RIdtqpkVcq0IbtU2S8j2Q==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:d3-geo@3.1.1/LICENSE",
+          "sha256": "3e3edc1224eec9c39cd26491a21304a62883c1e5b6a65c5283ccc7a6cc94baee"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "dd9c12177b06218991f56253cbcae601e06cf5008ee53a968d3d6c4c03ba6d15",
+      "disposition": "reviewed: ISC supplier terms and attribution retained in the inventory and distributed notices"
     },
     {
       "id": "d3-geo@3.1.2",
@@ -14028,6 +14314,50 @@
       "uses": ["contributor-build", "report-authoring-build", "web-client"],
       "fingerprint": "a3c5f983fc31acdbd795335ab42c5993a3598e2e2a8448da747391249550d098",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
+    },
+    {
+      "id": "d3-hexbin@0.2.2",
+      "license": "BSD-3-Clause",
+      "repository": "https://github.com/d3/d3-hexbin",
+      "author": {
+        "url": "http://bost.ocks.org/mike",
+        "name": "Mike Bostock"
+      },
+      "registry": "https://registry.npmjs.org/d3-hexbin/0.2.2",
+      "integrity": "sha512-KS3fUT2ReD4RlGCjvCEm1RgMtp2NFZumdMu4DBzQK8AZv3fXRM6Xm8I4fSU07UXvH4xxg03NwWKWdvxfS/yc4w==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:d3-hexbin@0.2.2/LICENSE",
+          "sha256": "9ae2b9fe1b61a313151f4ca9aa0f5c11d04aba157f469ec5690639dc0f1d401f"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "798967acb143ee5dc2fa2bc18ac0ef6f0e83360417e074623acd7ce2a7ec69d0",
+      "disposition": "reviewed: BSD-3-Clause supplier terms and attribution retained in the inventory and distributed notices"
+    },
+    {
+      "id": "d3-hierarchy@3.1.2",
+      "license": "ISC",
+      "repository": "https://github.com/d3/d3-hierarchy",
+      "author": {
+        "url": "http://bost.ocks.org/mike",
+        "name": "Mike Bostock"
+      },
+      "registry": "https://registry.npmjs.org/d3-hierarchy/3.1.2",
+      "integrity": "sha512-FX/9frcub54beBdugHjDCdikxThEqjnR93Qt7PvQTOHxyiNCAlvMrHhclk3cD5VeAaq9fxmfRp+CnWw9rEMBuA==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:d3-hierarchy@3.1.2/LICENSE",
+          "sha256": "e008c5e25a6be382593089c29bfabbc553c6378eee02895aec46ce396cc404ee"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "6a0b794ab1199dd9997fe8bf373ef0bd21c5f97ffd7049ca7f59221386376ec2",
+      "disposition": "reviewed: ISC supplier terms and attribution retained in the inventory and distributed notices"
     },
     {
       "id": "d3-hierarchy@3.1.3",
@@ -14069,7 +14399,13 @@
           "sha256": "2a6d2d5f32ba0b755ddbc1c833f766e30cdbe6ebe9a6d4e3e24427721f0b63d3"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "89143c1bde00fcf3924ef7ccb3a63cfb2bb30cd478388af031e79d8233401eff",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
@@ -14091,7 +14427,13 @@
           "sha256": "b8265327ab678f554800e71188b1cc6b1ff57522e292d2b1c0be66f27cf328b6"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "5de5cafef61aa1a415f9a53b28b7f1ffd6c41fd94d3db7f2312876bfd31332ef",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -14113,7 +14455,13 @@
           "sha256": "f5dff44740d51a1849b4d16b657eccf60577fb5d28d8ee46d33dcc780a11f94a"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "de7c1184226e3cb83bd8ab3c6b05b21340e76d9151f9dd59110806ccb32c5167",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
@@ -14157,7 +14505,13 @@
           "sha256": "2a6d2d5f32ba0b755ddbc1c833f766e30cdbe6ebe9a6d4e3e24427721f0b63d3"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "4ff892cdd0157b6c192c7e3599f1e02755155717f2ea0f943a2485724a9b59d1",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
@@ -14201,7 +14555,13 @@
           "sha256": "2bf785e778d67a4f5266cffcd4f2cc5bb98cde73791666e7efeb8002ba32dfa5"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "668578f032f5e4d4fb2595caf52f6619fd2be4f7ab77d520f692a203eb87b227",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -14228,6 +14588,28 @@
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
     {
+      "id": "d3-scale@4.0.2",
+      "license": "ISC",
+      "repository": "https://github.com/d3/d3-scale",
+      "author": {
+        "url": "https://bost.ocks.org/mike",
+        "name": "Mike Bostock"
+      },
+      "registry": "https://registry.npmjs.org/d3-scale/4.0.2",
+      "integrity": "sha512-GZW464g1SH7ag3Y7hXjf8RoUuAFIqklOAq3MRl4OaWabTFJY9PN/E1YklhXLh+OQ3fM9yS2nOkCoS+WLZ6kvxQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:d3-scale@4.0.2/LICENSE",
+          "sha256": "e008c5e25a6be382593089c29bfabbc553c6378eee02895aec46ce396cc404ee"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "1460b531175b0a1529d26164ab9b0b08f4f5fee607bab2ec75792ca35409321d",
+      "disposition": "reviewed: ISC supplier terms and attribution retained in the inventory and distributed notices"
+    },
+    {
       "id": "d3-scale@4.0.3",
       "license": "ISC",
       "repository": "https://github.com/d3/d3-scale",
@@ -14250,6 +14632,34 @@
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
     {
+      "id": "d3-selection@3.0.0",
+      "license": "ISC",
+      "repository": "https://github.com/d3/d3-selection",
+      "author": {
+        "url": "https://bost.ocks.org/mike",
+        "name": "Mike Bostock"
+      },
+      "registry": "https://registry.npmjs.org/d3-selection/3.0.0",
+      "integrity": "sha512-fmTRWbNMmsmWq6xJV8D19U/gw/bwrHfNXxrIN+HfZgnzqTHp9jOmKMhsTUjXOJnZOdZY9Q28y4yebKzqDKlxlQ==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:d3-selection@3.0.0/LICENSE",
+          "sha256": "e008c5e25a6be382593089c29bfabbc553c6378eee02895aec46ce396cc404ee"
+        }
+      ],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
+      "fingerprint": "6900f57e64bf3b64c185e0444540c0eddb41652f4a34a6b075401edcc323a2d1",
+      "disposition": "reviewed: ISC supplier terms and attribution retained in the inventory and distributed notices"
+    },
+    {
       "id": "d3-selection@3.0.1",
       "license": "ISC",
       "repository": "https://github.com/d3/d3-selection",
@@ -14267,7 +14677,13 @@
           "sha256": "2a6d2d5f32ba0b755ddbc1c833f766e30cdbe6ebe9a6d4e3e24427721f0b63d3"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "4b7f80575e5a0fac98bf0166fb0ba9ba27e57a1aecb2385823c51104f125e4b3",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
@@ -14289,9 +14705,37 @@
           "sha256": "7eea8533ea92bd8c32a901e89ecb0305890905bb12711449565ddff96891146d"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "28e8bca03fb0fe137ae99ce5c9759fa89e99159019312a8bc694e47f4909a045",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
+    },
+    {
+      "id": "d3-shape@3.2.0",
+      "license": "ISC",
+      "repository": "https://github.com/d3/d3-shape",
+      "author": {
+        "url": "http://bost.ocks.org/mike",
+        "name": "Mike Bostock"
+      },
+      "registry": "https://registry.npmjs.org/d3-shape/3.2.0",
+      "integrity": "sha512-SaLBuwGm3MOViRq2ABk3eLoxwZELpH6zhl3FbAoJ7Vm1gofKx6El1Ib5z23NUEhF9AsGl7y+dzLe5Cw2AArGTA==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:d3-shape@3.2.0/LICENSE",
+          "sha256": "faa682e3e430941f958d26180458f5934a62f58dac4d70ccdd15608c15d0f884"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "0980280de57e591958e27fa6e79506a9f4cfda09c8d8c8abaccd144dfe5dac56",
+      "disposition": "reviewed: ISC supplier terms and attribution retained in the inventory and distributed notices"
     },
     {
       "id": "d3-shape@3.2.1",
@@ -14333,7 +14777,13 @@
           "sha256": "2a6d2d5f32ba0b755ddbc1c833f766e30cdbe6ebe9a6d4e3e24427721f0b63d3"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "3127579a9abec826c671e0cc6416ff34de4e2fdc6943d79977a85495aaf9c27c",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
@@ -14355,7 +14805,13 @@
           "sha256": "2a6d2d5f32ba0b755ddbc1c833f766e30cdbe6ebe9a6d4e3e24427721f0b63d3"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "58c3b1dcece876040f8997520c84afe46cf8a264d0f6db8beed32c129ce6b56a",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
@@ -14377,7 +14833,13 @@
           "sha256": "2a6d2d5f32ba0b755ddbc1c833f766e30cdbe6ebe9a6d4e3e24427721f0b63d3"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "0bc29cd3435017bb6eeb7a1e465e7f5d6b47d4cb4c3b7eff73c9fac8d3bb4ba9",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
     },
@@ -14399,9 +14861,37 @@
           "sha256": "2a6d2d5f32ba0b755ddbc1c833f766e30cdbe6ebe9a6d4e3e24427721f0b63d3"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "77b3c56d640f319137836aba67466f0090b54579b4e3fbfd9b7a8a3f0399db04",
       "disposition": "reviewed: permissive ISC; preserve supplied notices and attribution"
+    },
+    {
+      "id": "d3-zoom@3.0.0",
+      "license": "ISC",
+      "repository": "https://github.com/d3/d3-zoom",
+      "author": {
+        "url": "https://bost.ocks.org/mike",
+        "name": "Mike Bostock"
+      },
+      "registry": "https://registry.npmjs.org/d3-zoom/3.0.0",
+      "integrity": "sha512-b8AmV3kfQaqWAuacbPuNbL6vahnOJflOhexLzMMNLga62+/nh0JzvJ0aO/5a5MVgUFGS7Hu1P9P03o3fJkDCyw==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:d3-zoom@3.0.0/LICENSE",
+          "sha256": "e008c5e25a6be382593089c29bfabbc553c6378eee02895aec46ce396cc404ee"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "397145121779f8761e2dbd1a19779c0ec5698502f1d58bb8ebfc20b2d99a90bc",
+      "disposition": "reviewed: ISC supplier terms and attribution retained in the inventory and distributed notices"
     },
     {
       "id": "d3-zoom@3.0.1",
@@ -14685,7 +15175,13 @@
           "sha256": "0b348fff56384b43dbb37593906904e56d0f9deb51eae590d4dc6d427fbf1808"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "7b1db27f626f9dfdbc6779516823043c736e02661c945942dc20ab39b108c829",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -17849,7 +18345,13 @@
           "sha256": "9ea8903938dab5f12c4572d60725069bec2d1b0dc3bcc210b09bae946a5ebb1f"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "2e550341d8179a5fd2d63bf11491d2c97652d8a33802ebbc1eaa6927b331cddb",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -17871,7 +18373,13 @@
           "sha256": "9ea8903938dab5f12c4572d60725069bec2d1b0dc3bcc210b09bae946a5ebb1f"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "a4a0391fba881c2e07ae8d2a07dc33278b2ffdb12032e2ad5f3e79bd2dae1c3c",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -25482,7 +25990,13 @@
           "sha256": "88d9b4eb60579c191ec391ca04c16130572d7eedc4a86daa58bf28c6e14c9bcd"
         }
       ],
-      "uses": ["contributor-build", "report-authoring-build", "web-client"],
+      "uses": [
+        "application-runtime",
+        "contributor-build",
+        "report-artifact",
+        "report-authoring-build",
+        "web-client"
+      ],
       "fingerprint": "4bb3fabbb967d7bca252cb26044e315bda9bb62c91589401079f2ce616898c8f",
       "disposition": "reviewed: supplier-installed unmodified dependency; preserve supplied notices; select BSD-3-Clause/Apache-2.0 for OR expressions; no third-party code relicensed"
     },
@@ -25825,7 +26339,7 @@
           "sha256": "2bd8a2c61751fc47dcd214f864b6fcdbcb518995fbf497c81a06c3bfe8d1d9d4"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "3207b58d19af07a19958edc2be3b5d35f3054af9370d740a8754690a34fd782e",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -25844,7 +26358,7 @@
           "sha256": "2bd8a2c61751fc47dcd214f864b6fcdbcb518995fbf497c81a06c3bfe8d1d9d4"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "14d4af083e71324b7c49d95055195b9df311daca3d85090e47e90c6ebb3e0a4b",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -26195,7 +26709,7 @@
           "sha256": "59a76ed2f4a3ebe8d20a58869ef9c09420f796aa179420c8fb916f5557defc9b"
         }
       ],
-      "uses": ["application-runtime"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "cadd628d56e18881a5e51f4b993ab140f3de5573bd59436bc29e8d5970ea7460",
       "disposition": "reviewed: permissive MIT; preserve supplied notices and attribution"
     },
@@ -27205,7 +27719,7 @@
           "sha256": "210b19e543130388c68654b7497e967119ce17145f66ab7d85688fbd70f08751"
         }
       ],
-      "uses": ["application-runtime", "contributor-build", "web-client"],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
       "fingerprint": "646d7249283e13663868e8afe63d9eb7998763fb4f7094b78e05a266e304c864",
       "disposition": "reviewed: permissive 0BSD; retain supplier evidence"
     },
@@ -29261,7 +29775,7 @@
     },
     {
       "file": "THIRD_PARTY_NOTICES.md",
-      "sha256": "c456693cbdab689d3a977ac14941381dd4876320ed1b05696e8de5a46b9be01c"
+      "sha256": "0afcc3af3312c3a86036bb99d48737936929f7350ab1e07dafc5ce10a06e47e7"
     },
     {
       "file": "licenses/openspec.txt",

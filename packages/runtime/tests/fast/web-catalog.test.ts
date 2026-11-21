@@ -1,9 +1,13 @@
+import { analysisCharts } from "../helpers/chart-fixtures.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Schema } from "effect";
-import { Catalog, PayloadValidator, STRICT_VALIDATION } from "@a2ui/web_core/v1_0";
+import { basicCatalog, Catalog, PayloadValidator, STRICT_VALIDATION } from "@a2ui/web_core/v1_0";
 import {
   catalogId,
+  catalogV1Id,
+  catalogV2Id,
+  catalogV3Id,
   legacyCatalogId,
   componentNames,
   workCatalogDocument,
@@ -35,12 +39,14 @@ const surface = () => ({
   },
 });
 
-test("generated Effect catalog round-trips through the official loader without functions", () => {
+test("generated Effect catalog round-trips through the official loader with the full basic catalog", () => {
   const loaded = Catalog.fromJson(workCatalogDocument);
   assert.deepEqual(loaded.toJson(), workCatalogDocument);
   assert.deepEqual([...loaded.components.keys()], componentNames);
   assert.equal(loaded.protocolVersion, "1.0");
-  assert.equal(loaded.functions.size, 0);
+  assert.deepEqual(Object.keys(workCatalogDocument.functions), Object.keys(basicCatalog.toJson().functions as object));
+  assert.deepEqual([...validationCatalog.functions.keys()], [...basicCatalog.functions.keys()]);
+  for (const name of basicCatalog.components.keys()) assert.ok(loaded.components.has(name));
   assert.match(JSON.stringify(Schema.toJsonSchemaDocument(SurfaceSchema)), /Kanban/);
 });
 
@@ -62,6 +68,80 @@ test("Effect custom props and SDK catalog validation enforce the same owned cont
     else assert.throws(validate);
   }
   assert.throws(() => sdk.validateComponent({ id: "root", component: "ReportLink" }));
+});
+
+test("chart publication enforces bounded literal data and catalog compatibility", () => {
+  const chart = {
+    id: "root",
+    component: "PieChart",
+    title: "Tickets",
+    data: [{ label: "Open", value: 1 }],
+  };
+  const publish = (props: object, id: string = catalogId) =>
+    validateSurface({
+      version: "1.0",
+      createSurface: { surfaceId: "chart", catalogId: id, components: [{ ...chart, ...props }] },
+    });
+  for (const component of ["PieChart", "BarChart", "LineChart"]) {
+    publish({ component });
+    for (const id of [catalogV1Id, catalogV2Id]) assert.throws(() => publish({ component }, id));
+  }
+  publish({
+    component: "BarChart",
+    data: [{ label: "Change", value: -3.5 }],
+    orientation: "horizontal",
+  });
+  for (const invalid of [
+    { data: [] },
+    { data: Array.from({ length: 101 }, (_, i) => ({ label: String(i), value: i })) },
+    { data: [...chart.data, ...chart.data] },
+    { data: [{ label: "Open", value: -1 }] },
+    { data: [{ label: "Open", value: "1" }] },
+    { data: [{ label: "Open", value: 1, url: "https://example.com" }] },
+    { orientation: "diagonal" },
+    { component: "LineChart", orientation: "horizontal" },
+  ])
+    assert.throws(() => publish(invalid));
+});
+
+test("analytical charts validate coordinates, stacked categories and UTC intervals by catalog version", () => {
+  const publish = (component: object, version: string = catalogId) =>
+    validateSurface({
+      version: "1.0",
+      createSurface: {
+        surfaceId: "chart",
+        catalogId: version,
+        components: [{ ...component, id: "root" }],
+      },
+    });
+  for (const chart of Object.values(analysisCharts)) {
+    publish(chart);
+    assert.throws(() => publish(chart, catalogV3Id));
+  }
+  const { BarChart, Histogram, ScatterPlot, Heatmap, GanttChart } = analysisCharts;
+  publish(
+    { component: "BarChart", title: "Balance", data: [{ label: "A", value: -1 }] },
+    catalogV3Id,
+  );
+  publish({ ...Histogram, data: [0, 0] });
+  publish({
+    ...ScatterPlot,
+    data: [
+      { x: 1, y: 1 },
+      { x: 1, y: 1 },
+    ],
+  });
+  for (const invalid of [
+    { ...BarChart, stacked: false },
+    { ...BarChart, data: [{ label: "A", value: 1 }] },
+    { ...BarChart, data: [BarChart.data[0], BarChart.data[0]] },
+    { ...Histogram, data: ["4"] },
+    { ...ScatterPlot, data: [{ x: "10", y: 2 }] },
+    { ...Heatmap, data: [Heatmap.data[0], Heatmap.data[0]] },
+    { ...GanttChart, data: [{ ...GanttChart.data[0], end: GanttChart.data[0].start }] },
+    { ...GanttChart, data: [{ ...GanttChart.data[0], end: "2026-02-30T12:00:00Z" }] },
+  ])
+    assert.throws(() => publish(invalid));
 });
 
 test("publication rejects invalid component-specific props", () => {

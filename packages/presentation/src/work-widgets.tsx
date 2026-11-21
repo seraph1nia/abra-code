@@ -4,7 +4,11 @@ import { bindWork, type WorkBinding } from "./work-bindings.ts";
 export { bindWork } from "./work-bindings.ts";
 import type { ReactNode } from "react";
 import type { WorkSummary } from "@abracode/contracts/visibility/work-summary";
-import type { WorkComponentName, WorkProps } from "@abracode/contracts/web/catalog";
+import type {
+  ChartComponentName,
+  WorkComponentName,
+  WorkProps,
+} from "@abracode/contracts/web/catalog";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import { workEvents } from "@abracode/contracts/presentation/work-events";
 import { phaseLabel } from "@abracode/contracts/presentation/work-state";
@@ -42,7 +46,7 @@ export function WorkWidget({
   props,
   binding,
 }: {
-  name: WorkComponentName;
+  name: Exclude<WorkComponentName, ChartComponentName>;
   props: WorkProps<"WorkTable"> &
     Partial<WorkProps<"ReportLink">> &
     Partial<WorkProps<"ResourceLink">> &

@@ -5,7 +5,7 @@ import { defineConfig } from "vite-plus";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { workCatalogDocument, previousCatalogDocument } from "@abracode/contracts/web/catalog";
+import { workCatalogs, catalogIds } from "@abracode/contracts/web/catalog";
 
 const development = developmentConfig();
 
@@ -41,16 +41,12 @@ export default defineConfig({
             existing_chat_markdown: "preserved",
           }),
         });
-        this.emitFile({
-          type: "asset",
-          fileName: "catalog/work-v2.json",
-          source: JSON.stringify(workCatalogDocument, null, 2) + "\n",
-        });
-        this.emitFile({
-          type: "asset",
-          fileName: "catalog/work-v1.json",
-          source: JSON.stringify(previousCatalogDocument, null, 2) + "\n",
-        });
+        for (const [index, id] of catalogIds.entries())
+          this.emitFile({
+            type: "asset",
+            fileName: `catalog/work-v${index + 1}.json`,
+            source: JSON.stringify(workCatalogs[id], null, 2) + "\n",
+          });
         const root = fileURLToPath(new URL("../../", import.meta.url));
         const inventory = JSON.parse(
           readFileSync(join(root, "licenses/inventory.json"), "utf8"),

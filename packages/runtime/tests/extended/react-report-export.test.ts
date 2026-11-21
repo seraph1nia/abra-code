@@ -1,3 +1,4 @@
+import { analysisCharts } from "../helpers/chart-fixtures.ts";
 import { mixedDiagrams, denseFlowchart } from "../helpers/diagram-fixtures.ts";
 import { validateReportDocument } from "../../src/presentation/report-document.ts";
 import { spawn } from "node:child_process";
@@ -42,12 +43,24 @@ test(
                     ...component,
                     children: [
                       ...(component.children as string[]),
+                      "totals",
+                      ...Object.values(analysisCharts).map((chart) => chart.id),
                       ...fixtures.map((_, i) => `inline${i}`),
                     ],
                   }
                 : component,
             )
-            .concat(fixtures.map((d, i) => ({ id: `inline${i}`, component: "Mermaid", ...d }))),
+            .concat(fixtures.map((d, i) => ({ id: `inline${i}`, component: "Mermaid", ...d })))
+            .concat(Object.values(analysisCharts))
+            .concat({
+              id: "totals",
+              component: "PieChart",
+              title: "Captured totals",
+              data: [
+                { label: "Completed", value: 4 },
+                { label: "Remaining", value: 2 },
+              ],
+            }),
         },
       },
     });
@@ -86,6 +99,14 @@ test(
       await report.locator('[data-diagram-state="ready"] .diagram-scroll svg').count(),
       32,
     );
+    const chart = report.getByRole("figure", { name: "Captured totals" });
+    await chart.locator("svg path[d]").first().waitFor();
+    assert.deepEqual(await chart.locator("dd").allTextContents(), ["4", "2"]);
+    for (const { title } of Object.values(analysisCharts)) {
+      const figure = report.getByRole("figure", { name: title, exact: true });
+      await figure.locator("svg").waitFor();
+      assert.ok((await figure.locator("tbody tr").count()) > 0);
+    }
     const dense = report.getByRole("img", { name: "Dense workflow", exact: true });
     assert.equal(
       await dense.evaluate((element) => element.scrollWidth > element.clientWidth),

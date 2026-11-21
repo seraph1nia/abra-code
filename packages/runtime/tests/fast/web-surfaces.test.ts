@@ -95,7 +95,7 @@ test("Express rejects invalid syntax, unsupported output, and oversized source o
   for (const src of [
     "root = Text(",
     "root = WorkTable(unknown=true)",
-    "root = Text($/title)",
+    "root = Text(unknownFunction($/title))",
     '<a2ui>root = Text("wrapped")</a2ui>',
     'explanation <a2ui>root = Text("wrapped")</a2ui>',
     'root = Text("valid")\n</a2ui> ignored trailing text',

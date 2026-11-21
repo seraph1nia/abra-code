@@ -74,7 +74,7 @@ test("portable registration preserves local skills without a developer skill dir
         signatures,
       );
       const examples = [...express.content.matchAll(/```express\n([\s\S]*?)```/g)];
-      assert.equal(examples.length, 2);
+      assert.equal(examples.length, 4);
       for (const [, example] of examples) compileWorkView("example", example);
     }
     assert.equal(inventory.has("abra-orchestration"), central);
