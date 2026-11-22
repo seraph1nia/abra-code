@@ -1,4 +1,6 @@
-import type { Execution } from "../../src/domain.ts";
+import { Effect, Schema } from "effect";
+import { ApprovalSchema } from "../../src/contracts.ts";
+import { CrewError, type Execution } from "../../src/domain.ts";
 import * as Id from "../../src/identities.ts";
 import { Records } from "../../src/storage/store.ts";
 import { MemoryStore, TestLocks } from "../fixtures.ts";
@@ -40,4 +42,21 @@ export async function retainedExecution(fields: Partial<Execution> = {}) {
   };
   await run(records.create(execution));
   return { execution, records, locks };
+}
+
+const approvalRecord = Schema.Struct({ approval_receipts: Schema.Array(ApprovalSchema) });
+
+export function interruptApprovalWrite(records: Records, recordKey: string, form: Id.FormId) {
+  const set = records.store.set.bind(records.store);
+  records.store.set = (key, value) => {
+    if (
+      key === recordKey &&
+      Schema.is(approvalRecord)(value) &&
+      value.approval_receipts.some((a) => a.form_id === form && a.authorized_at)
+    ) {
+      records.store.set = set;
+      return Effect.fail(new CrewError("STORAGE", "Approval receipt interrupted"));
+    }
+    return set(key, value);
+  };
 }

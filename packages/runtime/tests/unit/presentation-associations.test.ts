@@ -1,3 +1,4 @@
+import { SurfacePublications } from "../../src/web/surface-publications.ts";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Effect, Schema } from "effect";
@@ -78,32 +79,46 @@ test("publication search pages old revisions by producing session and diagnoses 
     session_id: "ses_elsewhere",
   });
   const reader: Parameters<typeof searchPublications>[0] = {
-    page: (prefix, after) =>
-      store.entries(prefix).pipe(
-        Effect.map((rows) => {
-          const pending = rows
-            .filter((r) => !after || r.key > after)
-            .sort((a, b) => a.key.localeCompare(b.key));
-          return {
-            entries: pending.slice(0, 1).map((row) => ({
-              key: row.key,
-              value: Schema.decodeUnknownSync(Schema.Json)(row.value),
-            })),
-            next: pending.length > 1 ? pending[0].key : undefined,
-          };
-        }),
-      ),
+    page: (prefix, after) => store.page(prefix, after, 1),
   };
+  const gets: string[] = [];
+  const get = store.get.bind(store);
+  store.get = (key) => {
+    gets.push(key);
+    return get(key);
+  };
+  const surfaces = new SurfacePublications(store, new TestLocks());
+  const committed = (target: { revision: number }) =>
+    surfaces.searchCommitted(session, "changes", target.revision);
+  store.values.set("web/surface-head/ses_abra/changes", {
+    schema_version: 1,
+    session_id: session,
+    surface_id: "changes",
+    next_revision: 3,
+    committed_revision: 2,
+  });
   const q = { kind: "surface" as const, search: "changes" };
-  const first = await run(searchPublications(reader, session, q));
-  const next = await run(searchPublications(reader, session, { ...q, cursor: first.next }));
-  const forged = await run(searchPublications(reader, session, { ...q, cursor: next.next }));
+  const first = await run(searchPublications(reader, session, q, committed));
+  const next = await run(
+    searchPublications(reader, session, { ...q, cursor: first.next }, committed),
+  );
+  const forged = await run(
+    searchPublications(reader, session, { ...q, cursor: next.next }, committed),
+  );
   assert.deepEqual(
     [...first.entries, ...next.entries]
       .map((r) => (r.target.kind === "surface" ? r.target.revision : 0))
       .sort((a, b) => a - b),
     [1, 2],
   );
+  const filtered = await run(searchPublications(reader, session, q, () => Effect.succeed(false)));
+  assert.deepEqual(filtered.entries, []);
+  assert.ok(filtered.next);
+  assert.deepEqual(
+    (await run(searchPublications(reader, SessionId.make("ses_other"), q, committed))).entries,
+    [],
+  );
+  assert.ok(gets.length && gets.every((key) => key.startsWith("web/surface-head/")));
   assert.equal(forged.incomplete, true);
   assert.deepEqual(forged.entries, []);
 });

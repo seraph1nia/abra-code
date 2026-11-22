@@ -1,10 +1,9 @@
 import {
-  permittedTools,
   policyAllows,
+  memoryReadTools,
   rolePolicy,
   protectedControlPath,
-  contributionAllows,
-  definitionAllows,
+  workerToolAllowed,
   leadAllows,
 } from "./role-policy.ts";
 import { bundledAssets } from "@abracode/agents/bundled";
@@ -232,16 +231,13 @@ export function installGuards(
             const e = yield* workerFor(controller, event.sessionID);
             if (e) {
               const role = roleFor(e, event.sessionID);
-              const allow = permittedTools(role);
+              const profile = e.configuration_snapshot?.definitions?.[role];
+              const active = isActiveWorker(e, event.sessionID, { role });
               for (const key of Object.keys(event.tools))
                 if (
-                  (!allow.has(ToolName.make(key)) &&
-                    !contributionAllows(
-                      e.configuration_snapshot?.definitions?.[role],
-                      role,
-                      key,
-                    )) ||
-                  !definitionAllows(e.configuration_snapshot?.definitions?.[role], key)
+                  !active ||
+                  (memoryReadTools.includes(key) && !e.configuration_snapshot?.memory_reads) ||
+                  !workerToolAllowed(role, profile, key)
                 )
                   delete event.tools[key];
               yield* controller.recordWorkerTools(
@@ -316,15 +312,7 @@ export function installGuards(
               return;
             }
             const role = roleFor(e, event.sessionID);
-            if (
-              (!permittedTools(role).has(ToolName.make(event.tool)) &&
-                !contributionAllows(
-                  e.configuration_snapshot?.definitions?.[role],
-                  role,
-                  event.tool,
-                )) ||
-              !definitionAllows(e.configuration_snapshot?.definitions?.[role], event.tool)
-            )
+            if (!workerToolAllowed(role, e.configuration_snapshot?.definitions?.[role], event.tool))
               return yield* new CrewError("WORKER_TOOL", `${role} cannot use ${event.tool}`);
             if (!isActiveWorker(e, event.sessionID, { role }))
               return yield* new CrewError(

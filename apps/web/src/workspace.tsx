@@ -1,3 +1,4 @@
+import { BriefingForms } from "./presentation/tool-context.ts";
 import { RunCommand, composerCommands, type ComposerCommand } from "./workspace-commands.ts";
 import { ReaderSplit } from "./reader-split.tsx";
 import { useMediaQuery } from "./use-media-query.ts";
@@ -6,7 +7,7 @@ import { AttentionPanel } from "./attention-panel-loader.tsx";
 import { Palette } from "./palette-loader.tsx";
 import type { PaletteActions } from "./workspace-palette.tsx";
 import { SearchTrigger } from "./search-trigger.tsx";
-import { Recap } from "./recap-loader.tsx";
+import { RecentlyInspected, useRecordInspection } from "./recently-inspected.tsx";
 import { MessageContent, emptyAttachments, emptyDiagnostics } from "./message-content.tsx";
 import { Composer } from "./composer.tsx";
 import {
@@ -230,6 +231,11 @@ function Workspace({
       ),
   );
   const work = workspace.work.work.find((w) => w.issue_id === selected);
+  const historyWritable = useRecordInspection(
+    workspace.session_id,
+    active ? selected : undefined,
+    work?.title,
+  );
   const attachedViews = new Set(
     presentations.entries.flatMap((entry) =>
       entry.target.kind === "surface"
@@ -393,17 +399,16 @@ function Workspace({
               <Link to="/settings">Settings</Link>
             </nav>
           )}
-          <div hidden={destination !== "/work" || route.collection?.section !== "recent"}>
-            <Recap
-              key={workspace.session_id}
-              session={workspace.session_id}
-              work={workspace.work.work}
-              selected={selected}
-              tab={tab}
-              view={JSON.stringify(route)}
-              open={open}
-            />
-          </div>
+          {collectionVisible &&
+            destination === "/work" &&
+            route.collection?.section === "recent" && (
+              <RecentlyInspected
+                writable={historyWritable}
+                session={workspace.session_id}
+                work={workspace.work.work}
+                open={open}
+              />
+            )}
         </section>
         <div className="collection-page" hidden={!attentionOpen}>
           <h1>Attention</h1>
@@ -493,17 +498,19 @@ function Workspace({
                       Abra
                     </section>
                   )}
-                  {messages.map((message) => (
-                    <MessageContent
-                      key={message.id}
-                      thoughtReceipt={thoughtReceipts.get(message.id)}
-                      message={message}
-                      work={workspace.work.work}
-                      inspect={inspect}
-                      attachments={attachmentIndex.get(message.id) ?? emptyAttachments}
-                      diagnostics={diagnosticIndex.get(message.id) ?? emptyDiagnostics}
-                    />
-                  ))}
+                  <BriefingForms.Provider value={workspace.forms}>
+                    {messages.map((message) => (
+                      <MessageContent
+                        key={message.id}
+                        thoughtReceipt={thoughtReceipts.get(message.id)}
+                        message={message}
+                        work={workspace.work.work}
+                        inspect={inspect}
+                        attachments={attachmentIndex.get(message.id) ?? emptyAttachments}
+                        diagnostics={diagnosticIndex.get(message.id) ?? emptyDiagnostics}
+                      />
+                    ))}
+                  </BriefingForms.Provider>
                   {presentations.truncated && (
                     <output className="muted">
                       Presentation references exceed this conversation page's coverage. Retained

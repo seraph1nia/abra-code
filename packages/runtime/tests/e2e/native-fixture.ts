@@ -1,4 +1,11 @@
-import { roadExcerpt, roadQuestion, thoughtsJourney } from "./memos-thoughts.ts";
+import { MemoryFixture } from "./agent-memory.ts";
+import {
+  configureMemosFixture,
+  roadExcerpt,
+  roadQuestion,
+  thoughtsJourney,
+} from "./memos-thoughts.ts";
+import { briefingFixtureAnswer, briefingQuestion } from "./work-briefing.ts";
 import { inboxJourney } from "./github-inbox.ts";
 import { cockpitJourney } from "./cockpit.ts";
 import { nativeObservation } from "../helpers/native-observation.ts";
@@ -91,6 +98,7 @@ export function nativeTest(
 ) {
   test(name, { timeout: options?.timeout ?? 600000 }, async (t) => {
     const journey = options?.journey ?? process.env.ABRACODE_TEST_JOURNEY;
+    const inboxFixture = journey === "github-inbox" || journey === "work-briefing";
     const evidenceDirectory = options?.evidenceDirectory ?? process.env.ABRACODE_TEST_EVIDENCE_DIR;
     if (journey === "crash-windows")
       assert.ok(
@@ -128,6 +136,7 @@ export function nativeTest(
     let logs = "";
     const engineeringEvidence: unknown[] = [];
     const agentRequests: unknown[] = [];
+    const memory = journey === "agent-memory" ? new MemoryFixture() : undefined;
     const providerRequests: Record<string, number> = {};
     const controllerCalls: Record<string, { count: number; total_ms: number; max_ms: number }> = {};
     let retainedState: Awaited<ReturnType<typeof retainedBytes>> | undefined;
@@ -318,7 +327,10 @@ export function nativeTest(
         );
         return;
       }
+      // Review coverage belongs to the current assignment even when its session is reused.
       const scopedMessages =
+        role === "review" ||
+        briefingQuestion(user) ||
         user.startsWith("AbraCode workspace operation ") ||
         user.includes("simplify-loop:") ||
         user.includes("planning-recovery:")
@@ -336,6 +348,17 @@ export function nativeTest(
         name: string;
         args: any;
       }> = [];
+      if (memory)
+        calls.push(
+          ...memory.calls(
+            role,
+            user,
+            (input.tools ?? []).map((tool: any) => tool.function?.name),
+          ),
+        );
+      const briefing =
+        journey === "work-briefing" && role === "supervisor" && briefingQuestion(user);
+      if (briefing) calls.push({ name: "abra_work_briefing", args: {} });
       const roadDiscussion = journey === "memos-thoughts" && user.startsWith(roadQuestion);
       if (roadDiscussion)
         calls.push({ name: "abra_thought_get", args: JSON.parse(user.split("\n").at(-1)) });
@@ -811,12 +834,13 @@ export function nativeTest(
             {
               delta: {
                 role: "assistant",
-                content:
-                  roadDiscussion &&
-                  messages.some(
-                    (m: any) =>
-                      m.role === "tool" && JSON.stringify(m.content).includes(roadExcerpt),
-                  )
+                content: briefing
+                  ? briefingFixtureAnswer(user, scopedMessages)
+                  : roadDiscussion &&
+                      messages.some(
+                        (m: any) =>
+                          m.role === "tool" && JSON.stringify(m.content).includes(roadExcerpt),
+                      )
                     ? "I found the weekly planning thought."
                     : user.includes("browser-acceptance")
                       ? "Observed the browser counter change from 0 to 1, captured and read scratch screenshot evidence, and closed the assigned browser. Completed assigned role."
@@ -1028,8 +1052,9 @@ export function nativeTest(
     await run(git.run(Id.AbsolutePath.make(projects[1]), ["push", "origin", "main"]));
     await installSource(home, {
       buildWeb:
+        journey === "agent-memory" ||
         journey === "memos-thoughts" ||
-        journey === "github-inbox" ||
+        inboxFixture ||
         journey === "workspace" ||
         journey === "cockpit",
     });
@@ -1067,12 +1092,26 @@ export function nativeTest(
     await writeFile(
       forgeState,
       JSON.stringify(
-        journey === "github-inbox"
-          ? { inboxFixture: true, remote: "https://inbox.invalid/fixture/api", merge_hold: true }
+        inboxFixture
+          ? {
+              inboxFixture: true,
+              ...(journey === "work-briefing" && {
+                check: "pending",
+                briefing: true,
+                releaseRemote: projects[0] + ".git",
+              }),
+              remote: "https://inbox.invalid/fixture/api",
+              merge_hold: true,
+            }
           : {},
       ),
     );
-    if (journey === "github-inbox") {
+    if (journey === "work-briefing")
+      await writeFile(
+        join(root, "release-forge-state.json"),
+        JSON.stringify({ remote: projects[0] + ".git", check: "pass" }),
+      );
+    if (inboxFixture) {
       await mkdir(join(root, "config/gh"), { recursive: true });
       await writeFile(join(root, "config/gh/hosts.yml"), "inbox.invalid: {}\n");
     }
@@ -1109,23 +1148,11 @@ export function nativeTest(
     });
     await writeFile(
       join(home, "abracode.yaml"),
-      `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture${journey === "research" ? ", variant: default" : ""} } ${journey === "github-inbox" ? ", overrides: { review: { providerID: fixture, id: gpt-specialist } }" : ""} }\nprofiles:\n  native-investigator: { role: research, model: { providerID: fixture, id: gpt-specialist } }\nworktree_root: ${root}/trees\nserver_url: http://127.0.0.1:${port}\nreconcile_interval_ms: 1000\n${journey === "finishing" ? "progress_timeout_ms: { explore: 500, apply: 1800000, review: 900000, research: 900000, operation: 300000 }\n" : ""}${journey === "simplify-loop" ? "supervision_mode: attended-automatic\n" : ""}max_executions: 8\ncommands:\n  forge: ${fakeForge}\n`,
+      `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture${journey === "research" ? ", variant: default" : ""} } ${inboxFixture ? ", overrides: { review: { providerID: fixture, id: gpt-specialist } }" : ""} }\nprofiles:\n  native-investigator: { role: research, model: { providerID: fixture, id: gpt-specialist } }\nworktree_root: ${root}/trees\nserver_url: http://127.0.0.1:${port}\nreconcile_interval_ms: 1000\n${journey === "finishing" ? "progress_timeout_ms: { explore: 500, apply: 1800000, review: 900000, research: 900000, operation: 300000 }\n" : ""}${journey === "simplify-loop" ? "supervision_mode: attended-automatic\n" : ""}max_executions: 8\ncommands:\n  forge: ${fakeForge}\n`,
     );
-    if (journey === "memos-thoughts") {
-      const instance = process.env.ABRACODE_TEST_MEMOS_ORIGIN,
-        token_file = process.env.ABRACODE_TEST_MEMOS_TOKEN_FILE;
-      assert.ok(
-        instance && /^http:\/\/127\.0\.0\.1:\d+$/u.test(instance) && token_file?.startsWith("/"),
-        "Use a disposable loopback Memos instance and temporary token file",
-      );
-      const personal = join(home, "abracode.yaml");
-      await writeFile(
-        personal,
-        (await readFile(personal, "utf8")) +
-          "memos: " +
-          JSON.stringify({ instance, token_file }) +
-          "\n",
-      );
+    if (memory) await memory.configure(root, home);
+    if (journey === "memos-thoughts" || journey === "agent-memory") {
+      await configureMemosFixture(home);
     }
     if (journey === "engineering")
       await writeFile(
@@ -1142,7 +1169,7 @@ export function nativeTest(
     );
     const env = {
       ...process.env,
-      ...(journey === "github-inbox"
+      ...(inboxFixture
         ? {
             ABRACODE_INBOX_FIXTURE_REMOTE: projects[1] + ".git",
             GH_CONFIG_DIR: join(root, "config/gh"),
@@ -1542,6 +1569,26 @@ export function nativeTest(
       engineeringEvidence.push(await runReplyRecovery());
       return;
     }
+    if (memory) {
+      engineeringEvidence.push(
+        await memory.run({
+          client,
+          root,
+          home,
+          projects,
+          session: supervisor.id,
+          evidence: evidenceDirectory,
+          invoke,
+          restart: () => restart(5000),
+          eventually,
+          endpoint: {
+            url: `http://127.0.0.1:${port}`,
+            auth: { type: "basic", username: "opencode", password },
+          },
+        }),
+      );
+      return;
+    }
     if (journey === "memos-thoughts") {
       engineeringEvidence.push(
         await thoughtsJourney({
@@ -1558,10 +1605,12 @@ export function nativeTest(
       );
       return;
     }
-    if (journey === "github-inbox") {
+    if (inboxFixture) {
       failFirstExplore = false;
       engineeringEvidence.push(
         await inboxJourney({
+          briefing: journey === "work-briefing",
+          releaseProject: projects[0],
           root,
           home,
           project: projects[1],

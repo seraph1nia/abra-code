@@ -1,3 +1,4 @@
+import { runBriefingBrowser } from "./work-briefing.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -15,6 +16,8 @@ export async function inboxJourney(input: {
   home: string;
   root: string;
   project: string;
+  releaseProject: string;
+  briefing: boolean;
   session: string;
   endpoint: Endpoint;
   evidence?: string;
@@ -38,7 +41,7 @@ export async function inboxJourney(input: {
     path: input.project,
     action: "register",
     plan_approval: false,
-    merge_approval: true,
+    merge_approval: !input.briefing,
     delivery: "github-pr",
     verification: [[process.execPath, "--version"]],
   });
@@ -56,7 +59,12 @@ export async function inboxJourney(input: {
     pr = select(first.entries.find((r: InboxSummary) => r.kind === "pr"));
   const local = await input.invoke("abra_github_assign", issue);
   assert.equal(await input.invoke("abra_github_assign", issue), local);
-  const review = await input.invoke("abra_github_assign", pr);
+  const wide =
+    input.briefing && (await input.invoke("abra_work_briefing", { include_open_github: true }));
+  const discussed = wide
+    ? select(wide.github.entries.find((r: InboxSummary) => r.kind === "pr"))
+    : pr;
+  const review = await input.invoke("abra_github_assign", discussed);
   await input.invoke("abra_work_start", { issue_id: review });
   const status = async (id: string) => {
     const e = (await input.invoke("abra_work_status", { issue_id: id })).execution;
@@ -109,6 +117,14 @@ export async function inboxJourney(input: {
       env: { ...process.env, AGENT_BROWSER_EXECUTABLE_PATH: reportBrowserExecutable() },
     });
   try {
+    if (input.briefing)
+      return await runBriefingBrowser({
+        ...input,
+        origin: web.origin,
+        ci: local,
+        report: review,
+        ab,
+      });
     await ab("open", web.origin);
     await ab("set", "viewport", "1500", "900");
     await ab("find", "role", "link", "click", "--name", "GitHub", "--exact");

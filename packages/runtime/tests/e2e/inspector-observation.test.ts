@@ -7,7 +7,7 @@ import { Schema } from "effect";
 import { ReceiptSchema, selectionMarker } from "@abracode/contracts/web/workspace-wire";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { IssueId, SessionId, ObligationKey } from "../../src/identities.ts";
+import { IssueId } from "../../src/identities.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 import { workspaceBrowserFixture } from "../helpers/workspace-browser.ts";
 
@@ -391,76 +391,43 @@ test("a retained screenshot loads only when its receipt is expanded", async (t) 
   assert.equal(await smallImage.getAttribute("src"), "data:image/png;base64," + data);
 });
 
-test("local return history follows inspected results independently of current attention", async (t) => {
+test("recent visits reopen unchanged and off-page tasks from legacy storage after reload", async (t) => {
   const f = await workspaceBrowserFixture();
   t.onTestFinished(f.close);
-  const first = f.source.value.work.work[0];
-  const work = [
-    first,
-    ...["b", "c"].map((id) => ({
-      ...first,
-      issue_id: IssueId.make("abra-" + id),
-      title: "Task " + id,
-    })),
-  ];
-  f.source.value = { ...f.source.value, work: { ...f.source.value.work, work } };
-  const page = await f.browser.newPage({ viewport: { width: 1600, height: 900 } });
-  await page.goto(f.origin);
-  await page.goto(
-    f.origin + "/work?collection=" + encodeURIComponent(JSON.stringify({ section: "recent" })),
-  );
-  await page.getByText("Since your last inspection").click();
+  const current = f.source.value.work.work[0];
+  const previous = {
+    ...current,
+    issue_id: IssueId.make("old-task"),
+    title: "Earlier investigation",
+  };
+  f.setDiscovery([current, previous]);
+  const page = await f.browser.newPage({ viewport: { width: 1500, height: 900 } });
+  const recent =
+    f.origin + "/work?collection=" + encodeURIComponent(JSON.stringify({ section: "recent" }));
+  await page.goto(recent);
   await page.getByText(/Inspect a task to start/).waitFor();
-  for (const [index, w] of work.entries()) {
-    await page.goto(f.origin + "/?issue=" + w.issue_id);
-    await page.getByRole("heading", { name: w.title, exact: true }).waitFor();
-    // The lazy history panel records this visit after the inspector heading appears.
-    await page
-      .locator(".work-recap p")
-      .filter({ hasText: `Currently observed: ${index + 1}.` })
-      .waitFor({ state: "attached" });
-  }
-  const decision = {
-    key: ObligationKey.make("decision"),
-    generation: 0,
-    status: "open" as const,
-    owner: "user" as const,
-    scope: "Change",
-    question: "Accept change?",
-    session_id: SessionId.make("ses_worker"),
-    opened_at: 1,
-  };
-  f.source.value = {
-    ...f.source.value,
-    work: {
-      ...f.source.value.work,
-      work: [
-        { ...first, last_check: "new-revision" },
-        { ...work[1], decisions: [decision] },
-        work[2],
-      ],
-    },
-  };
-  await page.goto(f.origin);
-  await page.goto(
-    f.origin + "/work?collection=" + encodeURIComponent(JSON.stringify({ section: "recent" })),
+  const key = "abra-recap-v1-" + f.source.value.session_id;
+  await page.evaluate(
+    ({ key, id }) =>
+      localStorage.setItem(key, JSON.stringify([{ issue: id, result: "old", decisions: "old" }])),
+    { key, id: previous.issue_id },
   );
-  await page.getByText(/Since your last inspection/).click();
-  const recap = page.locator(".work-recap");
-  await recap.getByRole("button", { name: /Verification result/ }).waitFor({ timeout: 3000 });
-  assert.equal(await recap.getByRole("button").count(), 2);
+  await page.reload();
+  const list = page.getByRole("region", { name: "Recently inspected tasks" });
+  await list.getByRole("button", { name: previous.issue_id }).click();
+  await page.getByRole("heading", { name: previous.title, exact: true }).waitFor();
+  await page.goto(f.origin + "/?issue=" + current.issue_id);
+  await page.getByRole("heading", { name: current.title, exact: true }).waitFor();
+  await page.goto(recent);
+  const buttons = list.getByRole("button");
+  assert.deepEqual(await buttons.allTextContents(), [current.title, previous.issue_id]);
   await f.changed();
-  await f.changed();
-  assert.equal(await recap.getByRole("button").count(), 2);
-  await recap.getByRole("button", { name: /Verification result/ }).click();
-  await page.waitForFunction(
-    () =>
-      document.querySelector<HTMLSelectElement>('[aria-label="Work details"]')?.value ===
-      "Verification",
-  );
-  await page.getByRole("button", { name: "Close inspector" }).click();
-  await recap.getByRole("button", { name: /Decision updated/ }).waitFor();
-  assert.equal(await recap.getByRole("button").count(), 1);
+  await page.reload();
+  assert.deepEqual(await buttons.allTextContents(), [current.title, previous.issue_id]);
+  assert.equal(await page.getByText("Since your last inspection").count(), 0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await buttons.first().click();
+  await page.getByRole("heading", { name: current.title, exact: true }).waitFor();
   assert.equal(f.source.submissions, 0);
 });
 
@@ -479,7 +446,6 @@ test("disabled local history leaves the main conversation and attention availabl
   await page.goto(
     f.origin + "/work?collection=" + encodeURIComponent(JSON.stringify({ section: "recent" })),
   );
-  await page.getByText("Since your last inspection").click();
   await page.getByText("Local reading history is unavailable.").waitFor();
   await page.getByRole("link", { name: "Chat", exact: true }).click();
   assert.ok(await page.getByRole("link", { name: "Attention", exact: true }).isVisible());
@@ -668,4 +634,69 @@ test("a deliberate reader split follows open tabs and tasks through reload and p
   });
   await handle(fresh).press("ArrowLeft");
   assert.ok(Number(await handle(fresh).getAttribute("aria-valuenow")) < 61);
+});
+
+test("a briefing source opens its bound form and offers the next decision when the binding changes", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const work = f.source.value.work.work[0];
+  const form = (key: string): (typeof f.source.value.forms)[number] => ({
+    active: true,
+    binding: key,
+    checkpoint: { active: true, issue_id: work.issue_id, kind: "merge" as const, fingerprint: key },
+    form: {
+      id: Form.ID.make("frm_" + key),
+      sessionID: f.source.sessionID,
+      title: "Approve " + key,
+      fields: [{ type: "boolean" as const, key: "authorize", title: "Authorize" }],
+    },
+  });
+  const first = form("first"),
+    next = form("next");
+  f.source.value = {
+    ...f.source.value,
+    forms: [first, next],
+    messages: [
+      {
+        id: SessionMessage.ID.make("msg_brief"),
+        role: "assistant",
+        at: f.source.value.at,
+        text: "Review this merge.",
+        tools: [
+          {
+            id: "brief",
+            name: "abra_work_briefing",
+            status: "completed",
+            presentation: {
+              kind: "briefing",
+              links: [
+                {
+                  title: work.title,
+                  label: "Merge approval",
+                  target: { action: "open_task", issue_id: work.issue_id, section: "verification" },
+                  form_id: first.form.id,
+                  fingerprint: first.binding,
+                },
+              ],
+            },
+          },
+        ],
+        parts: [{ type: "tool", tool_id: "brief" }],
+      },
+    ],
+  };
+  const page = await f.browser.newPage();
+  await page.goto(f.origin);
+  await page.getByText("Briefing sources (1)").click();
+  await page.getByRole("link", { name: "Open decision", exact: true }).click();
+  await page.locator('[data-native-form-id="frm_first"]:focus').waitFor();
+  assert.equal(f.replies.length, 0);
+  f.source.value = { ...f.source.value, forms: [next] };
+  await f.changed();
+  await page.getByRole("link", { name: "Open next decision" }).click();
+  await page.locator('[data-native-form-id="frm_next"]:focus').waitFor();
+  assert.equal(f.replies.length, 0);
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await page.getByText(/This form is no longer current/).waitFor();
+  assert.equal(await page.getByRole("link", { name: "Open decision", exact: true }).count(), 0);
 });

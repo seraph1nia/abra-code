@@ -4,12 +4,13 @@ import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveConfig } from "../../src/config/load.ts";
 import { PersonalThoughts } from "../../src/work/thoughts.ts";
-import { AbsolutePath } from "../../src/identities.ts";
+import { AbsolutePath, RequestId } from "../../src/identities.ts";
+import { AgentMemory } from "../../src/memory/service.ts";
 import { run } from "../effects.ts";
 
 async function notebook(cleanup: (f: () => Promise<void>) => void) {
@@ -199,6 +200,41 @@ test("direct and MCP thoughts share literal filters, tied ordering, scoped pages
   await assert.rejects(run(f.service.list(next, "http")), /Restart the search/);
   f.state.fail = true;
   await assert.rejects(run(f.service.list({}, "http")), /authentication/);
+});
+
+test("publishing a Thought validates the live private selection before contacting Basic Memory", async (t) => {
+  const f = await notebook((fn) => t.onTestFinished(fn));
+  const directory = join(f.root, "memory");
+  const config = await run(
+    resolveConfig(
+      join(f.root, "app"),
+      join(f.root, "abracode.yaml"),
+      `version: 1\nmodels: {default: {providerID: fixture, id: fixture}}\nmemory: ${JSON.stringify({ enabled: true, directory, executable: "/missing/bm" })}`,
+    ),
+  );
+  const memory = new AgentMemory(config, { projects: () => Effect.succeed([]) }, f.service);
+  t.onTestFinished(() => run(memory.close()));
+  f.state.text = "One sentence. Another sentence.";
+  const reference = (await run(f.service.list({}, "http"))).entries[0]!.reference;
+  const publish = (content = "One sentence.") =>
+    run(
+      memory.publish({
+        request_id: RequestId.make("validation"),
+        destination: { kind: "shared" },
+        source: { kind: "thought", reference },
+        content,
+      }),
+    );
+  await assert.rejects(publish("Paraphrase."), /exact wording/);
+  f.state.text += " Updated.";
+  await assert.rejects(publish(), /reselect/);
+  f.state.text = "One sentence. Another sentence.";
+  f.state.deleted = true;
+  await assert.rejects(publish(), /unavailable/);
+  f.state.deleted = false;
+  f.state.owner = "users/other";
+  await assert.rejects(publish(), /unavailable/);
+  assert.deepEqual(await readdir(join(directory, "vault")), []);
 });
 
 test("durable save reservations reconcile concurrent writes and lost responses without changing the wording", async (t) => {

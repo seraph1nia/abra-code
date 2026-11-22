@@ -6,12 +6,11 @@ import {
   IssueId,
   ExecutionId,
   BranchName,
-  timestamp,
   RepositoryId,
   SessionId,
 } from "../identities.ts";
 
-import { consumesRetained } from "../workflow/capacity.ts";
+import { consumesRetained, scanCapacity, unknownCapacity } from "../workflow/capacity.ts";
 import { createExecution } from "../workflow/execution.ts";
 
 import { Clock, Effect } from "effect";
@@ -22,7 +21,7 @@ import { domainEffect } from "../effect.ts";
 import { randomUUID } from "node:crypto";
 import { access, readFile } from "../filesystem.ts";
 import { join } from "node:path";
-import { Form } from "@opencode/schema/form";
+import { collectForm } from "../workflow/authorization.ts";
 import { decode } from "../decode.ts";
 import { json } from "../process.ts";
 import { DiscoverySchema } from "../openspec/adapter.ts";
@@ -180,16 +179,9 @@ export class ProjectSetup {
         e = yield* this.c.records.coordinateCommit(() =>
           domainEffect(
             Effect.gen({ self: this }, function* () {
-              const [executions, setups] = yield* Effect.all(
-                [this.c.records.executionScan(), this.c.records.setupScan()],
-                { concurrency: 2 },
-              );
-              if (executions.diagnostics.length || setups.diagnostics.length)
-                return yield* new CrewError(
-                  "CAPACITY_UNKNOWN",
-                  "Cannot verify capacity while execution records are unreadable",
-                );
-              const retained = [...executions.values, ...setups.values].filter(consumesRetained);
+              const scan = yield* scanCapacity(this.c.records);
+              if (scan.diagnostics.length) return yield* unknownCapacity();
+              const retained = [...scan.executions, ...scan.setups].filter(consumesRetained);
               const reason =
                 retained.length >= this.c.config.max_executions
                   ? "Waiting for global execution slot capacity"
@@ -345,8 +337,22 @@ export class ProjectSetup {
           );
         e.current_phase = "delivering";
         yield* this.save(e, ["current_phase"]);
-        const result = yield* this.c.delivery.deliver(p, e);
-        e.delivered_commit = result.commit;
+        const commit = yield* this.c.git.commit(
+          e.worktree_directory,
+          e.issue_id,
+          `Initialize OpenSpec for ${p.id}`,
+        );
+        yield* this.c.git.assertCommitTree(e.worktree_directory, commit, e.archived_tree!);
+        const result = yield* this.c.delivery.deliver(p, e, {
+          commit,
+          destination: { kind: "initial", pr: e.pull_request_reference },
+        });
+        if (result.commit !== commit)
+          return yield* new CrewError(
+            "DELIVERY_CHANGED",
+            "Published setup commit differs from the reviewed tree",
+          );
+        e.delivered_commit = commit;
         e.pull_request_reference = result.pr;
         e.current_phase = "awaiting_merge";
         return yield* this.save(e, ["delivered_commit", "pull_request_reference", "current_phase"]);
@@ -363,6 +369,12 @@ export class ProjectSetup {
         )
           return yield* new CrewError("SETUP_CHANGED", "Delivered setup worktree changed");
         if (action === "approve") {
+          if (!(p.delivery === "github-pr"))
+            return yield* new CrewError(
+              "DELIVERY_POLICY",
+              "Branch delivery does not require merge approval",
+            );
+
           const pr = yield* this.c.delivery.inspect(p, e);
           if (
             !(
@@ -374,42 +386,17 @@ export class ProjectSetup {
           )
             return yield* new CrewError("PR_HEAD", "Setup PR identity changed before approval");
           yield* this.readiness(p, e);
-          if (!(p.delivery === "github-pr"))
-            return yield* new CrewError(
-              "DELIVERY_POLICY",
-              "Branch delivery does not require merge approval",
-            );
-          let approval = e.approval_receipts.find(
-            (a) => a.fingerprint === e!.delivered_commit && !a.rejected_at,
+          const { decision, receipt } = yield* collectForm(
+            e,
+            this.c.records,
+            this.c.runtime,
+            { kind: "merge", session_id: supervisor, fingerprint: e.delivered_commit! },
+            `Authorize OpenSpec setup merge for ${id}`,
           );
-          if (!approval) {
-            approval = {
-              kind: "merge",
-              fingerprint: e.delivered_commit!,
-              form_id: Form.ID.create(),
-              session_id: supervisor,
-            };
-            e.approval_receipts.push(approval);
-            yield* this.save(e, ["approval_receipts"]);
-          }
-          if (!approval.authorized_at) {
-            yield* this.c.runtime.requestApproval(
-              approval.session_id,
-              approval.form_id,
-              `Authorize OpenSpec setup merge for ${id}`,
-              approval.fingerprint,
-            );
-            const decision = yield* this.c.runtime.approval(approval.session_id, approval.form_id);
-            if (decision === "pending")
-              return { setup: e, approval_required: true, form_id: approval.form_id };
-            if (decision === "rejected") {
-              approval.rejected_at = yield* timestamp;
-              yield* this.save(e, ["approval_receipts"]);
-              return yield* new CrewError("APPROVAL_REJECTED", "Human rejected the setup merge");
-            }
-            approval.authorized_at = yield* timestamp;
-            yield* this.save(e, ["approval_receipts"]);
-          }
+          if (decision === "pending")
+            return { setup: e, approval_required: true, form_id: receipt.form_id };
+          if (decision === "rejected")
+            return yield* new CrewError("APPROVAL_REJECTED", "Human rejected the setup merge");
         }
         if (
           p.delivery === "github-pr" &&

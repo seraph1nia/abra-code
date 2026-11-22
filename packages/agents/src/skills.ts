@@ -16,6 +16,7 @@ export const skillNames = (central: boolean) => [
         "browser",
       ]
     : ["openspec-execution", "browser"]),
+  "memory",
   "open-code-review-delegate",
   ...engineeringSkills.map((s) => s.name),
 ];

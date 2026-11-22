@@ -1,5 +1,4 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned native Service and Node filesystem APIs. */
-import { AbsolutePath } from "@opencode/client/effect";
 import { Service } from "@opencode/client/effect/service";
 import { Effect } from "effect";
 import { join } from "node:path";
@@ -9,7 +8,7 @@ import { decodeJSON } from "../decode.ts";
 import { CrewError, type Config } from "../domain.ts";
 import { readFile, realpath } from "../filesystem.ts";
 import { makeClient } from "./client.ts";
-import { abraCodePlugin } from "./plugin-activation.ts";
+import { awaitPluginState } from "./plugin-activation.ts";
 import { findSupervisor } from "./supervisor.ts";
 
 const ownershipError = () =>
@@ -25,11 +24,9 @@ export const stopService = (config: Config) =>
     const endpoint = yield* Service.discover({ file, version: "2.3.0" });
     if (!endpoint) return;
     const client = yield* makeClient(endpoint);
-    const plugins = yield* client.plugin.list({
-      location: { directory: AbsolutePath.make(config.home) },
-    });
-    const plugin = abraCodePlugin(plugins.data, config.home);
-    if (plugin?.state.status === "failed") {
+    const state = yield* awaitPluginState(client, config.home);
+    if (!state) return yield* ownershipError();
+    if (state.status === "failed") {
       yield* Effect.gen(function* () {
         const registration = yield* readFile(file, "utf8");
         const info = yield* decodeJSON(Service.Info, registration, "Native service registration");

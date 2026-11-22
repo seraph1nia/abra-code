@@ -241,7 +241,10 @@ export class InboxIndex {
       const assigned = "EXISTS(SELECT 1 FROM github_links WHERE source=github_items.source_id";
       const delivered =
         "EXISTS(SELECT 1 FROM json_each(?) WHERE json_extract(value,'$.url')=json_extract(summary,'$.url') AND json_extract(value,'$.repository_id')=project)";
-      if (query.role === "unassigned") {
+      if (query.role === "linked") {
+        filters.push("(" + assigned + ") OR " + delivered + ")");
+        args.push(JSON.stringify(deliveries));
+      } else if (query.role === "unassigned") {
         filters.push("NOT " + assigned + ") AND NOT " + delivered);
         args.push(JSON.stringify(deliveries));
       } else if (query.role === "delivery") {

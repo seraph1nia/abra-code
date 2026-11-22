@@ -1,3 +1,4 @@
+import { observedSurface } from "../../src/web/surface-records.ts";
 import { prepareDiagrams as prepareDiagramBatch } from "../../src/workflow/diagrams.ts";
 import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
 import { readReportDocument } from "../../src/presentation/report-document.ts";
@@ -13,6 +14,13 @@ import type { ResourceSelection } from "../../src/web/resources.ts";
 
 /** Deterministic transport fixture; native authority is covered separately by E2E. */
 export class WorkspaceFixture implements WebBackend {
+  memoryEnabled: WebBackend["memoryEnabled"] = Effect.succeed(false);
+  memorySearch: WebBackend["memorySearch"] = () =>
+    Effect.fail(new CrewError("MEMORY_DISABLED", "Memory disabled."));
+  memoryRead: WebBackend["memoryRead"] = () =>
+    Effect.fail(new CrewError("MEMORY_DISABLED", "Memory disabled."));
+  memoryPublish: WebBackend["memoryPublish"] = () =>
+    Effect.fail(new CrewError("MEMORY_DISABLED", "Memory disabled."));
   repositories: WebBackend["repositories"] = Effect.sync(() => this.value.projects);
   agents: WebBackend["agents"] = Effect.succeed({ agents: [] });
   reviews?: NonNullable<WebBackend["reviews"]>;
@@ -69,7 +77,7 @@ export class WorkspaceFixture implements WebBackend {
           surface_id: id,
           unavailable: "This exact generated-view revision is unavailable.",
         },
-    );
+    ).pipe(Effect.map((record) => ("surface" in record ? observedSurface(record) : record)));
   prepareDiagrams = (
     selection: import("@abracode/contracts/web/diagram-actions").PrepareDiagramSelection,
   ) =>

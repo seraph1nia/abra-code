@@ -1,3 +1,5 @@
+import { BriefingQuery, WorkBriefing } from "@abracode/contracts/visibility/briefing";
+import { workBriefing } from "../visibility/briefing.ts";
 import {
   ThoughtDetail,
   ThoughtPage,
@@ -11,6 +13,7 @@ import {
   InboxTarget,
   InboxDetail,
 } from "@abracode/contracts/visibility/github-inbox";
+import { memoryTools } from "./memory-tools.ts";
 import { isActiveWorker } from "../workflow/worker-assignment.ts";
 import {
   WorkerReferenceSchema,
@@ -78,7 +81,17 @@ export function registerTools(
   return domainEffect(
     Effect.gen(function* () {
       const definitions = [
+        ...(c.memory?.enabled ? memoryTools(ctx, c, central) : []),
         workSurfaceTool(ctx, c),
+        define({
+          name: "work_briefing",
+          diagnostic: true,
+          description:
+            "Read a bounded current snapshot for focus or catch-up. Includes human decisions, outcomes, ongoing work, queue and linked GitHub evidence. Set include_open_github only for an explicitly wider inbox.",
+          input: BriefingQuery,
+          output: WorkBriefing,
+          run: (query) => workBriefing(c, query),
+        }),
         define({
           name: "thought_save",
           description:

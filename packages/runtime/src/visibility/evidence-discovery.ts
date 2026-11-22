@@ -12,10 +12,7 @@ import type { Queries } from "../workflow/queries.ts";
 import type { scanLeads } from "../workflow/lead-contracts.ts";
 import { presentationHash } from "../presentation/identity.ts";
 
-type Reads = Pick<
-  Queries,
-  "execution" | "projects" | "searchOwners" | "diff" | "planDocuments" | "planDocument"
->;
+type Reads = Pick<Queries, "execution" | "projects" | "searchOwners" | "diff" | "planDocuments">;
 type Owner = { key: string; repository_id: RepositoryId; issue_id?: IssueId; title: string };
 type Collect = (
   kind: EvidenceKind,
@@ -218,7 +215,7 @@ export function discoverEvidence(
               coverage.add("Planning document coverage is limited for " + issue_id);
             if (docs._tag === "Success")
               for (const file of docs.success.paths) {
-                const doc = yield* reads.planDocument(e, file).pipe(Effect.result);
+                const doc = yield* docs.success.read(file).pipe(Effect.result);
                 if (doc._tag === "Failure") {
                   coverage.add("A planning document is unavailable for " + issue_id);
                   continue;

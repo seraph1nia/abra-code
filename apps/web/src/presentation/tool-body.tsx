@@ -1,3 +1,5 @@
+import { Link } from "@tanstack/react-router";
+import { Button } from "@abracode/presentation/ui/button";
 import { ThoughtSource } from "../thought-source.tsx";
 import { Schema } from "effect";
 import { ThoughtReference } from "@abracode/contracts/visibility/thoughts";
@@ -15,7 +17,7 @@ import {
   ArtifactCard,
   type Inspect,
 } from "@abracode/presentation/cards";
-import { ObservationContext } from "./tool-context.ts";
+import { BriefingForms, ObservationContext } from "./tool-context.ts";
 function ResultList<T>({
   items,
   total,
@@ -59,6 +61,53 @@ function ResultList<T>({
   );
 }
 
+function BriefingSources({
+  links,
+  inspect,
+}: {
+  links: Extract<ToolPresentation, { kind: "briefing" }>["links"];
+  inspect: Inspect;
+}) {
+  const forms = useContext(BriefingForms);
+  if (!links.length) return null;
+  return (
+    <details>
+      <summary>Briefing sources ({links.length})</summary>
+      <ul>
+        {links.map((link) => {
+          const form =
+            link.form_id &&
+            forms.find(
+              (f) =>
+                f.active &&
+                f.form.id === link.form_id &&
+                f.checkpoint?.issue_id === link.target.issue_id &&
+                (!link.fingerprint || f.checkpoint.fingerprint === link.fingerprint),
+            );
+          return (
+            <li key={JSON.stringify([link.target, link.form_id, link.label])}>
+              <Button variant="link" onClick={() => inspect(link.target)}>
+                {link.title} · {link.label}
+              </Button>
+              {form ? (
+                <Link to="/attention" hash={"form-" + form.form.id + "-" + form.binding}>
+                  Open decision
+                </Link>
+              ) : (
+                link.form_id && (
+                  <span>
+                    This form is no longer current.{" "}
+                    <Link to="/attention">View current decisions</Link>
+                  </span>
+                )
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
 function Presentation({
   value,
   inspect,
@@ -69,6 +118,8 @@ function Presentation({
   work: readonly WebWorkItem[];
 }) {
   switch (value.kind) {
+    case "briefing":
+      return <BriefingSources links={value.links} inspect={inspect} />;
     case "tasks":
       return (
         <>

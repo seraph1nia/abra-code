@@ -1,3 +1,4 @@
+import { publicationDestination } from "../../src/workflow/publication-destination.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import * as Id from "../../src/identities.ts";
 import { Effect } from "effect";
@@ -168,13 +169,19 @@ test("PR updates rediscover one identity, preserve outside user text and avoid r
     },
     Id.Executable.make("fake-forge"),
   );
-  await run(delivery.deliver(p, e));
-  await run(delivery.deliver(p, e));
+  await run(
+    delivery.deliver(p, e, { commit: e.delivered_commit!, destination: publicationDestination(e) }),
+  );
+  await run(
+    delivery.deliver(p, e, { commit: e.delivered_commit!, destination: publicationDestination(e) }),
+  );
   assert.equal(edits, 1);
   assert.ok(pr.body!.startsWith("User notes.\n"));
   pr.body += "\nUser epilogue.\n";
   e.review_receipt = { ...e.review_receipt!, findings: "Verified reconnect edge cases." };
-  await run(delivery.deliver(p, e));
+  await run(
+    delivery.deliver(p, e, { commit: e.delivered_commit!, destination: publicationDestination(e) }),
+  );
   assert.equal(edits, 2);
   assert.ok(pr.body!.endsWith("\nUser epilogue.\n"));
   assert.equal(forge.calls.filter((a) => a[1] === "create").length, 0);

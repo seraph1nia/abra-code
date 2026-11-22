@@ -41,3 +41,10 @@ repositories: []
 #     agent: build
 #     # agent is an independent native override, not a definition or model profile.
 #     required_skills: [project-conventions]
+
+# Optional local Basic Memory 1.0.0. Choose a dedicated directory outside checkouts.
+# memory:
+#   enabled: true
+#   executable: /absolute/path/to/basic-memory-1.0.0/bin/bm
+#   directory: /absolute/path/to/abra-memory-data
+#   retrieval: text

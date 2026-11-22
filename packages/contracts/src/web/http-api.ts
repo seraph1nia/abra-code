@@ -1,3 +1,11 @@
+import {
+  ScopedMemorySearch,
+  ScopedMemoryRead,
+  MemoryPage,
+  MemoryBody,
+  MemoryPublication,
+  MemoryReference,
+} from "../visibility/memory.ts";
 import { PublicationPage, PublicationQuery } from "../presentation/contracts.ts";
 import {
   EvidenceSearch,
@@ -178,6 +186,25 @@ export const workspaceApi = HttpApi.make("abra-workspace")
       HttpApiEndpoint.post("replyPermission", "/api/permission/reply", {
         payload: PermissionReplySchema,
         success: Schema.Struct({ status: Schema.Literal("answered") }),
+        error,
+      }),
+      HttpApiEndpoint.get("memorySearch", "/api/memory/search", {
+        query: ScopedMemorySearch.annotate(exact),
+        success: MemoryPage,
+        error,
+      }),
+      HttpApiEndpoint.post("memoryRead", "/api/memory/read", {
+        payload: ScopedMemoryRead.annotate(exact),
+        success: MemoryBody,
+        error,
+      }),
+      HttpApiEndpoint.post("memoryPublish", "/api/memory/publish", {
+        payload: MemoryPublication.annotate(exact),
+        success: MemoryReference,
+        error,
+      }),
+      HttpApiEndpoint.get("memoryEnabled", "/api/memory/enabled", {
+        success: Schema.Boolean,
         error,
       }),
       HttpApiEndpoint.post("stop", "/api/abra/stop", {

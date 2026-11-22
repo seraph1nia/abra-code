@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { test } from "vite-plus/test";
 import { createWorkflow } from "../../src/opencode/application.ts";
+import { interruptApprovalWrite } from "../helpers/retained-execution.ts";
 import { CrewError } from "../../src/domain.ts";
-import { SessionId, type FormId } from "../../src/identities.ts";
+import { SessionId, FormId, Timestamp } from "../../src/identities.ts";
 import { fixture, planned } from "../fixtures.ts";
 import { run } from "../effects.ts";
 
@@ -16,15 +17,30 @@ test("a form answered during its first request commits authorization before Appl
   t.onTestFinished(() => run(f.close()));
   const e = await run(planned(f));
   const request = f.runtime.requestApproval.bind(f.runtime);
+  const otherForm = FormId.create();
   f.runtime.requestApproval = (session, form) =>
     request(session, form).pipe(
+      Effect.tap(() =>
+        f.records.update(e.issue_id, (current) => ({
+          ...current,
+          approval_receipts: [
+            ...current.approval_receipts,
+            {
+              ...current.approval_receipts[0]!,
+              form_id: otherForm,
+              rejected_at: Timestamp.make("2026-01-01T00:00:00.000Z"),
+            },
+          ],
+        })),
+      ),
       Effect.tap(() => Effect.sync(() => f.runtime.forms.set(form, "approved"))),
     );
   const accepted = await run(f.controller.approve(e.issue_id, "plan", supervisor));
   assert.ok("current_phase" in accepted);
   assert.equal(accepted.current_phase, "applying");
   const retained = (await run(f.records.execution(e.issue_id)))!;
-  assert.equal(retained.approval_receipts.length, 1);
+  assert.equal(retained.approval_receipts.length, 2);
+  assert.ok(retained.approval_receipts.find((a) => a.form_id === otherForm)?.rejected_at);
   assert.ok(retained.approval_receipts[0]!.authorized_at);
 });
 
@@ -117,14 +133,7 @@ test("an interrupted approval receipt commit recollects the same answered form a
   const pending = await run(f.controller.approve(e.issue_id, "plan", supervisor));
   assert.ok("form_id" in pending);
   f.runtime.forms.set(pending.form_id, "approved");
-  const save = f.records.saveOwned.bind(f.records);
-  let interrupt = true;
-  f.records.saveOwned = (execution, fields) =>
-    interrupt &&
-    fields.includes("approval_receipts") &&
-    execution.approval_receipts.some((a) => a.form_id === pending.form_id && a.authorized_at)
-      ? ((interrupt = false), Effect.fail(new CrewError("STORAGE", "Approval receipt interrupted")))
-      : save(execution, fields);
+  interruptApprovalWrite(f.records, "execution/" + e.issue_id, pending.form_id);
   await assert.rejects(
     run(f.controller.approve(e.issue_id, "plan", supervisor)),
     /receipt interrupted/,

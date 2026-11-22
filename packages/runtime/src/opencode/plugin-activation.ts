@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { CrewError } from "../domain.ts";
 
 /** Import failures have no plugin ID yet; identify those by the configured source. */
-export const abraCodePlugin = (plugins: readonly Plugin.Info[], home: string) =>
+const abraCodePlugin = (plugins: readonly Plugin.Info[], home: string) =>
   plugins.find(
     (plugin) =>
       plugin.id === "abracode" ||
@@ -13,32 +13,35 @@ export const abraCodePlugin = (plugins: readonly Plugin.Info[], home: string) =>
         resolve(plugin.source.path) === join(home, ".opencode/plugins/abracode")),
   );
 
-export const awaitPluginActivation = (
+export const awaitPluginState = (
   client: { plugin: Pick<OpenCodeClient["plugin"], "list"> },
   home: string,
 ) =>
   client.plugin.list({ location: { directory: AbsolutePath.make(home) } }).pipe(
-    Effect.flatMap((plugins) => {
+    Effect.map((plugins) => {
       const plugin = abraCodePlugin(plugins.data, home);
-      if (plugin?.state.status === "failed")
-        return Effect.fail(
-          new CrewError(
-            "PLUGIN_ACTIVATION",
-            `AbraCode plugin failed to activate: ${plugin.state.error.slice(0, 2048)}${plugin.state.ref ? ` (native diagnostic: ${plugin.state.ref})` : ""}. Inspect native plugin diagnostics, correct the load error, then run pnpm service:restart or relaunch pnpm dev.`,
-          ),
-        );
-      return Effect.succeed(plugin?.id === "abracode" && plugin.state.status === "active");
+      if (plugin?.state.status === "failed" || plugin?.id === "abracode") return plugin.state;
+      return undefined;
     }),
-    Effect.repeat({ schedule: Schedule.spaced(100), until: Boolean }),
-    Effect.timeoutOrElse({
-      duration: "15 seconds",
-      orElse: () =>
-        Effect.fail(
-          new CrewError(
-            "PLUGIN_ACTIVATION",
-            "AbraCode plugin did not activate within 15 seconds. Inspect native plugin diagnostics, correct the load error, then run pnpm service:restart or relaunch pnpm dev.",
-          ),
+    Effect.repeat({ schedule: Schedule.spaced(100), until: (state) => state !== undefined }),
+    Effect.timeoutOrElse({ duration: "15 seconds", orElse: () => Effect.undefined }),
+  );
+
+export const awaitPluginActivation = (
+  client: { plugin: Pick<OpenCodeClient["plugin"], "list"> },
+  home: string,
+) =>
+  awaitPluginState(client, home).pipe(
+    Effect.flatMap((state) => {
+      if (state?.status === "active") return Effect.void;
+      const reason = state
+        ? `AbraCode plugin failed to activate: ${state.error.slice(0, 2048)}${state.ref ? ` (native diagnostic: ${state.ref})` : ""}`
+        : "AbraCode plugin did not activate within 15 seconds";
+      return Effect.fail(
+        new CrewError(
+          "PLUGIN_ACTIVATION",
+          `${reason}. Inspect native plugin diagnostics, correct the load error, then run pnpm service:restart or relaunch pnpm dev.`,
         ),
+      );
     }),
-    Effect.asVoid,
   );

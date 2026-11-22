@@ -129,6 +129,23 @@ export function capacityBlockers(
     own,
   );
 }
+export const scanCapacity = (records: Records) =>
+  Effect.all(
+    {
+      executions: records.executionScan(),
+      setups: records.setupScan(),
+    },
+    { concurrency: 2 },
+  ).pipe(
+    Effect.map(({ executions, setups }) => ({
+      executions: executions.values,
+      setups: setups.values,
+      diagnostics: [...executions.diagnostics, ...setups.diagnostics],
+    })),
+  );
+const unavailable = "Cannot verify capacity while issue or setup execution records are unreadable";
+export const unknownCapacity = () => new CrewError("CAPACITY_UNKNOWN", unavailable);
+
 /** Native admission reservations are persisted atomically, before resource/session submission. */
 export class Capacity {
   constructor(
@@ -164,18 +181,18 @@ export class Capacity {
     return this.coordination.with(() =>
       domainEffect(
         Effect.gen({ self: this }, function* () {
-          const executions = [
-            ...(yield* this.records.executions()),
-            ...(yield* this.records.setupScan()).values,
-          ];
-          const blockers = capacityBlockers(
-            this.config,
-            project,
-            executions,
-            role,
-            newExecution,
-            e.execution_id,
-          );
+          const scan = yield* scanCapacity(this.records);
+          if (newExecution && scan.diagnostics.length) return yield* unknownCapacity();
+          const blockers: ReadinessBlocker[] = scan.diagnostics.length
+            ? [{ code: "execution", message: unavailable }]
+            : capacityBlockers(
+                this.config,
+                project,
+                [...scan.executions, ...scan.setups],
+                role,
+                newExecution,
+                e.execution_id,
+              );
           let patch: ExecutionPatch;
           if (blockers.length) {
             yield* admissionWait(role);

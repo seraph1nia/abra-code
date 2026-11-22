@@ -2,10 +2,16 @@ import { SessionId, Fingerprint, Commit, timestamp } from "../identities.ts";
 
 import { Effect } from "effect";
 import { Form } from "@opencode/schema/form";
-import { type Execution, CrewError } from "../domain.ts";
+import {
+  type Execution,
+  type ManagedExecution,
+  type Approval,
+  CrewError,
+  ensure,
+} from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { type Runtime } from "../opencode/runtime.ts";
-import { historicalWorkers } from "./worker-assignment.ts";
+import { hasWorkerSession } from "./worker-assignment.ts";
 import { createHash } from "node:crypto";
 import type { Git } from "../git/repository.ts";
 import type { Records } from "../storage/store.ts";
@@ -14,7 +20,7 @@ import { approvedEvidence } from "./evidence.ts";
 import { currentPlanning } from "./planning-contracts.ts";
 
 type Kind = "plan" | "merge";
-const retainedIdentity = (e: Execution, kind: Kind) =>
+const retainedIdentity = (e: ManagedExecution, kind: Kind) =>
   kind === "plan" ? e.plan_fingerprint : e.delivered_commit;
 const currentReceipts = (e: Execution, kind: Kind) =>
   e.approval_receipts.filter(
@@ -43,7 +49,10 @@ export class CheckpointEvidence {
             ? Fingerprint.make(
                 createHash("sha256")
                   .update(e.openspec_change)
-                  .update(e.rounds?.at(-1)?.id ?? "revision")
+                  .update(
+                    e.rounds?.findLast((r) => r.openspec_change !== e.openspec_change)?.id ??
+                      "revision",
+                  )
                   .update(content)
                   .digest("hex"),
               )
@@ -106,16 +115,7 @@ export class CheckpointEvidence {
 
 export const assertApprovalActor = (e: Execution, supervisor: SessionId) =>
   Effect.gen(function* () {
-    if (
-      [
-        e.explore_session_id,
-        e.apply_session_id,
-        e.review_session_id,
-        e.research_session_id,
-        e.session_intent?.id,
-        ...historicalWorkers(e).map((worker) => worker.id),
-      ].includes(supervisor)
-    )
+    if (hasWorkerSession(e, supervisor))
       return yield* new CrewError("SELF_APPROVAL", "Workers cannot authorize decisions");
   });
 
@@ -182,29 +182,77 @@ export class Authorizations {
       fingerprint: Fingerprint | Commit,
     ) {
       yield* assertApprovalActor(e, supervisor);
-      let receipt = currentReceipts(e, kind).find((a) => a.fingerprint === fingerprint);
-      if (!receipt) {
-        receipt = { kind, fingerprint, session_id: supervisor, form_id: Form.ID.create() };
-        e.approval_receipts.push(receipt);
-        yield* this.records.saveOwned(e, ["approval_receipts"]);
-        // The owned save refreshes the aggregate; update its retained receipt, not the old object.
-        receipt = currentReceipts(e, kind).find((a) => a.fingerprint === fingerprint)!;
-      }
-      if (receipt.authorized_at) return { decision: "approved" as const, receipt };
-      yield* this.runtime.requestApproval(
-        receipt.session_id,
-        receipt.form_id,
+      return yield* collectForm(
+        e,
+        this.records,
+        this.runtime,
+        { kind, session_id: supervisor, fingerprint },
         `Authorize ${kind} for ${e.issue_id} (${fingerprint.slice(0, 12)})`,
-        fingerprint,
+        kind === "plan" && e.workflow_policy === "full-openspec"
+          ? () => this.validatePlanning?.(e) ?? Effect.void
+          : undefined,
       );
-      const decision = yield* this.runtime.approval(receipt.session_id, receipt.form_id);
-      if (decision === "approved" && kind === "plan" && e.workflow_policy === "full-openspec")
-        yield* this.validatePlanning?.(e) ?? Effect.void;
-      if (decision === "approved") receipt.authorized_at = yield* timestamp;
-      if (decision === "rejected") receipt.rejected_at = yield* timestamp;
-      if (decision !== "pending") yield* this.records.saveOwned(e, ["approval_receipts"]);
-      return { decision, receipt };
     }.bind(this),
     domainEffect,
   );
 }
+
+export const collectForm = Effect.fn("Authorizations.collectForm")(function* (
+  e: ManagedExecution,
+  records: Records,
+  runtime: Runtime,
+  checkpoint: Pick<Approval, "kind" | "fingerprint" | "session_id">,
+  title: string,
+  validate?: () => Effect.Effect<void, CrewError>,
+) {
+  const { kind, fingerprint } = checkpoint;
+  const active = (receipt: Approval) =>
+    receipt.kind === kind && receipt.fingerprint === fingerprint && !receipt.rejected_at;
+  const assertCurrent = (current: ManagedExecution) =>
+    ensure(
+      retainedIdentity(current, kind) === fingerprint,
+      "STALE_CHECKPOINT",
+      "Approval checkpoint changed",
+    );
+  const reserved = yield* records.commitOwned(e, (current) => {
+    assertCurrent(current);
+    if (current.approval_receipts.some(active)) return;
+    return {
+      approval_receipts: [
+        ...current.approval_receipts,
+        { ...checkpoint, form_id: Form.ID.create() },
+      ],
+    };
+  });
+  const receipt = reserved.approval_receipts.find(active)!;
+  if (receipt.authorized_at) return { decision: "approved" as const, receipt };
+  const { session_id, form_id } = receipt;
+  yield* runtime.requestApproval(session_id, form_id, title, fingerprint);
+  const decision = yield* runtime.approval(session_id, form_id);
+  if (decision === "pending") return { decision, receipt };
+  if (decision === "approved" && validate) yield* validate();
+  const at = yield* timestamp;
+  const matches = (r: Approval) =>
+    r.kind === kind &&
+    r.fingerprint === fingerprint &&
+    r.session_id === session_id &&
+    r.form_id === form_id;
+  const saved = yield* records.commitOwned(e, (current) => {
+    assertCurrent(current);
+    const bound = current.approval_receipts.find(matches);
+    ensure(bound, "STALE_CHECKPOINT", "Saved approval form changed");
+    if (decision === "approved" ? bound.authorized_at : bound.rejected_at) return;
+    ensure(
+      !bound.authorized_at && !bound.rejected_at,
+      "STALE_CHECKPOINT",
+      "Saved approval decision changed",
+    );
+    const answer = decision === "approved" ? { authorized_at: at } : { rejected_at: at };
+    return {
+      approval_receipts: current.approval_receipts.map((r) =>
+        r === bound ? { ...r, ...answer } : r,
+      ),
+    };
+  });
+  return { decision, receipt: saved.approval_receipts.find(matches)! };
+}, domainEffect);

@@ -1,3 +1,4 @@
+import { RememberThought } from "./remember-thought.tsx";
 import { RunCommand, composerCommands } from "./workspace-commands.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Typed workspace HTTP atoms own mounted query lifetimes. */
 import { useContext, useState, type ReactNode } from "react";
@@ -122,6 +123,7 @@ export function Thoughts({ discuss }: { discuss: (ref: ThoughtReference) => void
                     </Read>
                   )}
                 </details>
+                <RememberThought key={JSON.stringify(item.reference)} item={item} />
                 <Button onClick={() => discuss(item.reference)}>Ask Abra about this</Button>
               </article>
             )}

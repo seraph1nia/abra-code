@@ -1,3 +1,5 @@
+import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
+import { presentationHash } from "../presentation/identity.ts";
 import { Schema } from "effect";
 import { SurfaceRecordSchema, type UnavailableSurfaceSchema } from "./workspace-wire.ts";
 import { normalizeSurface } from "./surfaces.ts";
@@ -32,4 +34,13 @@ export function compactSurface(entry: SurfaceRecord | typeof UnavailableSurfaceS
         at: entry.at,
         ...(entry.history ? { history: entry.history } : {}),
       };
+}
+
+export function observedSurface(
+  record: SurfaceRecord,
+  verifiedHash?: SurfaceRecord["surface_hash"],
+): SurfaceRecord {
+  return collectDiagrams(record.surface.createSurface.components).length
+    ? { ...record, surface_hash: verifiedHash ?? presentationHash(record.surface) }
+    : record;
 }

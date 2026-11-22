@@ -9,7 +9,7 @@ import { Schema } from "effect";
 import { Form } from "@opencode/schema/form";
 import { Permission } from "@opencode/schema/permission";
 import { SessionMessage } from "@opencode/schema/session-message";
-import { SessionId, MessageId } from "../identities.ts";
+import { SessionId, MessageId, ContentHash } from "../identities.ts";
 import { WorkSnapshotSchema, DecisionSchema, DeclaredWaitSchema, ArtifactsSchema } from "./wire.ts";
 import { SurfaceSchema } from "./surfaces.ts";
 import { TranscriptPartSchema, TranscriptToolSchema } from "./presentation-contracts.ts";
@@ -102,6 +102,7 @@ export const SurfaceRecordSchema = Schema.Struct({
   revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
   at: Schema.String,
   surface: SurfaceSchema,
+  surface_hash: Schema.optionalKey(ContentHash),
   snapshot: WorkSnapshotSchema.fields.work.check(Schema.isMaxLength(100)),
   coverage: Schema.optionalKey(BindingCoverageSchema),
 });

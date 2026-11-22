@@ -33,9 +33,9 @@ test("one restart retains migrated full-spec delivery authorization, decisions, 
   };
   let green = false;
   const delivery: Delivery = {
-    deliver: (p, e) =>
+    deliver: (p, e, commit) =>
       adapter(e)
-        .deliver(p, e)
+        .deliver(p, e, commit)
         .pipe(
           Effect.map((result) => {
             const pr = adapter(e).pr!;

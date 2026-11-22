@@ -298,6 +298,14 @@ export function registerWebGateway(
           Effect.mapError((e) => error("refused", e.message, { code: e.code })),
           provide,
         ),
+      memorySearch: ({ session_id, repository_id, ...input }, { error }) =>
+        authorizedReview(session_id, error, () => controller.memory.search(repository_id, input)),
+      memoryRead: ({ session_id, repository_id, ...input }, { error }) =>
+        authorizedReview(session_id, error, () => controller.memory.read(repository_id, input)),
+      memoryPublish: ({ session_id, ...input }, { error }) =>
+        authorizedReview(session_id, error, () => controller.memory.publish(input)),
+      memoryEnabled: ({ session_id }, { error }) =>
+        authorizedReview(session_id, error, () => Effect.succeed(controller.memory.enabled)),
       agents: ({ session_id }, { error }) =>
         assertSupervisor(session_id).pipe(
           Effect.andThen(agents),
@@ -353,7 +361,17 @@ export function registerWebGateway(
         ),
       publications: ({ session_id, ...query }, { error }) =>
         assertSupervisor(session_id).pipe(
-          Effect.andThen(searchPublications(store, session_id, query)),
+          Effect.andThen(
+            searchPublications(store, session_id, query, (target) =>
+              target.kind === "surface"
+                ? surfacePublications.searchCommitted(
+                    session_id,
+                    target.surface_id,
+                    target.revision,
+                  )
+                : reviews.searchCommitted(session_id, target),
+            ),
+          ),
           Effect.mapError((e) => error("refused", e.message, { code: e.code })),
           provide,
         ),

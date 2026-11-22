@@ -1,4 +1,4 @@
-import { useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
@@ -56,6 +56,7 @@ export function AttentionPanel({
     observer.observe(container, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, [hash, attentionOpen, bound]);
+  const nextForm = workspace.forms.find((item) => item.active && item.checkpoint?.active);
   const owners = [...new Set(workAttention.map((entry) => entry.owner))];
   return (
     <>
@@ -75,7 +76,12 @@ export function AttentionPanel({
         {hash && !bound && /^(form|permission)-/.test(hash) && (
           <output>
             The selected request has closed or its binding has changed. Review the current requests
-            below.
+            below.{" "}
+            {nextForm && (
+              <Link to="/attention" hash={"form-" + nextForm.form.id + "-" + nextForm.binding}>
+                Open next decision
+              </Link>
+            )}
           </output>
         )}
         {workspace.work_unavailable && <output>{workspace.work_unavailable}</output>}

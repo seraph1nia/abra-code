@@ -98,7 +98,8 @@ test("a failed native plugin can be stopped before Abra exists, with process/con
     command(resolve("node_modules/.bin/tsx"), [resolve("scripts/stop.ts")], {
       cwd: foreign,
       env: { ...env, ABRACODE_HOME: foreign, ABRACODE_CONFIG: join(foreign, "abracode.yaml") },
-      timeout: 12000,
+      // A foreign location can omit AbraCode for the entire 15-second activation window.
+      timeout: 20000,
     }),
     /No service was stopped/,
   );
@@ -133,11 +134,12 @@ test("a matching HTTP health response and environment cannot authorize stopping 
       "-e",
       `
     import { createServer } from "node:http";
+    let inventoryReads = 0;
     const server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
       response.end(JSON.stringify(request.url.startsWith("/api/info")
         ? { version: "2.3.0", pid: process.pid, urls: [], paths: {tmp: process.env.ABRACODE_HOME} }
-        : { location: {directory: process.env.ABRACODE_HOME}, data: [{
+        : { location: {directory: process.env.ABRACODE_HOME}, data: ++inventoryReads === 1 ? [] : [{
           source: {type: "local", path: process.env.ABRACODE_HOME + "/.opencode/plugins/abracode"},
           features: {server: true}, state: {status: "failed", error: "Plugin failed to load"}
         }] }));

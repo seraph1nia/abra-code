@@ -80,7 +80,8 @@ test("portable registration preserves local skills without a developer skill dir
     assert.equal(inventory.has("abra-orchestration"), central);
     assert.ok(inventory.has("abra-openspec-execution"));
     assert.ok(!inventory.has("abra-testing"));
-    assert.equal(inventory.size, central ? 13 : 9);
+    assert.ok(inventory.has("abra-memory"));
+    assert.equal(inventory.size, central ? 14 : 10);
   }
 });
 

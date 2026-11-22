@@ -8,6 +8,10 @@ export const presentConfig = (config: Config) => ({
   config_digest: config.config_digest,
   home: config.home,
   memos: { configured: Boolean(config.memos) },
+  memory: {
+    enabled: config.memory?.enabled ?? false,
+    retrieval: config.memory?.retrieval ?? "text",
+  },
   paths: {
     database: config.work_database,
     worktrees: config.worktree_root,

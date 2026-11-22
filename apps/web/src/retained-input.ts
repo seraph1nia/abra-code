@@ -13,7 +13,8 @@ export function readRetained<S extends Schema.ConstraintDecoder<unknown>>(
 
 export function writeRetained(key: string, value: unknown): boolean {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
     return true;
   } catch {
     return false;

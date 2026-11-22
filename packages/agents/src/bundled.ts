@@ -10,7 +10,7 @@ import {
 } from "./index.ts";
 import { engineeringSkills } from "./engineering-skills.ts";
 import { fileURLToPath } from "node:url";
-import { rolePolicy } from "./policy.ts";
+import { rolePolicy, memoryReadTools } from "./policy.ts";
 export const bundledAssets = fileURLToPath(new URL("../assets", import.meta.url));
 export const bundledSkills = fileURLToPath(new URL("../assets/skills", import.meta.url));
 const worker = (
@@ -23,13 +23,14 @@ const worker = (
   mode: "subagent",
   roles: [id],
   instructions: [{ file: `${id}.md` }],
-  tools: rolePolicy(id).tools,
+  tools: [...rolePolicy(id).tools, ...memoryReadTools],
   skills: [
     ...(id === "review" || id === "research"
       ? [{ name: "open-code-review-delegate", preload: id === "review" }]
       : []),
     { name: "openspec-execution" },
     { name: "browser" },
+    { name: "memory" },
     ...engineeringSkills.map(({ name }) => ({ name })),
   ],
 });
@@ -44,6 +45,7 @@ export const definitions: readonly AgentDefinition[] = [
     tools: rolePolicy("supervisor").tools,
     skills: [
       "thoughts",
+      "memory",
       "express",
       "orchestration",
       "project-onboarding",
@@ -71,7 +73,7 @@ export const definitions: readonly AgentDefinition[] = [
     instructions: [
       {
         inline:
-          "You are a controller-managed project lead. Use only abra_lead_action at the retained registration revision. Propose scoped tasks and report evidence. Never approve, start workers, modify code or deliver work.",
+          "You are a controller-managed project lead. Use only abra_lead_action at the retained registration revision. For prior decisions use memory_search or memory_read with one assigned repository and your registration revision. Send candidate lessons to Abra. Propose scoped tasks and report evidence. Never approve, start workers, modify code or deliver work.",
       },
     ],
     tools: ["abra_lead_action"],

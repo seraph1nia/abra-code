@@ -807,3 +807,43 @@ test("proposal acceptance recovers a graph commit without a lead receipt and syn
   assert.equal(calls, 2);
   assert.equal((await run(readLeads(f.records)))[0]!.proposals[0]!.notified, true);
 });
+
+test("lead recall checks the live registration and native location before memory access", async (t) => {
+  const { f, lead } = await prepare();
+  t.onTestFinished(() => run(f.close()));
+  f.config.memory = {
+    enabled: true,
+    directory: Id.AbsolutePath.make("/unused-memory"),
+    executable: Id.AbsolutePath.make("/unused-bm"),
+  };
+  const calls: string[] = [];
+  f.controller.memory.search = (id) => {
+    calls.push(id!);
+    return Effect.succeed({ entries: [] });
+  };
+  const query = {
+    action: "memory_search" as const,
+    revision: lead.revision,
+    repository_id: repo,
+    query: "rotation",
+  };
+  await run(f.controller.lead().action(lead.session_id, query));
+  await assert.rejects(
+    run(
+      f.controller
+        .lead()
+        .action(lead.session_id, { ...query, repository_id: Id.RepositoryId.make("other") }),
+    ),
+    /assigned/,
+  );
+  f.runtime.sessions.get(lead.session_id)!.directory = Id.AbsolutePath.make("/elsewhere");
+  await assert.rejects(run(f.controller.lead().action(lead.session_id, query)), /moved/);
+  f.runtime.sessions.get(lead.session_id)!.directory = f.config.home;
+  await run(
+    f.controller
+      .lead()
+      .control(parent, { ...declaration, expected_revision: lead.revision, enabled: false }),
+  );
+  await assert.rejects(run(f.controller.lead().action(lead.session_id, query)), /current/);
+  assert.deepEqual(calls, [repo]);
+});

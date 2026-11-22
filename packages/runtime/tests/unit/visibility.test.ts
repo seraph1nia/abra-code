@@ -1,3 +1,4 @@
+import { workBriefing } from "../../src/visibility/briefing.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import * as Id from "../../src/identities.ts";
 import { CrewError } from "../../src/domain.ts";
@@ -466,6 +467,22 @@ test("retired planning reads exact archive blobs and excludes symbolic links and
   t.onTestFinished(() => run(f.close()));
   const e = await run(planned(f));
   const tree = e.worktree_directory!;
+  const q = { kind: "plan" as const, issue_id: e.issue_id, search: "unique collection token" };
+  const queries = f.controller.queries;
+  const folder = join(tree, "openspec/changes", e.openspec_change);
+  for (const file of ["a.md", "b.md", "c.md"])
+    await writeFile(join(folder, file), "unique collection token");
+  const enumeration = vi.spyOn(documents, "changeDocuments");
+  const live = await run(queries.discoverEvidence(q));
+  assert.equal(enumeration.mock.calls.length, 1);
+  assert.equal(live.entries.length, 3);
+  const listed = await run(queries.planDocuments(e));
+  await rm(join(folder, "a.md"));
+  await assert.rejects(run(listed.read(Id.RelativePath.make("a.md"))));
+  await symlink(join(tree, "source.txt"), join(folder, "a.md"));
+  await assert.rejects(run(listed.read(Id.RelativePath.make("a.md"))), /escapes/);
+  await rm(join(folder, "a.md"));
+  await writeFile(join(folder, "a.md"), "unique collection token");
   e.archive_path = Id.RelativePath.make(`openspec/changes/archive/2026-11-15-${e.openspec_change}`);
   const archive = join(tree, e.archive_path);
   await mkdir(join(tree, "openspec/changes/archive"), { recursive: true });
@@ -493,6 +510,18 @@ test("retired planning reads exact archive blobs and excludes symbolic links and
   const replacement = join(project.path, e.archive_path);
   await mkdir(replacement, { recursive: true });
   await writeFile(join(replacement, "proposal.md"), "Uncommitted replacement");
+  const commands = vi.spyOn(f.git, "run");
+  const archived = await run(queries.discoverEvidence(q));
+  assert.deepEqual(
+    archived.entries.map((hit) => hit.identity),
+    live.entries.map((hit) => hit.identity),
+  );
+  assert.deepEqual(archived.next, live.next);
+  assert.equal(commands.mock.calls.filter(([, args]) => args.includes("ls-tree")).length, 1);
+  assert.equal(
+    commands.mock.calls.filter(([, args]) => args.includes("--end-of-options")).length,
+    1,
+  );
   const before = await run(f.records.execution(e.issue_id));
   const view = new Visibility(f.controller);
   const detail = await run(view.detail(e.issue_id));
@@ -828,151 +857,66 @@ test("worker inspection reads only its ticket and admitted native session", asyn
   assert.deepEqual(scans.mock.calls, []);
 });
 
-test("a plan passage is bound to its occurrence, generation and exact document", async (t) => {
-  const { captureSelection } = await import("../../src/web/capture-selection.ts");
+test("briefing finds off-page obligations and gated work even when the inbox is unavailable", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(planned(f));
-  const file = Id.RelativePath.make("design.md");
-  const document = join(e.worktree_directory!, "openspec/changes", e.openspec_change, file);
-  await writeFile(document, "Same criterion\nFirst context\nSame criterion\nSecond context");
-  const source = await run(new Visibility(f.controller).document(e.issue_id, file));
-  const selection = {
-    kind: "plan" as const,
-    issue_id: e.issue_id,
-    file,
-    generation: source.generation!,
-    hash: source.hash!,
-    start: 3,
-    end: 4,
-  };
+  const e = await run(planned(f, Id.IssueId.make("zz-plan")));
+  const pending = await run(
+    f.controller.approve(e.issue_id, "plan", Id.SessionId.make("ses_supervisor")),
+  );
+  const dependent = Id.IssueId.make("a-dependent");
+  f.seed.named(dependent, undefined, [e.issue_id]);
+  for (let i = 0; i < 55; i++) f.seed.named(Id.IssueId.make("filler-" + i));
+  const captured = await run(f.records.executions());
+  const issues = await run(f.work.list);
+  const inbox = vi
+    .spyOn(f.controller.inbox, "list")
+    .mockReturnValue(Effect.fail(new CrewError("INBOX_ACCESS", "fixture offline")));
+  t.onTestFinished(() => inbox.mockRestore());
+  const read = () => run(workBriefing(f.controller));
+  const first = await read();
+  const second = await read();
+  assert.equal(first.decisions.total, 1);
   assert.equal(
-    await run(captureSelection(f.controller.queries, selection)),
-    "Same criterion\nSecond context",
+    first.decisions.entries[0]?.form_id,
+    "form_id" in pending ? pending.form_id : undefined,
   );
-  await assert.rejects(
-    run(
-      captureSelection(f.controller.queries, {
-        ...selection,
-        generation: selection.generation + 1,
-      }),
-    ),
-    /changed/,
-  );
-  await writeFile(document, "Updated criteria");
-  await assert.rejects(run(captureSelection(f.controller.queries, selection)), /changed/);
+  assert.match(first.decisions.entries[0]!.fact, /Blocks a-dependent/);
+  assert.equal(second.decisions.entries[0]?.source, first.decisions.entries[0]?.source);
+  assert.equal(first.queue.entries.length, 10);
+  assert.equal(first.queue.total, 56);
+  assert.match(first.queue.entries.find((r) => r.issue_id === dependent)!.fact, /zz-plan/);
+  assert.match(first.limitations.join(" "), /GitHub inbox unavailable/);
+  assert.deepEqual(await run(f.records.executions()), captured);
+  assert.deepEqual(await run(f.work.list), issues);
 });
-
-test("retained discovery pages same-file plan passages, checks the owner and never previews a patch", async (t) => {
+test("a controller CI wait and a PR URL alone carry no human action", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
+  const empty = await run(workBriefing(f.controller));
+  assert.deepEqual(empty.limitations, []);
+  const scoped = await run(
+    workBriefing(f.controller, { repository_id: Id.RepositoryId.make("api") }),
+  );
+  assert.deepEqual(scoped.limitations, []);
+  assert.equal(empty.decisions.total, 0);
   const e = await run(planned(f));
-  const queries = f.controller.queries;
-  const file = join(e.worktree_directory!, "openspec/changes", e.openspec_change, "proposal.md");
-  await writeFile(file, Array.from({ length: 18 }, (_, i) => "Notebook journey " + i).join("\n"));
-  const q = { search: "Notebook journey", kind: "plan" as const };
-  const first = await run(queries.discoverEvidence(q));
-  assert.equal(first.entries.length, 12);
-  assert.ok(first.next);
-  const second = await run(queries.discoverEvidence({ ...q, ...first.next }));
-  assert.equal(second.entries.length, 6);
-  assert.equal(new Set([...first.entries, ...second.entries].map((r) => r.identity)).size, 18);
-  const selected = first.entries[0];
-  assert.equal(selected.resource?.action, "open_passage");
-  const exact = {
-    kind: selected.kind,
-    repository_id: selected.repository_id,
-    issue_id: e.issue_id,
-    identity: selected.identity,
+  const head = Id.Commit.make("a".repeat(40));
+  e.current_phase = "awaiting_merge";
+  e.delivered_commit = head;
+  e.pull_request_reference = Id.PullRequestUrl.make("https://example.invalid/test/pr/1");
+  e.delivery_wait = {
+    category: "waiting",
+    code: Id.ErrorCode.make("CI_PENDING"),
+    reason: "CI is still running",
+    owner: "controller",
+    fingerprint: head,
+    attempts: 1,
+    observed_at: 1,
+    next_check_at: 1000,
   };
-  assert.equal((await run(queries.discoverEvidence(exact))).entries.length, 1);
-  assert.equal(
-    (
-      await run(
-        queries.discoverEvidence({ ...exact, repository_id: Id.RepositoryId.make("foreign") }),
-      )
-    ).entries.length,
-    0,
-  );
-  await writeFile(file, "Edited passage");
-  assert.equal((await run(queries.discoverEvidence(exact))).entries.length, 0);
-  const diff = vi.spyOn(queries, "diff");
-  await writeFile(join(e.worktree_directory!, "same-path.ts"), "export const marker=1");
-  const files = await run(
-    queries.discoverEvidence({ kind: "file", search: "same-path.ts", issue_id: e.issue_id }),
-  );
-  assert.equal(files.entries[0]?.resource?.action, "open_changes");
-  assert.ok(diff.mock.calls.length && diff.mock.calls.every((call) => call[3] === true));
-  const peer = Id.IssueId.make("different-owner");
-  f.seed.named(peer);
-  const snapshot = await run(queries.diff(e.issue_id, "all", undefined, true));
-  const record = (await run(queries.execution(e.issue_id)))!;
-  vi.spyOn(queries, "execution").mockImplementation((id) =>
-    Effect.succeed({ ...record, issue_id: id }),
-  );
-  diff.mockReturnValue(Effect.succeed(snapshot));
-  const sameName = await run(queries.discoverEvidence({ kind: "file", search: "same-path.ts" }));
-  assert.deepEqual(
-    new Set(sameName.entries.map((hit) => hit.resource?.issue_id)),
-    new Set([e.issue_id, peer]),
-  );
-});
-
-test("worker discovery returns current and retired identities without a transcript read", async (t) => {
-  const f = await run(fixture);
-  t.onTestFinished(() => run(f.close()));
-  const e = await run(planned(f));
-  const view = new Visibility(f.controller);
-  const inspect = vi.spyOn(f.runtime, "session");
-  const search = await run(view.sessionSearch({ search: e.explore_session_id, limit: 1 }));
-  assert.equal(search.entries.length, 1);
-  assert.equal(search.entries[0].issue_id, e.issue_id);
-  assert.equal(search.entries[0].session_id, e.explore_session_id);
-  const retained = await run(f.controller.queries.executions());
-  retained[0].current_phase = "completed";
-  vi.spyOn(f.controller.queries, "executions").mockReturnValue(Effect.succeed(retained));
-  Object.assign(f.runtime, {
-    sessionOwner: () => Effect.succeed({ issue_id: "unrelated", directory: e.worktree_directory }),
-  });
-  const historical = await run(view.sessionSearch({ search: e.explore_session_id }));
-  assert.equal(historical.entries[0].association, "historical");
-  assert.equal(historical.entries[0].availability, "unavailable");
-  const oldIssue = Id.IssueId.make("zz-retired");
-  f.seed.named(oldIssue);
-  const oldSession = Id.SessionId.make("ses_archive");
-  const workers = Array.from({ length: 35 }, (_, i) => {
-    const id = Id.IssueId.make("earlier-" + String(i).padStart(2, "0"));
-    f.seed.named(id);
-    return {
-      ...retained[0],
-      issue_id: id,
-      explore_session_id: Id.SessionId.make("ses_worker_" + i),
-    };
-  });
-  vi.spyOn(f.controller.queries, "executions").mockReturnValue(
-    Effect.succeed([
-      ...workers,
-      { ...retained[0], issue_id: oldIssue, explore_session_id: oldSession },
-    ]),
-  );
-  const first = await run(view.sessionSearch({ limit: 30 }));
-  assert.ok(first.next_offset);
-  assert.equal(
-    first.entries.some((row) => row.session_id === oldSession),
-    false,
-  );
-  const exact = await run(view.sessionSearch({ search: oldSession, limit: 1 }));
-  assert.equal(exact.entries[0].issue_id, oldIssue);
-  assert.equal(inspect.mock.calls.length, 0);
-  assert.deepEqual(
-    (
-      await run(
-        view.sessionSearch({
-          search: e.explore_session_id,
-          repository_id: Id.RepositoryId.make("foreign"),
-        }),
-      )
-    ).entries,
-    [],
-  );
+  await run(f.records.save(e));
+  const brief = await run(workBriefing(f.controller));
+  assert.equal(brief.decisions.total, 0);
+  assert.match(brief.ongoing.entries[0]!.fact, /CI is still running/);
 });

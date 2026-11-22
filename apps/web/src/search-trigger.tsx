@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 import { Button } from "@abracode/presentation/ui/button";
 
-export const OpenSearch = createContext<(origin: HTMLElement) => void>(() => {});
+export const OpenSearch = createContext<(origin: HTMLElement, source?: "memory") => void>(() => {});
 
 export function SearchTrigger({ compact = false }: { compact?: boolean }) {
   const open = useContext(OpenSearch);

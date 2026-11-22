@@ -1,3 +1,4 @@
+import { MemoryPage, MemoryBody, MemoryReference } from "@abracode/contracts/visibility/memory";
 import { PublicationPage } from "@abracode/contracts/presentation/contracts";
 import {
   EvidenceSearchPage,
@@ -86,6 +87,7 @@ const refused = (error: CrewError) =>
     message:
       error.code === "REVIEW_STALE" ||
       error.code === "REVIEW_REFUSED" ||
+      error.code.startsWith("MEMORY_") ||
       error.code.startsWith("MEMOS_")
         ? error.message
         : (resourceErrors.get(error.code) ??
@@ -105,6 +107,12 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
     );
   const operations = HttpApiBuilder.group(api, "workspace", (handlers) =>
     handlers
+      .handle("memorySearch", ({ query }) => validated(backend.memorySearch(query), MemoryPage))
+      .handle("memoryRead", ({ payload }) => validated(backend.memoryRead(payload), MemoryBody))
+      .handle("memoryEnabled", () => validated(backend.memoryEnabled, Schema.Boolean))
+      .handle("memoryPublish", ({ payload }) =>
+        validated(backend.memoryPublish(payload), MemoryReference),
+      )
       .handle("agents", () => validated(backend.agents, AgentCatalogSchema))
       .handle("repositories", () => validated(backend.repositories, ProjectsSchema))
       .handle("prepareDiagrams", ({ payload }) =>

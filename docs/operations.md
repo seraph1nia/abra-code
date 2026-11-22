@@ -8,6 +8,8 @@ Abra is the only conversational agent. Worker selections open read-only inspecti
 
 ## Persistent service and Supervisor
 
+Abra requests native compaction when a completed model step in the retained Supervisor session reports at least 200,000 tokens, including cached tokens. OpenCode processes the request at a step boundary. A step can cross the threshold, and a model with a smaller usable window can compact earlier.
+
 `pnpm service:start` uses the pinned native `Service.ensure()` API to start/discover an OpenCode 2.3.0 background process, activate the central location, verify plugin activation, and create/reuse a session tagged with the orchestration home. The process remains active after the command and every UI client exit. The dedicated registration is `.abracode/state/opencode/service.json`; this avoids replacing another default OpenCode service. Execution/session data lives in OpenCode's native data location, not in a new AbraCode database. The managed service sets `OPENCODE_CONFIG_DIR` to `<home>/.abracode/config/opencode`, so globally installed plugins under `~/.config/opencode/plugins` are not inherited by its pinned v2 runtime. Provider authentication remains in the native data location. AbraCode generates `.abracode/config/opencode/opencode.json` from the selected personal YAML; do not edit generated settings directly; the managed service does not inherit another OpenCode installation's global config or agents. Existing global files are not deleted.
 
 ```sh
@@ -121,6 +123,8 @@ Every attempt rechecks controller
 readiness and capacity, and a failed attempt does not prevent other eligible work.
 Each tick makes at most as many attempts as there were open issues at its start. The existing single scheduler-leader lock
 owns the cursor across processes.
+
+Worker reservation and setup count both issue and setup executions under coordination. An unreadable peer makes free capacity unknown. Waiting workers retain the reason and retry after the record is repaired.
 
 An explicitly requested repository setup that reaches an execution slot limit
 returns a setup record with phase `queued` and the reason. It holds no worktree
@@ -621,3 +625,27 @@ retain published export bytes if an older renderer identity must remain readable
 ## Native lock binding
 
 Cross-process locks use `fs-ext` 2.1.1 on Linux and macOS. Dependency installation compiles the binding with `node-gyp`, requiring Python and a C/C++ toolchain (`make` and a compiler on Linux, Xcode Command Line Tools on macOS). The frozen pnpm workspace explicitly allows the `fs-ext` build. Rebuild with `pnpm rebuild fs-ext` after a Node ABI change; `pnpm doctor` exercises a real native lock. No util-linux `flock` executable is used. Node callers lock directly. The embedded OpenCode runtime uses a scoped Node holder because its Bun runtime cannot execute the binding's NAN error path. It resolves `node` from the server PATH; `ABRACODE_NODE_BINARY` can select the matching Node executable explicitly. The Node executable must match the ABI used to compile `fs-ext`. Full application acceptance is currently retained for Linux only.
+
+## Self-hosted agent memory
+
+Install the pinned provider under the service account on Linux or macOS, using a dedicated Python environment. Choose a data directory outside the AbraCode checkout, managed repositories and worktrees. Give only the service account access. For example:
+
+```sh
+uv venv --python 3.12 ~/.local/share/abra-memory-1.0.0
+uv pip install --python ~/.local/share/abra-memory-1.0.0/bin/python --prerelease=allow 'basic-memory==1.0.0'
+```
+
+Set the three `memory` fields in `abracode.yaml` as in the example, using absolute paths. Restart the service. Doctor checks the installed executable in a disposable home. Runtime access starts local stdio on demand. Text retrieval works offline. For hybrid, provision the FastEmbed model into `<directory>/config/fastembed_cache` before enabling `retrieval: hybrid`, using the environment's Python and `TextEmbedding("BAAI/bge-small-en-v1.5", cache_dir=...)`. Run the pinned `bm reindex --embeddings --project NAME` for existing projects. Use the same environment as the runtime for maintenance: set `HOME=<directory>/home`, `BASIC_MEMORY_CONFIG_DIR=<directory>/config`, `BASIC_MEMORY_PROJECT_ROOT=<directory>/vault`, `BASIC_MEMORY_FORCE_LOCAL=true` and `HF_HUB_OFFLINE=1`. See the host prerequisites and offline probe in [supported APIs](supported-apis.md#basic-memory-100).
+
+Open a collection under `vault/` in Obsidian for human edits. Notes and private request receipts survive disabling memory or restarting AbraCode. For a consistent backup, stop AbraCode and other writers, then copy the entire memory directory including config, receipts and vault. For a same-location restore, restore the whole tree before restarting. For relocation, restore the vault and receipts into the new dedicated root and use fresh provider config and database. Re-register each restored collection using its existing directory name and exact new absolute path with `bm project add NAME PATH` in the isolated maintenance environment, then `bm reindex --search --project NAME`. Preserve the private receipts along with the vault. To disable, set `enabled: false` and restart. For upgrades, retain a stopped backup and verify a candidate pin on a disposable restore before changing the supported version.
+
+| Caller                           | Memory access                                                                                                                                                          |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Abra                             | Search one registered repository plus shared, or shared alone. Publish the operator's exact directive and return its revision.                                         |
+| Explore, Apply, Review, Research | Search and read from the live assignment when its enabled snapshot and captured agent definition permit the tool. Each reference is rechecked on read.                 |
+| Project lead                     | Use `memory_search` or `memory_read` in `abra_lead_action` at the current registration revision, naming one assigned repository.                                       |
+| Thoughts                         | **Remember for…** publishes a contiguous excerpt to a deliberately selected destination. Private save captures the whole memo in Memos. Work intake starts separately. |
+
+Use `Remember for repository api: Restart the fixture after rotating its token.` in a new Abra message to publish an observation. Use `Remember for all projects: …` for shared wording. To correct an entry, send `Correct PATH@REVISION for repository api: …` using a citation from a search. A correction writes a new note and leaves the original under human control. Publication records live in `receipts/publications.sqlite`. Keep this private database out of Obsidian and shared backups of the vault alone. It binds each request to its destination, exact content, private source and reserved note path. If an acknowledgement is lost, retry the original operation with the same identity. A mismatch means a conflict. An absent reserved note means the outcome is unresolved. Inspect the vault and receipt before explicitly issuing a fresh request. An ordinary retry never recreates a deleted note.
+
+Memory access does not grant external-directory or raw MCP permissions. As before, Apply's shell executes trusted commands as the service account. Separate OS accounts or process isolation are needed if shell code is outside that trust boundary.

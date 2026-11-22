@@ -120,6 +120,14 @@ export const ConfigInputSchema = Schema.Struct({
   version: Schema.Literal(1),
   models: ModelsSchema,
   memos: Schema.optional(memosSettings),
+  memory: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.Boolean,
+      executable: AbsolutePath,
+      directory: AbsolutePath,
+      retrieval: Schema.optional(Schema.Literals(["text", "hybrid"])),
+    }),
+  ),
   profiles: Schema.optional(DispatchProfilesSchema),
   attention_capacity: Schema.optional(Positive),
   progress_timeout_ms: Schema.optional(WatchdogPolicySchema),

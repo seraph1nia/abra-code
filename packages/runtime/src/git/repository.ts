@@ -316,6 +316,20 @@ export class Git {
     }.bind(this),
     domainEffect,
   );
+  assertCommitTree(path: AbsolutePath, commit: Commit, expected: GitTree) {
+    return this.run(path, ["rev-parse", "--verify", `${commit}^{tree}`]).pipe(
+      Effect.flatMap((tree) =>
+        tree === expected
+          ? Effect.void
+          : Effect.fail(
+              new CrewError(
+                "DELIVERY_CHANGED",
+                "Prepared commit differs from the retained reviewed tree",
+              ),
+            ),
+      ),
+    );
+  }
   commit = Effect.fn("Git.commit")(
     function* (this: Git, path: AbsolutePath, issue: IssueId, message?: string) {
       if (yield* this.dirty(path)) {

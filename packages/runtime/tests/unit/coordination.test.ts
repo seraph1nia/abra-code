@@ -365,6 +365,7 @@ test("restart after push rediscovers the exact remote ref and creates one PR", a
               mergeable: "MERGEABLE",
               mergeStateStatus: "CLEAN",
             };
+            return pr.url;
           }
           return JSON.stringify(pr ? [pr] : []);
         }),

@@ -1,3 +1,6 @@
+import { presentationHash } from "../../src/presentation/identity.ts";
+import { diagramRequestKey } from "@abracode/contracts/web/diagram-actions";
+import { searchPublications } from "../../src/presentation/associations.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "vite-plus/test";
@@ -219,6 +222,15 @@ for (const phase of [
         (await run(f.owner.associations(session, [MessageId.make("msg_crash")]))).entries,
         [],
       );
+      const search = () =>
+        run(
+          searchPublications(f.store, session, { search: "msg_crash" }, (target) =>
+            target.kind === "surface"
+              ? f.owner.searchCommitted(session, target.surface_id, target.revision)
+              : Effect.succeed(false),
+          ),
+        );
+      assert.deepEqual((await search()).entries, []);
       const visible = await run(f.owner.list(session));
       assert.deepEqual(
         visible.map((row) => "revision" in row && row.revision),
@@ -240,6 +252,7 @@ for (const phase of [
       assert.deepEqual(await run(restarted.recover(session)), []);
       assert.equal(f.reads(), revision);
       const captured = await run(restarted.read(session, "board", revision));
+      assert.equal((await search()).entries.length, 1);
       assert.equal(captured.snapshot[0].title, "Build a single workspace");
       const associations = await run(
         restarted.associations(session, [MessageId.make("msg_crash")]),
@@ -403,4 +416,54 @@ test("unfiltered snapshot siblings retain all observed work and explicit referen
     /Work item abra-web is unavailable/,
   );
   assert.deepEqual(await run(f.owner.read(session, "mixed", 1)), captured);
+});
+
+test("current and legacy diagrams expose exact compact selections without altering stored layouts", async () => {
+  const f = fixture();
+  const request = source("msg_diagram", "Original");
+  for (const length of [3, 1500]) {
+    const layout = validateSurface({
+      version: "1.0",
+      createSurface: {
+        surfaceId: "board",
+        catalogId,
+        components: [
+          {
+            id: "root",
+            component: "Mermaid",
+            title: "Map",
+            source: "flowchart LR\nA --> B\n%%" + "x".repeat(length),
+          },
+        ],
+      },
+    });
+    await run(
+      f.store.set(StorageKey.make(`web/surface/${session}/board`), {
+        session_id: session,
+        tool_call_id: "legacy",
+        revision: 1,
+        at: f.workspace.value.at,
+        snapshot: [],
+        surface: layout,
+      }),
+    );
+    const before = structuredClone([...f.store.values]);
+    const old = await run(f.owner.read(session, "board", 1));
+    assert.equal(old.surface_hash, presentationHash(layout));
+    assert.ok(
+      diagramRequestKey({
+        kind: "surface",
+        surface_id: "board",
+        revision: 1,
+        hash: old.surface_hash!,
+      }).length < 150,
+    );
+    assert.deepEqual([...f.store.values], before);
+    if (length === 1500) {
+      await run(f.owner.publish({ ...request, surface: layout }, f.observe));
+      const current = await run(f.owner.read(session, "board", 2));
+      assert.equal(current.surface_hash, old.surface_hash);
+      await assert.rejects(run(f.owner.read(session, "board", 3)));
+    }
+  }
 });

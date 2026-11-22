@@ -1,3 +1,4 @@
+import { AgentMemory } from "../memory/service.ts";
 import { PersonalThoughts } from "../work/thoughts.ts";
 import { GithubInbox } from "../work/github-inbox.ts";
 import { Forge } from "../git/forge.ts";
@@ -179,6 +180,7 @@ export function createWorkflow(
     transitions,
   });
   const thoughts = new PersonalThoughts(config, work);
+  const memory = new AgentMemory(config, records, thoughts);
   const admission = new WorkAdmission({
     config,
     records,
@@ -251,9 +253,11 @@ export function createWorkflow(
     obligations,
     admission.createWorkBatch,
     advancement.workMessage,
+    memory,
   );
   const controller = new Controller({
     thoughts,
+    memory,
     inbox: new GithubInbox(
       new InboxForge(new Forge(git.runner, config.commands.forge)),
       work.inbox,

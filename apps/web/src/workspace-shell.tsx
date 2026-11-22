@@ -38,7 +38,12 @@ export function WorkspaceShell() {
   if (workspace && !visited) setVisited(true);
 
   const navigate = useNavigate();
-  const [origin, setOrigin] = useState<HTMLElement | null>(null);
+  const [search, setSearch] = useState<{ origin: HTMLElement; source?: "memory" }>();
+  const origin = search?.origin;
+  const openSearch = useCallback(
+    (origin: HTMLElement, source?: "memory") => setSearch({ origin, source }),
+    [],
+  );
   const [command, setCommand] = useState<{ action: ComposerCommand }>();
   const consumed = useCallback(() => setCommand(undefined), []);
   const [focusChat, setFocusChat] = useState(false);
@@ -67,15 +72,16 @@ export function WorkspaceShell() {
         return;
       event.preventDefault();
       if (!event.repeat && document.activeElement instanceof HTMLElement)
-        setOrigin(document.activeElement);
+        openSearch(document.activeElement);
     }
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
-  }, [origin]);
+  }, [origin, openSearch]);
   const palette = origin
     ? {
         origin,
-        close: () => setOrigin(null),
+        initialSource: search.source,
+        close: () => setSearch(undefined),
         chat: () => {
           setFocusChat(true);
           void navigate({ to: "/", search: {} });
@@ -122,7 +128,7 @@ export function WorkspaceShell() {
         void navigate({ to: "/", search: {} });
       }}
     >
-      <OpenSearch.Provider value={setOrigin}>
+      <OpenSearch.Provider value={openSearch}>
         <div className="workspace-shell" ref={shell}>
           {(workspace || settings) &&
             (phone ? (

@@ -116,13 +116,13 @@ export class Reviews {
       },
     };
   }
-  private head(session: SessionId, id: ReviewID) {
+  private head(session: SessionId, id: ReviewID, metadataOnly = false) {
     return Effect.gen({ self: this }, function* () {
       const raw = yield* this.store.get(key(session, `head/${id}`));
-      return raw === undefined ? undefined : yield* this.decodeHead(session, id, raw);
+      return raw === undefined ? undefined : yield* this.decodeHead(session, id, raw, metadataOnly);
     });
   }
-  private decodeHead(session: SessionId, id: ReviewID, raw: unknown) {
+  private decodeHead(session: SessionId, id: ReviewID, raw: unknown, metadataOnly = false) {
     return Effect.gen({ self: this }, function* (): Effect.fn.Return<Head, CrewError> {
       const head = yield* decode(RetainedHeadSchema, raw, "Review head");
       if (
@@ -140,6 +140,8 @@ export class Reviews {
         // The legacy head advanced before publication. A predecessor remains
         // visible only when its exact record and association survived.
         const predecessor = { review_id: id, revision: head.current.revision - 1 };
+        if (metadataOnly && predecessor.revision > 0)
+          return yield* fail("Legacy pending review requires recovery to verify its predecessor");
         const prior =
           predecessor.revision > 0
             ? yield* this.rawRecord(session, predecessor).pipe(
@@ -147,6 +149,10 @@ export class Reviews {
                 Effect.result,
               )
             : undefined;
+        if (predecessor.revision > 0 && !(prior?._tag === "Success" && prior.success))
+          return yield* fail(
+            "Legacy review predecessor is unavailable; repair its publication evidence before recovery",
+          );
         return {
           schema_version: 1,
           ...(prior?._tag === "Success" && prior.success ? { committed: predecessor } : {}),
@@ -419,6 +425,13 @@ export class Reviews {
       )
         return yield* fail("Review belongs to another selection");
       return saved.record;
+    });
+  }
+  searchCommitted(session: SessionId, selection: ReviewSelection) {
+    return Effect.gen({ self: this }, function* () {
+      const head = yield* this.head(session, selection.review_id, true);
+      if (!head) return yield* fail("Review association has no committed head");
+      return selection.revision <= (head.committed?.revision ?? 0);
     });
   }
   private committedRecord(session: SessionId, selection: ReviewSelection) {

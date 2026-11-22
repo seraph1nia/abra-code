@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { test } from "vite-plus/test";
 import {
   compatiblePolicy,
+  workerToolAllowed,
+  workerPermissions,
   policyIdentity,
   nativePermissions,
   capabilityRequirements,
@@ -46,6 +48,25 @@ test("historical policy bytes, permission order/resources and engineering prereq
     assert.equal(
       createHash("sha256").update(JSON.stringify(payload)).digest("hex"),
       baseline[role][1],
+    );
+  }
+});
+
+test("captured Review eligibility agrees with native permission projection", () => {
+  for (const legacy of [true, false]) {
+    const profile = {
+      role: "review",
+      permissions: nativePermissions("review").filter(
+        (rule) => !legacy || rule.action !== "abra_review_changes",
+      ),
+      contributions: [],
+    } as unknown as import("@abracode/agents").StaticProfile;
+    assert.equal(workerToolAllowed("review", profile, "abra_review_changes"), !legacy);
+    assert.equal(
+      workerPermissions("review", profile, "assigned", []).some(
+        (rule) => rule.action === "abra_review_changes",
+      ),
+      !legacy,
     );
   }
 });

@@ -2,7 +2,7 @@ import { admittedSelection, captureCheck } from "./selected-requests.ts";
 import { Effect } from "effect";
 import { createHash } from "node:crypto";
 import { ensure, type Execution } from "../domain.ts";
-import { RequestId, SessionId, Timestamp, timestamp } from "../identities.ts";
+import { RequestId, SessionId, timestamp } from "../identities.ts";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { domainEffect } from "../effect.ts";
 import { decode } from "../decode.ts";
@@ -26,32 +26,15 @@ import { externalOwns } from "../validation/contracts.ts";
 import { type AttentionService } from "./attention.ts";
 import { leadAccounting } from "./lead-contracts.ts";
 
-/** Classification is observation only; a missing response grants no admission authority. */
-export function responseState(
-  request: typeof RequestSchema.Type,
-  state?: SessionState,
-  admission?: "queued" | "consumed" | "absent",
-) {
-  if (["cancelled", "superseded"].includes(request.status)) return "superseded";
-  if (!requiresResponse(request)) return "resolved";
-  if (!state || admission === undefined) return "unavailable";
-  if (admission === "queued") return "queued";
-  if (state.busy || state.executing) return "executing";
-  if (state.completion_pending) return "unavailable";
-  if (state.outcome === "failed" || state.assignment?.outcome === "failed") return "failed";
-  if (state.outcome === "interrupted" || state.assignment?.outcome === "interrupted")
-    return "interrupted";
-  if (admission === "absent") return "uncertain";
-  if (
-    state.executing === false &&
-    state.outcome === "succeeded" &&
-    state.assignment?.id === request.prompt_id &&
-    state.assignment.outcome === "succeeded" &&
-    state.assignment.completion
-  )
-    return "missing";
-  return "unavailable";
-}
+import {
+  reminderDecision,
+  reminderTarget,
+  pendingReminder,
+  queuedReminder,
+  suppressReminder,
+  reserveReminder,
+} from "./response-recovery.ts";
+export { responseState } from "./response-recovery.ts";
 
 /** Called with execution operation ownership; only short commits take coordination. */
 export class Messages {
@@ -319,7 +302,7 @@ export class Messages {
             );
             const suppressed =
               recovery.status === "pending" &&
-              (!requiresResponse(entry) || this.queries.settings.supervisionMode === "manual");
+              suppressReminder(entry, this.queries.settings.supervisionMode === "manual");
             allowed = !suppressed && status !== "suppressed";
             return {
               ...entry,
@@ -365,8 +348,9 @@ export class Messages {
           "SESSION_LOCATION",
           "Recovery recipient moved outside its owned worktree",
         );
-        if (state.busy || state.executing !== false || state.completion_pending) return false;
-        if (["failed", "interrupted"].includes(state.outcome ?? "")) {
+        const action = pendingReminder(state);
+        if (action === "wait") return false;
+        if (action === "suppress") {
           yield* this.recoveryStatus(e, m, "suppressed");
           yield* this.attention.responseIncident(
             e,
@@ -398,7 +382,8 @@ export class Messages {
           "SESSION_LOCATION",
           "Queued recovery recipient moved outside its owned worktree",
         );
-        if (["failed", "interrupted"].includes(state.outcome ?? "")) {
+        const action = queuedReminder(state);
+        if (action === "escalate") {
           yield* this.attention.responseIncident(
             e,
             m,
@@ -407,7 +392,7 @@ export class Messages {
           );
           return false;
         }
-        if (state.executing === false && !["failed", "interrupted"].includes(state.outcome ?? "")) {
+        if (action === "wake") {
           const current = yield* this.records.execution(e.issue_id);
           ensure(current, "MESSAGE_STALE", "Execution disappeared during recovery reconciliation");
           this.eligible(current, m);
@@ -432,14 +417,7 @@ export class Messages {
           continue;
         yield* Effect.gen({ self: this }, function* () {
           const session = this.eligible(e, m);
-          const input =
-            m.response_recovery?.status !== "suppressed" && m.response_recovery
-              ? {
-                  ...m,
-                  prompt_id: m.response_recovery.prompt_id,
-                  prompt: m.response_recovery.prompt,
-                }
-              : m;
+          const input = reminderTarget(m);
           const state = yield* this.runtime.session(session, input.prompt_id);
           ensure(
             state.directory === e.worktree_directory,
@@ -451,20 +429,10 @@ export class Messages {
             input.prompt_id,
             input.prompt,
           );
-          const observed = responseState(input, state, admission);
-          if (state.completion_pending) return;
-          if (["queued", "executing", "resolved", "superseded"].includes(observed)) return;
-          if (observed !== "missing" || m.response_recovery) {
-            yield* this.attention.responseIncident(
-              e,
-              m,
-              observed === "missing"
-                ? m.response_recovery?.status === "suppressed"
-                  ? "Reserved reminder suppressed before admission; inspect before explicit retry"
-                  : "Recovery completed without the required response; automatic attempt exhausted"
-                : observed,
-              state,
-            );
+          const decision = reminderDecision(m, state, admission);
+          if (decision.action === "wait") return;
+          if (decision.action === "escalate") {
+            yield* this.attention.responseIncident(e, m, decision.reason, state);
             return;
           }
           if (this.queries.settings.supervisionMode === "manual") {
@@ -508,15 +476,10 @@ export class Messages {
                   ))
                 )
                   return "capacity" as const;
-                const completion = state.assignment!.completion!;
-                const recovery = {
-                  prompt_id: SessionMessage.ID.create(),
-                  prompt: `AbraCode response-only reminder for original request ${m.request_id}, generation ${m.generation}. The admitted request's native turn completed, but its required ${m.response} is missing. Do not repeat the substantive task or broaden scope. This grants no approval. Use abra_worker_reply action ${m.response === "answer" ? "answer" : "acknowledge"} with the ORIGINAL request_id ${m.request_id} and generation ${m.generation}.`,
-                  created_at: yield* timestamp,
-                  completion_id: completion.id,
-                  completed_at: Timestamp.make(new Date(completion.at).toISOString()),
-                  status: "pending" as const,
-                };
+                const recovery = yield* reserveReminder(
+                  state.assignment!.completion!,
+                  `AbraCode response-only reminder for original request ${m.request_id}, generation ${m.generation}. The admitted request's native turn completed, but its required ${m.response} is missing. Do not repeat the substantive task or broaden scope. This grants no approval. Use abra_worker_reply action ${m.response === "answer" ? "answer" : "acknowledge"} with the ORIGINAL request_id ${m.request_id} and generation ${m.generation}.`,
+                );
                 synchronizeExecution(
                   e,
                   yield* this.records.update(e.issue_id, (fresh) => ({

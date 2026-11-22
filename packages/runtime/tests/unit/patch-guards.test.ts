@@ -8,19 +8,32 @@ import { symlink } from "node:fs/promises";
 import { type Context } from "@opencode/plugin/effect/plugin";
 import { applying, fixture } from "../fixtures.ts";
 import { installGuards } from "../../src/opencode/guards.ts";
-async function guard(t: TestContext, role: "explore" | "apply" = "explore") {
+async function guard(t: TestContext, role: "explore" | "apply" | "review" = "explore") {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   f.seed.named(Id.IssueId.make("abra-1"));
   const e = await run(
-    role === "apply"
-      ? applying(f)
-      : f.controller.start(Id.IssueId.make("abra-1"), Id.SessionId.make("ses_supervisor")),
+    role === "review"
+      ? Effect.gen(function* () {
+          const applyingIssue = yield* applying(f);
+          f.spec.done = true;
+          f.runtime.success(applyingIssue.apply_session_id!);
+          return yield* f.controller.advance(applyingIssue.issue_id);
+        })
+      : role === "apply"
+        ? applying(f)
+        : f.controller.start(Id.IssueId.make("abra-1"), Id.SessionId.make("ses_supervisor")),
   );
   const sessionID = e[`${role}_session_id`];
   let before: (event: any) => import("effect").Effect.Effect<void>;
+  let context: typeof before;
   const ctx = {
-    session: { hook: () => Effect.void },
+    session: {
+      hook: (name: string, handler: typeof before) =>
+        Effect.sync(() => {
+          if (name === "context") context = handler;
+        }),
+    },
     shell: { hook: () => Effect.void },
     tool: {
       hook: (_name: string, fn: typeof before) =>
@@ -33,6 +46,11 @@ async function guard(t: TestContext, role: "explore" | "apply" = "explore") {
   return {
     f,
     e,
+    visible: async (names: string[]) => {
+      const tools = Object.fromEntries(names.map((name) => [name, {}]));
+      await run(context({ sessionID, model: f.config.models.default, tools, system: [] }));
+      return Object.keys(tools);
+    },
     invoke: (tool: string) => before!({ tool, sessionID, input: {} }),
     edit: (tool: "write" | "edit", filePath: string) =>
       before!({ tool, sessionID, input: { filePath } }),
@@ -148,4 +166,58 @@ test("known worker hook and progress read only the selected execution among 100"
   assert.equal(executionScans().length, 0);
   assert.equal(await run(f.records.workerAssignment(Id.SessionId.make("ses_unknown"))), undefined);
   assert.equal(executionScans().length, 1);
+});
+
+test("model context and direct calls use the same captured Review tools", async (t) => {
+  const { f, e, visible, invoke } = await guard(t, "review");
+  const retained = await run(f.records.execution(e.issue_id));
+  assert.ok(retained?.current_phase === "verifying");
+  const base = e.configuration_snapshot!.definitions!.review!;
+  const names = ["abra_review_changes", "inspect-source", "read"];
+  vi.spyOn(f.controller, "recordWorkerTools").mockReturnValue(Effect.void);
+  vi.spyOn(f.controller, "workerContextRequest").mockReturnValue(Effect.succeed("Captured"));
+  for (const mode of ["current", "legacy", "deny-id", "deny-read", "inactive"]) {
+    const profile = {
+      ...base,
+      permissions: [
+        ...base.permissions.filter(
+          (rule) => mode !== "legacy" || rule.action !== "abra_review_changes",
+        ),
+        ...(["deny-id", "deny-read"].includes(mode)
+          ? [
+              {
+                effect: "deny" as const,
+                resource: "*",
+                action: mode === "deny-id" ? "inspect-source" : "read",
+              },
+            ]
+          : []),
+      ],
+      contributions: [
+        { id: "inspect-source", revision: "1", action: "read" as const, schema_digest: "fixture" },
+      ],
+    };
+    vi.spyOn(f.controller.queries, "assignment").mockReturnValue(
+      Effect.succeed({
+        ...retained,
+        active_role: mode === "inactive" ? undefined : "review",
+        configuration_snapshot: {
+          ...e.configuration_snapshot!,
+          definitions: { ...e.configuration_snapshot!.definitions!, review: profile },
+        },
+      }),
+    );
+    const expected = names.filter(
+      (name) =>
+        mode !== "inactive" &&
+        !(mode === "legacy" && name === names[0]) &&
+        !(mode === "deny-id" && name === names[1]) &&
+        !(mode === "deny-read" && name !== names[0]),
+    );
+    assert.deepEqual(await visible(names), expected);
+    for (const name of names) {
+      if (expected.includes(name)) await run(invoke(name));
+      else await assert.rejects(run(invoke(name)), /cannot use|no longer owns/);
+    }
+  }
 });

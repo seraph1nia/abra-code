@@ -34,3 +34,7 @@ automatic work, retained human decision, model selection, finding/acknowledgemen
 independent Review, delivery, portable architecture report and restart.
 
 For the GitHub inbox, set `ABRACODE_TEST_JOURNEY=github-inbox` and `ABRACODE_TEST_EVIDENCE_DIR` to a fresh temporary directory, then run `pnpm test:one packages/runtime/tests/extended/native.test.ts`. The local forge serves an unlabeled issue and a colleague’s PR. The journey checks repeated pickup, private findings, controller delivery and report navigation after restart. It retains Work and PR screenshots, accessibility snapshots and reproduction steps.
+
+For the unified work briefing, use the same native test with `ABRACODE_TEST_JOURNEY=work-briefing` and a fresh evidence directory. Two disposable forge repositories supply a current merge form, an independent CI wait and a completed private investigation. The loopback provider exercises both chat phrasings with the same facts, then with a changed priority. The browser opens the saved report and verification, answers the bound form, asks again, and reopens Recently inspected on desktop and phone layouts. The receipt and accessibility snapshots survive fixture cleanup.
+
+[Self-hosted agent memory](../agent-memory.md) covers private Thought promotion from the phone view, scoped worker recall after restart, human edits, index rebuild and provider outage.

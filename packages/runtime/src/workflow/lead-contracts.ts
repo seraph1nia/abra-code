@@ -1,3 +1,4 @@
+import { MemorySearch, MemoryRead } from "@abracode/contracts/visibility/memory";
 import { Effect, Schema } from "effect";
 import { Count, WorkerModelSchema } from "../contracts.ts";
 import {
@@ -105,6 +106,18 @@ export const LeadControlSchema = Schema.Union([
 ]);
 export type LeadControl = typeof LeadControlSchema.Type;
 export const LeadActionSchema = Schema.Union([
+  Schema.Struct({
+    action: Schema.Literal("memory_search"),
+    revision: Count,
+    repository_id: RepositoryId,
+    ...MemorySearch.fields,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("memory_read"),
+    revision: Count,
+    repository_id: RepositoryId,
+    ...MemoryRead.fields,
+  }),
   Schema.Struct({
     action: Schema.Literal("status"),
     revision: Count,

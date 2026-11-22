@@ -117,6 +117,40 @@
         }
       ]
     },
+    "memory": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "executable": {
+              "$ref": "#/$defs/AbsolutePath"
+            },
+            "directory": {
+              "$ref": "#/$defs/AbsolutePath"
+            },
+            "retrieval": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": ["text", "hybrid"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["enabled", "executable", "directory"],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "profiles": {
       "anyOf": [
         {

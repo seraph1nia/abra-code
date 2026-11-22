@@ -37,6 +37,7 @@ export function taskAttention(work: WorkSummary): TaskAttention[] {
     );
   if (
     work.phase === "awaiting_merge" &&
+    (!work.delivery_wait || work.outcome?.approval.state === "pending") &&
     !["recorded", "not_required"].includes(work.outcome?.approval.state ?? "")
   )
     add(

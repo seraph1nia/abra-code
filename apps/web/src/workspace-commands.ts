@@ -21,6 +21,12 @@ export const composerCommands = [
     aliases: ["use memo"],
     effect: "Attach to chat",
   },
+  {
+    id: "memory",
+    label: "Search agent memory",
+    aliases: ["Basic Memory", "search notes", "brain"],
+    effect: "Open",
+  },
 ] as const;
 export type ComposerCommand = (typeof composerCommands)[number];
 export const RunCommand = createContext<(command: ComposerCommand) => void>(() => {});

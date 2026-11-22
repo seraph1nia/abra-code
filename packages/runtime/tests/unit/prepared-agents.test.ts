@@ -7,7 +7,12 @@ import { NodeFileSystem, NodePath } from "@effect/platform-node";
 import { AgentDefinitionError, Agents, makeAgent, makeCatalog, customTool } from "@abracode/agents";
 import { Tool } from "@opencode/schema/tool";
 import { contributionAuthorization } from "../../src/opencode/agent-contributions.ts";
-import { contributionAllows, definitionAllows } from "@abracode/agents/policy";
+import {
+  workerToolAllowed,
+  workerPermissions,
+  contributionAllows,
+  definitionAllows,
+} from "@abracode/agents/policy";
 import { definitions, sourcesLayer, bundledSkills } from "@abracode/agents/bundled";
 import { ConfigurationSnapshotSchema, workerProfile } from "../../src/config/snapshot.ts";
 import { WorkerContextSchema } from "../../src/workflow/worker-context-contracts.ts";
@@ -106,6 +111,12 @@ test("new selections capture static definitions before providers; prepared evide
     id: Tool.CallID.make("call_specialist"),
   };
   f.runtime.origins.set(native.messageID, e.prompt_id!);
+  assert.equal(workerToolAllowed("explore", captured.prepared.profile, specialistTool.id), true);
+  assert.ok(
+    workerPermissions("explore", captured.prepared.profile, "assigned", []).some(
+      (rule) => rule.action === specialistTool.action && rule.effect === "allow",
+    ),
+  );
   await run(authorize(specialistTool, native));
   await assert.rejects(run(authorize({ ...specialistTool, revision: "wrong" }, native)));
   await assert.rejects(
@@ -298,6 +309,12 @@ for (const denial of ["inspect-assignment", "inspect-*", "read*", "*"])
     const context = await run(readWorkerContext(f.records.store, e.worker_context_id!));
     assert.equal(context.schema_version, 2);
     if (context.schema_version !== 2) return;
+    assert.equal(workerToolAllowed("explore", context.prepared.profile, specialistTool.id), false);
+    assert.ok(
+      workerPermissions("explore", context.prepared.profile, "assigned", []).some(
+        (rule) => rule.effect === "deny" && rule.action === denial,
+      ),
+    );
     assert.equal(contributionAllows(context.prepared.profile, "explore", specialistTool.id), false);
     if (denial !== "read*")
       assert.equal(definitionAllows(context.prepared.profile, specialistTool.id), false);

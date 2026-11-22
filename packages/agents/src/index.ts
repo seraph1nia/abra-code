@@ -318,7 +318,9 @@ export const makeAgent = <R>(definition: AgentDefinition<R>) =>
         mode: definition.mode,
         ...(definition.model ? { model: definition.model } : {}),
         permissions: [
-          ...(role === "project-lead" ? leadPermissions() : nativePermissions(role)),
+          ...(role === "project-lead"
+            ? leadPermissions()
+            : nativePermissions(role, "*", [], undefined, definition.tools)),
           ...(definition.deny ?? []).map((action) => ({
             action,
             resource: "*",

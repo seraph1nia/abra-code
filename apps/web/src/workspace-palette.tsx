@@ -1,9 +1,9 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Cancelling the picker releases its typed HTTP atom subscriptions. */
 import { useContext, useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { RegistryContext, useAtomSet, useAtomValue } from "@effect/atom-react";
-import { AsyncResult, Atom } from "effect/reactivity";
-import { SearchDialog, type SearchCommand } from "@abracode/presentation/ui/search-dialog";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { Atom } from "effect/reactivity";
+import { SearchDialog } from "@abracode/presentation/ui/search-dialog";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import { Exit } from "effect";
@@ -30,8 +30,13 @@ import {
 } from "./navigation.ts";
 import { RunCommand, composerCommands, snippetDraft, workControl } from "./workspace-commands.ts";
 
+import { useSource, sources, sourceFeedback, type Source, type Hit } from "./palette-source.ts";
+import { useEvidenceSource } from "./palette-evidence.ts";
+import { useMemorySource } from "./palette-memory.tsx";
+
 export type PaletteActions = {
   origin: HTMLElement;
+  initialSource?: "memory";
   close: () => void;
   chat: () => void;
   finder: (query?: string) => void;
@@ -51,56 +56,9 @@ type Props = PaletteActions & {
   };
 };
 const emptyDraft = Atom.make(undefined);
-const idle = Atom.make(AsyncResult.initial<never, never>());
-type Source =
-  | "work"
-  | "session"
-  | "thought"
-  | "github"
-  | "agent"
-  | "repo"
-  | "attention"
-  | "page"
-  | "command"
-  | "message"
-  | "evidence"
-  | "surface"
-  | "review";
-const sources: readonly Source[] = [
-  "work",
-  "session",
-  "thought",
-  "github",
-  "agent",
-  "repo",
-  "attention",
-  "page",
-  "command",
-  "message",
-  "evidence",
-  "surface",
-  "review",
-];
-type Hit = SearchCommand & {
-  source: Source;
-  identity: string;
-  effect: "Open" | "Prepare draft" | "Open form" | "Attach to chat";
-  aliases?: readonly string[];
-};
-function useSource<A, E>(enabled: boolean, read: () => Atom.Atom<AsyncResult.AsyncResult<A, E>>) {
-  const atom = enabled ? read() : idle;
-  const result = useAtomValue(atom);
-  const registry = useContext(RegistryContext);
-  return {
-    data: enabled && AsyncResult.isSuccess(result) ? result.value : undefined,
-    failed: enabled && AsyncResult.isFailure(result),
-    loading: enabled && (result.waiting || AsyncResult.isInitial(result)),
-    retry: () => registry.refresh(atom),
-  };
-}
-
 export default function WorkspacePalette({
   origin,
+  initialSource,
   close,
   chat,
   finder,
@@ -114,7 +72,7 @@ export default function WorkspacePalette({
 }: Props) {
   const navigate = useNavigate();
   const run = useContext(RunCommand);
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialSource ? initialSource + ": " : "");
   const input = value.trim();
   const prefix = sources.find((s) => input.toLowerCase().startsWith(s + ":"));
   const evidenceKind = EvidenceKind.literals.find((k) => input.toLowerCase().startsWith(k + ":"));
@@ -134,29 +92,32 @@ export default function WorkspacePalette({
     return () => clearTimeout(timer);
   }, [input]);
   const active = (source: Source) => !!input && input === settled && (!filter || filter === source);
-  const [page, setPage] = useState<{
-    forInput: string;
-    after_owner: string;
-    after_entry: string;
-  }>();
-  const cursor =
-    page?.forInput === input
-      ? { after_owner: page.after_owner, after_entry: page.after_entry }
-      : {};
-  const evidence = useSource(active("evidence"), () =>
-    WorkspaceApi.query("work", "evidenceSearch", {
-      query: { search: query, kind: evidenceKind, ...cursor },
-      timeToLive: "0 seconds",
-    }),
+  const snapshot = useSource(
+    !workspace &&
+      (active("session") ||
+        active("attention") ||
+        active("message") ||
+        active("surface") ||
+        active("review")),
+    () => bootstrapQuery,
   );
-  const [publicationPage, setPublicationPage] = useState<{ forInput: string; cursor: string }>();
-  const pubs = useSource(active("surface") || active("review"), () =>
+  const current = workspace ?? snapshot.data;
+  const [publicationPage, setPublicationPage] = useState<{
+    forInput: string;
+    session: string;
+    cursor: string;
+  }>();
+  const pubs = useSource(!!current && (active("surface") || active("review")), () =>
     WorkspaceApi.query("workspace", "publications", {
       query: {
         search: query,
         kind: filter === "surface" || filter === "review" ? filter : undefined,
-        cursor: publicationPage?.forInput === input ? publicationPage.cursor : undefined,
+        cursor:
+          publicationPage?.session === current?.session_id && publicationPage?.forInput === input
+            ? publicationPage.cursor
+            : undefined,
       },
+      reactivityKeys: ["publications/" + current?.session_id],
       timeToLive: "0 seconds",
     }),
   );
@@ -184,13 +145,8 @@ export default function WorkspacePalette({
   const closed = useSource(active("github"), () => github("CLOSED"));
   const merged = useSource(active("github"), () => github("MERGED"));
   const agents = useSource(active("agent"), () => agentsQuery);
+  const memory = useMemorySource(active("memory"), filter === "memory", query);
   const repos = useSource(active("repo"), () => repositoriesQuery);
-  const snapshot = useSource(
-    !workspace &&
-      (active("session") || active("attention") || active("message") || active("surface")),
-    () => bootstrapQuery,
-  );
-  const current = workspace ?? snapshot.data;
   const draft = useAtomValue(current ? workspaceDraft(current.session_id) : emptyDraft);
   const lower = query.toLowerCase();
   const hits: Hit[] = [];
@@ -234,20 +190,8 @@ export default function WorkspacePalette({
       to: destinationFor(location.pathname) ?? "/",
       search: (previous) => ({ collection: previous.collection, ...search }),
     });
-  for (const row of evidence.data?.entries ?? []) {
-    const { kind, issue_id, repository_id, identity } = row;
-    add(
-      "evidence",
-      [repository_id, issue_id, kind, identity].join("/"),
-      row.label,
-      kind + " · " + row.context,
-      "Open",
-      () =>
-        row.resource
-          ? go(row.resource)
-          : reader({ retained: { kind, issue_id, repository_id, identity } }),
-    );
-  }
+  const evidence = useEvidenceSource(active("evidence"), input, query, evidenceKind, go, reader);
+  hits.push(...evidence.hits);
   for (const row of reviews.data?.reviews ?? [])
     add(
       "review",
@@ -272,7 +216,13 @@ export default function WorkspacePalette({
           }),
       );
     }
+  const confirmedPublications = new Set<string>();
   for (const entry of pubs.data?.entries ?? []) {
+    if (entry.session_id !== current?.session_id) continue;
+    if (entry.target.kind === "surface")
+      confirmedPublications.add("surface/" + entry.target.surface_id + "/" + entry.target.revision);
+    if (entry.target.kind === "review")
+      confirmedPublications.add("review/" + entry.target.review_id + "/" + entry.target.revision);
     const t = entry.target;
     if (t.kind === "surface")
       add(
@@ -337,11 +287,28 @@ export default function WorkspacePalette({
     ["/settings/about", "About and licenses"],
   ] as const)
     add("page", path, label, "Settings", "Open", () => void navigate({ to: path }));
-  for (const action of composerCommands)
+  for (const action of composerCommands) {
+    if (action.id === "memory") {
+      if (memory.available)
+        hits.push({
+          id: "command/memory",
+          identity: action.id,
+          source: "command",
+          label: action.label,
+          detail: "Basic Memory",
+          aliases: [...action.aliases, "/memory"],
+          effect: action.effect,
+          keepOpen: true,
+          run: () => changeSearch("memory: "),
+        });
+      continue;
+    }
     add("command", action.id, action.label, "Chat", action.effect, () => run(action), [
       ...action.aliases,
       "/" + action.id,
     ]);
+  }
+  hits.push(...memory.hits);
   add("command", "chat", "Return to chat", "Abra", "Open", chat);
   add("command", "finder", "Open Work finder", "Work", "Open", () => finder());
   if (resume)
@@ -510,17 +477,9 @@ export default function WorkspacePalette({
         },
         [m.text],
       );
-  const more: SearchCommand[] = [];
-  const status: string[] = [];
-  const report = (
-    label: string,
-    part: { failed: boolean; loading: boolean; retry: () => void },
-  ) => {
-    if (part.failed) {
-      status.push(label + " unavailable");
-      more.push({ id: "retry-" + label, label: "Retry " + label, run: part.retry, keepOpen: true });
-    } else if (part.loading) status.push("Searching " + label + "…");
-  };
+  const { more, status, report } = sourceFeedback();
+  more.push(...memory.more);
+  status.push(...memory.status);
   report("Publications", pubs);
   if (pubs.data?.incomplete) status.push("Some retained publication associations are unavailable.");
   const publicationNext = pubs.data?.next;
@@ -529,22 +488,17 @@ export default function WorkspacePalette({
       id: "more-publications",
       label: "Search next publication page",
       keepOpen: true,
-      run: () => setPublicationPage({ forInput: input, cursor: publicationNext }),
+      run: () =>
+        setPublicationPage({
+          forInput: input,
+          session: current!.session_id,
+          cursor: publicationNext,
+        }),
     });
-  report("Retained evidence", evidence);
+  more.push(...evidence.more);
+  status.push(...evidence.status);
   report("Interactive reviews", reviews);
-  if (evidence.data) status.push(...evidence.data.coverage);
   if (reviews.data) status.push(...reviews.data.diagnostics);
-  const next = evidence.data?.next;
-  if (next) {
-    status.push("More retained evidence is available.");
-    more.push({
-      id: "more-evidence",
-      label: "Search next retained evidence page",
-      keepOpen: true,
-      run: () => setPage({ forInput: input, ...next }),
-    });
-  }
   report("Work", work);
   report("Sessions", workers);
   report("Thoughts", notes);
@@ -615,9 +569,10 @@ export default function WorkspacePalette({
   const rows = unique
     .filter((h) => {
       if (filter && h.source !== filter) return false;
+      if (confirmedPublications.has(h.id)) return true;
       if (!input) return h.source === "page" || h.source === "command";
       if (
-        ["work", "thought", "github", "evidence"].includes(h.source) ||
+        ["work", "thought", "github", "evidence", "memory"].includes(h.source) ||
         (h.source === "session" && h.identity !== current?.session_id)
       )
         return true;
@@ -646,27 +601,26 @@ export default function WorkspacePalette({
       });
   }
   if (input && !rows.length && !status.length) status.push("No matches in the searched sources.");
+  function changeSearch(text: string) {
+    setValue(text);
+    memory.reset();
+    evidence.reset();
+    setExpanded({});
+    setPublicationPage(undefined);
+  }
   return (
     <SearchDialog
       origin={origin}
       close={close}
       value={value}
-      onValueChange={(text) => {
-        setValue(text);
-        setExpanded({});
-        setPage(undefined);
-        setPublicationPage(undefined);
-      }}
-      filters={sources}
+      onValueChange={changeSearch}
+      filters={memory.available ? sources : sources.filter((s) => s !== "memory")}
+      controls={memory.controls}
+      reader={memory.reader}
       filter={filter}
-      onFilter={(s) => {
-        setValue(s ? s + ": " + query : query);
-        setExpanded({});
-        setPublicationPage(undefined);
-        setPage(undefined);
-      }}
-      commands={[...rows, ...more]}
-      status={status.join(" ")}
+      onFilter={(s) => changeSearch(s ? s + ": " + query : query)}
+      commands={memory.reader ? [] : [...rows, ...more]}
+      status={memory.reader ? undefined : status.join(" ")}
     />
   );
 }

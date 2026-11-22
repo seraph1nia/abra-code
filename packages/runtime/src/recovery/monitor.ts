@@ -1,5 +1,9 @@
 import { type Context } from "@opencode/plugin/effect/plugin";
+import { SessionMessage } from "@opencode/schema/session-message";
+import { TokenUsage } from "@opencode/schema/token-usage";
 import { Effect, Queue, Schedule, Stream } from "effect";
+import { identity } from "../config/identity.ts";
+import { domainEffect } from "../effect.ts";
 import { type Controller } from "../workflow/controller.ts";
 import { type Scheduler } from "../scheduler/scheduler.ts";
 import { workerFor } from "../opencode/guards.ts";
@@ -45,7 +49,35 @@ export function monitor(ctx: Context, c: Controller, scheduler: Scheduler) {
     const events = ctx.event.subscribe().pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {
-          if (
+          if (event.type === "session.step.ended") {
+            // A single step measures the active context, including cached tokens.
+            // The session usage event instead accumulates every step since creation.
+            const { sessionID, assistantMessageID, tokens } = event.data;
+            if (TokenUsage.total(tokens) < 200_000) return;
+            yield* Effect.gen(function* () {
+              // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- The native session API exposes unknown errors; domainEffect normalizes them.
+              const session = yield* domainEffect(ctx.session.get({ sessionID }));
+              // Native compact commits staged reverts. Leave that decision to the user.
+              if (
+                session.agent !== identity.agent ||
+                session.location.directory !== c.queries.settings.home ||
+                session.metadata?.abracode_supervisor_home !== c.queries.settings.home ||
+                session.parentID ||
+                session.fork ||
+                session.revert ||
+                session.time.archived
+              )
+                return;
+              yield* domainEffect(
+                // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- The native session API exposes unknown errors; domainEffect normalizes them.
+                ctx.session.compact({
+                  sessionID,
+                  id: SessionMessage.ID.make(`${assistantMessageID}_abra_compact`),
+                  delivery: "steer",
+                }),
+              );
+            }).pipe(Effect.catch((error) => Effect.logError("Abra supervisor compaction", error)));
+          } else if (
             event.type === "session.text.ended" ||
             event.type === "session.tool.success" ||
             event.type === "session.tool.failed" ||

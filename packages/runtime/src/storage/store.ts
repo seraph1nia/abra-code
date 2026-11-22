@@ -670,25 +670,26 @@ export class Records {
     });
   }
   /** Shared lifecycle handles observe the committed aggregate only after the write succeeds. */
-  commitOwned<E extends ManagedExecution>(e: E, patch: ExecutionPatch) {
-    const commit: Effect.Effect<ManagedExecution, CrewError> =
-      e.setup === true
-        ? this.coordinateCommit(() =>
-            domainEffect(
-              Effect.gen({ self: this }, function* () {
-                const current = yield* this.setup(e.repository_id);
-                ensure(current, "EXECUTION_MISSING", "No retained setup execution");
-                this.assertOwner(e, current);
-                return yield* this.saveSetup(applyPatch(current, patch));
-              }),
-            ),
-          )
-        : this.patchOwned(e, patch);
-    return commit.pipe(
-      Effect.map((saved) => {
-        synchronizeExecution(e, saved);
-        return e;
-      }),
+  commitOwned<E extends ManagedExecution>(
+    e: E,
+    change: ExecutionPatch | ((current: ManagedExecution) => ExecutionPatch | undefined),
+  ) {
+    return this.coordinateCommit(() =>
+      domainEffect(
+        Effect.gen({ self: this }, function* () {
+          const current = e.setup
+            ? yield* this.setup(e.repository_id)
+            : yield* this.execution(e.issue_id);
+          ensure(current, "EXECUTION_MISSING", "No retained execution for owned update");
+          this.assertOwner(e, current);
+          const patch = typeof change === "function" ? change(current) : change;
+          const saved = patch
+            ? yield* this.saveExecution(applyPatch(current, patch), e.setup === true)
+            : current;
+          synchronizeExecution(e, saved);
+          return e;
+        }),
+      ),
     );
   }
   /** Setup uses the same field ownership contract without becoming a graph execution. */

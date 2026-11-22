@@ -174,3 +174,142 @@ test("accepted wording and its original link survive an unavailable live memo", 
   await card.getByText(/This memo is unavailable/).waitFor();
   assert.equal(await card.locator("blockquote").innerText(), "Accepted sentence.");
 });
+
+test("phone and desktop remember exactly the selected sentence with one identity across a lost reply", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  f.source.memoryEnabled = Effect.succeed(true);
+  const text = "Remember our test procedure. The next sentence stays private.";
+  const reference = {
+    instance: "https://notes.example.test",
+    account: "users/me",
+    name: "memos/lesson",
+    wording_hash: "a".repeat(64),
+  };
+  const item = {
+    reference,
+    snippet: text,
+    tags: [],
+    created_at: "2026-11-22T10:00:00Z",
+    updated_at: "2026-11-22T10:00:00Z",
+    content: text,
+    url: reference.instance + "/memos/lesson",
+  };
+  f.source.work.thoughtList = () => Effect.succeed({ entries: [item] });
+  f.source.work.thoughtDetail = () => Effect.succeed(item);
+  const attempts: import("@abracode/contracts/visibility/memory").MemoryPublication[] = [];
+  f.source.memoryPublish = (input) => {
+    attempts.push(input);
+    return attempts.length % 2 === 1
+      ? Effect.fail(new CrewError("MEMORY_UNRESOLVED", "Retry with the same request ID."))
+      : Effect.succeed({ scope: input.destination, path: "lesson.md", revision: "b".repeat(64) });
+  };
+  for (const width of [390, 1440]) {
+    const page = await f.browser.newPage({ viewport: { width, height: 844 } });
+    try {
+      await page.goto(f.origin + "/thoughts");
+      await page.getByRole("button", { name: /Remember our test procedure/ }).click();
+      await page.getByRole("button", { name: "Remember for…" }).click();
+      await page.getByLabel("Exact wording").fill("Remember our test procedure.");
+      await page.getByLabel("Destination").selectOption(width === 390 ? "shared" : "repo:fixture");
+      await page.getByRole("button", { name: "Save to memory" }).click();
+      await page.getByRole("button", { name: "Retry save" }).waitFor();
+      await page.reload();
+      await page.getByRole("button", { name: "Retry save" }).click();
+      await page.getByRole("status").filter({ hasText: "Remembered for" }).waitFor();
+      assert.deepEqual(attempts.at(-2), attempts.at(-1));
+      assert.equal(attempts.at(-1)?.content, "Remember our test procedure.");
+      assert.equal(f.source.submissions, 0);
+    } finally {
+      await page.close();
+    }
+  }
+});
+
+test("the memory slash command and Ctrl+K open scoped notes without sending or changing the draft", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  f.source.memoryEnabled = Effect.succeed(true);
+  let lookups = 0;
+  f.source.memorySearch = ({ repository_id, query, cursor }) => {
+    lookups++;
+    assert.equal(query, "fixture");
+    const title = cursor ? "Later lesson" : repository_id ? "Repository lesson" : "Shared lesson";
+    return Effect.succeed({
+      entries: [
+        {
+          title,
+          excerpt: "A fixture observation.",
+          reference: {
+            scope: repository_id ? { kind: "repository", repository_id } : { kind: "shared" },
+            path: "lesson.md",
+            revision: "a".repeat(64),
+          },
+        },
+      ],
+      next_cursor: cursor ? undefined : "next",
+    });
+  };
+  f.source.memoryRead = ({ repository_id, reference, offset }) => {
+    if (reference.scope.kind === "shared") {
+      assert.equal(repository_id, undefined);
+      return Effect.fail(
+        new CrewError("MEMORY_CONFLICT", "The selected note changed. Search again."),
+      );
+    }
+    assert.equal(repository_id, "fixture");
+    assert.equal(reference.scope.kind, "repository");
+    return Effect.succeed({
+      reference,
+      body: offset ? "Last section." : "Exact first section.",
+      complete: !!offset,
+      next_offset: offset ? undefined : 8192,
+    });
+  };
+  const page = await f.browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.goto(f.origin);
+  const draft = page.getByLabel("Message Abra", { exact: true });
+  await draft.pressSequentially("Keep my question /memory");
+  await page.getByRole("option", { name: /\/memory/ }).waitFor();
+  await draft.press("Enter");
+  const search = page.getByLabel("Search work and commands");
+  await search.waitFor();
+  assert.equal(await search.inputValue(), "memory: ");
+  await search.pressSequentially("fixture");
+  await page.getByRole("option", { name: /Shared lesson/ }).waitFor();
+  await page.getByLabel("Memory scope").selectOption("fixture");
+  await page.getByRole("option", { name: /Repository lesson/ }).waitFor();
+  await page.getByRole("option", { name: "Search next memory page" }).click();
+  await page.getByRole("option", { name: /Later lesson/ }).click();
+  await page.getByText("Exact first section.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Read next section" }).click();
+  await page.getByText("Last section.", { exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  assert.equal(await draft.inputValue(), "Keep my question ");
+  await page.keyboard.press("Control+k");
+  await search.fill("> memory");
+  await page.getByRole("option", { name: /Search agent memory/ }).click();
+  await page.getByLabel("Memory scope").waitFor();
+  assert.equal(await search.inputValue(), "memory: ");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Control+k");
+  await search.fill("fixture");
+  await page.getByRole("option", { name: /Shared lesson/ }).click();
+  await page.getByRole("alert").filter({ hasText: "The selected note changed" }).waitFor();
+  await page.getByRole("button", { name: "Back to results" }).click();
+  await page.getByRole("option", { name: /Shared lesson/ }).waitFor();
+  await page.keyboard.press("Escape");
+  const previous = lookups;
+  f.source.memoryEnabled = Effect.succeed(false);
+  await page.reload();
+  await draft.press("Control+k");
+  await search.fill("memory: fixture");
+  await page.getByText(/Enable Basic Memory in personal settings/).waitFor();
+  assert.equal(lookups, previous);
+  await page.keyboard.press("Escape");
+  await draft.fill("");
+  await draft.pressSequentially("/");
+  await page.getByRole("option", { name: /onboard-repo/ }).waitFor();
+  assert.equal(await page.getByRole("option", { name: /\/memory/ }).count(), 0);
+  assert.equal(f.source.submissions, 0);
+});

@@ -1,7 +1,7 @@
 import { Autocomplete } from "@base-ui/react/autocomplete";
 import { Dialog } from "@base-ui/react/dialog";
 import { Search, X } from "lucide-react";
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import { Button } from "./button.tsx";
 
 export type SearchCommand = {
@@ -19,6 +19,8 @@ export function SearchDialog({
   onValueChange,
   commands,
   filters,
+  controls,
+  reader,
   filter,
   onFilter,
   status,
@@ -29,6 +31,8 @@ export function SearchDialog({
   onValueChange: (value: string) => void;
   commands: SearchCommand[];
   filters?: readonly string[];
+  controls?: ReactNode;
+  reader?: ReactNode;
   filter?: string;
   onFilter?: (source: string) => void;
   status?: string;
@@ -82,6 +86,7 @@ export function SearchDialog({
               </select>
             </label>
           )}
+          {controls}
           <Autocomplete.Root
             inline
             open
@@ -107,25 +112,30 @@ export function SearchDialog({
                 <X aria-hidden="true" />
               </Dialog.Close>
             </div>
-            <Autocomplete.List aria-label="Search results" className="min-h-0 overflow-y-auto p-1">
-              {(item: SearchCommand) => (
-                <Autocomplete.Item
-                  key={item.id}
-                  value={item}
-                  className="flex cursor-pointer flex-col gap-0.5 rounded-md px-3 py-2 text-sm data-highlighted:bg-accent data-highlighted:text-accent-foreground"
-                  onClick={() => {
-                    if (!item.keepOpen) {
-                      chosen.current = true;
-                      close();
-                    }
-                    item.run();
-                  }}
-                >
-                  <span>{item.label}</span>
-                  {item.detail && <small className="text-muted-foreground">{item.detail}</small>}
-                </Autocomplete.Item>
-              )}
-            </Autocomplete.List>
+            {reader ?? (
+              <Autocomplete.List
+                aria-label="Search results"
+                className="min-h-0 overflow-y-auto p-1"
+              >
+                {(item: SearchCommand) => (
+                  <Autocomplete.Item
+                    key={item.id}
+                    value={item}
+                    className="flex cursor-pointer flex-col gap-0.5 rounded-md px-3 py-2 text-sm data-highlighted:bg-accent data-highlighted:text-accent-foreground"
+                    onClick={() => {
+                      if (!item.keepOpen) {
+                        chosen.current = true;
+                        close();
+                      }
+                      item.run();
+                    }}
+                  >
+                    <span>{item.label}</span>
+                    {item.detail && <small className="text-muted-foreground">{item.detail}</small>}
+                  </Autocomplete.Item>
+                )}
+              </Autocomplete.List>
+            )}
           </Autocomplete.Root>
           {status && (
             <output className="border-t px-4 py-2 text-sm text-muted-foreground">{status}</output>

@@ -1071,14 +1071,11 @@
     display: none;
   }
 }
-.work-recap {
+.recently-inspected {
   margin: 0.5rem 1rem;
   font-size: 0.875rem;
 }
-.work-recap > summary {
-  cursor: pointer;
-}
-.work-recap p {
+.recently-inspected p {
   color: var(--muted-foreground);
   margin-block: 0.5rem;
 }
@@ -1127,10 +1124,6 @@
 }
 .canvas-size {
   accent-color: var(--primary);
-}
-.work-recap[open] {
-  max-height: 28vh;
-  overflow-y: auto;
 }
 
 .header-icon {
@@ -1356,7 +1349,7 @@
     width: 44px;
     height: 44px;
   }
-  .main-pane > :is(.attention, .work-recap) {
+  .main-pane > .attention {
     max-height: 30%;
     overflow-y: auto;
   }

@@ -1,3 +1,5 @@
+import { OpenSearch } from "./search-trigger.tsx";
+import { AsyncResult } from "effect/reactivity";
 import { ThoughtSource } from "./thought-source.tsx";
 import {
   appendDraft,
@@ -6,17 +8,26 @@ import {
   type ComposerCommand,
 } from "./workspace-commands.ts";
 import { selectionLabel } from "@abracode/contracts/web/resources";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useContext,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { Submission } from "@abracode/contracts/web/workspace-wire";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Composer owns draft/admission subscriptions independently of transcript presentation. */
-import { useAtom } from "@effect/atom-react";
+import { useAtom, useAtomValue } from "@effect/atom-react";
 import { Exit } from "effect";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { ArrowUp, Square } from "@abracode/presentation/icons";
 import { Button } from "@abracode/presentation/ui/button";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
 import { Textarea } from "@abracode/presentation/ui/textarea";
-import { stopMutation } from "./data.ts";
+import { stopMutation, memoryEnabledQuery } from "./data.ts";
 import { requestError } from "./request-error.ts";
 import { useWorkspaceDraft } from "./workspace-state/draft.ts";
 import { useWorkspaceAdmission } from "./workspace-state/admission.ts";
@@ -74,9 +85,16 @@ export function Composer({
 
   const textarea = useRef<HTMLTextAreaElement>(null);
   const [token, setToken] = useState<ReturnType<typeof slashToken>>();
+  const openSearch = useContext(OpenSearch);
+  const enabled = useAtomValue(memoryEnabledQuery);
+  const memoryAvailable = AsyncResult.isSuccess(enabled) && enabled.value;
   const [highlight, setHighlight] = useState(0);
   const choices = token
-    ? composerCommands.filter((c) => ("/" + c.id).startsWith(token.token.toLowerCase()))
+    ? composerCommands.filter(
+        (c) =>
+          (c.id !== "memory" || memoryAvailable) &&
+          ("/" + c.id).startsWith(token.token.toLowerCase()),
+      )
     : [];
   const handled = useRef<typeof command>(undefined);
   const choose = useCallback(
@@ -85,7 +103,11 @@ export function Composer({
         setError("Wait for the pending submission before editing this draft.");
         return;
       }
-      if (action.id === "attach-thought") {
+      if (action.id === "memory") {
+        if (!memoryAvailable || !textarea.current) return;
+        if (range) edit({ text: draft.slice(0, range.start) + draft.slice(range.end) });
+        openSearch(textarea.current, "memory");
+      } else if (action.id === "attach-thought") {
         pickThought(range ? { text: draft, ...range } : undefined);
       } else {
         const next =
@@ -101,7 +123,7 @@ export function Composer({
       }
       setToken(undefined);
     },
-    [isReady, pending, admitting, draft, edit, pickThought, setError],
+    [isReady, pending, admitting, draft, edit, pickThought, setError, openSearch, memoryAvailable],
   );
   useEffect(() => {
     if (command && handled.current !== command && isReady) {

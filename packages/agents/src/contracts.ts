@@ -5,7 +5,7 @@ import { Skill } from "@opencode/schema/skill";
 import { RoleSchema, PolicySchema } from "@abracode/contracts/primitives";
 import { createHash } from "node:crypto";
 import { CapabilityRequirementsSchema } from "./capabilities.ts";
-import { nativePermissions, leadPermissions, validDenial, legacyReviewProfile } from "./policy.ts";
+import { nativePermissions, leadPermissions, validDenial } from "./policy.ts";
 
 export const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 const canonical = (value: unknown): unknown =>
@@ -73,11 +73,10 @@ export const profileRevision = (profile: Omit<StaticProfile, "revision" | "id">)
   digest(canonicalJson(profile));
 export const validProfile = (profile: StaticProfile) => {
   const { id, revision, ...material } = profile;
-  const permissions =
-    profile.role === "project-lead" ? leadPermissions() : nativePermissions(profile.role);
-  const baseline = legacyReviewProfile(profile)
-    ? permissions.filter((p) => p.action !== "abra_review_changes")
-    : permissions;
+  const baseline =
+    profile.role === "project-lead"
+      ? leadPermissions()
+      : nativePermissions(profile.role, "*", [], profile);
   return (
     profile.permissions.length >= baseline.length &&
     canonicalJson(profile.permissions.slice(0, baseline.length)) === canonicalJson(baseline) &&

@@ -16,7 +16,7 @@ import {
 } from "../src/opencode/runtime.ts";
 import * as Id from "../src/identities.ts";
 import { domainEffect } from "../src/effect.ts";
-import { Effect, Exit, Scope, Semaphore } from "effect";
+import { Effect, Exit, Schema, Scope, Semaphore } from "effect";
 import { mkdtemp, mkdir, writeFile, readFile, rename } from "../src/filesystem.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,7 +39,7 @@ import {
   type WorkerModel,
 } from "../src/domain.ts";
 
-import { type Delivery, type PR } from "../src/git/delivery.ts";
+import { type Delivery, type Publication, type PR } from "../src/git/delivery.ts";
 import { type Locks } from "../src/storage/lock.ts";
 export class MemoryStore implements Store {
   values = new Map<string, unknown>();
@@ -54,6 +54,21 @@ export class MemoryStore implements Store {
     return domainEffect(
       Effect.sync(() => {
         this.values.set(key, structuredClone(value));
+      }),
+    );
+  }
+  page(prefix: Id.StoragePrefix, after: string | undefined, limit: number) {
+    return this.entries(prefix).pipe(
+      Effect.map((rows) => {
+        const sorted = rows
+          .filter((r) => !after || r.key > after)
+          .sort((a, b) => (a.key < b.key ? -1 : 1));
+        return {
+          entries: sorted
+            .slice(0, limit)
+            .map((r) => ({ key: r.key, value: Schema.decodeUnknownSync(Schema.Json)(r.value) })),
+          next: sorted.length > limit ? sorted[limit - 1].key : undefined,
+        };
       }),
     );
   }
@@ -450,10 +465,13 @@ export class FakeDelivery implements Delivery {
   cleanupFails = false;
   constructor(private git: Git) {}
   deliver = Effect.fn("FakeDelivery.deliver")(
-    function* (this: FakeDelivery, _p: Project, e: ManagedExecution) {
+    function* (this: FakeDelivery, _p: Project, e: ManagedExecution, { commit }: Publication) {
       this.calls++;
-      const commit = yield* this.git.commit(e.worktree_directory!, e.issue_id);
-      yield* this.git.run(e.worktree_directory!, ["push", "origin", e.branch]);
+      yield* this.git.run(e.worktree_directory!, [
+        "push",
+        "origin",
+        `${commit}:refs/heads/${e.branch}`,
+      ]);
       this.pr ??= {
         url: Id.PullRequestUrl.make("https://example.invalid/fixture/api/pull/1"),
         state: "OPEN",

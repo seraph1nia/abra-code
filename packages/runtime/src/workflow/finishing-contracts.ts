@@ -109,12 +109,23 @@ export const GeneratedAuthorizationSchema = Schema.Struct({
   directories: exactDirectories,
 }).check(Schema.makeFilter(directoryBinding));
 
+export const PublicationDestinationSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("initial"), pr: Schema.optional(PullRequestUrl) }),
+  Schema.Struct({
+    kind: Schema.Literals(["provisional", "correction", "synchronization"]),
+    predecessor: Commit,
+    pr: Schema.optional(PullRequestUrl),
+  }),
+]);
+export type PublicationDestination = typeof PublicationDestinationSchema.Type;
+
 export const PublicationBindingSchema = Schema.Struct({
   ...identity,
   operation_id: OperationId,
   verification: Fingerprint,
   review: Fingerprint,
   review_session: SessionId,
+  destination: Schema.optional(PublicationDestinationSchema),
   archived_tree: GitTree,
   commit: Commit,
   pr: Schema.optional(PullRequestUrl),

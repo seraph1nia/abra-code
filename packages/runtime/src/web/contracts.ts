@@ -1,3 +1,11 @@
+import {
+  ScopedMemorySearch,
+  ScopedMemoryRead,
+  MemoryPage,
+  MemoryBody,
+  MemoryPublication,
+  MemoryReference,
+} from "@abracode/contracts/visibility/memory";
 import type { PublicationPage, PublicationQuery } from "@abracode/contracts/presentation/contracts";
 import type { Submission } from "@abracode/contracts/web/workspace-wire";
 import type { AgentCatalog } from "@abracode/contracts/web/agent-settings";
@@ -68,6 +76,12 @@ export interface WebBackend {
   };
   prepareDiagrams(input: PrepareDiagramSelection): Effect.Effect<DiagramPreparation, CrewError>;
   readonly agentStatus?: Effect.Effect<{ busy: boolean }, CrewError>;
+  readonly memoryEnabled: Effect.Effect<boolean, CrewError>;
+  memorySearch(
+    input: typeof ScopedMemorySearch.Type,
+  ): Effect.Effect<typeof MemoryPage.Type, CrewError>;
+  memoryRead(input: typeof ScopedMemoryRead.Type): Effect.Effect<typeof MemoryBody.Type, CrewError>;
+  memoryPublish(input: MemoryPublication): Effect.Effect<MemoryReference, CrewError>;
   readonly repositories: Effect.Effect<WorkspaceSnapshot["projects"], CrewError>;
   readonly agents: Effect.Effect<AgentCatalog, CrewError>;
   readonly snapshot: Effect.Effect<WorkspaceSnapshot, CrewError>;

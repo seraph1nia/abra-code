@@ -29,7 +29,7 @@ test("research restarts from the saved phase before any worker admission intent 
   const entered = Deferred.makeUnsafe<void>();
   const commit = f.records.commitOwned.bind(f.records);
   f.records.commitOwned = (execution, patch) =>
-    patch.session_intent && execution.current_phase === "researching"
+    typeof patch !== "function" && patch.session_intent && execution.current_phase === "researching"
       ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
       : commit(execution, patch);
   await run(

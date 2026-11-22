@@ -58,8 +58,10 @@ const policies = {
     shell_commands: ["agent-browser", "agent-browser *"],
   },
 } as const;
+export const memoryReadTools = ["abra_memory_search", "abra_memory_read"];
 export const rolePolicy = (role: ManagedRole) => policies[role];
 export const policyAllows = (role: ManagedRole, tool: string) =>
+  memoryReadTools.includes(tool) ||
   policies[role].tools.some(
     (name) => name === tool || (name === "abra_*" && tool.startsWith("abra_")),
   );
@@ -105,6 +107,18 @@ const formerReviewIdentity = createHash("sha256")
 export const legacyReviewProfile = (profile?: StaticProfile) =>
   profile?.role === "review" &&
   !profile.permissions.some((p) => p.action === "abra_review_changes" && p.effect === "allow");
+const capturedAction = (profile: StaticProfile | undefined, tool: string) =>
+  tool !== "abra_review_changes" || !legacyReviewProfile(profile);
+
+export function workerToolAllowed(role: Role, profile: StaticProfile | undefined, tool: string) {
+  if (profile && profile.role !== role) return false;
+  if (memoryReadTools.includes(tool) && !profile?.tools.some((t) => t === tool)) return false;
+  return (
+    capturedAction(profile, tool) &&
+    definitionAllows(profile, tool) &&
+    (policyAllows(role, tool) || contributionAllows(profile, role, tool))
+  );
+}
 export const compatiblePolicy = (role: ManagedRole, hash: string) =>
   hash === policyIdentity(role) || (role === "review" && hash === formerReviewIdentity);
 export const protectedControlPath = (file: string, root: string, role: Role) => {
@@ -119,6 +133,8 @@ export function nativePermissions(
   role: ManagedRole,
   change = "*",
   readRoots: readonly string[] = [],
+  profile?: StaticProfile,
+  selectedTools: readonly string[] = profile?.tools ?? [],
 ) {
   const policy = rolePolicy(role);
   const rules: Agent.Info["permissions"][number][] = [
@@ -129,6 +145,8 @@ export function nativePermissions(
       action === "shell" && "shell_commands" in policy ? policy.shell_commands : ["*"];
     for (const resource of resources) rules.push({ action, resource, effect: "allow" });
   }
+  for (const action of memoryReadTools.filter((t) => selectedTools.includes(t)))
+    rules.push({ action, resource: "*", effect: "allow" });
   for (const root of readRoots)
     rules.push({ action: "external_directory", resource: `${root}/**`, effect: "allow" });
   if (policy.write_scope !== "none")
@@ -137,7 +155,18 @@ export function nativePermissions(
       resource: policy.write_scope === "assigned-change" ? `openspec/changes/${change}/**` : "**",
       effect: "allow",
     });
-  return rules;
+  return rules.filter((rule) => capturedAction(profile, rule.action));
+}
+export function workerPermissions(
+  role: Role,
+  profile: StaticProfile | undefined,
+  change: string,
+  roots: readonly string[],
+) {
+  return [
+    ...nativePermissions(role, change, roots, profile),
+    ...(profile?.permissions.slice(1).filter((rule) => rule.effect === "deny") ?? []),
+  ];
 }
 export const leadPermissions = (): Agent.Info["permissions"] => [
   { action: "*", resource: "*", effect: "deny" },

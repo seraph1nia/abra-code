@@ -1,4 +1,5 @@
-import { retainedExecution } from "../helpers/retained-execution.ts";
+import { createWorkflow } from "../../src/opencode/application.ts";
+import { retainedExecution, interruptApprovalWrite } from "../helpers/retained-execution.ts";
 import { summarizeCapacity } from "../../src/workflow/capacity.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import * as Id from "../../src/identities.ts";
@@ -593,4 +594,101 @@ test("base retains only decoded SHA-1 and SHA-256 fetch results", async (t) => {
     assert.equal((await run(base())).commit, oid);
   }
   assert.deepEqual(refs, ["a".repeat(40), "a".repeat(64)]);
+});
+
+for (const answer of ["approved", "rejected"] as const)
+  test(`setup retains an immediate ${answer} answer on the delivered commit`, async (t) => {
+    const f = await run(fixture);
+    t.onTestFinished(() => run(f.close()));
+    f.config.commands.openspec = Id.Executable.make(resolve("node_modules/.bin/openspec"));
+    const { project } = await managed(f, true);
+    const session = Id.SessionId.make("ses_setup");
+    await run(f.setup.run(project.id, "prepare", session, true));
+    const delivered = await run(f.setup.run(project.id, "deliver", session, false));
+    assert.ok("delivered_commit" in delivered);
+    f.runtime.requestApproval = (_session, id) =>
+      Effect.sync(() => {
+        f.runtime.forms.set(id, answer);
+        return id;
+      });
+    f.delivery.merge = () => Effect.fail(new CrewError("CI_PENDING", "CI is pending"));
+    await assert.rejects(
+      run(f.setup.run(project.id, "approve", session, false)),
+      answer === "approved" ? /CI is pending/ : /rejected/,
+    );
+    const [receipt] = (await run(f.records.setup(project.id)))!.approval_receipts;
+    assert.equal(receipt.fingerprint, delivered.delivered_commit);
+    assert.equal(receipt.session_id, session);
+    assert.equal(f.runtime.forms.get(receipt.form_id), answer);
+    assert.ok(answer === "approved" ? receipt.authorized_at : receipt.rejected_at);
+    assert.equal(f.delivery.merged, false);
+  });
+
+test("setup recollects its original pending form after a lost save and rejects a changed PR", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  f.config.commands.openspec = Id.Executable.make(resolve("node_modules/.bin/openspec"));
+  const { project } = await managed(f, true);
+  const session = Id.SessionId.make("ses_setup");
+  await run(f.setup.run(project.id, "prepare", session, true));
+  await run(f.setup.run(project.id, "deliver", session, false));
+  const pending = await run(f.setup.run(project.id, "approve", session, false));
+  assert.ok("form_id" in pending);
+  f.runtime.forms.set(pending.form_id, "approved");
+  interruptApprovalWrite(f.records, "setup/" + project.id, pending.form_id);
+  await assert.rejects(
+    run(f.setup.run(project.id, "approve", session, false)),
+    /receipt interrupted/,
+  );
+  const restarted = createWorkflow(
+    f.config,
+    f.records,
+    f.work,
+    f.spec,
+    f.git,
+    f.runtime,
+    f.delivery,
+    f.locks,
+  );
+  t.onTestFinished(() => run(restarted.controller.close()));
+  const original = f.delivery.pr!.headRefOid;
+  f.delivery.pr!.headRefOid = Id.Commit.make("f".repeat(40));
+  await assert.rejects(
+    run(restarted.setup.run(project.id, "approve", session, false)),
+    /identity changed/,
+  );
+  assert.equal(f.delivery.merged, false);
+  f.delivery.pr!.headRefOid = original;
+  await run(restarted.setup.run(project.id, "approve", session, false));
+  const receipts = (await run(f.records.setup(project.id)))!.approval_receipts;
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0].form_id, pending.form_id);
+  assert.ok(receipts[0].authorized_at);
+});
+
+test("branch-only setup finishes on confirmed Git evidence with no form", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  f.config.commands.openspec = Id.Executable.make(resolve("node_modules/.bin/openspec"));
+  const { project } = await managed(f, true);
+  project.delivery = "branch";
+  await run(f.records.saveProject(project));
+  const delivery = new GitHubDelivery(f.git, f.git.runner, Id.Executable.make("unused-for-branch"));
+  const workflow = createWorkflow(
+    f.config,
+    f.records,
+    f.work,
+    f.spec,
+    f.git,
+    f.runtime,
+    delivery,
+    f.locks,
+  );
+  t.onTestFinished(() => run(workflow.controller.close()));
+  const session = Id.SessionId.make("ses_setup");
+  await run(workflow.setup.run(project.id, "prepare", session, true));
+  await run(workflow.setup.run(project.id, "deliver", session, false));
+  const done = await run(workflow.setup.run(project.id, "finish", session, false));
+  assert.ok("current_phase" in done && done.current_phase === "completed");
+  assert.deepEqual(done.approval_receipts, []);
 });

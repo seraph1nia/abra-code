@@ -38,7 +38,7 @@ export const InboxQuery = Schema.Struct({
   kind: Schema.optional(InboxKind),
   search: Schema.optional(Schema.String.check(Schema.isMaxLength(256))),
   label: Schema.optional(Schema.String.check(Schema.isMaxLength(256))),
-  role: Schema.optional(Schema.Literals(["pickup", "review", "delivery", "unassigned"])),
+  role: Schema.optional(Schema.Literals(["pickup", "review", "delivery", "unassigned", "linked"])),
   offset: Schema.optional(Count),
   refresh: Schema.optional(Schema.Boolean),
 });

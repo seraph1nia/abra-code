@@ -1,3 +1,4 @@
+import { BriefingItem } from "../visibility/briefing.ts";
 import { Schema } from "effect";
 import { Count } from "../primitives.ts";
 import { IssueId } from "../identities.ts";
@@ -109,7 +110,18 @@ export const SurfacePublicationSchema = Schema.Struct({
   revision: Count.check(Schema.isGreaterThan(0)),
   version: Schema.Literal("1.0"),
 });
+const briefingLink = Schema.Struct({
+  title: BriefingItem.fields.title,
+  label: Schema.String,
+  target: BriefingItem.fields.target,
+  form_id: BriefingItem.fields.form_id,
+  fingerprint: BriefingItem.fields.fingerprint,
+});
 export const ToolPresentationSchema = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("briefing"),
+    links: Schema.Array(briefingLink).check(Schema.isMaxLength(40)),
+  }),
   Schema.Struct({
     kind: Schema.Literal("tasks"),
     tasks: Schema.Array(TaskCardSchema).check(Schema.isMaxLength(20)),

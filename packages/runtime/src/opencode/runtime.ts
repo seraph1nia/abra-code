@@ -1,3 +1,4 @@
+import { originatingUserMessage } from "./tool-caller.ts";
 import { workerProfile } from "../config/snapshot.ts";
 import { readWorkerContext, compatibleContext } from "../workflow/worker-context.ts";
 import {
@@ -6,7 +7,7 @@ import {
   awaitWorkerPlugin,
   type WorkerEnvironment,
 } from "./worker-environment.ts";
-import { nativePermissions, leadPermissions, legacyReviewProfile } from "./role-policy.ts";
+import { workerPermissions, leadPermissions, legacyReviewProfile } from "./role-policy.ts";
 import { workerBrowser } from "./browser.ts";
 import { provisionedEvidence } from "../workflow/evidence.ts";
 import {
@@ -434,19 +435,12 @@ export class NativeRuntime implements Runtime {
   private permissions = Effect.fn("NativeRuntime.permissions")(
     function* (this: NativeRuntime, e: ManagedExecution, role: Role, id: SessionId) {
       const projects = yield* new Records(new NativeStore(this.ctx.storage)).projects();
-      return [
-        ...nativePermissions(role, e.openspec_change, [
-          ...projects.map((p) => p.path),
-          workerBrowser(this.config.home, id).directory,
-        ]).filter(
-          (rule) =>
-            rule.action !== "abra_review_changes" ||
-            !legacyReviewProfile(e.configuration_snapshot?.definitions?.[role]),
-        ),
-        ...(e.configuration_snapshot?.definitions?.[role]?.permissions
-          .slice(1)
-          .filter((p) => p.effect === "deny") ?? []),
-      ];
+      return workerPermissions(
+        role,
+        e.configuration_snapshot?.definitions?.[role],
+        e.openspec_change,
+        [...projects.map((p) => p.path), workerBrowser(this.config.home, id).directory],
+      );
     }.bind(this),
     domainEffect,
   );
@@ -1020,13 +1014,7 @@ export class NativeRuntime implements Runtime {
   );
   promptOrigin = Effect.fn("NativeRuntime.promptOrigin")(
     function* (this: NativeRuntime, session: SessionId, message: MessageId) {
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native context is schema-decoded upstream; normalize its declared unknown error.
-      const context = yield* this.ctx.session
-        .context({ sessionID: session })
-        .pipe(Effect.mapError(CrewError.from));
-      const index = context.findIndex((m) => m.id === message);
-      if (index < 0) return;
-      return context.slice(0, index + 1).findLast((m) => m.type === "user")?.id;
+      return (yield* originatingUserMessage(this.ctx, session, message))?.id;
     }.bind(this),
     domainEffect,
   );

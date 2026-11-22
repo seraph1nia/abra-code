@@ -5,7 +5,7 @@ import { Clock, Deferred, Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { applying, delivered, fixture, planned } from "../fixtures.ts";
+import { MemoryStore, applying, delivered, fixture, planned } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { loadConfig } from "../../src/config/load.ts";
 import { writeFile } from "node:fs/promises";
@@ -90,11 +90,26 @@ test("Review capacity waits preserve verified content and do not rerun checks", 
   await run(f.controller.advance(first.issue_id));
   const clock = await run(TestClock.make());
   await run(clock.setTime(Date.now() + 5000));
+  const prompts = f.runtime.prompts;
+  const retry = () =>
+    run(f.controller.reconcile(second.issue_id).pipe(Effect.provideService(Clock.Clock, clock)));
+  const store = f.records.store as MemoryStore;
+  for (const key of ["execution/broken", "setup/broken"]) {
+    store.values.set(key, { broken: true });
+    const [blocked] = await retry();
+    assert.match(blocked.capacity_wait!.reasons.join(" "), /unreadable/);
+    assert.equal(blocked.capacity_reservation, undefined);
+    assert.equal(f.runtime.prompts, prompts);
+    store.values.delete(key);
+    await run(clock.adjust(2000));
+  }
   const resumed = (
     await run(
       f.controller.reconcile(second.issue_id).pipe(Effect.provideService(Clock.Clock, clock)),
     )
   )[0];
+  await retry();
+  assert.equal(f.runtime.prompts, prompts + 1);
   assert.ok(resumed.review_session_id);
   assert.equal(resumed.active_role, "review");
   assert.equal(checks, 2);

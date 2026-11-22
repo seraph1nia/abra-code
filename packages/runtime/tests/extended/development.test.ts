@@ -183,11 +183,6 @@ test(
         const errors: string[] = [];
         let infoReads = 0;
         const observers = new Set<object>();
-        // Scope request accounting to the current document; prior deliberate
-        // full navigations retire their entire browser/network owner.
-        page.on("framenavigated", (frame) => {
-          if (frame === page.mainFrame()) observers.clear();
-        });
         page.on("request", (request) => {
           if (request.url().endsWith("/api/copilotkit/info")) infoReads++;
           if (request.url().endsWith("/api/copilotkit/agent/abra/connect")) observers.add(request);
@@ -200,6 +195,9 @@ test(
         await page.goto(`${origin}/unknown-page`);
         await page.getByRole("heading", { name: "Page not found" }).waitFor();
         await page.getByRole("link", { name: "Return to AbraCode" }).click();
+        // The full navigation retires the previous document. Later client-side
+        // navigation keeps this document and its observer alive.
+        observers.clear();
         await page.goto(`${origin}/?issue=development-unavailable&tab=Plan`);
         await page.getByRole("heading", { name: "Selected task", exact: true }).waitFor();
         await page
@@ -212,26 +210,29 @@ test(
         await page
           .getByLabel("Additional choices, one per line", { exact: true })
           .fill("alpha\n\nbeta");
+        await page.goBack();
+        await page.getByRole("heading", { name: "Selected task", exact: true }).waitFor();
         const infoBeforeHmr = infoReads;
         await page.locator(".workspace").evaluate((element) => {
           element.dataset.hmrMount = "same";
         });
         const source = join(home, "apps/web/src/workspace.tsx");
-        await writeFile(
-          source,
-          (await readFile(source, "utf8")).replace(
-            "What would you like to build?",
-            "React hot reload is working",
-          ),
+        const before = await readFile(source, "utf8");
+        const after = before.replace(
+          'className="workspace"',
+          'className="workspace" data-hmr-revision="updated"',
         );
-        await page
-          .getByRole("heading", { name: "React hot reload is working" })
-          .waitFor({ timeout: 20000 });
+        assert.notEqual(after, before, "Expected to edit the workspace root for HMR");
+        await writeFile(source, after);
+        await page.locator('.workspace[data-hmr-revision="updated"]').waitFor({ timeout: 20000 });
         assert.equal(
           await page.getByRole("textbox", { name: "Message Abra" }).inputValue(),
           "Keep this draft through HMR",
         );
         assert.equal(await page.locator(".workspace").getAttribute("data-hmr-mount"), "same");
+        assert.match(page.url(), /issue=development-unavailable/);
+        assert.match(page.url(), /tab=Plan/);
+        await page.getByRole("button", { name: "Review next" }).click();
         assert.equal(
           await page.getByLabel("Retained form text", { exact: false }).inputValue(),
           "Keep native form edits",
@@ -240,8 +241,8 @@ test(
           await page.getByLabel("Additional choices, one per line", { exact: true }).inputValue(),
           "alpha\n\nbeta",
         );
-        assert.match(page.url(), /issue=development-unavailable/);
-        assert.match(page.url(), /tab=Plan/);
+        await page.goBack();
+        await page.getByRole("heading", { name: "Selected task", exact: true }).waitFor();
         assert.ok(infoBeforeHmr > 0);
         assert.equal(infoReads, infoBeforeHmr, "HMR must not reconnect the SDK info owner");
         await expect.poll(() => observers.size, { timeout: 5000 }).toBe(1);

@@ -23,6 +23,7 @@ import { type OperationResult } from "./results.ts";
 import { specVerificationPassed } from "./review-contracts.ts";
 import { type CleanupSample } from "../git/cleanup.ts";
 import { type Finishing } from "./finishing.ts";
+import { publicationDestination } from "./publication-destination.ts";
 import { activeSynchronization } from "./synchronization.ts";
 import { timestamp } from "../identities.ts";
 import { SessionMessage } from "@opencode/schema/session-message";
@@ -101,7 +102,7 @@ export class Finalization {
         e.resume_phase !== "delivering" ||
         e.stop_status ||
         externalOwns(e) ||
-        attempt?.stage !== "publishing" ||
+        (attempt ? attempt.stage !== "publishing" : !binding) ||
         !e.worktree_directory ||
         !e.archived_tree ||
         !e.review_receipt?.passed
@@ -113,7 +114,7 @@ export class Finalization {
       yield* this.c.git.validate(p, e);
       // Includes native inventory and directory identity, without disposing of residue.
       yield* this.c.workspaces.preflight(p, e);
-      if (!attempt.intended_commit) {
+      if (attempt && !attempt.intended_commit) {
         // The commit intent predates the native Git call; no push was admitted.
         if (
           attempt.publication_tree !== e.archived_tree ||
@@ -132,38 +133,32 @@ export class Finalization {
       }
       if (
         !binding ||
-        binding.commit !== attempt.intended_commit ||
+        (attempt && binding.commit !== attempt.intended_commit) ||
+        binding.generation !== e.control_generation ||
+        binding.review_session !== e.review_receipt.session_id ||
         binding.archived_tree !== e.archived_tree ||
         binding.verification !== e.verification_receipt?.fingerprint ||
         binding.review !== e.review_receipt.fingerprint
       )
         return undefined;
-      if (
-        (yield* this.c.git.head(e.worktree_directory)) !== binding.commit ||
-        (yield* this.c.git.dirty(e.worktree_directory)) ||
-        (yield* this.c.git.tree(e.worktree_directory)) !== binding.archived_tree
-      )
-        return undefined;
-      const pr = p.delivery === "github-pr" ? yield* this.c.delivery.inspect(p, e) : undefined;
-      if (
-        p.delivery === "github-pr" &&
-        !(
-          pr &&
-          ["OPEN", "MERGED"].includes(pr.state) &&
-          pr.url === attempt.pr &&
-          pr.headRefOid === binding.commit &&
-          pr.baseRefName === e.target_branch
+      const remote = yield* this.c.git.run(e.worktree_directory, [
+        "ls-remote",
+        "--heads",
+        "origin",
+        `refs/heads/${e.branch}`,
+      ]);
+      if (remote !== `${binding.commit}\trefs/heads/${e.branch}`) return undefined;
+      if (p.delivery === "github-pr") {
+        const pr = yield* this.c.delivery.inspect(p, e);
+        const expected = attempt?.pr ?? binding.pr ?? e.pull_request_reference;
+        if (
+          (expected && pr?.url !== expected) ||
+          (pr &&
+            (pr.state === "CLOSED" ||
+              pr.headRefOid !== binding.commit ||
+              pr.baseRefName !== (e.target_branch ?? p.target_branch)))
         )
-      )
-        return undefined;
-      if (pr?.state !== "MERGED") {
-        const remote = yield* this.c.git.run(e.worktree_directory, [
-          "ls-remote",
-          "--heads",
-          "origin",
-          `refs/heads/${e.branch}`,
-        ]);
-        if (remote !== `${binding.commit}\trefs/heads/${e.branch}`) return undefined;
+          return undefined;
       }
       const committed = yield* this.c.transitions.move(e, "delivering");
       return yield* this.deliver(committed, p);
@@ -286,7 +281,18 @@ export class Finalization {
         )
       )
         return yield* new CrewError("ARCHIVE_REQUIRED", "Archive/review evidence missing");
+      const prior = e.finishing?.publication;
+      const bound =
+        prior &&
+        prior.generation === e.control_generation &&
+        prior.archived_tree === e.archived_tree &&
+        prior.verification === e.verification_receipt!.fingerprint &&
+        prior.review === e.review_receipt!.fingerprint &&
+        prior.review_session === e.review_receipt.session_id
+          ? prior
+          : undefined;
       if (
+        !bound &&
         !(
           e.archived_tree &&
           (yield* this.c.git.tree(evidence.worktree_directory)) === e.archived_tree &&
@@ -320,22 +326,28 @@ export class Finalization {
         };
         yield* this.c.records.saveFinishing(e, ["synchronization"]);
       }
-      const commit = yield* this.c.git.commit(evidence.worktree_directory, e.issue_id);
+      const commit =
+        bound?.commit ?? (yield* this.c.git.commit(evidence.worktree_directory, e.issue_id));
+      yield* this.c.git.assertCommitTree(evidence.worktree_directory, commit, e.archived_tree!);
+      const destination = bound?.destination ?? publicationDestination(e);
       e.finishing = {
         ...e.finishing,
         schema_version: 1,
         preflight: undefined,
-        publication: {
-          schema_version: 1,
-          generation: e.control_generation,
-          operation_id: e.operation!.id,
-          verification: e.verification_receipt!.fingerprint,
-          review: e.review_receipt!.fingerprint,
-          review_session: e.review_receipt!.session_id,
-          archived_tree: e.archived_tree!,
-          commit,
-          at: yield* timestamp,
-        },
+        publication: bound
+          ? { ...bound, destination }
+          : {
+              destination,
+              schema_version: 1,
+              generation: e.control_generation,
+              operation_id: e.operation!.id,
+              verification: e.verification_receipt!.fingerprint,
+              review: e.review_receipt!.fingerprint,
+              review_session: e.review_receipt!.session_id,
+              archived_tree: e.archived_tree!,
+              commit,
+              at: yield* timestamp,
+            },
         synchronization: e.finishing?.synchronization?.map((a) =>
           a.ordinal === synchronization?.ordinal
             ? { ...a, stage: "publishing", intended_commit: commit }
@@ -343,7 +355,10 @@ export class Finalization {
         ),
       };
       yield* this.c.records.saveFinishing(e, ["publication", "preflight", "synchronization"]);
-      const result = yield* this.c.delivery.deliver(p, e);
+      const result = yield* this.c.delivery.deliver(p, e, {
+        commit,
+        destination: bound?.pr ? { ...destination, pr: bound.pr } : destination,
+      });
       if (result.commit !== commit)
         return yield* new CrewError(
           "DELIVERY_CHANGED",

@@ -17,3 +17,18 @@ export const PrepareDiagramSelectionSchema = Schema.Union([
   }),
 ]).annotate({ parseOptions: { onExcessProperty: "error" }, reportInput: false });
 export type PrepareDiagramSelection = typeof PrepareDiagramSelectionSchema.Type;
+
+export const diagramRequestKey = (request: PrepareDiagramSelection) =>
+  request.kind === "surface"
+    ? JSON.stringify({
+        kind: request.kind,
+        surface_id: request.surface_id,
+        revision: request.revision,
+        hash: request.hash,
+      })
+    : JSON.stringify({
+        kind: request.kind,
+        issue_id: request.issue_id,
+        request_id: request.request_id,
+        hash: request.hash,
+      });

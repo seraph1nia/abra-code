@@ -53,7 +53,7 @@ import {
 injectBasicCatalogStyles();
 type WorkViewContext = {
   record: Pick<SurfaceRecord, "surface" | "snapshot" | "revision" | "at" | "coverage"> &
-    Partial<Pick<SurfaceRecord, "session_id">>;
+    Partial<Pick<SurfaceRecord, "session_id" | "surface_hash">>;
   work: readonly WorkItem[];
   liveCoverage?: BindingCoverage;
   hideLiveWidgets?: boolean;
@@ -183,14 +183,17 @@ export function GeneratedSurface({
   const request = useMemo(
     () =>
       collectDiagrams(record.surface.createSurface.components, evidence).length
-        ? (diagramRequest ?? {
-            kind: "surface" as const,
-            surface_id: record.surface.createSurface.surfaceId,
-            revision: record.revision,
-            surface: record.surface,
-          })
+        ? (diagramRequest ??
+          (record.surface_hash
+            ? {
+                kind: "surface" as const,
+                surface_id: record.surface.createSurface.surfaceId,
+                revision: record.revision,
+                hash: record.surface_hash,
+              }
+            : undefined))
         : undefined,
-    [record.surface, record.revision, evidence, diagramRequest],
+    [record.surface, record.revision, record.surface_hash, evidence, diagramRequest],
   );
   const diagrams = usePreparedDiagrams(request, preparedDiagrams);
   const [owner] = useState(

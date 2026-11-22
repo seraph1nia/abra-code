@@ -1,3 +1,4 @@
+import { WorkBriefing } from "@abracode/contracts/visibility/briefing";
 import { communicationSummary } from "./presentation-contracts.ts";
 import { artifactSummary } from "./artifacts.ts";
 import { Schema } from "effect";
@@ -57,6 +58,22 @@ export function toolPresentation(
   const selected = read(Schema.Struct({ issue_id: IssueId }), input)?.issue_id;
   let presentation: unknown;
   switch (name) {
+    case "abra_work_briefing": {
+      const value = read(WorkBriefing, raw);
+      if (!value) break;
+      const links = [value.decisions, value.outcomes, value.ongoing, value.queue].flatMap(
+        (section) =>
+          section.entries.map((item) => ({
+            title: item.title,
+            label: item.report ? "Research report" : item.fact.slice(0, 140),
+            target: item.target,
+            form_id: item.form_id,
+            fingerprint: item.fingerprint,
+          })),
+      );
+      presentation = { kind: "briefing", links };
+      break;
+    }
     case "abra_work_status": {
       const value = read(toolOutputs.work_status, raw);
       if (value)

@@ -104,7 +104,7 @@ test("uncertain review findings require a decision, while a scoped correction su
 test("full-spec postarchive correction creates a new planning cycle, preserves archive and PR, and rejects stale merge authorization", async (t) => {
   const f = await newFixture();
   t.onTestFinished(() => run(f.close()));
-  await budget(f, 1);
+  await budget(f, 2);
   const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   project.plan_approval = false;
   await run(f.records.saveProject(project));
@@ -175,6 +175,22 @@ test("full-spec postarchive correction creates a new planning cycle, preserves a
   await run(
     f.controller.reviewReport(
       e.review_session_id!,
+      false,
+      "Repair an in-scope edge case",
+      "in_scope",
+      failedSpec,
+    ),
+  );
+  f.runtime.success(e.review_session_id!);
+  e = await run(f.controller.advance(e.issue_id));
+  assert.equal(e.current_phase, "applying");
+  assert.equal(e.rounds?.at(-1)?.prior_delivered_commit, undefined);
+  await writeFile(join(e.worktree_directory!, "source.txt"), "corrected after review\n");
+  f.runtime.success(e.apply_session_id!);
+  e = await run(f.controller.advance(e.issue_id));
+  await run(
+    f.controller.reviewReport(
+      e.review_session_id!,
       true,
       "Correction checked independently",
       undefined,
@@ -184,6 +200,11 @@ test("full-spec postarchive correction creates a new planning cycle, preserves a
   f.runtime.success(e.review_session_id!);
   e = await run(f.controller.advance(e.issue_id));
   assert.equal(e.current_phase, "awaiting_merge");
+  assert.deepEqual(e.finishing?.publication?.destination, {
+    kind: "correction",
+    predecessor: oldHead,
+    pr: pending.execution.pull_request_reference,
+  });
   assert.notEqual(e.delivered_commit, oldHead);
   assert.notEqual(e.archive_path, oldArchive);
   assert.equal(e.rounds![0].archive_path, oldArchive);

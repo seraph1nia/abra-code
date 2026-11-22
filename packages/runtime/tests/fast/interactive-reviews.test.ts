@@ -1,3 +1,4 @@
+import { searchPublications } from "../../src/presentation/associations.ts";
 import { reviewDefinition } from "../helpers/interactive-reviews.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -197,8 +198,17 @@ for (const point of ["reservation", "record", "association", "head"] as const) {
     const publish = Effect.runPromise(
       f.reviews.publish(session, nextMessage, "second", revised).pipe(Effect.result),
     );
+    const search = () =>
+      Effect.runPromise(
+        searchPublications(f.store, session, { search: "second" }, (target) =>
+          target.kind === "review"
+            ? f.reviews.searchCommitted(session, target)
+            : Effect.succeed(false),
+        ),
+      );
     try {
       await Effect.runPromise(Deferred.await(entered));
+      assert.equal((await search()).entries.length, point === "head" ? 1 : 0);
       const before = await Effect.runPromise(f.reviews.list(session));
       assert.deepEqual(
         before.reviews.map((r) => r.revision),
@@ -237,6 +247,7 @@ for (const point of ["reservation", "record", "association", "head"] as const) {
       restarted.publish(session, nextMessage, "second", revised),
     );
     assert.equal(returned.revision, 2);
+    assert.equal((await search()).entries.length, 1);
     assert.equal(
       (await Effect.runPromise(restarted.read(session, selection))).record.hash,
       returned.hash,
@@ -269,10 +280,29 @@ test("a legacy pending head preserves its proven predecessor and a malformed nei
     /Legacy head/,
   );
   assert.deepEqual((await Effect.runPromise(f.reviews.list(session))).reviews, [first]);
+  const search = () =>
+    Effect.runPromise(
+      searchPublications(f.store, session, { search: "first" }, (target) =>
+        target.kind === "review"
+          ? f.reviews.searchCommitted(session, target)
+          : Effect.succeed(false),
+      ),
+    );
+  const before = await search();
+  assert.deepEqual(before.entries, []);
+  assert.equal(before.incomplete, true);
   const corruptKey = StorageKey.make(`web/review/${session}/head/bad-head`);
   await Effect.runPromise(save(corruptKey, { schema_version: 17 }));
+  const predecessorKey = StorageKey.make(`web/review/${session}/record/${first.review_id}/1`);
+  const predecessor = await Effect.runPromise(f.store.get(predecessorKey));
+  await Effect.runPromise(save(predecessorKey, { broken: true }));
+  await Effect.runPromise(f.reviews.recover(session));
+  assert.equal((await search()).incomplete, true);
+  assert.deepEqual((await search()).entries, []);
+  await Effect.runPromise(save(predecessorKey, predecessor));
   const restarted = new Reviews(f.store, f.locks, f.source);
   await Effect.runPromise(restarted.recover(session));
+  assert.equal((await search()).entries.length, 1);
   const recovered = await Effect.runPromise(new Reviews(f.store, f.locks, f.source).list(session));
   assert.deepEqual(
     recovered.reviews.map((value) => value.revision),

@@ -6,6 +6,7 @@ import { type Config, type ManagedExecution, type Role } from "../domain.ts";
 import { CapturedProfile } from "@abracode/agents/contracts";
 
 export const ConfigurationSnapshotSchema = Schema.Struct({
+  memory_reads: Schema.optional(Schema.Literal(true)),
   digest: NonEmpty,
   supervisor: WorkerModelSchema,
   workers: ConfigSchema.fields.workers,
@@ -18,6 +19,7 @@ export const captureConfiguration = (config: Config, repository?: Dispatch, task
     workerRoles.map((role) => [role, resolveDispatch(config, role, repository, task)]),
   ) as Record<Role, ReturnType<typeof resolveDispatch>>;
   return {
+    ...(config.memory?.enabled ? { memory_reads: true as const } : {}),
     digest: config.config_digest,
     supervisor: structuredClone(config.supervisor_model),
     workers: Object.fromEntries(

@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
-import type { PrepareDiagramSelection } from "@abracode/contracts/web/diagram-actions";
+import {
+  diagramRequestKey,
+  type PrepareDiagramSelection,
+} from "@abracode/contracts/web/diagram-actions";
 
+export { diagramRequestKey };
 export type PreparedReportDiagram = { id?: string; source: string; svg: string };
-export type DiagramRequest =
-  | PrepareDiagramSelection
-  | { kind: "surface"; surface_id: string; revision: number; surface: unknown };
+export type DiagramRequest = PrepareDiagramSelection;
 export type DiagramState = {
   assets: readonly PreparedReportDiagram[];
   message?: string;
@@ -22,16 +24,6 @@ export const DiagramResourceContext = createContext<((key: string) => DiagramRes
 export const PresentationRefreshContext = createContext<
   ((retry: () => void) => () => void) | undefined
 >(undefined);
-export const diagramRequestKey = (request: unknown) =>
-  JSON.stringify(request, (_key, item) =>
-    item && typeof item === "object" && !Array.isArray(item)
-      ? Object.fromEntries(
-          Object.entries(item)
-            .filter(([, value]) => value !== undefined)
-            .sort(([a], [b]) => a.localeCompare(b)),
-        )
-      : item,
-  );
 const unavailable: DiagramState = {
   assets: [],
   message: "Captured Mermaid source. A prepared rendering is available in an explicit HTML export.",
@@ -49,7 +41,7 @@ export function usePreparedDiagrams(
 ): DiagramState & { retry?: () => void } {
   const adapter = useContext(DiagramResourceContext);
   const registerRefresh = useContext(PresentationRefreshContext);
-  const key = request ? diagramRequestKey(request) : "";
+  const key = request && !supplied ? diagramRequestKey(request) : "";
   const resource = useMemo(
     () => (adapter && key && !supplied ? adapter(key) : emptyResource),
     [adapter, key, supplied],

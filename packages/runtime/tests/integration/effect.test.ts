@@ -160,6 +160,66 @@ test("interruption preserves provisioning intent and releases the controller loc
   assert.equal(f.runtime.creates, 1);
 });
 
+test("only a supervisor step reaching 200k tokens requests native compaction", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const supervisor = Id.SessionId.make("ses_supervisor");
+  const ended = (sessionID: string, input: number, assistantMessageID: string) => ({
+    type: "session.step.ended",
+    data: {
+      sessionID,
+      assistantMessageID,
+      tokens: { input, cache: { read: 96_000, write: 2_000 }, output: 1_500, reasoning: 500 },
+    },
+  });
+  const steps = [
+    ended(supervisor, 99_999, "msg_below"),
+    ended("ses_worker", 150_000, "msg_worker"),
+    ended("ses_fork", 150_000, "msg_fork"),
+    ended("ses_untagged", 150_000, "msg_untagged"),
+    ended("ses_revert", 150_000, "msg_revert"),
+    ended(supervisor, 100_000, "msg_boundary"),
+    ended(supervisor, 130_000, "msg_above"),
+  ];
+  const drained = Deferred.makeUnsafe<void>();
+  const home = f.controller.queries.settings.home;
+  const get = vi.fn(({ sessionID }: { sessionID: string }) =>
+    Effect.succeed({
+      agent: sessionID === "ses_worker" ? "apply" : "abra",
+      location: { directory: home },
+      metadata: sessionID === "ses_untagged" ? {} : { abracode_supervisor_home: home },
+      fork: sessionID === "ses_fork" ? { sessionID: supervisor } : undefined,
+      revert: sessionID === "ses_revert" ? {} : undefined,
+      time: {},
+    }),
+  );
+  const compact = vi.fn(() => Effect.void);
+  const ctx = {
+    event: {
+      subscribe: () =>
+        Stream.fromIterable(steps).pipe(
+          Stream.concat(Stream.fromEffect(Deferred.succeed(drained, undefined)).pipe(Stream.drain)),
+        ),
+    },
+    session: { get, compact },
+  } as unknown as Context;
+  await run(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* monitor(ctx, f.controller, f.scheduler);
+        yield* Deferred.await(drained).pipe(Effect.timeout("5 seconds"));
+      }),
+    ),
+  );
+  assert.equal(get.mock.calls.length, steps.length - 1);
+  assert.deepEqual(
+    compact.mock.calls,
+    ["msg_boundary", "msg_above"].map((step) => [
+      { sessionID: supervisor, id: `${step}_abra_compact`, delivery: "steer" },
+    ]),
+  );
+});
+
 test("monitor scope interrupts reconciliation and closes the event subscription", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));

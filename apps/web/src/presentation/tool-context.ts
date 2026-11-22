@@ -1,3 +1,4 @@
+import type { AttentionForm } from "@abracode/contracts/web/contracts";
 import { createContext } from "react";
 import type { TranscriptTool } from "@abracode/contracts/web/presentation-contracts";
 import type { PresentationAttachmentSchema } from "@abracode/contracts/presentation/contracts";
@@ -12,3 +13,5 @@ export const ObservationContext = createContext<
     }
   | undefined
 >(undefined);
+
+export const BriefingForms = createContext<readonly AttentionForm[]>([]);

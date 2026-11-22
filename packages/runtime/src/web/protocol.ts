@@ -1,3 +1,11 @@
+import {
+  ScopedMemorySearch,
+  ScopedMemoryRead,
+  MemoryPage,
+  MemoryBody,
+  MemoryPublication,
+  MemoryReference,
+} from "@abracode/contracts/visibility/memory";
 import { PublicationPage, PublicationQuery } from "@abracode/contracts/presentation/contracts";
 import {
   ReviewSelectionSchema,
@@ -63,6 +71,19 @@ export const webGateway = Rpc.define({
         projects: Schema.optionalKey(ProjectsSchema),
       }),
     ),
+    memorySearch: method(
+      Schema.Struct({ session_id: SessionId, ...ScopedMemorySearch.fields }),
+      MemoryPage,
+    ),
+    memoryRead: method(
+      Schema.Struct({ session_id: SessionId, ...ScopedMemoryRead.fields }),
+      MemoryBody,
+    ),
+    memoryPublish: method(
+      Schema.Struct({ session_id: SessionId, ...MemoryPublication.fields }),
+      MemoryReference,
+    ),
+    memoryEnabled: method(Schema.Struct({ session_id: SessionId }), Schema.Boolean),
     agents: method(Schema.Struct({ session_id: SessionId }), AgentCatalogSchema),
     reviewReceipt: method(
       Schema.Struct({ session_id: SessionId, ...ReviewResponseQuerySchema.fields }),

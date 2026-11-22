@@ -29,6 +29,9 @@ import { prContent, updateSummary } from "./pr-content.ts";
 import { GitHubReadiness } from "./readiness.ts";
 import { Forge, PRSchema, type PR } from "./forge.ts";
 export { PRSchema, type PR } from "./forge.ts";
+import type { PublicationDestination } from "../workflow/finishing-contracts.ts";
+import { publicationDestination } from "../workflow/publication-destination.ts";
+export type Publication = { commit: Commit; destination: PublicationDestination };
 export interface DeliveryAssessment {
   pr: PR;
   feedback: Feedback;
@@ -53,6 +56,7 @@ export interface Delivery {
   deliver(
     p: Project,
     e: ManagedExecution,
+    publication: Publication,
   ): Effect.Effect<
     {
       commit: Commit;
@@ -145,28 +149,38 @@ export class GitHubDelivery implements Delivery {
     );
   }
   deliver = Effect.fn("GitHubDelivery.deliver")(
-    function* (this: GitHubDelivery, p: Project, e: ManagedExecution, draft = false) {
+    function* (
+      this: GitHubDelivery,
+      p: Project,
+      e: ManagedExecution,
+      { commit, destination }: Publication,
+      draft = false,
+    ) {
       yield* progress({ stage: "deliver", status: "started" });
       if (!e.worktree_directory) return yield* new CrewError("WORKTREE", "Missing worktree");
-      const sync = e.finishing?.synchronization?.at(-1);
-      const synchronization = sync?.stage === "publishing" ? sync : undefined;
-      if (synchronization && p.delivery === "github-pr") {
+      const predecessor = destination.kind === "initial" ? undefined : destination.predecessor;
+      const ref = `refs/heads/${e.branch}`;
+      const readRemote = () => this.git.run(e.worktree_directory!, ["ls-remote", "origin", ref]);
+      const remote = yield* readRemote();
+      const intended = `${commit}\t${ref}`;
+      if (destination.kind === "synchronization" && p.delivery === "github-pr") {
         const prior = yield* this.inspect(p, e);
         if (
           prior?.state === "MERGED" &&
-          prior.url === synchronization.pr &&
+          prior.url === destination.pr &&
           prior.baseRefName === e.target_branch &&
-          prior.headRefOid === synchronization.intended_commit &&
-          (yield* this.git.head(e.worktree_directory)) === synchronization.intended_commit &&
+          prior.headRefOid === commit &&
+          remote === intended &&
+          (yield* this.git.head(e.worktree_directory)) === commit &&
           !(yield* this.git.dirty(e.worktree_directory))
         )
-          return { commit: synchronization.intended_commit!, pr: prior.url };
+          return { commit, pr: prior.url };
         if (
           !(
             prior?.state === "OPEN" &&
-            prior.url === synchronization.pr &&
+            prior.url === destination.pr &&
             prior.baseRefName === e.target_branch &&
-            [synchronization.published, synchronization.intended_commit].includes(prior.headRefOid)
+            [destination.predecessor, commit].includes(prior.headRefOid)
           )
         )
           return yield* new CrewError(
@@ -174,103 +188,83 @@ export class GitHubDelivery implements Delivery {
             "Synchronization PR is no longer the exact owned open publication",
           );
       }
-      const commit = yield* this.git.commit(
-        e.worktree_directory,
-        e.issue_id,
-        e.setup
-          ? `Initialize OpenSpec for ${p.id}`
-          : draft
-            ? `Publish draft implementation ${e.issue_id}`
-            : undefined,
-      );
-      // Retrying a push is avoided if the exact remote ref already exists.
-      const remote = yield* this.git.run(e.worktree_directory, [
-        "ls-remote",
-        "origin",
-        `refs/heads/${e.branch}`,
-      ]);
-      if (synchronization && !remote.startsWith(`${commit}\t`)) {
-        if (!remote.startsWith(`${synchronization.published}\t`))
+      if (remote !== intended) {
+        if (remote !== (predecessor ? `${predecessor}\t${ref}` : ""))
           return yield* new CrewError(
             "DELIVERY_CHANGED",
-            "Synchronization remote branch changed independently",
+            "Owned destination has a conflicting head",
           );
-        yield* this.git.run(e.worktree_directory, [
-          "merge-base",
-          "--is-ancestor",
-          synchronization.published,
-          commit,
-        ]);
-      }
-      if (
-        e.provisional &&
-        !remote.startsWith(`${commit}\t`) &&
-        !remote.startsWith(`${e.provisional.head}\t`) &&
-        !remote.startsWith(`${e.rounds?.at(-1)?.prior_delivered_commit}\t`) &&
-        !remote.startsWith(`${synchronization?.published}\t`)
-      )
-        return yield* new CrewError(
-          "DELIVERY_CHANGED",
-          "Provisional remote branch changed outside controller publication",
-        );
-      if (
-        !synchronization &&
-        !remote.startsWith(`${commit}\t`) &&
-        e.rounds?.at(-1)?.prior_delivered_commit
-      ) {
-        const previous = e.rounds.at(-1)!.prior_delivered_commit!;
-        if (!remote.startsWith(`${previous}\t`))
-          return yield* new CrewError(
-            "DELIVERY_CHANGED",
-            "Correction remote branch is no longer the retained prior head",
-          );
-        yield* this.git.run(e.worktree_directory, [
-          "merge-base",
-          "--is-ancestor",
-          previous,
-          commit,
-        ]);
-        if (p.delivery === "github-pr") {
+        if (predecessor)
+          yield* this.git.run(e.worktree_directory, [
+            "merge-base",
+            "--is-ancestor",
+            predecessor,
+            commit,
+          ]);
+        if (destination.kind === "correction" && p.delivery === "github-pr") {
           const prior = yield* this.inspect(p, e);
           if (
             !(
               prior?.state === "OPEN" &&
-              prior.url === e.pull_request_reference &&
-              prior.headRefOid === previous &&
+              prior.url === destination.pr &&
+              prior.headRefOid === predecessor &&
               prior.baseRefName === e.target_branch
             )
           )
             return yield* new CrewError("PR_HEAD", "Correction PR changed before push");
         }
+        yield* this.git.run(e.worktree_directory, [
+          "push",
+          `--force-with-lease=${ref}:${predecessor ?? ""}`,
+          "origin",
+          `${commit}:${ref}`,
+        ]);
+        if ((yield* readRemote()) !== intended)
+          return yield* new CrewError(
+            "DELIVERY_CHANGED",
+            "Remote did not confirm the bound commit",
+          );
       }
-      if (!remote.startsWith(`${commit}\t`))
-        yield* this.git.run(e.worktree_directory, ["push", "--set-upstream", "origin", e.branch]);
       if (p.delivery === "branch") return { commit };
+      const base = e.target_branch ?? p.target_branch;
+      const matches = (pr: PR | undefined, url: string) =>
+        pr?.url === url &&
+        pr.state !== "CLOSED" &&
+        pr.headRefOid === commit &&
+        pr.baseRefName === base;
       const content = prContent(p, e, commit);
       const existing = yield* this.inspect(p, e);
       if (existing) {
-        if (!(existing.state !== "CLOSED"))
+        if (existing.state === "CLOSED")
           return yield* new CrewError("PR_CLOSED", "Existing PR was closed without merging");
-        if (!(!e.pull_request_reference || existing.url === e.pull_request_reference))
+        const expected = destination.pr;
+        if (expected && existing.url !== expected)
           return yield* new CrewError("PR_IDENTITY", "Owned PR identity changed");
-        if (!(existing.headRefOid === commit))
+        if (!matches(existing, existing.url))
           return yield* new CrewError(
             "PR_HEAD",
             "Owned PR head differs from the intended delivery",
           );
-        if (!(existing.body !== undefined))
+        if (existing.body === undefined)
           return yield* new CrewError(
             "PR_BODY_UNKNOWN",
             "PR body unavailable; do not replace unknown user content",
           );
         const updated = updateSummary(existing.body, content.body);
-        if (existing.state === "OPEN" && updated !== existing.body)
+        if (existing.state === "OPEN" && updated !== existing.body) {
           yield* this.withBody(updated, (body) =>
             this.client.run(p, ["pr", "edit", existing.url, "--body-file", body]),
           );
+          if (!matches(yield* this.inspect(p, e), existing.url))
+            return yield* new CrewError(
+              "PR_HEAD",
+              "Owned PR changed during its publication update",
+            );
+        }
         return { commit, pr: existing.url };
       }
-      yield* this.withBody(content.body, (body) =>
+      if (destination.pr) return yield* new CrewError("PR_IDENTITY", "Owned PR is missing");
+      const createdUrl = yield* this.withBody(content.body, (body) =>
         this.client.run(p, [
           "pr",
           "create",
@@ -291,11 +285,27 @@ export class GitHubDelivery implements Delivery {
           "PR_UNKNOWN",
           "PR creation outcome unknown; reconcile before retrying",
         );
+      if (!matches(created, createdUrl.trim()) || created.state !== "OPEN")
+        return yield* new CrewError(
+          "PR_HEAD",
+          "Created PR identity, target or head differs from the intended publication",
+        );
       return { commit, pr: created.url };
     }.bind(this),
     completedProgress("deliver"),
   );
-  provisional = (p: Project, e: ManagedExecution) => this.deliver(p, e, true);
+  provisional = Effect.fn("GitHubDelivery.provisional")(
+    function* (this: GitHubDelivery, p: Project, e: ManagedExecution) {
+      if (!e.worktree_directory) return yield* new CrewError("WORKTREE", "Missing worktree");
+      const commit = yield* this.git.commit(
+        e.worktree_directory,
+        e.issue_id,
+        `Publish draft implementation ${e.issue_id}`,
+      );
+      return yield* this.deliver(p, e, { commit, destination: publicationDestination(e) }, true);
+    }.bind(this),
+    domainEffect,
+  );
   assessment = Effect.fn("GitHubDelivery.assessment")(
     function* (this: GitHubDelivery, p: Project, e: ManagedExecution) {
       const pr = yield* this.inspect(p, e);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join, resolve } from "node:path";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { Effect, Exit, Scope } from "effect";
 import type { Endpoint } from "@opencode/client/effect/service";
 import { reportBrowserExecutable } from "@abracode/report-export/browser";
@@ -123,4 +123,21 @@ export async function thoughtsJourney(input: {
   } finally {
     await ab("close").finally(() => Effect.runPromise(Scope.close(scope, Exit.void)));
   }
+}
+
+export async function configureMemosFixture(home: string) {
+  const instance = process.env.ABRACODE_TEST_MEMOS_ORIGIN,
+    token_file = process.env.ABRACODE_TEST_MEMOS_TOKEN_FILE;
+  assert.ok(
+    instance && /^http:\/\/127\.0\.0\.1:\d+$/u.test(instance) && token_file?.startsWith("/"),
+    "Use a disposable loopback Memos instance and temporary token file",
+  );
+  const personal = join(home, "abracode.yaml");
+  await writeFile(
+    personal,
+    (await readFile(personal, "utf8")) +
+      "memos: " +
+      JSON.stringify({ instance, token_file }) +
+      "\n",
+  );
 }

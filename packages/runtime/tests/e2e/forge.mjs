@@ -4,8 +4,16 @@ import { readFileSync, writeFileSync, renameSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-const stateFile = fileURLToPath(new URL("./forge-state.json", import.meta.url));
-const state = JSON.parse(readFileSync(stateFile, "utf8"));
+let stateFile = fileURLToPath(new URL("./forge-state.json", import.meta.url));
+let state = JSON.parse(readFileSync(stateFile, "utf8"));
+// Two isolated repositories can have different check observations in the briefing journey.
+if (state.briefing && process.argv[2] !== "auth") {
+  const remote = execFileSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" }).trim();
+  if (remote === state.releaseRemote) {
+    stateFile = fileURLToPath(new URL("./release-forge-state.json", import.meta.url));
+    state = JSON.parse(readFileSync(stateFile, "utf8"));
+  }
+}
 const args = process.argv.slice(2),
   arg = (name) => args[args.indexOf(name) + 1];
 const git = (...argv) =>

@@ -23,13 +23,19 @@ export class Controller {
   }
   validation = (...args: Parameters<ValidationCommands["command"]>) =>
     this.services.validation.command(...args);
+  get memory() {
+    return this.services.memory;
+  }
   get thoughts() {
     return this.services.thoughts;
   }
   get inbox() {
     return this.services.inbox;
   }
-  close = () => this.inbox.close().pipe(Effect.andThen(this.services.execution.close));
+  close = () =>
+    this.memory
+      .close()
+      .pipe(Effect.andThen(this.inbox.close()), Effect.andThen(this.services.execution.close));
   prAction = (...args: Parameters<VerificationCommands["prAction"]>) =>
     this.services.verification.prAction(...args);
   feedbackDisposition = (...args: Parameters<VerificationCommands["feedbackDisposition"]>) =>

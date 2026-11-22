@@ -1,3 +1,4 @@
+import { workBriefing } from "../../src/visibility/briefing.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { deliveryOutcome } from "../../src/workflow/delivery-outcome.ts";
 import * as Id from "../../src/identities.ts";
@@ -108,6 +109,16 @@ test("research runs without OpenSpec/checks and retains a hashed report and sess
   assert.equal(detail.progress, undefined);
   assert.equal(detail.change, undefined);
   assert.equal(detail.work.report!.hash, receipt.hash);
+  const brief = await run(workBriefing(c));
+  assert.deepEqual(brief.outcomes.entries[0]?.report, {
+    id: receipt.report_id,
+    hash: receipt.hash,
+  });
+  assert.deepEqual(brief.outcomes.entries[0]?.target, {
+    action: "open_task",
+    issue_id: issue.id,
+    section: "reports",
+  });
   const follow = (
     await run(
       c.createWork(

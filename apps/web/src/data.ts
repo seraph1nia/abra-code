@@ -11,8 +11,7 @@ import { Atom, AtomHttpApi, Reactivity } from "effect/reactivity";
 import { Form } from "@opencode/schema/form";
 import { Permission } from "@opencode/schema/permission";
 import { workspaceApi } from "@abracode/contracts/web/http-api";
-import { IssueId, ContentHash } from "@abracode/contracts/identities";
-import { diagramRequestKey, type DiagramRequest } from "@abracode/presentation/diagram-resource";
+import { IssueId } from "@abracode/contracts/identities";
 import type { PrepareDiagramSelection } from "@abracode/contracts/web/diagram-actions";
 
 export class WorkspaceApi extends AtomHttpApi.Service<WorkspaceApi>()("WorkspaceApi", {
@@ -27,6 +26,9 @@ export const queryOptions = (issue: string) => ({
 });
 export const bootstrapQuery = WorkspaceApi.query("workspace", "bootstrap", {});
 export const agentsQuery = WorkspaceApi.query("workspace", "agents", { timeToLive: "30 seconds" });
+export const memoryEnabledQuery = WorkspaceApi.query("workspace", "memoryEnabled", {
+  timeToLive: "30 seconds",
+});
 export const repositoriesQuery = WorkspaceApi.query("workspace", "repositories", {});
 /** An uncached exact read; missing admission evidence must be checked afresh. */
 export const readReceipt = WorkspaceApi.runtime.fn((request_id: string) =>
@@ -50,26 +52,7 @@ export const diagramQuery = Atom.family((key: string) =>
   WorkspaceApi.runtime
     .atom(
       Effect.gen(function* () {
-        const request = JSON.parse(key) as DiagramRequest;
-        let selection: PrepareDiagramSelection;
-        if (request.kind === "surface" && "surface" in request) {
-          const digest = yield* Effect.tryPromise(() =>
-            crypto.subtle.digest(
-              "SHA-256",
-              new TextEncoder().encode(diagramRequestKey(request.surface)),
-            ),
-          );
-          selection = {
-            kind: "surface",
-            surface_id: request.surface_id,
-            revision: request.revision,
-            hash: ContentHash.make(
-              Array.from(new Uint8Array(digest), (value) =>
-                value.toString(16).padStart(2, "0"),
-              ).join(""),
-            ),
-          };
-        } else selection = request;
+        const selection = JSON.parse(key) as PrepareDiagramSelection;
         const client = yield* WorkspaceApi;
         return yield* client.workspace.prepareDiagrams({ payload: selection });
       }),

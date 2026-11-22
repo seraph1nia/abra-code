@@ -2,14 +2,7 @@ import { Effect, Schema } from "effect";
 import { Session, SessionMessage } from "@opencode/client/effect";
 import { createHash } from "node:crypto";
 import { CrewError, ensure, type Config } from "../domain.ts";
-import {
-  LockKey,
-  RequestId,
-  SessionId,
-  Timestamp,
-  type IssueId,
-  timestamp,
-} from "../identities.ts";
+import { LockKey, RequestId, SessionId, type IssueId, timestamp } from "../identities.ts";
 import { decode, decodeJSON } from "../decode.ts";
 import { domainEffect } from "../effect.ts";
 import { type Records } from "../storage/store.ts";
@@ -29,7 +22,15 @@ import {
   requiresResponse,
   type MessageSendSchema,
 } from "./message-contracts.ts";
-import { admitNativeRequest, responseState } from "./messages.ts";
+import {
+  reminderDecision,
+  reminderTarget,
+  pendingReminder,
+  queuedReminder,
+  suppressReminder,
+  reserveReminder,
+} from "./response-recovery.ts";
+import { admitNativeRequest } from "./messages.ts";
 import {
   LeadActionSchema,
   LeadControlSchema,
@@ -64,6 +65,7 @@ export class Leads {
       input: typeof MessageSendSchema.Type,
       parent: SessionId,
     ) => Effect.Effect<unknown, CrewError>,
+    private memory?: import("../memory/service.ts").AgentMemory,
   ) {}
   private save(record: LeadRecord) {
     return domainEffect(
@@ -277,6 +279,26 @@ export class Leads {
       // Short commits revalidate the native principal under the same controller lock
       // as disable, proposals and routine decision answers.
       const principal = yield* this.current(session, a.revision);
+      if (a.action === "memory_read" || a.action === "memory_search") {
+        return yield* this.locks.with(LockKey.make(`lead-${principal.id}`), () =>
+          Effect.gen({ self: this }, function* () {
+            const live = yield* this.current(session, a.revision);
+            const native = yield* this.runtime.session(session);
+            if (native.agent !== "project-lead" || native.directory !== this.config.home)
+              return yield* new CrewError("LEAD_SESSION", "Lead session moved or changed agent.");
+            if (!this.memory?.enabled || !live.repositories.includes(a.repository_id))
+              return yield* new CrewError(
+                "LEAD_FORBIDDEN",
+                "Select an enabled, assigned repository.",
+              );
+            const result =
+              a.action === "memory_read"
+                ? yield* this.memory.read(a.repository_id, a)
+                : yield* this.memory.search(a.repository_id, a);
+            return yield* json(result);
+          }),
+        );
+      }
       return yield* this.locks.with(LockKey.make(`lead-${principal.id}`), () =>
         this.records
           .coordinateCommit(() =>
@@ -594,9 +616,7 @@ export class Leads {
                 "Reserved reminder suppressed before admission; explicit recovery required",
               )
             : l;
-        const input = recovery
-          ? { ...m, prompt_id: recovery.prompt_id, prompt: recovery.prompt }
-          : m;
+        const input = reminderTarget(m);
         let state = yield* this.runtime.session(l.session_id, input.prompt_id);
         ensure(
           state.directory === this.config.home && state.agent === "project-lead",
@@ -609,10 +629,10 @@ export class Leads {
           input.prompt,
         );
         if (!recovery) {
-          if (state.completion_pending) return l;
-          const observed = responseState(m, state, admission);
-          if (["queued", "executing", "resolved", "superseded"].includes(observed)) return l;
-          if (observed !== "missing") return yield* this.escalate(l, id, observed, state);
+          const decision = reminderDecision(m, state, admission);
+          if (decision.action === "wait") return l;
+          if (decision.action === "escalate")
+            return yield* this.escalate(l, id, decision.reason, state);
           const prepared = yield* this.records.coordinateCommit(() =>
             domainEffect(
               Effect.gen({ self: this }, function* () {
@@ -643,15 +663,10 @@ export class Leads {
                     lead: current,
                     reason: "Management capacity unavailable; no reminder admitted",
                   };
-                const completion = state.assignment!.completion!;
-                const attempt = {
-                  prompt_id: SessionMessage.ID.create(),
-                  prompt: `AbraCode response-only reminder for original project-lead request ${id}, registration revision ${l.revision}. Its admitted native turn completed without the required answer. Do not repeat its substantive task, create work or broaden scope. Use abra_lead_action action reply, revision ${l.revision}, ORIGINAL request_id ${id}. No approval or delivery authority is granted.`,
-                  created_at: yield* timestamp,
-                  completion_id: completion.id,
-                  completed_at: Timestamp.make(new Date(completion.at).toISOString()),
-                  status: "pending" as const,
-                };
+                const attempt = yield* reserveReminder(
+                  state.assignment!.completion!,
+                  `AbraCode response-only reminder for original project-lead request ${id}, registration revision ${l.revision}. Its admitted native turn completed without the required answer. Do not repeat its substantive task, create work or broaden scope. Use abra_lead_action action reply, revision ${l.revision}, ORIGINAL request_id ${id}. No approval or delivery authority is granted.`,
+                );
                 const next = {
                   ...current,
                   active: true,
@@ -681,16 +696,16 @@ export class Leads {
             "LEAD_SESSION",
             "Management recipient moved before reminder admission",
           );
-          if (state.busy || state.executing !== false || state.completion_pending) return l;
+          const action = pendingReminder(state);
+          if (action === "wait") return l;
           l = yield* this.records.coordinateCommit(() =>
             domainEffect(
               Effect.gen({ self: this }, function* () {
                 const current = yield* this.current(l.session_id, l.revision);
                 const request = current.requests.find((r) => r.request.request_id === id)!;
                 const suppress =
-                  !requiresResponse(request.request) ||
-                  this.config.supervision_mode === "manual" ||
-                  ["failed", "interrupted"].includes(state.outcome ?? "");
+                  suppressReminder(request.request, this.config.supervision_mode === "manual") ||
+                  action === "suppress";
                 const next = {
                   ...current,
                   requests: current.requests.map((r) =>
@@ -762,27 +777,23 @@ export class Leads {
             ),
           );
         if (submitted) return l;
-        if (admission === "queued" && ["failed", "interrupted"].includes(state.outcome ?? ""))
-          return yield* this.escalate(l, id, "Lead stopped with the reminder still queued", state);
-        if (
-          admission === "queued" &&
-          state.executing === false &&
-          !["failed", "interrupted"].includes(state.outcome ?? "")
-        ) {
-          yield* this.current(l.session_id, l.revision);
-          yield* this.runtime.prompt(l.session_id, recovery.prompt, recovery.prompt_id);
+        if (admission === "queued") {
+          const action = queuedReminder(state);
+          if (action === "escalate")
+            return yield* this.escalate(
+              l,
+              id,
+              "Lead stopped with the reminder still queued",
+              state,
+            );
+          if (action === "wake") {
+            yield* this.current(l.session_id, l.revision);
+            yield* this.runtime.prompt(l.session_id, recovery.prompt, recovery.prompt_id);
+          }
         }
-        const observed = responseState({ ...m, prompt_id: recovery.prompt_id }, state, admission);
-        if (state.completion_pending) return l;
-        if (!["queued", "executing", "resolved", "superseded"].includes(observed))
-          l = yield* this.escalate(
-            l,
-            id,
-            observed === "missing"
-              ? "Recovery completed without the required answer; automatic attempt exhausted"
-              : observed,
-            state,
-          );
+        const decision = reminderDecision(m, state, admission);
+        if (decision.action === "escalate")
+          return yield* this.escalate(l, id, decision.reason, state);
         return l;
       }),
     ).pipe(

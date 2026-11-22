@@ -1,3 +1,8 @@
+import type {
+  ScopedMemorySearch,
+  ScopedMemoryRead,
+  MemoryPublication,
+} from "@abracode/contracts/visibility/memory";
 import type { PublicationQuery } from "@abracode/contracts/presentation/contracts";
 import type { Submission } from "@abracode/contracts/web/workspace-wire";
 import type {
@@ -96,6 +101,23 @@ export class NativeWebBackend implements WebBackend {
   private gateway(client: OpenCodeClient) {
     return client.rpc(webGateway);
   }
+  readonly memoryEnabled = Effect.suspend(() =>
+    this.use((client) =>
+      this.gateway(client).memoryEnabled({ session_id: this.sessionID }, this.location()),
+    ),
+  );
+  memorySearch = (input: typeof ScopedMemorySearch.Type) =>
+    this.use((client) =>
+      this.gateway(client).memorySearch({ session_id: this.sessionID, ...input }, this.location()),
+    );
+  memoryRead = (input: typeof ScopedMemoryRead.Type) =>
+    this.use((client) =>
+      this.gateway(client).memoryRead({ session_id: this.sessionID, ...input }, this.location()),
+    );
+  memoryPublish = (input: MemoryPublication) =>
+    this.use((client) =>
+      this.gateway(client).memoryPublish({ session_id: this.sessionID, ...input }, this.location()),
+    );
   readonly agents = Effect.suspend(() =>
     this.use((client) =>
       this.gateway(client).agents({ session_id: this.sessionID }, this.location()),

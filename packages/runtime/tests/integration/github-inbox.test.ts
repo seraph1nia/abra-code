@@ -1,3 +1,4 @@
+import { workBriefing } from "../../src/visibility/briefing.ts";
 import assert from "node:assert/strict";
 import { test, vi } from "vite-plus/test";
 import { Deferred, Effect } from "effect";
@@ -197,8 +198,13 @@ test("warm inbox shares bounded reads, resolves private review and keeps remote 
   await run(c.inbox.detail(target(true)));
   assert.equal(calls.length, 3);
   assert.ok(!calls.some((a) => a.some((x) => x.includes("/files?"))));
+  assert.equal((await run(workBriefing(c))).github.total, 0);
+  const wide = await run(workBriefing(c, { include_open_github: true }));
+  assert.equal(wide.github.total, 2);
+  assert.equal(wide.decisions.total, 0);
+  const discussed = wide.github.entries.find((entry) => entry.kind === "pr")!;
   const issue = await run(c.inbox.assign(target(), session));
-  const review = await run(c.inbox.assign(target(true), session));
+  const review = await run(c.inbox.assign(discussed, session));
   assert.equal((await run(graph.show(review))).workflow_policy, "research-only");
   const requested = await run(graph.show(review));
   assert.deepEqual(requested.dispatch?.research?.model, {
@@ -212,6 +218,7 @@ test("warm inbox shares bounded reads, resolves private review and keeps remote 
   assert.equal((await list({ role: "pickup" })).entries[0]?.links[0]?.issue_id, issue);
   assert.equal((await list({ role: "review" })).entries[0]?.author, "colleague");
   assert.equal((await list({ role: "unassigned" })).total, 0);
+  assert.equal((await run(workBriefing(c))).github.total, 2);
 
   account.closed = true;
   assert.equal(await run(c.inbox.assign(target(), session)), issue);

@@ -28,7 +28,7 @@ import { SurfaceRecordSchema, PresentationAttachmentSchema } from "./workspace-w
 import { normalizeSurface, validateSurface, type WorkSurface } from "./surfaces.ts";
 import { ComponentId } from "./catalog.ts";
 import { WorkItemSchema } from "./wire.ts";
-import { compactSurface, loadSurfaceRecord } from "./surface-records.ts";
+import { compactSurface, loadSurfaceRecord, observedSurface } from "./surface-records.ts";
 import type { SurfaceRecord } from "./contracts.ts";
 
 type SurfaceObservation = Effect.Effect<
@@ -249,12 +249,18 @@ export class SurfacePublications {
       return { ...page, entries, diagnostics: page.diagnostics.slice(0, 200) };
     });
   }
-  private committedRevision(session: SessionId, surface: string) {
+  searchCommitted(session: SessionId, surface: string, revision: number) {
+    return this.committedRevision(session, surface, true).pipe(
+      Effect.map((head) => revision <= head),
+    );
+  }
+  private committedRevision(session: SessionId, surface: string, metadataOnly = false) {
     return Effect.gen({ self: this }, function* () {
       yield* decode(ComponentId, surface, "Surface selection");
       const key = headKey(session, surface);
       const raw = yield* this.store.get(key);
       if (raw === undefined) {
+        if (metadataOnly) return yield* conflict("Surface association has no committed head");
         const latest = yield* this.store.get(latestKey(session, surface));
         if (latest === undefined) return 0;
         // A publisher may have reserved the first revision between these two reads.
@@ -310,7 +316,7 @@ export class SurfacePublications {
           record.revision !== revision
         )
           return yield* conflict("Surface revision belongs to another selection");
-        return record;
+        return observedSurface(record, publication.input_hash);
       }
       const raw =
         (yield* this.store.get(
@@ -324,7 +330,7 @@ export class SurfacePublications {
         latest.surface.createSurface.surfaceId === surface &&
         latest.revision === revision
       )
-        return latest;
+        return observedSurface(latest);
       return yield* new CrewError(
         "SURFACE_REVISION_UNAVAILABLE",
         "This exact layout revision was not retained. Legacy surfaces preserve only their latest known layout.",

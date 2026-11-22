@@ -57,7 +57,7 @@ import { type OpenSpec } from "../openspec/adapter.ts";
 import { type Git } from "../git/repository.ts";
 import { type Runtime, type PromptAdmission } from "../opencode/runtime.ts";
 import { diagnosticText } from "../opencode/diagnostics.ts";
-import { summarizeCapacity, type CapacitySummary } from "./capacity.ts";
+import { scanCapacity, summarizeCapacity, type CapacitySummary } from "./capacity.ts";
 import { TicketDiff } from "../visibility/ticket-diff.ts";
 import { type DiffScope } from "../visibility/protocol.ts";
 import { type LeadSummary } from "../visibility/protocol.ts";
@@ -503,6 +503,7 @@ export class Queries {
           const archive = yield* archivedPlans(this.git, yield* this.project(e.repository_id), e);
           return {
             paths: archive.paths,
+            read: archive.read,
             observation: {
               source: "archive" as const,
               commit: archive.commit,
@@ -514,22 +515,15 @@ export class Queries {
         return {
           paths,
           observation: { source: "worktree" as const, limited: paths.length >= 100 },
+          read: (path: RelativePath) =>
+            paths.includes(path)
+              ? changeDocument(e, path)
+              : Effect.fail(new CrewError("SPEC_PATH", "Select a document from the owned change")),
         };
       }),
     );
   planDocument = (e: Execution, path: RelativePath) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        if (e.archive_path || e.current_phase === "completed") {
-          const archive = yield* archivedPlans(this.git, yield* this.project(e.repository_id), e);
-          return yield* archive.read(path);
-        }
-        const paths = yield* changeDocuments(e);
-        if (!paths.includes(path))
-          return yield* new CrewError("SPEC_PATH", "Select a document from the owned change");
-        return yield* changeDocument(e, path);
-      }),
-    );
+    this.planDocuments(e).pipe(Effect.flatMap((docs) => docs.read(path)));
   specStatus = (e: Execution) => this.spec.status(e);
   specApply = (e: Execution) => this.spec.apply(e);
   specInstructions = (e: Execution, artifact: ArtifactId) => this.spec.instructions(e, artifact);
@@ -1221,21 +1215,20 @@ export class Queries {
   readinessFor = (ids: readonly IssueId[]) =>
     this.capture(() =>
       Effect.gen({ self: this }, function* () {
-        const { explanation, projects, executions, setups } = yield* Effect.all(
+        const { explanation, projects, scan } = yield* Effect.all(
           {
             explanation: this.work.explainSelected(ids),
             projects: this.records.projectScan(),
-            executions: this.records.executionScan(),
-            setups: this.records.setupScan(),
+            scan: scanCapacity(this.records),
           },
           { concurrency: "unbounded" },
         );
         const rows = yield* this.evaluateReadiness({
           explanation,
           projects: projects.values,
-          executions: executions.values,
-          setups: setups.values,
-          diagnostics: [...projects.diagnostics, ...executions.diagnostics, ...setups.diagnostics],
+          executions: scan.executions,
+          setups: scan.setups,
+          diagnostics: [...projects.diagnostics, ...scan.diagnostics],
         });
         return new Map(rows.map((row) => [row.issue.id, row]));
       }),

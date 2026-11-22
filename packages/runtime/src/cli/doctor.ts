@@ -1,4 +1,5 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect platform APIs are required by the native adapters and covered by integration tests. */
+import { checkMemoryVersion, memoryError } from "../memory/provider.ts";
 import { Executable } from "../identities.ts";
 import { Effect, Console } from "effect";
 import { ProcessRunner } from "../process.ts";
@@ -18,6 +19,32 @@ await Effect.runPromise(
   Effect.gen(function* () {
     const config = yield* loadConfig(process.env.ABRACODE_HOME ?? process.cwd());
     const runner = new ProcessRunner();
+    if (config.memory?.enabled) {
+      const executable = config.memory.executable;
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const root = yield* Effect.acquireRelease(
+            mkdtemp(join(tmpdir(), "abra-memory-doctor-")),
+            (p) => rm(p, { recursive: true, force: true }).pipe(Effect.orDie),
+          );
+          yield* Effect.tryPromise({
+            try: (signal) => checkMemoryVersion(executable, root, signal),
+            catch: memoryError,
+          });
+          yield* Console.log("Basic Memory 1.0.0 available for local stdio.");
+        }),
+      ).pipe(
+        Effect.catch((error) =>
+          Console.error(error.message).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                process.exitCode = 1;
+              }),
+            ),
+          ),
+        ),
+      );
+    }
     const browser = join(config.home, "node_modules/.bin/agent-browser");
     yield* Console.log(
       `Capacity: ${config.max_workers} active workers; ${config.max_executions ?? config.max_workers} execution slots`,

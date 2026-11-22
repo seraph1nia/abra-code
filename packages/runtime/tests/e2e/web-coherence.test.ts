@@ -2,7 +2,7 @@ import { chooseAppearance } from "../helpers/workspace-browser.ts";
 import { reviewDefinition } from "../helpers/interactive-reviews.ts";
 import { feedbackFixture } from "../helpers/review-evidence.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Disposable browser/HTTP/stream fixtures exercise the shipped frontend. */
-import { test as baseTest, beforeAll, afterAll } from "vite-plus/test";
+import { test as baseTest, expect, beforeAll, afterAll } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { reportDocument, coveredReportDocument } from "../helpers/report-document.ts";
@@ -23,9 +23,11 @@ import { Form } from "@opencode/schema/form";
 
 import {
   IssueId,
+  MessageId,
   Timestamp,
   ContentHash,
   RepositoryId,
+  SessionId,
   SpecSchemaName,
 } from "../../src/identities.ts";
 import type { AttentionForm } from "../../src/web/contracts.ts";
@@ -3375,6 +3377,84 @@ test("palette searches off-page tasks, rejects late matches and seeds editable f
     await page.waitForURL((url) => url.searchParams.get("tab") === tab);
   }
   assert.equal(f.source.submissions, 0);
+});
+
+test("palette opens the exact publication once by producing call or message ID", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const session = f.source.sessionID;
+  const entries = [1, 2].map((revision) => ({
+    session_id: session,
+    message_id: MessageId.make("msg_producer_" + revision),
+    tool_call_id: "unique-call-" + revision,
+    source: "tool" as const,
+    target: { kind: "surface" as const, surface_id: "board", revision },
+  }));
+  f.source.value = {
+    ...f.source.value,
+    surfaces: [{ surface_id: "board", revision: 2, at: f.source.value.at }],
+  };
+  for (const { target } of entries)
+    f.source.surfaceHistory.set(
+      "board/" + target.revision,
+      Schema.decodeSync(SurfaceRecordSchema)({
+        session_id: session,
+        tool_call_id: "call",
+        revision: target.revision,
+        at: f.source.value.at,
+        snapshot: [],
+        surface: {
+          version: "1.0",
+          createSurface: {
+            surfaceId: "board",
+            catalogId,
+            components: [
+              { id: "root", component: "Text", text: "Exact layout " + target.revision },
+            ],
+          },
+        },
+      }),
+    );
+  f.source.publications = ({ search }) =>
+    Effect.succeed({
+      entries: [
+        ...entries.filter((e) =>
+          [e.tool_call_id, e.message_id, e.target.surface_id].some((v) => v.includes(search ?? "")),
+        ),
+        {
+          ...entries[0],
+          session_id: SessionId.make("ses_previous"),
+          target: { ...entries[0].target, surface_id: "foreign-board" },
+        },
+      ],
+      incomplete: false,
+    });
+  const page = await f.browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const requests: string[] = [];
+  page.on("request", (req) => {
+    const url = new URL(req.url());
+    if (url.pathname === "/api/surface") requests.push(url.searchParams.get("revision")!);
+  });
+  for (const [term, revision] of [
+    ["unique-call-2", 2],
+    ["msg_producer_1", 1],
+  ] as const) {
+    await page.goto(f.origin + "/settings/repositories");
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    const input = page.getByLabel("Search work and commands");
+    await input.fill("surface: board");
+    await expect.poll(() => page.getByRole("option", { name: /surface.*board/i }).count()).toBe(2);
+    await input.fill("surface: " + term);
+    const hit = page.getByRole("option", { name: /surface.*board/i });
+    await expect.poll(() => hit.count()).toBe(1);
+    requests.length = 0;
+    await hit.click();
+    await page
+      .getByLabel("Work inspector", { exact: true })
+      .getByText("Exact layout " + revision, { exact: true })
+      .waitFor();
+    assert.deepEqual(requests, [String(revision)]);
+  }
 });
 
 test("palette and slash onboarding append the same draft and leave admission explicit", async (t) => {

@@ -34,6 +34,9 @@ export function searchPublications(
   store: Pick<NativeStore, "page">,
   session: SessionId,
   query: typeof PublicationQuery.Type,
+  committed: (
+    target: Exclude<Attachment["target"], { kind: "artifact" }>,
+  ) => Effect.Effect<boolean, CrewError>,
 ) {
   return Effect.gen(function* () {
     const prefix = StoragePrefix.make("web/presentation/" + session + "/");
@@ -63,8 +66,11 @@ export function searchPublications(
         [id, target.kind, String(target.revision), item.message_id, item.tool_call_id].some((v) =>
           v?.toLowerCase().includes(needle),
         )
-      )
-        entries.push(item);
+      ) {
+        const visible = yield* committed(target).pipe(Effect.result);
+        if (visible._tag === "Failure") incomplete = true;
+        else if (visible.success) entries.push(item);
+      }
     }
     return { entries, next: page.next, incomplete };
   });

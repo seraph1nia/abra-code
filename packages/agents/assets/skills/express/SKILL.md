@@ -1,7 +1,17 @@
 ---
 name: express
-description: Compose, check, revise and publish a generated workspace view with abra_render_ui in the Supervisor conversation.
+description: Create or revise an A2UI workspace view when the user asks to see a previous explanation visually, compare plans or work items visually, or follow work in a dashboard.
 ---
+
+## Choose the view
+
+For “Can you show me why?”, carry forward the subject and evidence from the preceding answer. Publish the view that makes the answer visible with `abra_render_ui`, then give its takeaway briefly in chat.
+
+- **“Why is delivery waiting?”** When an outstanding prerequisite is the observed blocker, use `DependencyGraph` with the observed issue IDs so the user can see which issue depends on which. When a human decision is holding up delivery, lead with `DecisionSummary` for that issue. If all you have is a list of dependencies, label them as known relationships and say the cause of the wait is unknown.
+- **“Show me what changed between these plans.”** Read the two revisions. Give each consequential change a row in a `Table`, with the actual revision labels above the old and proposed behavior. Put longer supporting excerpts in a `Disclosure` when they help explain a row.
+- **“Keep these release issues in view.”** Use a live `WorkTable` scoped to the specified issue IDs. For “Add pending decisions,” publish the existing layout plus a live `DecisionSummary` for those same IDs under the original `surface_id`.
+
+## Compose and publish
 
 Choose a stable `surface_id`. Put the complete Express body in `source`, with one `root` assignment. Use arrays for fixed children and List templates for repeated data. Nest components directly or assign reusable names to individual children. Place each child once. Express assigns inline component IDs. Use named components with short identifiers for deep layouts.
 
@@ -45,13 +55,14 @@ root = Column([
 ])
 ```
 
-## Present literal content
+## Compare two plan revisions
+
+For example, the first plan calls for an immediate rollout and its revision introduces a canary. Use the user's revision labels and observed changes.
 
 ```express
 root = Card(Column([
-  KeyValueList([{label:"Branch", value:"main"}]),
-  Table("Options", ["Approach", "Effort"], [["Reuse", "Small"]]),
-  Disclosure("Implementation", CodeBlock("return value", language="Python"))
+  Table("Rollout changes", ["Decision", "Plan v1", "Plan v2"], [["Initial audience", "All users", "5% canary"]]),
+  Disclosure("Plan v2 rollout excerpt", CodeBlock("initial_rollout_percent: 5", language="yaml"))
 ]))
 ```
 
