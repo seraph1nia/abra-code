@@ -49,9 +49,8 @@ export async function thoughtsJourney(input: {
     await ab("open", web.origin);
     await ab("set", "viewport", "390", "844");
     await ab("wait", '[aria-label="Message Abra"]');
-    await ab("find", "role", "link", "click", "--name", "Canvas");
+    await ab("find", "role", "link", "click", "--name", "Thoughts", "--exact");
     await ab("wait", "--text", "Thoughts");
-    await ab("find", "role", "button", "click", "--name", "Thoughts");
     await ab("wait", '[aria-label="Thought text"]');
     await ab("find", "label", "Thought text", "fill", roadExcerpt);
     await ab("find", "role", "button", "click", "--name", "Search thoughts");
@@ -61,7 +60,18 @@ export async function thoughtsJourney(input: {
     if (input.evidence)
       await writeFile(join(input.evidence, "abra-thought.txt"), (await ab("snapshot")).stdout);
     await ab("find", "role", "button", "click", "--name", "Ask Abra about this");
-    await ab("wait", "--text", "Selected thought");
+    await ab("wait", ".thought-source a");
+    const original = (await ab("get", "attr", ".thought-source a", "href")).stdout.trim();
+    assert.equal(original, (await Effect.runPromise(backend.work.thoughtDetail(ref))).url);
+    await ab("tab", "new", original);
+    await ab("wait", "body");
+    assert.equal(new URL((await ab("get", "url")).stdout.trim()).origin, ref.instance);
+    if (input.evidence)
+      await writeFile(
+        join(input.evidence, "original-memos-on-phone.txt"),
+        (await ab("snapshot")).stdout,
+      );
+    await ab("tab", "t1");
     await ab("find", "label", "Message Abra", "fill", roadQuestion);
     await ab("press", "Enter");
     await ab("wait", "--text", "I found the weekly planning thought.");
@@ -96,6 +106,12 @@ export async function thoughtsJourney(input: {
       backend.work.overview({ issue_id: IssueId.make(result.issue.id) }),
     );
     assert.deepEqual(overview.thought_source, goal.thought_source);
+    const used = await Effect.runPromise(backend.work.thoughtWork(ref));
+    assert.ok(
+      used.entries.some(
+        (row) => row.id === result.issue.id && row.wording_hash === ref.wording_hash,
+      ),
+    );
     assert.ok(!JSON.stringify(overview).includes("Keep this second sentence personal"));
     if (input.evidence)
       await writeFile(join(input.evidence, "intake.json"), JSON.stringify(overview, null, 2));

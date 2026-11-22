@@ -1,5 +1,7 @@
 # AbraCode verification recipe
 
+For the responsive shell, search, shared reader width and notebook handoffs, see [workspace layout verification](workspace-layout.md).
+
 The focused controlled-replanning recipe is
 `ABRACODE_TEST_JOURNEY=planning-recovery ABRACODE_TEST_EVIDENCE_DIR=/tmp/abra-planning-recovery pnpm test:one packages/runtime/tests/extended/native.test.ts`.
 Use a fresh evidence directory outside the disposable installation. It reuses

@@ -46,9 +46,9 @@ export function DecisionsPanel({
 }: {
   issue: IssueId;
   forms: readonly AttentionForm[];
-  focusForm: (id: string) => void;
+  focusForm: (id: string, binding?: string) => void;
 }) {
-  const route = useSearch({ from: "/" });
+  const route = useSearch({ from: "__root__" });
   const target = route.resource?.action === "open_decision" ? route.resource : undefined;
   return (
     <RequestState query={queries.decisions(issue)}>
@@ -107,7 +107,7 @@ function DecisionRow({
 }: {
   decision: typeof DecisionSchema.Type;
   forms: readonly AttentionForm[];
-  focusForm: (id: string) => void;
+  focusForm: (id: string, binding?: string) => void;
 }) {
   return (
     <section data-decision-key={decision.key}>
@@ -115,7 +115,15 @@ function DecisionRow({
         {decision.status === "open" &&
           decision.owner === "user" &&
           (forms.some((item) => item.active && item.form.id === decision.form_id) ? (
-            <Button variant="outline" onClick={() => focusForm(decision.form_id!)}>
+            <Button
+              variant="outline"
+              onClick={() =>
+                focusForm(
+                  decision.form_id!,
+                  forms.find((item) => item.active && item.form.id === decision.form_id)?.binding,
+                )
+              }
+            >
               Answer in native form
             </Button>
           ) : (

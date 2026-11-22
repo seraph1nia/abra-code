@@ -1,20 +1,19 @@
-import { SearchTrigger } from "./search-trigger.tsx";
 import { Link } from "@tanstack/react-router";
 import { useLayoutEffect, type RefObject } from "react";
-import { resourceFromSearch, type WorkspaceSearch } from "./navigation.ts";
+import { destinations, type CollectionState } from "./navigation.ts";
 
 export default function PhoneNavigation({
-  route,
-  settings,
+  saved,
+  more,
   shell,
 }: {
-  route: WorkspaceSearch;
-  settings: boolean;
+  saved: Partial<Record<string, CollectionState>>;
+  more: boolean;
   shell: RefObject<HTMLDivElement | null>;
 }) {
   useLayoutEffect(() => {
     const viewport = window.visualViewport;
-    const element = shell.current;
+    const element = shell.current?.ownerDocument.documentElement;
     if (!viewport || !element) return;
     const fit = () => {
       // Pinch zoom retains the browser's native panning and layout.
@@ -36,27 +35,19 @@ export default function PhoneNavigation({
       element.style.removeProperty("--phone-top");
     };
   }, [shell]);
-  const canvas = Boolean(route.surface || resourceFromSearch(route) || route.view);
   return (
     <nav className="phone-navigation" aria-label="Workspace">
-      <Link
-        to="/"
-        search={{}}
-        aria-current={!settings && !canvas ? "page" : undefined}
-        activeOptions={{ exact: true }}
-      >
-        Chat
-      </Link>
-      <Link
-        to="/"
-        search={canvas ? route : { view: "canvas" }}
-        aria-current={canvas ? "page" : undefined}
-        activeOptions={{ exact: true }}
-      >
-        Canvas
-      </Link>
-      <Link to="/settings">Settings</Link>
-      <SearchTrigger compact />
+      {(["/", "/work", "/thoughts", "/more"] as const).map((to) => (
+        <Link
+          key={to}
+          to={to}
+          search={{ collection: saved[to] }}
+          activeOptions={{ exact: true, includeSearch: false }}
+          aria-current={to === "/more" && more ? "page" : undefined}
+        >
+          {destinations[to]}
+        </Link>
+      ))}
     </nav>
   );
 }

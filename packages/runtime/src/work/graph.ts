@@ -1,4 +1,9 @@
-import { ThoughtSource } from "@abracode/contracts/visibility/thoughts";
+import {
+  ThoughtSource,
+  ThoughtWorkQuery,
+  ThoughtWorkPage,
+  ThoughtWorkRow,
+} from "@abracode/contracts/visibility/thoughts";
 import { InboxIndex, inboxTables, type SourceLink } from "./inbox-index.ts";
 import { DispatchSchema } from "../config/dispatch.ts";
 import {
@@ -75,6 +80,9 @@ type Row = Record<string, SQLOutputValue>;
 export interface WorkGraph {
   readonly inbox: InboxIndex;
   hasRequest(id: RequestId): Effect.Effect<boolean, CrewError>;
+  thoughtWork(
+    query: typeof ThoughtWorkQuery.Type,
+  ): Effect.Effect<typeof ThoughtWorkPage.Type, CrewError>;
   reserveThought(
     key: string,
     digest: string,
@@ -85,6 +93,11 @@ export interface WorkGraph {
   repositoryIssueSummaries(
     repository: RepositoryId,
   ): Effect.Effect<Array<Pick<Issue, "id" | "title" | "status">>, CrewError>;
+  searchOwners(
+    after: string,
+    repository?: RepositoryId,
+    issue?: IssueId,
+  ): Effect.Effect<Array<Pick<Issue, "id" | "repository_id" | "title">>, CrewError>;
   task(id: IssueId): Effect.Effect<TaskIssue, CrewError>;
   taskEvidence(entries: readonly Issue[]): Effect.Effect<TaskEvidence[], CrewError>;
   readonly list: Effect.Effect<Issue[], CrewError>;
@@ -211,6 +224,9 @@ export class SqliteWorkGraph implements WorkGraph {
             db.exec("ALTER TABLE issues ADD COLUMN scope_json TEXT");
           if (!columns.some((c) => c.name === "thought_source_json"))
             db.exec("ALTER TABLE issues ADD COLUMN thought_source_json TEXT");
+          db.exec(
+            `CREATE INDEX IF NOT EXISTS issues_thought_source ON issues(json_extract(thought_source_json,'$.reference.instance'),json_extract(thought_source_json,'$.reference.account'),json_extract(thought_source_json,'$.reference.name'),id)`,
+          );
           if (!columns.some((c) => c.name === "report_reference_json"))
             db.exec("ALTER TABLE issues ADD COLUMN report_reference_json TEXT");
           if (!columns.some((c) => c.name === "quality_profile"))
@@ -342,6 +358,26 @@ export class SqliteWorkGraph implements WorkGraph {
         .all(),
     );
   }
+  searchOwners(after: string, repository?: RepositoryId, issue?: IssueId) {
+    return sqlEffect(() =>
+      this.db
+        .prepare(
+          "SELECT id,repository_id,title FROM issues WHERE id >= ? AND (? IS NULL OR repository_id = ?) AND (? IS NULL OR id = ?) ORDER BY id LIMIT 5",
+        )
+        .all(after, repository ?? null, repository ?? null, issue ?? null, issue ?? null)
+        .map((row) =>
+          decodeSync(
+            Schema.Struct({
+              id: IssueSchema.fields.id,
+              repository_id: IssueSchema.fields.repository_id,
+              title: IssueSchema.fields.title,
+            }),
+            row,
+            "Discovery owner",
+          ),
+        ),
+    );
+  }
   repositoryIssueSummaries(repository: RepositoryId) {
     return sqlEffect(() =>
       this.db
@@ -421,6 +457,20 @@ export class SqliteWorkGraph implements WorkGraph {
     );
   }
 
+  thoughtWork(query: typeof ThoughtWorkQuery.Type) {
+    return sqlEffect(() => {
+      const offset = query.offset ?? 0;
+      const rows = this.db
+        .prepare(`SELECT id,title,repository_id,json_extract(thought_source_json,'$.reference.wording_hash') AS wording_hash FROM issues
+        WHERE json_extract(thought_source_json,'$.reference.instance')=? AND json_extract(thought_source_json,'$.reference.account')=? AND json_extract(thought_source_json,'$.reference.name')=?
+        ORDER BY id LIMIT 21 OFFSET ?`)
+        .all(query.instance, query.account, query.name, offset);
+      return {
+        entries: rows.slice(0, 20).map((row) => Schema.decodeUnknownSync(ThoughtWorkRow)(row)),
+        next_offset: rows.length > 20 ? offset + 20 : undefined,
+      };
+    });
+  }
   reserveThought(key: string, digest: string) {
     return sqlEffect(() =>
       this.transaction(() => {

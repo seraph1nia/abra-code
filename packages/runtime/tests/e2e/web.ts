@@ -271,7 +271,7 @@ export async function webJourney(
         await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
         false,
       );
-      await page.getByRole("link", { name: "Canvas", exact: true }).click();
+      await page.getByRole("link", { name: "Work", exact: true }).click();
       await page.getByRole("link", { name: "Chat", exact: true }).click();
       if (evidence)
         await page.screenshot({ path: join(evidence, "workspace-narrow.png"), fullPage: true });

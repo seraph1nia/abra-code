@@ -1,3 +1,4 @@
+import { chooseAppearance } from "../helpers/workspace-browser.ts";
 import { analysisCharts } from "../helpers/chart-fixtures.ts";
 import { workspaceBrowserFixture } from "../helpers/workspace-browser.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Shipped browser assets and disposable Effect HTTP fixture. */
@@ -275,7 +276,7 @@ test("upstream A2UI renders every work widget, replaces revisions and retains va
   for (const width of [1440, 375, 390]) {
     await page.setViewportSize({ width, height: 844 });
     for (const theme of ["light", "dark"]) {
-      await page.getByLabel("Color theme", { exact: true }).selectOption(theme);
+      await chooseAppearance(page, theme);
       assert.equal(
         await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
         false,

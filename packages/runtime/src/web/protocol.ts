@@ -1,3 +1,4 @@
+import { PublicationPage, PublicationQuery } from "@abracode/contracts/presentation/contracts";
 import {
   ReviewSelectionSchema,
   ReviewViewSchema,
@@ -86,6 +87,10 @@ export const webGateway = Rpc.define({
     prepareDiagrams: method(
       Schema.Struct({ session_id: SessionId, selection: PrepareDiagramSelectionSchema }),
       DiagramPreparationSchema,
+    ),
+    publications: method(
+      Schema.Struct({ session_id: SessionId, ...PublicationQuery.fields }),
+      PublicationPage,
     ),
     surface: method(
       Schema.Struct({

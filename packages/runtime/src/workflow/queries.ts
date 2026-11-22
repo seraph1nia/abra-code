@@ -1,3 +1,5 @@
+import { discoverEvidence } from "../visibility/evidence-discovery.ts";
+import type { EvidenceSearch } from "@abracode/contracts/visibility/discovery-contracts";
 import { retainedEvidence } from "./worker-evidence.ts";
 import type { EvidenceQuery } from "@abracode/contracts/web/worker-evidence";
 import { archivedPlans } from "../visibility/archived-plans.ts";
@@ -151,6 +153,11 @@ export class Queries {
   project = (id: RepositoryId) => this.records.project(id);
   executions = () => this.records.executions();
   execution = (id: IssueId) => this.records.execution(id);
+  thoughtWork = (query: Parameters<WorkGraph["thoughtWork"]>[0]) => this.work.thoughtWork(query);
+  searchOwners = (after: string, repository?: RepositoryId, issue?: IssueId) =>
+    this.work.searchOwners(after, repository, issue);
+  discoverEvidence = (query: EvidenceSearch) =>
+    discoverEvidence(this, () => scanLeads(this.records), query);
   issues = () => this.work.list;
   issue = (id: IssueId) => this.work.show(id);
   history = (id: IssueId) => this.work.history(id);
@@ -528,12 +535,35 @@ export class Queries {
   specInstructions = (e: Execution, artifact: ArtifactId) => this.spec.instructions(e, artifact);
   dirty = (path: AbsolutePath) => this.git.dirty(path);
   session = (id: SessionId) => this.runtime.session(id);
+  sessionAvailability = (
+    e: Execution,
+    id: SessionId,
+  ): Effect.Effect<"available" | "unavailable" | "unverified"> =>
+    this.runtime.sessionOwner
+      ? this.runtime.sessionOwner(id).pipe(
+          Effect.map((owner) =>
+            (
+              owner.issue_id
+                ? owner.issue_id === e.issue_id
+                : owner.directory === e.worktree_directory
+            )
+              ? ("available" as const)
+              : ("unavailable" as const),
+          ),
+          Effect.orElseSucceed(() => "unavailable" as const),
+        )
+      : Effect.succeed("unverified" as const);
   inspectWorker = (issue: IssueId, session: SessionId) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
         const execution = yield* this.get(issue);
         if (!hasWorkerSession(execution, session))
           return yield* new CrewError("NOT_FOUND", "Worker is not assigned to this ticket");
+        if ((yield* this.sessionAvailability(execution, session)) === "unavailable")
+          return yield* new CrewError(
+            "WORKER_UNAVAILABLE",
+            "The native session is missing or belongs to another task",
+          );
         const state = yield* this.runtime
           .session(session)
           .pipe(
@@ -734,13 +764,13 @@ export class Queries {
     domainEffect,
   );
   assignment = (sessionID: SessionId) => this.records.workerAssignment(sessionID);
-  diff = (id: IssueId, scope: DiffScope, file?: RelativePath) =>
+  diff = (id: IssueId, scope: DiffScope, file?: RelativePath, filesOnly = false) =>
     new TicketDiff({
       issue: this.issue,
       execution: this.execution,
       project: this.project,
       git: { run: this.git.run.bind(this.git), validate: this.git.validate },
-    }).read(id, scope, file);
+    }).read(id, scope, file, filesOnly);
   report = (id: IssueId) =>
     this.get(id).pipe(
       Effect.flatMap((e) =>

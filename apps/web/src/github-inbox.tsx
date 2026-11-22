@@ -8,6 +8,7 @@ import type {
   InboxTarget,
   InboxDetail,
 } from "@abracode/contracts/visibility/github-inbox";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { WorkspaceApi } from "./data.ts";
 import { RequestState } from "./request-state.tsx";
 import { requestError } from "./request-error.ts";
@@ -31,7 +32,7 @@ function Item({
   close,
   ask,
   open,
-}: { target: InboxTarget; close: () => void } & Pick<Props, "ask" | "open">) {
+}: { target: InboxTarget; close: () => Promise<void> } & Pick<Props, "ask" | "open">) {
   const query = WorkspaceApi.query("work", "githubItem", {
     query: target,
     timeToLive: "0 seconds",
@@ -40,7 +41,7 @@ function Item({
     <Sheet
       open
       onOpenChange={(v) => {
-        if (!v) close();
+        if (!v) void close();
       }}
     >
       <SheetContent className="overflow-y-auto" side="right">
@@ -65,7 +66,6 @@ function Item({
                   key={link.role + link.issue_id}
                   variant="outline"
                   onClick={() => {
-                    close();
                     open(
                       link.issue_id,
                       link.role === "review" && link.status === "closed" ? "Reports" : undefined,
@@ -94,8 +94,8 @@ function Item({
               {!item.comments_complete && <p>Showing part of the discussion.</p>}
               {item.state === "OPEN" && (
                 <Button
-                  onClick={() => {
-                    close();
+                  onClick={async () => {
+                    await close();
                     ask(
                       (item.kind === "pr" ? "Privately review " : "Pick up ") +
                         item.url +
@@ -115,40 +115,72 @@ function Item({
     </Sheet>
   );
 }
-export function GithubInbox({ query: base, ask, open }: Props) {
-  const [kind, setKind] = useState<InboxQuery["kind"]>(),
-    [role, setRole] = useState<InboxQuery["role"]>(),
-    [label, setLabel] = useState(""),
-    [filter, setFilter] = useState(""),
-    [state, setState] = useState<InboxQuery["state"]>("OPEN");
-  const scope = JSON.stringify([base.repository_id, base.search, kind, role, filter, state]);
-  const [pagination, setPagination] = useState({ scope, offset: 0 });
-  const offset = scope === pagination.scope ? pagination.offset : 0;
-  const [target, setTarget] = useState<InboxTarget>(),
-    [visible, setVisible] = useState(!document.hidden);
+export function GithubInbox({
+  ask,
+  open,
+  projects,
+}: Omit<Props, "query"> & { projects: readonly { id: string; name: string }[] }) {
+  const { collection } = useSearch({ from: "__root__" });
+  const navigate = useNavigate();
+  const query = { state: "OPEN", ...collection?.github } satisfies InboxQuery;
+  const { kind, role, state } = query;
+
+  const target = collection?.item;
+  const update = (change: Partial<InboxQuery>) =>
+    void navigate({
+      to: "/github",
+      search: { collection: { github: { ...query, offset: 0, ...change } } },
+    });
+  const setTarget = (item?: InboxTarget) =>
+    navigate({ to: "/github", search: { collection: { github: query, item } } });
+  const [visible, setVisible] = useState(!document.hidden);
   useEffect(() => {
     const handle = () => setVisible(!document.hidden);
     document.addEventListener("visibilitychange", handle);
     return () => document.removeEventListener("visibilitychange", handle);
   }, []);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setFilter(label.trim());
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [label]);
-
-  const query = { ...base, kind, role, state, label: filter || undefined, offset };
   return (
-    <section className="max-h-[38dvh] shrink-0 space-y-2 overflow-y-auto" aria-label="GitHub inbox">
+    <section className="space-y-2" aria-label="GitHub inbox">
       <h3>GitHub inbox</h3>
+      <form
+        key={query.search ?? ""}
+        onSubmit={(e) => {
+          e.preventDefault();
+          const field = new FormData(e.currentTarget).get("text");
+          const search = typeof field === "string" ? field.trim() : "";
+          update({ search: search || undefined });
+        }}
+      >
+        <Input
+          aria-label="Search GitHub"
+          name="text"
+          defaultValue={query.search}
+          placeholder="Search GitHub items"
+          maxLength={256}
+        />
+        <Button type="submit">Search GitHub items</Button>
+      </form>
+      <NativeSelect
+        aria-label="GitHub repository"
+        value={query.repository_id ?? ""}
+        onChange={(e) =>
+          update({ repository_id: (e.target.value || undefined) as InboxQuery["repository_id"] })
+        }
+      >
+        <option value="">All repositories</option>
+        {projects.map((p) => (
+          <option value={p.id} key={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </NativeSelect>
       <details>
         <summary>GitHub filters</summary>
         <NativeSelect
           aria-label="GitHub item type"
           value={kind ?? ""}
           onChange={(e) => {
-            setKind((e.target.value as typeof kind) || undefined);
+            update({ kind: (e.target.value as typeof kind) || undefined });
           }}
         >
           <option value="">Issues and pull requests</option>
@@ -159,7 +191,7 @@ export function GithubInbox({ query: base, ask, open }: Props) {
           aria-label="GitHub state"
           value={state}
           onChange={(e) => {
-            setState(e.target.value as typeof state);
+            update({ state: e.target.value as typeof state });
           }}
         >
           {["OPEN", "CLOSED", "MERGED"].map((s) => (
@@ -172,7 +204,7 @@ export function GithubInbox({ query: base, ask, open }: Props) {
           aria-label="Abra role"
           value={role ?? ""}
           onChange={(e) => {
-            setRole((e.target.value as typeof role) || undefined);
+            update({ role: (e.target.value as typeof role) || undefined });
           }}
         >
           <option value="">Any Abra role</option>
@@ -183,28 +215,23 @@ export function GithubInbox({ query: base, ask, open }: Props) {
         <Input
           aria-label="GitHub label"
           placeholder="Filter by label"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
+          key={query.label ?? ""}
+          defaultValue={query.label ?? ""}
+          onBlur={(e) => {
+            const label = e.target.value.trim();
+            if (label !== (query.label ?? "")) update({ label: label || undefined });
+          }}
         />
         <Button
           variant="ghost"
           onClick={() => {
-            setState("OPEN");
-            setLabel("");
-            setRole(undefined);
-            setKind(undefined);
+            void navigate({ to: "/github", search: {} });
           }}
         >
           Clear GitHub filters
         </Button>
       </details>
-      {visible && (
-        <Rows
-          query={query}
-          select={setTarget}
-          page={(offset) => setPagination({ scope, offset })}
-        />
-      )}
+      {visible && <Rows query={query} select={setTarget} page={(offset) => update({ offset })} />}
       {visible && target && (
         <Item target={target} close={() => setTarget(undefined)} ask={ask} open={open} />
       )}

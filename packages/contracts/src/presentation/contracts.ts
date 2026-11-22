@@ -49,3 +49,14 @@ export const PresentationPageSchema = Schema.Struct({
     Schema.Array(PresentationDiagnosticSchema).check(Schema.isMaxLength(200)),
   ),
 });
+
+export const PublicationQuery = Schema.Struct({
+  search: Schema.optional(Schema.String.check(Schema.isMaxLength(256))),
+  kind: Schema.optional(Schema.Literals(["surface", "review"])),
+  cursor: Schema.optional(Schema.String.check(Schema.isMaxLength(1024))),
+});
+export const PublicationPage = Schema.Struct({
+  entries: Schema.Array(PresentationAttachmentSchema).check(Schema.isMaxLength(32)),
+  next: Schema.optional(Schema.String),
+  incomplete: Schema.Boolean,
+});

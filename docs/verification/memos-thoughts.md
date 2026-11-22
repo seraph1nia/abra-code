@@ -17,5 +17,9 @@ Use the [native fixture prerequisites](README.md) and a disposable Memos 26.11.1
    pnpm test:one packages/runtime/tests/extended/native.test.ts
    ```
 
-4. The fixture starts the pinned OpenCode service and workspace, opens the phone Canvas finder, searches Thoughts, and submits a question about the selected reference. Its deterministic provider calls the real Supervisor lookup through Memos MCP. It then registers its temporary repository and explicitly invokes ordinary work intake twice with the same request ID. The issue overview must retain the chosen reference and excerpt. The second sentence stays outside the issue.
-5. Review the captured phone memo, Abra detail and chat snapshots, and the retained issue overview. Stop the disposable notebook and remove its temporary token file.
+4. The fixture starts the pinned OpenCode service and workspace, opens the phone Thoughts destination, searches the private notebook, and submits a question about the selected reference. Its deterministic provider calls the real Supervisor lookup through Memos MCP. It then registers its temporary repository and explicitly invokes ordinary work intake twice with the same request ID. The issue overview must retain the chosen reference and excerpt. The second sentence stays outside the issue.
+5. Review the captured phone memo, Abra detail and chat snapshots, and the retained issue overview. Keep the disposable notebook running for the source checks below.
+6. Check **Open in Memos** on the selected thought, its draft chip and its accepted task. Use a notebook origin reachable from the test phone. The task shows the captured excerpt. Opening **Live notebook preview** rechecks the configured origin, account and wording.
+7. Open **Used in work** from the current memo, page through matching issues and open the accepted task. Edit or delete the disposable memo. Confirm the accepted excerpt still renders and the live preview explains an obsolete or unavailable source. A different notebook account with the same memo name must have separate results.
+
+8. Stop the disposable notebook and remove its temporary token file.

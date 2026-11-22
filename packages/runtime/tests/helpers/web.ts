@@ -55,6 +55,8 @@ export class WorkspaceFixture implements WebBackend {
   observe = (_scope: import("@abracode/contracts/web/changes").ChangeScope) =>
     Effect.suspend(() => this.snapshot);
   resolve = (target: ResourceSelection) => Effect.succeed(target);
+  publications: WebBackend["publications"] = () =>
+    Effect.succeed({ entries: [], incomplete: false });
   surface = (id: string, revision: number) =>
     Effect.sync(
       () =>
@@ -168,6 +170,9 @@ export class WorkspaceFixture implements WebBackend {
           observed_at: this.value.at,
         };
       }),
+    evidenceSearch: this.unavailableRead,
+    sessions: this.unavailableRead,
+    thoughtWork: this.unavailableRead,
     thoughtList: this.unavailableRead,
     thoughtDetail: this.unavailableRead,
     githubInbox: () => Effect.succeed({ entries: [], total: 0, coverage: [] }),

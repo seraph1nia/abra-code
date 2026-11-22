@@ -76,7 +76,12 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
     }
   }
   return (
-    <Card className="attention-card" data-native-form-id={form.id} tabIndex={-1}>
+    <Card
+      className="attention-card"
+      id={"form-" + form.id + "-" + item.binding}
+      data-native-form-id={form.id}
+      tabIndex={-1}
+    >
       <CardHeader>
         <div className="eyebrow">
           {item.checkpoint
@@ -383,7 +388,12 @@ function PermissionContent({ item, refresh }: { item: AttentionPermission; refre
     }
   }
   return (
-    <Card className="attention-card" data-native-permission tabIndex={-1}>
+    <Card
+      className="attention-card"
+      id={"permission-" + item.request.id + "-" + item.binding}
+      data-native-permission
+      tabIndex={-1}
+    >
       <CardHeader>
         <div className="eyebrow">Native permission</div>
         <CardTitle>

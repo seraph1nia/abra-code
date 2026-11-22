@@ -58,8 +58,7 @@ test("Thoughts browses private selections directly with zero projects and keeps 
     if (r.url().startsWith("http")) origins.add(new URL(r.url()).origin);
   });
   await page.goto(f.origin);
-  await page.getByRole("button", { name: "Toggle work finder" }).click();
-  await page.getByRole("button", { name: "Thoughts", exact: true }).click();
+  await page.getByRole("link", { name: "Thoughts", exact: true }).click();
   await page.getByText(/Configure a Memos notebook/).waitFor();
   state = "down";
   await page.getByRole("button", { name: "Retry", exact: true }).click();
@@ -128,8 +127,7 @@ test("phone selection preserves an edited draft through navigation and submits t
   await page.goto(f.origin);
   const composer = page.getByRole("textbox", { name: "Message Abra" });
   await composer.fill("Keep my question");
-  await page.getByRole("link", { name: "Canvas", exact: true }).click();
-  await page.getByRole("button", { name: "Thoughts", exact: true }).click();
+  await page.getByRole("link", { name: "Thoughts", exact: true }).click();
   await page
     .getByRole("button", { name: /Same opening/ })
     .nth(1)
@@ -138,13 +136,41 @@ test("phone selection preserves an edited draft through navigation and submits t
   await composer.waitFor();
   assert.equal(await composer.inputValue(), "Keep my question");
   rows.reverse();
+  await page.getByRole("link", { name: "More", exact: true }).click();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("link", { name: "Chat", exact: true }).click();
-  await page.getByText("Selected thought · memos/second").waitFor();
+  await page.locator(".selection-chip").getByText("memos/second").waitFor();
   assert.equal(f.source.submissions, 0);
   await composer.fill("Keep my question and discuss this");
   await composer.press("Enter");
   await page.getByText("I can help you build that.").waitFor();
   assert.equal(f.source.submissions, 1);
   assert.deepEqual(f.source.value.receipts.at(-1)?.thought, make("second").reference);
+});
+
+test("accepted wording and its original link survive an unavailable live memo", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const reference = {
+    instance: "https://notes.test",
+    account: "users/me",
+    name: "memos/deleted",
+    wording_hash: "a".repeat(64),
+  };
+  f.detailOverrides.set("abra-web", {
+    thought_source: { reference, excerpt: "Accepted sentence." },
+  });
+  f.source.work.thoughtDetail = () =>
+    Effect.fail(new CrewError("MEMOS_UNAVAILABLE", "This memo is unavailable."));
+  const page = await f.browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.goto(f.origin + "/work?issue=abra-web&tab=Overview");
+  const card = page.locator(".thought-source");
+  await card.getByText("Accepted sentence.").waitFor();
+  assert.equal(
+    await card.getByRole("link", { name: "Open in Memos" }).getAttribute("href"),
+    reference.instance + "/" + reference.name,
+  );
+  await card.getByText("Live notebook preview").click();
+  await card.getByText(/This memo is unavailable/).waitFor();
+  assert.equal(await card.locator("blockquote").innerText(), "Accepted sentence.");
 });

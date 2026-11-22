@@ -1,3 +1,8 @@
+import {
+  EvidenceSearchPage,
+  SessionPage,
+} from "@abracode/contracts/visibility/discovery-contracts";
+import { ThoughtWorkPage } from "@abracode/contracts/visibility/thoughts";
 import { ThoughtPage, ThoughtDetail } from "@abracode/contracts/visibility/thoughts";
 import { InboxPage, InboxDetail } from "@abracode/contracts/visibility/github-inbox";
 import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
@@ -158,6 +163,21 @@ export const createPlugin = (
         // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native RPC registration exposes an open error channel.
         const registration = yield* ctx.rpc.register(visibility, {
           binding: read(BindingReadSchema, (query) => observer.binding(query)),
+          evidenceSearch: read(EvidenceSearchPage, (q) =>
+            central
+              ? c.queries.discoverEvidence(q)
+              : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central workspace")),
+          ),
+          sessions: read(SessionPage, (q) =>
+            central
+              ? observer.sessionSearch(q)
+              : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central workspace")),
+          ),
+          thoughtWork: read(ThoughtWorkPage, (q) =>
+            central
+              ? c.thoughts.get(q, "http").pipe(Effect.andThen(() => c.queries.thoughtWork(q)))
+              : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central workspace")),
+          ),
           thoughtList: read(ThoughtPage, (q) =>
             central
               ? c.thoughts.list(q, "http")

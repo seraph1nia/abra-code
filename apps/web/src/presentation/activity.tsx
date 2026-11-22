@@ -1,3 +1,4 @@
+import { destinationFor } from "../navigation.ts";
 import { useSearch, useNavigate } from "@tanstack/react-router";
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
 import { activitySections, searchForResource } from "../navigation.ts";
@@ -14,8 +15,8 @@ const labels = {
   leads: "Leads & proposals",
 };
 export function ActivityPanel({ work, inspect }: { work: WebWorkItem; inspect: Inspect }) {
-  const route = useSearch({ from: "/" }),
-    navigate = useNavigate({ from: "/" });
+  const route = useSearch({ from: "__root__" }),
+    navigate = useNavigate({ from: destinationFor(window.location.pathname) ?? "/" });
   const section = route.activity ?? "sessions";
   return (
     <Tabs
@@ -24,12 +25,15 @@ export function ActivityPanel({ work, inspect }: { work: WebWorkItem; inspect: I
         const activity = activitySections.find((section) => section === value);
         if (activity)
           void navigate({
-            search: searchForResource({
-              action: "open_task",
-              issue_id: work.issue_id,
-              section: "activity",
-              activity,
-            }),
+            search: {
+              collection: route.collection,
+              ...searchForResource({
+                action: "open_task",
+                issue_id: work.issue_id,
+                section: "activity",
+                activity,
+              }),
+            },
           });
       }}
     >

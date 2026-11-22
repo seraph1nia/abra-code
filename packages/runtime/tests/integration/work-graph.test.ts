@@ -334,7 +334,7 @@ test("schema 10 work replays after upgrading the optional thought source and sav
   const db = new DatabaseSync(path);
   try {
     db.exec(
-      "ALTER TABLE issues DROP COLUMN thought_source_json; DROP TABLE thought_saves; PRAGMA user_version = 10",
+      "DROP INDEX IF EXISTS issues_thought_source; ALTER TABLE issues DROP COLUMN thought_source_json; DROP TABLE thought_saves; PRAGMA user_version = 10",
     );
   } finally {
     db.close();
@@ -801,4 +801,27 @@ test("batch integrity is checked on reopen and after peer commits, and reused on
     (await run(reopened.createBatch(attempt))).tasks.map((t) => [t.client_key, t.issue.id]),
     receipt.tasks.map((t) => [t.client_key, t.issue.id]),
   );
+});
+
+test("memo work lookup keeps both accepted wordings and excludes foreign notebooks and accounts", async (t) => {
+  const { graph } = await database(t);
+  const reference = {
+    instance: "https://memos.test",
+    account: "users/me",
+    name: "memos/design",
+    wording_hash: "a".repeat(64),
+  };
+  for (const [key, ref] of [
+    ["v1", reference],
+    ["v2", { ...reference, wording_hash: "b".repeat(64) }],
+    ["other-account", { ...reference, account: "users/other" }],
+    ["other-instance", { ...reference, instance: "https://other.test" }],
+  ] as const)
+    await run(graph.create({ ...goal(key), thought_source: { reference: ref, excerpt: key } }));
+  const result = await run(graph.thoughtWork(reference));
+  assert.deepEqual(result.entries.map((row) => row.wording_hash).sort(), [
+    "a".repeat(64),
+    "b".repeat(64),
+  ]);
+  assert.equal((await run(graph.thoughtWork({ ...reference, offset: 2 }))).entries.length, 0);
 });

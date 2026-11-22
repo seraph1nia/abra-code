@@ -1,5 +1,12 @@
+import { ThoughtSource } from "./thought-source.tsx";
+import {
+  appendDraft,
+  composerCommands,
+  slashToken,
+  type ComposerCommand,
+} from "./workspace-commands.ts";
 import { selectionLabel } from "@abracode/contracts/web/resources";
-import { useCallback, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Submission } from "@abracode/contracts/web/workspace-wire";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Composer owns draft/admission subscriptions independently of transcript presentation. */
 import { useAtom } from "@effect/atom-react";
@@ -13,8 +20,17 @@ import { stopMutation } from "./data.ts";
 import { requestError } from "./request-error.ts";
 import { useWorkspaceDraft } from "./workspace-state/draft.ts";
 import { useWorkspaceAdmission } from "./workspace-state/admission.ts";
+const ComposerSuggestions = lazy(() =>
+  import("@abracode/presentation/ui/search-dialog").then((module) => ({
+    default: module.ComposerSuggestions,
+  })),
+);
 export function Composer({
   workspace,
+  command,
+  consumed,
+  pickThought,
+  updateDraftLock,
   isReady,
   refresh,
   error,
@@ -23,6 +39,10 @@ export function Composer({
   connectionError,
 }: {
   workspace: WorkspaceSnapshot;
+  command?: { action: ComposerCommand };
+  consumed: () => void;
+  pickThought: (consume?: { text: string; start: number; end: number }) => void;
+  updateDraftLock: (locked: boolean) => void;
   isReady: boolean;
   refresh: () => void;
   error: string;
@@ -47,7 +67,49 @@ export function Composer({
     refresh,
     setError,
   });
+  useLayoutEffect(() => {
+    updateDraftLock(!isReady || Boolean(pending) || admitting);
+  }, [updateDraftLock, pending, admitting, isReady]);
   const [stopResult, stop] = useAtom(stopMutation, { mode: "promiseExit" });
+
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const [token, setToken] = useState<ReturnType<typeof slashToken>>();
+  const [highlight, setHighlight] = useState(0);
+  const choices = token
+    ? composerCommands.filter((c) => ("/" + c.id).startsWith(token.token.toLowerCase()))
+    : [];
+  const handled = useRef<typeof command>(undefined);
+  const choose = useCallback(
+    (action: ComposerCommand, range?: ReturnType<typeof slashToken>) => {
+      if (!isReady || pending || admitting) {
+        setError("Wait for the pending submission before editing this draft.");
+        return;
+      }
+      if (action.id === "attach-thought") {
+        pickThought(range ? { text: draft, ...range } : undefined);
+      } else {
+        const next =
+          range && range.end < draft.length
+            ? draft.slice(0, range.start) + action.text + draft.slice(range.end)
+            : appendDraft(range ? draft.slice(0, range.start) : draft, action.text);
+        if (next === undefined || next.length > 32768) {
+          setError("This insertion exceeds the draft limit.");
+          return;
+        }
+        edit({ text: next });
+        textarea.current?.focus();
+      }
+      setToken(undefined);
+    },
+    [isReady, pending, admitting, draft, edit, pickThought, setError],
+  );
+  useEffect(() => {
+    if (command && handled.current !== command && isReady) {
+      handled.current = command;
+      choose(command.action);
+      consumed();
+    }
+  }, [command, consumed, choose, isReady]);
   return (
     <footer className="composer-area">
       {(error || stateError || connectionError || workspace.work_unavailable) && (
@@ -92,8 +154,13 @@ export function Composer({
       >
         {input.thought && (
           <div className="selection-chip">
-            <span>Selected thought · {input.thought.name}</span>
-            <Button type="button" variant="ghost" onClick={() => edit({ thought: undefined })}>
+            <ThoughtSource reference={input.thought} />
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={!isReady || admitting || Boolean(pending)}
+              onClick={() => edit({ thought: undefined })}
+            >
               Remove thought
             </Button>
           </div>
@@ -106,16 +173,70 @@ export function Composer({
               </summary>
               <pre>{input.attachment.excerpt}</pre>
             </details>
-            <Button type="button" variant="ghost" onClick={() => edit({ attachment: undefined })}>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={!isReady || admitting || Boolean(pending)}
+              onClick={() => edit({ attachment: undefined })}
+            >
               Remove selection
             </Button>
           </div>
         )}
+        {choices.length > 0 && (
+          <Suspense fallback={null}>
+            <ComposerSuggestions
+              items={choices}
+              highlight={highlight}
+              choose={(id) => {
+                const action = choices.find((item) => item.id === id);
+                if (action) choose(action, token);
+              }}
+            />
+          </Suspense>
+        )}
         <Textarea
+          ref={textarea}
+          aria-controls={choices.length ? "chat-commands" : undefined}
+          aria-activedescendant={choices[highlight] ? "slash-" + choices[highlight].id : undefined}
+          onSelect={(event) => {
+            if (token && event.currentTarget.selectionStart !== token.end) setToken(undefined);
+          }}
+          onCompositionStart={() => setToken(undefined)}
           aria-label="Message Abra"
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            const inputEvent = event.nativeEvent as InputEvent;
+            setDraft(event.target.value);
+            setHighlight(0);
+            setToken(
+              inputEvent.inputType === "insertText" && !inputEvent.isComposing
+                ? slashToken(event.target.value, event.target.selectionStart)
+                : undefined,
+            );
+          }}
           onKeyDown={(event) => {
+            if (choices.length && !event.nativeEvent.isComposing) {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                setToken(undefined);
+                return;
+              }
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                setHighlight(
+                  (highlight + (event.key === "ArrowDown" ? 1 : -1) + choices.length) %
+                    choices.length,
+                );
+                return;
+              }
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                choose(choices[highlight]!, token);
+                return;
+              }
+            }
             if (
               event.key === "Enter" &&
               !event.shiftKey &&
@@ -131,7 +252,7 @@ export function Composer({
               ? delivery === "steer"
                 ? "Steer the current Abra turn…"
                 : "Queue a message for Abra…"
-              : "Ask Abra to explore, plan, or build…"
+              : "Message Abra…"
           }
           rows={2}
           maxLength={32768}

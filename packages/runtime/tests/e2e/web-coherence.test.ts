@@ -1,3 +1,4 @@
+import { chooseAppearance } from "../helpers/workspace-browser.ts";
 import { reviewDefinition } from "../helpers/interactive-reviews.ts";
 import { feedbackFixture } from "../helpers/review-evidence.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Disposable browser/HTTP/stream fixtures exercise the shipped frontend. */
@@ -309,14 +310,15 @@ test("theme resolves before application loading and follows system changes witho
   release();
   const draft = page.getByRole("textbox", { name: "Message Abra" });
   await draft.fill("Keep theme edits");
-  await page.getByLabel("Color theme", { exact: true }).selectOption("system");
+  await chooseAppearance(page, "system");
   await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
   await page.emulateMedia({ colorScheme: "dark" });
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
   assert.equal(await draft.inputValue(), "Keep theme edits");
-  await page.getByRole("link", { name: "Canvas", exact: true }).click();
-  const dialog = page.getByRole("complementary", { name: "Work finder" });
+  await page.getByRole("link", { name: "Work", exact: true }).click();
+  const dialog = page.getByRole("region", { name: "Work finder" });
   await dialog.waitFor();
+  await dialog.getByRole("link", { name: "Capacity", exact: true }).click();
   const capacity = dialog.getByRole("region", { name: "Capacity" });
   await capacity.getByText("0 / 2", { exact: true }).waitFor();
   await capacity.getByText("1 / 4", { exact: true }).waitFor();
@@ -326,7 +328,7 @@ test("theme resolves before application loading and follows system changes witho
     await dialog.evaluate((element) => getComputedStyle(element).fontFamily),
     await page.locator("body").evaluate((element) => getComputedStyle(element).fontFamily),
   );
-  await page.keyboard.press("Escape");
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
   assert.equal(await draft.inputValue(), "Keep theme edits");
   const unavailable = await f.browser.newPage({ colorScheme: "dark" });
   await unavailable.addInitScript(() => {
@@ -339,7 +341,7 @@ test("theme resolves before application loading and follows system changes witho
   });
   await unavailable.goto(f.origin);
   await unavailable.getByRole("textbox", { name: "Message Abra" }).fill("Mounted without storage");
-  await unavailable.getByLabel("Color theme", { exact: true }).selectOption("light");
+  await chooseAppearance(unavailable, "light");
   await unavailable.waitForFunction(() => document.documentElement.dataset.theme === "light");
   assert.equal(
     await unavailable.getByRole("textbox", { name: "Message Abra" }).inputValue(),
@@ -453,8 +455,8 @@ test("custom native choices retain raw lines across refresh and normalize only o
   const raw = await text.inputValue();
   assert.equal(raw, "alpha\n\nbeta\nmiddle alpha");
   await f.changed();
-  await page.getByRole("button", { name: /^Attention/ }).click();
-  await page.getByRole("button", { name: /^Attention/ }).click();
+  await page.getByRole("link", { name: "Attention", exact: true }).click();
+  await page.getByRole("link", { name: "Attention", exact: true }).click();
   assert.equal(await text.inputValue(), raw);
   await text.fill("alpha\n\nbeta\nalpha\npreset");
   await page.getByRole("button", { name: "Submit answer", exact: true }).click();
@@ -657,10 +659,8 @@ test("exact saved reports use frozen catalog bindings, preserve pending checks a
   for (const width of [1600, 375, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     for (const theme of ["light", "dark"]) {
-      if (width <= 760) await page.getByRole("link", { name: "Chat", exact: true }).click();
-      await page.getByLabel("Color theme", { exact: true }).selectOption(theme);
+      await chooseAppearance(page, theme);
       if (width <= 760) {
-        await page.getByRole("link", { name: "Canvas", exact: true }).click();
         await page.locator(".frozen-report").waitFor();
       }
       assert.ok(
@@ -731,7 +731,7 @@ test("exact saved reports use frozen catalog bindings, preserve pending checks a
     await page.setViewportSize({ width, height: 844 });
     await page
       .locator('.phone-navigation a[aria-current="page"]')
-      .filter({ hasText: "Canvas" })
+      .filter({ hasText: "Chat" })
       .waitFor();
     await page.locator('.inspector [data-report-section="checks"]').waitFor();
     await page.locator('[data-report-section="checks"]').scrollIntoViewIfNeeded();
@@ -1083,7 +1083,7 @@ test("typed inspector URLs render Pierre, preserve navigation and theme across r
   await page.goBack();
   await page.locator('[data-diff-renderer="pierre"]').waitFor();
   assert.match(page.url(), /file=second.ts/);
-  await page.getByLabel("Color theme").selectOption("dark");
+  await chooseAppearance(page, "dark");
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
   await screenshot(page, "frontend-coherence-desktop-dark.png");
   await page.setViewportSize({ width: 761, height: 844 });
@@ -1091,7 +1091,7 @@ test("typed inspector URLs render Pierre, preserve navigation and theme across r
   await page.setViewportSize({ width: 390, height: 844 });
   await page
     .locator('.phone-navigation a[aria-current="page"]')
-    .filter({ hasText: "Canvas" })
+    .filter({ hasText: "Chat" })
     .waitFor();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   assert.equal(await page.getByLabel("Diff layout").count(), 0);
@@ -1107,11 +1107,11 @@ test("typed inspector URLs render Pierre, preserve navigation and theme across r
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await screenshot(page, "frontend-coherence-mobile-diff.png");
   await page.getByRole("link", { name: "Chat", exact: true }).click();
-  await page.getByRole("link", { name: "Canvas", exact: true }).click();
+  await page.goBack();
   await page.waitForURL(/file=second.ts/);
-  await page.getByRole("link", { name: "Find other work" }).click();
-  await page.getByRole("complementary", { name: "Work finder" }).waitFor();
-  await page.keyboard.press("Escape");
+  await page.getByRole("link", { name: "Work", exact: true }).click();
+  await page.getByRole("region", { name: "Work finder" }).waitFor();
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
   await page.getByRole("log").waitFor();
   // Native snapshot fallback must not cause a second browser bootstrap polling loop.
   await page.waitForTimeout(5500);
@@ -1207,6 +1207,7 @@ test("a finding from chat opens its exact file, survives Back and reload, and at
   await page.waitForFunction(
     () => document.activeElement?.getAttribute("aria-label") === "Message Abra",
   );
+  await page.getByRole("link", { name: "More", exact: true }).click();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("link", { name: "Chat", exact: true }).click();
   await page.locator(".selection-chip summary").click();
@@ -1265,9 +1266,8 @@ test("form bindings reset values and concurrent native replies retain their own 
   await page.goto(f.origin);
   await page.getByRole("button", { name: "Review next" }).click();
   await page.getByLabel("Name frm_slow").fill("unsaved");
-  const attention = page.getByRole("button", { name: /^Attention/ });
+  const attention = page.getByRole("link", { name: "Chat", exact: true });
   await attention.press("Enter");
-  await page.getByText("Since your last inspection", { exact: false }).first().click();
   await page.getByRole("button", { name: "Review next" }).press("Enter");
   assert.equal(await page.getByLabel("Name frm_slow").inputValue(), "unsaved");
   f.source.value = {
@@ -1290,7 +1290,7 @@ test("form bindings reset values and concurrent native replies retain their own 
     .click();
   await page.getByLabel("Name frm_fast").waitFor({ state: "hidden" });
   await page.getByLabel("Name frm_slow").waitFor({ state: "hidden" });
-  await page.getByRole("button", { name: /^Attention/ }).press("Enter");
+  await page.getByRole("link", { name: "Chat", exact: true }).press("Enter");
   await page.getByRole("button", { name: "Review next" }).press("Enter");
   await page.waitForFunction(() => document.activeElement?.hasAttribute("data-native-permission"));
   await page.getByRole("button", { name: "Reject", exact: true }).click();
@@ -1315,6 +1315,7 @@ test("lost submission responses survive reload without automatic replay and reco
   await page.getByRole("button", { name: "Reconcile submission" }).waitFor();
   const before = await page.evaluate(() => localStorage.getItem("abra-pending-ses_webfixture"));
   assert.ok(before);
+  await page.getByRole("link", { name: "More", exact: true }).click();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("heading", { name: "Agents" }).waitFor();
   await page.getByRole("link", { name: "Chat", exact: true }).click();
@@ -1409,7 +1410,7 @@ test("late inspector responses cannot replace a new selection and live updates i
   );
   await page.goto(`${f.origin}/?issue=abra-slow&tab=Plan`);
   await request;
-  await page.getByRole("button", { name: "Toggle work finder" }).click();
+  await page.getByRole("link", { name: "Work", exact: true }).click();
   await page.route("**/api/work/resolve", (route) => route.abort(), { times: 1 });
   await page.getByRole("button", { name: /Another issue/ }).click();
   const failure = page
@@ -1590,7 +1591,7 @@ test("native tool cards use CopilotKit render-only hooks, preserve order and ins
   await article.getByRole("button", { name: "Inspect task", exact: true }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("complementary", { name: "Work inspector" }).waitFor();
-  await page.keyboard.press("Escape");
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
   await page.getByRole("log").waitFor();
   await page.waitForFunction(() => document.activeElement?.textContent === "Inspect task");
   assert.equal(
@@ -1828,7 +1829,7 @@ test("lead proposal attention is lazy and accessible without creating a task", a
   });
   const page = await f.browser.newPage({ viewport: { width: 1440, height: 1000 } });
   await page.goto(f.origin);
-  await page.getByRole("button", { name: /^Attention/ }).click();
+  await page.getByRole("link", { name: "Attention", exact: true }).click();
   await page.locator("[data-management-attention]").waitFor();
   assert.equal(f.calls.filter((call) => call.name === "leads").length, 0);
   await page.locator("[data-management-attention] > summary").click();
@@ -1995,6 +1996,8 @@ test("native observation outages retain data and the server fallback recovers mi
   await page.getByRole("button", { name: "Review next" }).click();
   const answer = page.getByLabel("Pending answer");
   await answer.fill("Unsubmitted");
+  await page.goBack();
+  await composer.waitFor();
   const scroll = page.locator(".conversation-scroll");
   await scroll.dispatchEvent("wheel");
   await scroll.evaluate(async (element) => {
@@ -2011,10 +2014,8 @@ test("native observation outages retain data and the server fallback recovers mi
     );
   const position = await readingAnchor();
   assert.ok(position);
-  const appearance = page.getByLabel("Color theme");
-  await appearance.focus();
-  await appearance.selectOption("dark");
-  assert.equal(await appearance.evaluate((element) => element === document.activeElement), true);
+  await chooseAppearance(page, "dark");
+  await composer.waitFor();
   assert.equal(await readingAnchor(), position);
   assert.match(page.url(), /issue=abra-web/);
   f.setObservationOffline(true);
@@ -2514,8 +2515,10 @@ test("chat stays mounted while the finder searches retained pages, preserving dr
   await page.clock.install();
   await page.clock.pauseAt(Date.now() + 100);
   f.setFleetObservation({ state: "unavailable" });
-  await page.getByRole("button", { name: "Toggle work finder" }).click();
+  await page.getByRole("link", { name: "Work", exact: true }).click();
+  await page.getByRole("link", { name: "Capacity", exact: true }).click();
   await page.getByText("Fleet totals are temporarily unavailable.", { exact: true }).waitFor();
+  await page.getByRole("link", { name: "Tasks", exact: true }).click();
   f.setFleetObservation({ state: "stale", observed_at: f.source.value.work.at });
   f.source.value = {
     ...f.source.value,
@@ -2537,7 +2540,9 @@ test("chat stays mounted while the finder searches retained pages, preserving dr
   };
   await page.getByRole("button", { name: "Closed", exact: true }).click();
   await page.getByText(/56 matching tasks/).waitFor();
+  await page.getByRole("link", { name: "Capacity", exact: true }).click();
   await page.getByText("Fleet across all projects · 57 tasks · Stale", { exact: true }).waitFor();
+  await page.getByRole("link", { name: "Tasks", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByText("51–56 of 56", { exact: true }).waitFor();
   await page.clock.runFor(250);
@@ -2563,12 +2568,11 @@ test("chat stays mounted while the finder searches retained pages, preserving dr
   await page.getByRole("button", { name: "Close inspector", exact: true }).click();
   for (const width of [375, 390]) {
     await page.setViewportSize({ width, height: 844 });
-    await page.getByLabel("Color theme").selectOption(width === 375 ? "dark" : "light");
-    await page.getByRole("link", { name: "Canvas", exact: true }).click();
-    await page.getByRole("link", { name: "Find other work" }).click();
-    await page.getByRole("complementary", { name: "Work finder" }).waitFor();
+    await chooseAppearance(page, width === 375 ? "dark" : "light");
+    await page.getByRole("link", { name: "Work", exact: true }).click();
+    await page.getByRole("region", { name: "Work finder" }).waitFor();
     await screenshot(page, `chat-primary-finder-${width}.png`);
-    await page.keyboard.press("Escape");
+    await page.getByRole("link", { name: "Chat", exact: true }).click();
     await page.getByRole("log").waitFor();
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     assert.equal(await composer.inputValue(), "Keep this draft while I inspect work");
@@ -2728,7 +2732,7 @@ test("historical generated cards reopen exact revisions and repair-response atta
   await canvas.getByText("Original generated layout", { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("link", { name: "Chat", exact: true }).click();
-  await page.getByRole("link", { name: "Canvas", exact: true }).click();
+  await page.goBack();
   await canvas.getByText("Original generated layout", { exact: true }).waitFor();
   for (const [session_id, revision] of [
     [f.source.sessionID, 99],
@@ -2739,7 +2743,7 @@ test("historical generated cards reopen exact revisions and repair-response atta
     });
     await page.goto(f.origin + "/?" + params);
     await canvas.getByText(/unavailable|another Abra conversation/).waitFor();
-    await page.getByRole("link", { name: "Find other work" }).waitFor();
+    await page.getByRole("link", { name: "Work", exact: true }).waitFor();
     assert.equal(await canvas.locator(".generated-surface").count(), 0);
   }
   await page.getByRole("button", { name: "Close inspector" }).click();
@@ -2824,16 +2828,17 @@ test("fleet and project totals distinguish native queue, capacity and dependency
   ]);
   const page = await f.browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.goto(f.origin);
-  await page.getByRole("button", { name: /^Attention/ }).click();
+  await page.getByRole("link", { name: "Attention", exact: true }).click();
   await page
     .getByRole("button", { name: /Build a single workspace.*Plan approval required/ })
     .waitFor();
-  await page.getByRole("link", { name: "Canvas", exact: true }).click();
+  await page.getByRole("link", { name: "Work", exact: true }).click();
   await page.getByRole("button", { name: /Capacity pending task/ }).waitFor();
   assert.match(
     await page.getByRole("button", { name: /Capacity pending task/ }).innerText(),
     /Waiting for capacity.*Execution slots are occupied/,
   );
+  await page.getByRole("link", { name: "Capacity", exact: true }).click();
   const fleet = page.locator(".fleet-summary");
   await fleet.locator(":scope > summary").click();
   await page
@@ -2845,13 +2850,13 @@ test("fleet and project totals distinguish native queue, capacity and dependency
   assert.match(await project.innerText(), /Waiting for capacity\s+1/);
   assert.match(await project.innerText(), /Dependency blocked\s+1/);
   assert.match(await project.innerText(), /1 attention item/);
-  await page.getByRole("button", { name: "Closed", exact: true }).click();
-  await page.getByText(/56 matching tasks/).waitFor();
   assert.match(await fleet.innerText(), /61 tasks/);
   assert.match(await fleet.innerText(), /Completed today: 7 \(UTC\)/);
+  await page.getByRole("link", { name: "Tasks", exact: true }).click();
+  await page.getByRole("button", { name: "Closed", exact: true }).click();
+  await page.getByText(/56 matching tasks/).waitFor();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByText("Historical task 55", { exact: true }).waitFor();
-  assert.match(await fleet.innerText(), /Completed today: 7 \(UTC\)/);
   const search = page.getByRole("textbox", { name: "Search work" });
   await search.fill("Historical task 55");
   await page.getByText(/1 matching task/).waitFor();
@@ -2958,10 +2963,10 @@ test("an optional inspector chunk has local accessible loading/error states and 
   assert.equal(await composer.inputValue(), "Keep this draft while inspection is unavailable");
   await screenshot(page, "deferred-inspector-recovered-desktop.png");
   await page.route("**/assets/work-finder-*.js", (route) => route.abort("failed"));
-  await page.getByRole("button", { name: "Toggle work finder", exact: true }).click();
+  await page.getByRole("link", { name: "Work", exact: true }).click();
   const finderError = page.getByRole("alert").filter({ hasText: "Work finder could not load" });
   await finderError.waitFor();
-  await page.getByRole("button", { name: "Toggle work finder", exact: true }).click();
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
   await finderError.waitFor({ state: "hidden" });
   assert.equal(await composer.inputValue(), "Keep this draft while inspection is unavailable");
   assert.equal(f.source.submissions, 0);
@@ -3019,7 +3024,7 @@ test("GitHub finder loads on demand, preserves drafts on inspection and exposes 
     });
   });
   await page.goto(f.origin);
-  const work = page.getByRole("button", { name: "Toggle work finder" });
+  const work = page.getByRole("link", { name: "GitHub", exact: true });
   await work.waitFor();
   const observeFallback = async (text: string) => {
     // Leave the feed idle so its server-side fallback discovers this message.
@@ -3035,7 +3040,7 @@ test("GitHub finder loads on demand, preserves drafts on inspection and exposes 
         },
       ],
     };
-    await page.getByText(text, { exact: true }).waitFor();
+    await page.getByText(text, { exact: true }).waitFor({ state: "attached" });
   };
   await observeFallback("Inbox is unmounted");
   assert.equal(reads.length, 0);
@@ -3053,7 +3058,11 @@ test("GitHub finder loads on demand, preserves drafts on inspection and exposes 
     "Existing draft",
   );
   await page.getByRole("button", { name: "Ask Abra to review" }).click();
-  assert.equal(await composer.inputValue(), "Privately review " + pr.url + " in project api.");
+  assert.equal(
+    await composer.inputValue(),
+    "Existing draft\nPrivately review " + pr.url + " in project api.",
+  );
+  await work.click();
   await page.getByText("GitHub filters", { exact: true }).click();
   await page.getByLabel("GitHub state").selectOption("MERGED");
   await page.getByRole("button", { name: /Previous delivery/ }).waitFor();
@@ -3073,7 +3082,7 @@ test("GitHub finder loads on demand, preserves drafts on inspection and exposes 
   assert.equal(reads.length, hiddenReads);
   await setHidden(false);
   await row.waitFor();
-  await work.click();
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
   await row.waitFor({ state: "detached" });
   const before = reads.length;
   await page.clock.fastForward(310000);
@@ -3090,65 +3099,45 @@ test("phone destinations follow bookmarks and history at the 760px boundary", as
   ]);
   const page = await f.browser.newPage({ viewport: { width: 760, height: 844 } });
   const nav = page.getByRole("navigation", { name: "Workspace", exact: true });
-  const current = nav.locator('[aria-current="page"]');
-  let bootstrapReads = 0;
-  await page.route("**/api/bootstrap", async (request) => {
-    bootstrapReads++;
-    await request.continue();
-  });
+  const reader = page.getByRole("complementary", { name: "Work inspector" });
+  const draft = page.getByLabel("Message Abra");
   await page.goto(f.origin + "/settings/repositories");
   await page.getByRole("heading", { name: "Repositories" }).waitFor();
-  assert.equal(await current.innerText(), "Settings");
-  await page.reload();
-  await page.getByRole("heading", { name: "Repositories" }).waitFor();
-  await page.getByRole("link", { name: "Agents", exact: true }).click();
-  await page.getByRole("heading", { name: "Agents" }).waitFor();
-  assert.equal(bootstrapReads, 0);
-  const chat = nav.getByRole("link", { name: "Chat", exact: true });
-  await chat.focus();
-  await chat.press("Enter");
-  await page.getByRole("log").waitFor();
-  assert.equal(await current.innerText(), "Chat");
-  await page.keyboard.press("Tab");
-  assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Canvas");
-  await page.keyboard.press("Enter");
-  await page.waitForURL(/view=finder/);
-  await page.getByRole("complementary", { name: "Work finder" }).waitFor();
-  assert.equal(await current.innerText(), "Canvas");
-  assert.equal(await page.getByRole("textbox", { name: "Message Abra" }).count(), 0);
-  await page.reload();
-  await page.getByRole("button", { name: /Build a single workspace/ }).click();
-  await page.getByRole("complementary", { name: "Work inspector" }).waitFor();
-  await page.getByRole("link", { name: "Find other work" }).click();
+  await nav.getByRole("link", { name: "Chat" }).click();
+  await draft.fill("Keep this question");
+  await nav.getByRole("link", { name: "Work", exact: true }).click();
+  await page.getByLabel("Search work").fill("Second");
+  await page.getByText("1 matching task", { exact: false }).waitFor();
+  const list = page.url();
   await page.getByRole("button", { name: /Second task/ }).click();
-  await page.getByRole("heading", { name: "Second task", exact: true }).waitFor();
+  await reader.waitFor();
   const selection = page.url();
-  await nav.getByRole("link", { name: "Settings" }).click();
-  await page.getByRole("heading", { name: "Agents" }).waitFor();
   await page.goBack();
-  await page.getByRole("complementary", { name: "Work inspector" }).waitFor();
-  assert.equal(page.url(), selection);
+  await page.getByLabel("Search work").waitFor();
+  assert.equal(page.url(), list);
+  assert.equal(await page.getByLabel("Search work").inputValue(), "Second");
   await page.goForward();
-  await page.getByRole("heading", { name: "Agents" }).waitFor();
-  await nav.getByRole("link", { name: "Canvas" }).click();
-  await page.waitForURL(selection);
-  await page.setViewportSize({ width: 761, height: 844 });
-  await page.getByRole("dialog", { name: /Work inspector/ }).waitFor();
-  assert.equal(await nav.count(), 0);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByRole("dialog").waitFor({ state: "hidden" });
-  await page.getByRole("heading", { name: "Second task", exact: true }).waitFor();
+  await reader.waitFor();
+  await page.reload();
+  await reader.waitFor();
   assert.equal(page.url(), selection);
-  await page.setViewportSize({ width: 760, height: 844 });
-  await nav.getByRole("link", { name: "Canvas" }).waitFor();
-  await page.getByRole("heading", { name: "Second task", exact: true }).waitFor();
-  await page.setViewportSize({ width: 761, height: 844 });
-  await page.getByRole("dialog").waitFor();
-  await page.keyboard.press("Escape");
-  await page.getByRole("dialog").waitFor({ state: "hidden" });
-  await page.getByRole("button", { name: "Toggle work finder" }).focus();
-  await page.keyboard.press("Enter");
-  await page.getByRole("complementary", { name: "Work finder" }).waitFor();
+  for (const width of [761, 1250, 1251, 1440, 760]) {
+    await page.setViewportSize({ width, height: 844 });
+    if (width > 760 && width <= 1250)
+      await page.getByRole("dialog", { name: /Work inspector/ }).waitFor();
+    else {
+      await page.getByRole("dialog").waitFor({ state: "hidden" });
+      await reader.waitFor();
+      await draft.waitFor({ state: width > 1250 ? "visible" : "hidden" });
+    }
+  }
+  await nav.getByRole("link", { name: "Chat" }).click();
+  assert.equal(await draft.inputValue(), "Keep this question");
+  await page.goto(f.origin + "/?view=finder");
+  await page.waitForURL("**/work");
+  await page.goto(f.origin + "/?resource=invalid");
+  await draft.waitFor();
+  assert.equal(await reader.count(), 0);
   assert.equal(f.source.submissions, 0);
 });
 
@@ -3180,11 +3169,12 @@ test("phone retains the current form and reading position when a reply arrives i
   const page = await f.browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.goto(f.origin);
   await page.getByLabel("Message Abra").fill("Check before sending");
-  await page.getByRole("button", { name: /^Attention/ }).click();
-  await page.getByLabel("Storage choice").fill("SQLite");
   const anchor = page.locator('[data-native-message-id="reading-12"]');
   await anchor.evaluate((element) => element.scrollIntoView({ block: "start" }));
   const offset = await anchor.evaluate((element) => element.getBoundingClientRect().top);
+  await page.getByRole("link", { name: "Attention", exact: true }).click();
+  await page.getByLabel("Storage choice").fill("SQLite");
+  await page.getByRole("link", { name: "More", exact: true }).click();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("heading", { name: "Agents" }).waitFor();
   f.source.value = { ...f.source.value, messages: [...f.source.value.messages, message(30)] };
@@ -3192,9 +3182,11 @@ test("phone retains the current form and reading position when a reply arrives i
   await page.locator('[data-native-message-id="reading-30"]').waitFor({ state: "attached" });
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page.getByRole("option", { name: "Review pending decisions" }).click();
+
+  assert.equal(await page.getByLabel("Storage choice").inputValue(), "SQLite");
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
   await page.getByRole("log").waitFor();
   assert.ok(Math.abs((await anchor.evaluate((e) => e.getBoundingClientRect().top)) - offset) < 4);
-  assert.equal(await page.getByLabel("Storage choice").inputValue(), "SQLite");
   assert.equal(await page.getByLabel("Message Abra").inputValue(), "Check before sending");
   assert.equal(f.replies.length, 0);
 });
@@ -3293,7 +3285,7 @@ test("palette opens from Settings by touch or shortcut and keeps modal keyboard 
   await search.tap();
   await input.fill("finder");
   await input.press("Enter");
-  await page.getByRole("complementary", { name: "Work finder" }).waitFor();
+  await page.getByRole("region", { name: "Work finder" }).waitFor();
   await page.goBack();
   await page.getByRole("heading", { name: "Repositories" }).waitFor();
   await page.goForward();
@@ -3302,7 +3294,8 @@ test("palette opens from Settings by touch or shortcut and keeps modal keyboard 
   const sheet = page.getByRole("dialog", { name: /Work inspector/ });
   await sheet.waitFor();
   await page.keyboard.press("Control+k");
-  assert.equal(await page.getByRole("dialog", { name: "Search workspace" }).count(), 0);
+  await page.getByRole("dialog", { name: "Search workspace" }).waitFor();
+  await page.getByLabel("Search work and commands").press("Escape");
   assert.ok(await sheet.isVisible());
 });
 
@@ -3333,7 +3326,14 @@ test("palette searches off-page tasks, rejects late matches and seeds editable f
   await trigger.click();
   await input.fill("archived-key");
   await page.getByRole("option", { name: /Archived palette task/ }).waitFor();
-  assert.match(await page.getByRole("option").first().innerText(), /Archived palette task/);
+  assert.match(
+    await page
+      .getByRole("listbox", { name: "Search results" })
+      .getByRole("option")
+      .first()
+      .innerText(),
+    /Archived palette task/,
+  );
   await page.getByRole("option", { name: "See all results in Work" }).click();
   await page.getByRole("button", { name: /Archived palette task/ }).waitFor();
   assert.equal(await field.inputValue(), "archived-key");
@@ -3359,20 +3359,201 @@ test("palette searches off-page tasks, rejects late matches and seeds editable f
   await input.fill("palette");
   await requested;
   await input.fill("no such work");
-  await page.getByText("No matching work.", { exact: true }).waitFor();
+  await page.getByRole("status").filter({ hasText: "No matching work" }).waitFor();
   release();
   await input.fill("settings");
-  await page.getByText("Work search is unavailable.", { exact: true }).waitFor();
+  await page.getByRole("option", { name: "Retry Work" }).waitFor();
   assert.equal(await page.getByRole("option", { name: /Archived palette task/ }).count(), 0);
-  await page.getByRole("option", { name: "Open Settings" }).waitFor();
+  await page.getByRole("option", { name: /^Settings / }).waitFor();
   await input.fill("archived-key");
   await page.getByRole("option", { name: /Archived palette task/ }).click();
   await page.getByRole("heading", { name: task.title, exact: true }).waitFor();
   for (const tab of ["Plan", "Diff", "Verification", "Reports"]) {
     await trigger.click();
     await input.fill(tab);
-    await page.getByRole("option", { name: "Open " + tab + " " + task.title }).click();
+    await page.getByRole("option", { name: new RegExp("^Open " + tab + " ") }).click();
     await page.waitForURL((url) => url.searchParams.get("tab") === tab);
   }
+  assert.equal(f.source.submissions, 0);
+});
+
+test("palette and slash onboarding append the same draft and leave admission explicit", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.goto(f.origin + "/?issue=abra-web&tab=Diff");
+  const input = page.getByLabel("Message Abra");
+  await input.fill("First question");
+  await page.keyboard.press("Control+k");
+  const search = page.getByLabel("Search work and commands");
+  await search.fill("add project");
+  await page.getByRole("option", { name: /Onboard repository/ }).click();
+  await page.waitForFunction(() =>
+    document.querySelector("textarea")?.value.includes("onboard a project"),
+  );
+  const paletteDraft = await input.inputValue();
+  assert.match(paletteDraft, /First question/);
+  await input.fill("First question");
+  await input.press("End");
+  await input.pressSequentially(" /onboard-repo");
+  await page.getByRole("option", { name: /onboard-repo/ }).click();
+  assert.equal((await input.inputValue()).replace(/ +\n/g, "\n"), paletteDraft);
+  await input.fill("x".repeat(32767));
+  await page.keyboard.press("Control+k");
+  await search.fill("> onboard");
+  await page.getByRole("option", { name: /Onboard repository/ }).click();
+  await page.getByText("This insertion exceeds the draft limit.").waitFor();
+  assert.equal((await input.inputValue()).length, 32767);
+  assert.equal(f.source.submissions, 0);
+  assert.equal(f.replies.length, 0);
+});
+
+test("Work opens each real reader alongside one live chat and sending preserves the selected diff", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  await page.goto(f.origin + "/work");
+  const task = page.getByRole("navigation", { name: "Work results" }).getByRole("button").first();
+  await task.click();
+  const input = page.getByLabel("Message Abra", { exact: true });
+  const sections = page.getByLabel("Work details", { exact: true });
+  await input.fill("Explain the selected diff");
+  for (const tab of ["Plan", "Verification", "Diff"]) {
+    await sections.selectOption(tab);
+    await page.waitForURL((url) => url.pathname === "/work" && url.searchParams.get("tab") === tab);
+    assert.equal(await input.inputValue(), "Explain the selected diff");
+  }
+  const file = page.getByRole("region", { name: "source.ts", exact: true });
+  await file.waitFor();
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByRole("log").getByText("Explain the selected diff", { exact: true }).waitFor();
+  await file.waitFor();
+  assert.equal(f.source.submissions, 1);
+  assert.equal(new URL(page.url()).searchParams.get("tab"), "Diff");
+  await page.reload();
+  await file.waitFor();
+  await input.fill("Second question");
+  for (const width of [1250, 761, 760, 1251]) {
+    await page.setViewportSize({ width, height: 900 });
+    await file.waitFor();
+  }
+  assert.equal(await input.inputValue(), "Second question");
+});
+
+test("Closed Work returns to its off-page reading position and keeps a separate merged GitHub filter", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const current = f.source.value.work.work[0];
+  f.setDiscovery(
+    Array.from({ length: 100 }, (_, i) => ({
+      ...current,
+      issue_id: IssueId.make("closed-" + i),
+      title: "Closed task " + i,
+      issue_status: "closed" as const,
+    })),
+  );
+  const page = await f.browser.newPage({ viewport: { width: 1440, height: 700 } });
+  await page.goto(f.origin + "/work");
+  await page.getByRole("button", { name: "Closed", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByText("51–100 of 100").waitFor();
+  const task = page.getByRole("button", { name: /Closed task 80/ });
+  await task.scrollIntoViewIfNeeded();
+  const scroller = page.locator(".collection-page:visible").first();
+  const position = await scroller.evaluate((el) => el.scrollTop);
+  assert.ok(position > 0);
+  await task.click();
+  await page.getByRole("heading", { name: "Closed task 80", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Close inspector" }).click();
+  await task.waitFor();
+  assert.ok(Math.abs((await scroller.evaluate((el) => el.scrollTop)) - position) < 3);
+  await page.getByRole("link", { name: "GitHub", exact: true }).click();
+  await page.getByText("GitHub filters", { exact: true }).click();
+  await page.getByLabel("GitHub item type").selectOption("pr");
+  await page.getByLabel("GitHub state").selectOption("MERGED");
+  await page.waitForURL((url) => decodeURIComponent(url.search).includes("MERGED"));
+  await page.getByRole("link", { name: "Work", exact: true }).click();
+  await page.getByText("51–100 of 100").waitFor();
+  assert.equal(
+    await page.getByRole("button", { name: "Closed", exact: true }).getAttribute("aria-pressed"),
+    "true",
+  );
+});
+
+test("slash selection edits the chosen token in place and leaves literal and dismissed commands intact", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage();
+  await page.goto(f.origin);
+  const input = page.getByRole("textbox", { name: "Message Abra" });
+  await input.fill("Before  after");
+  await input.evaluate((el) => (el as HTMLTextAreaElement).setSelectionRange(7, 7));
+  await input.pressSequentially("/save");
+  await page.getByRole("option", { name: /save-thought/ }).waitFor();
+  await input.press("Enter");
+  assert.match(await input.inputValue(), /^Before Save .*Memos: after$/);
+  await input.fill("~~~ts\n");
+  await input.press("Control+End");
+  await input.pressSequentially("/onboard");
+  assert.equal(await page.getByRole("option", { name: /onboard-repo/ }).count(), 0);
+  await input.fill("");
+  await input.pressSequentially("/attach");
+  await page.getByRole("option", { name: /attach-thought/ }).waitFor();
+  await input.press("Escape");
+  assert.equal(await input.inputValue(), "/attach");
+  assert.equal(await page.getByRole("option", { name: /attach-thought/ }).count(), 0);
+  assert.equal(f.source.submissions, 0);
+});
+
+test("search pages retained evidence in place and locates text beyond an observed message preview", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const work = f.source.value.work.work[0];
+  f.source.value = {
+    ...f.source.value,
+    messages: [
+      {
+        id: "msg_searchable",
+        role: "assistant",
+        at: f.source.value.at,
+        text: "Earlier observation. ".repeat(10) + "Final keyword.",
+      },
+    ],
+  };
+  f.source.work.evidenceSearch = (q) =>
+    Effect.succeed(
+      q.after_owner
+        ? {
+            entries: [
+              {
+                kind: "wait" as const,
+                issue_id: work.issue_id,
+                repository_id: RepositoryId.make(f.source.value.projects[0].id),
+                identity: "approval/1",
+                label: "Retained approval",
+                context: "Worker waiting",
+              },
+            ],
+            coverage: [],
+          }
+        : {
+            entries: [],
+            coverage: [],
+            next: { after_owner: "work/" + work.issue_id, after_entry: "" },
+          },
+    );
+  const page = await f.browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.goto(f.origin);
+  await page.getByLabel("Message Abra").waitFor();
+  await page.keyboard.press("Control+k");
+  const input = page.getByLabel("Search work and commands");
+  await input.fill("wait:approval");
+  await page.getByRole("option", { name: "Search next retained evidence page" }).click();
+  await page.getByRole("option", { name: /Retained approval/ }).waitFor();
+  assert.equal(await input.inputValue(), "wait:approval");
+  await input.fill("message:Final keyword");
+  await page.getByRole("option", { name: /Earlier observation/ }).click();
+  await page.waitForURL((url) => url.hash === "#message-msg_searchable");
+  assert.equal(await page.locator(":focus").getAttribute("id"), "message-msg_searchable");
   assert.equal(f.source.submissions, 0);
 });

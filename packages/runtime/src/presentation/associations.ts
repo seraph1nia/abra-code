@@ -1,3 +1,5 @@
+import type { PublicationQuery } from "@abracode/contracts/presentation/contracts";
+import type { NativeStore } from "../storage/store.ts";
 import { committedScope } from "../visibility/invalidations.ts";
 import { Effect } from "effect";
 import { CrewError } from "../domain.ts";
@@ -25,6 +27,47 @@ function associationKey(value: Attachment) {
   return StorageKey.make(
     `web/presentation/${value.session_id}/${hash(value.message_id)}/${hash([value.source, value.tool_call_id, value.target.kind, slot])}`,
   );
+}
+
+/** Search the compact producing-message associations. Only opening a result reads its publication. */
+export function searchPublications(
+  store: Pick<NativeStore, "page">,
+  session: SessionId,
+  query: typeof PublicationQuery.Type,
+) {
+  return Effect.gen(function* () {
+    const prefix = StoragePrefix.make("web/presentation/" + session + "/");
+    const page = yield* store.page(prefix, query.cursor, 32);
+    const entries: Attachment[] = [];
+    const needle = query.search?.trim().toLowerCase() ?? "";
+    let incomplete = false;
+    for (const row of page.entries) {
+      const result = yield* decode(
+        PresentationAttachmentSchema,
+        row.value,
+        "Publication association",
+      ).pipe(Effect.result);
+      if (
+        result._tag === "Failure" ||
+        result.success.session_id !== session ||
+        associationKey(result.success) !== row.key
+      ) {
+        incomplete = true;
+        continue;
+      }
+      const item = result.success,
+        target = item.target;
+      if (target.kind === "artifact" || (query.kind && query.kind !== target.kind)) continue;
+      const id = target.kind === "surface" ? target.surface_id : target.review_id;
+      if (
+        [id, target.kind, String(target.revision), item.message_id, item.tool_call_id].some((v) =>
+          v?.toLowerCase().includes(needle),
+        )
+      )
+        entries.push(item);
+    }
+    return { entries, next: page.next, incomplete };
+  });
 }
 
 /** Native presentation owners attach only already-published resources and proven

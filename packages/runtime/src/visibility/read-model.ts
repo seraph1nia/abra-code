@@ -1,3 +1,4 @@
+import type { SessionQuery, SessionRow } from "@abracode/contracts/visibility/discovery-contracts";
 import { presentationHash } from "../presentation/identity.ts";
 import { BindingReadQuery, selectBindingRows } from "@abracode/contracts/web/bindings";
 import { executionBlocker } from "../workflow/readiness.ts";
@@ -271,6 +272,60 @@ export class Visibility {
   });
   feedback = (issue: IssueId, page = 0, finding_id?: string, revision?: string) =>
     this.c.feedback(issue, page, finding_id, revision);
+  sessionSearch = (query: typeof SessionQuery.Type) =>
+    Effect.gen({ self: this }, function* () {
+      const issues = new Map((yield* this.c.issues()).map((issue) => [issue.id, issue]));
+      const needle = query.search?.trim().toLowerCase() ?? "";
+      const rows: Array<typeof SessionRow.Type> = [];
+      const executions = new Map((yield* this.c.executions()).map((e) => [e.issue_id, e]));
+      for (const execution of executions.values()) {
+        const issue = issues.get(execution.issue_id);
+        if (
+          !issue ||
+          issue.repository_id !== execution.repository_id ||
+          (query.repository_id && issue.repository_id !== query.repository_id)
+        )
+          continue;
+        for (const { id, role } of sessions(execution)) {
+          if (
+            ![id, role, issue.id, issue.title, issue.repository_id].some((value) =>
+              value.toLowerCase().includes(needle),
+            )
+          )
+            continue;
+          rows.push({
+            availability: "unverified",
+            session_id: id,
+            role,
+            issue_id: issue.id,
+            title: issue.title,
+            repository_id: issue.repository_id,
+            association:
+              execution[`${role}_session_id`] === id && execution.current_phase !== "completed"
+                ? "current"
+                : "historical",
+          });
+        }
+      }
+      rows.sort(
+        (a, b) =>
+          Number(b.session_id.toLowerCase() === needle) -
+            Number(a.session_id.toLowerCase() === needle) ||
+          a.issue_id.localeCompare(b.issue_id) ||
+          a.session_id.localeCompare(b.session_id),
+      );
+      const offset = query.offset ?? 0,
+        end = offset + (query.limit ?? 30);
+      const entries = yield* Effect.forEach(
+        rows.slice(offset, end),
+        (row) =>
+          this.c
+            .sessionAvailability(executions.get(row.issue_id)!, row.session_id)
+            .pipe(Effect.map((availability) => ({ ...row, availability }))),
+        { concurrency: 4 },
+      );
+      return { entries, total: rows.length, next_offset: end < rows.length ? end : undefined };
+    });
   find = (input: WorkDiscovery = {}) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {

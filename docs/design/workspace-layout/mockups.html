@@ -376,6 +376,30 @@
       .phone .composer {
         padding: 8px;
       }
+      .reader-pair {
+        display: flex;
+        flex: 1;
+        min-width: 0;
+        --reader-width: 39%;
+      }
+      .reader-pair > .reader {
+        flex: 0 0 var(--reader-width);
+      }
+      .reader-handle {
+        cursor: col-resize;
+        touch-action: none;
+        flex: 0 0 10px;
+        background: linear-gradient(
+          to right,
+          transparent 45%,
+          var(--line) 45% 55%,
+          transparent 55%
+        );
+      }
+      .reader-handle:focus-visible {
+        outline: 2px solid currentColor;
+        outline-offset: -2px;
+      }
       .wideReader {
         flex: 0 0 43%;
       }
@@ -653,8 +677,8 @@
       <p>
         Invented records and in-memory drafts. Use the controls in the dark bar to compare the same
         scene. Buttons walk through representative flows. Bordered text shows the footprint of other
-        controls. Refresh resets the sample. No messages, notebook writes, approvals or network
-        requests are sent.
+        controls. Refresh resets the sample conversation. The proposed reader width is saved in this
+        browser. No messages, notebook writes, approvals or network requests are sent.
       </p>
     </details>
     <script>
@@ -1370,6 +1394,63 @@
           "</section>"
         );
       }
+      const splitKey = "abra-layout-study-reader-percent";
+      const readWidth = (value) => {
+        const width = Number(value);
+        return Number.isFinite(width) && width >= 30 && width <= 55 ? width : 39;
+      };
+      let readerWidth = 39;
+      try {
+        readerWidth = readWidth(localStorage.getItem(splitKey));
+      } catch {
+        // The sample also works when browser storage is unavailable.
+      }
+      function paintDivider() {
+        $(".reader-pair")?.style.setProperty("--reader-width", readerWidth + "%");
+        $(".reader-handle")?.setAttribute("aria-valuenow", String(readerWidth));
+        $(".reader-handle")?.setAttribute("aria-valuetext", readerWidth + "% reader width");
+      }
+      function changeWidth(value) {
+        readerWidth = Math.min(55, Math.max(30, Math.round(value)));
+        paintDivider();
+        try {
+          localStorage.setItem(splitKey, String(readerWidth));
+        } catch {
+          // Keep the selected width for this visit.
+        }
+      }
+      window.addEventListener("storage", (event) => {
+        if (event.key === splitKey || event.key === null) {
+          readerWidth = readWidth(event.newValue);
+          paintDivider();
+        }
+      });
+      function connectDivider() {
+        const handle = $(".reader-handle");
+        if (!handle) return;
+        paintDivider();
+        handle.onkeydown = (event) => {
+          const next = {
+            ArrowLeft: readerWidth + 1,
+            ArrowRight: readerWidth - 1,
+            Home: 30,
+            End: 55,
+          };
+          if (!Object.hasOwn(next, event.key)) return;
+          event.preventDefault();
+          changeWidth(next[event.key]);
+        };
+        handle.onpointerdown = (event) => {
+          if (event.button !== 0) return;
+          handle.setPointerCapture(event.pointerId);
+          handle.focus();
+        };
+        handle.onpointermove = (event) => {
+          if (!handle.hasPointerCapture(event.pointerId)) return;
+          const bounds = handle.parentElement.getBoundingClientRect();
+          changeWidth((100 * (bounds.right - event.clientX)) / bounds.width);
+        };
+      }
       function draw() {
         const p = demo.page;
         const n = newUI(),
@@ -1388,7 +1469,7 @@
             (p === "original" ? collection(p) : misc(p)) +
             "</section></div>";
         else if (n) {
-          const side = isTask(p) && demo.from === "chat" && !mob;
+          const side = isTask(p) && !mob;
           html =
             (mob || tablet()
               ? '<div class="bar"><strong>' +
@@ -1400,7 +1481,15 @@
               : "") +
             '<div class="layout">' +
             (mob || tablet() ? "" : rail()) +
-            (side ? deck() + reader(p, true) : collection(p)) +
+            (side
+              ? tablet()
+                ? deck() + reader(p, true)
+                : '<div class="reader-pair">' +
+                  deck() +
+                  '<div class="reader-handle" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Reader width" aria-valuemin="30" aria-valuemax="55"></div>' +
+                  reader(p, true) +
+                  "</div>"
+              : collection(p)) +
             "</div>" +
             (mob
               ? '<nav class="mobilebar bottomnav">' +
@@ -1471,6 +1560,7 @@
           }
         }
         $("#view").innerHTML = html;
+        connectDivider();
         const taskQuery = $("#taskQuery");
         if (taskQuery)
           taskQuery.oninput = () => {
@@ -1511,7 +1601,11 @@
               : "The opened Work finder stacks two collections, their filters, capacity, fleet and administration."
             : isTask(p)
               ? n
-                ? "The owning task stays visible in the reader."
+                ? mob
+                  ? "Back restores the same conversation or originating collection."
+                  : tablet()
+                    ? "The sheet opens over the conversation."
+                    : "The conversation and composer stay beside the reader. Drag the divider or use the arrow keys."
                 : "The work inspector follows the selected task and evidence section."
               : "Explore " + (scenes[p] || p) + ".");
       }

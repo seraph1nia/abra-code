@@ -1,3 +1,4 @@
+import type { PublicationQuery } from "@abracode/contracts/presentation/contracts";
 import type { Submission } from "@abracode/contracts/web/workspace-wire";
 import type {
   ReviewSelection,
@@ -287,6 +288,10 @@ export class NativeWebBackend implements WebBackend {
     this.use((client) =>
       this.gateway(client).resolve({ session_id: this.sessionID, target }, this.location()),
     );
+  publications = (query: typeof PublicationQuery.Type) =>
+    this.use((client) =>
+      this.gateway(client).publications({ session_id: this.sessionID, ...query }, this.location()),
+    );
   surface = (id: string, revision: number) =>
     this.use((client) =>
       this.gateway(client).surface(
@@ -322,6 +327,9 @@ export class NativeWebBackend implements WebBackend {
       this.use((client) => select(this.visibility(client))(input, this.location()));
   }
   readonly work: WorkQueries = {
+    evidenceSearch: this.workMethod((rpc) => rpc.evidenceSearch),
+    sessions: this.workMethod((rpc) => rpc.sessions),
+    thoughtWork: this.workMethod((rpc) => rpc.thoughtWork),
     thoughtList: this.workMethod((rpc) => rpc.thoughtList),
     thoughtDetail: this.workMethod((rpc) => rpc.thoughtDetail),
     githubInbox: this.workMethod((rpc) => rpc.githubInbox),

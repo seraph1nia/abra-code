@@ -1,4 +1,11 @@
 import {
+  EvidenceSearch,
+  EvidenceSearchPage,
+  SessionQuery,
+  SessionPage,
+} from "@abracode/contracts/visibility/discovery-contracts";
+import { ThoughtWorkQuery, ThoughtWorkPage } from "@abracode/contracts/visibility/thoughts";
+import {
   ThoughtSource,
   ThoughtQuery,
   ThoughtPage,
@@ -221,6 +228,21 @@ export const visibility = Rpc.define({
         parseOptions: { onExcessProperty: "error", reportInput: false },
       }),
       output: Schema.toStandardSchemaV1(BindingReadSchema),
+    },
+    evidenceSearch: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(EvidenceSearch),
+      output: Schema.toStandardSchemaV1(EvidenceSearchPage),
+    },
+    sessions: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(SessionQuery),
+      output: Schema.toStandardSchemaV1(SessionPage),
+    },
+    thoughtWork: {
+      errors: observerErrors,
+      input: Schema.toStandardSchemaV1(ThoughtWorkQuery),
+      output: Schema.toStandardSchemaV1(ThoughtWorkPage),
     },
     thoughtList: {
       errors: observerErrors,

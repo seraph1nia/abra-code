@@ -8,7 +8,8 @@ import { ResourceSelectionSchema } from "./resources.ts";
 
 /** Ownership is checked before transcript, document or artifact bytes are requested. */
 export function resolveOwnedResource(
-  queries: Pick<Queries, "issue" | "execution" | "planDocument" | "diff">,
+  queries: Pick<Queries, "issue" | "execution" | "planDocument" | "diff"> &
+    Partial<Pick<Queries, "sessionAvailability">>,
   input: unknown,
 ) {
   return Effect.gen(function* () {
@@ -54,6 +55,10 @@ export function resolveOwnedResource(
           execution.research_session_id,
           ...historicalWorkers(execution).map((session) => session.id),
         ].includes(target.session_id);
+        if (owned && queries.sessionAvailability)
+          owned =
+            (yield* queries.sessionAvailability(execution, target.session_id)) !== "unavailable";
+
         break;
       case "open_decision":
         owned = !!execution.decisions?.some(

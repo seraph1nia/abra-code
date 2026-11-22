@@ -228,10 +228,10 @@ test("Verification uses one responsive canvas and keyboard resizing preserves th
   await page.goto(f.origin + "/?issue=abra-web&tab=Feedback");
   await page.getByLabel("Message Abra").fill("Keep this question");
   await page.getByLabel("Work details", { exact: true }).selectOption("Verification");
-  const width = page.getByRole("slider", { name: "Canvas width" });
+  const width = page.getByRole("separator", { name: "Chat width" });
   const panel = page.getByRole("complementary", { name: "Work inspector" });
   const before = (await panel.boundingBox())!.width;
-  await width.press("ArrowRight");
+  await width.press("ArrowLeft");
   assert.ok((await panel.boundingBox())!.width > before);
   await page.goBack();
   await page.waitForFunction(
@@ -406,6 +406,9 @@ test("local return history follows inspected results independently of current at
   f.source.value = { ...f.source.value, work: { ...f.source.value.work, work } };
   const page = await f.browser.newPage({ viewport: { width: 1600, height: 900 } });
   await page.goto(f.origin);
+  await page.goto(
+    f.origin + "/work?collection=" + encodeURIComponent(JSON.stringify({ section: "recent" })),
+  );
   await page.getByText("Since your last inspection").click();
   await page.getByText(/Inspect a task to start/).waitFor();
   for (const [index, w] of work.entries()) {
@@ -439,6 +442,9 @@ test("local return history follows inspected results independently of current at
     },
   };
   await page.goto(f.origin);
+  await page.goto(
+    f.origin + "/work?collection=" + encodeURIComponent(JSON.stringify({ section: "recent" })),
+  );
   await page.getByText(/Since your last inspection/).click();
   const recap = page.locator(".work-recap");
   await recap.getByRole("button", { name: /Verification result/ }).waitFor({ timeout: 3000 });
@@ -452,6 +458,7 @@ test("local return history follows inspected results independently of current at
       document.querySelector<HTMLSelectElement>('[aria-label="Work details"]')?.value ===
       "Verification",
   );
+  await page.getByRole("button", { name: "Close inspector" }).click();
   await recap.getByRole("button", { name: /Decision updated/ }).waitFor();
   assert.equal(await recap.getByRole("button").count(), 1);
   assert.equal(f.source.submissions, 0);
@@ -469,9 +476,13 @@ test("disabled local history leaves the main conversation and attention availabl
     };
   });
   await page.goto(f.origin);
+  await page.goto(
+    f.origin + "/work?collection=" + encodeURIComponent(JSON.stringify({ section: "recent" })),
+  );
   await page.getByText("Since your last inspection").click();
   await page.getByText("Local reading history is unavailable.").waitFor();
-  assert.ok(await page.getByRole("button", { name: /Attention/ }).isVisible());
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  assert.ok(await page.getByRole("link", { name: "Attention", exact: true }).isVisible());
   assert.ok(await page.getByLabel("Message Abra").isEditable());
 });
 
@@ -602,4 +613,59 @@ test("canvas refresh reads each visible section once and Retry recovers only its
   await failure.waitFor({ state: "hidden" });
   assert.deepEqual(reads, ["decisions/abra-web"]);
   assert.equal(f.source.submissions, 0);
+});
+
+test("a deliberate reader split follows open tabs and tasks through reload and phone layout", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const context = await f.browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  const peer = await context.newPage();
+  const fresh = await f.browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await Promise.all(
+    [page, peer, fresh].map((p, i) =>
+      p.goto(f.origin + "/?issue=abra-web&tab=" + ["Plan", "Diff", "Verification"][i]),
+    ),
+  );
+  const handle = (p: typeof page) => p.getByRole("separator", { name: "Chat width" });
+  await handle(page).waitFor();
+  await handle(peer).waitFor();
+  const box = (await handle(page).boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 90, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForFunction(() => Number(localStorage.getItem("abra-reader-percent")) >= 30);
+  const saved = await page.evaluate(() => Number(localStorage.getItem("abra-reader-percent")));
+  assert.notEqual(saved, 39);
+  await peer.waitForFunction(
+    (expected) =>
+      Math.abs(
+        Number(document.querySelector('[aria-label="Chat width"]')?.getAttribute("aria-valuenow")) -
+          (100 - expected),
+      ) <= 1,
+    saved,
+  );
+  await peer.reload();
+  await handle(peer).waitFor();
+  assert.equal(await fresh.evaluate(() => localStorage.getItem("abra-reader-percent")), null);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await handle(page).waitFor({ state: "hidden" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await handle(page).waitFor();
+  assert.equal(
+    await page.evaluate(() => Number(localStorage.getItem("abra-reader-percent"))),
+    saved,
+  );
+  await fresh.evaluate(() => localStorage.setItem("abra-reader-percent", "broken"));
+  await fresh.reload();
+  await handle(fresh).waitFor();
+  assert.equal(Number(await handle(fresh).getAttribute("aria-valuenow")), 61);
+  await fresh.evaluate(() => {
+    Storage.prototype.setItem = () => {
+      throw new Error("blocked");
+    };
+  });
+  await handle(fresh).press("ArrowLeft");
+  assert.ok(Number(await handle(fresh).getAttribute("aria-valuenow")) < 61);
 });

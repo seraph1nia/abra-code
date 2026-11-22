@@ -14,14 +14,18 @@ import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 const parent = Id.SessionId.make("ses_legacy-parent"),
   issue = Id.IssueId.make("legacy-report");
-async function prepare(status: VisualBuild["status"] = "published", embedded?: string) {
+async function prepare(
+  status: VisualBuild["status"] = "published",
+  embedded?: string,
+  title?: string,
+) {
   const f = await run(fixture);
   f.seed.named(issue);
   const e = await run(f.controller.start(issue, parent));
   await run(f.controller.recordSupervisor(parent));
   const snapshot = await run(captureReportSnapshot(f.work, e));
   const html = `<!doctype html><html><body><script type="application/json" id="abracode-report-data">${embedded ?? snapshotJSON(snapshot)}</script><script type="application/json" id="abracode-license-notices">{}</script></body></html>`;
-  const request = { request_id: Id.RequestId.make("original-legacy") };
+  const request = { request_id: Id.RequestId.make("original-legacy"), ...(title && { title }) };
   const directory = join(f.config.home, ".abracode/reports/generated", issue, request.request_id);
   await mkdir(directory, { recursive: true });
   const path = Id.AbsolutePath.make(join(directory, "index.html")),
@@ -59,6 +63,41 @@ async function prepare(status: VisualBuild["status"] = "published", embedded?: s
     );
   return { f, reports, build, request, html, path, staging };
 }
+
+test("report discovery keeps equally titled published revisions separate when artifact bytes are offline", async (t) => {
+  const { f, build, path } = await prepare("published", undefined, "Evidence report");
+  t.onTestFinished(() => run(f.close()));
+  const another = Id.RequestId.make("revised-report");
+  const hash = reportHash("revised evidence");
+  await run(
+    f.records.update(issue, (current) => ({
+      ...current,
+      visual_reports: [
+        build,
+        {
+          ...build,
+          request: { request_id: another, title: "Evidence report" },
+          artifact: { ...build.artifact!, request_id: another, hash },
+        },
+      ],
+    })),
+  );
+  await rm(path);
+  const result = await run(
+    f.controller.queries.discoverEvidence({
+      issue_id: issue,
+      kind: "report",
+      search: "Evidence report",
+    }),
+  );
+  assert.equal(result.entries.length, 2);
+  assert.deepEqual(
+    new Set(
+      result.entries.map((hit) => hit.resource?.action === "open_artifact" && hit.resource.hash),
+    ),
+    new Set([build.artifact!.hash, hash]),
+  );
+});
 
 test("published legacy HTML retains original identity and bytes while new requests default to JSON", async (t) => {
   const { f, reports, build, request, html, path } = await prepare();

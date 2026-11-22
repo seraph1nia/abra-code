@@ -72,6 +72,14 @@ export class NativeStore implements Store {
       }),
     );
   }
+  page(prefix: StoragePrefix, after: string | undefined, limit: number) {
+    return domainEffect(this.storage.scan({ prefix, after, limit })).pipe(
+      Effect.map((page) => ({
+        entries: page.entries.map((entry) => ({ ...entry, key: StorageKey.make(entry.key) })),
+        next: page.next,
+      })),
+    );
+  }
   entries(prefix: StoragePrefix) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {

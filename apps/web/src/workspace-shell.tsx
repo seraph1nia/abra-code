@@ -1,23 +1,48 @@
+import { RunCommand, type ComposerCommand } from "./workspace-commands.ts";
 import { OpenSearch } from "./search-trigger.tsx";
 import { Palette } from "./palette-loader.tsx";
-import { Outlet, useMatch, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Outlet,
+  Link,
+  useRouterState,
+  useSearch,
+  useMatch,
+  useNavigate,
+} from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Application } from "./workspace.tsx";
+import {
+  destinations,
+  workspaceSearch,
+  destinationFor,
+  type CollectionState,
+} from "./navigation.ts";
+import { SearchTrigger } from "./search-trigger.tsx";
 import PhoneNavigation from "./phone-navigation.tsx";
 import { useMediaQuery } from "./use-media-query.ts";
 
 export function WorkspaceShell() {
-  const workspace = useMatch({ from: "/", shouldThrow: false });
+  const path = useRouterState({ select: (state) => state.location.pathname });
+  const destination = destinationFor(path);
+  const workspace = Boolean(destination);
+  const raw = useSearch({ from: "__root__" });
+  const route = useMemo(() => workspaceSearch(raw), [raw]);
+  const [saved, setSaved] = useState<Partial<Record<string, CollectionState>>>({});
+  if (destination && saved[destination] !== route.collection)
+    setSaved({ ...saved, [destination]: route.collection });
+  const tablet = useMediaQuery("(max-width: 1250px)");
   const settings = useMatch({ from: "/settings", shouldThrow: false });
   const phone = useMediaQuery("(max-width: 760px)");
   const shell = useRef<HTMLDivElement>(null);
   const [visited, setVisited] = useState(Boolean(workspace));
   if (workspace && !visited) setVisited(true);
-  const route = workspace?.search ?? {};
+
   const navigate = useNavigate();
   const [origin, setOrigin] = useState<HTMLElement | null>(null);
+  const [command, setCommand] = useState<{ action: ComposerCommand }>();
+  const consumed = useCallback(() => setCommand(undefined), []);
   const [focusChat, setFocusChat] = useState(false);
-  const [finderSeed, setFinderSeed] = useState<{ query: string; sequence: number }>();
+
   const didFocus = useCallback(() => setFocusChat(false), []);
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
@@ -34,7 +59,12 @@ export function WorkspaceShell() {
         event.preventDefault();
         return;
       }
-      if (document.querySelector('dialog[open], [role="dialog"], [role="alertdialog"]')) return;
+      if (
+        document.querySelector(
+          'dialog[open], [role="dialog"]:not(.inspector-sheet), [role="alertdialog"]',
+        )
+      )
+        return;
       event.preventDefault();
       if (!event.repeat && document.activeElement instanceof HTMLElement)
         setOrigin(document.activeElement);
@@ -51,34 +81,92 @@ export function WorkspaceShell() {
           void navigate({ to: "/", search: {} });
         },
         finder: (query?: string) => {
-          if (query)
-            setFinderSeed((previous) => ({ query, sequence: (previous?.sequence ?? 0) + 1 }));
-          void navigate({ to: "/", search: { view: "finder" } });
+          void navigate({
+            to: "/work",
+            search: query
+              ? { collection: { work: { search: query, state: "all" } } }
+              : { collection: saved["/work"] },
+          });
         },
       }
     : undefined;
+  const links = (Object.entries(destinations) as [keyof typeof destinations, string][])
+    .filter(([to]) => to !== "/more")
+    .map(([to, label]) => (
+      <Link
+        key={to}
+        to={to}
+        search={{ collection: saved[to] }}
+        activeOptions={{ exact: true, includeSearch: false }}
+      >
+        {label}
+      </Link>
+    ));
+  const navigation = (
+    <>
+      {links}
+      <Link to="/settings">Settings</Link>
+    </>
+  );
   return (
-    <OpenSearch.Provider value={setOrigin}>
-      <div className="workspace-shell" ref={shell}>
-        {phone && (workspace || settings) && (
-          <PhoneNavigation shell={shell} route={route} settings={Boolean(settings)} />
-        )}
-        {(workspace || visited) && (
-          <div className="workspace-host" hidden={!workspace}>
-            <Application
-              route={route}
-              active={Boolean(workspace)}
-              phone={phone}
-              palette={palette}
-              finderSeed={finderSeed}
-              focusChat={focusChat}
-              didFocus={didFocus}
-            />
-          </div>
-        )}
-        {!workspace && !visited && palette && <Palette {...palette} />}
-        <Outlet />
-      </div>
-    </OpenSearch.Provider>
+    <RunCommand.Provider
+      value={(action) => {
+        setCommand({ action });
+        if (
+          workspace &&
+          !tablet &&
+          (route.issue || route.surface || route.review || route.retained) &&
+          !route.canvas
+        )
+          return;
+        void navigate({ to: "/", search: {} });
+      }}
+    >
+      <OpenSearch.Provider value={setOrigin}>
+        <div className="workspace-shell" ref={shell}>
+          {(workspace || settings) &&
+            (phone ? (
+              <>
+                <header className="phone-tools">
+                  <SearchTrigger />
+                  <Link to="/attention">Attention</Link>
+                </header>
+                <PhoneNavigation
+                  shell={shell}
+                  saved={saved}
+                  more={Boolean(settings || destination === "/github")}
+                />
+              </>
+            ) : tablet ? (
+              <details key={path} className="destination-menu">
+                <summary>Destinations</summary>
+                <nav aria-label="Workspace">{navigation}</nav>
+              </details>
+            ) : (
+              <nav className="destination-rail" aria-label="Workspace">
+                <SearchTrigger />
+                {navigation}
+              </nav>
+            ))}
+          {(workspace || visited) && (
+            <div className="workspace-host" hidden={!workspace}>
+              <Application
+                route={route}
+                active={Boolean(workspace)}
+                phone={phone}
+                palette={palette}
+                command={command}
+                consumed={consumed}
+                destination={destination ?? "/"}
+                focusChat={focusChat}
+                didFocus={didFocus}
+              />
+            </div>
+          )}
+          {!workspace && !visited && palette && <Palette {...palette} />}
+          <Outlet />
+        </div>
+      </OpenSearch.Provider>
+    </RunCommand.Provider>
   );
 }

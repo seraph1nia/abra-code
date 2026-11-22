@@ -11,7 +11,7 @@ import { SessionCard, type Inspect } from "@abracode/presentation/cards";
 import { ToolObservation } from "./tools.tsx";
 
 export function SessionsPanel({ work, inspect }: { work: WebWorkItem; inspect: Inspect }) {
-  const route = useSearch({ from: "/" });
+  const route = useSearch({ from: "__root__" });
   const [page, setPage] = useState(0);
   const selectId = useId();
   const target = route.resource?.action === "open_session" ? route.resource.session_id : undefined;

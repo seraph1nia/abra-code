@@ -1,3 +1,4 @@
+import { RunCommand, composerCommands } from "./workspace-commands.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Typed workspace HTTP atoms own mounted query lifetimes. */
 import { useContext, useState, type ReactNode } from "react";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
@@ -5,6 +6,7 @@ import { AsyncResult, type Atom } from "effect/reactivity";
 import { Button } from "@abracode/presentation/ui/button";
 import { Input } from "@abracode/presentation/ui/input";
 import type { ThoughtQuery, ThoughtReference } from "@abracode/contracts/visibility/thoughts";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { WorkspaceApi } from "./data.ts";
 import { requestError } from "./request-error.ts";
 
@@ -29,27 +31,33 @@ function Read<A, E>({
   if (!AsyncResult.isSuccess(result) || result.waiting) return <output>Loading thoughts…</output>;
   return children(result.value);
 }
-export function Thoughts({
-  back,
-  discuss,
-}: {
-  back: () => void;
-  discuss: (ref: ThoughtReference) => void;
-}) {
-  const [filters, setFilters] = useState<ThoughtQuery>({});
-  const [query, setQuery] = useState<ThoughtQuery>({});
-  const [pages, setPages] = useState<string[]>([]);
-  const [selected, setSelected] = useState<ThoughtReference>();
+export function Thoughts({ discuss }: { discuss: (ref: ThoughtReference) => void }) {
+  const { collection } = useSearch({ from: "__root__" });
+  const runCommand = useContext(RunCommand);
+  const navigate = useNavigate();
+  const [used, setUsed] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const query = collection?.notebook ?? {};
+  const selected = collection?.memo;
+  const [filters, setFilters] = useState<ThoughtQuery>(query);
+  const cursors = collection?.previousCursors ?? [];
+  const setQuery = (notebook: ThoughtQuery, previousCursors: readonly string[] = []) =>
+    void navigate({ to: "/thoughts", search: { collection: { notebook, previousCursors } } });
+  const setSelected = (memo?: ThoughtReference) =>
+    void navigate({
+      to: "/thoughts",
+      search: { collection: { ...collection, notebook: query, memo } },
+    });
   const list = WorkspaceApi.query("work", "thoughtList", {
-    query: { ...query, cursor: pages.at(-1) },
+    query,
     timeToLive: "0 seconds",
   });
   return (
     <section aria-label="Personal thoughts" className="space-y-3 overflow-y-auto p-2">
       <div className="sidebar-heading">
         <h2>Thoughts</h2>
-        <Button variant="ghost" onClick={back}>
-          Back to Work
+        <Button variant="outline" onClick={() => runCommand(composerCommands[1])}>
+          Save a thought
         </Button>
       </div>
       {selected ? (
@@ -70,6 +78,50 @@ export function Thoughts({
                 <a href={item.url} target="_blank" rel="noreferrer">
                   Open in Memos
                 </a>
+                <details key={item.reference.name} onToggle={(e) => setUsed(e.currentTarget.open)}>
+                  <summary>Used in work</summary>
+                  {used && (
+                    <Read
+                      atom={WorkspaceApi.query("work", "thoughtWork", {
+                        query: { ...item.reference, offset },
+                        timeToLive: "0 seconds",
+                      })}
+                    >
+                      {(page) => (
+                        <>
+                          {!page.entries.length && <p>No accepted work references on this page.</p>}
+                          {page.entries.map((row) => (
+                            <p key={row.id}>
+                              <Button
+                                onClick={() =>
+                                  void navigate({
+                                    to: "/thoughts",
+                                    search: { collection, issue: row.id },
+                                  })
+                                }
+                              >
+                                {row.title}
+                              </Button>{" "}
+                              ·{" "}
+                              {row.wording_hash === item.reference.wording_hash
+                                ? "Current wording"
+                                : "Earlier wording"}{" "}
+                              · {row.wording_hash.slice(0, 12)}
+                            </p>
+                          ))}
+                          {offset > 0 && (
+                            <Button onClick={() => setOffset(Math.max(0, offset - 20))}>
+                              Previous work
+                            </Button>
+                          )}
+                          {page.next_offset !== undefined && (
+                            <Button onClick={() => setOffset(page.next_offset!)}>More work</Button>
+                          )}
+                        </>
+                      )}
+                    </Read>
+                  )}
+                </details>
                 <Button onClick={() => discuss(item.reference)}>Ask Abra about this</Button>
               </article>
             )}
@@ -81,8 +133,7 @@ export function Thoughts({
             className="space-y-2"
             onSubmit={(event) => {
               event.preventDefault();
-              setPages([]);
-              setQuery(filters);
+              setQuery({ ...filters, cursor: undefined });
             }}
           >
             <Input
@@ -140,19 +191,30 @@ export function Thoughts({
                     </li>
                   ))}
                 </ul>
-                {(pages.length > 0 || page.next_cursor) && (
+                {(query.cursor || page.next_cursor) && (
                   <nav aria-label="Thought pages">
                     <Button
                       variant="outline"
-                      disabled={!pages.length}
-                      onClick={() => setPages(pages.slice(0, -1))}
+                      disabled={!query.cursor}
+                      onClick={() =>
+                        setQuery(
+                          { ...query, cursor: cursors.at(-1) || undefined },
+                          cursors.slice(0, -1),
+                        )
+                      }
                     >
                       Previous
                     </Button>
                     <Button
                       variant="outline"
                       disabled={!page.next_cursor}
-                      onClick={() => page.next_cursor && setPages([...pages, page.next_cursor])}
+                      onClick={() =>
+                        page.next_cursor &&
+                        setQuery(
+                          { ...query, cursor: page.next_cursor },
+                          [...cursors, query.cursor ?? ""].slice(-32),
+                        )
+                      }
                     >
                       Next
                     </Button>

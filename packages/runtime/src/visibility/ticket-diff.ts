@@ -22,7 +22,13 @@ export class TicketDiff {
     },
   ) {}
   read = Effect.fn("TicketDiff.read")(
-    function* (this: TicketDiff, issueID: IssueId, scope: DiffScope, selected?: RelativePath) {
+    function* (
+      this: TicketDiff,
+      issueID: IssueId,
+      scope: DiffScope,
+      selected?: RelativePath,
+      filesOnly = false,
+    ) {
       identifier(issueID);
       yield* this.c.issue(issueID);
       const e = yield* this.c.execution(issueID);
@@ -78,6 +84,7 @@ export class TicketDiff {
         file,
         limited,
       };
+      if (filesOnly) return result;
       if (!files.length) return { ...result, message: "No changes against this base." };
       const patchIds = new Map<RelativePath, ContentHash>();
       const remember = (path: RelativePath, patch: string) => {

@@ -1,9 +1,14 @@
+import { WorkspaceApi } from "./data.ts";
+import { SearchTrigger } from "./search-trigger.tsx";
+import { ThoughtSource } from "./thought-source.tsx";
+import { workControl } from "./workspace-commands.ts";
+import { destinationFor } from "./navigation.ts";
 import { RefreshCanvas, CanvasRefreshProvider, useCanvasRead } from "./canvas-refresh.tsx";
 import { ExactSurface } from "./presentation/attachments.tsx";
 import type { WorkspaceSearch } from "./navigation.ts";
 import { SelectedFinding } from "./presentation/finding.tsx";
 import { PlanPassage } from "./presentation/plan-passage.tsx";
-import { VerificationPanel } from "./presentation/verification.tsx";
+import { RetainedAsset, VerificationPanel } from "./presentation/verification.tsx";
 import { RelativePath } from "@abracode/contracts/identities";
 import { ReviewsForSource } from "./presentation/interactive-review-loader.tsx";
 import { ExportReport } from "./presentation/export-report.tsx";
@@ -44,8 +49,6 @@ function Markdown({ content, className }: { content: string; className?: string 
   return <DeferredMarkdown key={content} content={content} className={className} mode="static" />;
 }
 type Props = {
-  width: number;
-  resize: (width: number) => void;
   work?: WorkItem;
   issue: IssueId;
   tab: InspectorTab;
@@ -59,30 +62,106 @@ type Props = {
 };
 type ContentProps = Omit<Props, "work" | "issue"> & { work: WorkItem };
 export function Inspector(
-  props: Omit<Props, "issue"> & { issue?: IssueId; surface?: WorkspaceSearch["surface"] },
+  props: Omit<Props, "issue"> & {
+    picker?: React.ReactNode;
+    issue?: IssueId;
+    surface?: WorkspaceSearch["surface"];
+    retained?: WorkspaceSearch["retained"];
+    review?: WorkspaceSearch["review"];
+  },
 ) {
-  const route = useSearch({ from: "/" });
+  const route = useSearch({ from: "__root__" });
   const canvas = route.canvas === true;
   const overlay = useMediaQuery("(max-width: 1250px)") || canvas;
   const phone = useMediaQuery("(max-width: 760px)");
-  const content = props.surface ? (
-    <aside className="inspector" aria-label="Work inspector">
-      <header className="inspector-header">
-        <div className="canvas-heading">
-          <h2>{props.surface.surface_id}</h2>
-          <small>Conversation view · revision {props.surface.revision}</small>
+  const retained = props.retained;
+  const content =
+    retained || props.review ? (
+      <aside className="inspector" aria-label="Work inspector">
+        <header className="inspector-header">
+          <h2>{retained ? "Selected " + retained.kind : "Interactive review"}</h2>
+          <CanvasControls {...props} />
+        </header>
+        <div className="inspector-content">
+          {retained ? (
+            <RequestState
+              query={WorkspaceApi.query("work", "evidenceSearch", {
+                query: retained,
+                timeToLive: "0 seconds",
+              })}
+            >
+              {(page) => {
+                const hit = page.entries.find(
+                  (row) =>
+                    row.identity === retained.identity &&
+                    row.kind === retained.kind &&
+                    row.issue_id === retained.issue_id &&
+                    row.repository_id === retained.repository_id,
+                );
+                if (!hit)
+                  return (
+                    <output>This evidence is no longer available at the selected identity.</output>
+                  );
+                return (
+                  <article>
+                    <h3>{hit.label}</h3>
+                    <p>{hit.context}</p>
+                    {hit.asset && <RetainedAsset receipt={hit.asset} />}
+                    <small>
+                      {hit.repository_id} · {hit.identity}
+                    </small>
+                    {hit.issue_id && (
+                      <Button
+                        onClick={() =>
+                          props.inspect(
+                            hit.resource ?? {
+                              action: "open_task",
+                              issue_id: hit.issue_id!,
+                              section:
+                                hit.kind === "communication" || hit.kind === "lead"
+                                  ? "activity"
+                                  : hit.kind === "wait"
+                                    ? "summary"
+                                    : "verification",
+                              ...(hit.kind === "communication"
+                                ? { activity: "communication" as const }
+                                : hit.kind === "lead"
+                                  ? { activity: "leads" as const }
+                                  : {}),
+                            },
+                          )
+                        }
+                      >
+                        Open in task
+                      </Button>
+                    )}
+                  </article>
+                );
+              }}
+            </RequestState>
+          ) : (
+            props.review && <ReviewsForSource target={props.review} />
+          )}
         </div>
-        <CanvasControls {...props} />
-      </header>
-      <div className="inspector-content">
-        <ExactSurface target={props.surface} inspect={props.inspect} />
-      </div>
-    </aside>
-  ) : !props.issue ? null : props.work ? (
-    <InspectorContent {...props} work={props.work} />
-  ) : (
-    <UnloadedInspector {...props} issue={props.issue} />
-  );
+      </aside>
+    ) : props.surface ? (
+      <aside className="inspector" aria-label="Work inspector">
+        <header className="inspector-header">
+          <div className="canvas-heading">
+            <h2>{props.surface.surface_id}</h2>
+            <small>Conversation view · revision {props.surface.revision}</small>
+          </div>
+          <CanvasControls {...props} />
+        </header>
+        <div className="inspector-content">
+          <ExactSurface target={props.surface} inspect={props.inspect} />
+        </div>
+      </aside>
+    ) : !props.issue ? null : props.work ? (
+      <InspectorContent {...props} work={props.work} />
+    ) : (
+      <UnloadedInspector {...props} issue={props.issue} />
+    );
   if (phone || !overlay) return <CanvasRefreshProvider>{content}</CanvasRefreshProvider>;
   return (
     <Sheet
@@ -107,24 +186,16 @@ export function Inspector(
         <SheetDescription className="sr-only">
           Read-only work details. Instructions go to Abra.
         </SheetDescription>
+        <SearchTrigger />
+        <span className="sheet-picker">{props.picker}</span>
         <CanvasRefreshProvider>{content}</CanvasRefreshProvider>
       </SheetContent>
     </Sheet>
   );
 }
-function CanvasControls({ width, resize, close }: Pick<Props, "width" | "resize" | "close">) {
+function CanvasControls({ close }: Pick<Props, "close">) {
   return (
     <>
-      <input
-        className="canvas-size"
-        aria-label="Canvas width"
-        aria-valuetext={width + " percent"}
-        type="range"
-        min={30}
-        max={55}
-        value={width}
-        onChange={(event) => resize(event.currentTarget.valueAsNumber)}
-      />
       <RefreshCanvas />
       <Button variant="ghost" size="icon" onClick={close} aria-label="Close inspector">
         <X aria-hidden="true" />
@@ -157,15 +228,13 @@ function InspectorContent({
   work,
   tab,
   setTab,
-  width,
-  resize,
   close,
   ask,
   forms,
   focusForm,
   inspect,
 }: ContentProps) {
-  const route = useSearch({ from: "/" });
+  const route = useSearch({ from: "__root__" });
   const target = route.resource;
   const title =
     target?.action === "open_finding"
@@ -204,7 +273,7 @@ function InspectorContent({
             <option key={name}>{name}</option>
           ))}
         </NativeSelect>
-        <CanvasControls width={width} resize={resize} close={close} />
+        <CanvasControls close={close} />
       </header>
       <div className="inspector-content" key={JSON.stringify([work.issue_id, tab, target])}>
         <InspectorPanel
@@ -227,8 +296,8 @@ function InspectorPanel({
   focusForm,
   inspect,
 }: Pick<ContentProps, "work" | "tab" | "ask" | "forms" | "focusForm" | "inspect">) {
-  const search = useSearch({ from: "/" });
-  const navigate = useNavigate({ from: "/" });
+  const search = useSearch({ from: "__root__" });
+  const navigate = useNavigate({ from: destinationFor(window.location.pathname) ?? "/" });
   const file = search.file ?? "";
   const selectFile = (file: string) => {
     void navigate({ search: (previous) => ({ ...previous, file: file || undefined }) });
@@ -421,13 +490,10 @@ function Overview({
         ))}
       <Markdown className="prose" content={detail.description} />
       {detail.thought_source && (
-        <section aria-label="Accepted thought">
-          <h3>Accepted thought</h3>
-          <p>
-            {detail.thought_source.reference.account} · {detail.thought_source.reference.name}
-          </p>
-          <blockquote className="whitespace-pre-wrap">{detail.thought_source.excerpt}</blockquote>
-        </section>
+        <ThoughtSource
+          reference={detail.thought_source.reference}
+          excerpt={detail.thought_source.excerpt}
+        />
       )}
       {work.execution_contract && <ExecutionContractSummary contract={work.execution_contract} />}
       {work.outcome && (
@@ -496,15 +562,11 @@ function Overview({
         </p>
       )}
       <div className="button-row">
-        {["pause", "resume", "advance"].map((action) => (
+        {(["pause", "resume", "advance"] as const).map((action) => (
           <Button
             variant="outline"
             key={action}
-            onClick={() =>
-              ask(
-                `Request controller action ${action} for ${work.issue_id}. Inspect its current state and use the existing guarded work control.`,
-              )
-            }
+            onClick={() => ask(workControl(action, work.issue_id).text)}
           >
             Ask Abra to {action} work
           </Button>
@@ -517,7 +579,7 @@ function Overview({
   );
 }
 function DiffPanel({ issue }: { issue: string }) {
-  const search = useSearch({ from: "/" });
+  const search = useSearch({ from: "__root__" });
   const { resolved } = useTheme();
   return (
     <RequestState query={queries.diff(issue, "", search.scope ?? "all")} showRefresh={false}>
@@ -539,8 +601,8 @@ function DiffPanel({ issue }: { issue: string }) {
   );
 }
 function Reports({ issue, inspect }: { issue: string; inspect: Inspect }) {
-  const route = useSearch({ from: "/" });
-  const navigate = useNavigate({ from: "/" });
+  const route = useSearch({ from: "__root__" });
+  const navigate = useNavigate({ from: destinationFor(window.location.pathname) ?? "/" });
   const target = route.resource?.action === "open_artifact" ? route.resource : undefined;
   const [otherReports, setOtherReports] = useState(false);
   return (
@@ -667,8 +729,8 @@ function SelectedReport({
   target: Extract<Parameters<Inspect>[0], { action: "open_artifact" }>;
   inspect: Inspect;
 }) {
-  const route = useSearch({ from: "/" });
-  const navigate = useNavigate({ from: "/" });
+  const route = useSearch({ from: "__root__" });
+  const navigate = useNavigate({ from: destinationFor(window.location.pathname) ?? "/" });
   return (
     <RequestState query={queries.artifactSummary(target.issue_id, target.request_id, target.hash)}>
       {(selected) =>

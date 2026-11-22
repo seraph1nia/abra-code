@@ -29,6 +29,16 @@ export const SelectionFollowupSchema = Schema.Struct({
 });
 export type SelectionFollowup = typeof SelectionFollowupSchema.Type;
 export const selectionMarker = "\n\nSelected work (captured source)\n";
+export const thoughtMarker = "\n\nSelected personal thought (resolve with abra_thought_get)\n";
+export const thoughtSubmissionMarker = "\n\nAbra thought submission: ";
+export function thoughtSubmission(text: string) {
+  const index = text.lastIndexOf(thoughtSubmissionMarker);
+  if (index < 0) return;
+  const end = text.indexOf(thoughtMarker, index + thoughtSubmissionMarker.length);
+  if (end < 0) return;
+  const id = text.slice(index + thoughtSubmissionMarker.length, end);
+  return /^[a-zA-Z0-9_-]{1,100}$/.test(id) ? id : undefined;
+}
 export function selectedQuestion(text: string) {
   const index = text.lastIndexOf(selectionMarker);
   if (index < 0) return;
@@ -38,7 +48,14 @@ export function selectedQuestion(text: string) {
         request_id: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/)),
         ...CapturedSelectionSchema.fields,
       }),
-    )(JSON.parse(text.slice(index + selectionMarker.length)));
+    )(
+      JSON.parse(
+        text
+          .slice(index + selectionMarker.length)
+          .split(thoughtSubmissionMarker)[0]
+          .split(thoughtMarker)[0],
+      ),
+    );
     return { text: text.slice(0, index), ...source };
   } catch {
     return;

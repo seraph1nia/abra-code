@@ -240,7 +240,14 @@ export async function workspaceJourney(input: {
     let secondObserver = await attachObserver();
     input.streaming.hold();
     let ordinal = 0;
+    async function chatFromAttention() {
+      if (new URL(page.url()).pathname !== "/attention") return;
+      const chat = page.getByRole("link", { name: "Chat", exact: true });
+      if (!(await chat.isVisible())) await page.getByText("Destinations", { exact: true }).click();
+      await chat.click();
+    }
     async function command(tool: string, args: Record<string, unknown>, question?: string) {
+      await chatFromAttention();
       const text =
         question ??
         `AbraCode workspace operation ${JSON.stringify({ tool, args, ordinal: ++ordinal })}`;
@@ -428,6 +435,7 @@ export async function workspaceJourney(input: {
     assert.equal(published.revision, 1);
     await page.getByText("Native workspace coding journey", { exact: true }).waitFor();
     const openLayout = async (revision: number) => {
+      await chatFromAttention();
       await page
         .locator(`.transcript [data-surface-reference="workspace-board/${revision}"]`)
         .getByRole("button", { name: /Open board|Open comparison/ })
@@ -1130,8 +1138,10 @@ export async function workspaceJourney(input: {
           await page.locator(".frozen-report").waitFor();
           await page.getByRole("button", { name: "Close inspector", exact: true }).click();
         }
-        const dock = page.getByRole("button", { name: /^Attention/ });
-        if ((await dock.getAttribute("aria-expanded")) === "false") await dock.click();
+        const dock = page.getByRole("link", { name: "Attention", exact: true });
+        if (!(await dock.isVisible()))
+          await page.getByText("Destinations", { exact: true }).click();
+        await dock.click();
         const forms = page
           .locator(".attention-card")
           .filter({ has: page.getByText(new RegExp(`Authorize ${kind} for ${issue}`)) });

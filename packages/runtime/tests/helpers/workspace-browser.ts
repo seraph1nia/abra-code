@@ -278,6 +278,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
     ),
     observe: () => backend.snapshot,
     resolve: source.resolve,
+    publications: (q) => source.publications(q),
     surface: source.surface,
     history: source.history,
     submit: source.submit,
@@ -321,6 +322,9 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
             observed_at: source.value.at,
           };
         }),
+      evidenceSearch: (q) => source.work.evidenceSearch(q),
+      sessions: (q) => source.work.sessions(q),
+      thoughtWork: (q) => source.work.thoughtWork(q),
       thoughtList: (q) => source.work.thoughtList(q),
       thoughtDetail: (q) => source.work.thoughtDetail(q),
       githubInbox: source.work.githubInbox,
@@ -428,4 +432,20 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
       }
     },
   };
+}
+
+export async function chooseAppearance(
+  page: Awaited<ReturnType<Browser["newPage"]>>,
+  theme: string,
+) {
+  const phone = (page.viewportSize()?.width ?? 0) <= 760;
+  if (phone) await page.getByRole("link", { name: "More", exact: true }).click();
+  else if ((page.viewportSize()?.width ?? 1440) <= 1250)
+    await page.getByText("Destinations", { exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Appearance", exact: true }).click();
+  await page.getByLabel("Color theme", { exact: true }).selectOption(theme);
+  await page.goBack();
+  await page.goBack();
+  if (phone) await page.goBack();
 }

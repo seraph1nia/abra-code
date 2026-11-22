@@ -1,3 +1,4 @@
+import type { PublicationPage, PublicationQuery } from "@abracode/contracts/presentation/contracts";
 import type { Submission } from "@abracode/contracts/web/workspace-wire";
 import type { AgentCatalog } from "@abracode/contracts/web/agent-settings";
 import type {
@@ -72,6 +73,9 @@ export interface WebBackend {
   readonly snapshot: Effect.Effect<WorkspaceSnapshot, CrewError>;
   observe(scope: ChangeScope): Effect.Effect<WorkspaceSnapshot, CrewError>;
   resolve(target: ResourceSelection): Effect.Effect<ResourceSelection, CrewError>;
+  publications(
+    query: typeof PublicationQuery.Type,
+  ): Effect.Effect<typeof PublicationPage.Type, CrewError>;
   surface(id: string, revision: number): Effect.Effect<SurfaceEntry, CrewError>;
   history(cursor: string): Effect.Effect<
     {

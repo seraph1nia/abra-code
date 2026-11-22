@@ -1,12 +1,34 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Read the same typed discovery and overview atoms as the finder and inspector. */
-import { useEffect, useState } from "react";
+/* oxlint-disable effecttsgo/unstable-api-usage -- Cancelling the picker releases its typed HTTP atom subscriptions. */
+import { useContext, useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { SearchDialog, type SearchCommand } from "@abracode/presentation/ui/search-dialog";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
+import type { ResourceSelection } from "@abracode/contracts/web/resources";
+import { Exit } from "effect";
+import { toast } from "sonner";
+import { requestError } from "./request-error.ts";
+import { reviewListQuery } from "./review-data.ts";
+import { MessageId } from "@abracode/contracts/identities";
+import { selectionLabel } from "@abracode/contracts/web/resources";
+import { workspaceDraft } from "./workspace-state/draft.ts";
+import { EvidenceKind } from "@abracode/contracts/visibility/discovery-contracts";
+import {
+  WorkspaceApi,
+  resolveResource,
+  agentsQuery,
+  repositoriesQuery,
+  bootstrapQuery,
+} from "./data.ts";
 import { queries } from "./work-data.ts";
-import { type WorkspaceSearch } from "./navigation.ts";
+import {
+  destinations,
+  destinationFor,
+  searchForResource,
+  type WorkspaceSearch,
+} from "./navigation.ts";
+import { RunCommand, composerCommands, snippetDraft, workControl } from "./workspace-commands.ts";
 
 export type PaletteActions = {
   origin: HTMLElement;
@@ -19,9 +41,63 @@ type Props = PaletteActions & {
   selected?: string;
   resume?: WorkspaceSearch;
   review?: () => void;
-  inspect?: (id: string) => void;
+  inspect?: (target: ResourceSelection) => void;
+  prepare?: (text: string) => void;
+  history?: {
+    messages: WorkspaceSnapshot["messages"];
+    more: boolean;
+    loading: boolean;
+    load: () => void;
+  };
 };
+const emptyDraft = Atom.make(undefined);
 const idle = Atom.make(AsyncResult.initial<never, never>());
+type Source =
+  | "work"
+  | "session"
+  | "thought"
+  | "github"
+  | "agent"
+  | "repo"
+  | "attention"
+  | "page"
+  | "command"
+  | "message"
+  | "evidence"
+  | "surface"
+  | "review";
+const sources: readonly Source[] = [
+  "work",
+  "session",
+  "thought",
+  "github",
+  "agent",
+  "repo",
+  "attention",
+  "page",
+  "command",
+  "message",
+  "evidence",
+  "surface",
+  "review",
+];
+type Hit = SearchCommand & {
+  source: Source;
+  identity: string;
+  effect: "Open" | "Prepare draft" | "Open form" | "Attach to chat";
+  aliases?: readonly string[];
+};
+function useSource<A, E>(enabled: boolean, read: () => Atom.Atom<AsyncResult.AsyncResult<A, E>>) {
+  const atom = enabled ? read() : idle;
+  const result = useAtomValue(atom);
+  const registry = useContext(RegistryContext);
+  return {
+    data: enabled && AsyncResult.isSuccess(result) ? result.value : undefined,
+    failed: enabled && AsyncResult.isFailure(result),
+    loading: enabled && (result.waiting || AsyncResult.isInitial(result)),
+    retry: () => registry.refresh(atom),
+  };
+}
 
 export default function WorkspacePalette({
   origin,
@@ -33,93 +109,564 @@ export default function WorkspacePalette({
   resume,
   review,
   inspect,
+  prepare,
+  history,
 }: Props) {
   const navigate = useNavigate();
+  const run = useContext(RunCommand);
   const [value, setValue] = useState("");
-  const query = value.trim();
+  const input = value.trim();
+  const prefix = sources.find((s) => input.toLowerCase().startsWith(s + ":"));
+  const evidenceKind = EvidenceKind.literals.find((k) => input.toLowerCase().startsWith(k + ":"));
+  const filter = evidenceKind && !prefix ? "evidence" : input.startsWith(">") ? "command" : prefix;
+  const query = (
+    evidenceKind
+      ? input.slice(evidenceKind.length + 1)
+      : prefix
+        ? input.slice(prefix.length + 1)
+        : filter === "command"
+          ? input.slice(1)
+          : input
+  ).trim();
   const [settled, setSettled] = useState("");
   useEffect(() => {
-    const timer = setTimeout(() => setSettled(query), 180);
+    const timer = setTimeout(() => setSettled(input), 180);
     return () => clearTimeout(timer);
-  }, [query]);
-  const searching = Boolean(query && query === settled);
-  const result = useAtomValue(
-    searching ? queries.find({ state: "all", search: query, limit: 8 }) : idle,
+  }, [input]);
+  const active = (source: Source) => !!input && input === settled && (!filter || filter === source);
+  const [page, setPage] = useState<{
+    forInput: string;
+    after_owner: string;
+    after_entry: string;
+  }>();
+  const cursor =
+    page?.forInput === input
+      ? { after_owner: page.after_owner, after_entry: page.after_entry }
+      : {};
+  const evidence = useSource(active("evidence"), () =>
+    WorkspaceApi.query("work", "evidenceSearch", {
+      query: { search: query, kind: evidenceKind, ...cursor },
+      timeToLive: "0 seconds",
+    }),
   );
-  const selectedWork = workspace?.work.work.find((task) => task.issue_id === selected);
-  const overview = useAtomValue(selected && !selectedWork ? queries.overview(selected) : idle);
-  const title =
-    selectedWork?.title ??
-    (AsyncResult.isSuccess(overview) ? overview.value.work.title : undefined);
-  const go = (search: WorkspaceSearch) => void navigate({ to: "/", search });
-  const commands: SearchCommand[] = [];
-  if (review) commands.push({ id: "review", label: "Review pending decisions", run: review });
-  if (resume)
-    commands.push({
-      id: "resume",
-      label: "Resume last inspection",
-      detail: resume.file ?? resume.surface?.surface_id ?? resume.issue,
-      run: () => go(resume),
+  const [publicationPage, setPublicationPage] = useState<{ forInput: string; cursor: string }>();
+  const pubs = useSource(active("surface") || active("review"), () =>
+    WorkspaceApi.query("workspace", "publications", {
+      query: {
+        search: query,
+        kind: filter === "surface" || filter === "review" ? filter : undefined,
+        cursor: publicationPage?.forInput === input ? publicationPage.cursor : undefined,
+      },
+      timeToLive: "0 seconds",
+    }),
+  );
+  const reviews = useSource(active("review"), () => reviewListQuery());
+  const work = useSource(active("work"), () =>
+    queries.find({ search: query, state: "all", limit: 8 }),
+  );
+  const workers = useSource(active("session"), () =>
+    WorkspaceApi.query("work", "sessions", {
+      query: { search: query, limit: 8 },
+      timeToLive: "0 seconds",
+    }),
+  );
+  const notebook = query.startsWith("#") ? { tag: query.slice(1) } : { text: query };
+  const notes = useSource(active("thought"), () =>
+    WorkspaceApi.query("work", "thoughtList", { query: notebook, timeToLive: "0 seconds" }),
+  );
+  function github(state: "OPEN" | "CLOSED" | "MERGED") {
+    return WorkspaceApi.query("work", "githubInbox", {
+      query: { search: query, state },
+      timeToLive: "0 seconds",
     });
-  if (selected && title) {
-    for (const tab of ["Plan", "Diff", "Verification", "Reports"] as const) {
-      commands.push({
-        id: tab,
-        label: "Open " + tab,
-        detail: title,
-        run: () => go({ issue: selected, tab }),
+  }
+  const opened = useSource(active("github"), () => github("OPEN"));
+  const closed = useSource(active("github"), () => github("CLOSED"));
+  const merged = useSource(active("github"), () => github("MERGED"));
+  const agents = useSource(active("agent"), () => agentsQuery);
+  const repos = useSource(active("repo"), () => repositoriesQuery);
+  const snapshot = useSource(
+    !workspace &&
+      (active("session") || active("attention") || active("message") || active("surface")),
+    () => bootstrapQuery,
+  );
+  const current = workspace ?? snapshot.data;
+  const draft = useAtomValue(current ? workspaceDraft(current.session_id) : emptyDraft);
+  const lower = query.toLowerCase();
+  const hits: Hit[] = [];
+  const add = (
+    source: Source,
+    identity: string,
+    label: string,
+    detail: string,
+    effect: Hit["effect"],
+    select: () => void,
+    aliases?: readonly string[],
+  ) => {
+    hits.push({
+      id: source + "/" + identity,
+      source,
+      identity,
+      label,
+      detail,
+      effect,
+      run: select,
+      aliases,
+    });
+  };
+  const resolve = useAtomSet(resolveResource, { mode: "promiseExit" });
+  const go = (target: ResourceSelection) => {
+    if (inspect) inspect(target);
+    else {
+      const address = location.href;
+      void resolve({ payload: target }).then((result) => {
+        if (location.href !== address) return;
+        if (Exit.isFailure(result)) {
+          toast.error("Couldn’t open this work item", { description: requestError(result.cause) });
+          return;
+        }
+        void navigate({ to: "/", search: searchForResource(result.value) });
       });
     }
+  };
+  const reader = (search: WorkspaceSearch) =>
+    void navigate({
+      to: destinationFor(location.pathname) ?? "/",
+      search: (previous) => ({ collection: previous.collection, ...search }),
+    });
+  for (const row of evidence.data?.entries ?? []) {
+    const { kind, issue_id, repository_id, identity } = row;
+    add(
+      "evidence",
+      [repository_id, issue_id, kind, identity].join("/"),
+      row.label,
+      kind + " · " + row.context,
+      "Open",
+      () =>
+        row.resource
+          ? go(row.resource)
+          : reader({ retained: { kind, issue_id, repository_id, identity } }),
+    );
   }
-  commands.push(
-    { id: "chat", label: "Return to chat", run: chat },
-    { id: "finder", label: "Open Work finder", run: () => finder() },
-    { id: "settings", label: "Open Settings", run: () => void navigate({ to: "/settings" }) },
+  for (const row of reviews.data?.reviews ?? [])
+    add(
+      "review",
+      row.review_id + "/" + row.revision,
+      row.title,
+      "Interactive review · " + row.hash,
+      "Open",
+      () => reader({ review: { review_id: row.review_id, revision: row.revision } }),
+    );
+  for (const row of current?.surfaces ?? [])
+    if (!("unavailable" in row) && current) {
+      const id = "surface" in row ? row.surface.createSurface.surfaceId : row.surface_id;
+      add(
+        "surface",
+        id + "/" + row.revision,
+        id,
+        "Generated view · revision " + row.revision,
+        "Open",
+        () =>
+          reader({
+            surface: { session_id: current.session_id, surface_id: id, revision: row.revision },
+          }),
+      );
+    }
+  for (const entry of pubs.data?.entries ?? []) {
+    const t = entry.target;
+    if (t.kind === "surface")
+      add(
+        "surface",
+        t.surface_id + "/" + t.revision,
+        t.surface_id,
+        "Published revision " + t.revision + " · " + entry.message_id,
+        "Open",
+        () =>
+          reader({
+            surface: {
+              session_id: entry.session_id,
+              surface_id: t.surface_id,
+              revision: t.revision,
+            },
+          }),
+      );
+    if (t.kind === "review")
+      add(
+        "review",
+        t.review_id + "/" + t.revision,
+        t.review_id,
+        "Published revision " + t.revision + " · " + entry.message_id,
+        "Open",
+        () => reader({ review: { review_id: t.review_id, revision: t.revision } }),
+      );
+  }
+  for (const [path, label] of Object.entries(destinations))
+    add(
+      "page",
+      path,
+      label,
+      "Workspace",
+      "Open",
+      () => void navigate({ to: destinationFor(path) ?? "/", search: {} }),
+    );
+  add(
+    "page",
+    "settings",
+    "Settings",
+    "Workspace",
+    "Open",
+    () => void navigate({ to: "/settings" }),
   );
-  const matches = commands.filter((command) =>
-    command.label.toLowerCase().includes(query.toLowerCase()),
-  );
-  const tasks: SearchCommand[] = [];
-  const rows: SearchCommand[] = [];
-  let status: string | undefined;
-  if (query) {
-    if (searching && AsyncResult.isSuccess(result)) {
-      for (const task of result.value.entries) {
-        const project = workspace?.projects.find(
-          (project) => project.id === task.repository_id,
-        )?.name;
-        const command = {
-          id: "task/" + task.issue_id,
-          label: task.title,
-          detail: [
-            project ?? task.repository_id ?? "Unassigned",
-            task.issue_status.replaceAll("_", " "),
-            task.issue_id,
-          ].join(" · "),
-          run: () =>
-            inspect ? inspect(task.issue_id) : go({ issue: task.issue_id, tab: "Overview" }),
-        };
-        if (!rows.length && task.issue_id.toLowerCase() === query.toLowerCase()) rows.push(command);
-        else tasks.push(command);
-      }
-      if (!result.value.entries.length) status = "No matching work.";
-    } else {
-      status =
-        searching && AsyncResult.isFailure(result)
-          ? "Work search is unavailable."
-          : "Searching work…";
+  for (const [section, label] of [
+    ["sessions", "Sessions"],
+    ["capacity", "Capacity"],
+    ["recent", "Recently inspected"],
+  ] as const)
+    add(
+      "page",
+      "work/" + section,
+      label,
+      "Work",
+      "Open",
+      () => void navigate({ to: "/work", search: { collection: { section } } }),
+    );
+  for (const [path, label] of [
+    ["/settings", "Agents"],
+    ["/settings/repositories", "Repositories"],
+    ["/settings/appearance", "Appearance"],
+    ["/settings/about", "About and licenses"],
+  ] as const)
+    add("page", path, label, "Settings", "Open", () => void navigate({ to: path }));
+  for (const action of composerCommands)
+    add("command", action.id, action.label, "Chat", action.effect, () => run(action), [
+      ...action.aliases,
+      "/" + action.id,
+    ]);
+  add("command", "chat", "Return to chat", "Abra", "Open", chat);
+  add("command", "finder", "Open Work finder", "Work", "Open", () => finder());
+  if (resume)
+    add(
+      "command",
+      "resume",
+      "Resume last inspection",
+      resume.issue ?? "Conversation view",
+      "Open",
+      () => void navigate({ to: "/", search: resume }),
+    );
+  const exportButton = selected && document.getElementById("export-report-" + selected);
+  if (exportButton && exportButton instanceof HTMLButtonElement && !exportButton.disabled)
+    add(
+      "command",
+      "export-report",
+      "Open report export controls",
+      selected!,
+      "Open",
+      () => requestAnimationFrame(() => exportButton.focus()),
+      ["download report"],
+    );
+  if (review)
+    add("command", "review", "Review pending decisions", "Attention", "Open form", review);
+  const attachment = draft?.attachment;
+  if (prepare && attachment && attachment.selection.kind !== "region") {
+    const source = attachment.selection.issue_id + " · " + selectionLabel(attachment.selection);
+    add(
+      "command",
+      "insert-snippet",
+      "Insert selected code in chat",
+      source,
+      "Prepare draft",
+      () => prepare(snippetDraft(attachment.excerpt, source)),
+      ["paste snippet"],
+    );
+  }
+  if (selected) {
+    for (const tab of ["Plan", "Diff", "Verification", "Reports"] as const)
+      add(
+        "command",
+        tab,
+        "Open " + tab,
+        selected,
+        "Open",
+        () =>
+          void navigate({
+            to: destinationFor(location.pathname) ?? "/",
+            search: (previous) => ({ collection: previous.collection, issue: selected, tab }),
+          }),
+      );
+    for (const action of ["pause", "resume", "advance"] as const) {
+      const item = workControl(action, selected);
+      if (prepare)
+        add("command", action + "-" + selected, item.label, selected, "Prepare draft", () =>
+          prepare(item.text),
+        );
     }
   }
-  rows.push(...matches, ...tasks);
-  if (query) rows.push({ id: "all", label: "See all results in Work", run: () => finder(query) });
+  for (const row of work.data?.entries ?? [])
+    add(
+      "work",
+      row.issue_id,
+      row.title,
+      [row.repository_id, row.issue_status].filter(Boolean).join(" · "),
+      "Open",
+      () => go({ action: "open_task", issue_id: row.issue_id }),
+    );
+  if (current && active("session"))
+    add("session", current.session_id, "Abra", "Main conversation", "Open", chat);
+  for (const row of workers.data?.entries ?? [])
+    add(
+      "session",
+      row.session_id,
+      row.role + " · " + row.session_id,
+      row.title + " · " + row.repository_id + " · " + row.association + " · " + row.availability,
+      "Open",
+      () => go({ action: "open_session", issue_id: row.issue_id, session_id: row.session_id }),
+    );
+  for (const row of notes.data?.entries ?? [])
+    add(
+      "thought",
+      row.reference.name,
+      row.snippet,
+      row.reference.account + " · " + row.tags.map((t) => "#" + t).join(" "),
+      "Open",
+      () => void navigate({ to: "/thoughts", search: { collection: { memo: row.reference } } }),
+    );
+  for (const part of [opened, closed, merged])
+    for (const row of part.data?.entries ?? []) {
+      const { repository_id, repo_node, item_node, number, kind } = row;
+      add(
+        "github",
+        repository_id + "/" + item_node,
+        row.title,
+        `${repository_id} #${number} · ${row.state}`,
+        "Open",
+        () =>
+          void navigate({
+            to: "/github",
+            search: {
+              collection: {
+                item: { repository_id, repo_node, item_node, number, kind },
+                github: { state: row.state, search: query },
+              },
+            },
+          }),
+      );
+    }
+  for (const agent of agents.data?.agents ?? [])
+    add(
+      "agent",
+      agent.id,
+      agent.id,
+      agent.description,
+      "Open",
+      () => void navigate({ to: "/settings", hash: "agent-" + agent.id }),
+    );
+  for (const repo of repos.data ?? [])
+    add(
+      "repo",
+      repo.id,
+      repo.name,
+      repo.id,
+      "Open",
+      () => void navigate({ to: "/settings/repositories", hash: "repo-" + repo.id }),
+    );
+  for (const form of current?.forms ?? [])
+    if (form.active)
+      add(
+        "attention",
+        form.form.id,
+        form.form.title,
+        "Native form",
+        "Open form",
+        () =>
+          void navigate({ to: "/attention", hash: "form-" + form.form.id + "-" + form.binding }),
+      );
+  for (const p of current?.permissions ?? [])
+    add(
+      "attention",
+      p.request.id,
+      p.request.action,
+      "Permission",
+      "Open form",
+      () =>
+        void navigate({ to: "/attention", hash: "permission-" + p.request.id + "-" + p.binding }),
+    );
+  for (const m of history?.messages ?? current?.messages ?? [])
+    if (m.text)
+      add(
+        "message",
+        m.id,
+        m.text.slice(0, 100),
+        m.role + " · observed conversation",
+        "Open",
+        () => {
+          if (current)
+            void navigate({
+              to: "/",
+              search: {
+                message: { session_id: current.session_id, message_id: MessageId.make(m.id) },
+              },
+              hash: "message-" + m.id,
+            });
+        },
+        [m.text],
+      );
+  const more: SearchCommand[] = [];
+  const status: string[] = [];
+  const report = (
+    label: string,
+    part: { failed: boolean; loading: boolean; retry: () => void },
+  ) => {
+    if (part.failed) {
+      status.push(label + " unavailable");
+      more.push({ id: "retry-" + label, label: "Retry " + label, run: part.retry, keepOpen: true });
+    } else if (part.loading) status.push("Searching " + label + "…");
+  };
+  report("Publications", pubs);
+  if (pubs.data?.incomplete) status.push("Some retained publication associations are unavailable.");
+  const publicationNext = pubs.data?.next;
+  if (publicationNext)
+    more.push({
+      id: "more-publications",
+      label: "Search next publication page",
+      keepOpen: true,
+      run: () => setPublicationPage({ forInput: input, cursor: publicationNext }),
+    });
+  report("Retained evidence", evidence);
+  report("Interactive reviews", reviews);
+  if (evidence.data) status.push(...evidence.data.coverage);
+  if (reviews.data) status.push(...reviews.data.diagnostics);
+  const next = evidence.data?.next;
+  if (next) {
+    status.push("More retained evidence is available.");
+    more.push({
+      id: "more-evidence",
+      label: "Search next retained evidence page",
+      keepOpen: true,
+      run: () => setPage({ forInput: input, ...next }),
+    });
+  }
+  report("Work", work);
+  report("Sessions", workers);
+  report("Thoughts", notes);
+  report("Open GitHub", opened);
+  report("Closed GitHub", closed);
+  report("Merged GitHub", merged);
+  report("Agents", agents);
+  report("Repositories", repos);
+  report("Workspace", snapshot);
+  if (work.data && !work.data.entries.length) status.push("No matching work.");
+  if (input !== settled) status.push("Searching…");
+  if (active("message")) {
+    status.push("Messages cover the observed conversation window.");
+    if (history?.loading) status.push("Loading earlier messages…");
+    else if (history?.more)
+      more.push({
+        id: "earlier-messages",
+        label: "Search earlier messages",
+        keepOpen: true,
+        run: history.load,
+      });
+    else if (!history && current?.older)
+      more.push({ id: "earlier-chat", label: "Open Chat for earlier messages", run: chat });
+  }
+  if ([opened, closed, merged].some((s) => s.data?.coverage.some((c) => c.status !== "current")))
+    status.push("GitHub coverage is partial.");
+  if (active("work"))
+    more.push({ id: "all", label: "See all results in Work", run: () => finder(query) });
+  if (active("thought") && notes.data?.next_cursor)
+    more.push({
+      id: "more-thought",
+      label: "More in Thoughts",
+      run: () => void navigate({ to: "/thoughts", search: { collection: { notebook } } }),
+    });
+  if (active("session") && workers.data?.next_offset)
+    more.push({
+      id: "more-session",
+      label: "More in Sessions",
+      run: () =>
+        void navigate({
+          to: "/work",
+          search: { collection: { section: "sessions", work: { search: query } } },
+        }),
+    });
+  if (active("github"))
+    for (const [state, part] of [
+      ["OPEN", opened],
+      ["CLOSED", closed],
+      ["MERGED", merged],
+    ] as const)
+      if (part.data && part.data.total > 4)
+        more.push({
+          id: "more-" + state,
+          label: "More " + state.toLowerCase() + " items in GitHub",
+          run: () =>
+            void navigate({
+              to: "/github",
+              search: { collection: { github: { search: query, state } } },
+            }),
+        });
+  const rank = (h: Hit) =>
+    h.identity.toLowerCase() === lower ? 0 : h.label.toLowerCase() === lower ? 1 : 2;
+  const [expanded, setExpanded] = useState<Partial<Record<Source, number>>>({});
+  const counts = new Map<Source, number>();
+  const unique = hits.filter(
+    (hit, index) => hits.findIndex((other) => other.id === hit.id) === index,
+  );
+  const rows = unique
+    .filter((h) => {
+      if (filter && h.source !== filter) return false;
+      if (!input) return h.source === "page" || h.source === "command";
+      if (
+        ["work", "thought", "github", "evidence"].includes(h.source) ||
+        (h.source === "session" && h.identity !== current?.session_id)
+      )
+        return true;
+      return [h.identity, h.label, h.detail, ...(h.aliases ?? [])].some((s) =>
+        s?.toLowerCase().includes(lower),
+      );
+    })
+    .sort((a, b) => rank(a) - rank(b))
+    .filter((h) => {
+      const count = counts.get(h.source) ?? 0;
+      counts.set(h.source, count + 1);
+      return count < (expanded[h.source] ?? (h.source === "evidence" ? 12 : 8));
+    })
+    .map((h) => ({
+      ...h,
+      detail: [h.source, h.detail, h.identity, h.effect].filter(Boolean).join(" · "),
+    }));
+  for (const [source, count] of counts) {
+    const limit = expanded[source] ?? (source === "evidence" ? 12 : 8);
+    if (count > limit)
+      more.unshift({
+        id: "more-rows-" + source,
+        label: "Show more " + source + " matches",
+        keepOpen: true,
+        run: () => setExpanded((previous) => ({ ...previous, [source]: limit + 8 })),
+      });
+  }
+  if (input && !rows.length && !status.length) status.push("No matches in the searched sources.");
   return (
     <SearchDialog
       origin={origin}
       close={close}
       value={value}
-      onValueChange={setValue}
-      commands={rows}
-      status={status}
+      onValueChange={(text) => {
+        setValue(text);
+        setExpanded({});
+        setPage(undefined);
+        setPublicationPage(undefined);
+      }}
+      filters={sources}
+      filter={filter}
+      onFilter={(s) => {
+        setValue(s ? s + ": " + query : query);
+        setExpanded({});
+        setPublicationPage(undefined);
+        setPage(undefined);
+      }}
+      commands={[...rows, ...more]}
+      status={status.join(" ")}
     />
   );
 }

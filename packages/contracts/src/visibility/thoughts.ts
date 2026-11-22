@@ -1,5 +1,6 @@
 import { Schema } from "effect";
-import { RequestId } from "../identities.ts";
+import { Count } from "../primitives.ts";
+import { IssueId, RepositoryId, RequestId } from "../identities.ts";
 
 export const MemoName = Schema.String.check(
   Schema.isPattern(/^memos\/[A-Za-z0-9][A-Za-z0-9-]{0,99}$/u),
@@ -43,4 +44,19 @@ export const ThoughtSave = Schema.Struct({ request_id: RequestId, content: Schem
 export const ThoughtSource = Schema.Struct({
   reference: ThoughtReference,
   excerpt: Schema.NonEmptyString.check(Schema.isMaxLength(8192)),
+});
+
+export const ThoughtWorkQuery = Schema.Struct({
+  ...ThoughtReference.fields,
+  offset: Schema.optional(Count),
+});
+export const ThoughtWorkRow = Schema.Struct({
+  id: IssueId,
+  title: Schema.String,
+  repository_id: RepositoryId,
+  wording_hash: ThoughtReference.fields.wording_hash,
+});
+export const ThoughtWorkPage = Schema.Struct({
+  entries: Schema.Array(ThoughtWorkRow),
+  next_offset: Schema.optional(Count),
 });

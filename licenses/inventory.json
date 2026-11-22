@@ -1,7 +1,7 @@
 {
   "version": 1,
   "distribution": "source clone; dependencies downloaded by the operator from their suppliers",
-  "lock_sha256": "6d34cb0a08fc5f3dd17a298e5d9ede9900f19e47c50cec3dcfac4f9abe123366",
+  "lock_sha256": "13bea7a7ff6645da1265594a7d9b8c4fa4366d8484efccce78ffc2eef7dc768f",
   "packages": [
     {
       "id": "@0no-co/graphql.web@1.3.4",
@@ -25163,6 +25163,29 @@
       "disposition": "reviewed: MIT supplier grants; retained full terms and attribution in source inventory and generated web-client notices"
     },
     {
+      "id": "react-resizable-panels@4.24.1",
+      "license": "MIT",
+      "repository": "https://github.com/bvaughn/react-resizable-panels",
+      "author": {
+        "url": "https://github.com/bvaughn/",
+        "name": "Brian Vaughn",
+        "email": "brian.david.vaughn@gmail.com"
+      },
+      "registry": "https://registry.npmjs.org/react-resizable-panels/4.24.1",
+      "integrity": "sha512-K2xXKRXGyIxKipmDV2Zuj6UAJQNWWbKNmkIf/hZU6/3NGTNoiQz5Zc2oBWBk3MFgqf8QoqCEIqZCPrkZmRa/hg==",
+      "installed": true,
+      "category": "dependency-installation",
+      "evidence": [
+        {
+          "source": "npm:react-resizable-panels@4.24.1/LICENSE.md",
+          "sha256": "a8f1e0280bf14adcf5d017547db85eb5c3bac0feb1690ca98650874002eaa8ea"
+        }
+      ],
+      "uses": ["application-runtime", "contributor-build", "report-artifact", "web-client"],
+      "fingerprint": "b12533cea854e886f2ba2edaca040dd995cd8040bb23b8b04d28a970a0370251",
+      "disposition": "reviewed: MIT supplier grant; retained Brian Vaughn attribution and full terms in generated web-client notices"
+    },
+    {
       "id": "react-style-singleton@2.2.3",
       "license": "MIT",
       "repository": "https://github.com/theKashey/react-style-singleton",
@@ -29766,6 +29789,14 @@
       "upstream": "https://github.com/alibaba/open-code-review/blob/445ad9dea3057346986197385858a1a281253cc9/skills/open-code-review-delegate/SKILL.md",
       "notice": "licenses/open-code-review.txt",
       "modifications": "Adapted for controller-bound net patches and private PR review in OpenCode."
+    },
+    {
+      "file": "packages/presentation/src/ui/resizable.tsx",
+      "sha256": "1f6ce0b5028623d0893c7a517580d47e9899968db53430fad0215e31b272d3d4",
+      "license": "MIT",
+      "upstream": "https://github.com/shadcn-ui/ui/tree/e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "notice": "licenses/shadcn-ui.txt",
+      "modifications": "Generated Base Nova components using shadcn 4.23.0; adapted utility imports, formatting and Base UI orientation selectors; relocated to shared presentation workspace"
     }
   ],
   "assets": [

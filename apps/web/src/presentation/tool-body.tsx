@@ -1,3 +1,6 @@
+import { ThoughtSource } from "../thought-source.tsx";
+import { Schema } from "effect";
+import { ThoughtReference } from "@abracode/contracts/visibility/thoughts";
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
 import { actionable } from "@abracode/contracts/workflow/feedback-contracts";
 import { useContext, useState, type ReactNode } from "react";
@@ -190,6 +193,10 @@ export function ObservedTool({ toolCallId }: { toolCallId: string }) {
             revision: tool.presentation.revision,
           }
         : undefined;
+  const saved =
+    tool.status === "completed" && tool.name === "abra_thought_save" && tool.result
+      ? Schema.decodeOption(Schema.fromJsonString(ThoughtReference))(tool.result)
+      : undefined;
   const title = tool.name.replace(/^abra_/, "").replaceAll("_", " ");
   const status = {
     streaming: "Preparing",
@@ -203,6 +210,7 @@ export function ObservedTool({ toolCallId }: { toolCallId: string }) {
       data-tool-call-id={tool.id}
       data-tool-state={tool.status}
     >
+      {saved?._tag === "Some" && <ThoughtSource reference={saved.value} />}
       {surface ? (
         tool.status === "error" && <small>Publication response unavailable · retained view</small>
       ) : tool.presentation ? (

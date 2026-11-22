@@ -1,5 +1,7 @@
+import { ThoughtSource } from "./thought-source.tsx";
+import type { SubmissionReceipt } from "@abracode/contracts/web/workspace-wire";
 import { deferred } from "./deferred.tsx";
-import { selectionMarker } from "@abracode/contracts/web/workspace-wire";
+import { selectionMarker, thoughtSubmission } from "@abracode/contracts/web/workspace-wire";
 import { memo, useMemo } from "react";
 import type { TranscriptMessage } from "@abracode/contracts/web/contracts";
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
@@ -22,6 +24,10 @@ const MessageAttachment = deferred<
     })),
   "Retained presentation",
 );
+const HistoricalThought = deferred<{ message: TranscriptMessage; request: string }>(
+  () => import("./historical-thought.tsx"),
+  "Notebook source",
+);
 const SelectedMessage = deferred<{ message: TranscriptMessage }>(
   () => import("./presentation/selected-message.tsx"),
   "Captured selection",
@@ -32,15 +38,19 @@ export const MessageContent = memo(function MessageContent({
   message,
   work,
   inspect,
+  thoughtReceipt,
   attachments,
   diagnostics,
 }: {
   message: TranscriptMessage;
+  thoughtReceipt?: SubmissionReceipt;
   work: readonly WebWorkItem[];
   inspect: Inspect;
   attachments: readonly (typeof PresentationAttachmentSchema.Type)[];
   diagnostics: readonly (typeof PresentationDiagnosticSchema.Type)[];
 }) {
+  const request =
+    message.role === "user" && !thoughtReceipt ? thoughtSubmission(message.text) : undefined;
   const byTool = useMemo(() => {
     const result = new Map<string, (typeof PresentationAttachmentSchema.Type)[]>();
     for (const attachment of attachments) {
@@ -52,7 +62,12 @@ export const MessageContent = memo(function MessageContent({
     return result;
   }, [attachments]);
   return (
-    <article className={`message ${message.role}`} data-native-message-id={message.id}>
+    <article
+      className={`message ${message.role}`}
+      tabIndex={-1}
+      id={"message-" + message.id}
+      data-native-message-id={message.id}
+    >
       <div className="message-body">
         <header>
           <strong>
@@ -65,6 +80,14 @@ export const MessageContent = memo(function MessageContent({
             })}
           </time>
         </header>
+        {request && <HistoricalThought message={message} request={request} />}
+        {message.role === "user" &&
+          thoughtReceipt?.thought &&
+          thoughtReceipt.message_id === message.id &&
+          thoughtReceipt.native_text === message.text &&
+          thoughtReceipt.status === "admitted" && (
+            <ThoughtSource reference={thoughtReceipt.thought} />
+          )}
         {message.role === "assistant"
           ? orderedParts(message).map((part, index) => {
               if (part.type === "text")
@@ -91,7 +114,12 @@ export const MessageContent = memo(function MessageContent({
             (message.role === "user" && message.text.includes(selectionMarker) ? (
               <SelectedMessage message={message} />
             ) : (
-              <div className="message-text">{message.text}</div>
+              <div className="message-text">
+                {thoughtReceipt?.native_text === message.text &&
+                thoughtReceipt.message_id === message.id
+                  ? thoughtReceipt.text
+                  : message.text}
+              </div>
             ))}
         {message.files?.map((f) => (
           <p className="attachment" key={f}>

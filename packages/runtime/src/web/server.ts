@@ -1,3 +1,9 @@
+import { PublicationPage } from "@abracode/contracts/presentation/contracts";
+import {
+  EvidenceSearchPage,
+  SessionPage,
+} from "@abracode/contracts/visibility/discovery-contracts";
+import { ThoughtWorkPage } from "@abracode/contracts/visibility/thoughts";
 import { ThoughtPage, ThoughtDetail } from "@abracode/contracts/visibility/thoughts";
 import { InboxPage, InboxDetail } from "@abracode/contracts/visibility/github-inbox";
 import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
@@ -104,6 +110,9 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
       .handle("prepareDiagrams", ({ payload }) =>
         validated(backend.prepareDiagrams(payload), DiagramPreparationSchema),
       )
+      .handle("publications", ({ query }) =>
+        validated(backend.publications(query), PublicationPage),
+      )
       .handle("surface", ({ query }) =>
         query.session_id !== undefined && query.session_id !== backend.sessionID
           ? Effect.succeed({
@@ -154,6 +163,18 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
       validated(read(query), schema);
   const work = HttpApiBuilder.group(api, "work", (handlers) =>
     handlers
+      .handle(
+        "evidenceSearch",
+        workRead((q) => backend.work.evidenceSearch(q), EvidenceSearchPage),
+      )
+      .handle(
+        "sessions",
+        workRead((q) => backend.work.sessions(q), SessionPage),
+      )
+      .handle(
+        "thoughtWork",
+        workRead((q) => backend.work.thoughtWork(q), ThoughtWorkPage),
+      )
       .handle(
         "thoughtList",
         workRead((q) => backend.work.thoughtList(q), ThoughtPage),
@@ -442,7 +463,15 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
       HttpRouter.add("POST", "/api/copilotkit/agent/abra/run", copilotRoute),
       HttpRouter.add("POST", "/api/copilotkit/agent/abra/connect", copilotRoute),
       HttpRouter.add("GET", "/", frontend),
+      HttpRouter.add("GET", "/work", frontend),
+      HttpRouter.add("GET", "/github", frontend),
+      HttpRouter.add("GET", "/thoughts", frontend),
+      HttpRouter.add("GET", "/attention", frontend),
+      HttpRouter.add("GET", "/more", frontend),
+      HttpRouter.add("GET", "/settings/appearance", frontend),
+      HttpRouter.add("GET", "/settings/about", frontend),
       HttpRouter.add("GET", "/settings", frontend),
+
       HttpRouter.add("GET", "/settings/repositories", frontend),
       HttpRouter.add(
         "GET",

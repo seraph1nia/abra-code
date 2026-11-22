@@ -111,7 +111,7 @@ export async function inboxJourney(input: {
   try {
     await ab("open", web.origin);
     await ab("set", "viewport", "1500", "900");
-    await ab("find", "label", "Toggle work finder", "click");
+    await ab("find", "role", "link", "click", "--name", "GitHub", "--exact");
     await ab("wait", "--text", "Fix export retries");
     await ab("wait", "--text", "Review retry messaging");
     if (input.evidence) {

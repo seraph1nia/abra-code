@@ -149,7 +149,7 @@ export function VerificationPanel({
   );
 }
 
-function RetainedAsset({ receipt }: { receipt: EvidenceReceipt }) {
+export function RetainedAsset({ receipt }: { receipt: EvidenceReceipt }) {
   const [open, setOpen] = useState(false);
   return (
     <details onToggle={(event) => setOpen(event.currentTarget.open)}>

@@ -24,6 +24,7 @@ function ExportState({ issue, request, hash }: { issue: string; request: string;
   return (
     <div className="report-export space-y-2">
       <Button
+        id={"export-report-" + issue}
         variant="outline"
         disabled={state.waiting}
         onClick={() => {

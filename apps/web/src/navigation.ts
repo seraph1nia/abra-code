@@ -1,3 +1,10 @@
+import { MessageId, SessionId } from "@abracode/contracts/identities";
+import {
+  RetainedTarget,
+  WorkDiscoveryQuery,
+} from "@abracode/contracts/visibility/discovery-contracts";
+import { InboxQuery, InboxTarget } from "@abracode/contracts/visibility/github-inbox";
+import { ThoughtQuery, ThoughtReference } from "@abracode/contracts/visibility/thoughts";
 import { createContext } from "react";
 import { SurfaceDestinationSchema } from "@abracode/contracts/web/surface-destination";
 import { Schema } from "effect";
@@ -18,8 +25,46 @@ export const inspectorTabs = [
 export type InspectorTab = (typeof inspectorTabs)[number];
 export const activitySections = ["sessions", "communication", "checks", "leads"] as const;
 export type ActivitySection = (typeof activitySections)[number];
+export const destinations = {
+  "/": "Chat",
+  "/work": "Work",
+  "/github": "GitHub",
+  "/thoughts": "Thoughts",
+  "/attention": "Attention",
+  "/more": "More",
+} as const;
+export type Destination = keyof typeof destinations;
+export function destinationFor(path: string): Destination | undefined {
+  return Object.hasOwn(destinations, path) ? (path as Destination) : undefined;
+}
+const CollectionState = Schema.Struct({
+  work: Schema.optional(WorkDiscoveryQuery),
+  section: Schema.optional(Schema.Literals(["tasks", "sessions", "capacity", "recent"])),
+  github: Schema.optional(
+    Schema.Struct({
+      repository_id: InboxQuery.fields.repository_id,
+      state: InboxQuery.fields.state,
+      kind: InboxQuery.fields.kind,
+      search: InboxQuery.fields.search,
+      label: InboxQuery.fields.label,
+      role: InboxQuery.fields.role,
+      offset: InboxQuery.fields.offset,
+    }),
+  ),
+  item: Schema.optional(InboxTarget),
+  notebook: Schema.optional(ThoughtQuery),
+  memo: Schema.optional(ThoughtReference),
+  previousCursors: Schema.optional(
+    Schema.Array(Schema.String.check(Schema.isMaxLength(4096))).check(Schema.isMaxLength(32)),
+  ),
+});
+export type CollectionState = typeof CollectionState.Type;
 export type WorkspaceSearch = {
+  collection?: CollectionState;
   view?: "finder" | "canvas";
+  message?: { session_id: SessionId; message_id: MessageId };
+  retained?: RetainedTarget;
+  review?: { review_id: string; revision: number };
   surface?: typeof SurfaceDestinationSchema.Type;
   issue?: string;
   tab?: InspectorTab;
@@ -31,9 +76,30 @@ export type WorkspaceSearch = {
   artifact_offset?: number;
 };
 export function workspaceSearch(value: Record<string, unknown>): WorkspaceSearch {
+  const decoded = Schema.decodeUnknownOption(CollectionState)(value.collection);
+  const context = decoded._tag === "Some" ? { collection: decoded.value } : {};
+  if (value.message !== undefined) {
+    const message = Schema.decodeUnknownOption(
+      Schema.Struct({ session_id: SessionId, message_id: MessageId }),
+    )(value.message);
+    if (message._tag === "Some") return { ...context, message: message.value };
+  }
+  if (value.retained !== undefined) {
+    const retained = Schema.decodeUnknownOption(RetainedTarget)(value.retained);
+    if (retained._tag === "Some") return { ...context, retained: retained.value };
+  }
+  if (value.review !== undefined) {
+    const review = Schema.decodeUnknownOption(
+      Schema.Struct({
+        review_id: SurfaceDestinationSchema.fields.surface_id,
+        revision: SurfaceDestinationSchema.fields.revision,
+      }),
+    )(value.review);
+    if (review._tag === "Some") return { ...context, review: review.value };
+  }
   if (value.surface !== undefined) {
     const surface = Schema.decodeUnknownOption(SurfaceDestinationSchema)(value.surface);
-    if (surface._tag === "Some") return { surface: surface.value };
+    if (surface._tag === "Some") return { ...context, surface: surface.value };
   }
   const legacy = {
     Workers: "sessions",
@@ -60,6 +126,7 @@ export function workspaceSearch(value: Record<string, unknown>): WorkspaceSearch
     }
   }
   const result = {
+    ...context,
     ...(typeof value.issue === "string" && value.issue.length <= 1024
       ? { issue: value.issue }
       : {}),

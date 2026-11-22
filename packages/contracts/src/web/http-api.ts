@@ -1,3 +1,11 @@
+import { PublicationPage, PublicationQuery } from "../presentation/contracts.ts";
+import {
+  EvidenceSearch,
+  EvidenceSearchPage,
+  SessionQuery,
+  SessionPage,
+} from "../visibility/discovery-contracts.ts";
+import { ThoughtWorkQuery, ThoughtWorkPage } from "../visibility/thoughts.ts";
 import {
   ThoughtQuery,
   ThoughtPage,
@@ -133,6 +141,11 @@ export const workspaceApi = HttpApi.make("abra-workspace")
         success: DiagramPreparationSchema,
         error,
       }),
+      HttpApiEndpoint.get("publications", "/api/search/publications", {
+        query: PublicationQuery.annotate(exact),
+        success: PublicationPage,
+        error,
+      }),
       HttpApiEndpoint.get("surface", "/api/surface", {
         query: Schema.Struct({
           session_id: Schema.optionalKey(SessionId),
@@ -183,6 +196,21 @@ export const workspaceApi = HttpApi.make("abra-workspace")
           ),
         }).annotate(exact),
         success: BindingReadSchema,
+        error,
+      }),
+      HttpApiEndpoint.get("evidenceSearch", "/api/work/search/evidence", {
+        query: EvidenceSearch.annotate(exact),
+        success: EvidenceSearchPage,
+        error,
+      }),
+      HttpApiEndpoint.get("sessions", "/api/work/sessions", {
+        query: SessionQuery.annotate(exact),
+        success: SessionPage,
+        error,
+      }),
+      HttpApiEndpoint.get("thoughtWork", "/api/thoughts/work", {
+        query: ThoughtWorkQuery.annotate(exact),
+        success: ThoughtWorkPage,
         error,
       }),
       HttpApiEndpoint.get("thoughtList", "/api/thoughts", {
@@ -353,6 +381,9 @@ export const workspaceApi = HttpApi.make("abra-workspace")
 /** Fixed retained-work reads. Types follow the HTTP owner, including decoded numeric queries. */
 export type WorkReadName =
   | "binding"
+  | "evidenceSearch"
+  | "sessions"
+  | "thoughtWork"
   | "thoughtList"
   | "thoughtDetail"
   | "githubInbox"

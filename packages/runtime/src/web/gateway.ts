@@ -1,3 +1,4 @@
+import { searchPublications } from "../presentation/associations.ts";
 import { selectedFollowups, selectionReceiptKey } from "../workflow/selected-requests.ts";
 import { captureSelection } from "./capture-selection.ts";
 import type { WorkSelection } from "@abracode/contracts/web/resources";
@@ -27,6 +28,8 @@ import { webGateway } from "./protocol.ts";
 
 import {
   selectionMarker,
+  thoughtMarker,
+  thoughtSubmissionMarker,
   ReceiptSchema,
   ReceiptQuerySchema,
   type SubmissionReceipt,
@@ -116,7 +119,9 @@ export class WebAdmissions {
             );
             nativeText =
               (nativeText ?? input.text) +
-              "\n\nSelected personal thought (resolve with abra_thought_get)\n" +
+              thoughtSubmissionMarker +
+              input.request_id +
+              thoughtMarker +
               JSON.stringify(input.thought);
             if (nativeText.length > 32768)
               return yield* new CrewError(
@@ -343,6 +348,12 @@ export function registerWebGateway(
               return yield* prepareDiagrams(documentDiagrams(decoded.document));
             }),
           ),
+          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
+          provide,
+        ),
+      publications: ({ session_id, ...query }, { error }) =>
+        assertSupervisor(session_id).pipe(
+          Effect.andThen(searchPublications(store, session_id, query)),
           Effect.mapError((e) => error("refused", e.message, { code: e.code })),
           provide,
         ),

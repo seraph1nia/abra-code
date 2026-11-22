@@ -1,6 +1,10 @@
+import { RunCommand, composerCommands } from "./workspace-commands.ts";
+import { useTheme } from "./theme.tsx";
+import { NativeSelect } from "@abracode/presentation/ui/native-select";
+import { Button } from "@abracode/presentation/ui/button";
 import { SearchTrigger } from "./search-trigger.tsx";
-import { Link, Outlet } from "@tanstack/react-router";
-import { useState } from "react";
+import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { useState, useLayoutEffect, useContext } from "react";
 import type { AgentDefinitionView } from "@abracode/contracts/web/agent-settings";
 import { agentsQuery, repositoriesQuery } from "./data.ts";
 import { RequestState } from "./request-state.tsx";
@@ -21,9 +25,20 @@ function Names({ values, empty = "None declared" }: { values: readonly string[];
 }
 
 function AgentDetails({ agent }: { agent: AgentDefinitionView }) {
-  const [expanded, setExpanded] = useState(false);
+  const hash = useRouterState({ select: (state) => state.location.hash });
+  const [expanded, setExpanded] = useState(hash === "agent-" + agent.id);
+  useLayoutEffect(() => {
+    if (hash !== "agent-" + agent.id) return;
+    const element = document.getElementById(hash) as HTMLDetailsElement | null;
+    if (!element) return;
+    element.open = true;
+    element.querySelector("summary")?.focus({ preventScroll: true });
+    element.scrollIntoView({ block: "nearest" });
+  }, [hash, agent.id]);
   return (
     <details
+      id={"agent-" + agent.id}
+      open={expanded}
       className="agent-definition"
       onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
@@ -191,6 +206,12 @@ export function Settings() {
           <Link className="settings-link" to="/settings/repositories">
             Repositories
           </Link>
+          <Link className="settings-link" to="/settings/appearance">
+            Appearance
+          </Link>
+          <Link className="settings-link" to="/settings/about">
+            About
+          </Link>
         </nav>
         <main className="settings-content">
           <Outlet />
@@ -238,12 +259,15 @@ export function AgentSettings() {
 }
 
 export function RepositorySettings() {
+  const hash = useRouterState({ select: (state) => state.location.hash });
+  const run = useContext(RunCommand);
   return (
     <>
       <div className="settings-heading">
         <h1>Repositories</h1>
         <span className="agent-mode">Read only</span>
       </div>
+      <Button onClick={() => run(composerCommands[0])}>Onboard repository</Button>
       <RequestState query={repositoriesQuery}>
         {(repositories) =>
           repositories.length ? (
@@ -256,7 +280,17 @@ export function RepositorySettings() {
                 {repositories
                   .toSorted((a, b) => a.id.localeCompare(b.id))
                   .map((repository) => (
-                    <li key={repository.id}>
+                    <li
+                      key={repository.id}
+                      id={"repo-" + repository.id}
+                      tabIndex={-1}
+                      ref={(element) => {
+                        if (element && hash === element.id && document.activeElement !== element) {
+                          element.focus({ preventScroll: true });
+                          element.scrollIntoView({ block: "nearest" });
+                        }
+                      }}
+                    >
                       <strong>{repository.name}</strong>
                       {repository.name !== repository.id && <code>{repository.id}</code>}
                       {repository.path && <code>{repository.path}</code>}
@@ -269,6 +303,38 @@ export function RepositorySettings() {
           )
         }
       </RequestState>
+    </>
+  );
+}
+
+export function AppearanceSettings() {
+  const { theme, setTheme } = useTheme();
+  return (
+    <>
+      <h1>Appearance</h1>
+      <NativeSelect
+        aria-label="Color theme"
+        value={theme}
+        onChange={(e) =>
+          setTheme(
+            e.target.value === "dark" || e.target.value === "light" ? e.target.value : "system",
+          )
+        }
+      >
+        <option value="system">System theme</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </NativeSelect>
+    </>
+  );
+}
+export function AboutSettings() {
+  return (
+    <>
+      <h1>About AbraCode</h1>
+      <a href="/THIRD_PARTY_NOTICES.txt" target="_blank" rel="noreferrer">
+        Third-party licenses
+      </a>
     </>
   );
 }

@@ -147,6 +147,7 @@ export interface Runtime {
   supervisorModel(id?: SessionId): Effect.Effect<WorkerModel | undefined, CrewError>;
   switchModel(id: SessionId, model: WorkerModel): Effect.Effect<void, CrewError>;
   switchAgent(id: SessionId, agent: Agent.ID): Effect.Effect<void, CrewError>;
+  sessionOwner?(id: SessionId): Effect.Effect<{ issue_id?: string; directory: string }, CrewError>;
   session(id: SessionId, assignment?: MessageId): Effect.Effect<SessionState, CrewError>;
   promptAdmissions(
     session: SessionId,
@@ -553,6 +554,22 @@ export class NativeRuntime implements Runtime {
     }.bind(this),
     domainEffect,
   );
+  sessionOwner = (id: SessionId) =>
+    // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown on native session lookup.
+    this.ctx.session.get({ sessionID: id }).pipe(
+      Effect.map((info) => {
+        const metadata = info.metadata?.abracode;
+        const issue_id =
+          typeof metadata === "object" &&
+          metadata !== null &&
+          "issue_id" in metadata &&
+          typeof metadata.issue_id === "string"
+            ? metadata.issue_id
+            : undefined;
+        return { issue_id, directory: info.location.directory };
+      }),
+      Effect.mapError(CrewError.from),
+    );
   session = Effect.fn("NativeRuntime.session")(
     function* (this: NativeRuntime, id: SessionId, assignment?: MessageId) {
       // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
