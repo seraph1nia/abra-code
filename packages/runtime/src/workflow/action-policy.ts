@@ -1,8 +1,8 @@
 import { digest } from "../digest.ts";
 import { ensure, type Execution } from "../domain.ts";
 import { automation } from "../config/policy.ts";
-import { type ActionInput, type Finding } from "./feedback-contracts.ts";
-import { actionFindings, type CurrentAction } from "./action-contracts.ts";
+import { type ActionInput, type Finding } from "@abracode/contracts/workflow/feedback-contracts";
+import { actionFindings, type CurrentAction } from "@abracode/contracts/workflow/action-contracts";
 import { normalizeAction, targetKey } from "./action-state.ts";
 
 export const evidenceReply = (head: string) =>

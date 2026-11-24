@@ -1,8 +1,8 @@
 import { Rpc } from "@opencode/plugin/rpc";
 import { Schema } from "effect";
-import { SessionId, AbsolutePath } from "../identities.ts";
+import { SessionId, AbsolutePath } from "@abracode/contracts/identities";
 import { ConfigurationReportSchema } from "./declarations.ts";
-import { Count } from "../contracts.ts";
+import { Count } from "@abracode/contracts/primitives";
 export const configuration = Rpc.define({
   id: "abracode-configuration",
   methods: {

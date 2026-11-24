@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { reportDocument } from "../helpers/report-document.ts";
-import { ReportExports } from "../../src/workflow/report-exports.ts";
+import { ReportExports } from "../../src/reporting/report-exports.ts";
 import { canonicalJSON } from "../../src/presentation/identity.ts";
-import { reportHash } from "../../src/workflow/report-build.ts";
+import { reportHash } from "../../src/reporting/report-build.ts";
 import { CrewError } from "../../src/domain.ts";
 
 test("HTML exports are immutable, keyed by document and exporter and repaired without recapture", async (t) => {

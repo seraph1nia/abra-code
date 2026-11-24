@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect";
 import { parseDocument } from "yaml";
 import { randomUUID } from "node:crypto";
 import { type Config, type OnboardInput, CrewError } from "../domain.ts";
-import { LockKey, StorageKey } from "../identities.ts";
+import { LockKey, StorageKey } from "@abracode/contracts/identities";
 import { type Locks } from "../storage/lock.ts";
 import { type Records } from "../storage/store.ts";
 import { readFile, writeFile, rename, rm } from "../filesystem.ts";
@@ -12,7 +12,7 @@ import { ProjectInputSchema, ModelsSchema } from "./contracts.ts";
 import { digest } from "../digest.ts";
 import { decode } from "../decode.ts";
 import { domainEffect } from "../effect.ts";
-import { Count } from "../contracts.ts";
+import { Count } from "@abracode/contracts/primitives";
 
 export const DeclarationOutcomeSchema = Schema.Struct({
   id: ProjectInputSchema.fields.id,

@@ -1,11 +1,11 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect platform APIs are required by the native adapters and covered by integration tests. */
-import * as Id from "../identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { resolve, join } from "node:path";
 import { AbsolutePath, Agent } from "@opencode/client/effect";
 import { Service } from "@opencode/client/effect/service";
 import { Effect } from "effect";
 import { realpath } from "../filesystem.ts";
-import { makeClient } from "../opencode/client.ts";
+import { makeClient, OPENCODE_VERSION } from "../opencode/client.ts";
 import { findSupervisor } from "../opencode/supervisor.ts";
 import { FileLocks } from "../storage/lock.ts";
 import { loadConfig } from "../config/load.ts";
@@ -43,7 +43,7 @@ export const bootstrapService = Effect.gen(function* () {
   const state = join(home, ".abracode/state");
   const existingEndpoint = yield* Service.discover({
     file: join(state, "opencode/service.json"),
-    version: "2.3.0",
+    version: OPENCODE_VERSION,
   });
   const hostConfig = existingEndpoint
     ? join(home, ".abracode/config/opencode/opencode.json")
@@ -53,7 +53,7 @@ export const bootstrapService = Effect.gen(function* () {
     existingEndpoint ??
     (yield* Service.ensure({
       file: join(state, "opencode/service.json"),
-      version: "2.3.0",
+      version: OPENCODE_VERSION,
       command: [resolve(home, "node_modules/.bin/opencode"), "serve", "--service", "--port", "0"],
       env: {
         XDG_STATE_HOME: state,

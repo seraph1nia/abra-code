@@ -3,21 +3,27 @@ import { mixedDiagrams, denseFlowchart, longSequence } from "../helpers/diagram-
 import { sampleFixtureMemory } from "../helpers/process-memory.ts";
 import { HttpAgent } from "@ag-ui/client";
 import { SqliteWorkGraph } from "../../src/work/graph.ts";
-import { ExecutionId, RepositoryId } from "../../src/identities.ts";
-import { DecisionsSchema } from "../../src/web/http-api.ts";
-import { MessagesPageSchema, FeedbackPageSchema } from "../../src/web/wire.ts";
-import { WorkerHistoryPageSchema } from "../../src/web/worker-history.ts";
-import { DocumentArtifactSchema } from "../../src/web/wire.ts";
+import { ExecutionId, RepositoryId } from "@abracode/contracts/identities";
+import { DecisionsSchema } from "@abracode/contracts/web/http-api";
+import { MessagesPageSchema, FeedbackPageSchema } from "@abracode/contracts/web/wire";
+import { WorkerHistoryPageSchema } from "@abracode/contracts/web/worker-history";
+import { DocumentArtifactSchema } from "@abracode/contracts/web/wire";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Disposable native API and Effect HTTP/AG-UI acceptance. */
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { Deferred, Effect, Exit, Fiber, Scope, Schema } from "effect";
 import { FileLocks } from "../../src/storage/lock.ts";
-import { LockKey } from "../../src/identities.ts";
+import { LockKey } from "@abracode/contracts/identities";
 import { OpenCode } from "@opencode/client";
 import type { Endpoint } from "@opencode/client/effect/service";
-import { AbsolutePath, IssueId, RequestId, ContentHash, SessionId } from "../../src/identities.ts";
+import {
+  AbsolutePath,
+  IssueId,
+  RequestId,
+  ContentHash,
+  SessionId,
+} from "@abracode/contracts/identities";
 import { NativeWebBackend } from "../../src/web/backend.ts";
 import { workspaceServer } from "../../src/web/server.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";

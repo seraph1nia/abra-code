@@ -8,7 +8,7 @@ import { BatchInputSchema, normalizeBatch } from "../../src/work/batch.ts";
 import { strictInput } from "../../src/opencode/tool-definition.ts";
 import { run } from "../effects.ts";
 import { fixture } from "../fixtures.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 
 const task = {
   client_key: "one",

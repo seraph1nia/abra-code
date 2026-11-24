@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { canonicalJSON } from "../presentation/identity.ts";
-import { Count, NonEmpty, ApprovalSchema, PhaseSchema } from "../contracts.ts";
+import { Count, NonEmpty, ApprovalSchema, PhaseSchema } from "@abracode/contracts/primitives";
 import {
   AbsolutePath,
   BranchName,
@@ -19,8 +19,8 @@ import {
   SessionId,
   Timestamp,
   ContentHash,
-} from "../identities.ts";
-import { DirectoryIdentitySchema } from "../git/retirement-contracts.ts";
+} from "@abracode/contracts/identities";
+import { DirectoryIdentitySchema } from "@abracode/contracts/git/retirement-contracts";
 
 export const PlanningSourceSchema = Schema.Struct({
   head: Commit,

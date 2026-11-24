@@ -1,5 +1,5 @@
 import { goal as workGoal } from "../helpers/work-goal.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { run } from "../effects.ts";
 import { domainEffect } from "../../src/effect.ts";
 import { Effect } from "effect";

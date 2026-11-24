@@ -1,7 +1,7 @@
 import { readFile, writeFile, rename } from "node:fs/promises";
 import { Effect } from "effect";
 import { CrewError } from "../../src/domain.ts";
-import { IssueId, StorageKey, AbsolutePath } from "../../src/identities.ts";
+import { IssueId, StorageKey, AbsolutePath } from "@abracode/contracts/identities";
 import { Records, type Store } from "../../src/storage/store.ts";
 import { FileLocks } from "../../src/storage/lock.ts";
 

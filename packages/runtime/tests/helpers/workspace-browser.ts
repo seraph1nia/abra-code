@@ -5,9 +5,9 @@ import { selectBindingRows } from "@abracode/contracts/web/bindings";
 
 import { Effect, Exit, PubSub, Scope, Stream, Schema } from "effect";
 
-import { WorkPageSchema } from "../../src/visibility/discovery-contracts.ts";
-import { LeadEvidencePageSchema } from "../../src/visibility/lead-observation.ts";
-import { WorkerHistoryPageSchema } from "../../src/web/worker-history.ts";
+import { WorkPageSchema } from "@abracode/contracts/visibility/discovery-contracts";
+import { LeadEvidencePageSchema } from "@abracode/contracts/visibility/lead-observation";
+import { WorkerHistoryPageSchema } from "@abracode/contracts/web/worker-history";
 import { decode } from "../../src/decode.ts";
 import {
   WorkOverviewSchema,
@@ -20,14 +20,14 @@ import {
   ArtifactsSchema,
   DocumentArtifactSchema,
   ArtifactSummarySchema,
-} from "../../src/web/wire.ts";
-import { DecisionsSchema } from "../../src/web/http-api.ts";
-import { requiresResponse } from "../../src/workflow/message-contracts.ts";
+} from "@abracode/contracts/web/wire";
+import { DecisionsSchema } from "@abracode/contracts/web/http-api";
+import { requiresResponse } from "@abracode/contracts/workflow/message-contracts";
 
-import { MessagesPageSchema, type WebWorkItem } from "../../src/web/wire.ts";
+import { MessagesPageSchema, type WebWorkItem } from "@abracode/contracts/web/wire";
 
 import { CrewError } from "../../src/domain.ts";
-import { Timestamp } from "../../src/identities.ts";
+import { Timestamp } from "@abracode/contracts/identities";
 import type { WebBackend, WorkReadName } from "../../src/web/contracts.ts";
 import { workspaceServer } from "../../src/web/server.ts";
 import { WorkspaceFixture } from "./web.ts";

@@ -2,15 +2,15 @@ import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Schema } from "effect";
 import { Skill } from "@opencode/schema/skill";
-import { ToolName } from "../../src/identities.ts";
+import { ToolName } from "@abracode/contracts/identities";
 import {
   capabilityRequirements,
   nativePermissions,
   policyAllows,
   protectedControlPath,
 } from "../../src/opencode/role-policy.ts";
-import { engineeringSkillIds } from "../../src/opencode/engineering-skills.ts";
-import { RequiredToolSchema } from "../../src/opencode/capability-contracts.ts";
+import { engineeringSkillIds } from "@abracode/agents/engineering-skills";
+import { RequiredToolSchema } from "@abracode/agents/capabilities";
 
 test("managed roles preserve distinct authority and scoped native edits", () => {
   assert.ok(policyAllows("supervisor", "abra_work_start"));

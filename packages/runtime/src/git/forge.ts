@@ -5,10 +5,10 @@ import {
   GitRemote,
   PullRequestUrl,
   BranchName,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 
 import { Effect, Schema } from "effect";
-import { Commit, Count, NonEmpty, Positive } from "../contracts.ts";
+import { Commit, Count, NonEmpty, Positive } from "@abracode/contracts/primitives";
 import { CrewError, ensure, type Project } from "../domain.ts";
 import { decodeJSON } from "../decode.ts";
 import { type Runner, type RunOptions } from "../process.ts";

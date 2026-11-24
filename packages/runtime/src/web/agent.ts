@@ -18,8 +18,7 @@ import {
   type AgentRunnerStopRequest,
 } from "@copilotkit/runtime/v2";
 import type { WebBackend, WorkspaceSnapshot } from "./contracts.ts";
-import { WorkspaceSnapshotSchema } from "./workspace-wire.ts";
-import { decode } from "../decode.ts";
+import { WorkspaceSnapshotSchema } from "@abracode/contracts/web/workspace-wire";
 
 type ProjectionOrder = { epoch: string; sequence: number; baseline: boolean };
 type FeedEvent =
@@ -27,32 +26,80 @@ type FeedEvent =
   | { type: "native"; native: NativeSessionView; projection_order?: ProjectionOrder }
   | { type: "freshness"; at: string; epoch: string; sequence: number }
   | { type: "reconnecting" };
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-function changedResources(
+const same = (a: unknown, b: unknown) => Object.is(a, b) || JSON.stringify(a) === JSON.stringify(b);
+const allSame = (pairs: readonly (readonly [unknown, unknown])[]) =>
+  pairs.every(([a, b]) => same(a, b));
+const hasScopeChange = (scope: ChangeScope) =>
+  Boolean(
+    scope.all ||
+    scope.transcript ||
+    scope.attention ||
+    scope.admissions ||
+    scope.presentations ||
+    scope.projects ||
+    scope.work_all ||
+    scope.finder ||
+    scope.fleet ||
+    scope.issues?.length,
+  );
+function diffWorkspace(
   previous: WorkspaceSnapshot | undefined,
   next: WorkspaceSnapshot,
   hint: ChangeScope,
-): ChangeScope {
-  if (!previous) return { all: true };
-  const a = semanticWorkspace(previous),
-    b = semanticWorkspace(next);
-  return mergeChanges(hint.all ? (hint.work_all ? { work_all: true, finder: true } : {}) : hint, {
-    transcript:
-      !same(
-        [a.messages, a.inbox, a.busy, a.model, a.outcome, a.older],
-        [b.messages, b.inbox, b.busy, b.model, b.outcome, b.older],
-      ) || undefined,
-    attention: !same([a.forms, a.permissions], [b.forms, b.permissions]) || undefined,
-    admissions: !same(a.receipts, b.receipts) || undefined,
-    presentations: !same([a.surfaces, a.presentations], [b.surfaces, b.presentations]) || undefined,
-    projects: !same(a.projects, b.projects) || undefined,
-    ...(!same([a.work, a.work_unavailable], [b.work, b.work_unavailable])
-      ? {
-          ...(hint.issues?.length && !hint.all && !hint.work_all ? {} : { work_all: true }),
-          finder: true,
-        }
-      : {}),
-  });
+): { changes: ChangeScope; changed: boolean } {
+  if (!previous) return { changes: { all: true }, changed: true };
+  const transcript = !allSame([
+    [previous.messages, next.messages],
+    [previous.inbox, next.inbox],
+    [previous.busy, next.busy],
+    [previous.model, next.model],
+    [previous.outcome, next.outcome],
+    [previous.older, next.older],
+  ]);
+  const attention = !allSame([
+    [previous.forms, next.forms],
+    [previous.permissions, next.permissions],
+  ]);
+  const admissions = !same(previous.receipts, next.receipts);
+  const presentations = !allSame([
+    [previous.surfaces, next.surfaces],
+    [previous.presentations, next.presentations],
+  ]);
+  const projects = !same(previous.projects, next.projects);
+  const workChanged =
+    previous.work_unavailable !== next.work_unavailable ||
+    (!Object.is(previous.work, next.work) &&
+      !same(semanticWorkspace(previous).work, semanticWorkspace(next).work));
+  const identityChanged =
+    previous.session_id !== next.session_id || previous.agent_id !== next.agent_id;
+  const changes = mergeChanges(
+    hint.all ? (hint.work_all ? { work_all: true, finder: true } : {}) : hint,
+    {
+      transcript: transcript || undefined,
+      attention: attention || undefined,
+      admissions: admissions || undefined,
+      presentations: presentations || undefined,
+      projects: projects || undefined,
+      ...(workChanged
+        ? {
+            ...(hint.issues?.length && !hint.all && !hint.work_all ? {} : { work_all: true }),
+            finder: true,
+          }
+        : {}),
+    },
+  );
+  const changed =
+    transcript ||
+    attention ||
+    admissions ||
+    presentations ||
+    projects ||
+    workChanged ||
+    identityChanged ||
+    !!changes.fleet ||
+    !!changes.work_all ||
+    !!changes.issues?.length;
+  return { changes, changed };
 }
 /** One observation owner, one fallback schedule and bounded coalescing. */
 export class WorkspaceFeed {
@@ -90,20 +137,8 @@ export class WorkspaceFeed {
       const read = (scope: ChangeScope) =>
         mutex.withPermit(
           Effect.gen(function* () {
-            const value = yield* backend
-              .observe(scope)
-              .pipe(
-                Effect.flatMap((snapshot) =>
-                  decode(Schema.toType(WorkspaceSnapshotSchema), snapshot, "Workspace feed"),
-                ),
-              );
-            const changes = changedResources(latest, value, scope);
-            const changed =
-              !latest ||
-              !same(semanticWorkspace(latest), semanticWorkspace(value)) ||
-              !!changes.fleet ||
-              !!changes.work_all ||
-              !!changes.issues?.length;
+            const value = yield* backend.observe(scope);
+            const { changes, changed } = diffWorkspace(latest, value, scope);
             if (changed) {
               latest = {
                 ...value,
@@ -139,12 +174,18 @@ export class WorkspaceFeed {
       yield* backend.changes.pipe(
         Stream.runForEach((scope) =>
           Effect.gen(function* () {
+            let repair = false;
             if (scope?.native && backend.nativeEvent) {
               const update = backend.nativeEvent(scope.native);
               if (update.view) yield* publish({ type: "native", native: update.view });
-              if (update.repair) yield* publish({ type: "reconnecting" });
+              if (update.repair) {
+                repair = true;
+                yield* publish({ type: "reconnecting" });
+              }
             }
-            yield* notify(!scope || scope.all ? { all: true, work_all: true } : scope);
+            if (!scope || scope.all) yield* notify({ all: true, work_all: true });
+            else if (repair) yield* notify(mergeChanges(scope, { transcript: true }));
+            else if (hasScopeChange(scope)) yield* notify(scope);
           }),
         ),
         Effect.matchEffect({

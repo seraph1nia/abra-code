@@ -1,4 +1,6 @@
 /* oxlint-disable jsx-a11y/media-has-caption -- A2UI v1 exposes the container’s native caption tracks and has no separate track URL property. */
+import { sanitizeMediaUrl } from "@a2ui/web_core/v1_0";
+
 export type MediaKind = "Image" | "Video" | "AudioPlayer";
 const fits = {
   contain: "contain",
@@ -8,8 +10,14 @@ const fits = {
   scaleDown: "scale-down",
 } as const;
 
+const allowedDataUrl: Record<MediaKind, RegExp> = {
+  Image: /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]*$/i,
+  AudioPlayer: /^data:audio\/(?:mpeg|ogg|wav|webm);base64,[A-Za-z0-9+/=\s]*$/i,
+  Video: /^data:video\/(?:mp4|webm);base64,[A-Za-z0-9+/=\s]*$/i,
+};
+
 // Evaluate after data binding, including updates from editable fields.
-export function mediaUrl(value: unknown, frozen: boolean) {
+export function mediaUrl(value: unknown, frozen: boolean, kind: MediaKind = "Image") {
   if (typeof value !== "string") return;
   const trimmed = value.trim();
   let start = 0,
@@ -17,19 +25,19 @@ export function mediaUrl(value: unknown, frozen: boolean) {
   while (start < end && trimmed.charCodeAt(start) <= 32) start++;
   while (end > start && trimmed.charCodeAt(end - 1) <= 32) end--;
   const url = trimmed.slice(start, end);
-  if (/^data:/i.test(url)) return url;
-  if (!url || frozen) return;
+  if (!url) return;
+  const sanitized = sanitizeMediaUrl(url);
+  if (!sanitized) return;
   // URL parsers remove these characters before interpreting the scheme or host.
-  const normalized = url.replace(/[\t\n\r]/g, "");
+  const normalized = sanitized.replace(/[\t\n\r]/g, "");
+  if (/^data:/i.test(normalized)) {
+    return allowedDataUrl[kind].test(normalized) ? normalized : undefined;
+  }
+  if (frozen) return;
   if (/^[\\/]{2}/.test(normalized)) return;
   const absolute = /^[a-z][a-z\d+.-]*:/i.test(normalized);
-  if (absolute && !/^https?:\/\/[^/\\?#\s]/i.test(url)) return;
-  try {
-    const parsed = new URL(normalized, "https://relative.invalid/");
-    if (parsed.protocol === "https:" || parsed.protocol === "http:") return normalized;
-  } catch {
-    return;
-  }
+  if (absolute && !/^https?:\/\/[^/\\?#\s]/i.test(sanitized)) return;
+  return normalized;
 }
 
 export function CatalogMedia({
@@ -41,7 +49,7 @@ export function CatalogMedia({
   props: Record<string, unknown>;
   frozen: boolean;
 }) {
-  const src = mediaUrl(props.url, frozen);
+  const src = mediaUrl(props.url, frozen, kind);
   const description = typeof props.description === "string" ? props.description : "";
   if (!src)
     return frozen && props.url ? (
@@ -54,7 +62,7 @@ export function CatalogMedia({
         controls
         preload="metadata"
         src={src}
-        poster={mediaUrl(props.posterUrl, frozen)}
+        poster={mediaUrl(props.posterUrl, frozen, "Image")}
       />
     );
   if (kind === "AudioPlayer")

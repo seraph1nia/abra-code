@@ -7,13 +7,13 @@ import { Effect, Schema } from "effect";
 import { encode } from "@toon-format/toon";
 import { fixture, applying } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import {
   ExternalDocument,
   ExternalRecord,
   SkippedSteps,
   externalOwns,
-} from "../../src/validation/contracts.ts";
+} from "@abracode/contracts/validation/contracts";
 import { machineDocument, intentDigest } from "../../src/validation/no-mistakes.ts";
 import { ExecutionRecordSchema } from "../../src/storage/contracts.ts";
 import { consumesWorker } from "../../src/workflow/capacity.ts";

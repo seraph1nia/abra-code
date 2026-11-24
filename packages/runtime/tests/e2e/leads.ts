@@ -1,9 +1,9 @@
 import { JourneyGates } from "./journey-gates.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import type {
   LeadEvidenceQuery,
   LeadEvidencePageSchema,
-} from "../../src/visibility/lead-observation.ts";
+} from "@abracode/contracts/visibility/lead-observation";
 import assert from "node:assert/strict";
 import { repo } from "../fixtures.ts";
 import { run } from "../effects.ts";

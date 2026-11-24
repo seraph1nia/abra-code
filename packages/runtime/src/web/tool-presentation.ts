@@ -1,17 +1,17 @@
 import { WorkBriefing } from "@abracode/contracts/visibility/briefing";
-import { communicationSummary } from "./presentation-contracts.ts";
+import { communicationSummary } from "@abracode/contracts/web/presentation-contracts";
 import { artifactSummary } from "./artifacts.ts";
 import { Schema } from "effect";
 import { toolOutputs } from "../opencode/tool-contracts.ts";
 import { nativeActivity } from "../visibility/supervision.ts";
-import { IssueId, type Timestamp } from "../identities.ts";
+import { IssueId, type Timestamp } from "@abracode/contracts/identities";
 import type { Issue } from "../work/model.ts";
 import type { Execution } from "../domain.ts";
 import {
   SurfacePublicationSchema,
   ToolPresentationSchema,
   type ToolPresentation,
-} from "./presentation-contracts.ts";
+} from "@abracode/contracts/web/presentation-contracts";
 
 function read<S extends Schema.ConstraintDecoder<unknown>>(
   schema: S,

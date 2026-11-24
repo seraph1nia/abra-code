@@ -8,7 +8,7 @@ import { run } from "../effects.ts";
 import { ConfigApplication } from "../../src/config/application.ts";
 import { resolveConfig } from "../../src/config/load.ts";
 import { saveDeclaration } from "../../src/config/declarations.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { requireOwnedPrompt } from "../../src/opencode/guards.ts";
 
 test("declarations preserve comments, support absent lists and serialize concurrent updates", async (t) => {

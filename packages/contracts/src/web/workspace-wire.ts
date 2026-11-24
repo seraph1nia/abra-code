@@ -9,7 +9,8 @@ import { Schema } from "effect";
 import { Form } from "@opencode/schema/form";
 import { Permission } from "@opencode/schema/permission";
 import { SessionMessage } from "@opencode/schema/session-message";
-import { SessionId, MessageId, ContentHash } from "../identities.ts";
+import { SessionId, MessageId, ContentHash, WebSubmissionId } from "../identities.ts";
+import { exactParseOptions } from "../primitives.ts";
 import { WorkSnapshotSchema, DecisionSchema, DeclaredWaitSchema, ArtifactsSchema } from "./wire.ts";
 import { SurfaceSchema } from "./surfaces.ts";
 import { TranscriptPartSchema, TranscriptToolSchema } from "./presentation-contracts.ts";
@@ -31,13 +32,13 @@ export type SelectionFollowup = typeof SelectionFollowupSchema.Type;
 export const selectionMarker = "\n\nSelected work (captured source)\n";
 export const thoughtMarker = "\n\nSelected personal thought (resolve with abra_thought_get)\n";
 export const thoughtSubmissionMarker = "\n\nAbra thought submission: ";
-export function thoughtSubmission(text: string) {
+export function thoughtSubmission(text: string): WebSubmissionId | undefined {
   const index = text.lastIndexOf(thoughtSubmissionMarker);
   if (index < 0) return;
   const end = text.indexOf(thoughtMarker, index + thoughtSubmissionMarker.length);
   if (end < 0) return;
   const id = text.slice(index + thoughtSubmissionMarker.length, end);
-  return /^[a-zA-Z0-9_-]{1,100}$/.test(id) ? id : undefined;
+  return Schema.is(WebSubmissionId)(id) ? id : undefined;
 }
 export function selectedQuestion(text: string) {
   const index = text.lastIndexOf(selectionMarker);
@@ -45,7 +46,7 @@ export function selectedQuestion(text: string) {
   try {
     const source = Schema.decodeUnknownSync(
       Schema.Struct({
-        request_id: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/)),
+        request_id: WebSubmissionId,
         ...CapturedSelectionSchema.fields,
       }),
     )(
@@ -125,20 +126,20 @@ export const ProjectsSchema = Schema.Array(
 export const SubmissionSchema = Schema.Struct({
   thought: Schema.optionalKey(ThoughtReference),
   selection: Schema.optionalKey(WorkSelectionSchema),
-  request_id: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/)),
+  request_id: WebSubmissionId,
   text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32768)),
   delivery: Schema.Literals(["queue", "steer"]),
 });
 export type Submission = typeof SubmissionSchema.Type;
 export const ReceiptQuerySchema = Schema.Struct({
   request_id: SubmissionSchema.fields.request_id,
-}).annotate({ parseOptions: { onExcessProperty: "error" }, reportInput: false });
+}).annotate(exactParseOptions);
 export const SubmissionOptionsSchema = Schema.Struct({
   thought: SubmissionSchema.fields.thought,
   selection: SubmissionSchema.fields.selection,
   request_id: SubmissionSchema.fields.request_id,
   delivery: Schema.optionalKey(SubmissionSchema.fields.delivery),
-}).annotate({ parseOptions: { onExcessProperty: "error" }, reportInput: false });
+}).annotate(exactParseOptions);
 export const WorkspaceSnapshotSchema = Schema.Struct({
   observation: Schema.optional(ObservationSchema),
   session_id: SessionId,

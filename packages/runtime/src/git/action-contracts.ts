@@ -1,6 +1,6 @@
 import { type Effect } from "effect";
 import { type CrewError, type ManagedExecution, type Project } from "../domain.ts";
-import { type CurrentAction } from "../workflow/action-contracts.ts";
+import { type CurrentAction } from "@abracode/contracts/workflow/action-contracts";
 
 /** Requests are produced only by read-only adapter validation, never from forge-provided commands. */
 export type PreparedWrite = {

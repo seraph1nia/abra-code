@@ -9,8 +9,8 @@ import { type Context } from "@opencode/plugin/effect/plugin";
 import { NativeRuntime } from "../../src/opencode/runtime.ts";
 import { readWorkerContext } from "../../src/workflow/worker-context.ts";
 import { type WorkerContext } from "../../src/workflow/worker-context-contracts.ts";
-import { engineeringSkillIds } from "../../src/opencode/engineering-skills.ts";
-import * as Id from "../../src/identities.ts";
+import { engineeringSkillIds } from "@abracode/agents/engineering-skills";
+import * as Id from "@abracode/contracts/identities";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 

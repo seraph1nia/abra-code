@@ -1,11 +1,19 @@
 import { parse as parseYaml } from "yaml";
-import { SchemaName } from "./schema-contracts.ts";
+import { SchemaName } from "@abracode/contracts/openspec/schema-contracts";
 import { decode } from "../decode.ts";
 import { planningPrerequisites, trackedImplementation } from "./prerequisites.ts";
-import { SchemaResolution, NativeSchemaValidation } from "./schema-contracts.ts";
+import {
+  SchemaResolution,
+  NativeSchemaValidation,
+} from "@abracode/contracts/openspec/schema-contracts";
 import { schemaName, schemaEvidence } from "./schema-binding.ts";
 import { ensure } from "../domain.ts";
-import { Executable, ArtifactId, RelativePath, type AbsolutePath } from "../identities.ts";
+import {
+  Executable,
+  ArtifactId,
+  RelativePath,
+  type AbsolutePath,
+} from "@abracode/contracts/identities";
 
 import { domainEffect } from "../effect.ts";
 import { Effect, Schema } from "effect";

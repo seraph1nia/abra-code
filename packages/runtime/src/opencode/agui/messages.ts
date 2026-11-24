@@ -5,7 +5,7 @@ import type {
   TranscriptTool,
   ToolPresentation,
 } from "@abracode/contracts/web/presentation-contracts";
-import { Timestamp } from "../../identities.ts";
+import { Timestamp } from "@abracode/contracts/identities";
 const text = (value: string) =>
   value.length > 65536
     ? value.slice(0, 65536) + "\n[Native text limited to 64 Ki characters]"

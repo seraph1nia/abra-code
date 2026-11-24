@@ -1,9 +1,21 @@
 import { Effect } from "effect";
 import { CrewError, type Execution, type Project } from "../domain.ts";
-import { Commit, RelativePath } from "../identities.ts";
+import { type AbsolutePath, Commit, RelativePath } from "@abracode/contracts/identities";
+import { decode } from "../decode.ts";
 import { domainEffect } from "../effect.ts";
 import type { Git } from "../git/repository.ts";
 import { documentLimit } from "./documents.ts";
+
+/** Decode commit identity at the Git boundary so malformed output becomes a typed failure. */
+export const resolveCommit = (
+  git: Pick<Git, "run">,
+  path: AbsolutePath,
+  ref: string,
+  source = "Git commit",
+) =>
+  git
+    .run(path, ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`])
+    .pipe(Effect.flatMap((value) => decode(Commit, value, source)));
 
 /** Read retained blobs, never a replacement working-tree file or a symbolic-link target. */
 export const archivedPlans = Effect.fn("Visibility.archivedPlans")(function* (
@@ -29,13 +41,11 @@ export const archivedPlans = Effect.fn("Visibility.archivedPlans")(function* (
   if (!project)
     return yield* new CrewError("DOCUMENT_UNAVAILABLE", "The planning repository is unavailable.");
   yield* git.validate(project);
-  const commit = Commit.make(
-    yield* git.run(project.path, [
-      "rev-parse",
-      "--verify",
-      "--end-of-options",
-      `${execution.delivered_commit}^{commit}`,
-    ]),
+  const commit = yield* resolveCommit(
+    git,
+    project.path,
+    execution.delivered_commit,
+    "Archived planning commit",
   );
   const tree = yield* git.run(
     project.path,

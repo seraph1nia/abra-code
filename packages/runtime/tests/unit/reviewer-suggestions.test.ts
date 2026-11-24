@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { forgeFixture } from "../forge.ts";
 import { Forge } from "../../src/git/forge.ts";
 import { GitHubReviewers } from "../../src/git/reviewers.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { ownersFor } from "../../src/git/reviewers.ts";

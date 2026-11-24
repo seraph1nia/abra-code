@@ -3,11 +3,11 @@ import { test } from "vite-plus/test";
 import { Deferred, Effect, Fiber, Schema } from "effect";
 import { deliveredPR, noEffect } from "../helpers/delivered-pr.ts";
 import { run } from "../effects.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
 import { type Delivery } from "../../src/git/delivery.ts";
 import { type PreparedWrite } from "../../src/git/action-contracts.ts";
-import { type CurrentAction, ActionSchema } from "../../src/workflow/action-contracts.ts";
+import { type CurrentAction, ActionSchema } from "@abracode/contracts/workflow/action-contracts";
 import { normalizeAction } from "../../src/workflow/action-state.ts";
 import { PRActions } from "../../src/workflow/pr-actions.ts";
 

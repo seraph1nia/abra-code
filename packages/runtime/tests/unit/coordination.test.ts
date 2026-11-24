@@ -2,7 +2,7 @@ import { goal as workGoal } from "../helpers/work-goal.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { deliveryAction } from "../../src/workflow/delivery-outcome.ts";
 import { verifiedSpec } from "../helpers/spec-review.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { Deferred, Effect, Fiber } from "effect";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";

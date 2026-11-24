@@ -2,7 +2,7 @@ import { Onboarding } from "../../src/config/onboard.ts";
 import { Records } from "../../src/storage/store.ts";
 import { MemoryStore, writePlan, repo } from "../fixtures.ts";
 import { createExecution } from "../../src/workflow/execution.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { Effect, Scope, Exit } from "effect";
 import { run } from "../effects.ts";
 import { test } from "vite-plus/test";

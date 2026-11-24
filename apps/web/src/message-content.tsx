@@ -14,6 +14,7 @@ import { Paperclip } from "@abracode/presentation/icons";
 import { orderedParts } from "@abracode/contracts/web/transcript";
 import { Markdown } from "./markdown.tsx";
 import { ToolObservation } from "./presentation/tools.tsx";
+import { attachmentKey } from "./presentation/tool-context.ts";
 
 const MessageAttachment = deferred<
   React.ComponentProps<typeof import("./presentation/attachments.tsx").MessageAttachment>
@@ -134,7 +135,7 @@ export const MessageContent = memo(function MessageContent({
           )
           .map((attachment) => (
             <MessageAttachment
-              key={JSON.stringify(attachment)}
+              key={attachmentKey(attachment)}
               attachment={attachment}
               work={work}
               inspect={inspect}

@@ -5,9 +5,9 @@ import { reportDocument, coveredReportDocument } from "../helpers/report-documen
 import {
   readReportDocument,
   validateReportDocument,
-} from "../../src/presentation/report-document.ts";
-import { catalogV2Id, catalogV3Id, catalogV4Id } from "../../src/web/catalog.ts";
-import { ReportArtifactReceiptSchema } from "../../src/workflow/report-contracts.ts";
+} from "@abracode/contracts/presentation/report-document";
+import { catalogV2Id, catalogV3Id, catalogV4Id } from "@abracode/contracts/web/catalog";
+import { ReportArtifactReceiptSchema } from "../../src/reporting/report-contracts.ts";
 
 test("canonical JSON retains exact layout, captured values, source revision and pending evidence", () => {
   const document = reportDocument();

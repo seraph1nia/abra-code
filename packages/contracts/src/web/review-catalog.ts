@@ -1,25 +1,32 @@
 import { Schema } from "effect";
-import { Catalog, basicCatalog, type ComponentApi } from "@a2ui/web_core/v1_0";
+import { Catalog, basicCatalog, STRICT_VALIDATION, type ComponentApi } from "@a2ui/web_core/v1_0";
 import {
   SingleSelectSchema,
   MultiSelectSchema,
   DesignChoiceSchema,
   CommentFieldSchema,
+  type ReviewAnswers,
   type ReviewDefinition,
 } from "./reviews.ts";
 
 export const reviewCatalogId = "https://abracode.local/catalog/review/v1/catalog.json";
-const heading = Schema.Struct({
+export const ReviewFormSchema = Schema.Struct({
   component: Schema.Literal("ReviewForm"),
   title: Schema.String,
   description: Schema.optionalKey(Schema.String),
 });
 export const reviewComponentSchemas = {
-  ReviewForm: heading,
+  ReviewForm: ReviewFormSchema,
   SingleSelect: SingleSelectSchema,
   MultiSelect: MultiSelectSchema,
   DesignChoiceGroup: DesignChoiceSchema,
   CommentField: CommentFieldSchema,
+};
+export const reviewValidation = {
+  ...STRICT_VALIDATION,
+  targetVersion: "1.0",
+  maxDepth: 10,
+  allowedMessages: ["createSurface", "updateDataModel"],
 };
 const base = basicCatalog
   .derive({ catalogId: reviewCatalogId, components: ["Column", "Row", "Text"], functions: [] })
@@ -52,12 +59,22 @@ export const reviewCatalogDocument = {
 export const reviewCatalog = Catalog.fromJson(reviewCatalogDocument);
 export const implementedReviewCatalog = <T extends ComponentApi>(entries: readonly T[]) =>
   new Catalog(reviewCatalogId, "1.0", entries, []);
-export function reviewSurface(review: ReviewDefinition) {
+export type ReviewSurfaceState = {
+  readonly answers?: ReviewAnswers;
+  readonly errors?: Readonly<Record<string, string>>;
+  readonly disabled?: boolean;
+};
+export function reviewSurface(review: ReviewDefinition, state?: ReviewSurfaceState) {
   return {
     version: "1.0" as const,
     createSurface: {
       surfaceId: review.review_id,
       catalogId: reviewCatalogId,
+      dataModel: {
+        answers: { ...state?.answers },
+        errors: { ...state?.errors },
+        disabled: state?.disabled ?? false,
+      },
       components: [
         {
           id: "root",

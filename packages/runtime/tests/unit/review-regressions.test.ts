@@ -5,7 +5,7 @@ import { Deferred, Effect, Fiber } from "effect";
 import { fixture, applying } from "../fixtures.ts";
 import { run } from "../effects.ts";
 
-import { RepositoryId, SessionId } from "../../src/identities.ts";
+import { RepositoryId, SessionId } from "@abracode/contracts/identities";
 
 test("research restarts from the saved phase before any worker admission intent exists", async (t) => {
   const f = await run(fixture);

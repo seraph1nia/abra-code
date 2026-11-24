@@ -1,8 +1,8 @@
 import { type Execution, CrewError } from "../domain.ts";
 import { automation } from "../config/policy.ts";
 import { type PR } from "../git/forge.ts";
-import { type ActionInput } from "./feedback-contracts.ts";
-import { type CurrentAction } from "./action-contracts.ts";
+import { type ActionInput } from "@abracode/contracts/workflow/feedback-contracts";
+import { type CurrentAction } from "@abracode/contracts/workflow/action-contracts";
 import { prepareAction, addressed } from "./action-policy.ts";
 import { normalizeAction, targetKey } from "./action-state.ts";
 

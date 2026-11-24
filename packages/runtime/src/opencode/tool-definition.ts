@@ -1,13 +1,30 @@
 import { Effect, Schema, SchemaIssue } from "effect";
 import { Tool } from "@opencode/schema/tool";
 import { type ToolEditor } from "@opencode/plugin/effect/tool";
-import { type SessionId } from "../identities.ts";
+import { type SessionId } from "@abracode/contracts/identities";
 import { CrewError } from "../domain.ts";
-import { decodeJSON } from "../decode.ts";
 import { ToolProgress } from "./progress.ts";
 import { diagnosticText } from "./diagnostics.ts";
 
 export type ToolAccess = { worker: boolean; diagnostic: boolean; lead?: boolean };
+
+const DEFAULT_RECOVERY_HINT = "Inspect work_status and the recovery runbook; preserve resources.";
+
+/** Recursively omit keys whose value is undefined so in-memory outputs match JSON wire shape. */
+export function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(stripUndefined) as T;
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    Object.getPrototypeOf(value) === Object.prototype
+  ) {
+    const out: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value))
+      if (entry !== undefined) out[key] = stripUndefined(entry);
+    return out as T;
+  }
+  return value;
+}
 
 /** Keep strict decoding at the host boundary, including the pinned host's schema bridge. */
 export function strictInput<S extends Schema.Codec<unknown, unknown>>(schema: S) {
@@ -46,6 +63,7 @@ export function strictInput<S extends Schema.Codec<unknown, unknown>>(schema: S)
     },
   };
 }
+
 export function defineTool<I, O>(d: {
   name: string;
   description: string;
@@ -59,6 +77,7 @@ export function defineTool<I, O>(d: {
   worker?: boolean;
   lead?: boolean;
   diagnostic?: boolean | ((input: NoInfer<I>) => boolean);
+  recoveryHint?: string;
 }) {
   const output: Schema.Codec<{ readonly ok: true; readonly result?: O }, unknown> = Schema.Struct({
     ok: Schema.Literal(true),
@@ -93,7 +112,20 @@ export function defineTool<I, O>(d: {
               ),
             ),
             Effect.flatMap((result) =>
-              decodeJSON(output, JSON.stringify({ ok: true, result }), `abra_${d.name} output`),
+              Schema.decodeUnknownEffect(Schema.toType(output), { reportInput: false })(
+                stripUndefined({
+                  ok: true,
+                  ...(result === undefined ? {} : { result }),
+                }),
+              ).pipe(
+                Effect.mapError(
+                  (error) =>
+                    new CrewError(
+                      "INVALID_DATA",
+                      `abra_${d.name} output: ${error.message.slice(0, 2048)}`,
+                    ),
+                ),
+              ),
             ),
             Effect.map((value) => ({
               output: value,
@@ -106,14 +138,7 @@ export function defineTool<I, O>(d: {
                   message: `${error.code}: ${diagnosticText(error.message)}`,
                   metadata: {
                     code: error.code,
-                    action:
-                      d.name === "render_ui"
-                        ? "Use abra-express to correct the indicated draft or reference. Retry unavailable verification when it recovers."
-                        : d.name.startsWith("project")
-                          ? "Inspect project_list and the onboarding/recovery runbook; preserve resources."
-                          : d.name === "work_create"
-                            ? "Inspect work_list; reuse the same request_id after repair."
-                            : "Inspect work_status and the recovery runbook; preserve resources.",
+                    action: d.recoveryHint ?? DEFAULT_RECOVERY_HINT,
                   },
                 }),
             ),
@@ -123,3 +148,5 @@ export function defineTool<I, O>(d: {
     },
   };
 }
+
+export type DefinedTool = ReturnType<typeof defineTool>;

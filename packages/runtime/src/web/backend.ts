@@ -13,6 +13,7 @@ import type {
 } from "@abracode/contracts/web/reviews";
 import type { PrepareDiagramSelection } from "@abracode/contracts/web/diagram-actions";
 import { NativeSessionReader } from "../opencode/agui/source.ts";
+import { trustedSessionEvent, type NativeEventEnvelope } from "../opencode/agui/native-state.ts";
 import { projectNativeMessage } from "../opencode/agui/messages.ts";
 import type { ChangeScope } from "@abracode/contracts/web/changes";
 import { nativeChangeScope } from "./change-scopes.ts";
@@ -21,8 +22,8 @@ import type {
   SaveSurfaceSchema,
   ExportDocumentSchema,
   ReadExportSchema,
-} from "./report-actions.ts";
-import { workerHistoryMessage } from "./worker-history.ts";
+} from "@abracode/contracts/web/report-actions";
+import { workerHistoryMessage } from "@abracode/contracts/web/worker-history";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect native HTTP and event APIs, verified against OpenCode 2.3.0. */
 import { createHash } from "node:crypto";
 import { Effect, Result, Schema, Stream } from "effect";
@@ -33,26 +34,106 @@ import type { SessionMessage } from "@opencode/schema/session-message";
 import { type Endpoint } from "@opencode/client/effect/service";
 import { CrewError } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import { AbsolutePath, IssueId, SessionId, RequestId, timestamp } from "../identities.ts";
+import {
+  AbsolutePath,
+  IssueId,
+  SessionId,
+  RequestId,
+  timestamp,
+} from "@abracode/contracts/identities";
 import { makeClient } from "../opencode/client.ts";
-import { ArtifactSchema, WorkSnapshotSchema } from "./wire.ts";
-import { WorkspaceSnapshotSchema } from "./workspace-wire.ts";
+import { ArtifactSchema, WorkSnapshotSchema } from "@abracode/contracts/web/wire";
+import { WorkspaceSnapshotSchema } from "@abracode/contracts/web/workspace-wire";
 import { decode } from "../decode.ts";
 import { visibility } from "../visibility/protocol.ts";
 import { webGateway } from "./protocol.ts";
 import type { AttentionForm, WebBackend, WorkQueries, WorkspaceSnapshot } from "./contracts.ts";
-import type { ResourceSelection } from "./resources.ts";
+import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import { toolPresentation } from "./tool-presentation.ts";
 import { nativeRpcError, readWorkReport } from "./native-errors.ts";
+import { canonicalJSON } from "../presentation/identity.ts";
 
-const fingerprint = (value: unknown) =>
-  createHash("sha256").update(JSON.stringify(value)).digest("hex");
+export const fingerprint = (value: unknown) =>
+  createHash("sha256").update(canonicalJSON(value)).digest("hex");
 export const projectMessage = (message: SessionMessage.Info) =>
   projectNativeMessage(message, toolPresentation);
+
+const subscribedSessionEventTypes = [
+  "session.agent.selected",
+  "session.compaction.started",
+  "session.compaction.ended",
+  "session.compaction.failed",
+  "session.created",
+  "session.deleted",
+  "session.execution.started",
+  "session.execution.succeeded",
+  "session.execution.failed",
+  "session.execution.interrupted",
+  "session.inbox.enqueued",
+  "session.inbox.delivered",
+  "session.inbox.cancelled",
+  "session.inbox.delivery.changed",
+  "session.metadata.updated",
+  "session.model.selected",
+  "session.renamed",
+  "session.retry.scheduled",
+  "session.revert.cleared",
+  "session.revert.committed",
+  "session.revert.staged",
+  "session.shell.started",
+  "session.shell.ended",
+  "session.step.started",
+  "session.step.ended",
+  "session.step.failed",
+  "session.synthetic",
+  "session.text.started",
+  "session.text.delta",
+  "session.text.ended",
+  "session.tool.input.started",
+  "session.tool.input.delta",
+  "session.tool.input.ended",
+  "session.tool.called",
+  "session.tool.progress",
+  "session.tool.success",
+  "session.tool.failed",
+] as const;
+
+const subscribedEventTypes = [
+  "rpc.abracode-visibility.changed",
+  "location.shutdown",
+  "form.created",
+  "form.replied",
+  "form.cancelled",
+  "permission.asked",
+  "permission.replied",
+  ...subscribedSessionEventTypes,
+] as const;
+
+const domainRpcFailureTypes = new Set([
+  "not_found",
+  "resource_unavailable",
+  "invalid_selection",
+  "refused",
+  "rpc.method_not_found",
+]);
+
+function isTransportFailure(cause: unknown): boolean {
+  if (cause instanceof CrewError) return cause.code === "WEB_SERVICE";
+  if (
+    cause &&
+    typeof cause === "object" &&
+    "type" in cause &&
+    typeof cause.type === "string" &&
+    domainRpcFailureTypes.has(cause.type)
+  )
+    return false;
+  return true;
+}
 
 export class NativeWebBackend implements WebBackend {
   private lastObservation?: WorkspaceSnapshot;
   private lastValidWork?: WorkspaceSnapshot["work"];
+  private cachedClient?: OpenCodeClient;
   readonly sessionID: SessionId;
   private reader: NativeSessionReader;
   private workerCursors = new Set<string>();
@@ -68,7 +149,21 @@ export class NativeWebBackend implements WebBackend {
       toolPresentation,
     );
   }
-  private connection = () =>
+  private verifySession = (client: OpenCodeClient) =>
+    Effect.gen({ self: this }, function* () {
+      const session = yield* client.session.get({ sessionID: this.sessionID });
+      if (
+        session.agent !== "abra" ||
+        session.location.directory !== this.home ||
+        session.metadata?.abracode_supervisor_home !== this.home
+      )
+        return yield* new CrewError(
+          "ABRA_REQUIRED",
+          "The central Abra session changed; reopen the frontend",
+        );
+      return session;
+    });
+  private discoverConnection = () =>
     Effect.gen({ self: this }, function* () {
       const endpoint = yield* this.discover;
       if (!endpoint) return yield* new CrewError("WEB_SERVICE", "AbraCode service unavailable");
@@ -82,21 +177,45 @@ export class NativeWebBackend implements WebBackend {
       )
         return yield* new CrewError("WEB_SERVICE", "Expected this installation's local service");
       const client = yield* makeClient(endpoint);
-      const session = yield* client.session.get({ sessionID: this.sessionID });
-      if (
-        session.agent !== "abra" ||
-        session.location.directory !== this.home ||
-        session.metadata?.abracode_supervisor_home !== this.home
-      )
-        return yield* new CrewError(
-          "ABRA_REQUIRED",
-          "The central Abra session changed; reopen the frontend",
-        );
+      const session = yield* this.verifySession(client);
+      this.cachedClient = client;
       return { client, session };
     });
-  private client = () => this.connection().pipe(Effect.map(({ client }) => client));
+  private connection = () =>
+    Effect.suspend(() => {
+      const cached = this.cachedClient;
+      if (!cached) return this.discoverConnection();
+      return this.verifySession(cached).pipe(
+        Effect.map((session) => ({ client: cached, session })),
+        Effect.catch((cause) => {
+          if (!isTransportFailure(cause)) return Effect.fail(cause);
+          if (this.cachedClient === cached) this.cachedClient = undefined;
+          return this.discoverConnection();
+        }),
+      );
+    });
+  private client = () =>
+    Effect.suspend(() =>
+      this.cachedClient
+        ? Effect.succeed(this.cachedClient)
+        : this.discoverConnection().pipe(Effect.map(({ client }) => client)),
+    );
   private use<A, E>(fn: (client: OpenCodeClient) => Effect.Effect<A, E>) {
-    return domainEffect(this.client().pipe(Effect.flatMap(fn), Effect.mapError(nativeRpcError)));
+    return domainEffect(
+      this.client().pipe(
+        Effect.flatMap((client) =>
+          fn(client).pipe(
+            Effect.tapError((cause) =>
+              Effect.sync(() => {
+                if (isTransportFailure(cause) && this.cachedClient === client)
+                  this.cachedClient = undefined;
+              }),
+            ),
+          ),
+        ),
+        Effect.mapError(nativeRpcError),
+      ),
+    );
   }
   private gateway(client: OpenCodeClient) {
     return client.rpc(webGateway);
@@ -531,13 +650,12 @@ export class NativeWebBackend implements WebBackend {
     this.use((client) =>
       this.gateway(client).saveSurface({ session_id: this.sessionID, ...input }, this.location()),
     );
-  nativeEvent = (event: import("../opencode/agui/native-state.ts").NativeEventEnvelope) =>
-    this.reader.apply(event);
+  nativeEvent = (event: NativeEventEnvelope) => this.reader.apply(event);
   nativeSnapshot = () => this.reader.current();
   readonly changes = Stream.unwrap(
     this.client().pipe(
       Effect.map((client) =>
-        client.event.subscribe().pipe(
+        client.event.subscribe({ types: subscribedEventTypes }).pipe(
           Stream.filterMap((event) => {
             const scope = nativeChangeScope(
               event,
@@ -548,19 +666,37 @@ export class NativeWebBackend implements WebBackend {
                   work.sessions.some((worker) => worker.id === session),
                 )?.issue_id,
             );
-            const data = "data" in event ? event.data : undefined;
-            const native =
-              event.type === "server.connected" ||
-              (event.type.startsWith("session.") &&
-                data &&
-                typeof data === "object" &&
-                "sessionID" in data &&
-                data.sessionID === this.sessionID &&
-                (!event.location?.directory || event.location.directory === this.home));
-            return scope || native
-              ? Result.succeed({ ...scope, ...(native ? { native: event } : {}) })
+            const isServerConnected = event.type === "server.connected";
+            const isSupervisorSession =
+              event.type.startsWith("session.") &&
+              "data" in event &&
+              event.data !== null &&
+              typeof event.data === "object" &&
+              "sessionID" in event.data &&
+              event.data.sessionID === this.sessionID &&
+              (!("location" in event) ||
+                !event.location?.directory ||
+                event.location.directory === this.home);
+            const nativeEnvelope: NativeEventEnvelope | undefined = isServerConnected
+              ? event
+              : isSupervisorSession
+                ? trustedSessionEvent(
+                    event as Extract<
+                      typeof event,
+                      { type: (typeof subscribedSessionEventTypes)[number] }
+                    >,
+                  )
+                : undefined;
+            return scope || nativeEnvelope
+              ? Result.succeed({ ...scope, ...(nativeEnvelope ? { native: nativeEnvelope } : {}) })
               : Result.fail(undefined);
           }),
+          Stream.tapError((cause) =>
+            Effect.sync(() => {
+              if (isTransportFailure(cause) && this.cachedClient === client)
+                this.cachedClient = undefined;
+            }),
+          ),
           Stream.mapError(CrewError.from),
         ),
       ),

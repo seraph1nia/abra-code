@@ -10,10 +10,13 @@ import {
   StoragePrefix,
   type SessionId,
   type MessageId,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 import type { Store } from "../storage/store.ts";
 import type { Locks } from "../storage/lock.ts";
-import { PresentationAttachmentSchema, type PresentationDiagnosticSchema } from "./contracts.ts";
+import {
+  PresentationAttachmentSchema,
+  type PresentationDiagnosticSchema,
+} from "@abracode/contracts/presentation/contracts";
 import { canonicalJSON, presentationHash as hash } from "./identity.ts";
 
 type Attachment = typeof PresentationAttachmentSchema.Type;

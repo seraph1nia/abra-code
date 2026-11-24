@@ -12,7 +12,7 @@ import { WorkspaceObservation, type ObservationState } from "./observation-clien
 import { HttpAgent } from "@ag-ui/client";
 import { ownObservationRequests } from "./observation-transport.ts";
 import { retainConversation } from "./conversation.ts";
-const updates = [UseAgentUpdate.OnStateChanged, UseAgentUpdate.OnMessagesChanged];
+const updates = [UseAgentUpdate.OnStateChanged];
 export function useWorkspaceObservation(
   initial: WorkspaceSnapshot,
   setError: (message: string) => void,
@@ -37,6 +37,7 @@ export function useWorkspaceObservation(
   useEffect(() => {
     if (!isReady) return;
     const releaseRequests = agent instanceof HttpAgent ? ownObservationRequests(agent) : () => {};
+    let publishedState: unknown;
     const observation = new WorkspaceObservation(
       initialRef.current,
       {
@@ -44,7 +45,13 @@ export function useWorkspaceObservation(
           current: () => agent.state,
           subscribe: (listener) => {
             const subscription = agent.subscribe({
-              onStateChanged: ({ state }) => listener.state(state),
+              onStateChanged: ({ state }) => {
+                if (state === publishedState) {
+                  publishedState = undefined;
+                  return;
+                }
+                listener.state(state);
+              },
               onCustomEvent: ({ event }) => listener.custom(event),
             });
             return () => subscription.unsubscribe();
@@ -53,8 +60,11 @@ export function useWorkspaceObservation(
           detach: () => {
             void agent.detachActiveRun();
           },
-          publish: (workspace) =>
-            agent.setState(Schema.encodeSync(WorkspaceStateJson)({ workspace })),
+          publish: (workspace) => {
+            const encoded = Schema.encodeSync(WorkspaceStateJson)({ workspace });
+            publishedState = encoded;
+            agent.setState(encoded);
+          },
         },
         baseline: async (signal) => {
           registry.refresh(bootstrapQuery);

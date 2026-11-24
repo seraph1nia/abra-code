@@ -8,21 +8,24 @@ import { InboxPage, InboxDetail } from "@abracode/contracts/visibility/github-in
 import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
 import { VerificationViewSchema } from "@abracode/contracts/web/verification";
 import { BindingReadSchema } from "@abracode/contracts/web/bindings";
-import { LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
+import { LeadEvidencePageSchema } from "@abracode/contracts/visibility/lead-observation";
 import { registerWebGateway } from "../web/gateway.ts";
 import { readAgentCatalog } from "../web/agent-settings.ts";
 import { nativeReviews } from "../web/review-tool.ts";
-import { WorkPageSchema } from "../visibility/discovery-contracts.ts";
-import { WorkerInspectionSchema } from "../visibility/worker.ts";
+import { WorkPageSchema } from "@abracode/contracts/visibility/discovery-contracts";
+import { WorkerInspectionSchema } from "@abracode/contracts/visibility/worker";
 import { configurationReport } from "../config/declarations.ts";
 import { configuration } from "../config/protocol.ts";
 import { CrewError } from "../domain.ts";
-import { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
-import { MessagesPageSchema } from "../workflow/message-contracts.ts";
+import { FeedbackPageSchema } from "@abracode/contracts/workflow/feedback-contracts";
+import { MessagesPageSchema } from "@abracode/contracts/workflow/message-contracts";
 import { observerRequest } from "../observability.ts";
 import { Invalidations, publishInvalidations } from "../visibility/invalidations.ts";
 import { observerResult } from "../visibility/errors.ts";
-import { decodeJSON } from "../decode.ts";
+import { OPENCODE_VERSION } from "../opencode/client.ts";
+import { nativeInvoke, nativeRpcRegister } from "../opencode/native-call.ts";
+import { assertSupervisor } from "../opencode/session-authority.ts";
+import { stripUndefined } from "../opencode/tool-definition.ts";
 import {
   WorkSnapshotSchema,
   WorkOverviewSchema,
@@ -32,14 +35,11 @@ import {
   WorkReportSchema,
   visibility,
 } from "../visibility/protocol.ts";
-import { AbsolutePath, LockKey } from "../identities.ts";
+import { LockKey } from "@abracode/contracts/identities";
 import { Plugin } from "@opencode/plugin/effect";
 import type { Context as PluginContext } from "@opencode/plugin/effect/plugin";
 import { Context, Effect, Layer, Queue, Schedule, Schema } from "effect";
-import { resolve } from "node:path";
 import { sourceInstallationRoot } from "../installation.ts";
-import { realpath } from "../filesystem.ts";
-import { FileLocks } from "../storage/lock.ts";
 import { Crew, applicationLayer } from "../opencode/application.ts";
 import { installGuards } from "../opencode/guards.ts";
 import { registerTools } from "../opencode/tools.ts";
@@ -56,9 +56,9 @@ export const createPlugin = (
     effect: (ctx) => {
       const home = process.env.ABRACODE_HOME ?? sourceInstallationRoot();
       return Effect.gen(function* () {
-        if (ctx.app.version !== "2.3.0")
+        if (ctx.app.version !== OPENCODE_VERSION)
           return yield* Effect.die(
-            new Error(`AbraCode requires OpenCode 2.3.0; got ${ctx.app.version}`),
+            new Error(`AbraCode requires OpenCode ${OPENCODE_VERSION}; got ${ctx.app.version}`),
           );
         // Callbacks outlive registration: retain layer resources in the host plugin scope.
         const services = yield* Layer.build(applicationLayer(ctx, home, catalog?.(ctx, home)));
@@ -66,13 +66,9 @@ export const createPlugin = (
         const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
           effect.pipe(Effect.provide(services));
         const c = application.controller;
-        const config = application.config;
-        const central = (yield* realpath(ctx.location.directory)) === config.home;
+        const { config, central, locks } = application;
         const reviews = central ? nativeReviews(ctx, c) : undefined;
-        if (central)
-          yield* new FileLocks(AbsolutePath.make(resolve(config.home, ".abracode/locks"))).acquire(
-            LockKey.make("scheduler-leader"),
-          );
+        if (central) yield* locks.acquire(LockKey.make("scheduler-leader"));
         yield* installGuards(ctx, c, provide);
         yield* registerTools(
           ctx,
@@ -85,35 +81,23 @@ export const createPlugin = (
           reviews,
         );
         if (central)
-          // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native RPC registration exposes an open handler-error channel.
-          yield* ctx.rpc.register(configuration, {
-            // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native RPC uses an open handler-error channel; domain errors are mapped to refused below.
+          yield* nativeRpcRegister(ctx, configuration, {
             reconcile: ({ session_id, action, page, config_path }, { error }) =>
               Effect.gen(function* () {
                 if (config_path && config_path !== config.config_path)
-                  return yield* Effect.fail(
-                    error(
-                      "refused",
-                      "The running service uses another configuration file. Restart with the selected ABRACODE_CONFIG before applying it.",
-                      { code: "CONFIG_RESTART" },
-                    ),
+                  return yield* new CrewError(
+                    "CONFIG_RESTART",
+                    "The running service uses another configuration file. Restart with the selected ABRACODE_CONFIG before applying it.",
                   );
-                const session = yield* application.controller.queries.session(session_id);
-                if (
-                  session.agent !== "abra" ||
-                  session.directory !== config.home ||
-                  (yield* c.queries.assignment(session_id))
-                )
-                  return yield* Effect.fail(
-                    error("refused", "Use the central Abra session", { code: "ABRA_REQUIRED" }),
-                  );
+                const session = yield* assertSupervisor(c, session_id, {
+                  verifyNative: true,
+                  code: "ABRA_REQUIRED",
+                  message: "Use the central Abra session",
+                });
                 if (action === "apply" && session.busy)
-                  return yield* Effect.fail(
-                    error(
-                      "refused",
-                      "Wait until Abra is idle before applying configuration from the CLI",
-                      { code: "ABRA_BUSY" },
-                    ),
+                  return yield* new CrewError(
+                    "ABRA_BUSY",
+                    "Wait until Abra is idle before applying configuration from the CLI",
                   );
                 const outcomes = yield* action === "apply"
                   ? application.configuration.apply()
@@ -121,16 +105,14 @@ export const createPlugin = (
                 return configurationReport(outcomes, page, config);
               }).pipe(
                 Effect.mapError((failure) =>
-                  failure instanceof CrewError
-                    ? error("refused", failure.message, { code: failure.code })
-                    : failure,
+                  error("refused", failure.message, { code: failure.code }),
                 ),
                 provide,
               ),
           });
         if (reviews)
-          // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native RPC registration declares an open handler-error channel; handlers map domain errors to refused.
-          yield* registerWebGateway(
+          yield* nativeInvoke(
+            registerWebGateway,
             ctx,
             config,
             c,
@@ -154,14 +136,24 @@ export const createPlugin = (
               (method ? observerRequest(method) : Effect.void).pipe(
                 Effect.andThen(() => handler(input)),
                 Effect.flatMap((value) =>
-                  decodeJSON(schema, JSON.stringify(value), "Observer response").pipe(Effect.orDie),
+                  Schema.decodeUnknownEffect(Schema.toType(schema), { reportInput: false })(
+                    stripUndefined(value),
+                  ).pipe(
+                    Effect.mapError(
+                      (err) =>
+                        new CrewError(
+                          "INVALID_DATA",
+                          `Observer response: ${err.message.slice(0, 2048)}`,
+                        ),
+                    ),
+                    Effect.orDie,
+                  ),
                 ),
               ),
               error,
               method === "githubInbox" || method === "githubItem",
             ).pipe(provide);
-        // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native RPC registration exposes an open error channel.
-        const registration = yield* ctx.rpc.register(visibility, {
+        const registration = yield* nativeRpcRegister(ctx, visibility, {
           binding: read(BindingReadSchema, (query) => observer.binding(query)),
           evidenceSearch: read(EvidenceSearchPage, (q) =>
             central
@@ -249,15 +241,15 @@ export const createPlugin = (
         });
         const invalidations = Context.get(services, Invalidations);
         yield* publishInvalidations(invalidations, c.queries.afterCommit(), (scope) =>
-          observer.invalidateFinder(scope).pipe(
-            Effect.andThen(
-              // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native emit declares unknown errors; immediate mapping/ignore isolates publication from commits.
-              registration.events.emit("changed", { home: config.home, scope }).pipe(
-                Effect.mapError(() => new Error("Invalidation publication failed")),
-                Effect.ignore,
+          observer
+            .invalidateFinder(scope)
+            .pipe(
+              Effect.andThen(
+                registration.events
+                  .emit("changed", { home: config.home, scope })
+                  .pipe(Effect.ignore),
               ),
             ),
-          ),
         ).pipe(Effect.forkScoped);
         yield* Queue.take(finderRequests).pipe(
           Effect.andThen(observer.refreshFinder),

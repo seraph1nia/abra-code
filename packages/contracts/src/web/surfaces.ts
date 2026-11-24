@@ -1,6 +1,7 @@
 import { validateChart, chartComponents } from "./charts.ts";
 import { collectDiagrams, diagramBudget } from "../presentation/diagrams.ts";
 import { Schema } from "effect";
+import { exactParseOptions } from "../primitives.ts";
 import { ResourceSelectionSchema } from "./resources.ts";
 import {
   CreateSurfaceMessageSchema,
@@ -38,15 +39,15 @@ const PublicationSchema = Schema.Struct({
     dataModel: Schema.optionalKey(Schema.Record(Schema.String, Schema.Json)),
     components: Schema.Array(ComponentSchema).check(Schema.isMinLength(1), Schema.isMaxLength(100)),
   }),
-}).annotate({ parseOptions: { onExcessProperty: "error" }, reportInput: false });
+}).annotate(exactParseOptions);
 export const SurfaceSchema = PublicationSchema.check(
   Schema.makeFilter(
     (value) => {
       try {
-        validateSurface(value);
+        validateDecodedSurface(value);
         return true;
-      } catch {
-        return false;
+      } catch (error) {
+        return error instanceof Error ? error.message.slice(0, 2048) : false;
       }
     },
     { expected: "A complete bounded work surface", toJsonSchema: () => ({}) },
@@ -104,12 +105,22 @@ export function surfaceResources(surface: WorkSurface) {
   );
 }
 
-/** Validate the complete replacement before committing or changing a displayed revision. */
-export function validateSurface(value: unknown, workIds?: ReadonlySet<string>): WorkSurface {
-  CreateSurfaceMessageSchema.parse(value);
-  const surface = Schema.decodeUnknownSync(PublicationSchema)(value, { onExcessProperty: "error" });
+const validatedSurfaces = new WeakSet<WorkSurface>();
+
+export function validateSurfaceWorkIds(surface: WorkSurface, workIds?: ReadonlySet<string>) {
+  const refs = referencedWorkIds(surface);
+  if (new Set(refs).size > 100) throw new Error("Select at most 100 distinct work items");
+  const missing = workIds && refs.find((id) => !workIds.has(id));
+  if (missing) throw new Error(`Work item ${missing} is unavailable. Select an existing issue ID`);
+}
+
+function validateDecodedSurface(surface: WorkSurface, workIds?: ReadonlySet<string>): WorkSurface {
+  if (validatedSurfaces.has(surface)) {
+    if (workIds) validateSurfaceWorkIds(surface, workIds);
+    return surface;
+  }
   const old = surface.createSurface.catalogId === catalogV1Id;
-  if (new TextEncoder().encode(JSON.stringify(value)).length > (old ? 65536 : maxSurfaceBytes))
+  if (new TextEncoder().encode(JSON.stringify(surface)).length > (old ? 65536 : maxSurfaceBytes))
     throw new Error(old ? "Surface exceeds the 64 KiB limit" : "Surface exceeds the 384 KiB limit");
   if (old && surface.createSurface.components.some((c) => c.component === "Mermaid"))
     throw new Error("Mermaid requires the v2 catalog");
@@ -151,10 +162,7 @@ export function validateSurface(value: unknown, workIds?: ReadonlySet<string>): 
       throw new Error("Layout requires bounded child IDs");
     components.set(id, c);
   }
-  const refs = referencedWorkIds(surface);
-  if (new Set(refs).size > 100) throw new Error("Select at most 100 distinct work items");
-  const missing = workIds && refs.find((id) => !workIds.has(id));
-  if (missing) throw new Error(`Work item ${missing} is unavailable. Select an existing issue ID`);
+  validateSurfaceWorkIds(surface, workIds);
   const seen = new Set<string>();
   function visit(id: string, depth: number) {
     const c = components.get(id);
@@ -207,7 +215,19 @@ export function validateSurface(value: unknown, workIds?: ReadonlySet<string>): 
   } finally {
     processor.dispose();
   }
+  validatedSurfaces.add(surface);
   return surface;
+}
+
+/** Validate the complete replacement before committing or changing a displayed revision. */
+export function validateSurface(value: unknown, workIds?: ReadonlySet<string>): WorkSurface {
+  if (typeof value === "object" && value !== null && validatedSurfaces.has(value as WorkSurface)) {
+    const surface = value as WorkSurface;
+    if (workIds) validateSurfaceWorkIds(surface, workIds);
+    return surface;
+  }
+  const surface = Schema.decodeUnknownSync(PublicationSchema)(value, { onExcessProperty: "error" });
+  return validateDecodedSurface(surface, workIds);
 }
 
 /** Normalize legacy rendering semantics on read, without rewriting native storage. */

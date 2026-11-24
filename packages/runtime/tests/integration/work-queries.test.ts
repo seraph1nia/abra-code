@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Exit, Scope } from "effect";
 
 import { test } from "vite-plus/test";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
 import { run } from "../effects.ts";
 import { workDatabase, workGraphAt } from "../helpers/work-database.ts";

@@ -3,7 +3,7 @@ import { fixture, delivered } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { type AutomationSchema } from "../../src/config/policy.ts";
 import { type Project } from "../../src/domain.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 
 export async function deliveredPR(
   t: { onTestFinished: (close: () => Promise<void>) => void },

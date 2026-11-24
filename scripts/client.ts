@@ -1,1 +1,3 @@
-import "@abracode/runtime/cli/client";
+import { runMain } from "@abracode/runtime/cli";
+
+runMain(["attach"]);

@@ -7,9 +7,9 @@ import {
   leadAllows,
 } from "./role-policy.ts";
 import { bundledAssets } from "@abracode/agents/bundled";
-import { externalOwns } from "../validation/contracts.ts";
+import { externalOwns } from "@abracode/contracts/validation/contracts";
 import { decode } from "../decode.ts";
-import { AbsolutePath, ToolName, SessionId } from "../identities.ts";
+import { AbsolutePath, ToolName, SessionId } from "@abracode/contracts/identities";
 
 import { domainEffect } from "../effect.ts";
 import { Effect, Result, Schema } from "effect";
@@ -22,7 +22,22 @@ import { resolve, dirname, isAbsolute, sep } from "node:path";
 import { CrewError, type Execution, type Role } from "../domain.ts";
 import { type Controller } from "../workflow/controller.ts";
 import { isActiveWorker, historicalWorkers } from "../workflow/worker-assignment.ts";
-import { messageRequests, requiresResponse } from "../workflow/message-contracts.ts";
+import { messageRequests, requiresResponse } from "@abracode/contracts/workflow/message-contracts";
+import { nativeSession } from "./native-call.ts";
+import { assertActiveLead, assertActiveWorker } from "./session-authority.ts";
+
+const roleFallbackCache = new Map<Role, string>();
+const readRoleFallback = (role: Role) => {
+  const cached = roleFallbackCache.get(role);
+  if (cached !== undefined) return Effect.succeed(cached);
+  return readFile(resolve(bundledAssets, `${role}.md`), "utf8").pipe(
+    Effect.tap((text) =>
+      Effect.sync(() => {
+        roleFallbackCache.set(role, text);
+      }),
+    ),
+  );
+};
 export function workerFor(controller: Controller, sessionID: SessionId) {
   return controller.queries.assignment(sessionID);
 }
@@ -41,44 +56,57 @@ export function roleFor(e: Execution, id: SessionId): Role {
 }
 export { permittedTools } from "./role-policy.ts";
 /** A native queue flag or client metadata is not controller ownership. */
+export function requireOwnedPromptEffect(
+  e: Execution,
+  session: SessionId,
+  message: import("@abracode/contracts/identities").MessageId,
+) {
+  return Effect.suspend(() => {
+    const role = roleFor(e, session);
+    const retained = messageRequests(e.messages).find(
+      (m) => m.prompt_id === message || m.response_recovery?.prompt_id === message,
+    );
+    const recovery =
+      retained?.response_recovery?.prompt_id === message ? retained.response_recovery : undefined;
+    const intent =
+      retained && recovery
+        ? {
+            ...retained,
+            prompt_id: recovery.prompt_id,
+            prompt: recovery.prompt,
+            delivery: "queue" as const,
+          }
+        : retained;
+    if (
+      (intent
+        ? intent.generation !== e.control_generation ||
+          intent.assignment_id !== e.prompt_id ||
+          intent.recipient_session_id !== session ||
+          intent.role !== role ||
+          (recovery &&
+            (!["admission_uncertain", "admitted"].includes(recovery.status) ||
+              (recovery.status === "admission_uncertain" && !requiresResponse(intent)))) ||
+          !["admission_uncertain", "admitted", "acknowledged", "answered"].includes(intent.status)
+        : e.prompt_id !== message || e.worker_context_id !== message) ||
+      !isActiveWorker(e, session, { role })
+    )
+      return Effect.fail(
+        new CrewError(
+          "WORKER_PROMPT_ONLY",
+          "Managed workers accept only controller-owned prompts. Talk to Abra.",
+        ),
+      );
+    return Effect.succeed(intent);
+  });
+}
 export function requireOwnedPrompt(
   e: Execution,
   session: SessionId,
-  message: import("../identities.ts").MessageId,
+  message: import("@abracode/contracts/identities").MessageId,
 ) {
-  const role = roleFor(e, session);
-  const retained = messageRequests(e.messages).find(
-    (m) => m.prompt_id === message || m.response_recovery?.prompt_id === message,
-  );
-  const recovery =
-    retained?.response_recovery?.prompt_id === message ? retained.response_recovery : undefined;
-  const intent =
-    retained && recovery
-      ? {
-          ...retained,
-          prompt_id: recovery.prompt_id,
-          prompt: recovery.prompt,
-          delivery: "queue" as const,
-        }
-      : retained;
-  if (
-    (intent
-      ? intent.generation !== e.control_generation ||
-        intent.assignment_id !== e.prompt_id ||
-        intent.recipient_session_id !== session ||
-        intent.role !== role ||
-        (recovery &&
-          (!["admission_uncertain", "admitted"].includes(recovery.status) ||
-            (recovery.status === "admission_uncertain" && !requiresResponse(intent)))) ||
-        !["admission_uncertain", "admitted", "acknowledged", "answered"].includes(intent.status)
-      : e.prompt_id !== message || e.worker_context_id !== message) ||
-    !isActiveWorker(e, session, { role })
-  )
-    throw new CrewError(
-      "WORKER_PROMPT_ONLY",
-      "Managed workers accept only controller-owned prompts. Talk to Abra.",
-    );
-  return intent;
+  const result = Effect.runSync(Effect.result(requireOwnedPromptEffect(e, session, message)));
+  if (Result.isFailure(result)) throw result.failure;
+  return result.success;
 }
 const editInput = Schema.Struct({
   patchText: Schema.optional(Schema.String),
@@ -137,10 +165,7 @@ export function installGuards(
                   "LEAD_PROMPT",
                   "Lead prompts cannot attach files, agents or skills",
                 );
-              // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native errors are normalized before entering controller code.
-              const native = yield* ctx.session
-                .get({ sessionID: event.sessionID })
-                .pipe(Effect.mapError(CrewError.from));
+              const native = yield* nativeSession(ctx).get({ sessionID: event.sessionID });
               if (
                 native.location.directory !== controller.queries.settings.home ||
                 native.agent !== "project-lead"
@@ -174,7 +199,11 @@ export function installGuards(
                 "WORKER_PROMPT_ONLY",
                 "The original response is already committed; unused reminder suppressed. Talk to Abra.",
               );
-            const intent = requireOwnedPrompt(assignment, event.sessionID, event.messageID);
+            const intent = yield* requireOwnedPromptEffect(
+              assignment,
+              event.sessionID,
+              event.messageID,
+            );
             const captured = yield* controller.queries.capturedWorkerPrompt(assignment);
             if (
               captured.generation !== assignment.control_generation ||
@@ -190,10 +219,7 @@ export function installGuards(
                 "WORKER_PROMPT_ONLY",
                 "Managed workers accept only their retained controller assignment. Talk to Abra.",
               );
-            // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native errors are normalized before entering controller code.
-            const native = yield* ctx.session
-              .get({ sessionID: event.sessionID })
-              .pipe(Effect.mapError(CrewError.from));
+            const native = yield* nativeSession(ctx).get({ sessionID: event.sessionID });
             if (native.location.directory !== assignment.worktree_directory)
               return yield* new CrewError(
                 "SESSION_LOCATION",
@@ -207,18 +233,15 @@ export function installGuards(
           Effect.gen(function* () {
             const lead = yield* controller.lead().principal(event.sessionID);
             if (lead || event.agent === "project-lead") {
+              const activeLead = yield* assertActiveLead(controller, event.sessionID, event.agent, {
+                lead,
+                code: "LEAD_STALE",
+                message: "Current registered lead required",
+              });
               if (
-                !lead ||
-                !lead.enabled ||
-                lead.stop_pending ||
-                lead.session_id !== event.sessionID ||
-                event.agent !== "project-lead"
-              )
-                return yield* new CrewError("LEAD_STALE", "Current registered lead required");
-              if (
-                event.model.providerID !== lead.model.providerID ||
-                event.model.id !== lead.model.id ||
-                (event.model.variant ?? "default") !== (lead.model.variant ?? "default")
+                event.model.providerID !== activeLead.model.providerID ||
+                event.model.id !== activeLead.model.id ||
+                (event.model.variant ?? "default") !== (activeLead.model.variant ?? "default")
               )
                 return yield* new CrewError(
                   "LEAD_MODEL",
@@ -258,7 +281,7 @@ export function installGuards(
               );
               event.system.push({
                 type: "text",
-                text: guidance ?? (yield* readFile(resolve(bundledAssets, `${role}.md`), "utf8")),
+                text: guidance ?? (yield* readRoleFallback(role)),
               });
             } else if (event.agent === "abra") {
               for (const key of Object.keys(event.tools))
@@ -291,18 +314,12 @@ export function installGuards(
           Effect.gen(function* () {
             const lead = yield* controller.lead().principal(event.sessionID);
             if (lead || event.agent === "project-lead") {
-              if (
-                !lead ||
-                !lead.enabled ||
-                lead.stop_pending ||
-                lead.session_id !== event.sessionID ||
-                event.agent !== "project-lead" ||
-                !leadAllows(event.tool)
-              )
-                return yield* new CrewError(
-                  "LEAD_FORBIDDEN",
-                  "Project lead tool is outside its management scope",
-                );
+              yield* assertActiveLead(controller, event.sessionID, event.agent, {
+                lead,
+                allowed: leadAllows(event.tool),
+                code: "LEAD_FORBIDDEN",
+                message: "Project lead tool is outside its management scope",
+              });
               return;
             }
             const e = yield* workerFor(controller, event.sessionID);
@@ -312,13 +329,17 @@ export function installGuards(
               return;
             }
             const role = roleFor(e, event.sessionID);
-            if (!workerToolAllowed(role, e.configuration_snapshot?.definitions?.[role], event.tool))
+            if (
+              (memoryReadTools.includes(event.tool) && !e.configuration_snapshot?.memory_reads) ||
+              !workerToolAllowed(role, e.configuration_snapshot?.definitions?.[role], event.tool)
+            )
               return yield* new CrewError("WORKER_TOOL", `${role} cannot use ${event.tool}`);
-            if (!isActiveWorker(e, event.sessionID, { role }))
-              return yield* new CrewError(
-                "INACTIVE_WORKER",
-                "Worker no longer owns an active workflow phase",
-              );
+            yield* assertActiveWorker(controller, event.sessionID, {
+              execution: e,
+              role,
+              code: "INACTIVE_WORKER",
+              message: "Worker no longer owns an active workflow phase",
+            });
             if (["write", "edit", "patch"].includes(event.tool)) {
               if (rolePolicy(role).write_scope === "none")
                 return yield* new CrewError("READ_ONLY", "This role is read-only");

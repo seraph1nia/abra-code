@@ -1,15 +1,15 @@
 import { Schema } from "effect";
-import { Count } from "../contracts.ts";
-import { FormId, SessionId } from "../identities.ts";
+import { Count } from "@abracode/contracts/primitives";
+import { FormId, SessionId } from "@abracode/contracts/identities";
 import { FinishingTargetSchema, FinishingAnswerSchema } from "./finishing-contracts.ts";
-import { DecisionSummarySchema } from "./obligation-summary.ts";
-import { DeclaredWaitSchema } from "./obligation-summary.ts";
+import { DecisionSummarySchema } from "@abracode/contracts/workflow/obligation-summary";
+import { DeclaredWaitSchema } from "@abracode/contracts/workflow/obligation-summary";
 export {
   QuestionInputSchema,
   WaitInputSchema,
   DeclaredWaitSchema,
   ProgressSchema,
-} from "./obligation-summary.ts";
+} from "@abracode/contracts/workflow/obligation-summary";
 export const DecisionSchema = Schema.Struct({
   ...DecisionSummarySchema.fields,
   finishing_target: Schema.optional(FinishingTargetSchema),

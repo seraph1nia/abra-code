@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { OpenCode } from "@opencode/client";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { ProcessRunner } from "../../src/process.ts";
 import { run } from "../effects.ts";
 

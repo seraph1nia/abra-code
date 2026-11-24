@@ -1,4 +1,4 @@
-import { LockKey } from "../identities.ts";
+import { LockKey } from "@abracode/contracts/identities";
 import { Context, Effect } from "effect";
 import { CrewError } from "../domain.ts";
 import { type Locks } from "../storage/lock.ts";

@@ -15,7 +15,7 @@ import { Effect } from "effect";
 import { CrewError } from "../../src/domain.ts";
 import { fixtureConfig, FakeRuntime, FakeSpec } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 const supervisor = Id.SessionId.make("ses_supervisor");
 
 async function checkpointFixture(t: TestContext, root: string, kind: "plan" | "merge") {
@@ -29,12 +29,20 @@ async function checkpointFixture(t: TestContext, root: string, kind: "plan" | "m
     await writeFile(join(path, "proposal.md"), "Original proposal");
   }
   const fingerprint = kind === "plan" ? await run(git.planFingerprint(directory, change)) : commit;
-  const approval: import("../../src/domain.ts").Approval = {
-    kind,
-    fingerprint,
-    form_id: Id.FormId.make("frm_checkpoint"),
-    session_id: supervisor,
-  };
+  const approval: import("../../src/domain.ts").Approval =
+    kind === "plan"
+      ? {
+          kind: "plan",
+          fingerprint: Id.Fingerprint.make(fingerprint),
+          form_id: Id.FormId.make("frm_checkpoint"),
+          session_id: supervisor,
+        }
+      : {
+          kind: "merge",
+          fingerprint: commit,
+          form_id: Id.FormId.make("frm_checkpoint"),
+          session_id: supervisor,
+        };
   const { records, execution } = await retainedExecution({
     current_phase: kind === "plan" ? "awaiting_plan_approval" : "awaiting_merge",
     worktree_directory: directory,

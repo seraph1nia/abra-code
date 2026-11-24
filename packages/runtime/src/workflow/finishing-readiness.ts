@@ -1,13 +1,13 @@
 import { Clock, Effect } from "effect";
-import { type Commit, type Fingerprint } from "../identities.ts";
-import { Commit as CommitSchema } from "../identities.ts";
+import { type Commit, type Fingerprint } from "@abracode/contracts/identities";
+import { Commit as CommitSchema } from "@abracode/contracts/identities";
 import { type ManagedExecution, type Project, CrewError } from "../domain.ts";
 import { type Git } from "../git/repository.ts";
 import { type Delivery } from "../git/delivery.ts";
 import { type Workspaces } from "../git/workspaces.ts";
 import { domainEffect } from "../effect.ts";
 import { decode } from "../decode.ts";
-import { externalOwns } from "../validation/contracts.ts";
+import { externalOwns } from "@abracode/contracts/validation/contracts";
 import { sameDirectory } from "../git/retirement.ts";
 import { type CleanupPreflightSchema } from "./finishing-contracts.ts";
 

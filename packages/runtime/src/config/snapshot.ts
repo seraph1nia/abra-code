@@ -1,6 +1,6 @@
 import { DispatchSourcesSchema, resolveDispatch, workerRoles, type Dispatch } from "./dispatch.ts";
 import { Schema } from "effect";
-import { WorkerModelSchema, NonEmpty } from "../contracts.ts";
+import { WorkerModelSchema, NonEmpty } from "@abracode/contracts/primitives";
 import { ConfigSchema } from "./contracts.ts";
 import { type Config, type ManagedExecution, type Role } from "../domain.ts";
 import { CapturedProfile } from "@abracode/agents/contracts";

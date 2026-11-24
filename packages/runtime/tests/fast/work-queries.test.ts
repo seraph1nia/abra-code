@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test, vi } from "vite-plus/test";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import type { WorkDiscovery } from "@abracode/contracts/visibility/discovery-contracts";
 import { run } from "../effects.ts";
 import { workGraphAt, workDatabase } from "../helpers/work-database.ts";

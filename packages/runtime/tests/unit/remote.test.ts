@@ -2,7 +2,7 @@ import { createWorkflow } from "../../src/opencode/application.ts";
 import { retainedExecution, interruptApprovalWrite } from "../helpers/retained-execution.ts";
 import { summarizeCapacity } from "../../src/workflow/capacity.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { run } from "../effects.ts";
 import { domainEffect } from "../../src/effect.ts";
 import { CrewError } from "../../src/domain.ts";

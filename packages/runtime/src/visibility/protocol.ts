@@ -18,7 +18,7 @@ import {
   InboxTarget,
   InboxDetail,
 } from "@abracode/contracts/visibility/github-inbox";
-import { ContentHash } from "../identities.ts";
+import { ContentHash } from "@abracode/contracts/identities";
 import { EvidenceDataSchema, EvidenceQuerySchema } from "@abracode/contracts/web/worker-evidence";
 import { VerificationViewSchema } from "@abracode/contracts/web/verification";
 import { FilePatchId } from "@abracode/contracts/web/resources";
@@ -28,22 +28,30 @@ import {
   BindingCoverageSchema,
 } from "@abracode/contracts/web/bindings";
 import { ChangeScopeSchema } from "@abracode/contracts/web/changes";
-import { LeadAttentionSchema } from "./lead-observation.ts";
-import { LeadEvidenceQuery, LeadEvidencePageSchema } from "./lead-observation.ts";
-import { PlanningObservationSchema } from "./document-contracts.ts";
-import { WorkSummarySchema } from "./work-summary.ts";
-import { WorkDiscoveryQuery, WorkPageSchema } from "./discovery-contracts.ts";
+import { LeadAttentionSchema } from "@abracode/contracts/visibility/lead-observation";
+import {
+  LeadEvidenceQuery,
+  LeadEvidencePageSchema,
+} from "@abracode/contracts/visibility/lead-observation";
+import { PlanningObservationSchema } from "@abracode/contracts/visibility/document-contracts";
+import { WorkSummarySchema } from "@abracode/contracts/visibility/work-summary";
+import {
+  WorkDiscoveryQuery,
+  WorkPageSchema,
+} from "@abracode/contracts/visibility/discovery-contracts";
 import { SupervisionAggregateSchema } from "./supervision.ts";
 import { FleetSchema } from "./fleet.ts";
-import { WorkerInspectionSchema } from "./worker.ts";
-import { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
-import { MessagesPageSchema } from "../workflow/message-contracts.ts";
+import { WorkerInspectionSchema } from "@abracode/contracts/visibility/worker";
+import { FeedbackPageSchema } from "@abracode/contracts/workflow/feedback-contracts";
+import { MessagesPageSchema } from "@abracode/contracts/workflow/message-contracts";
 import { AutomationFields, QualityReceipt } from "../config/policy.ts";
 import { ProgressSchema as TaskProgressSchema, SpecArtifactSchema } from "../openspec/contracts.ts";
 import {
   AbsolutePath,
   ChangeName,
   ArtifactId,
+  FindingId,
+  FindingRevisionId,
   IssueId,
   SessionId,
   Commit,
@@ -51,7 +59,7 @@ import {
   RoundId,
   Timestamp,
   Fingerprint,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 import {
   ReadinessBlockerSchema,
   RecordDiagnosticSchema,
@@ -59,22 +67,25 @@ import {
   Positive,
   MergeMethodSchema,
   CIPolicySchema,
-} from "../contracts.ts";
+} from "@abracode/contracts/primitives";
 
-import { OperationIntentSchema } from "../workflow/operation-contracts.ts";
+import { OperationIntentSchema } from "@abracode/contracts/workflow/operation-contracts";
 import { ScopeRecordSchema } from "../work/scope.ts";
-import { ReportReceiptSchema } from "../workflow/report-contracts.ts";
+import { ReportReceiptSchema } from "../reporting/report-contracts.ts";
 import {
   DecisionSchema,
   DeclaredWaitSchema,
   ProgressSchema,
 } from "../workflow/obligation-contracts.ts";
-import { AttentionSchema } from "../workflow/attention-contracts.ts";
+import { AttentionSchema } from "@abracode/contracts/workflow/attention-contracts";
 import { Rpc } from "@opencode/plugin/rpc";
 import { Schema } from "effect";
 const strings = Schema.Array(Schema.String);
-import { LeadSummarySchema } from "./lead-observation.ts";
-export { LeadSummarySchema, type LeadSummary } from "./lead-observation.ts";
+import { LeadSummarySchema } from "@abracode/contracts/visibility/lead-observation";
+export {
+  LeadSummarySchema,
+  type LeadSummary,
+} from "@abracode/contracts/visibility/lead-observation";
 const work = Schema.Struct({
   ...WorkSummarySchema.fields,
   waits: Schema.optional(Schema.Array(DeclaredWaitSchema)),
@@ -296,9 +307,15 @@ export const visibility = Rpc.define({
         Schema.Struct({
           issue_id: IssueId,
           page: Schema.optional(Count),
-          finding_id: Schema.optionalKey(Schema.String),
-          revision: Schema.optionalKey(Schema.String),
-        }),
+          finding_id: Schema.optionalKey(FindingId),
+          revision: Schema.optionalKey(FindingRevisionId),
+        }).check(
+          Schema.makeFilter(
+            (input) =>
+              (input.finding_id === undefined) === (input.revision === undefined) ||
+              "Finding selection requires both finding_id and revision",
+          ),
+        ),
       ),
       output: Schema.toStandardSchemaV1(FeedbackPageSchema),
     },

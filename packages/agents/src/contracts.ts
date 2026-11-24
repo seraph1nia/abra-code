@@ -2,23 +2,14 @@ import { Schema } from "effect";
 import { Agent as NativeAgent } from "@opencode/schema/agent";
 import { Model } from "@opencode/schema/model";
 import { Skill } from "@opencode/schema/skill";
+import { canonicalJson } from "@abracode/contracts/canonical-json";
 import { RoleSchema, PolicySchema } from "@abracode/contracts/primitives";
 import { createHash } from "node:crypto";
 import { CapabilityRequirementsSchema } from "./capabilities.ts";
 import { nativePermissions, leadPermissions, validDenial } from "./policy.ts";
 
+export { canonicalJson };
 export const digest = (text: string) => createHash("sha256").update(text).digest("hex");
-const canonical = (value: unknown): unknown =>
-  Array.isArray(value)
-    ? value.map(canonical)
-    : value !== null && typeof value === "object"
-      ? Object.fromEntries(
-          Object.entries(value)
-            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-            .map(([key, item]) => [key, canonical(item)]),
-        )
-      : value;
-export const canonicalJson = (value: unknown) => JSON.stringify(canonical(value));
 export const AssignmentRole = Schema.Union([
   RoleSchema,
   Schema.Literals(["supervisor", "project-lead"]),

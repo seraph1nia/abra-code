@@ -7,13 +7,13 @@ import { SessionMessage } from "@opencode/schema/session-message";
 import { type ToolEditor } from "@opencode/plugin/effect/tool";
 import { defineTool, strictInput } from "../../src/opencode/tool-definition.ts";
 import { progress } from "../../src/opencode/progress.ts";
-import { SessionId } from "../../src/identities.ts";
+import { SessionId } from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
 import { run } from "../effects.ts";
 import { toolOutputs } from "../../src/opencode/tool-contracts.ts";
 import { deliveryAction } from "../../src/workflow/delivery-outcome.ts";
 import { ExecutionBusy } from "../../src/workflow/operations.ts";
-import { IssueId } from "../../src/identities.ts";
+import { IssueId } from "@abracode/contracts/identities";
 
 test("native finish output preserves unexecuted busy observations and genuine failed actions", async () => {
   const registered: Tool.Info[] = [];

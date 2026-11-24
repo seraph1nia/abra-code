@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { type FormId, type IssueId } from "../../src/identities.ts";
+import { type FormId, type IssueId } from "@abracode/contracts/identities";
 import { type toolOutputs } from "../../src/opencode/tool-contracts.ts";
-import { type FeedbackPageSchema } from "../../src/workflow/feedback-contracts.ts";
+import { type FeedbackPageSchema } from "@abracode/contracts/workflow/feedback-contracts";
 import { join } from "node:path";
 import { repo } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { Git } from "../../src/git/repository.ts";
 import { ProcessRunner } from "../../src/process.ts";
-import { AbsolutePath } from "../../src/identities.ts";
+import { AbsolutePath } from "@abracode/contracts/identities";
 
 type Execution = (typeof toolOutputs)["work_pr_action"]["Type"];
 type Invoke = <K extends keyof typeof toolOutputs>(

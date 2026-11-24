@@ -53,6 +53,7 @@ import {
   ArtifactSummarySchema,
 } from "./wire.ts";
 import { IssueId, RelativePath, SessionId, RequestId, ContentHash } from "../identities.ts";
+import { exactParseOptions as exact } from "../primitives.ts";
 
 export class WorkspaceError extends Schema.TaggedError<
   WorkspaceError,
@@ -90,11 +91,25 @@ import {
   TranscriptMessageSchema,
   ReceiptQuerySchema,
   ReceiptLookupSchema,
+  ReceiptSchema,
+  SubmissionSchema,
   WorkspaceSnapshotSchema,
   ProjectsSchema,
   PresentationPageSchema,
   SurfaceEntrySchema,
 } from "./workspace-wire.ts";
+import {
+  ReviewSelectionSchema,
+  ReviewViewSchema,
+  ReviewListQuerySchema,
+  ReviewListSchema,
+  ReviewAssetQuerySchema,
+  ReviewAssetDataSchema,
+  ReviewSubmitSchema,
+  ReviewReceiptSchema,
+  ReviewResponseQuerySchema,
+  ReviewReceiptLookupSchema,
+} from "./reviews.ts";
 import { ComponentId } from "./catalog.ts";
 import { SaveSurfaceSchema, ExportDocumentSchema, ReadExportSchema } from "./report-actions.ts";
 export const HistorySchema = Schema.Struct({
@@ -107,7 +122,6 @@ export const DecisionsSchema = Schema.Struct({
   waits: Schema.Array(DeclaredWaitSchema),
 });
 const identity = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024));
-const exact = { parseOptions: { onExcessProperty: "error" as const }, reportInput: false };
 export const FormReplySchema = Schema.Struct({
   id: Form.ID,
   binding: identity,
@@ -131,6 +145,34 @@ const documentQuery = Schema.Struct({
 }).annotate(exact);
 const documentJSON = Schema.String.pipe(
   HttpApiSchema.asText({ contentType: "application/json; charset=utf-8" }),
+);
+
+export const reviewGroup = HttpApiGroup.make("reviews").add(
+  HttpApiEndpoint.get("reviewReceipt", "/api/review/receipt", {
+    query: ReviewResponseQuerySchema,
+    success: ReviewReceiptLookupSchema,
+    error,
+  }),
+  HttpApiEndpoint.get("reviewList", "/api/reviews", {
+    query: ReviewListQuerySchema,
+    success: ReviewListSchema,
+    error,
+  }),
+  HttpApiEndpoint.get("review", "/api/review", {
+    query: ReviewSelectionSchema,
+    success: ReviewViewSchema,
+    error,
+  }),
+  HttpApiEndpoint.get("reviewAsset", "/api/review/asset", {
+    query: ReviewAssetQuerySchema,
+    success: ReviewAssetDataSchema,
+    error,
+  }),
+  HttpApiEndpoint.post("reviewSubmit", "/api/review/submit", {
+    payload: ReviewSubmitSchema,
+    success: ReviewReceiptSchema,
+    error,
+  }),
 );
 
 export const workspaceApi = HttpApi.make("abra-workspace")
@@ -178,6 +220,11 @@ export const workspaceApi = HttpApi.make("abra-workspace")
         success: ReceiptLookupSchema,
         error,
       }),
+      HttpApiEndpoint.post("submit", "/api/abra/submit", {
+        payload: SubmissionSchema.annotate(exact),
+        success: ReceiptSchema,
+        error,
+      }),
       HttpApiEndpoint.post("replyForm", "/api/form/reply", {
         payload: FormReplySchema,
         success: Schema.Struct({ status: Schema.Literal("answered") }),
@@ -205,11 +252,6 @@ export const workspaceApi = HttpApi.make("abra-workspace")
       }),
       HttpApiEndpoint.get("memoryEnabled", "/api/memory/enabled", {
         success: Schema.Boolean,
-        error,
-      }),
-      HttpApiEndpoint.post("stop", "/api/abra/stop", {
-        payload: Schema.Struct({}).annotate(exact),
-        success: Schema.Struct({ stopped: Schema.Boolean }),
         error,
       }),
     ),
@@ -401,6 +443,7 @@ export const workspaceApi = HttpApi.make("abra-workspace")
         error,
       }),
     ),
+    reviewGroup,
   )
   .annotate(HttpApi.QueryParseOptions, { onExcessProperty: "error", reportInput: false })
   .annotate(HttpApi.PayloadParseOptions, { onExcessProperty: "error", reportInput: false });

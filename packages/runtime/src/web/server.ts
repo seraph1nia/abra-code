@@ -1,35 +1,10 @@
-import { MemoryPage, MemoryBody, MemoryReference } from "@abracode/contracts/visibility/memory";
-import { PublicationPage } from "@abracode/contracts/presentation/contracts";
-import {
-  EvidenceSearchPage,
-  SessionPage,
-} from "@abracode/contracts/visibility/discovery-contracts";
-import { ThoughtWorkPage } from "@abracode/contracts/visibility/thoughts";
-import { ThoughtPage, ThoughtDetail } from "@abracode/contracts/visibility/thoughts";
-import { InboxPage, InboxDetail } from "@abracode/contracts/visibility/github-inbox";
-import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
-import { VerificationViewSchema } from "@abracode/contracts/web/verification";
-import { reviewGroup } from "@abracode/contracts/web/review-api";
-import { ProjectsSchema } from "@abracode/contracts/web/workspace-wire";
 import { catalogIds, workCatalogs } from "@abracode/contracts/web/catalog";
-import { AgentCatalogSchema } from "@abracode/contracts/web/agent-settings";
-import {
-  ReviewListSchema,
-  ReviewViewSchema,
-  ReviewAssetDataSchema,
-  ReviewReceiptSchema,
-  ReviewReceiptLookupSchema,
-} from "@abracode/contracts/web/reviews";
-import { DiagramPreparationSchema } from "@abracode/contracts/presentation/diagrams";
-import { BindingReadSchema } from "@abracode/contracts/web/bindings";
-import { LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
-import { WorkerHistoryPageSchema } from "./worker-history.ts";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 HTTP server/router/API contracts. */
 import "./telemetry.ts";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { sourceInstallationRoot } from "../installation.ts";
-import { ByteSize, Effect, Layer, Schema } from "effect";
+import { ByteSize, Effect, Layer } from "effect";
 import {
   HttpIncomingMessage,
   HttpMiddleware,
@@ -41,23 +16,8 @@ import { HttpApiBuilder, HttpApiSchema } from "effect/http-api";
 import { NodeHttpServer } from "@effect/platform-node";
 import { CopilotRuntime, createCopilotRuntimeHandler } from "@copilotkit/runtime/v2";
 import { CrewError } from "../domain.ts";
-import { decode } from "../decode.ts";
-import {
-  WorkOverviewSchema,
-  WorkDetailSchema,
-  WorkDiffSchema,
-  WorkDocumentSchema,
-  WorkReportSchema,
-  WorkerInspectionSchema,
-  MessagesPageSchema,
-  FeedbackPageSchema,
-  ArtifactsSchema,
-  DocumentArtifactSchema,
-  ArtifactSummarySchema,
-} from "./wire.ts";
 import { AbraAgent, AbraRunner, WorkspaceFeed } from "./agent.ts";
-import { workspaceApi, WorkspaceError, DecisionsSchema } from "./http-api.ts";
-import { WorkPageSchema } from "../visibility/discovery-contracts.ts";
+import { workspaceApi, WorkspaceError } from "@abracode/contracts/web/http-api";
 import type { WebBackend } from "./contracts.ts";
 
 const maximumBodyBytes = 262144;
@@ -87,6 +47,7 @@ const refused = (error: CrewError) =>
     message:
       error.code === "REVIEW_STALE" ||
       error.code === "REVIEW_REFUSED" ||
+      error.code.startsWith("SELECTION_") ||
       error.code.startsWith("MEMORY_") ||
       error.code.startsWith("MEMOS_")
         ? error.message
@@ -96,45 +57,38 @@ const refused = (error: CrewError) =>
 const json = (value: unknown, status: number) => HttpServerResponse.jsonUnsafe(value, { status });
 
 function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
-  const api = workspaceApi.add(reviewGroup);
-  const validated = <S extends Schema.ConstraintDecoder<unknown>>(
-    operation: Effect.Effect<S["Type"], CrewError>,
-    schema: S,
-  ) =>
-    operation.pipe(
-      Effect.flatMap((value) => decode(schema, value, "Workspace resource")),
-      Effect.mapError(refused),
-    );
-  const operations = HttpApiBuilder.group(api, "workspace", (handlers) =>
+  const handle = <A>(operation: Effect.Effect<A, CrewError>) =>
+    operation.pipe(Effect.mapError(refused));
+  const workRead =
+    <I, A>(read: (query: I) => Effect.Effect<A, CrewError>) =>
+    ({ query }: { query: I }) =>
+      handle(read(query));
+  const operations = HttpApiBuilder.group(workspaceApi, "workspace", (handlers) =>
     handlers
-      .handle("memorySearch", ({ query }) => validated(backend.memorySearch(query), MemoryPage))
-      .handle("memoryRead", ({ payload }) => validated(backend.memoryRead(payload), MemoryBody))
-      .handle("memoryEnabled", () => validated(backend.memoryEnabled, Schema.Boolean))
-      .handle("memoryPublish", ({ payload }) =>
-        validated(backend.memoryPublish(payload), MemoryReference),
-      )
-      .handle("agents", () => validated(backend.agents, AgentCatalogSchema))
-      .handle("repositories", () => validated(backend.repositories, ProjectsSchema))
-      .handle("prepareDiagrams", ({ payload }) =>
-        validated(backend.prepareDiagrams(payload), DiagramPreparationSchema),
-      )
-      .handle("publications", ({ query }) =>
-        validated(backend.publications(query), PublicationPage),
-      )
+      .handle("memorySearch", ({ query }) => handle(backend.memorySearch(query)))
+      .handle("memoryRead", ({ payload }) => handle(backend.memoryRead(payload)))
+      .handle("memoryEnabled", () => handle(backend.memoryEnabled))
+      .handle("memoryPublish", ({ payload }) => handle(backend.memoryPublish(payload)))
+      .handle("agents", () => handle(backend.agents))
+      .handle("repositories", () => handle(backend.repositories))
+      .handle("prepareDiagrams", ({ payload }) => handle(backend.prepareDiagrams(payload)))
+      .handle("publications", ({ query }) => handle(backend.publications(query)))
       .handle("surface", ({ query }) =>
         query.session_id !== undefined && query.session_id !== backend.sessionID
           ? Effect.succeed({
               surface_id: query.surface_id,
               unavailable: "This view belongs to another Abra conversation.",
             })
-          : backend.surface(query.surface_id, query.revision).pipe(Effect.mapError(refused)),
+          : handle(backend.surface(query.surface_id, query.revision)),
       )
-      .handle("bootstrap", () => feed.baseline.pipe(Effect.mapError(refused)))
-      .handle("history", ({ query }) =>
-        backend.history(query.cursor).pipe(Effect.mapError(refused)),
-      )
-      .handle("receipt", ({ query }) =>
-        backend.receipt(query.request_id).pipe(Effect.mapError(refused)),
+      .handle("bootstrap", () => handle(feed.baseline))
+      .handle("history", ({ query }) => handle(backend.history(query.cursor)))
+      .handle("receipt", ({ query }) => handle(backend.receipt(query.request_id)))
+      .handle("submit", ({ payload }) =>
+        backend.submit(payload).pipe(
+          Effect.tap(() => feed.notify({ admissions: true, transcript: true })),
+          Effect.mapError(refused),
+        ),
       )
       .handle("replyForm", ({ payload }) =>
         backend
@@ -153,124 +107,108 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
             Effect.as({ status: "answered" as const }),
             Effect.mapError(refused),
           ),
-      )
-      .handle("stop", () =>
-        backend.stop.pipe(
-          Effect.tap(() => feed.refresh),
-          Effect.map((stopped) => ({ stopped })),
-          Effect.mapError(refused),
-        ),
       ),
   );
-  const workRead =
-    <I, S extends Schema.ConstraintDecoder<unknown>>(
-      read: (query: I) => Effect.Effect<NoInfer<S["Type"]>, CrewError>,
-      schema: S,
-    ) =>
-    ({ query }: { query: I }) =>
-      validated(read(query), schema);
-  const work = HttpApiBuilder.group(api, "work", (handlers) =>
+  const work = HttpApiBuilder.group(workspaceApi, "work", (handlers) =>
     handlers
       .handle(
         "evidenceSearch",
-        workRead((q) => backend.work.evidenceSearch(q), EvidenceSearchPage),
+        workRead((q) => backend.work.evidenceSearch(q)),
       )
       .handle(
         "sessions",
-        workRead((q) => backend.work.sessions(q), SessionPage),
+        workRead((q) => backend.work.sessions(q)),
       )
       .handle(
         "thoughtWork",
-        workRead((q) => backend.work.thoughtWork(q), ThoughtWorkPage),
+        workRead((q) => backend.work.thoughtWork(q)),
       )
       .handle(
         "thoughtList",
-        workRead((q) => backend.work.thoughtList(q), ThoughtPage),
+        workRead((q) => backend.work.thoughtList(q)),
       )
       .handle(
         "thoughtDetail",
-        workRead((q) => backend.work.thoughtDetail(q), ThoughtDetail),
+        workRead((q) => backend.work.thoughtDetail(q)),
       )
       .handle(
         "githubInbox",
-        workRead((q) => backend.work.githubInbox(q), InboxPage),
+        workRead((q) => backend.work.githubInbox(q)),
       )
       .handle(
         "githubItem",
-        workRead((q) => backend.work.githubItem(q), InboxDetail),
+        workRead((q) => backend.work.githubItem(q)),
       )
       .handle(
         "binding",
-        workRead((q) => backend.work.binding(q), BindingReadSchema),
+        workRead((q) => backend.work.binding(q)),
       )
       .handle(
         "find",
-        workRead((q) => backend.work.find(q), WorkPageSchema),
+        workRead((q) => backend.work.find(q)),
       )
-      .handle("resolve", ({ payload }) => backend.resolve(payload).pipe(Effect.mapError(refused)))
+      .handle("resolve", ({ payload }) => handle(backend.resolve(payload)))
       .handle(
         "evidence",
-        workRead((q) => backend.work.evidence(q), EvidenceDataSchema),
+        workRead((q) => backend.work.evidence(q)),
       )
       .handle(
         "verification",
-        workRead((q) => backend.work.verification(q), VerificationViewSchema),
+        workRead((q) => backend.work.verification(q)),
       )
       .handle(
         "overview",
-        workRead((q) => backend.work.overview(q), WorkOverviewSchema),
+        workRead((q) => backend.work.overview(q)),
       )
       .handle(
         "detail",
-        workRead((q) => backend.work.detail(q), WorkDetailSchema),
+        workRead((q) => backend.work.detail(q)),
       )
       .handle(
         "document",
-        workRead((q) => backend.work.document(q), WorkDocumentSchema),
+        workRead((q) => backend.work.document(q)),
       )
       .handle(
         "diff",
-        workRead((q) => backend.work.diff(q), WorkDiffSchema),
+        workRead((q) => backend.work.diff(q)),
       )
       .handle(
         "worker",
-        workRead((q) => backend.work.worker(q), WorkerInspectionSchema),
+        workRead((q) => backend.work.worker(q)),
       )
       .handle(
         "worker-history",
-        workRead((q) => backend.work["worker-history"](q), WorkerHistoryPageSchema),
+        workRead((q) => backend.work["worker-history"](q)),
       )
       .handle(
         "leads",
-        workRead((q) => backend.work.leads(q), LeadEvidencePageSchema),
+        workRead((q) => backend.work.leads(q)),
       )
       .handle(
         "messages",
-        workRead((q) => backend.work.messages(q), MessagesPageSchema),
+        workRead((q) => backend.work.messages(q)),
       )
       .handle(
         "feedback",
-        workRead((q) => backend.work.feedback(q), FeedbackPageSchema),
+        workRead((q) => backend.work.feedback(q)),
       )
       .handle(
         "report",
-        workRead((q) => backend.work.report(q), WorkReportSchema),
+        workRead((q) => backend.work.report(q)),
       )
       .handle(
         "artifacts",
-        workRead((q) => backend.work.artifacts(q), ArtifactsSchema),
+        workRead((q) => backend.work.artifacts(q)),
       )
       .handle(
         "artifactSummary",
-        workRead((q) => backend.work.artifactSummary(q), ArtifactSummarySchema),
+        workRead((q) => backend.work.artifactSummary(q)),
       )
       .handle(
         "artifactDocument",
-        workRead((q) => backend.work.artifactDocument(q), DocumentArtifactSchema),
+        workRead((q) => backend.work.artifactDocument(q)),
       )
-      .handle("exportDocument", ({ payload }) =>
-        backend.exportDocument(payload).pipe(Effect.mapError(refused)),
-      )
+      .handle("exportDocument", ({ payload }) => handle(backend.exportDocument(payload)))
       .handle("exportPreview", ({ query }) =>
         backend.readExport(query).pipe(
           Effect.map((a) => a.html),
@@ -297,7 +235,7 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
         ),
       )
       .handle("downloadDocument", ({ query }) =>
-        validated(backend.work["artifactDocument"](query), DocumentArtifactSchema).pipe(
+        backend.work.artifactDocument(query).pipe(
           Effect.map((artifact) =>
             HttpApiSchema.withHeaders({
               body: artifact.json,
@@ -306,6 +244,7 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
               },
             }),
           ),
+          Effect.mapError(refused),
         ),
       )
       .handle("preview", ({ query }) =>
@@ -327,49 +266,34 @@ function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
           Effect.mapError(refused),
         ),
       )
-      .handle("decisions", ({ query }) =>
-        validated(backend.work["decisions"](query), DecisionsSchema),
+      .handle(
+        "decisions",
+        workRead((q) => backend.work.decisions(q)),
       ),
   );
-  const reviews = HttpApiBuilder.group(api, "reviews", (handlers) =>
+  const reviewUnavailable = () =>
+    Effect.fail(new CrewError("REVIEW_UNAVAILABLE", "Reviews are unavailable"));
+  const reviews = HttpApiBuilder.group(workspaceApi, "reviews", (handlers) =>
     handlers
       .handle("reviewReceipt", ({ query }) =>
-        validated(
-          backend.reviews?.receipt(query) ??
-            Effect.fail(new CrewError("REVIEW_UNAVAILABLE", "Reviews are unavailable")),
-          ReviewReceiptLookupSchema,
-        ),
+        handle(backend.reviews?.receipt(query) ?? reviewUnavailable()),
       )
       .handle("reviewList", ({ query }) =>
-        validated(
-          backend.reviews?.list(query.issue_id) ??
-            Effect.fail(new CrewError("REVIEW_UNAVAILABLE", "Reviews are unavailable")),
-          ReviewListSchema,
-        ),
+        handle(backend.reviews?.list(query.issue_id) ?? reviewUnavailable()),
       )
-      .handle("review", ({ query }) =>
-        validated(
-          backend.reviews?.read(query) ??
-            Effect.fail(new CrewError("REVIEW_UNAVAILABLE", "Reviews are unavailable")),
-          ReviewViewSchema,
-        ),
-      )
+      .handle("review", ({ query }) => handle(backend.reviews?.read(query) ?? reviewUnavailable()))
       .handle("reviewAsset", ({ query }) =>
-        validated(
-          backend.reviews?.asset(query) ??
-            Effect.fail(new CrewError("REVIEW_UNAVAILABLE", "Reviews are unavailable")),
-          ReviewAssetDataSchema,
-        ),
+        handle(backend.reviews?.asset(query) ?? reviewUnavailable()),
       )
       .handle("reviewSubmit", ({ payload }) =>
-        validated(
-          backend.reviews?.submit(payload) ??
-            Effect.fail(new CrewError("REVIEW_UNAVAILABLE", "Reviews are unavailable")),
-          ReviewReceiptSchema,
-        ).pipe(Effect.tap(() => feed.notify({ presentations: true, admissions: true }))),
+        handle(backend.reviews?.submit(payload) ?? reviewUnavailable()).pipe(
+          Effect.tap(() => feed.notify({ presentations: true, admissions: true })),
+        ),
       ),
   );
-  return HttpApiBuilder.layer(api).pipe(Layer.provide(Layer.mergeAll(operations, work, reviews)));
+  return HttpApiBuilder.layer(workspaceApi).pipe(
+    Layer.provide(Layer.mergeAll(operations, work, reviews)),
+  );
 }
 
 export interface WorkspaceServerOptions {
@@ -387,10 +311,44 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
       runner,
       a2ui: { enabled: false },
     });
+    const forbiddenSession = () =>
+      Response.json(
+        { _tag: "WorkspaceForbidden", message: "Use the fixed Abra session" },
+        { status: 403 },
+      );
     const copilot = createCopilotRuntimeHandler({
       runtime,
       basePath: "/api/copilotkit",
       activateChannels: false,
+      hooks: {
+        onBeforeHandler: async ({ request, route }) => {
+          if (route.method === "info") return;
+          if (route.method === "agent/stop") {
+            if (route.agentId !== "abra" || route.threadId !== options.backend.sessionID)
+              throw forbiddenSession();
+            return;
+          }
+          if (route.method === "agent/run" || route.method === "agent/connect") {
+            let input: unknown;
+            try {
+              input = await request.clone().json();
+            } catch {
+              input = undefined;
+            }
+            if (
+              route.agentId !== "abra" ||
+              !input ||
+              typeof input !== "object" ||
+              Array.isArray(input) ||
+              !("threadId" in input) ||
+              input.threadId !== options.backend.sessionID
+            )
+              throw forbiddenSession();
+            return;
+          }
+          throw Response.json({ error: "Not found" }, { status: 404 });
+        },
+      },
     });
     const assets = options.assets ?? join(sourceInstallationRoot(), "apps/web/dist");
     const server = yield* NodeHttpServer.make(() => createServer(), {
@@ -404,37 +362,24 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
     const copilotRoute = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       const url = new URL(request.url, origin);
-      const info = url.pathname === "/api/copilotkit/info";
       if (url.search) return json({ error: "Query options are not supported" }, 400);
-      const input = request.method === "POST" ? yield* request.json : undefined;
-      if (
-        !info &&
-        (!input ||
-          typeof input !== "object" ||
-          Array.isArray(input) ||
-          !("threadId" in input) ||
-          input.threadId !== options.backend.sessionID)
-      )
-        return json({ _tag: "WorkspaceForbidden", message: "Use the fixed Abra session" }, 403);
       // The request scope aborts Fetch and its AG-UI observer on disconnect. Native
       // admission masks interruption only inside its short persisted critical section.
       const abort = yield* Effect.acquireRelease(
         Effect.sync(() => new AbortController()),
         (abort) => Effect.sync(() => abort.abort()),
       );
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          copilot(
-            new Request(url, {
-              method: request.method,
-              headers: {
-                "content-type": "application/json",
-                accept: request.headers.accept ?? "text/event-stream",
-              },
-              body: input === undefined ? undefined : JSON.stringify(input),
-              signal: abort.signal,
+      const webRequest = yield* HttpServerRequest.toWeb(request, { signal: abort.signal }).pipe(
+        Effect.mapError(
+          () =>
+            new WorkspaceError({
+              code: "COPILOT_TRANSPORT",
+              message: "Abra observation unavailable; reconnect without resubmitting",
             }),
-          ),
+        ),
+      );
+      const response = yield* Effect.tryPromise({
+        try: () => copilot(webRequest),
         catch: () =>
           new WorkspaceError({
             code: "COPILOT_TRANSPORT",
@@ -450,6 +395,20 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
         json({ error: "Frontend build missing. Run pnpm web:build." }, 503),
       ),
     );
+    const spaFallback = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const pathname = request.url.split("?")[0] ?? "/";
+      if (
+        pathname === "/api" ||
+        pathname.startsWith("/api/") ||
+        pathname === "/assets" ||
+        pathname.startsWith("/assets/") ||
+        pathname === "/catalog" ||
+        pathname.startsWith("/catalog/")
+      )
+        return json({ error: "Not found" }, 404);
+      return yield* frontend;
+    });
     const routes = Layer.mergeAll(
       workspaceHandlers(options.backend, feed),
       ...catalogIds.map((id, index) =>
@@ -470,17 +429,7 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
       HttpRouter.add("POST", "/api/copilotkit/info", copilotRoute),
       HttpRouter.add("POST", "/api/copilotkit/agent/abra/run", copilotRoute),
       HttpRouter.add("POST", "/api/copilotkit/agent/abra/connect", copilotRoute),
-      HttpRouter.add("GET", "/", frontend),
-      HttpRouter.add("GET", "/work", frontend),
-      HttpRouter.add("GET", "/github", frontend),
-      HttpRouter.add("GET", "/thoughts", frontend),
-      HttpRouter.add("GET", "/attention", frontend),
-      HttpRouter.add("GET", "/more", frontend),
-      HttpRouter.add("GET", "/settings/appearance", frontend),
-      HttpRouter.add("GET", "/settings/about", frontend),
-      HttpRouter.add("GET", "/settings", frontend),
-
-      HttpRouter.add("GET", "/settings/repositories", frontend),
+      HttpRouter.add("POST", "/api/copilotkit/agent/abra/stop/:threadId", copilotRoute),
       HttpRouter.add(
         "GET",
         "/assets/:file",
@@ -498,6 +447,8 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
           );
         }),
       ),
+      HttpRouter.add("GET", "/", frontend),
+      HttpRouter.add("GET", "/*", spaFallback),
     ).pipe(Layer.provide(NodeHttpServer.layerHttpServices));
     const app = yield* HttpRouter.toHttpEffect(routes);
     const guarded = Effect.gen(function* () {

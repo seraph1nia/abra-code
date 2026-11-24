@@ -1,16 +1,20 @@
 import { actionsEvidence } from "./actions.ts";
 import { digest } from "../digest.ts";
-import { replyBody } from "../workflow/action-contracts.ts";
+import { replyBody } from "@abracode/contracts/workflow/action-contracts";
 import { Clock, Effect, Schema } from "effect";
-import { Commit, NonEmpty, Positive } from "../contracts.ts";
-import { FindingId, Timestamp, PullRequestUrl } from "../identities.ts";
+import { Commit, NonEmpty, Positive } from "@abracode/contracts/primitives";
+import { FindingId, Timestamp, PullRequestUrl } from "@abracode/contracts/identities";
 import { CrewError, ensure, type ManagedExecution, type Project } from "../domain.ts";
 import { decode } from "../decode.ts";
 import { domainEffect } from "../effect.ts";
 import { Forge, type PR } from "./forge.ts";
 import { type OperationResult } from "../workflow/results.ts";
 import { GitHubReadiness } from "./readiness.ts";
-import { FeedbackSchema, type Feedback, type Finding } from "../workflow/feedback-contracts.ts";
+import {
+  FeedbackSchema,
+  type Feedback,
+  type Finding,
+} from "@abracode/contracts/workflow/feedback-contracts";
 
 const User = Schema.NullOr(Schema.Struct({ login: NonEmpty }));
 const Review = Schema.Struct({
@@ -113,8 +117,13 @@ export class GitHubFeedback {
         : readiness.category === "completed"
           ? "Unconfirmed check policy"
           : readiness.reason;
-      const reviews = yield* restPages(this.forge, p, Review, `${endpoint}/reviews?per_page=100`);
-      const ordinary = yield* restPages(this.forge, p, Comment, `${issue}/comments?per_page=100`);
+      const [reviews, ordinary] = yield* Effect.all(
+        [
+          restPages(this.forge, p, Review, `${endpoint}/reviews?per_page=100`),
+          restPages(this.forge, p, Comment, `${issue}/comments?per_page=100`),
+        ],
+        { concurrency: "unbounded" },
+      );
       const findings: Finding[] = [];
       let inspectionRequired = false;
       const add = (

@@ -22,7 +22,7 @@ export class DiagramBatch {
   constructor(
     private options: {
       factory: () => Promise<Renderer>;
-      compiler: string | Promise<string>;
+      compiler: string | Promise<string> | (() => Promise<string>);
       deadlineMs?: number;
     },
   ) {}
@@ -41,7 +41,10 @@ export class DiagramBatch {
     inputs: readonly DiagramInput[],
     signal?: AbortSignal,
   ): Promise<DiagramPreparation> {
-    const compiler = await this.options.compiler;
+    const compiler =
+      typeof this.options.compiler === "function"
+        ? await this.options.compiler()
+        : await this.options.compiler;
     const error = (status: DiagramResult["status"], message: string): DiagramPreparation => ({
       compiler,
       verified: false,

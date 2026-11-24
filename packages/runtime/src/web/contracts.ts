@@ -27,13 +27,13 @@ import type { ChangeScope } from "@abracode/contracts/web/changes";
 import type { Form } from "@opencode/schema/form";
 import type { Permission } from "@opencode/schema/permission";
 import type { SubmissionReceipt } from "@abracode/contracts/web/workspace-wire";
-import type { ResourceSelection } from "./resources.ts";
+import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import type {
   SaveSurfaceSchema,
   ExportDocumentSchema,
   ReadExportSchema,
-} from "./report-actions.ts";
-import type { ArtifactSummarySchema } from "./wire.ts";
+} from "@abracode/contracts/web/report-actions";
+import type { ArtifactSummarySchema } from "@abracode/contracts/web/wire";
 
 import { type Effect, type Stream } from "effect";
 import { type CrewError } from "../domain.ts";
@@ -116,11 +116,11 @@ export interface WebBackend {
   exportDocument(
     input: typeof ExportDocumentSchema.Type,
   ): Effect.Effect<
-    typeof import("../presentation/report-export-contract.ts").ReportExportSchema.Type,
+    typeof import("@abracode/contracts/presentation/report-export-contract").ReportExportSchema.Type,
     CrewError
   >;
   readExport(input: typeof ReadExportSchema.Type): Effect.Effect<
-    typeof import("../presentation/report-export-contract.ts").ReportExportSchema.Type & {
+    typeof import("@abracode/contracts/presentation/report-export-contract").ReportExportSchema.Type & {
       html: string;
     },
     CrewError

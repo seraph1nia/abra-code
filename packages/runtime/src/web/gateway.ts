@@ -6,17 +6,24 @@ import type { Submission } from "@abracode/contracts/web/workspace-wire";
 import type { Reviews } from "./reviews.ts";
 import type { AgentDefinitionError } from "@abracode/agents";
 import type { AgentCatalog } from "@abracode/contracts/web/agent-settings";
-import { prepareDiagrams, documentDiagrams } from "../workflow/diagrams.ts";
+import { prepareDiagrams, documentDiagrams } from "../reporting/diagrams.ts";
 import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
-import { readReportDocument } from "../presentation/report-document.ts";
+import { readReportDocument } from "@abracode/contracts/presentation/report-document";
 import { canonicalJSON, presentationHash } from "../presentation/identity.ts";
 import { committedScope } from "../visibility/invalidations.ts";
 import { artifactSummary, artifactPage } from "./artifacts.ts";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type { Context } from "@opencode/plugin/effect/plugin";
 import { SessionMessage } from "@opencode/schema/session-message";
-import { AbsolutePath, LockKey, SessionId, StoragePrefix, timestamp } from "../identities.ts";
+import {
+  AbsolutePath,
+  LockKey,
+  SessionId,
+  StoragePrefix,
+  WebSubmissionId,
+  timestamp,
+} from "@abracode/contracts/identities";
 import { CrewError, type Config } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { NativeStore, type Store } from "../storage/store.ts";
@@ -33,10 +40,10 @@ import {
   ReceiptSchema,
   ReceiptQuerySchema,
   type SubmissionReceipt,
-} from "./workspace-wire.ts";
+} from "@abracode/contracts/web/workspace-wire";
 import { SurfacePublications } from "./surface-publications.ts";
 import { resolveOwnedResource } from "./resource-selection.ts";
-export type { SubmissionReceipt } from "./workspace-wire.ts";
+export type { SubmissionReceipt } from "@abracode/contracts/web/workspace-wire";
 
 /** Admission is separate from controller effects. A receipt never authorizes work. */
 export class WebAdmissions {
@@ -50,7 +57,7 @@ export class WebAdmissions {
     ) => Effect.Effect<void, CrewError>,
   ) {}
   /** Observe one retained identity. Missing evidence never admits or retries input. */
-  receipt(session: SessionId, requestID: string) {
+  receipt(session: SessionId, requestID: WebSubmissionId) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
         const id = yield* decode(ReceiptQuerySchema.fields.request_id, requestID, "Request ID");
@@ -69,7 +76,7 @@ export class WebAdmissions {
       domainEffect(
         Effect.gen({ self: this }, function* () {
           if (
-            !/^[a-zA-Z0-9_-]{1,100}$/.test(input.request_id) ||
+            !Schema.is(WebSubmissionId)(input.request_id) ||
             !input.text.trim() ||
             input.text.length > 32768
           )
@@ -193,15 +200,13 @@ export function registerWebGateway(
   provide: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E>,
 ) {
   const store = new NativeStore(ctx.storage);
-  const surfacePublications = new SurfacePublications(
-    store,
-    new FileLocks(AbsolutePath.make(join(config.home, ".abracode/locks"))),
-  );
+  const locks = new FileLocks(AbsolutePath.make(join(config.home, ".abracode/locks")));
+  const surfacePublications = new SurfacePublications(store, locks);
   let surfaceDiagnostics: { surface_id: string; unavailable: string }[] = [];
   const admissions = new WebAdmissions(
     store,
     new NativeRuntime(ctx, config),
-    new FileLocks(AbsolutePath.make(join(config.home, ".abracode/locks"))),
+    locks,
     (selection) => captureSelection(controller.queries, selection),
     (ref) => controller.thoughts.get(ref, "http").pipe(Effect.asVoid),
   );
@@ -239,10 +244,10 @@ export function registerWebGateway(
       )
         return yield* new CrewError("ABRA_REQUIRED", "Use the single central Abra session");
     });
-  const authorizedReview = <A, E>(
+  const authorizedSupervisor = <A, E>(
     id: SessionId,
     error: (kind: "refused", message: string, data: { code: string }) => E,
-    operation: () => Effect.Effect<A, CrewError>,
+    operation: () => Effect.Effect<A, CrewError | AgentDefinitionError>,
   ) =>
     assertSupervisor(id).pipe(
       Effect.andThen(operation),
@@ -277,233 +282,182 @@ export function registerWebGateway(
     // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Native registration declares unknown; handler failures are mapped at the boundary.
     return yield* ctx.rpc.register(webGateway, {
       observeSections: (input, { error }) =>
-        assertSupervisor(input.session_id).pipe(
-          Effect.andThen(
-            Effect.gen(function* () {
-              return {
-                ...(input.receipts ? { receipts: yield* receipts(input.session_id) } : {}),
-                ...(input.surfaces ? { surfaces: yield* surfaces(input.session_id) } : {}),
-                ...(input.message_ids
-                  ? {
-                      presentations: yield* reviews.presentations(
-                        input.session_id,
-                        input.message_ids,
-                      ),
-                    }
-                  : {}),
-                ...(input.projects ? { projects: yield* projects() } : {}),
-              };
-            }),
-          ),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
+        authorizedSupervisor(input.session_id, error, () =>
+          Effect.gen(function* () {
+            return {
+              ...(input.receipts ? { receipts: yield* receipts(input.session_id) } : {}),
+              ...(input.surfaces ? { surfaces: yield* surfaces(input.session_id) } : {}),
+              ...(input.message_ids
+                ? {
+                    presentations: yield* reviews.presentations(
+                      input.session_id,
+                      input.message_ids,
+                    ),
+                  }
+                : {}),
+              ...(input.projects ? { projects: yield* projects() } : {}),
+            };
+          }),
         ),
       memorySearch: ({ session_id, repository_id, ...input }, { error }) =>
-        authorizedReview(session_id, error, () => controller.memory.search(repository_id, input)),
-      memoryRead: ({ session_id, repository_id, ...input }, { error }) =>
-        authorizedReview(session_id, error, () => controller.memory.read(repository_id, input)),
-      memoryPublish: ({ session_id, ...input }, { error }) =>
-        authorizedReview(session_id, error, () => controller.memory.publish(input)),
-      memoryEnabled: ({ session_id }, { error }) =>
-        authorizedReview(session_id, error, () => Effect.succeed(controller.memory.enabled)),
-      agents: ({ session_id }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(agents),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
+        authorizedSupervisor(session_id, error, () =>
+          controller.memory.search(repository_id, input),
         ),
+      memoryRead: ({ session_id, repository_id, ...input }, { error }) =>
+        authorizedSupervisor(session_id, error, () => controller.memory.read(repository_id, input)),
+      memoryPublish: ({ session_id, ...input }, { error }) =>
+        authorizedSupervisor(session_id, error, () => controller.memory.publish(input)),
+      memoryEnabled: ({ session_id }, { error }) =>
+        authorizedSupervisor(session_id, error, () => Effect.succeed(controller.memory.enabled)),
+      agents: ({ session_id }, { error }) => authorizedSupervisor(session_id, error, () => agents),
       reviewReceipt: ({ session_id, ...selection }, { error }) =>
-        authorizedReview(session_id, error, () =>
+        authorizedSupervisor(session_id, error, () =>
           reviews.receipt(session_id, selection, admissions),
         ),
       reviewList: ({ session_id, issue_id }, { error }) =>
-        authorizedReview(session_id, error, () => reviews.list(session_id, issue_id)),
+        authorizedSupervisor(session_id, error, () => reviews.list(session_id, issue_id)),
       review: ({ session_id, ...selection }, { error }) =>
-        authorizedReview(session_id, error, () => reviews.read(session_id, selection)),
+        authorizedSupervisor(session_id, error, () => reviews.read(session_id, selection)),
       reviewAsset: ({ session_id, ...selection }, { error }) =>
-        authorizedReview(session_id, error, () => reviews.asset(session_id, selection)),
+        authorizedSupervisor(session_id, error, () => reviews.asset(session_id, selection)),
       reviewSubmit: ({ session_id, ...input }, { error }) =>
-        authorizedReview(session_id, error, () => reviews.submit(session_id, input, admissions)),
+        authorizedSupervisor(session_id, error, () =>
+          reviews.submit(session_id, input, admissions),
+        ),
       prepareDiagrams: ({ session_id, selection }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(
-            Effect.gen(function* () {
-              if (selection.kind === "surface") {
-                const record = yield* surfacePublications.read(
-                  session_id,
-                  selection.surface_id,
-                  selection.revision,
-                );
-                if (presentationHash(record.surface) !== selection.hash)
-                  return yield* new CrewError(
-                    "DIAGRAM_SOURCE",
-                    "Surface source hash does not match its exact revision",
-                  );
-                return yield* prepareDiagrams(
-                  collectDiagrams(record.surface.createSurface.components),
-                );
-              }
-              const artifact = yield* controller.visualDocument(
-                selection.issue_id,
-                selection.request_id,
-                selection.hash,
+        authorizedSupervisor(session_id, error, () =>
+          Effect.gen(function* () {
+            if (selection.kind === "surface") {
+              const record = yield* surfacePublications.read(
+                session_id,
+                selection.surface_id,
+                selection.revision,
               );
-              const decoded = yield* Effect.try({
-                try: () => readReportDocument(artifact.json),
-                catch: CrewError.from,
-              });
-              if (!decoded.supported) return yield* new CrewError("REPORT_FORMAT", decoded.reason);
-              return yield* prepareDiagrams(documentDiagrams(decoded.document));
-            }),
-          ),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
+              if (presentationHash(record.surface) !== selection.hash)
+                return yield* new CrewError(
+                  "DIAGRAM_SOURCE",
+                  "Surface source hash does not match its exact revision",
+                );
+              return yield* prepareDiagrams(
+                collectDiagrams(record.surface.createSurface.components),
+              );
+            }
+            const artifact = yield* controller.visualDocument(
+              selection.issue_id,
+              selection.request_id,
+              selection.hash,
+            );
+            const decoded = yield* Effect.try({
+              try: () => readReportDocument(artifact.json),
+              catch: CrewError.from,
+            });
+            if (!decoded.supported) return yield* new CrewError("REPORT_FORMAT", decoded.reason);
+            return yield* prepareDiagrams(documentDiagrams(decoded.document));
+          }),
         ),
       publications: ({ session_id, ...query }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(
-            searchPublications(store, session_id, query, (target) =>
-              target.kind === "surface"
-                ? surfacePublications.searchCommitted(
-                    session_id,
-                    target.surface_id,
-                    target.revision,
-                  )
-                : reviews.searchCommitted(session_id, target),
-            ),
+        authorizedSupervisor(session_id, error, () =>
+          searchPublications(store, session_id, query, (target) =>
+            target.kind === "surface"
+              ? surfacePublications.searchCommitted(session_id, target.surface_id, target.revision)
+              : reviews.searchCommitted(session_id, target),
           ),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
         ),
       surface: ({ session_id, surface_id, revision }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(surfacePublications.read(session_id, surface_id, revision)),
-          Effect.catchIf(
-            (e) => e.code === "SURFACE_REVISION_UNAVAILABLE",
-            (e) => Effect.succeed({ surface_id, unavailable: e.message }),
-          ),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
-      presentations: ({ session_id, message_ids }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(reviews.presentations(session_id, message_ids)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
-      resolve: ({ session_id, target }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(resolveOwnedResource(controller.queries, target)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
-      submit: (input, { error }) =>
-        assertSupervisor(input.session_id).pipe(
-          Effect.andThen(admissions.submit(input.session_id, input)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
-      receipt: ({ session_id, request_id }, { error }) =>
-        Effect.gen(function* () {
-          yield* assertSupervisor(session_id);
-          const receipt = yield* admissions.receipt(session_id, request_id);
-          if (!receipt?.capture) return receipt;
-          const execution = yield* controller.queries.execution(receipt.capture.selection.issue_id);
-          return { ...receipt, followups: selectedFollowups(receipt, execution, session_id) };
-        }).pipe(
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
-      receipts: ({ session_id }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(receipts(session_id)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
-      surfaces: ({ session_id }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(surfaces(session_id)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
-      projects: ({ session_id }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(projects()),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
-      history: ({ session_id, issue_id, artifact_offset }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(controller.queries.execution(issue_id)),
-          Effect.map((e) => ({
-            decisions: e?.decisions ?? [],
-            waits: e?.waits ?? [],
-            ...artifactPage(e?.visual_reports ?? [], artifact_offset),
-          })),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
-      artifact: ({ session_id, issue_id, request_id }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(controller.visualArtifact(issue_id, request_id)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
-      artifactDocument: ({ session_id, issue_id, request_id, hash }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(controller.visualDocument(issue_id, request_id, hash)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
-        ),
-      artifactSummary: ({ session_id, issue_id, request_id, hash }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(
-            resolveOwnedResource(controller.queries, {
-              action: "open_artifact",
-              issue_id,
-              request_id,
-              hash,
-            }),
-          ),
-          Effect.andThen(controller.queries.execution(issue_id)),
-          Effect.map((execution) =>
-            artifactSummary(
-              execution!.visual_reports!.find((build) => build.request.request_id === request_id)!,
+        authorizedSupervisor(session_id, error, () =>
+          surfacePublications.read(session_id, surface_id, revision).pipe(
+            Effect.catchIf(
+              (e) => e.code === "SURFACE_REVISION_UNAVAILABLE",
+              (e) => Effect.succeed({ surface_id, unavailable: e.message }),
             ),
           ),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
+        ),
+      presentations: ({ session_id, message_ids }, { error }) =>
+        authorizedSupervisor(session_id, error, () =>
+          reviews.presentations(session_id, message_ids),
+        ),
+      resolve: ({ session_id, target }, { error }) =>
+        authorizedSupervisor(session_id, error, () =>
+          resolveOwnedResource(controller.queries, target),
+        ),
+      submit: (input, { error }) =>
+        authorizedSupervisor(input.session_id, error, () =>
+          admissions.submit(input.session_id, input),
+        ),
+      receipt: ({ session_id, request_id }, { error }) =>
+        authorizedSupervisor(session_id, error, () =>
+          Effect.gen(function* () {
+            const receipt = yield* admissions.receipt(session_id, request_id);
+            if (!receipt?.capture) return receipt;
+            const execution = yield* controller.queries.execution(
+              receipt.capture.selection.issue_id,
+            );
+            return { ...receipt, followups: selectedFollowups(receipt, execution, session_id) };
+          }),
+        ),
+      receipts: ({ session_id }, { error }) =>
+        authorizedSupervisor(session_id, error, () => receipts(session_id)),
+      surfaces: ({ session_id }, { error }) =>
+        authorizedSupervisor(session_id, error, () => surfaces(session_id)),
+      projects: ({ session_id }, { error }) =>
+        authorizedSupervisor(session_id, error, () => projects()),
+      history: ({ session_id, issue_id, artifact_offset }, { error }) =>
+        authorizedSupervisor(session_id, error, () =>
+          controller.queries.execution(issue_id).pipe(
+            Effect.map((e) => ({
+              decisions: e?.decisions ?? [],
+              waits: e?.waits ?? [],
+              ...artifactPage(e?.visual_reports ?? [], artifact_offset),
+            })),
+          ),
+        ),
+      artifact: ({ session_id, issue_id, request_id }, { error }) =>
+        authorizedSupervisor(session_id, error, () =>
+          controller.visualArtifact(issue_id, request_id),
+        ),
+      artifactDocument: ({ session_id, issue_id, request_id, hash }, { error }) =>
+        authorizedSupervisor(session_id, error, () =>
+          controller.visualDocument(issue_id, request_id, hash),
+        ),
+      artifactSummary: ({ session_id, issue_id, request_id, hash }, { error }) =>
+        authorizedSupervisor(session_id, error, () =>
+          resolveOwnedResource(controller.queries, {
+            action: "open_artifact",
+            issue_id,
+            request_id,
+            hash,
+          }).pipe(
+            Effect.andThen(controller.queries.execution(issue_id)),
+            Effect.map((execution) =>
+              artifactSummary(
+                execution!.visual_reports!.find(
+                  (build) => build.request.request_id === request_id,
+                )!,
+              ),
+            ),
+          ),
         ),
       exportDocument: ({ session_id, issue_id, request_id, hash }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(controller.exportVisualDocument(issue_id, request_id, hash)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
+        authorizedSupervisor(session_id, error, () =>
+          controller.exportVisualDocument(issue_id, request_id, hash),
         ),
       readExport: ({ session_id, issue_id, request_id, hash, exporter_hash }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(controller.readVisualExport(issue_id, request_id, hash, exporter_hash)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
+        authorizedSupervisor(session_id, error, () =>
+          controller.readVisualExport(issue_id, request_id, hash, exporter_hash),
         ),
       saveSurface: ({ session_id, issue_id, request_id, surface_id, revision, title }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(
-            controller.saveVisualSurface(session_id, issue_id, {
+        authorizedSupervisor(session_id, error, () =>
+          controller
+            .saveVisualSurface(session_id, issue_id, {
               request_id,
               surface: { surface_id, revision },
               ...(title ? { title } : {}),
-            }),
-          ),
-          Effect.map(artifactSummary),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
+            })
+            .pipe(Effect.map(artifactSummary)),
         ),
       checkpoint: ({ session_id, form_id }, { error }) =>
-        assertSupervisor(session_id).pipe(
-          Effect.andThen(controller.queries.checkpoint(session_id, form_id)),
-          Effect.mapError((e) => error("refused", e.message, { code: e.code })),
-          provide,
+        authorizedSupervisor(session_id, error, () =>
+          controller.queries.checkpoint(session_id, form_id),
         ),
     });
   });

@@ -1,10 +1,17 @@
-import { diagramPreparer } from "./preparation.ts";
-import { readFile } from "node:fs/promises";
+import { glob, readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { diagramFiles } from "./diagrams.ts";
+import { diagramPreparer } from "./preparation.ts";
 
 const workspace = fileURLToPath(new URL("../", import.meta.url));
+
+async function diagramFiles(root: string) {
+  const paths: string[] = [];
+  for await (const path of glob("**/*.mmd", { cwd: resolve(root, "src") })) {
+    paths.push(resolve(root, "src", path));
+  }
+  return paths.sort();
+}
 
 async function validate() {
   const args = process.argv.slice(2).filter((arg) => arg !== "--");

@@ -9,7 +9,7 @@ import type { Endpoint } from "@opencode/client/effect/service";
 import { reportBrowserExecutable } from "@abracode/report-export/browser";
 import { NativeWebBackend } from "../../src/web/backend.ts";
 import { workspaceServer } from "../../src/web/server.ts";
-import { AbsolutePath } from "../../src/identities.ts";
+import { AbsolutePath } from "@abracode/contracts/identities";
 import type { InboxSummary, InboxTarget } from "@abracode/contracts/visibility/github-inbox";
 
 export async function inboxJourney(input: {

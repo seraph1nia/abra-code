@@ -4,11 +4,11 @@ import { parse } from "yaml";
 import { readFile } from "../filesystem.ts";
 import { Effect, Schema } from "effect";
 import { createHash } from "node:crypto";
-import { Commit, Timestamp, type RepositoryId } from "../identities.ts";
-import { Positive, Count } from "../contracts.ts";
+import { Commit, GitRemote, Timestamp, type RepositoryId } from "@abracode/contracts/identities";
+import { Positive, Count } from "@abracode/contracts/primitives";
 import { CrewError, ensure, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import { decodeJSON } from "../decode.ts";
+import { decode, decodeJSON } from "../decode.ts";
 import { Forge } from "./forge.ts";
 import { remoteIdentity } from "./source.ts";
 import {
@@ -75,8 +75,20 @@ export const githubHosts = Effect.suspend(() => {
     process.env.GH_CONFIG_DIR ||
     join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "gh");
   return readFile(join(config, "hosts.yml"), "utf8").pipe(
-    Effect.flatMap((text) => Effect.try(() => Object.keys(parse(text) ?? {}))),
-    Effect.orElseSucceed(() => []),
+    Effect.flatMap((text) =>
+      Effect.try({
+        try: () => Object.keys(parse(text) ?? {}),
+        catch: (cause) =>
+          new CrewError(
+            "INBOX_CONFIG",
+            `Invalid GitHub CLI hosts configuration: ${cause instanceof Error ? cause.message : String(cause)}`,
+          ),
+      }),
+    ),
+    Effect.catchIf(
+      (error) => error.code === "ENOENT",
+      () => Effect.succeed([] as string[]),
+    ),
     Effect.map(
       (hosts) =>
         new Set([
@@ -134,6 +146,9 @@ export class InboxForge {
     return this.forge
       .run(p, ["auth", "token", "--hostname", origin.host], { deadline_ms: 5000 })
       .pipe(
+        Effect.mapError(
+          () => new CrewError("INBOX_AUTH", "GitHub credentials unavailable for " + origin.host),
+        ),
         Effect.flatMap((token) =>
           token.trim()
             ? Effect.succeed(
@@ -142,9 +157,6 @@ export class InboxForge {
                   .digest("hex"),
               )
             : Effect.fail(new CrewError("INBOX_AUTH", "Sign in to GitHub to see this repository")),
-        ),
-        Effect.mapError(
-          () => new CrewError("INBOX_AUTH", "GitHub credentials unavailable for " + origin.host),
         ),
       );
   }
@@ -222,10 +234,13 @@ export class InboxForge {
           ...(label ? ["-f", "label=" + label] : []),
         ]);
         const repo = r.data.repository;
+        const repoRemote = repo
+          ? yield* decode(GitRemote, repo.url, "GitHub repository URL")
+          : undefined;
         ensure(
           repo &&
-            remoteIdentity(repo.url as Project["remote"], p.path) ===
-              remoteIdentity(p.remote, p.path),
+            repoRemote &&
+            remoteIdentity(repoRemote, p.path) === remoteIdentity(p.remote, p.path),
           "INBOX_ACCESS",
           "Incomplete or mismatched repository observation",
         );
@@ -269,11 +284,14 @@ export class InboxForge {
         ]);
         const repo = response.data.repository,
           row = repo?.item;
+        const repoRemote = repo
+          ? yield* decode(GitRemote, repo.url, "GitHub repository URL")
+          : undefined;
         ensure(
           repo &&
+            repoRemote &&
             repo.id === target.repo_node &&
-            remoteIdentity(repo.url as Project["remote"], p.path) ===
-              remoteIdentity(p.remote, p.path),
+            remoteIdentity(repoRemote, p.path) === remoteIdentity(p.remote, p.path),
           "INBOX_ACCESS",
           "GitHub repository identity or access changed",
         );

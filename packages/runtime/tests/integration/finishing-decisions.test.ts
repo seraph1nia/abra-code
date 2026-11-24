@@ -3,7 +3,7 @@ import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { mkdir, writeFile, rename, access, rm } from "node:fs/promises";
 import { join } from "node:path";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { delivered, fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { deliveryOutcome, DeliveryOutcomeSchema } from "../../src/workflow/delivery-outcome.ts";

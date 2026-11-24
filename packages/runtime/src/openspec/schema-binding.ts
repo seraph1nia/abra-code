@@ -2,12 +2,21 @@ import { join, resolve, relative } from "node:path";
 import { createHash } from "node:crypto";
 import { parse } from "yaml";
 import { Effect, Schema } from "effect";
-import { AbsolutePath, RelativePath, ContentHash, SpecSchemaName } from "../identities.ts";
+import {
+  AbsolutePath,
+  RelativePath,
+  ContentHash,
+  SpecSchemaName,
+} from "@abracode/contracts/identities";
 import { CrewError, ensure, type Execution } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { decode } from "../decode.ts";
 import { lstat, realpath, readBytes, pathExists } from "../filesystem.ts";
-import { SchemaName, type SchemaResolution, type BoundSchema } from "./schema-contracts.ts";
+import {
+  SchemaName,
+  type SchemaResolution,
+  type BoundSchema,
+} from "@abracode/contracts/openspec/schema-contracts";
 import { canonicalJSON } from "../presentation/identity.ts";
 const hash = (text: string) => ContentHash.make(createHash("sha256").update(text).digest("hex"));
 const Definition = Schema.Struct({

@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { ReviewDefinitionSchema } from "@abracode/contracts/web/reviews";
-import { IssueId, RelativePath } from "../../src/identities.ts";
+import { IssueId, RelativePath } from "@abracode/contracts/identities";
 import { presentationHash } from "../../src/presentation/identity.ts";
 
 export const previewPNG = Buffer.from(

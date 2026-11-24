@@ -11,9 +11,9 @@ import type { Locks } from "../../src/storage/lock.ts";
 import type { Messages } from "../../src/workflow/messages.ts";
 import type { AttentionService } from "../../src/workflow/attention.ts";
 import type { Execution } from "../../src/domain.ts";
-import type { LockKey } from "../../src/identities.ts";
+import type { LockKey } from "@abracode/contracts/identities";
 import { installCommunicationFaults, installReportFault } from "./faults.ts";
-import type { DocumentRenderer } from "../../src/workflow/report-export.ts";
+import type { DocumentRenderer } from "../../src/reporting/report-export.ts";
 import type { Runner } from "../../src/process.ts";
 
 /** Injected only into the disposable ProcessRunner, after its scoped spawn. */

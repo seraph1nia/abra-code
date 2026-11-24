@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { createHash } from "node:crypto";
-import { Identifier, IssueId, RequestId } from "../identities.ts";
+import { Identifier, IssueId, RequestId } from "@abracode/contracts/identities";
 import { ensure } from "../domain.ts";
 import { decodeSync } from "../decode.ts";
 import { WorkInputSchema, IssueSchema, normalizeIssue } from "./model.ts";
@@ -11,8 +11,8 @@ const {
   thought_source: _singleThought,
   ...workFields
 } = WorkInputSchema.fields;
-import { BatchDependencySchema } from "./batch-dependency.ts";
-export { BatchDependencySchema } from "./batch-dependency.ts";
+import { BatchDependencySchema } from "@abracode/contracts/work/batch-dependency";
+export { BatchDependencySchema } from "@abracode/contracts/work/batch-dependency";
 export const BatchTaskSchema = Schema.Struct({
   ...workFields,
   client_key: Identifier,

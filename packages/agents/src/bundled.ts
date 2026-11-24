@@ -1,12 +1,11 @@
-import { Context, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import {
-  Agent,
   Agents,
   AgentSources,
   agentLayer,
+  makeAgent,
   makeCatalog,
   type AgentDefinition,
-  type AgentService,
 } from "./index.ts";
 import { engineeringSkills } from "./engineering-skills.ts";
 import { fileURLToPath } from "node:url";
@@ -85,22 +84,9 @@ export const ApplyLive = agentLayer(definitions[2]);
 export const ReviewLive = agentLayer(definitions[3]);
 export const ResearchLive = agentLayer(definitions[4]);
 export const ProjectLeadLive = agentLayer(definitions[5]);
-export const bundledCatalog = Effect.gen(function* () {
-  const values: AgentService[] = [];
-  // Each implementation publishes the same tag into its OWN Context.
-  for (const live of [
-    AbraLive,
-    ExploreLive,
-    ApplyLive,
-    ReviewLive,
-    ResearchLive,
-    ProjectLeadLive,
-  ]) {
-    const context = yield* Layer.build(live);
-    values.push(Context.get(context, Agent));
-  }
-  return yield* makeCatalog(values);
-});
+export const bundledCatalog = Effect.forEach(definitions, makeAgent).pipe(
+  Effect.flatMap(makeCatalog),
+);
 export const AgentsLive = Layer.effect(Agents, bundledCatalog);
 export const sourcesLayer = (skills = bundledSkills, assets = bundledAssets) =>
   Layer.succeed(AgentSources, { assets, skills });

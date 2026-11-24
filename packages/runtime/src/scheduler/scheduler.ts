@@ -1,8 +1,8 @@
 import { Effect, Schema, Semaphore } from "effect";
 import { domainEffect } from "../effect.ts";
 import { decode } from "../decode.ts";
-import { Priority } from "../contracts.ts";
-import { RepositoryId, StorageKey, type IssueId } from "../identities.ts";
+import { Priority } from "@abracode/contracts/primitives";
+import { RepositoryId, StorageKey, type IssueId } from "@abracode/contracts/identities";
 import { type Records } from "../storage/store.ts";
 import { type ProjectSetup } from "../config/setup.ts";
 import { type Controller } from "../workflow/controller.ts";

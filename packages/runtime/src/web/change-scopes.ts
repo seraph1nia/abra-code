@@ -1,9 +1,25 @@
 import { Schema } from "effect";
 import { ChangeScopeSchema, type ChangeScope } from "@abracode/contracts/web/changes";
-import type { IssueId } from "../identities.ts";
+import type { IssueId } from "@abracode/contracts/identities";
 
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+const incrementalStreamingEvents = new Set([
+  "session.text.started",
+  "session.text.delta",
+  "session.text.ended",
+  "session.tool.input.started",
+  "session.tool.input.delta",
+  "session.tool.input.ended",
+  "session.tool.called",
+  "session.tool.progress",
+  "session.step.started",
+  "session.step.ended",
+  "session.step.failed",
+  "session.step.first-token",
+  "session.step.streamed",
+]);
+
 /** Native transport supplies the envelope; resource hints never authorize actions. */
 export function nativeChangeScope(
   event: {
@@ -53,6 +69,7 @@ export function nativeChangeScope(
   if (event.type.startsWith("form.") || event.type.startsWith("permission."))
     return { attention: true };
   if (event.type.startsWith("session.inbox.")) return { admissions: true, transcript: true };
+  if (incrementalStreamingEvents.has(event.type)) return;
   if (event.type.startsWith("session.")) return { transcript: true };
   return;
 }

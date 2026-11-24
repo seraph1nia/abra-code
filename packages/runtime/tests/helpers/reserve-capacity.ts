@@ -1,5 +1,5 @@
 import { createExecution } from "../../src/workflow/execution.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { Effect, Schedule } from "effect";
 import { join } from "node:path";
 import { loadConfig } from "../../src/config/load.ts";

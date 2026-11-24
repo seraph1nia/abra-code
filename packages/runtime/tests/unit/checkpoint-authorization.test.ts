@@ -6,7 +6,7 @@ import { test } from "vite-plus/test";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { interruptApprovalWrite } from "../helpers/retained-execution.ts";
 import { CrewError } from "../../src/domain.ts";
-import { SessionId, FormId, Timestamp } from "../../src/identities.ts";
+import { SessionId, FormId, Timestamp } from "@abracode/contracts/identities";
 import { fixture, planned } from "../fixtures.ts";
 import { run } from "../effects.ts";
 

@@ -1,6 +1,6 @@
 import { removeOwnedField } from "../storage/store.ts";
 import { type PRFeedback } from "./pr-feedback.ts";
-import { externalOwns } from "../validation/contracts.ts";
+import { externalOwns } from "@abracode/contracts/validation/contracts";
 import { progress } from "../opencode/progress.ts";
 import { provisionedEvidence, verifiedEvidence, deliveredEvidence } from "./evidence.ts";
 import { Clock, Effect } from "effect";
@@ -16,7 +16,7 @@ import { type Records } from "../storage/store.ts";
 import { type WorkGraph } from "../work/graph.ts";
 import { type Coordination } from "./coordination.ts";
 import { type WorkerSessions } from "./sessions.ts";
-import { type Reports } from "./reports.ts";
+import { type Reports } from "../reporting/reports.ts";
 import { type Obligations } from "./obligations.ts";
 import { type ExecutionTransitions } from "./transitions.ts";
 import { type OperationResult } from "./results.ts";
@@ -25,9 +25,10 @@ import { type CleanupSample } from "../git/cleanup.ts";
 import { type Finishing } from "./finishing.ts";
 import { publicationDestination } from "./publication-destination.ts";
 import { activeSynchronization } from "./synchronization.ts";
-import { timestamp } from "../identities.ts";
+import { timestamp } from "@abracode/contracts/identities";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { applyDispositions } from "./finishing-disposition.ts";
+import { MAX_OUTBOX_ATTEMPTS, nextAttemptCount, nextCheckAt } from "./durable-outbox.ts";
 interface Dependencies {
   finishing: Finishing;
   feedback: PRFeedback;
@@ -170,7 +171,10 @@ export class Finalization {
       if (e.current_phase !== "completed") return e;
       const now = yield* Clock.currentTimeMillis;
       const old = e.finishing?.completion_notice;
-      if (old?.status === "delivered" || (old && (old.next_check_at > now || old.attempts >= 8)))
+      if (
+        old?.status === "delivered" ||
+        (old && (old.next_check_at > now || old.attempts >= MAX_OUTBOX_ATTEMPTS))
+      )
         return e;
       const notice = old ?? {
         message_id: SessionMessage.ID.create(),
@@ -197,8 +201,8 @@ export class Finalization {
         completion_notice: {
           ...notice,
           status: result?._tag === "Success" ? "delivered" : "pending",
-          attempts: Math.min(notice.attempts + 1, 8),
-          next_check_at: now + Math.min(300_000, 30_000 * 2 ** Math.min(notice.attempts, 4)),
+          attempts: nextAttemptCount(notice.attempts),
+          next_check_at: nextCheckAt(now, notice.attempts + 1),
           reason:
             result?._tag === "Failure"
               ? result.failure.message.slice(0, 8192)
@@ -257,11 +261,13 @@ export class Finalization {
         return yield* this.deliver(committed, p);
       }
       // Archival is idempotently reconciled from actual active/archive directories.
-      e.archive_path = yield* this.c.spec.archive(e);
+      const archive_path = yield* this.c.spec.archive(e);
       yield* this.c.git.run(evidence.worktree_directory, ["add", "--all"]);
-      e.archived_tree = yield* this.c.git.tree(evidence.worktree_directory);
-      yield* this.c.records.saveOwned(e, ["archive_path", "archived_tree"]);
-      const committed = yield* this.c.transitions.move(e, "delivering");
+      const archived_tree = yield* this.c.git.tree(evidence.worktree_directory);
+      const committed = yield* this.c.transitions.move(e, "delivering", {
+        archive_path,
+        archived_tree,
+      });
       return yield* this.deliver(committed, p);
     }.bind(this),
     domainEffect,
@@ -364,19 +370,23 @@ export class Finalization {
           "DELIVERY_CHANGED",
           "Published commit differs from retained reviewed publication binding",
         );
-      e.finishing = {
-        ...e.finishing,
-        schema_version: 1,
-        publication: { ...e.finishing.publication!, pr: result.pr },
-        synchronization: e.finishing.synchronization?.map((a) =>
-          a.ordinal === synchronization?.ordinal ? { ...a, stage: "published" } : a,
-        ),
-      };
-      yield* this.c.records.saveFinishing(e, ["publication", "synchronization"]);
-      yield* this.c.transitions.move(e, "awaiting_merge", {
+      yield* this.c.transitions.move(e, "awaiting_merge", (current) => ({
+        finishing: {
+          ...current.finishing,
+          schema_version: 1,
+          publication: {
+            ...(current.finishing?.publication ?? e.finishing!.publication!),
+            pr: result.pr,
+          },
+          ...(current.finishing?.synchronization && {
+            synchronization: current.finishing.synchronization.map((a) =>
+              a.ordinal === synchronization?.ordinal ? { ...a, stage: "published" as const } : a,
+            ),
+          }),
+        },
         delivered_commit: result.commit,
         pull_request_reference: result.pr ?? removeOwnedField,
-      });
+      }));
       yield* this.c.transitions.notice(
         e,
         p.delivery === "branch"
@@ -433,13 +443,13 @@ export class Finalization {
         );
       const now = yield* Clock.currentTimeMillis;
       const attempts =
-        e.delivery_wait?.code === result.code ? Math.min(e.delivery_wait.attempts + 1, 8) : 1;
+        e.delivery_wait?.code === result.code ? nextAttemptCount(e.delivery_wait.attempts) : 1;
       e.delivery_wait = {
         ...result,
         fingerprint: e.delivered_commit,
         attempts,
         observed_at: now,
-        next_check_at: now + Math.min(300_000, 30_000 * 2 ** (attempts - 1)),
+        next_check_at: nextCheckAt(now, attempts),
       };
       delete e.error_or_recovery_reason;
       return yield* this.c.records.saveOwned(e, ["delivery_wait", "error_or_recovery_reason"]);
@@ -546,14 +556,14 @@ export class Finalization {
         previous?.fingerprint === blocker.fingerprint &&
         previous.generation === e.control_generation &&
         previous.preservation === preservation;
-      const attempts = same ? Math.min(previous.attempts + 1, 8) : 1;
+      const attempts = same ? nextAttemptCount(previous.attempts) : 1;
       e.cleanup_blocker = {
         ...blocker,
         generation: e.control_generation,
         preservation,
         observed_at: now,
         attempts,
-        next_check_at: now + Math.min(300_000, 30_000 * 2 ** (attempts - 1)),
+        next_check_at: nextCheckAt(now, attempts),
       };
       e.attention = e.attention?.map((a) =>
         a.code === "cleanup_blocked" &&

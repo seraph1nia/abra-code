@@ -1,6 +1,6 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Injected pinned Effect 4.1.4 filesystem/path services. */
 import { Context, Effect, FileSystem, Layer, Path, Schema, Scope } from "effect";
-import type { Agent as NativeAgent } from "@opencode/schema/agent";
+import { Agent as NativeAgent } from "@opencode/schema/agent";
 import { Tool } from "@opencode/schema/tool";
 import type { ToolEditor } from "@opencode/plugin/effect/tool";
 import {
@@ -26,7 +26,7 @@ import {
   policyAllows,
   validDenial,
 } from "./policy.ts";
-import { readSkill } from "./skills.ts";
+import { parseFrontmatter, readSkill } from "./skills.ts";
 import type { CapabilityRequirements } from "./capabilities.ts";
 export * from "./contracts.ts";
 export * from "./errors.ts";
@@ -97,13 +97,25 @@ export const customTool = <I, O, E>(options: {
               Schema.decodeUnknownEffect(Schema.toType(options.output))(value),
             ),
             Effect.map((output) => ({ output, content: JSON.stringify(output) })),
-            Effect.mapError(
-              () =>
-                new Tool.Error({
-                  message: `Custom tool ${options.id} failed`,
-                  metadata: { code: "AGENT_TOOL" },
-                }),
-            ),
+            Effect.mapError((error) => {
+              const detail =
+                error instanceof Tool.Error
+                  ? error.message
+                  : error instanceof Error
+                    ? error.message
+                    : typeof error === "string"
+                      ? error
+                      : undefined;
+              return new Tool.Error({
+                message: detail
+                  ? `Custom tool ${options.id} failed: ${detail}`
+                  : `Custom tool ${options.id} failed`,
+                metadata: {
+                  ...(error instanceof Tool.Error ? error.metadata : undefined),
+                  code: "AGENT_TOOL",
+                },
+              });
+            }),
           ),
       }),
   };
@@ -174,6 +186,62 @@ const frozenInput = (input: PrepareAgentInput) =>
       }),
     nativeOverride: input.nativeOverride,
   });
+const RESERVED_TOOL_IDS = new Set([
+  "read",
+  "glob",
+  "grep",
+  "list",
+  "skill",
+  "task",
+  "shell",
+  "bash",
+  "edit",
+  "write",
+  "patch",
+]);
+
+const AgentDefinitionContract = Schema.Struct({
+  id: Identity,
+  revision: Schema.NonEmptyString,
+  description: Schema.NonEmptyString,
+  mode: NativeAgent.Info.fields.mode,
+  roles: Schema.NonEmptyArray(AssignmentRole),
+  instructions: Schema.Array(
+    Schema.Union([
+      Schema.Struct({ inline: Schema.String }),
+      Schema.Struct({ file: Schema.String }),
+    ]),
+  ),
+  skills: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        name: Schema.String,
+        preload: Schema.optional(Schema.Boolean),
+      }),
+    ).check(
+      Schema.makeFilter(
+        (skills) => new Set(skills.map((s) => s.name)).size === skills.length || "Duplicate skill",
+      ),
+    ),
+  ),
+  deny: Schema.optional(
+    Schema.Array(
+      Schema.String.check(Schema.makeFilter((action) => validDenial(action) || "Invalid denial")),
+    ),
+  ),
+});
+
+const CustomToolContract = Schema.Struct({
+  id: Identity.check(
+    Schema.makeFilter(
+      (id) => (!id.startsWith("abra-") && !RESERVED_TOOL_IDS.has(id)) || "Reserved tool identity",
+    ),
+  ),
+  revision: Schema.NonEmptyString,
+  action: Schema.Literal("read"),
+  schema_digest: Schema.NonEmptyString,
+});
+
 export const makeAgent = <R>(definition: AgentDefinition<R>) =>
   Effect.gen(function* () {
     const environment = yield* Effect.context<
@@ -210,26 +278,8 @@ export const makeAgent = <R>(definition: AgentDefinition<R>) =>
       },
     );
     if (
-      !Schema.is(Identity)(definition.id) ||
-      !definition.revision ||
-      !definition.description ||
-      !Array.isArray(definition.roles) ||
-      !definition.roles.length ||
-      !definition.roles.every((role) => Schema.is(AssignmentRole)(role)) ||
-      !Array.isArray(definition.instructions) ||
-      !definition.instructions.every(
-        (source) =>
-          source !== null &&
-          typeof source === "object" &&
-          ("inline" in source
-            ? typeof source.inline === "string"
-            : "file" in source && typeof source.file === "string"),
-      ) ||
-      !["subagent", "primary", "all"].includes(definition.mode) ||
-      (definition.context !== undefined && typeof definition.context !== "function") ||
-      new Set(definition.skills?.map((skill) => skill.name)).size !==
-        (definition.skills?.length ?? 0) ||
-      definition.deny?.some((action) => !validDenial(action))
+      !Schema.is(AgentDefinitionContract)(definition) ||
+      (definition.context !== undefined && typeof definition.context !== "function")
     )
       return yield* fail(
         "INVALID_DEFINITION",
@@ -240,24 +290,7 @@ export const makeAgent = <R>(definition: AgentDefinition<R>) =>
       return yield* fail("TOOL_COLLISION", "Duplicate custom tool identity");
     for (const tool of custom)
       if (
-        !Schema.is(Identity)(tool.id) ||
-        !tool.revision ||
-        tool.id.startsWith("abra-") ||
-        [
-          "read",
-          "glob",
-          "grep",
-          "list",
-          "skill",
-          "task",
-          "shell",
-          "bash",
-          "edit",
-          "write",
-          "patch",
-        ].includes(tool.id) ||
-        tool.action !== "read" ||
-        !tool.schema_digest ||
+        !Schema.is(CustomToolContract)(tool) ||
         !Schema.isSchema(tool.input) ||
         !Schema.isSchema(tool.output)
       )
@@ -297,7 +330,7 @@ export const makeAgent = <R>(definition: AgentDefinition<R>) =>
         ),
       );
       const system = [
-        ...instructions.map((s) => s.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim()),
+        ...instructions.map((s) => parseFrontmatter(s).body.trim()),
         ...skills.filter((s) => s.preload).map((s) => s.content!),
       ]
         .filter(Boolean)
@@ -401,9 +434,8 @@ export const makeAgent = <R>(definition: AgentDefinition<R>) =>
       prepare,
     } satisfies AgentService;
   });
-import { Agent as Native } from "@opencode/schema/agent";
 const NativeID = (role: AssignmentRole, id: string, revision: string) =>
-  Native.ID.make(
+  NativeAgent.ID.make(
     role === "supervisor"
       ? "abra"
       : role === "project-lead"

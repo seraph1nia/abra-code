@@ -1,1 +1,3 @@
-import "@abracode/runtime/cli/web";
+import { runMain } from "@abracode/runtime/cli";
+
+runMain(["web"]);

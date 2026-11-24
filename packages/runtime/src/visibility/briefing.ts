@@ -6,10 +6,10 @@ import {
   type WorkBriefing,
 } from "@abracode/contracts/visibility/briefing";
 import { fleetLabels, fleetState } from "./fleet.ts";
-import { taskAttention } from "./attention.ts";
+import { taskAttention } from "@abracode/contracts/visibility/attention";
 import type { Controller } from "../workflow/controller.ts";
 import { Visibility } from "./read-model.ts";
-import { timestamp } from "../identities.ts";
+import { timestamp } from "@abracode/contracts/identities";
 import type { WorkItem, WorkSnapshot } from "./protocol.ts";
 import type { ReadBundle } from "../workflow/queries.ts";
 import type { InboxPage } from "@abracode/contracts/visibility/github-inbox";

@@ -1,10 +1,10 @@
 import { ThoughtSource } from "@abracode/contracts/visibility/thoughts";
-import { SchemaName } from "../openspec/schema-contracts.ts";
+import { SchemaName } from "@abracode/contracts/openspec/schema-contracts";
 import { DispatchSchema, normalizeDispatch } from "../config/dispatch.ts";
-import { IssueId, RepositoryId, RequestId, ExecutionId } from "../identities.ts";
+import { IssueId, RepositoryId, RequestId, ExecutionId } from "@abracode/contracts/identities";
 
 import { ScopeDraftSchema, ReportReferenceSchema } from "./scope.ts";
-import { PolicySchema, Priority, NonEmpty } from "../contracts.ts";
+import { PolicySchema, Priority, NonEmpty } from "@abracode/contracts/primitives";
 import { Schema } from "effect";
 import { ensure } from "../domain.ts";
 import { decodeSync } from "../decode.ts";

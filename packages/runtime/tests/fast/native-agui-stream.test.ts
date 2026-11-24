@@ -1,5 +1,5 @@
 import { toolPresentation } from "../../src/web/tool-presentation.ts";
-import { catalogId } from "../../src/web/catalog.ts";
+import { catalogId } from "@abracode/contracts/web/catalog";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Schema } from "effect";
@@ -8,7 +8,7 @@ import { EventType, type Event } from "@ag-ui/core";
 import { from } from "rxjs";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { NativeSessionProjection } from "../../src/opencode/agui/native-state.ts";
-import { NativeMessageCursor, nativeAguiMessages } from "../../src/web/transcript.ts";
+import { NativeMessageCursor, nativeAguiMessages } from "@abracode/contracts/web/transcript";
 import { projectNativeMessage } from "../../src/opencode/agui/messages.ts";
 
 const user = Schema.decodeSync(SessionMessage.User)({

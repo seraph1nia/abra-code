@@ -9,7 +9,7 @@ import { run } from "../effects.ts";
 import { removeFixture } from "../helpers/resources.ts";
 import { Git } from "../../src/git/repository.ts";
 import { ProcessRunner } from "../../src/process.ts";
-import { AbsolutePath } from "../../src/identities.ts";
+import { AbsolutePath } from "@abracode/contracts/identities";
 
 test("batched Git fingerprints preserve legacy bytes, filters, staged edits and odd paths", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "abra-fingerprint-"));

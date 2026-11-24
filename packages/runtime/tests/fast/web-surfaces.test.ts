@@ -1,7 +1,7 @@
 import { test } from "vite-plus/test";
 import { compileWorkView } from "../../src/web/express.ts";
 import assert from "node:assert/strict";
-import { catalogId, validateSurface } from "../../src/web/surfaces.ts";
+import { catalogId, validateSurface } from "@abracode/contracts/web/surfaces";
 
 const work = new Set(["abra-1"]);
 const surface = () => ({

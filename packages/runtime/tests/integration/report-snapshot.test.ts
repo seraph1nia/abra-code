@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
-import { validateDocumentHTML } from "../../src/workflow/report-export.ts";
+import { validateDocumentHTML } from "../../src/reporting/report-export.ts";
 import { reportDocument } from "../helpers/report-document.ts";
 import { canonicalJSON } from "../../src/presentation/identity.ts";
-import { reportHash } from "../../src/workflow/report-build.ts";
+import { reportHash } from "../../src/reporting/report-build.ts";
 
 test("portable document validation refuses changed JSON, missing attribution and external assets", () => {
   const document = reportDocument(),

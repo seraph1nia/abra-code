@@ -1,4 +1,4 @@
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { run } from "../effects.ts";
 import { Effect } from "effect";
 import { test, vi } from "vite-plus/test";

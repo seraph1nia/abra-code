@@ -1,42 +1,31 @@
-import { GitHubReviewers, type ReviewerSuggestions } from "./reviewers.ts";
-import { GitHubPRActions } from "./pr-actions.ts";
-import { type PRActionAdapter } from "./action-contracts.ts";
-import { progress, completedProgress } from "../opencode/progress.ts";
 import {
-  Executable,
-  AbsolutePath,
-  Commit,
-  PullRequestUrl,
-  BranchName,
-  Timestamp,
-  timestamp,
-} from "../identities.ts";
-
-import { GitHubFeedback } from "./feedback.ts";
-import { type Feedback } from "../workflow/feedback-contracts.ts";
-import { type ForgeFindingSchema } from "../workflow/correction-contracts.ts";
-import { domainEffect } from "../effect.ts";
-import { CrewError, type ManagedExecution, type Project } from "../domain.ts";
+  type BranchName,
+  type Commit,
+  type Executable,
+  type PullRequestUrl,
+  type Timestamp,
+} from "@abracode/contracts/identities";
+import { type Feedback } from "@abracode/contracts/workflow/feedback-contracts";
 import { Effect, Schema } from "effect";
-import { mkdtemp, writeFile, rm } from "../filesystem.ts";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
+import { CrewError, type ManagedExecution, type Project } from "../domain.ts";
+import { domainEffect } from "../effect.ts";
 import { type Runner } from "../process.ts";
-import { Git } from "./repository.ts";
+import { type ForgeFindingSchema } from "../workflow/correction-contracts.ts";
 import { type OperationResult } from "../workflow/results.ts";
-import { prContent, updateSummary } from "./pr-content.ts";
-import { GitHubReadiness } from "./readiness.ts";
+import { type PRActionAdapter } from "./action-contracts.ts";
+import { GitHubFeedback } from "./feedback.ts";
 import { Forge, PRSchema, type PR } from "./forge.ts";
+import { assessPR, deliveryEvidence, mergePR, type DeliveryAssessment } from "./merge.ts";
+import { GitHubPRActions } from "./pr-actions.ts";
+import { deliverPublication, provisionalPublication, type Publication } from "./publish.ts";
+import { GitHubReadiness } from "./readiness.ts";
+import { type Git } from "./repository.ts";
+import { GitHubReviewers, type ReviewerSuggestions } from "./reviewers.ts";
+
 export { PRSchema, type PR } from "./forge.ts";
-import type { PublicationDestination } from "../workflow/finishing-contracts.ts";
-import { publicationDestination } from "../workflow/publication-destination.ts";
-export type Publication = { commit: Commit; destination: PublicationDestination };
-export interface DeliveryAssessment {
-  pr: PR;
-  feedback: Feedback;
-  readiness: OperationResult;
-}
+export { type DeliveryAssessment } from "./merge.ts";
+export { assertOwnedPR, matchesOwnedPR, type OwnedPRCheck, type Publication } from "./publish.ts";
+
 export interface Delivery {
   assessment?(p: Project, e: ManagedExecution): Effect.Effect<DeliveryAssessment, CrewError>;
   provisional?(
@@ -83,22 +72,34 @@ export interface Delivery {
     CrewError
   >;
 }
+
+const PRListSchema = Schema.Array(PRSchema);
+
 export class GitHubDelivery implements Delivery {
-  reviewers = (p: Project, e: ManagedExecution) =>
-    new GitHubReviewers(this.git, this.client).suggest(p, e);
-  private client: Forge;
+  private readonly client: Forge;
+  private readonly reviewerAdapter: GitHubReviewers;
+  private readonly readinessAdapter: GitHubReadiness;
+  private readonly feedbackAdapter: GitHubFeedback;
   readonly actions: GitHubPRActions;
+
   constructor(
-    private git: Git,
+    private readonly git: Git,
     runner: Runner,
     forge: Executable,
   ) {
     this.client = new Forge(runner, forge);
+    this.reviewerAdapter = new GitHubReviewers(this.git, this.client);
+    this.readinessAdapter = new GitHubReadiness(this.client);
+    this.feedbackAdapter = new GitHubFeedback(this.client);
     this.actions = new GitHubPRActions(this.client, this.inspect);
   }
+
+  reviewers = (p: Project, e: ManagedExecution) => this.reviewerAdapter.suggest(p, e);
+
   private call(p: Project, args: string[]) {
-    return this.client.json(p, Schema.Array(PRSchema), args);
+    return this.client.json(p, PRListSchema, args);
   }
+
   inspect = Effect.fn("GitHubDelivery.inspect")(
     function* (this: GitHubDelivery, p: Project, e: ManagedExecution) {
       const rows = yield* this.call(p, [
@@ -124,336 +125,38 @@ export class GitHubDelivery implements Delivery {
             : error,
         ),
       );
-      if (!(rows.length <= 1))
+      if (rows.length > 1) {
         return yield* new CrewError(
           "PR_AMBIGUOUS",
           "Multiple PRs match the owned branch; recover manually",
         );
+      }
       return rows[0];
     }.bind(this),
     domainEffect,
   );
-  private withBody<A>(
-    content: string,
-    action: (path: AbsolutePath) => Effect.Effect<A, CrewError>,
-  ) {
-    return Effect.scoped(
-      Effect.gen(function* () {
-        const temp = yield* Effect.acquireRelease(mkdtemp(join(tmpdir(), "abracode-pr-")), (temp) =>
-          rm(temp, { recursive: true }).pipe(Effect.orDie),
-        );
-        const path = AbsolutePath.make(join(temp, "body.md"));
-        yield* writeFile(path, content, { mode: 0o600, flag: "wx" });
-        return yield* action(path);
-      }),
-    );
-  }
-  deliver = Effect.fn("GitHubDelivery.deliver")(
-    function* (
-      this: GitHubDelivery,
-      p: Project,
-      e: ManagedExecution,
-      { commit, destination }: Publication,
-      draft = false,
-    ) {
-      yield* progress({ stage: "deliver", status: "started" });
-      if (!e.worktree_directory) return yield* new CrewError("WORKTREE", "Missing worktree");
-      const predecessor = destination.kind === "initial" ? undefined : destination.predecessor;
-      const ref = `refs/heads/${e.branch}`;
-      const readRemote = () => this.git.run(e.worktree_directory!, ["ls-remote", "origin", ref]);
-      const remote = yield* readRemote();
-      const intended = `${commit}\t${ref}`;
-      if (destination.kind === "synchronization" && p.delivery === "github-pr") {
-        const prior = yield* this.inspect(p, e);
-        if (
-          prior?.state === "MERGED" &&
-          prior.url === destination.pr &&
-          prior.baseRefName === e.target_branch &&
-          prior.headRefOid === commit &&
-          remote === intended &&
-          (yield* this.git.head(e.worktree_directory)) === commit &&
-          !(yield* this.git.dirty(e.worktree_directory))
-        )
-          return { commit, pr: prior.url };
-        if (
-          !(
-            prior?.state === "OPEN" &&
-            prior.url === destination.pr &&
-            prior.baseRefName === e.target_branch &&
-            [destination.predecessor, commit].includes(prior.headRefOid)
-          )
-        )
-          return yield* new CrewError(
-            "PR_HEAD",
-            "Synchronization PR is no longer the exact owned open publication",
-          );
-      }
-      if (remote !== intended) {
-        if (remote !== (predecessor ? `${predecessor}\t${ref}` : ""))
-          return yield* new CrewError(
-            "DELIVERY_CHANGED",
-            "Owned destination has a conflicting head",
-          );
-        if (predecessor)
-          yield* this.git.run(e.worktree_directory, [
-            "merge-base",
-            "--is-ancestor",
-            predecessor,
-            commit,
-          ]);
-        if (destination.kind === "correction" && p.delivery === "github-pr") {
-          const prior = yield* this.inspect(p, e);
-          if (
-            !(
-              prior?.state === "OPEN" &&
-              prior.url === destination.pr &&
-              prior.headRefOid === predecessor &&
-              prior.baseRefName === e.target_branch
-            )
-          )
-            return yield* new CrewError("PR_HEAD", "Correction PR changed before push");
-        }
-        yield* this.git.run(e.worktree_directory, [
-          "push",
-          `--force-with-lease=${ref}:${predecessor ?? ""}`,
-          "origin",
-          `${commit}:${ref}`,
-        ]);
-        if ((yield* readRemote()) !== intended)
-          return yield* new CrewError(
-            "DELIVERY_CHANGED",
-            "Remote did not confirm the bound commit",
-          );
-      }
-      if (p.delivery === "branch") return { commit };
-      const base = e.target_branch ?? p.target_branch;
-      const matches = (pr: PR | undefined, url: string) =>
-        pr?.url === url &&
-        pr.state !== "CLOSED" &&
-        pr.headRefOid === commit &&
-        pr.baseRefName === base;
-      const content = prContent(p, e, commit);
-      const existing = yield* this.inspect(p, e);
-      if (existing) {
-        if (existing.state === "CLOSED")
-          return yield* new CrewError("PR_CLOSED", "Existing PR was closed without merging");
-        const expected = destination.pr;
-        if (expected && existing.url !== expected)
-          return yield* new CrewError("PR_IDENTITY", "Owned PR identity changed");
-        if (!matches(existing, existing.url))
-          return yield* new CrewError(
-            "PR_HEAD",
-            "Owned PR head differs from the intended delivery",
-          );
-        if (existing.body === undefined)
-          return yield* new CrewError(
-            "PR_BODY_UNKNOWN",
-            "PR body unavailable; do not replace unknown user content",
-          );
-        const updated = updateSummary(existing.body, content.body);
-        if (existing.state === "OPEN" && updated !== existing.body) {
-          yield* this.withBody(updated, (body) =>
-            this.client.run(p, ["pr", "edit", existing.url, "--body-file", body]),
-          );
-          if (!matches(yield* this.inspect(p, e), existing.url))
-            return yield* new CrewError(
-              "PR_HEAD",
-              "Owned PR changed during its publication update",
-            );
-        }
-        return { commit, pr: existing.url };
-      }
-      if (destination.pr) return yield* new CrewError("PR_IDENTITY", "Owned PR is missing");
-      const createdUrl = yield* this.withBody(content.body, (body) =>
-        this.client.run(p, [
-          "pr",
-          "create",
-          ...(draft ? ["--draft"] : []),
-          "--head",
-          e.branch,
-          "--base",
-          e.target_branch ?? p.target_branch,
-          "--title",
-          content.title,
-          "--body-file",
-          body,
-        ]),
-      );
-      const created = yield* this.inspect(p, e);
-      if (!created)
-        return yield* new CrewError(
-          "PR_UNKNOWN",
-          "PR creation outcome unknown; reconcile before retrying",
-        );
-      if (!matches(created, createdUrl.trim()) || created.state !== "OPEN")
-        return yield* new CrewError(
-          "PR_HEAD",
-          "Created PR identity, target or head differs from the intended publication",
-        );
-      return { commit, pr: created.url };
-    }.bind(this),
-    completedProgress("deliver"),
-  );
-  provisional = Effect.fn("GitHubDelivery.provisional")(
-    function* (this: GitHubDelivery, p: Project, e: ManagedExecution) {
-      if (!e.worktree_directory) return yield* new CrewError("WORKTREE", "Missing worktree");
-      const commit = yield* this.git.commit(
-        e.worktree_directory,
-        e.issue_id,
-        `Publish draft implementation ${e.issue_id}`,
-      );
-      return yield* this.deliver(p, e, { commit, destination: publicationDestination(e) }, true);
-    }.bind(this),
-    domainEffect,
-  );
-  assessment = Effect.fn("GitHubDelivery.assessment")(
-    function* (this: GitHubDelivery, p: Project, e: ManagedExecution) {
-      const pr = yield* this.inspect(p, e);
-      if (
-        !(
-          pr?.state === "OPEN" &&
-          pr.url === e.pull_request_reference &&
-          pr.headRefOid === e.delivered_commit &&
-          pr.baseRefName === e.target_branch
-        )
-      )
-        return yield* new CrewError(
-          "PR_HEAD",
-          "Findings require the exact open delivered PR/head/target",
-        );
-      const readiness = yield* new GitHubReadiness(this.client).check(p, e, pr);
-      const feedback = yield* new GitHubFeedback(this.client).observe(p, e, pr, readiness);
-      const after = yield* this.inspect(p, e);
-      if (
-        !(
-          after?.state === "OPEN" &&
-          after.url === pr.url &&
-          after.headRefOid === pr.headRefOid &&
-          after.baseRefName === pr.baseRefName
-        )
-      )
-        return yield* new CrewError(
-          "PR_HEAD",
-          "PR changed identity or head while observing findings",
-        );
-      return { pr, feedback, readiness };
-    }.bind(this),
-    domainEffect,
-  );
+
+  deliver = (p: Project, e: ManagedExecution, publication: Publication, draft = false) =>
+    deliverPublication(this.git, this.client, this.inspect, p, e, publication, draft);
+
+  provisional = (p: Project, e: ManagedExecution) =>
+    provisionalPublication(this.git, this.client, this.inspect, p, e);
+
+  assessment = (p: Project, e: ManagedExecution) =>
+    assessPR(this.inspect, this.readinessAdapter, this.feedbackAdapter, p, e);
+
   feedback = (p: Project, e: ManagedExecution) =>
     this.assessment(p, e).pipe(Effect.map((a) => a.feedback));
+
   findings = (p: Project, e: ManagedExecution) =>
     this.feedback(p, e).pipe(Effect.map((f) => [...f.findings]));
-  merge = Effect.fn("GitHubDelivery.merge")(
-    function* (
-      this: GitHubDelivery,
-      p: Project,
-      e: ManagedExecution,
-      assessed?: DeliveryAssessment,
-      beforeSubmit?: () => Effect.Effect<void, CrewError>,
-    ) {
-      yield* progress({ stage: "merge", status: "started" });
-      const pr = yield* this.inspect(p, e);
-      if (!pr) return yield* new CrewError("PR_MISSING", "No matching PR");
-      if (
-        !(
-          ["OPEN", "MERGED"].includes(pr.state) &&
-          pr.url === e.pull_request_reference &&
-          pr.baseRefName === (e.target_branch ?? p.target_branch) &&
-          pr.headRefOid === e.delivered_commit
-        )
-      )
-        return yield* new CrewError("PR_HEAD", "PR target or head differs from reviewed delivery");
-      if (pr.state === "MERGED") return { category: "completed", value: undefined } as const;
-      const observation = assessed ?? (yield* this.assessment(p, e));
-      if (observation.readiness.category !== "completed") return observation.readiness;
-      const current = yield* this.inspect(p, e);
-      if (
-        !(
-          current?.url === pr.url &&
-          current.headRefOid === e.delivered_commit &&
-          current.baseRefName === (e.target_branch ?? p.target_branch)
-        )
-      )
-        return yield* new CrewError(
-          "PR_HEAD",
-          "PR identity, head or target changed during readiness observation",
-        );
-      if (!(current.state !== "CLOSED"))
-        return yield* new CrewError("PR_CLOSED", "PR closed during readiness observation");
-      if (current.state === "MERGED") return { category: "completed", value: undefined } as const;
-      if (!beforeSubmit)
-        return yield* new CrewError(
-          "MERGE_GUARD",
-          "Controller finishing readiness guard is required before merge submission",
-        );
-      yield* beforeSubmit();
-      const method = e.effective_policy.merge_method;
-      yield* this.client.run(p, [
-        "pr",
-        "merge",
-        pr.url,
-        `--${method}`,
-        "--match-head-commit",
-        e.delivered_commit!,
-      ]);
-      return { category: "completed", value: undefined } as const;
-    }.bind(this),
-    completedProgress("merge"),
-  );
-  evidence = Effect.fn("GitHubDelivery.evidence")(
-    function* (this: GitHubDelivery, p: Project, e: ManagedExecution) {
-      yield* progress({ stage: "deliver", status: "started" });
-      if (p.delivery === "branch") {
-        if (!e.delivered_commit) return yield* new CrewError("DELIVERY", "No committed delivery");
-        const ref = yield* this.git.run(p.path, ["ls-remote", "origin", `refs/heads/${e.branch}`]);
-        if (!ref.startsWith(`${e.delivered_commit}\t`))
-          return yield* new CrewError(
-            "DELIVERY",
-            "Exact commit is not preserved in configured remote branch",
-          );
-        return { commit: e.delivered_commit, target: e.branch, at: yield* timestamp };
-      }
-      const pr = yield* this.inspect(p, e);
-      if (
-        !(
-          pr?.state === "MERGED" &&
-          pr.url === e.pull_request_reference &&
-          pr.baseRefName === (e.target_branch ?? p.target_branch) &&
-          pr.headRefOid === e.delivered_commit &&
-          pr.mergeCommit?.oid
-        )
-      )
-        return yield* new CrewError(
-          "NOT_MERGED",
-          "Delivery is not a verified merge of the intended PR head",
-        );
-      const target = e.target_branch ?? p.target_branch;
-      const method = e.effective_policy.merge_method;
-      yield* this.git.run(p.path, ["fetch", "--no-tags", "origin", `refs/heads/${target}`]);
-      yield* this.git.run(p.path, [
-        "merge-base",
-        "--is-ancestor",
-        pr.mergeCommit.oid,
-        "FETCH_HEAD",
-      ]);
-      if (method === "merge")
-        yield* this.git.run(p.path, [
-          "merge-base",
-          "--is-ancestor",
-          e.delivered_commit!,
-          "FETCH_HEAD",
-        ]);
-      return {
-        commit: e.delivered_commit!,
-        source_commit: e.delivered_commit!,
-        result_commit: pr.mergeCommit.oid,
-        target,
-        method,
-        pr: pr.url,
-        at: yield* timestamp,
-      };
-    }.bind(this),
-    completedProgress("deliver"),
-  );
+
+  merge = (
+    p: Project,
+    e: ManagedExecution,
+    assessed?: DeliveryAssessment,
+    beforeSubmit?: () => Effect.Effect<void, CrewError>,
+  ) => mergePR(this.client, this.inspect, this.assessment, p, e, assessed, beforeSubmit);
+
+  evidence = (p: Project, e: ManagedExecution) => deliveryEvidence(this.git, this.inspect, p, e);
 }

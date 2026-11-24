@@ -1,4 +1,4 @@
-import { AbsolutePath } from "../identities.ts";
+import { AbsolutePath } from "@abracode/contracts/identities";
 import {
   directoryIdentity,
   sameDirectory,

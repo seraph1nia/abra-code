@@ -3,7 +3,7 @@ import type { OpenSpec } from "../openspec/adapter.ts";
 import { Effect } from "effect";
 import { CrewError, type Execution, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import { externalOwns } from "../validation/contracts.ts";
+import { externalOwns } from "@abracode/contracts/validation/contracts";
 import { type Git } from "../git/repository.ts";
 import { type Delivery } from "../git/delivery.ts";
 import { type Workspaces } from "../git/workspaces.ts";
@@ -24,8 +24,9 @@ import {
 import { applyDispositions, residueTarget } from "./finishing-disposition.ts";
 import { type CleanupSample } from "../git/cleanup.ts";
 import { type FinishingTarget } from "./finishing-contracts.ts";
-import { timestamp } from "../identities.ts";
+import { timestamp } from "@abracode/contracts/identities";
 import { specVerificationPassed } from "./review-contracts.ts";
+import { assertTransition } from "./transitions.ts";
 
 interface Dependencies {
   git: Git;
@@ -75,6 +76,7 @@ export class Finishing {
       const observation = yield* observePublication(this.c.git, this.c.delivery, p, e);
       if (observation.remote !== attempt.published || observation.state === "merged")
         return undefined;
+      assertTransition(e.current_phase, "awaiting_merge");
       const resumed = yield* this.c.records.commitOwned(e, {
         current_phase: "awaiting_merge",
         error_or_recovery_reason: removeOwnedField,

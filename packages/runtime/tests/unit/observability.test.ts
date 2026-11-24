@@ -1,7 +1,7 @@
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Effect, Metric, Logger, References } from "effect";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import {
   observerRequest,
   observerRequests,

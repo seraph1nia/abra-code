@@ -1,6 +1,6 @@
 import { Schema } from "effect";
-import { CheckName, Commit } from "../identities.ts";
-import { NonEmpty, Positive } from "../contracts.ts";
+import { CheckName, Commit } from "@abracode/contracts/identities";
+import { NonEmpty, Positive } from "@abracode/contracts/primitives";
 
 export const CheckFields = {
   name: CheckName,

@@ -3,7 +3,7 @@ import { WorkspaceFixture } from "../helpers/web.ts";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { bindingRequirements, selectBindingRows } from "@abracode/contracts/web/bindings";
-import { validateSurface, catalogId } from "../../src/web/surfaces.ts";
+import { validateSurface, catalogId } from "@abracode/contracts/web/surfaces";
 const surface = () =>
   validateSurface({
     version: "1.0",

@@ -41,7 +41,16 @@ export function observerResult<A, R>(
           )
         )
           return Effect.fail(error("not_found", message, data));
-        if (["SPEC_PATH", "DOCUMENT_PATH", "DIFF_PATH", "INVALID_ID"].includes(failure.code))
+        if (
+          [
+            "SPEC_PATH",
+            "DOCUMENT_PATH",
+            "DIFF_PATH",
+            "INVALID_ID",
+            "INVALID_SELECTION",
+            "FEEDBACK_PAGE",
+          ].includes(failure.code)
+        )
           return Effect.fail(error("invalid_selection", message, data));
         if (
           [
@@ -55,6 +64,11 @@ export function observerResult<A, R>(
             "REPORT_PATH",
             "REPORT_TAMPERED",
             "DIFF_REPOSITORY",
+            "DIFF_FORMAT",
+            "INVALID_DATA",
+            "GIT_IDENTITY",
+            "WORKTREE_IDENTITY",
+            "WORKTREE_BRANCH",
             "ENOENT",
             "EACCES",
             "WORKTREE",

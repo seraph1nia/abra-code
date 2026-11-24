@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { Commit, Count, NonEmpty, Positive } from "../contracts.ts";
+import { Commit, Count, NonEmpty, Positive } from "@abracode/contracts/primitives";
 import { ensure, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { type Forge } from "./forge.ts";
@@ -28,7 +28,7 @@ export function actionsEvidence(
   p: Project,
   slug: string,
   link: string,
-  head: import("../identities.ts").Commit,
+  head: import("@abracode/contracts/identities").Commit,
 ) {
   return domainEffect(
     Effect.gen(function* () {

@@ -1,7 +1,7 @@
 import { selectedDiffExcerpt } from "../../src/visibility/ticket-diff.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import { parseDiffPatch } from "@abracode/web/diff-patch";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { applyPatch } from "diff";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";

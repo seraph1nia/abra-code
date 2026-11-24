@@ -7,7 +7,7 @@ import type {
 } from "@abracode/contracts/visibility/discovery-contracts";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import { type Execution } from "../domain.ts";
-import type { RepositoryId, IssueId } from "../identities.ts";
+import type { RepositoryId, IssueId } from "@abracode/contracts/identities";
 import type { Queries } from "../workflow/queries.ts";
 import type { scanLeads } from "../workflow/lead-contracts.ts";
 import { presentationHash } from "../presentation/identity.ts";

@@ -6,7 +6,7 @@ import { test, type TestContext } from "vite-plus/test";
 import { Effect } from "effect";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
 import { type Execution } from "../../src/domain.ts";
 
@@ -20,7 +20,7 @@ import {
   WorkerReplySchema,
   messageRequests,
   messageHistoryError,
-} from "../../src/workflow/message-contracts.ts";
+} from "@abracode/contracts/workflow/message-contracts";
 
 async function assigned(t: TestContext) {
   const f = await run(fixture);

@@ -9,7 +9,7 @@ import type { Controller } from "../../src/workflow/controller.ts";
 import { registerTools } from "../../src/opencode/tools.ts";
 import { workerPermissions, workerToolAllowed } from "../../src/opencode/role-policy.ts";
 import { CrewError } from "../../src/domain.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { Agents } from "@abracode/agents";

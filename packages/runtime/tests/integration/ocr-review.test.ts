@@ -13,7 +13,7 @@ import {
   RelativePath,
   ModelId,
   ModelVariant,
-} from "../../src/identities.ts";
+} from "@abracode/contracts/identities";
 import { Git } from "../../src/git/repository.ts";
 import { ProcessRunner } from "../../src/process.ts";
 import { readReviewChanges } from "../../src/git/review-changes.ts";

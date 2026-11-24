@@ -15,7 +15,7 @@ import {
 import { Count, Commit } from "../primitives.ts";
 import { WorkSummarySchema } from "../visibility/work-summary.ts";
 import { ReportSnapshotSchema, LegacyReportSnapshotSchema } from "./report-evidence.ts";
-import { SurfaceSchema, validateSurface } from "../web/surfaces.ts";
+import { SurfaceSchema, validateSurfaceWorkIds } from "../web/surfaces.ts";
 import {
   catalogId,
   catalogV1Id,
@@ -122,7 +122,7 @@ export const ReportDocumentSchema = Schema.Struct({
     )
       return "Repeated captured work identity";
     try {
-      validateSurface(
+      validateSurfaceWorkIds(
         document.surface,
         new Set(
           [...document.data.work, ...(document.data.snapshot_work ?? [])].map(

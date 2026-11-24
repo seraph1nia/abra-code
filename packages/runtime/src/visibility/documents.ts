@@ -1,4 +1,4 @@
-import { AbsolutePath, RelativePath } from "../identities.ts";
+import { AbsolutePath, RelativePath } from "@abracode/contracts/identities";
 
 import { constants } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";

@@ -1,9 +1,12 @@
 import { DateTime, Schema } from "effect";
 import { SessionEvent } from "@opencode/schema/session-event";
 import { SessionMessage } from "@opencode/schema/session-message";
+import type { TranscriptMessage } from "@abracode/contracts/web/contracts";
 import type { NativeSessionView } from "./adapter.ts";
 import { projectNativeMessage, type ToolPresenter } from "./messages.ts";
 
+const DECODED_SESSION_EVENT = Symbol("abracode.decodedSessionEvent");
+export type DecodedSessionEvent = typeof SessionEvent.All.Type;
 export type NativeEventEnvelope = {
   type: string;
   data?: unknown;
@@ -11,7 +14,13 @@ export type NativeEventEnvelope = {
   created?: number;
   durable?: { aggregateID: string; seq: number; version: number };
   location?: { directory?: string };
+  readonly [DECODED_SESSION_EVENT]?: DecodedSessionEvent;
 };
+/** Mark an event already validated by `@opencode/client` so token streaming skips re-decoding. */
+export const trustedSessionEvent = (event: DecodedSessionEvent): NativeEventEnvelope => ({
+  ...event,
+  [DECODED_SESSION_EVENT]: event,
+});
 const visibleAssistant = (
   message: SessionMessage.Assistant,
   content: readonly SessionMessage.AssistantContent[],
@@ -28,6 +37,7 @@ const visibleAssistant = (
  * their full-value boundary; fresh parts can stream immediately without replay. */
 export class NativeSessionProjection {
   private messages = new Map<string, SessionMessage.Info>();
+  private projected = new Map<string, TranscriptMessage>();
   private streamable = new Set<string>();
   private seen = new Set<string>();
   private seq?: number;
@@ -47,13 +57,15 @@ export class NativeSessionProjection {
     preserveLive = false,
   ) {
     const previous = this.messages;
+    const previousProjected = this.projected;
     const live = new Set<string>();
     const retain = preserveLive && !this.recovering;
-    this.messages = new Map(
-      messages.map((message): [string, SessionMessage.Info] => {
-        const old = previous.get(message.id);
-        if (message.type !== "assistant" || old?.type !== "assistant" || message.time.completed)
-          return [message.id, message];
+    const nextMessages = new Map<string, SessionMessage.Info>();
+    const nextProjected = new Map<string, TranscriptMessage>();
+    for (const message of messages) {
+      const old = previous.get(message.id);
+      let resolved: SessionMessage.Info = message;
+      if (message.type === "assistant" && old?.type === "assistant" && !message.time.completed) {
         const content = message.content.map((part, i) => {
           const prior = old.content[i];
           if (
@@ -75,9 +87,15 @@ export class NativeSessionProjection {
           }
           return part;
         });
-        return [message.id, visibleAssistant(message, content)];
-      }),
-    );
+        resolved = visibleAssistant(message, content);
+      }
+      nextMessages.set(resolved.id, resolved);
+      const cached = old === resolved ? previousProjected.get(resolved.id) : undefined;
+      const projected = cached ?? projectNativeMessage(resolved, this.present);
+      if (projected) nextProjected.set(resolved.id, projected);
+    }
+    this.messages = nextMessages;
+    this.projected = nextProjected;
     this.busy = busy;
     this.inbox = inbox;
     this.streamable = live;
@@ -91,8 +109,9 @@ export class NativeSessionProjection {
   }
   current(): NativeSessionView {
     const completions: NonNullable<NativeSessionView["completions"]>[number][] = [];
+    const projectedMessages: TranscriptMessage[] = [];
     let inputs: string[] = [];
-    for (const message of this.messages.values()) {
+    for (const [id, message] of this.messages) {
       if (message.type === "user") inputs.push(message.id);
       if (message.type === "idle") {
         completions.push({
@@ -102,19 +121,29 @@ export class NativeSessionProjection {
         });
         inputs = [];
       }
+      const projected = this.projected.get(id);
+      if (projected) projectedMessages.push(projected);
     }
     return {
       busy: this.busy,
       inbox: this.inbox,
       completions,
-      messages: [...this.messages.values()].flatMap(
-        (message) => projectNativeMessage(message, this.present) ?? [],
-      ),
+      messages: projectedMessages,
     };
   }
   private put(message: SessionMessage.Info) {
     this.messages.set(message.id, message);
-    while (this.messages.size > 100) this.messages.delete(this.messages.keys().next().value!);
+    const projected = projectNativeMessage(message, this.present);
+    if (projected) this.projected.set(message.id, projected);
+    else this.projected.delete(message.id);
+    while (this.messages.size > 100) {
+      const evicted = this.messages.keys().next().value!;
+      this.messages.delete(evicted);
+      this.projected.delete(evicted);
+    }
+  }
+  applyDecoded(event: DecodedSessionEvent): { view?: NativeSessionView; repair?: boolean } {
+    return this.applyEvent(event);
   }
   apply(raw: NativeEventEnvelope): { view?: NativeSessionView; repair?: boolean } {
     if (raw.type === "server.connected") {
@@ -123,10 +152,14 @@ export class NativeSessionProjection {
       this.streamable.clear();
       return { repair: true };
     }
+    const predecoded = raw[DECODED_SESSION_EVENT];
+    if (predecoded) return this.applyEvent(predecoded);
     if (!raw.type.startsWith("session.")) return {};
     const parsed = Schema.decodeUnknownResult(SessionEvent.All)(raw);
     if (parsed._tag === "Failure") return { repair: true };
-    const event = parsed.success;
+    return this.applyEvent(parsed.success);
+  }
+  private applyEvent(event: DecodedSessionEvent): { view?: NativeSessionView; repair?: boolean } {
     if (event.data.sessionID !== this.sessionID) return {};
     if (this.seen.has(event.id)) return {};
     this.seen.add(event.id);

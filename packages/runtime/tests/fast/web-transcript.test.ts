@@ -4,8 +4,8 @@ import { Schema } from "effect";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { MessageSchema } from "@ag-ui/core/schemas";
 import { projectMessage } from "../../src/web/backend.ts";
-import { nativeAguiMessages } from "../../src/web/transcript.ts";
-import { TranscriptMessageSchema } from "../../src/web/workspace-wire.ts";
+import { nativeAguiMessages } from "@abracode/contracts/web/transcript";
+import { TranscriptMessageSchema } from "@abracode/contracts/web/workspace-wire";
 
 const assistant = (state: unknown) =>
   Schema.decodeUnknownSync(SessionMessage.Assistant)({

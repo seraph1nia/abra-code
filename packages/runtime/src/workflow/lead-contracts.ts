@@ -1,6 +1,6 @@
 import { MemorySearch, MemoryRead } from "@abracode/contracts/visibility/memory";
 import { Effect, Schema } from "effect";
-import { Count, WorkerModelSchema } from "../contracts.ts";
+import { Count, WorkerModelSchema } from "@abracode/contracts/primitives";
 import {
   MessageId,
   IssueId,
@@ -11,11 +11,11 @@ import {
   SessionId,
   StorageKey,
   StoragePrefix,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 import { type Records } from "../storage/store.ts";
 import { decode } from "../decode.ts";
 import { BatchInputSchema, BatchResultSchema } from "../work/batch.ts";
-import { MessageBody, RequestSchema } from "./message-contracts.ts";
+import { MessageBody, RequestSchema } from "@abracode/contracts/workflow/message-contracts";
 import { CrewError } from "../domain.ts";
 
 const repositories = Schema.Array(RepositoryId).check(

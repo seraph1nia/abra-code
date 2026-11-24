@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { repo } from "../fixtures.ts";
 import { Git } from "../../src/git/repository.ts";
 import { run } from "../effects.ts";
-import { AbsolutePath } from "../../src/identities.ts";
+import { AbsolutePath } from "@abracode/contracts/identities";
 
 /** Runs against the main test's isolated service, native sessions and local bare remotes. */
 export async function workerContextCapabilities(options: {

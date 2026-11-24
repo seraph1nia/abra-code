@@ -2,7 +2,7 @@ import { PrepareSurfaceMessage } from "../workspace-state/draft.ts";
 import { ReviewAttachment, ReviewsForSource } from "./interactive-review-loader.tsx";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect HTTP atoms own shared generated-binding queries. */
 import { RegistryContext } from "@effect/atom-react";
-import { AsyncResult, type AtomRegistry, type Atom } from "effect/reactivity";
+import { AsyncResult, type Atom, type AtomRegistry } from "effect/reactivity";
 import { Option } from "effect";
 import {
   bindingRequirements,
@@ -223,7 +223,6 @@ function liveBindingStore(
     read: () => (mounted ? registry.get(query) : pending),
   };
 }
-
 function LiveSurface({
   record,
   inspect,

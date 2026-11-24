@@ -1,16 +1,16 @@
 import { observedSurface } from "../../src/web/surface-records.ts";
-import { prepareDiagrams as prepareDiagramBatch } from "../../src/workflow/diagrams.ts";
+import { prepareDiagrams as prepareDiagramBatch } from "../../src/reporting/diagrams.ts";
 import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
-import { readReportDocument } from "../../src/presentation/report-document.ts";
+import { readReportDocument } from "@abracode/contracts/presentation/report-document";
 import { presentationHash } from "../../src/presentation/identity.ts";
 import { selectBindingRows } from "@abracode/contracts/web/bindings";
 import { Effect, Stream } from "effect";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { CrewError } from "../../src/domain.ts";
-import { AbsolutePath, IssueId, SessionId, Timestamp } from "../../src/identities.ts";
+import { AbsolutePath, IssueId, SessionId, Timestamp } from "@abracode/contracts/identities";
 import type { WebBackend, WorkspaceSnapshot, SurfaceEntry } from "../../src/web/contracts.ts";
-import type { SubmissionReceipt } from "../../src/web/http-api.ts";
-import type { ResourceSelection } from "../../src/web/resources.ts";
+import type { SubmissionReceipt } from "@abracode/contracts/web/http-api";
+import type { ResourceSelection } from "@abracode/contracts/web/resources";
 
 /** Deterministic transport fixture; native authority is covered separately by E2E. */
 export class WorkspaceFixture implements WebBackend {

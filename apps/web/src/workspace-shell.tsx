@@ -4,6 +4,7 @@ import { Palette } from "./palette-loader.tsx";
 import {
   Outlet,
   Link,
+  useRouter,
   useRouterState,
   useSearch,
   useMatch,
@@ -27,15 +28,50 @@ export function WorkspaceShell() {
   const workspace = Boolean(destination);
   const raw = useSearch({ from: "__root__" });
   const route = useMemo(() => workspaceSearch(raw), [raw]);
-  const [saved, setSaved] = useState<Partial<Record<string, CollectionState>>>({});
-  if (destination && saved[destination] !== route.collection)
-    setSaved({ ...saved, [destination]: route.collection });
+  const router = useRouter();
+  const [savedByDestination, setSavedByDestination] = useState<
+    Partial<Record<string, CollectionState>>
+  >(() => (destination ? { [destination]: route.collection } : {}));
+  const [visited, setVisited] = useState(workspace);
+  useEffect(
+    () =>
+      router.subscribe("onResolved", ({ fromLocation, toLocation }) => {
+        const updates: [string, CollectionState | undefined][] = [];
+        for (const location of [fromLocation, toLocation]) {
+          if (!location) continue;
+          const target = destinationFor(location.pathname);
+          if (target)
+            updates.push([
+              target,
+              workspaceSearch(location.search as Record<string, unknown>).collection,
+            ]);
+        }
+        if (toLocation && destinationFor(toLocation.pathname)) setVisited(true);
+        if (!updates.length) return;
+        setSavedByDestination((previous) => {
+          let changed = false;
+          const next = { ...previous };
+          for (const [target, collection] of updates) {
+            if (JSON.stringify(previous[target]) !== JSON.stringify(collection)) {
+              next[target] = collection;
+              changed = true;
+            }
+          }
+          return changed ? next : previous;
+        });
+      }),
+    [router],
+  );
+  const saved = useMemo(
+    () =>
+      destination ? { ...savedByDestination, [destination]: route.collection } : savedByDestination,
+    [savedByDestination, destination, route.collection],
+  );
+  const hasWorkspace = workspace || visited;
   const tablet = useMediaQuery("(max-width: 1250px)");
   const settings = useMatch({ from: "/settings", shouldThrow: false });
   const phone = useMediaQuery("(max-width: 760px)");
   const shell = useRef<HTMLDivElement>(null);
-  const [visited, setVisited] = useState(Boolean(workspace));
-  if (workspace && !visited) setVisited(true);
 
   const navigate = useNavigate();
   const [search, setSearch] = useState<{ origin: HTMLElement; source?: "memory" }>();
@@ -154,7 +190,7 @@ export function WorkspaceShell() {
                 {navigation}
               </nav>
             ))}
-          {(workspace || visited) && (
+          {hasWorkspace && (
             <div className="workspace-host" hidden={!workspace}>
               <Application
                 route={route}
@@ -169,7 +205,7 @@ export function WorkspaceShell() {
               />
             </div>
           )}
-          {!workspace && !visited && palette && <Palette {...palette} />}
+          {!hasWorkspace && palette && <Palette {...palette} />}
           <Outlet />
         </div>
       </OpenSearch.Provider>

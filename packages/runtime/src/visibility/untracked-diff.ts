@@ -1,4 +1,4 @@
-import { AbsolutePath, RelativePath, Commit } from "../identities.ts";
+import { AbsolutePath, RelativePath, Commit } from "@abracode/contracts/identities";
 import { formatPatch, structuredPatch } from "diff";
 import { Effect } from "effect";
 import { resolve } from "node:path";

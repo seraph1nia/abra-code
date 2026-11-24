@@ -8,7 +8,7 @@ import {
   Commit,
   Fingerprint,
   SessionId,
-} from "../../src/identities.ts";
+} from "@abracode/contracts/identities";
 import { type Execution, type SavedExecution } from "../../src/domain.ts";
 import { type Runtime, type QuestionAnswer } from "../../src/opencode/runtime.ts";
 import { WaitInputSchema } from "../../src/workflow/obligation-contracts.ts";

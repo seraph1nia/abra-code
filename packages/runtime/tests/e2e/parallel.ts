@@ -6,7 +6,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { repo } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import { type SessionId } from "../../src/identities.ts";
+import { type SessionId } from "@abracode/contracts/identities";
 
 type Invoke = (tool: string, args: unknown) => Promise<any>;
 type Execution = {

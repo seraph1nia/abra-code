@@ -3,10 +3,10 @@ import { Tool } from "@opencode/schema/tool";
 import type { ToolAuthorization } from "@abracode/agents";
 import { contributionAllows } from "@abracode/agents/policy";
 import type { CrewError, Execution } from "../domain.ts";
-import type { SessionId, MessageId } from "../identities.ts";
+import type { SessionId, MessageId } from "@abracode/contracts/identities";
 import type { Store } from "../storage/store.ts";
-import { verifiedWorkerCaller } from "./tool-caller.ts";
 import { readWorkerContext } from "../workflow/worker-context.ts";
+import { assertVerifiedWorker } from "./session-authority.ts";
 
 /** Handler authorization is independent of visibility and native permission shaping. */
 export const contributionAuthorization = (
@@ -23,7 +23,7 @@ export const contributionAuthorization = (
     );
     if (!e?.worker_context_id)
       return yield* new Tool.Error({ message: "Current eligible worker assignment required" });
-    const { role, profile } = yield* verifiedWorkerCaller(
+    const { role, profile } = yield* assertVerifiedWorker(
       e,
       native,
       readWorkerContext(store, e.worker_context_id),

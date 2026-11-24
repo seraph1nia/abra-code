@@ -52,6 +52,7 @@ export type LegacyAction = typeof LegacyActionSchema.Type;
 
 export const ActionKind = LegacyActionSchema.fields.kind;
 export const FindingRevision = Schema.Struct({ id: FindingId, revision: NonEmpty });
+export type FindingRevision = typeof FindingRevision.Type;
 const revisions = Schema.Array(FindingRevision).check(
   Schema.isMinLength(1),
   Schema.isMaxLength(256),

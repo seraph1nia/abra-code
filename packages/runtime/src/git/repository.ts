@@ -9,7 +9,7 @@ import {
   BranchName,
   ChangeName,
   IssueId,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 
 import { decode } from "../decode.ts";
 import { domainEffect } from "../effect.ts";
@@ -196,6 +196,7 @@ export class Git {
           "EXPLORE_SOURCE_EDIT",
           "Explore modified files outside assigned OpenSpec change",
         );
+      const checkedDirs = new Set<string>();
       for (const name of names) {
         // Deleted planning artifacts have no current entry. All surviving entries
         // must be regular blobs; literal pathspecs cannot interpret file names.
@@ -213,12 +214,14 @@ export class Git {
         let current = root;
         for (const part of parts.slice(0, -1)) {
           current = AbsolutePath.make(join(current, part));
+          if (checkedDirs.has(current)) continue;
           const stat = yield* lstat(current);
           if (!stat.isDirectory() || stat.isSymbolicLink())
             return yield* new CrewError(
               "SPEC_SYMLINK",
               "Planning artifact ancestor is not a real directory",
             );
+          checkedDirs.add(current);
         }
       }
     }.bind(this),

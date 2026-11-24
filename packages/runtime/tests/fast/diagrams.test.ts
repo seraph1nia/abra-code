@@ -8,12 +8,12 @@ import {
   diagramBudget,
   diagramSourcePolicy,
 } from "@abracode/contracts/presentation/diagrams";
-import { catalogId, catalogV1Id } from "../../src/web/catalog.ts";
-import { validateSurface } from "../../src/web/surfaces.ts";
+import { catalogId, catalogV1Id } from "@abracode/contracts/web/catalog";
+import { validateSurface } from "@abracode/contracts/web/surfaces";
 import {
   validateReportDocument,
   readReportDocument,
-} from "../../src/presentation/report-document.ts";
+} from "@abracode/contracts/presentation/report-document";
 import { reportDocument } from "../helpers/report-document.ts";
 
 const source = "flowchart LR\nA <--> B";

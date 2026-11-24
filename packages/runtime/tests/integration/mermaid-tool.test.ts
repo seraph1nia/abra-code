@@ -7,11 +7,11 @@ import { Tool } from "@opencode/schema/tool";
 import type { ToolEditor } from "@opencode/plugin/effect/tool";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { mermaidVerifierTool } from "../../src/opencode/diagram-tool.ts";
 import { strictInput } from "../../src/opencode/tool-definition.ts";
 import { DiagramVerifyInputSchema } from "@abracode/contracts/presentation/diagrams";
-import { captureReportSnapshot } from "../../src/workflow/report-snapshot.ts";
+import { captureReportSnapshot } from "../../src/reporting/report-snapshot.ts";
 
 test(
   "registered verifier permits current assigned custom agents without publication or lifecycle effects",

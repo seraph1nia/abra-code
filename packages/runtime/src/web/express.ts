@@ -1,23 +1,72 @@
 import { ExpressParser } from "@a2ui/agent";
-import { catalog, catalogId } from "./catalog.ts";
-import { maxSurfaceBytes, validateSurface } from "./surfaces.ts";
+import { catalog, catalogId } from "@abracode/contracts/web/catalog";
+import { maxSurfaceBytes, validateSurface } from "@abracode/contracts/web/surfaces";
+
+/**
+ * Checks whether `<a2ui>` or `</a2ui>` sentinel tags occur outside Express string literals
+ * or block comments (line comments end at `</a2ui>` per the Express compiler).
+ */
+function hasTopLevelSentinelTag(source: string): boolean {
+  let i = 0;
+  const n = source.length;
+  while (i < n) {
+    const ch = source[i]!;
+    if (
+      ch === '"' ||
+      ((ch === "r" || ch === "R") &&
+        source[i + 1] === '"' &&
+        (i === 0 || !/[a-zA-Z0-9_]/.test(source[i - 1]!)))
+    ) {
+      const raw = ch !== '"';
+      const q = raw ? i + 1 : i;
+      const triple = source.startsWith('"""', q);
+      i = q + (triple ? 3 : 1);
+      while (i < n) {
+        if (!raw && source[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (triple ? source.startsWith('"""', i) : source[i] === '"') {
+          i += triple ? 3 : 1;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      const end = source.indexOf("*/", i + 2);
+      i = end < 0 ? n : end + 2;
+      continue;
+    }
+    if (
+      ch === "#" ||
+      (ch === "/" && source[i + 1] === "/") ||
+      (ch === "-" && source[i + 1] === "-")
+    ) {
+      const nl = source.indexOf("\n", i);
+      const end = nl < 0 ? n : nl;
+      if (/<\/a2ui\s*>/i.test(source.slice(i, end))) return true;
+      i = end + 1;
+      continue;
+    }
+    if (ch === "<" && /^<\/?a2ui(?:\s[^>]*)?>/i.test(source.slice(i))) return true;
+    i++;
+  }
+  return false;
+}
 
 export function compileWorkView(surfaceId: string, source: string) {
   if (Buffer.byteLength(source, "utf8") > maxSurfaceBytes)
     throw new Error("Shorten the Express source to fit the 384 KiB limit");
   const parser = new ExpressParser(catalog, surfaceId, "v1.0");
-  const messages = parser.compile(source, true);
-  // The SDK strips chat tags and discards surrounding prose. Check the entire
-  // body with ordinary tag names when these delimiters occur. The grammar
-  // still permits literal tags inside strings, including Mermaid labels.
-  const body = source.replace(/<(\/?)a2ui(?=[\s>])/gi, "<$1express_literal");
-  if (body !== source) {
-    try {
-      parser.compile(body, true);
-    } catch {
-      throw new Error("Supply a complete Express body without chat tags or surrounding prose");
-    }
+  // The tool expects a bare Express body without chat <a2ui> wrappers or surrounding prose.
+  // Use ExpressParser's native unwrap/hasFormatContent check before compiling, while still
+  // allowing literal "<a2ui>" text inside quoted Express strings.
+  if (parser.hasFormatContent(source) && hasTopLevelSentinelTag(source)) {
+    throw new Error("Supply a complete Express body without chat tags or surrounding prose");
   }
+  const messages = parser.compile(source, true);
   const [message] = messages;
   if (messages.length !== 1 || !message || !("createSurface" in message))
     throw new Error("Supply one complete layout with a root component");

@@ -5,25 +5,32 @@ import {
   type SelectionFollowup,
 } from "@abracode/contracts/web/workspace-wire";
 import { CrewError, ensure, type Execution } from "../domain.ts";
-import { SessionId, StorageKey, LockKey, type RequestId, type IssueId } from "../identities.ts";
+import {
+  SessionId,
+  StorageKey,
+  LockKey,
+  WebSubmissionId,
+  type IssueId,
+} from "@abracode/contracts/identities";
 import { decode } from "../decode.ts";
 import type { Store } from "../storage/store.ts";
 import type { Locks } from "../storage/lock.ts";
 import { committedScope } from "../visibility/invalidations.ts";
-import { messageRequests } from "./message-contracts.ts";
+import { messageRequests } from "@abracode/contracts/workflow/message-contracts";
 
-export const selectionReceiptKey = (session: SessionId, request: string) =>
+export const selectionReceiptKey = (session: SessionId, request: WebSubmissionId) =>
   StorageKey.make(`web/receipt/${session}/${request}`);
 export const admittedSelection = Effect.fn("admittedSelection")(function* (
   store: Store,
   session: SessionId,
-  request: string,
+  request: WebSubmissionId,
   issue: IssueId,
 ) {
-  const raw = yield* store.get(selectionReceiptKey(session, request));
+  const id = yield* decode(WebSubmissionId, request, "Selected question");
+  const raw = yield* store.get(selectionReceiptKey(session, id));
   const receipt = yield* decode(ReceiptSchema, raw, "Selected question");
   if (
-    receipt.request_id !== request ||
+    receipt.request_id !== id ||
     receipt.status !== "admitted" ||
     receipt.capture?.selection.issue_id !== issue
   )
@@ -38,19 +45,20 @@ export function answerSelection(
   store: Store,
   locks: Locks,
   session: SessionId,
-  request: RequestId,
+  request: WebSubmissionId,
   issue: IssueId,
   answer: string,
 ) {
   return locks.with(LockKey.make("web-admission"), () =>
     Effect.gen(function* () {
-      const receipt = yield* admittedSelection(store, session, request, issue);
+      const id = yield* decode(WebSubmissionId, request, "Selected question");
+      const receipt = yield* admittedSelection(store, session, id, issue);
       if (receipt.answer && receipt.answer !== answer)
         return yield* new CrewError(
           "MESSAGE_REBIND",
           "The selected request already has a different direct answer",
         );
-      yield* store.set(selectionReceiptKey(session, request), { ...receipt, answer });
+      yield* store.set(selectionReceiptKey(session, id), { ...receipt, answer });
       yield* committedScope({ admissions: true, issues: [issue] });
       return answer;
     }),

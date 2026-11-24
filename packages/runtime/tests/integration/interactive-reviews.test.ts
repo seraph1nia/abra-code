@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { Reviews } from "../../src/web/reviews.ts";
 import { MemoryStore, TestLocks } from "../fixtures.ts";
-import { AbsolutePath, MessageId, SessionId } from "../../src/identities.ts";
+import { AbsolutePath, MessageId, SessionId } from "@abracode/contracts/identities";
 import { previewPNG, reviewDefinition } from "../helpers/interactive-reviews.ts";
 
 test("retained preview bytes survive source removal and reject escapes, size, type and corruption", async (t) => {

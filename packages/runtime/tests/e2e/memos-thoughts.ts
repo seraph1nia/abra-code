@@ -6,7 +6,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { Effect, Exit, Scope } from "effect";
 import type { Endpoint } from "@opencode/client/effect/service";
 import { reportBrowserExecutable } from "@abracode/report-export/browser";
-import { AbsolutePath, IssueId } from "../../src/identities.ts";
+import { AbsolutePath, IssueId } from "@abracode/contracts/identities";
 import { NativeWebBackend } from "../../src/web/backend.ts";
 import { workspaceServer } from "../../src/web/server.ts";
 

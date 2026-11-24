@@ -1,5 +1,5 @@
 import { createComponentImplementation } from "@a2ui/react";
-import { lazy, Suspense, type ComponentType } from "react";
+import { lazy, Suspense, useMemo, type ComponentType } from "react";
 import type { HighlightedCodeProps } from "./highlighted-code.tsx";
 import { Schema } from "effect";
 import { catalog, contentProps, type ContentName } from "@abracode/contracts/web/catalog";
@@ -14,12 +14,17 @@ const HighlightedCode = lazy<ComponentType<HighlightedCodeProps>>(() =>
 // Logs and terminal output retain all original characters, including ANSI escapes.
 const plainLanguages = new Set(["ansi", "log", "plain", "plaintext", "text", "txt"]);
 
+const decodeTable = Schema.decodeUnknownSync(contentProps.Table);
+const decodeDisclosure = Schema.decodeUnknownSync(contentProps.Disclosure);
+const decodeKeyValueList = Schema.decodeUnknownSync(contentProps.KeyValueList);
+const decodeCodeBlock = Schema.decodeUnknownSync(contentProps.CodeBlock);
+
 export function contentImplementation(name: ContentName) {
   const api = catalog.components.get(name)!;
-  return createComponentImplementation(api, ({ props, buildChild }) => {
-    switch (name) {
-      case "Table": {
-        const { caption, columns, rows } = Schema.decodeUnknownSync(contentProps.Table)(props);
+  switch (name) {
+    case "Table":
+      return createComponentImplementation(api, ({ props }) => {
+        const { caption, columns, rows } = useMemo(() => decodeTable(props), [props]);
         return (
           <section className="catalog-table-scroll" aria-label={caption} tabIndex={0}>
             <table>
@@ -45,18 +50,20 @@ export function contentImplementation(name: ContentName) {
             </table>
           </section>
         );
-      }
-      case "Disclosure": {
-        const { label, child } = Schema.decodeUnknownSync(contentProps.Disclosure)(props);
+      });
+    case "Disclosure":
+      return createComponentImplementation(api, ({ props, buildChild }) => {
+        const { label, child } = useMemo(() => decodeDisclosure(props), [props]);
         return (
           <details className="catalog-disclosure">
             <summary>{label}</summary>
             {buildChild(child)}
           </details>
         );
-      }
-      case "KeyValueList": {
-        const { entries } = Schema.decodeUnknownSync(contentProps.KeyValueList)(props);
+      });
+    case "KeyValueList":
+      return createComponentImplementation(api, ({ props }) => {
+        const { entries } = useMemo(() => decodeKeyValueList(props), [props]);
         return (
           <dl className="catalog-facts">
             {entries.map(({ label, value }, i) => (
@@ -67,9 +74,10 @@ export function contentImplementation(name: ContentName) {
             ))}
           </dl>
         );
-      }
-      case "CodeBlock": {
-        const { code, language } = Schema.decodeUnknownSync(contentProps.CodeBlock)(props);
+      });
+    case "CodeBlock":
+      return createComponentImplementation(api, ({ props }) => {
+        const { code, language } = useMemo(() => decodeCodeBlock(props), [props]);
         const lang = language?.trim().toLowerCase();
         return (
           <figure className="catalog-code">
@@ -87,7 +95,6 @@ export function contentImplementation(name: ContentName) {
             </pre>
           </figure>
         );
-      }
-    }
-  });
+      });
+  }
 }

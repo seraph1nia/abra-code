@@ -233,7 +233,7 @@ export const workCatalogs = {
   [catalogV4Id]: previousDocument,
   [catalogId]: workCatalogDocument,
 };
-export const catalog = Catalog.fromJson(workCatalogDocument);
+const workCatalogSchema = Catalog.fromJson(workCatalogDocument);
 
 // The pinned SDK also opens mailto and tel. The v1 guide requires HTTP(S).
 const basicFunctions = [...basicCatalog.functions.values()].map((fn) =>
@@ -263,7 +263,8 @@ export function implementedCatalog<T extends ComponentApi>(entries: readonly T[]
     defs: sharedDefinitions,
   });
 }
-export const validationCatalog = implementedCatalog([...catalog.components.values()]);
+export const catalog = implementedCatalog([...workCatalogSchema.components.values()]);
+export const validationCatalog = catalog;
 const validator = new PayloadValidator(validationCatalog, STRICT_VALIDATION);
 const componentIdentifier = Schema.String.check(Schema.isPattern(/^[a-zA-Z][a-zA-Z0-9_]{0,100}$/u));
 const componentIdentifierHelp =

@@ -8,6 +8,7 @@ import {
   RequestId,
   SessionId,
   Timestamp,
+  WebSubmissionId,
 } from "../identities.ts";
 import { EvidenceReferenceSchema } from "./report-metadata.ts";
 import { DecisionSummarySchema as DecisionSchema } from "./obligation-summary.ts";
@@ -66,7 +67,10 @@ const RequestFields = {
   source: Schema.optional(
     Schema.Union([
       Schema.Struct({ type: Schema.Literal("finding"), issue_id: IssueId, request_id: RequestId }),
-      Schema.Struct({ type: Schema.Literal("selection"), request_id: RequestId }),
+      Schema.Struct({
+        type: Schema.Literal("selection"),
+        request_id: Schema.Union([WebSubmissionId, RequestId]),
+      }),
       Schema.Struct({ type: Schema.Literal("decision"), key: ObligationKey }),
     ]),
   ),
@@ -280,7 +284,13 @@ export const MessageSendSchema = Schema.Struct({
   kind: MessageIntentSchema.fields.kind,
   delivery: Schema.optional(MessageIntentSchema.fields.delivery),
   response: MessageIntentSchema.fields.response,
-  source: MessageIntentSchema.fields.source,
+  source: Schema.optional(
+    Schema.Union([
+      Schema.Struct({ type: Schema.Literal("finding"), issue_id: IssueId, request_id: RequestId }),
+      Schema.Struct({ type: Schema.Literal("selection"), request_id: WebSubmissionId }),
+      Schema.Struct({ type: Schema.Literal("decision"), key: ObligationKey }),
+    ]),
+  ),
 });
 export const MessageInputSchema = MessageSendSchema;
 export const WorkerReplySchema = Schema.Union([

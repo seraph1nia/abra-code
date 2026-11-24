@@ -19,6 +19,8 @@ export const ExecutionId = Identifier.pipe(Schema.brand("abracode/ExecutionId"))
 export type ExecutionId = typeof ExecutionId.Type;
 export const RequestId = Identifier.pipe(Schema.brand("abracode/RequestId"));
 export type RequestId = typeof RequestId.Type;
+export const WebSubmissionId = Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/));
+export type WebSubmissionId = typeof WebSubmissionId.Type;
 export const LeadId = Identifier.pipe(Schema.brand("abracode/LeadId"));
 export type LeadId = typeof LeadId.Type;
 export const DispatchProfileId = Identifier.pipe(Schema.brand("abracode/DispatchProfileId"));
@@ -58,6 +60,10 @@ export const PullRequestUrl = Schema.String.check(Schema.isPattern(/^https?:\/\/
 export type PullRequestUrl = typeof PullRequestUrl.Type;
 export const FindingId = Schema.NonEmptyString.pipe(Schema.brand("abracode/FindingId"));
 export type FindingId = typeof FindingId.Type;
+export const FindingRevisionId = Schema.NonEmptyString.pipe(
+  Schema.brand("abracode/FindingRevisionId"),
+);
+export type FindingRevisionId = typeof FindingRevisionId.Type;
 export const ActivityId = Schema.NonEmptyString.pipe(Schema.brand("abracode/ActivityId"));
 export type ActivityId = typeof ActivityId.Type;
 const utcInstant = Schema.String.check(

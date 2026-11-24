@@ -1,14 +1,17 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Scoped browser observation and typed HTTP atoms. */
-import { useEffect, useRef, useState } from "react";
-import { HttpAgent } from "@ag-ui/client";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomSet } from "@effect/atom-react";
-import { readRetained, writeRetained } from "../retained-input.ts";
-import { Equal, Exit } from "effect";
+import { Cause, Equal, Exit, Option } from "effect";
+import { WebSubmissionId } from "@abracode/contracts/identities";
 import { SubmissionSchema } from "@abracode/contracts/web/workspace-wire";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
-import { readReceipt } from "../data.ts";
+import { readRetained, writeRetained } from "../retained-input.ts";
+import { readReceipt, submitMutation } from "../data.ts";
 import { requestError } from "../request-error.ts";
+
 type Pending = typeof SubmissionSchema.Type;
+type Receipt = WorkspaceSnapshot["receipts"][number];
+
 export function useWorkspaceAdmission({
   workspace,
   isReady,
@@ -37,43 +40,46 @@ export function useWorkspaceAdmission({
   const [admitting, setAdmitting] = useState(false);
   const admittingRef = useRef(false);
   const mounted = useRef(false);
-  const senders = useRef(new Map<string, { agent: HttpAgent; admitted: boolean }>());
+  const reconciledIds = useRef(new Set<string>());
   const lookupReceipt = useAtomSet(readReceipt, { mode: "promiseExit" });
+  const submit = useAtomSet(submitMutation, { mode: "promiseExit" });
+
   useEffect(() => {
     mounted.current = true;
-    const transports = senders.current;
     return () => {
       mounted.current = false;
-      for (const sender of transports.values()) void sender.agent.detachActiveRun();
-      transports.clear();
     };
   }, []);
-  useEffect(() => {
-    if (!pending) return;
-    let active = true;
-    const reconcile = (receipt: WorkspaceSnapshot["receipts"][number] | null) => {
-      if (!active || !receipt) return;
+
+  const applyReceipt = useCallback(
+    (
+      expected: Pending,
+      receipt: Receipt | null,
+    ): "admitted" | "uncertain" | "conflict" | "none" => {
+      if (!receipt) return "none";
       if (
-        receipt.request_id !== pending.request_id ||
-        receipt.text !== pending.text ||
-        receipt.delivery !== pending.delivery ||
-        !Equal.equals(receipt.thought, pending.thought) ||
-        !Equal.equals(receipt.capture?.selection, pending.selection)
+        receipt.request_id !== expected.request_id ||
+        receipt.text !== expected.text ||
+        receipt.delivery !== expected.delivery ||
+        !Equal.equals(receipt.thought, expected.thought) ||
+        !Equal.equals(receipt.capture?.selection, expected.selection)
       ) {
         setAdmitting(false);
         admittingRef.current = false;
         setError(
           "Submission identity conflicts with retained evidence. The pending input was preserved.",
         );
-        return;
+        return "conflict";
       }
       if (receipt.status === "admitted") {
-        const sender = senders.current.get(pending.request_id);
-        if (sender) {
-          sender.admitted = true;
-          void sender.agent.detachActiveRun();
+        if (!reconciledIds.current.has(expected.request_id)) {
+          reconciledIds.current.add(expected.request_id);
+          if (reconciledIds.current.size > 32) {
+            const oldest = reconciledIds.current.values().next().value;
+            if (oldest !== undefined) reconciledIds.current.delete(oldest);
+          }
+          if (expected.selection || expected.thought) clearSent(expected);
         }
-        if (pending.selection || pending.thought) clearSent(pending);
         setPending(undefined);
         setAdmitting(false);
         admittingRef.current = false;
@@ -82,34 +88,47 @@ export function useWorkspaceAdmission({
         } catch {
           setError("Submission was admitted, but browser recovery storage is unavailable.");
         }
-      } else if (receipt.status === "uncertain") {
+        return "admitted";
+      }
+      if (receipt.status === "uncertain") {
         setAdmitting(false);
         admittingRef.current = false;
         setError(
           "Submission is uncertain. Use Reconcile submission to check the same input identity.",
         );
+        return "uncertain";
       }
-    };
+      return "none";
+    },
+    [clearSent, setError, storageKey],
+  );
+
+  useEffect(() => {
+    if (!pending) return;
+    let active = true;
     const recent = workspace.receipts.find((r) => r.request_id === pending.request_id);
-    if (recent) reconcile(recent);
-    else {
+    if (recent) {
+      void Promise.resolve().then(() => {
+        if (active) applyReceipt(pending, recent);
+      });
+    } else if (!admittingRef.current) {
       // History is a display window, not the admission ledger. Read the exact
       // retained identity on restored or subsequent server observations.
       void lookupReceipt(pending.request_id).then((result) => {
         if (!active) return;
-        if (Exit.isSuccess(result)) reconcile(result.value);
+        if (Exit.isSuccess(result)) applyReceipt(pending, result.value);
         else setError(requestError(result.cause));
       });
     }
     return () => {
       active = false;
     };
-  }, [workspace.receipts, pending, storageKey, lookupReceipt, setError, clearSent]);
+  }, [workspace.receipts, pending, lookupReceipt, setError, applyReceipt]);
 
   async function send(input?: Pending) {
     if (!isReady || admittingRef.current || (!input && pending)) return;
-    const submission = input ?? {
-      request_id: crypto.randomUUID(),
+    const submission: Pending = input ?? {
+      request_id: WebSubmissionId.make(crypto.randomUUID()),
       text: draft.trim(),
       ...(selection && { selection }),
       ...(thought && { thought }),
@@ -128,63 +147,38 @@ export function useWorkspaceAdmission({
     setPending(submission);
     if (!submission.selection && !submission.thought) setDraft("");
     setError("");
-    const sender = {
-      agent: new HttpAgent({
-        url: "/api/copilotkit/agent/abra/run",
-        agentId: "abra",
-        threadId: workspace.session_id,
-        initialMessages: [{ id: submission.request_id, role: "user", content: submission.text }],
-      }),
-      admitted: false,
-    };
-    senders.current.set(submission.request_id, sender);
-    let refused = false;
-    try {
-      await sender.agent.runAgent(
-        {
-          tools: [],
-          context: [],
-          forwardedProps: {
-            request_id: submission.request_id,
-            delivery: submission.delivery,
-            ...(submission.thought && { thought: submission.thought }),
-            ...(submission.selection && { selection: submission.selection }),
-          },
-        },
-        {
-          onRunErrorEvent: ({ event }) => {
-            if (
-              (!submission.selection && !submission.thought) ||
-              !event.code?.startsWith("SELECTION_") ||
-              !mounted.current
-            )
-              return;
-            refused = true;
-            setPending(undefined);
-            try {
-              localStorage.removeItem(storageKey);
-            } catch {
-              /* Keep the mounted draft. */
-            }
-            setError(event.message);
-          },
-        },
-      );
-    } catch (cause) {
-      if (!sender.admitted && !refused && mounted.current)
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "Submission could not be confirmed. Reconcile before sending again.",
-        );
-    } finally {
-      senders.current.delete(submission.request_id);
-      if (mounted.current && !sender.admitted) {
+    const result = await submit({ payload: submission });
+    if (!mounted.current) return;
+    if (Exit.isSuccess(result)) {
+      const outcome = applyReceipt(submission, result.value);
+      if (outcome !== "admitted") {
         admittingRef.current = false;
         setAdmitting(false);
         refresh();
       }
+      return;
     }
+    const failure = Cause.findErrorOption(result.cause);
+    const errorObj =
+      Option.isSome(failure) && failure.value && typeof failure.value === "object"
+        ? failure.value
+        : undefined;
+    const code = errorObj && "code" in errorObj ? String(errorObj.code) : undefined;
+    const message = errorObj && "message" in errorObj ? String(errorObj.message) : undefined;
+    if ((submission.selection || submission.thought) && code?.startsWith("SELECTION_")) {
+      setPending(undefined);
+      try {
+        localStorage.removeItem(storageKey);
+      } catch {
+        /* Keep the mounted draft. */
+      }
+      setError(message ?? requestError(result.cause));
+    } else if (!reconciledIds.current.has(submission.request_id)) {
+      setError(message ?? "Submission could not be confirmed. Reconcile before sending again.");
+    }
+    admittingRef.current = false;
+    setAdmitting(false);
+    refresh();
   }
   return { pending, admitting, send };
 }

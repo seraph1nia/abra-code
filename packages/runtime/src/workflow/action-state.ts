@@ -1,7 +1,7 @@
 import { digest } from "../digest.ts";
 import { ensure, type ManagedExecution } from "../domain.ts";
-import { type CurrentAction, type PRAction } from "./action-contracts.ts";
-import { type ActionInput } from "./feedback-contracts.ts";
+import { type CurrentAction, type PRAction } from "@abracode/contracts/workflow/action-contracts";
+import { type ActionInput } from "@abracode/contracts/workflow/feedback-contracts";
 
 /** Normalize only at the boundary; the original receipt and approval identity survive. */
 export function normalizeAction(a: PRAction, e: ManagedExecution): CurrentAction {

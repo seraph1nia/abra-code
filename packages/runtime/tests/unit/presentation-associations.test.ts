@@ -6,8 +6,8 @@ import {
   PresentationAssociations,
   searchPublications,
 } from "../../src/presentation/associations.ts";
-import { PresentationAttachmentSchema } from "../../src/presentation/contracts.ts";
-import { SessionId, MessageId } from "../../src/identities.ts";
+import { PresentationAttachmentSchema } from "@abracode/contracts/presentation/contracts";
+import { SessionId, MessageId } from "@abracode/contracts/identities";
 import { MemoryStore, TestLocks } from "../fixtures.ts";
 import { run } from "../effects.ts";
 

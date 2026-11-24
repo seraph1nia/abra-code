@@ -6,7 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Effect, Exit, Scope } from "effect";
 import { reportBrowserExecutable } from "@abracode/report-export/browser";
-import { AbsolutePath, RequestId } from "../../src/identities.ts";
+import { AbsolutePath, RequestId } from "@abracode/contracts/identities";
 import { NativeWebBackend } from "../../src/web/backend.ts";
 import { workspaceServer } from "../../src/web/server.ts";
 import { hash } from "../../src/memory/collections.ts";

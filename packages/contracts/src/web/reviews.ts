@@ -1,10 +1,10 @@
 import { Schema } from "effect";
 import { ContentHash, IssueId, MessageId, RequestId, SessionId, Timestamp } from "../identities.ts";
+import { exactParseOptions as exact } from "../primitives.ts";
 import { ComponentId } from "./catalog.ts";
 import { ResourcePathSchema } from "./resources.ts";
 import { SubmissionSchema, ReceiptSchema } from "./workspace-wire.ts";
 
-const exact = { parseOptions: { onExcessProperty: "error" as const }, reportInput: false };
 const text = Schema.String.check(Schema.isMaxLength(4096));
 const label = text.check(Schema.isNonEmpty());
 const positive = Schema.Int.check(Schema.isGreaterThan(0));

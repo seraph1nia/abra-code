@@ -2,16 +2,48 @@ import { createRoot } from "react-dom/client";
 import { StrictMode, useState } from "react";
 import { Checkbox } from "@abracode/presentation/ui/checkbox";
 import { ReportDocumentView } from "@abracode/presentation/report-document";
+import { readReportDocument } from "@abracode/contracts/presentation/report-document";
 import { FeedbackForm } from "./feedback.tsx";
 import { preparedDiagrams } from "@report/prepared-diagrams";
 import { Schema } from "effect";
 import { ContentHash } from "@abracode/contracts/identities";
 import "./style.css";
 
+const reportEvidenceSectionLabels: Record<string, string> = {
+  summary: "Summary",
+  findings: "Findings",
+  checks: "Checks",
+  events: "Events",
+  excerpts: "Code and evidence",
+  limitations: "Limitations",
+  diagrams: "Diagrams",
+};
+
+function feedbackSections(json: string): readonly string[] {
+  try {
+    const parsed = readReportDocument(json);
+    if (!parsed.supported || !parsed.document.data.evidence) return [];
+    const seen = new Set<string>();
+    const sections: string[] = [];
+    for (const component of parsed.document.surface.createSurface.components) {
+      if (component.component !== "ReportEvidence" || typeof component.section !== "string")
+        continue;
+      const label = reportEvidenceSectionLabels[component.section];
+      if (!label || seen.has(label)) continue;
+      seen.add(label);
+      sections.push(label);
+    }
+    return sections;
+  } catch {
+    return [];
+  }
+}
+
 function PortableReport() {
   const [dark, setDark] = useState(false);
   const data = document.getElementById("abracode-report-document");
   const json = data?.textContent;
+  const [sections] = useState(() => (json ? feedbackSections(json) : []));
   if (!json)
     return (
       <main className="portable-report">
@@ -50,17 +82,7 @@ function PortableReport() {
         }}
         preparedDiagrams={preparedDiagrams}
       />
-      <FeedbackForm
-        sections={[
-          "Summary",
-          "Findings",
-          "Checks",
-          "Events",
-          "Code and evidence",
-          "Limitations",
-          "Diagrams",
-        ]}
-      />
+      <FeedbackForm sections={sections} />
       <details>
         <summary>Third-party notices</summary>
         <pre>{notices}</pre>

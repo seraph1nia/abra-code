@@ -16,11 +16,11 @@ import {
   reviewCatalogDocument,
   reviewSurface,
 } from "@abracode/contracts/web/review-catalog";
-import { validateSurface } from "../../src/web/surfaces.ts";
+import { validateSurface } from "@abracode/contracts/web/surfaces";
 import { Reviews } from "../../src/web/reviews.ts";
 import { WebAdmissions } from "../../src/web/gateway.ts";
 import { CrewError } from "../../src/domain.ts";
-import { ContentHash, MessageId, SessionId, StorageKey } from "../../src/identities.ts";
+import { ContentHash, MessageId, SessionId, StorageKey } from "@abracode/contracts/identities";
 import { MemoryStore, TestLocks } from "../fixtures.ts";
 
 const session = SessionId.make("ses_review"),

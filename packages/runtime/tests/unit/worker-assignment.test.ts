@@ -5,7 +5,7 @@ import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import { SessionId } from "../../src/identities.ts";
+import { SessionId } from "@abracode/contracts/identities";
 import { type Execution } from "../../src/domain.ts";
 import { isActiveWorker } from "../../src/workflow/worker-assignment.ts";
 

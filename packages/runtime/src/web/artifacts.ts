@@ -1,6 +1,6 @@
-import type { VisualBuildSummarySchema } from "../workflow/report-contracts.ts";
-import type { ArtifactSummarySchema } from "./wire.ts";
-import { artifactPageSize } from "./wire.ts";
+import type { VisualBuildSummarySchema } from "../reporting/report-contracts.ts";
+import type { ArtifactSummarySchema } from "@abracode/contracts/web/wire";
+import { artifactPageSize } from "@abracode/contracts/web/wire";
 export function artifactSummary(
   build: typeof VisualBuildSummarySchema.Type,
 ): typeof ArtifactSummarySchema.Type {

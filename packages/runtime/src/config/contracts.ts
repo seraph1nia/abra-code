@@ -1,5 +1,5 @@
 import { ProjectDispatchSchema, DispatchProfilesSchema } from "./dispatch.ts";
-import { CapabilityFields } from "../opencode/capability-contracts.ts";
+import { CapabilityFields } from "@abracode/agents/capabilities";
 import {
   Executable,
   SpecSchemaName,
@@ -8,7 +8,7 @@ import {
   GitRemote,
   BranchName,
   AgentId,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 import {
   DeliveryPolicySchema,
   BranchPolicySchema,
@@ -19,10 +19,10 @@ import {
   PolicySchema,
   Positive,
   WorkerModelSchema,
-} from "../contracts.ts";
+} from "@abracode/contracts/primitives";
 
-import { WatchdogPolicySchema } from "../workflow/attention-contracts.ts";
-import { GeneratedPathsSchema } from "./paths.ts";
+import { WatchdogPolicySchema } from "@abracode/contracts/workflow/attention-contracts";
+import { GeneratedPathsSchema } from "@abracode/contracts/config/paths";
 import { Schema, Effect } from "effect";
 
 import { parseDocument } from "yaml";

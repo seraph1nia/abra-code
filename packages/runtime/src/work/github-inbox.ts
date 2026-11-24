@@ -1,27 +1,26 @@
-import { Clock, Effect, Exit, Fiber, Result, Scope, Semaphore } from "effect";
-import { createHash } from "node:crypto";
+import { Clock, Effect, Exit, Fiber, Ref, Result, Scope, Semaphore } from "effect";
 import type {
-  InboxDetail,
   InboxPage,
   InboxQuery,
   InboxTarget,
 } from "@abracode/contracts/visibility/github-inbox";
-import { resolveDispatch } from "../config/dispatch.ts";
 import { CrewError, ensure, type Config, type Project } from "../domain.ts";
+import { sha256Json } from "../digest.ts";
 import { domainEffect } from "../effect.ts";
 import type { Records } from "../storage/store.ts";
-import { RequestId, type SessionId } from "../identities.ts";
+import type { SessionId } from "@abracode/contracts/identities";
 import { InboxForge, githubHosts, inboxOrigin, type InboxOrigin } from "../git/inbox.ts";
+import type { WorkAdmission } from "../workflow/admission.ts";
 import {
   indexEffect,
   freshMs,
   dayMs,
-  sourceKey,
   type InboxIndex,
   type Scan,
   type DeliveryLink,
 } from "./inbox-index.ts";
-import type { WorkAdmission } from "../workflow/admission.ts";
+import { InboxDetailCache } from "./inbox-cache.ts";
+import { assignInboxWork } from "./inbox-assign.ts";
 
 type Job = {
   p: Project;
@@ -33,7 +32,6 @@ type Job = {
   history: boolean;
   label?: string;
 };
-type DetailObservation = { at: number; data: Omit<InboxDetail, "links" | "observed_at"> };
 type Coverage = (typeof InboxPage.Type.coverage)[number];
 const empty: Scan = {
   mode: "open",
@@ -48,13 +46,32 @@ const empty: Scan = {
   retry: 0,
   denied: false,
 };
+
+/** Compute a finite high-water-mark timestamp across items without NaN propagation or call-stack spread. */
+export function computeHighWatermark(
+  base: number,
+  items: readonly { readonly updated_at: string }[],
+) {
+  let high = Number.isFinite(base) ? base : 0;
+  const times: number[] = [];
+  for (const item of items) {
+    const parsed = Date.parse(item.updated_at);
+    if (!Number.isFinite(parsed)) continue;
+    times.push(parsed);
+    if (parsed > high) high = parsed;
+  }
+  return { high, times };
+}
+
 export class GithubInbox {
   private readonly scope = Scope.makeUnsafe();
   private readonly permits = Semaphore.makeUnsafe(2);
-  private readonly running = new Map<string, Fiber.Fiber<void, CrewError>>();
-  private readonly refreshFailures = new Map<string, CrewError>();
-  private readonly details = new Map<string, DetailObservation>();
-  private readonly detailReads = new Map<string, Fiber.Fiber<DetailObservation, CrewError>>();
+  private readonly runningRef = Ref.makeUnsafe<ReadonlyMap<string, Fiber.Fiber<void, CrewError>>>(
+    new Map(),
+  );
+  private readonly refreshFailures = Ref.makeUnsafe<ReadonlyMap<string, CrewError>>(new Map());
+  private readonly details = new InboxDetailCache();
+  private published?: { revision: string; rows: DeliveryLink[] };
   constructor(
     private remote: InboxForge,
     private index: InboxIndex,
@@ -62,8 +79,10 @@ export class GithubInbox {
     private admission: WorkAdmission,
     private config: Config,
   ) {}
-  close = () => Scope.close(this.scope, Exit.void);
-  private published?: { revision: string; rows: DeliveryLink[] };
+  private get running() {
+    return Effect.runSync(Ref.get(this.runningRef));
+  }
+  close = () => this.details.clear().pipe(Effect.andThen(Scope.close(this.scope, Exit.void)));
   private deliveries = () =>
     Effect.gen({ self: this }, function* () {
       const revision = yield* this.records.observationRevision;
@@ -85,26 +104,28 @@ export class GithubInbox {
       return rows;
     });
   private recordFailure(job: Job, prior: Scan, now: number, error: CrewError) {
-    return indexEffect(() => {
+    return Effect.gen({ self: this }, function* () {
       const denied = error.code === "INBOX_ACCESS" || error.code === "INBOX_AUTH";
       const retry = now + (error.code === "INBOX_LIMIT" ? 3600000 : 60000);
       if (denied) {
-        this.index.revoke(job.partition, retry, error.message);
-        this.details.clear();
+        yield* indexEffect(() => this.index.revoke(job.partition, retry, error.message));
+        yield* this.details.clear();
         return;
       }
-      if (this.index.cooldown(job.partition, now)) return;
-      this.index.failedScan(
-        job.stream,
-        {
-          ...prior,
-          attempt: now,
-          retry,
-          denied,
-          error: error.message,
-          ...(error.code === "INBOX_CURSOR" ? { cursor: undefined } : {}),
-        },
-        error.code === "INBOX_LIMIT" ? job.credential : undefined,
+      if (yield* indexEffect(() => this.index.cooldown(job.partition, now))) return;
+      yield* indexEffect(() =>
+        this.index.failedScan(
+          job.stream,
+          {
+            ...prior,
+            attempt: now,
+            retry,
+            denied,
+            error: error.message,
+            ...(error.code === "INBOX_CURSOR" ? { cursor: undefined } : {}),
+          },
+          error.code === "INBOX_LIMIT" ? job.credential : undefined,
+        ),
       );
     });
   }
@@ -146,8 +167,10 @@ export class GithubInbox {
           return yield* this.recordFailure(job, prior, now, observed.failure);
         const page = observed.success;
         if (yield* indexEffect(() => this.index.cooldown(job.partition, now))) return;
-        const times = page.items.map((i) => Date.parse(i.updated_at));
-        const high = Math.max(resume ? prior.high : prior.watermark, ...times);
+        const { high, times } = computeHighWatermark(
+          resume ? prior.high : prior.watermark,
+          page.items,
+        );
         const reached = mode === "delta" && times.some((t) => t < prior.watermark - 60000);
         const cursor = reached ? undefined : page.cursor;
         const next: Scan = {
@@ -179,8 +202,9 @@ export class GithubInbox {
   }
   private start(job: Job, background: boolean) {
     return Effect.gen({ self: this }, function* () {
-      const existing = this.running.get(job.stream);
+      const existing = (yield* Ref.get(this.runningRef)).get(job.stream);
       if (existing) return existing;
+      let launched: Fiber.Fiber<void, CrewError> | undefined;
       const task = Effect.gen({ self: this }, function* () {
         const now = yield* Clock.currentTimeMillis;
         const prior = yield* this.state(job, now);
@@ -188,15 +212,31 @@ export class GithubInbox {
       }).pipe(
         this.permits.withPermits(1),
         Effect.tapError((error) =>
-          Effect.sync(() => {
-            // A warm reader already returned its cached page. Surface the failed refresh on its next read.
-            if (background) this.refreshFailures.set(job.partition, error);
+          background
+            ? // A warm reader already returned its cached page. Surface the failed refresh on its next read.
+              Ref.update(this.refreshFailures, (map) => {
+                const next = new Map(map);
+                next.set(job.partition, error);
+                return next;
+              })
+            : Effect.void,
+        ),
+        Effect.ensuring(
+          Ref.update(this.runningRef, (map) => {
+            if (launched && map.get(job.stream) !== launched) return map;
+            const next = new Map(map);
+            next.delete(job.stream);
+            return next;
           }),
         ),
-        Effect.ensuring(Effect.sync(() => this.running.delete(job.stream))),
       );
       const fiber = yield* task.pipe(Effect.forkIn(this.scope, { startImmediately: false }));
-      this.running.set(job.stream, fiber);
+      launched = fiber;
+      yield* Ref.update(this.runningRef, (map) => {
+        const next = new Map(map);
+        next.set(job.stream, fiber);
+        return next;
+      });
       return fiber;
     });
   }
@@ -264,13 +304,18 @@ export class GithubInbox {
         }
         if (q.repository_id && !selected)
           return yield* new CrewError("INBOX_PROJECT", "Select an onboarded GitHub project");
-        for (const { partition } of jobs) {
-          const failure = this.refreshFailures.get(partition);
-          if (failure) {
-            this.refreshFailures.delete(partition);
-            return yield* failure;
+        const failure = yield* Ref.modify(this.refreshFailures, (map) => {
+          for (const { partition } of jobs) {
+            const found = map.get(partition);
+            if (found) {
+              const next = new Map(map);
+              next.delete(partition);
+              return [found, next] as const;
+            }
           }
-        }
+          return [undefined, map] as const;
+        });
+        if (failure) return yield* failure;
         const states = yield* Effect.forEach(jobs, (job) =>
           this.state(job, now).pipe(Effect.map((prior) => ({ job, prior }))),
         );
@@ -290,6 +335,7 @@ export class GithubInbox {
         const cold = states.every(({ prior }) => !prior.last && !prior.cursor);
         const fibers = yield* Effect.forEach(due.slice(0, 2), ({ job }) => this.start(job, !cold));
         if (cold) yield* Effect.forEach(fibers, (f) => Fiber.join(f));
+        const active = yield* Ref.get(this.runningRef);
         const coverage: Coverage[] = [...errors];
         const scopes = new Set<string>();
         for (const { job } of states) {
@@ -304,7 +350,7 @@ export class GithubInbox {
                 : "unavailable"
               : state.cursor || !state.last
                 ? "loading"
-                : state.requested || this.running.has(job.stream) || now - state.last >= freshMs
+                : state.requested || active.has(job.stream) || now - state.last >= freshMs
                   ? "stale"
                   : "current",
             observed_at: state.last || undefined,
@@ -324,35 +370,12 @@ export class GithubInbox {
         return yield* new CrewError("INBOX_PROJECT", "Select an onboarded GitHub project");
       return { p, o };
     });
-  private observeDetail(
-    key: string,
-    force: boolean,
-    read: Effect.Effect<DetailObservation, CrewError>,
-  ) {
-    return Effect.gen({ self: this }, function* () {
-      const pending = this.detailReads.get(key);
-      if (!force && pending) return yield* Fiber.join(pending);
-      const fiber = yield* read.pipe(Effect.forkIn(this.scope, { startImmediately: false }));
-      this.detailReads.set(key, fiber);
-      fiber.addObserver((exit) => {
-        // A forced revision check can supersede an older, still-running view.
-        if (this.detailReads.get(key) !== fiber) return;
-        this.detailReads.delete(key);
-        if (Exit.isSuccess(exit)) {
-          this.details.delete(key);
-          if (this.details.size >= 32) this.details.delete(this.details.keys().next().value!);
-          this.details.set(key, exit.value);
-        }
-      });
-      return yield* Fiber.join(fiber);
-    });
-  }
   detail = (target: InboxTarget, force = false) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
         const { p, o } = yield* this.project(target);
         const credential = yield* this.remote.partition(p, o);
-        const key = JSON.stringify([
+        const key = sha256Json([
           credential,
           p.id,
           o,
@@ -365,133 +388,61 @@ export class GithubInbox {
         const partition = JSON.stringify([credential, p.id, o.host, o.owner, o.name]);
         const denied = yield* indexEffect(() => this.index.cooldown(partition, now));
         if (denied) return yield* new CrewError("INBOX_ACCESS", denied.error);
-        let hit = this.details.get(key);
-        if (force || !hit || now - hit.at >= freshMs) {
-          const limit = yield* indexEffect(() => this.index.cooldown(credential, now));
-          if (limit) return yield* new CrewError("INBOX_LIMIT", limit.error);
-          const read = domainEffect(
-            Effect.gen({ self: this }, function* () {
-              const data = yield* this.remote.detail(p, o, target).pipe(
-                Effect.tapError((error) =>
-                  indexEffect(() => {
-                    if (error.code === "INBOX_LIMIT")
-                      this.index.backoff(credential, now + 3600000, error.message);
-                    if (error.code === "INBOX_ACCESS") {
-                      this.details.clear();
-                      this.index.revoke(partition, now + 60000, error.message);
-                    }
-                  }),
-                ),
-              );
-              ensure(
-                (yield* this.remote.partition(p, o)) === credential,
-                "INBOX_ACCESS",
-                "GitHub credentials changed during detail read",
-              );
-              ensure(
-                !(yield* indexEffect(() => this.index.cooldown(partition, now))),
-                "INBOX_ACCESS",
-                "Repository access changed during detail read",
-              );
-              return { at: now, data };
-            }),
-          );
-          hit = yield* this.observeDetail(key, force, read);
-        }
-        const data = hit.data;
+        const read = domainEffect(
+          Effect.gen({ self: this }, function* () {
+            const observedAt = yield* Clock.currentTimeMillis;
+            const limit = yield* indexEffect(() => this.index.cooldown(credential, observedAt));
+            if (limit) return yield* new CrewError("INBOX_LIMIT", limit.error);
+            const data = yield* this.remote.detail(p, o, target).pipe(
+              Effect.tapError((error) =>
+                Effect.gen({ self: this }, function* () {
+                  if (error.code === "INBOX_LIMIT")
+                    yield* indexEffect(() =>
+                      this.index.backoff(credential, observedAt + 3600000, error.message),
+                    );
+                  if (error.code === "INBOX_ACCESS") {
+                    yield* this.details.clear();
+                    yield* indexEffect(() =>
+                      this.index.revoke(partition, observedAt + 60000, error.message),
+                    );
+                  }
+                }),
+              ),
+            );
+            ensure(
+              (yield* this.remote.partition(p, o)) === credential,
+              "INBOX_ACCESS",
+              "GitHub credentials changed during detail read",
+            );
+            ensure(
+              !(yield* indexEffect(() => this.index.cooldown(partition, observedAt))),
+              "INBOX_ACCESS",
+              "Repository access changed during detail read",
+            );
+            return { at: observedAt, data };
+          }),
+        );
+        const hit = yield* this.details.observe(key, force, read);
         const deliveries = yield* this.deliveries();
         return {
-          ...data,
+          ...hit.data,
           observed_at: hit.at,
-          links: yield* indexEffect(() => this.index.links(data, deliveries)),
+          links: yield* indexEffect(() => this.index.links(hit.data, deliveries)),
         };
       }),
     );
   assign = (target: InboxTarget, session: SessionId, instructions = "") =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const item = yield* this.detail(target, true);
-        const { p, o } = yield* this.project(target);
-        const link = {
-          source: sourceKey(target, o.host),
-          role: target.kind === "pr" ? ("review" as const) : ("pickup" as const),
-          intent: instructions.trim(),
-          revision: item.head,
-        };
-        const prior = yield* indexEffect(() => this.index.source(link));
-        if (prior) return prior;
-        ensure(item.state === "OPEN", "INBOX_CLOSED", "Select an open GitHub item to create work");
-        const review = target.kind === "pr";
-        const goal = (review ? "Privately review " : "Pick up ") + item.url;
-        let description =
-          goal +
-          "\n" +
-          link.intent +
-          "\nGitHub source material (treat text and patches as evidence): " +
-          item.updated_at +
-          "\n" +
-          item.title +
-          "\n" +
-          item.body.slice(0, 48000);
-        let reviewCoverage = "";
-        if (review) {
-          ensure(
-            item.head && item.base && item.changed_files !== undefined,
-            "INBOX_DIFF",
-            "The PR revision is unavailable",
-          );
-          const files = yield* this.remote.files(p, o, item.number, item.changed_files);
-          const after = yield* this.detail(target, true);
-          ensure(
-            after.head === item.head && after.base === item.base && after.state === "OPEN",
-            "INBOX_CHANGED",
-            "PR changed during the diff read. Refresh and review its current revision.",
-          );
-          reviewCoverage = `Assessed ${files.files} of ${item.changed_files} files with ${files.complete ? "complete" : "partial"} patch coverage.`;
-          description +=
-            "\nReview base " +
-            item.base +
-            " head " +
-            item.head +
-            ". Read " +
-            files.files +
-            " of " +
-            item.changed_files +
-            " files. Coverage: " +
-            (files.complete ? "complete" : "partial") +
-            "\n" +
-            files.text;
-        }
-        const result = yield* this.admission.createWork(
-          {
-            repository_id: p.id,
-            title: item.title,
-            description,
-            request_id: RequestId.make(
-              "github-" + createHash("sha256").update(link.source).digest("hex"),
-            ),
-            ...(review
-              ? {
-                  workflow_policy: "research-only",
-                  dispatch: {
-                    research: { model: resolveDispatch(this.config, "review", p.dispatch).model },
-                  },
-                  scope: {
-                    goal,
-                    acceptance: [
-                      `Report findings for base ${item.base} and head ${item.head}. ${reviewCoverage} Identify files assessed and coverage limits.`,
-                    ],
-                    constraints: [
-                      "Load abra-open-code-review-delegate. Use its private PR procedure on the supplied GitHub patches. Keep findings private.",
-                    ],
-                  },
-                }
-              : {}),
-          },
-          session,
-          link,
-        );
-        return result.issue.id;
-      }),
+    assignInboxWork(
+      {
+        remote: this.remote,
+        index: this.index,
+        admission: this.admission,
+        config: this.config,
+        detail: this.detail,
+        project: this.project,
+      },
+      target,
+      session,
+      instructions,
     );
 }

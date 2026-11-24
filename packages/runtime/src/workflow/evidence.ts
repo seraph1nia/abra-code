@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { AbsolutePath, Commit, BranchName, Fingerprint } from "../identities.ts";
+import { AbsolutePath, Commit, BranchName, Fingerprint } from "@abracode/contracts/identities";
 import { ExecutionStateSchema } from "../storage/contracts.ts";
 import { decode } from "../decode.ts";
 import { type ManagedExecution } from "../domain.ts";

@@ -1,5 +1,5 @@
-import { IssueId } from "../identities.ts";
 import { Effect } from "effect";
+import { CrewError } from "../domain.ts";
 import type {
   ControllerServices,
   ExecutionCommands,
@@ -14,7 +14,6 @@ import type {
   PublicationCommands,
 } from "./public-api.ts";
 import type { Queries } from "./queries.ts";
-import { Visibility } from "../visibility/read-model.ts";
 /** Public lifecycle commands and read-only queries; implementation adapters remain private. */
 export class Controller {
   readonly queries: Queries;
@@ -62,10 +61,14 @@ export class Controller {
     ]
   ) =>
     this.services.reports.saveSurface(...args, (selection) =>
-      new Visibility(this).binding({
-        issue_ids: selection.ids.map((id) => IssueId.make(id)),
-        include_population: selection.unfiltered,
-      }),
+      this.services.readBinding
+        ? this.services.readBinding(selection)
+        : Effect.fail(
+            new CrewError(
+              "UNAVAILABLE",
+              "Visual surface binding reader is not configured on Controller",
+            ),
+          ),
     );
   reconcileReports = () => this.services.reports.recover();
   visualReport = (...args: Parameters<ReportCommands["generate"]>) =>

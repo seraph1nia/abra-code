@@ -2,7 +2,7 @@ import { Schema } from "effect";
 import { IssueId, RepositoryId } from "../identities.ts";
 import { WorkSummarySchema } from "../visibility/work-summary.ts";
 import { CapacityUsageSchema } from "../visibility/discovery-contracts.ts";
-import { Count, PhaseSchema } from "../primitives.ts";
+import { Count, PhaseSchema, exactParseOptions } from "../primitives.ts";
 import type { WorkSurface } from "./surfaces.ts";
 
 export const maximumBindingRows = 100;
@@ -97,7 +97,7 @@ export function selectBindingRows<T extends { issue_id: string }>(
 export const BindingReadQuery = Schema.Struct({
   issue_ids: ids,
   include_population: Schema.optional(Schema.Boolean),
-}).annotate({ parseOptions: { onExcessProperty: "error" }, reportInput: false });
+}).annotate(exactParseOptions);
 export const BindingReadSchema = Schema.Struct({
   capacity: Schema.optionalKey(
     Schema.Struct({

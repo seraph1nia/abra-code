@@ -6,12 +6,10 @@
   "type": "module",
   "imports": {
     "#ui/*": "./src/ui/*.tsx",
-    "#utils": "./src/utils.ts",
-    "#components/*": "./src/components/*.tsx",
-    "#lib/*": "./src/lib/*.ts",
-    "#hooks/*": "./src/hooks/*.ts"
+    "#utils": "./src/utils.ts"
   },
   "exports": {
+    "./catalog-media": "./src/catalog-media.tsx",
     "./icons": "./src/icons.ts",
     "./diagram-resource": "./src/diagram-resource.tsx",
     "./surface-owner": "./src/surface-owner.ts",

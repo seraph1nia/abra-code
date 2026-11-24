@@ -1,8 +1,11 @@
 import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
 import { presentationHash } from "../presentation/identity.ts";
 import { Schema } from "effect";
-import { SurfaceRecordSchema, type UnavailableSurfaceSchema } from "./workspace-wire.ts";
-import { normalizeSurface } from "./surfaces.ts";
+import {
+  SurfaceRecordSchema,
+  type UnavailableSurfaceSchema,
+} from "@abracode/contracts/web/workspace-wire";
+import { normalizeSurface } from "@abracode/contracts/web/surfaces";
 import type { SurfaceRecord } from "./contracts.ts";
 
 /** A corrupt saved view is isolated; the original native record is never modified. */

@@ -14,7 +14,7 @@ import { Service } from "@opencode/client/effect/service";
 import { OpenCode } from "@opencode/client";
 import { readDevNotebook } from "../../src/config/memos.ts";
 import { runtimePaths } from "../../src/config/identity.ts";
-import { AbsolutePath } from "../../src/identities.ts";
+import { AbsolutePath } from "@abracode/contracts/identities";
 
 async function unusedPort() {
   const server = createServer();
@@ -169,7 +169,7 @@ test(
       );
       assert.equal(
         (
-          await fetch(`${origin}/api/abra/stop`, {
+          await fetch(`${origin}/api/copilotkit/agent/abra/stop/${first.session_id}`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: "{}",

@@ -6,7 +6,7 @@ import { Agent } from "@opencode/schema/agent";
 import { OpenCode } from "@opencode/client";
 import { type Context } from "@opencode/plugin/effect/plugin";
 import { type Execution } from "../../src/domain.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { loadConfig } from "../../src/config/load.ts";
 import { makeClient } from "../../src/opencode/client.ts";
 import { capabilityRequirements, policyIdentity } from "../../src/opencode/role-policy.ts";

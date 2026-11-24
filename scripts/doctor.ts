@@ -1,1 +1,3 @@
-import "@abracode/runtime/cli/doctor";
+import { runMain } from "@abracode/runtime/cli";
+
+runMain(["doctor"]);

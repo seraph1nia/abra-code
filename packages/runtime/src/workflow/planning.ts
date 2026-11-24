@@ -3,7 +3,12 @@ import { isDeepStrictEqual } from "node:util";
 import { Effect } from "effect";
 import { CrewError, ensure, type Execution, type Project, type Role } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import { Fingerprint, type RequestId, type SessionId, timestamp } from "../identities.ts";
+import {
+  Fingerprint,
+  type RequestId,
+  type SessionId,
+  timestamp,
+} from "@abracode/contracts/identities";
 import { directoryIdentity, sameDirectory } from "../git/retirement.ts";
 import type { Git } from "../git/repository.ts";
 import type { Records } from "../storage/store.ts";
@@ -15,7 +20,8 @@ import type { Obligations } from "./obligations.ts";
 import { assertApprovalActor } from "./authorization.ts";
 import { readWorkerContext, compatibleContext } from "./worker-context.ts";
 import { activeSynchronization } from "./synchronization.ts";
-import { externalOwns } from "../validation/contracts.ts";
+import { externalOwns } from "@abracode/contracts/validation/contracts";
+import { messageRequests } from "@abracode/contracts/workflow/message-contracts";
 import { realpath } from "../filesystem.ts";
 import { resolve } from "node:path";
 import {
@@ -27,6 +33,15 @@ import {
 const digest = (value: unknown) =>
   Fingerprint.make(createHash("sha256").update(JSON.stringify(value)).digest("hex"));
 const refs = (a: PlanningAttempt) => `refs/abracode/planning/${a.execution_id}/${a.id}`;
+const hasLegacyReplanGap = (e: Execution) =>
+  !e.planning_base_commit &&
+  !activeSynchronization(e) &&
+  e.approval_receipts.some((r) => r.kind === "plan" && r.authorized_at);
+const legacyReplanError = () =>
+  new CrewError(
+    "PLANNING_BASELINE_REQUIRED",
+    "Legacy controlled replan has no attributable baseline; use explicit recovery",
+  );
 type Request = { id: RequestId; sender: SessionId };
 interface Dependencies {
   records: Records;
@@ -114,7 +129,25 @@ export class PlanningBaselines {
   );
   private quiescent = Effect.fn("Planning.quiescent")(
     function* (this: PlanningBaselines, e: Execution) {
-      yield* this.c.inspection.idle(e);
+      ensure(
+        !messageRequests(e.messages).some((m) => m.status === "admission_uncertain"),
+        "MESSAGE_UNCERTAIN",
+        "Pause and confirm native stop before replacing an uncertain instruction",
+      );
+      const sessionIds = [
+        e.explore_session_id,
+        e.apply_session_id,
+        e.review_session_id,
+        e.research_session_id,
+      ].filter((id): id is SessionId => Boolean(id));
+      const states = yield* Effect.forEach(sessionIds, (id) => this.c.runtime.session(id), {
+        concurrency: "unbounded",
+      });
+      ensure(
+        states.every((s) => !s.busy),
+        "WRITER_BUSY",
+        "A managed session still runs in this worktree",
+      );
       ensure(
         !e.session_intent &&
           !e.capacity_wait &&
@@ -122,24 +155,17 @@ export class PlanningBaselines {
         "PLANNING_ADMISSION",
         "Resolve queued or uncertain admission before planning",
       );
-      for (const id of [
-        e.explore_session_id,
-        e.apply_session_id,
-        e.review_session_id,
-        e.research_session_id,
-      ]) {
-        if (!id) continue;
-        const s = yield* this.c.runtime.session(id);
-        ensure(
-          !s.busy &&
+      ensure(
+        states.every(
+          (s) =>
             !s.executing &&
             !s.completion_pending &&
             !s.queued_prompt_ids?.length &&
             !s.diagnostic_error,
-          "WRITER_BUSY",
-          "A managed assignment is running, completing or queued",
-        );
-      }
+        ),
+        "WRITER_BUSY",
+        "A managed assignment is running, completing or queued",
+      );
     }.bind(this),
     domainEffect,
   );
@@ -190,14 +216,15 @@ export class PlanningBaselines {
   private pins = Effect.fn("Planning.pins")(
     function* (this: PlanningBaselines, e: Execution, a: PlanningAttempt, check = false) {
       ensure(a.source, "PLANNING_BASELINE_REQUIRED", "No reconstructable source baseline");
-      for (const view of ["index", "candidate"] as const)
-        if (check)
-          yield* this.c.git.assertPinnedTree(
-            e.worktree_directory!,
-            `${refs(a)}/${view}`,
-            a.source[view],
-          );
-        else yield* this.c.git.pinTree(e.worktree_directory!, `${refs(a)}/${view}`, a.source[view]);
+      const source = a.source;
+      yield* Effect.forEach(
+        ["index", "candidate"] as const,
+        (view) =>
+          check
+            ? this.c.git.assertPinnedTree(e.worktree_directory!, `${refs(a)}/${view}`, source[view])
+            : this.c.git.pinTree(e.worktree_directory!, `${refs(a)}/${view}`, source[view]),
+        { concurrency: 2 },
+      );
     }.bind(this),
     domainEffect,
   );
@@ -213,23 +240,23 @@ export class PlanningBaselines {
         "PLANNING_BASELINE_REQUIRED",
         "Planning baseline/pins are unavailable",
       );
+      const source = a.source;
       yield* this.pins(e, a, true);
       ensure(
-        observed.head === a.source.head,
+        observed.head === source.head,
         "EXPLORE_SOURCE_EDIT",
         "Explore changed the admitted HEAD",
       );
-      yield* this.c.git.planningDelta(
-        e.worktree_directory!,
-        a.source.index,
-        observed.index,
-        e.openspec_change,
-      );
-      yield* this.c.git.planningDelta(
-        e.worktree_directory!,
-        a.source.candidate,
-        observed.candidate,
-        e.openspec_change,
+      yield* Effect.forEach(
+        ["index", "candidate"] as const,
+        (view) =>
+          this.c.git.planningDelta(
+            e.worktree_directory!,
+            source[view],
+            observed[view],
+            e.openspec_change,
+          ),
+        { concurrency: 2 },
       );
     }.bind(this),
     domainEffect,
@@ -241,12 +268,11 @@ export class PlanningBaselines {
       const commit = e.planning_base_commit ?? e.openspec_update_commit ?? e.base_commit!;
       ensure(source.head === commit, "EXPLORE_SOURCE_EDIT", "Explore changed its trusted HEAD");
       const base = sync?.planning_base_tree ?? commit;
-      yield* this.c.git.planningDelta(e.worktree_directory!, base, source.index, e.openspec_change);
-      yield* this.c.git.planningDelta(
-        e.worktree_directory!,
-        base,
-        source.candidate,
-        e.openspec_change,
+      yield* Effect.forEach(
+        ["index", "candidate"] as const,
+        (view) =>
+          this.c.git.planningDelta(e.worktree_directory!, base, source[view], e.openspec_change),
+        { concurrency: 2 },
       );
       return commit;
     }.bind(this),
@@ -510,16 +536,8 @@ export class PlanningBaselines {
       if (a?.stage === "applying") return;
       const observed = yield* this.observe(e);
       if (!a) {
-        if (
-          ["exploring", "planning"].includes(e.current_phase) &&
-          !e.planning_base_commit &&
-          !activeSynchronization(e) &&
-          e.approval_receipts.some((r) => r.kind === "plan" && r.authorized_at)
-        )
-          return yield* new CrewError(
-            "PLANNING_BASELINE_REQUIRED",
-            "Legacy controlled replan has no attributable baseline; use explicit recovery",
-          );
+        if (["exploring", "planning"].includes(e.current_phase) && hasLegacyReplanGap(e))
+          return yield* legacyReplanError();
         yield* this.trusted(e, observed);
         return;
       }
@@ -557,6 +575,19 @@ export class PlanningBaselines {
     const a = currentPlanning(e);
     return a ? this.save(e, { ...a, stage: "planned" }) : Effect.void;
   };
+  private effectiveProject = Effect.fn("Planning.effectiveProject")(
+    function* (this: PlanningBaselines, e: Execution) {
+      const p = yield* this.c.records.project(e.repository_id);
+      ensure(p, "PROJECT_MISSING", "Planning repository registration is unavailable");
+      ensure(
+        e.delivery_policy === p.delivery,
+        "POLICY_DRIFT",
+        "Registered delivery policy changed during execution",
+      );
+      return { ...p, verification: e.effective_policy.verification };
+    }.bind(this),
+    domainEffect,
+  );
   beforeAdmission = Effect.fn("Planning.beforeAdmission")(
     function* (this: PlanningBaselines, e: Execution, role: Role) {
       const a = currentPlanning(e);
@@ -564,14 +595,9 @@ export class PlanningBaselines {
         !a &&
         role === "explore" &&
         e.workflow_policy === "full-openspec" &&
-        !e.planning_base_commit &&
-        !activeSynchronization(e) &&
-        e.approval_receipts.some((r) => r.kind === "plan" && r.authorized_at)
+        hasLegacyReplanGap(e)
       )
-        return yield* new CrewError(
-          "PLANNING_BASELINE_REQUIRED",
-          "Legacy controlled replan has no attributable baseline; use explicit recovery",
-        );
+        return yield* legacyReplanError();
       if (!a || (role !== "explore" && role !== "apply")) return;
       if (role === "explore")
         ensure(
@@ -580,8 +606,7 @@ export class PlanningBaselines {
           "Controlled Explore lacks an admitted baseline",
         );
       if (role === "apply" && a.stage === "applying") return;
-      const project = yield* this.c.records.project(e.repository_id);
-      ensure(project, "PROJECT_MISSING", "Planning repository registration is unavailable");
+      const project = yield* this.effectiveProject(e);
       yield* this.fence(e, project);
       yield* this.assertDelta(e);
     }.bind(this),
@@ -591,8 +616,7 @@ export class PlanningBaselines {
     function* (this: PlanningBaselines, e: Execution, role: Role) {
       const a = currentPlanning(e);
       if (!a || (role !== "explore" && role !== "apply") || a.stage === "applying") return;
-      const project = yield* this.c.records.project(e.repository_id);
-      ensure(project, "PROJECT_MISSING", "Planning repository registration is unavailable");
+      const project = yield* this.effectiveProject(e);
       yield* this.fence(e, project);
       yield* this.assertDelta(e);
       ensure(

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile, access, rename, symlink, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Schema } from "effect";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { fixture, delivered, writePlan } from "../fixtures.ts";
 
 import { verifiedSpec } from "../helpers/spec-review.ts";

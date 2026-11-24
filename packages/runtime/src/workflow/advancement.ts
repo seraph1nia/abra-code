@@ -3,12 +3,14 @@ import { removeOwnedField } from "../storage/store.ts";
 import type { ExecutionRecovery, RecoveryOutcome } from "./execution-recovery.ts";
 import type { PlanningBaselines } from "./planning.ts";
 import type { WorkAdmission } from "./admission.ts";
-
 import { type Messages } from "./messages.ts";
-import { MessageSendSchema, messageRequests, requiresResponse } from "./message-contracts.ts";
+import {
+  MessageSendSchema,
+  messageRequests,
+  requiresResponse,
+} from "@abracode/contracts/workflow/message-contracts";
 import { ExternalValidation } from "./external-validation.ts";
-import { externalOwns } from "../validation/contracts.ts";
-
+import { externalOwns } from "@abracode/contracts/validation/contracts";
 import {
   OperationAction,
   StorageKey,
@@ -18,24 +20,20 @@ import {
   IssueId,
   SessionId,
   RequestId,
-} from "../identities.ts";
-
+} from "@abracode/contracts/identities";
 import { Finalization } from "./finalization.ts";
 import { Finishing } from "./finishing.ts";
 import { activeSynchronization } from "./synchronization.ts";
 import { ExecutionTransitions } from "./transitions.ts";
 import { Records, type ExecutionPatch } from "../storage/store.ts";
-
 import { Corrections } from "./corrections.ts";
 import { createHash } from "node:crypto";
 import { Scopes } from "./scopes.ts";
-import { Reports } from "./reports.ts";
+import { Reports } from "../reporting/reports.ts";
 import { type Scope } from "../work/scope.ts";
-
 import { Obligations } from "./obligations.ts";
-import { Clock, Effect } from "effect";
+import { Clock, Effect, Match } from "effect";
 import { domainEffect } from "../effect.ts";
-
 import {
   CrewError,
   identifier,
@@ -43,14 +41,12 @@ import {
   type Config,
   type Execution,
   type Project,
+  type Role,
 } from "../domain.ts";
-
 import { type WorkGraph } from "../work/graph.ts";
-
 import { OpenSpec } from "../openspec/adapter.ts";
 import { Git } from "../git/repository.ts";
 import { type Delivery } from "../git/delivery.ts";
-
 import {
   type Authorizations,
   type CheckpointEvidence,
@@ -60,7 +56,6 @@ import { Queries } from "./queries.ts";
 import { CodingChecks } from "./checks.ts";
 import { specVerificationPassed } from "./review-contracts.ts";
 import { WorkerSessions, workerSessionID } from "./sessions.ts";
-
 import { Operations } from "./operations.ts";
 
 export interface AdvancementDependencies {
@@ -111,6 +106,30 @@ export class Advancement {
         }),
       ),
     );
+  private withOwnedRecord<A>(
+    id: IssueId,
+    action: string,
+    body: (e: Execution) => Effect.Effect<A, CrewError>,
+  ) {
+    return this.c.operations.owned(id, OperationAction.make(action), () =>
+      domainEffect(
+        Effect.gen({ self: this }, function* () {
+          return yield* body(yield* this.get(id));
+        }),
+      ),
+    );
+  }
+  private withOwnedExecution<A>(
+    id: IssueId,
+    action: string,
+    body: (e: Execution, p: Project) => Effect.Effect<A, CrewError>,
+  ) {
+    return this.withOwnedRecord(id, action, (e) =>
+      Effect.gen({ self: this }, function* () {
+        return yield* body(e, yield* this.project(e));
+      }),
+    );
+  }
   start = (id: IssueId, supervisor?: SessionId) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
@@ -137,17 +156,18 @@ export class Advancement {
   private launch = (...args: Parameters<WorkerSessions["launch"]>) =>
     this.c.sessions.launch(...args);
   reviseScope = (id: IssueId, input: Scope) =>
-    this.c.operations.owned(id, OperationAction.make("scope-revision"), () =>
-      domainEffect(
-        Effect.gen({ self: this }, function* () {
-          const e = yield* this.get(id);
-          yield* this.idle(e);
-          yield* this.c.scopes.validateRevision(e, input);
-          const issue = yield* this.c.work.show(id);
-          if (issue.status === "blocked") yield* this.c.work.resume(id, e.execution_id);
-          return yield* this.c.scopes.revise(e, input, (e) => this.c.records.saveControl(e));
-        }),
-      ),
+    this.withOwnedRecord(id, "scope-revision", (e) =>
+      Effect.gen({ self: this }, function* () {
+        yield* this.idle(e);
+        yield* this.c.scopes.validateRevision(e, input);
+        const issue = yield* this.c.work.show(id);
+        if (issue.status === "blocked") yield* this.c.work.resume(id, e.execution_id);
+        const revised = yield* this.c.scopes.revise(e, input, (record) =>
+          this.c.records.saveControl(record),
+        );
+        yield* this.c.operations.notifyControl(id);
+        return revised;
+      }),
     );
   correctFailure = Effect.fn("Advancement.correctFailure")(
     function* (this: Advancement, e: Execution, error: CrewError) {
@@ -169,7 +189,7 @@ export class Advancement {
           : error.message;
       const fp = yield* this.c.git.fingerprint(e.worktree_directory!);
       if (source === "review" && e.review_receipt?.fingerprint !== fp) return;
-      yield* this.c.checks.assertPlan(e, yield* this.project(e));
+      yield* this.c.checks.assertPlan(e);
       const key = FindingId.make(
         `${source}-${createHash("sha256").update(fp).update(text).digest("hex")}`,
       );
@@ -189,27 +209,118 @@ export class Advancement {
   );
   advance = Effect.fn("Advancement.advance")(
     function* (this: Advancement, id: IssueId) {
-      return yield* this.c.operations.owned(id, OperationAction.make("advance"), () =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const e = yield* this.get(id);
-            return yield* this.checkpointExecution(e).pipe(
-              Effect.catch((error) =>
-                Effect.gen({ self: this }, function* () {
-                  // Refusing an explicit checkpoint while its worker is busy
-                  // must not revoke that worker's valid active assignment.
-                  if (error.code === "WRITER_BUSY") return yield* error;
-                  const corrected = yield* this.correctFailure(e, error);
-                  if (corrected) return corrected;
-                  if (!["APPROVAL_REQUIRED", "MERGE_APPROVAL", "WRITER_BUSY"].includes(error.code))
-                    yield* this.c.transitions.fail(e, error);
-                  return yield* error;
-                }),
-              ),
-            );
-          }),
+      return yield* this.withOwnedRecord(id, "advance", (e) =>
+        this.checkpointExecution(e).pipe(
+          Effect.catch((error) =>
+            Effect.gen({ self: this }, function* () {
+              // Refusing an explicit checkpoint while its worker is busy
+              // must not revoke that worker's valid active assignment.
+              if (error.code === "WRITER_BUSY") return yield* error;
+              const corrected = yield* this.correctFailure(e, error);
+              if (corrected) return corrected;
+              if (!["APPROVAL_REQUIRED", "MERGE_APPROVAL", "WRITER_BUSY"].includes(error.code))
+                yield* this.c.transitions.fail(e, error);
+              return yield* error;
+            }),
+          ),
         ),
       );
+    }.bind(this),
+    domainEffect,
+  );
+  private checkpointPlanning = Effect.fn("Advancement.checkpointPlanning")(
+    function* (this: Advancement, e: Execution, p: Project) {
+      yield* this.c.transitions.move(e, "planning");
+      if (e.workflow_policy !== "full-openspec") {
+        if (!(yield* this.c.scopes.initialize(e, yield* this.c.work.show(e.issue_id)))) return e;
+        yield* this.c.transitions.move(e, "awaiting_plan_approval");
+        if (e.plan_approval_required === false) return yield* this.beginApply(e, p);
+        return e;
+      }
+      yield* this.c.spec.plan(e);
+      yield* this.c.planning.assertDelta(e);
+      yield* this.c.git.run(e.worktree_directory!, [
+        "add",
+        "--",
+        `openspec/changes/${e.openspec_change}`,
+      ]);
+      yield* this.c.planning.planned(e);
+      yield* this.c.transitions.move(e, "awaiting_plan_approval", {
+        plan_fingerprint: yield* this.c.checkpoints.plan(e),
+      });
+      if (e.plan_approval_required === false) return yield* this.beginApply(e, p);
+      yield* this.c.transitions.notice(
+        e,
+        "Planning validated. Request approval with abra_work_approve.",
+      );
+      return e;
+    }.bind(this),
+    domainEffect,
+  );
+  private checkpointApplying = Effect.fn("Advancement.checkpointApplying")(
+    function* (this: Advancement, e: Execution) {
+      if (e.workflow_policy === "full-openspec") yield* this.c.spec.implemented(e);
+      yield* this.assertPlan(e);
+      yield* this.c.transitions.move(
+        e,
+        e.effective_policy.validation?.engine === "no-mistakes"
+          ? "validating_external"
+          : "verifying",
+      );
+      return yield* this.checkpointExecution(e);
+    }.bind(this),
+    domainEffect,
+  );
+  private checkpointVerifying = Effect.fn("Advancement.checkpointVerifying")(
+    function* (this: Advancement, e: Execution, p: Project, completedRole?: Role) {
+      if (
+        p.delivery === "github-pr" &&
+        e.effective_policy.publication &&
+        e.effective_policy.publication !== "ready" &&
+        !e.provisional
+      ) {
+        if (!this.c.delivery.provisional)
+          return yield* new CrewError(
+            "DRAFT_UNSUPPORTED",
+            "Delivery adapter does not support provisional publication",
+          );
+        const draft = yield* this.c.delivery.provisional(p, e);
+        if (!draft.pr)
+          return yield* new CrewError("DRAFT_PR", "Draft publication did not produce an owned PR");
+        e.provisional = {
+          head: draft.commit,
+          pr: draft.pr,
+          at: yield* Clock.currentTimeMillis,
+        };
+        e.pull_request_reference = draft.pr;
+        yield* this.c.records.saveOwned(e, ["provisional", "pull_request_reference"]);
+      }
+      if (completedRole === "review" && !e.review_receipt)
+        return yield* new CrewError(
+          "REVIEW_MISSING",
+          "Independent Review completed without a matching report",
+        );
+      if (!e.review_receipt) return yield* this.verify(e, p);
+      const fp = yield* this.c.git.fingerprint(e.worktree_directory!);
+      if (!(e.review_receipt.passed && e.review_receipt.fingerprint === fp))
+        return yield* new CrewError("REVIEW_FAILED", "Review failed or reviewed content changed");
+      if (
+        e.workflow_policy === "full-openspec" &&
+        !specVerificationPassed(e.review_receipt.spec_verification)
+      )
+        return yield* new CrewError(
+          "SPEC_VERIFICATION_REQUIRED",
+          "Full-spec Review evidence is missing or incomplete; retry independent Review",
+        );
+      if (!(e.verification_receipt?.fingerprint === fp))
+        return yield* new CrewError(
+          "VERIFICATION_STALE",
+          "Repository checks do not cover current content",
+        );
+      if (e.workflow_policy === "full-openspec") yield* this.c.spec.implemented(e);
+      yield* this.assertPlan(e);
+      yield* this.c.transitions.move(e, "archiving");
+      return yield* this.c.finalization.archive(e, p);
     }.bind(this),
     domainEffect,
   );
@@ -238,132 +349,38 @@ export class Advancement {
       yield* this.idle(e);
       yield* this.c.corrections.assertArchives(e);
       const completedRole = yield* this.c.sessions.requireCompleted(e);
-      switch (e.current_phase) {
-        case "exploring":
-        case "planning": {
-          yield* this.c.transitions.move(e, "planning");
-          if (e.workflow_policy !== "full-openspec") {
-            if (!(yield* this.c.scopes.initialize(e, yield* this.c.work.show(e.issue_id))))
-              return e;
-            yield* this.c.transitions.move(e, "awaiting_plan_approval");
-            if (e.plan_approval_required === false) return yield* this.beginApply(e, p);
-            return e;
-          }
-          yield* this.c.spec.plan(e);
-          yield* this.c.planning.assertDelta(e);
-          yield* this.c.git.run(e.worktree_directory!, [
-            "add",
-            "--",
-            `openspec/changes/${e.openspec_change}`,
-          ]);
-          yield* this.c.planning.planned(e);
-          yield* this.c.transitions.move(e, "awaiting_plan_approval", {
-            plan_fingerprint: yield* this.c.checkpoints.plan(e),
-          });
-          if (e.plan_approval_required === false) return yield* this.beginApply(e, p);
-          yield* this.c.transitions.notice(
-            e,
-            "Planning validated. Request approval with abra_work_approve.",
-          );
-          return e;
-        }
-        case "awaiting_plan_approval":
-          return yield* this.beginApply(e, p);
-        case "researching": {
-          yield* this.c.reports.verify(e);
-          yield* this.c.transitions.move(e, "cleaning");
-          return yield* this.c.finalization.cleanup(e, p);
-        }
-        case "applying": {
-          if (e.workflow_policy === "full-openspec") yield* this.c.spec.implemented(e);
-          yield* this.assertPlan(e, p);
-          if (e.effective_policy.validation?.engine === "no-mistakes") {
-            yield* this.c.transitions.move(e, "validating_external");
-            return yield* this.checkpointExecution(e);
-          }
-          yield* this.c.transitions.move(e, "verifying");
-          return yield* this.checkpointExecution(e);
-        }
-        case "validating_external": {
-          const external = yield* this.c.external.advance(e, p);
-          return external.current_phase === "verifying"
-            ? yield* this.checkpointExecution(external)
-            : external;
-        }
-        case "verifying": {
-          if (
-            p.delivery === "github-pr" &&
-            e.effective_policy.publication &&
-            e.effective_policy.publication !== "ready" &&
-            !e.provisional
-          ) {
-            if (!this.c.delivery.provisional)
-              return yield* new CrewError(
-                "DRAFT_UNSUPPORTED",
-                "Delivery adapter does not support provisional publication",
-              );
-            const draft = yield* this.c.delivery.provisional(p, e);
-            if (!draft.pr)
-              return yield* new CrewError(
-                "DRAFT_PR",
-                "Draft publication did not produce an owned PR",
-              );
-            e.provisional = {
-              head: draft.commit,
-              pr: draft.pr,
-              at: yield* Clock.currentTimeMillis,
-            };
-            e.pull_request_reference = draft.pr;
-            yield* this.c.records.saveOwned(e, ["provisional", "pull_request_reference"]);
-          }
-          if (completedRole === "review") {
-            if (!e.review_receipt)
-              return yield* new CrewError(
-                "REVIEW_MISSING",
-                "Independent Review completed without a matching report",
-              );
-          }
-          if (!e.review_receipt) return yield* this.verify(e, p);
-          const fp = yield* this.c.git.fingerprint(e.worktree_directory!);
-          if (!(e.review_receipt.passed && e.review_receipt.fingerprint === fp))
-            return yield* new CrewError(
-              "REVIEW_FAILED",
-              "Review failed or reviewed content changed",
-            );
-          if (
-            e.workflow_policy === "full-openspec" &&
-            !specVerificationPassed(e.review_receipt.spec_verification)
-          )
-            return yield* new CrewError(
-              "SPEC_VERIFICATION_REQUIRED",
-              "Full-spec Review evidence is missing or incomplete; retry independent Review",
-            );
-          if (!(e.verification_receipt?.fingerprint === fp))
-            return yield* new CrewError(
-              "VERIFICATION_STALE",
-              "Repository checks do not cover current content",
-            );
-          if (e.workflow_policy === "full-openspec") yield* this.c.spec.implemented(e);
-          yield* this.assertPlan(e, p);
-          yield* this.c.transitions.move(e, "archiving");
-          return yield* this.c.finalization.archive(e, p);
-        }
-        case "archiving":
-          return yield* this.c.finalization.archive(e, p);
-        case "delivering":
-          return yield* this.c.finalization.deliver(e, p);
-        case "awaiting_merge":
-          return yield* this.c.finalization.finish(e, p);
-        case "cleaning":
-          return yield* this.c.finalization.cleanup(e, p);
-        case "completed":
-          return e;
-        default:
-          return yield* new CrewError(
-            "PHASE",
-            `Cannot advance ${e.current_phase}; use retry/resume/reconcile`,
-          );
-      }
+      return yield* Match.value(e.current_phase).pipe(
+        Match.whenOr("exploring", "planning", () => this.checkpointPlanning(e, p)),
+        Match.when("awaiting_plan_approval", () => this.beginApply(e, p)),
+        Match.when("researching", () =>
+          this.c.reports
+            .verify(e)
+            .pipe(
+              Effect.andThen(this.c.transitions.move(e, "cleaning")),
+              Effect.andThen(this.c.finalization.cleanup(e, p)),
+            ),
+        ),
+        Match.when("applying", () => this.checkpointApplying(e)),
+        Match.when("validating_external", () =>
+          this.c.external.advance(e, p).pipe(
+            Effect.filterOrElse(
+              (external) => external.current_phase !== "verifying",
+              (external) => this.checkpointExecution(external),
+            ),
+          ),
+        ),
+        Match.when("verifying", () => this.checkpointVerifying(e, p, completedRole)),
+        Match.when("archiving", () => this.c.finalization.archive(e, p)),
+        Match.when("delivering", () => this.c.finalization.deliver(e, p)),
+        Match.when("awaiting_merge", () => this.c.finalization.finish(e, p)),
+        Match.when("cleaning", () => this.c.finalization.cleanup(e, p)),
+        Match.when("completed", () => Effect.succeed(e)),
+        Match.orElse((phase) =>
+          Effect.fail(
+            new CrewError("PHASE", `Cannot advance ${phase}; use retry/resume/reconcile`),
+          ),
+        ),
+      );
     }.bind(this),
     domainEffect,
   );
@@ -372,7 +389,7 @@ export class Advancement {
   beginApply = Effect.fn("Advancement.beginApply")(
     function* (this: Advancement, e: Execution, p: Project) {
       if (e.workflow_policy === "full-openspec") yield* this.c.spec.plan(e);
-      yield* this.assertPlan(e, p);
+      yield* this.assertPlan(e);
       if (activeSynchronization(e)) {
         const committed = yield* this.c.transitions.move(e, "verifying");
         return yield* this.verify(committed, p);
@@ -391,70 +408,56 @@ export class Advancement {
     this.c.checks.reviewReport(...args);
   approve = Effect.fn("Advancement.approve")(
     function* (this: Advancement, id: IssueId, kind: "plan" | "merge", supervisor: SessionId) {
-      return yield* this.c.operations.owned(id, OperationAction.make("approve"), () =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const e = yield* this.get(id);
-            const p = yield* this.project(e);
-            yield* assertApprovalActor(e, supervisor);
-            if (
-              kind === "merge" &&
-              ["cleaning", "completed"].includes(e.current_phase) &&
-              this.c.checkpoints.status(e, "merge") === "approved"
-            ) {
-              // The receipt is already committed; do not touch a retired worktree or create a form.
-              return e;
-            }
-            yield* this.idle(e);
-            if (
-              !(e.current_phase === (kind === "plan" ? "awaiting_plan_approval" : "awaiting_merge"))
-            )
-              return yield* new CrewError(
-                "APPROVAL_PHASE",
-                "Approval does not match current phase",
-              );
-            if (kind === "merge" && !(yield* this.c.finishing.prepare(e, p))) return e;
-            const { decision, receipt } = yield* this.c.authorizations.collect(e, kind, supervisor);
-            if (decision === "pending")
-              return { execution: e, approval_required: true, form_id: receipt.form_id };
-            if (decision === "rejected") {
-              if (kind === "plan") yield* this.c.transitions.move(e, "planning");
-              yield* this.c.transitions.fail(
-                e,
-                new CrewError(
-                  "APPROVAL_REJECTED",
-                  "Human rejected this checkpoint; revise before requesting approval",
-                ),
-              );
-              return yield* new CrewError("APPROVAL_REJECTED", "Human rejected this checkpoint");
-            }
-            return yield* kind === "plan" ? this.beginApply(e, p) : Effect.succeed(e);
-          }),
-        ),
+      return yield* this.withOwnedExecution(id, "approve", (e, p) =>
+        Effect.gen({ self: this }, function* () {
+          yield* assertApprovalActor(e, supervisor);
+          if (
+            kind === "merge" &&
+            ["cleaning", "completed"].includes(e.current_phase) &&
+            this.c.checkpoints.status(e, "merge") === "approved"
+          ) {
+            // The receipt is already committed; do not touch a retired worktree or create a form.
+            return e;
+          }
+          yield* this.idle(e);
+          if (
+            !(e.current_phase === (kind === "plan" ? "awaiting_plan_approval" : "awaiting_merge"))
+          )
+            return yield* new CrewError("APPROVAL_PHASE", "Approval does not match current phase");
+          if (kind === "merge" && !(yield* this.c.finishing.prepare(e, p))) return e;
+          const { decision, receipt } = yield* this.c.authorizations.collect(e, kind, supervisor);
+          if (decision === "pending")
+            return { execution: e, approval_required: true, form_id: receipt.form_id };
+          if (decision === "rejected") {
+            if (kind === "plan") yield* this.c.transitions.move(e, "planning");
+            yield* this.c.transitions.fail(
+              e,
+              new CrewError(
+                "APPROVAL_REJECTED",
+                "Human rejected this checkpoint; revise before requesting approval",
+              ),
+            );
+            return yield* new CrewError("APPROVAL_REJECTED", "Human rejected this checkpoint");
+          }
+          return yield* kind === "plan" ? this.beginApply(e, p) : Effect.succeed(e);
+        }),
       );
     }.bind(this),
     domainEffect,
   );
   finish = Effect.fn("Advancement.finish")(
     function* (this: Advancement, id: IssueId) {
-      return yield* this.c.operations.owned(id, OperationAction.make("finish"), () =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const e = yield* this.get(id);
-            const p = yield* this.project(e);
-            return yield* (
-              e.workflow_policy === "research-only" && e.current_phase === "researching"
-                ? this.checkpointExecution(e)
-                : this.c.finalization.finish(e, p)
-            ).pipe(
-              Effect.tapError((error) =>
-                Effect.gen({ self: this }, function* () {
-                  e.error_or_recovery_reason = error.message;
-                  yield* this.c.records.saveOwned(e, ["error_or_recovery_reason"]);
-                }),
-              ),
-            );
-          }),
+      return yield* this.withOwnedExecution(id, "finish", (e, p) =>
+        (e.workflow_policy === "research-only" && e.current_phase === "researching"
+          ? this.checkpointExecution(e)
+          : this.c.finalization.finish(e, p)
+        ).pipe(
+          Effect.tapError((error) =>
+            Effect.gen({ self: this }, function* () {
+              e.error_or_recovery_reason = error.message;
+              yield* this.c.records.saveOwned(e, ["error_or_recovery_reason"]);
+            }),
+          ),
         ),
       );
     }.bind(this),
@@ -462,9 +465,8 @@ export class Advancement {
   );
   workMessage = Effect.fn("Advancement.workMessage")(
     function* (this: Advancement, input: typeof MessageSendSchema.Type, sender: SessionId) {
-      return yield* this.c.operations.owned(input.issue_id, OperationAction.make("message"), () =>
+      return yield* this.withOwnedRecord(input.issue_id, "message", (e) =>
         Effect.gen({ self: this }, function* () {
-          const e = yield* this.get(input.issue_id);
           const saved = yield* this.c.messages.request(e, sender, input);
           return messageRequests(saved.messages).find((m) => m.request_id === input.request_id)!;
         }),
@@ -490,156 +492,144 @@ export class Advancement {
     ) {
       if (action === "advance") return yield* this.advance(id);
       if (action === "pause" || action === "interrupt") return yield* this.c.transitions.pause(id);
-      return yield* this.c.operations.owned(id, OperationAction.make("control"), () =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const e = yield* this.get(id);
-            if (action === "steer") {
-              if (!(text && this.sessionID(e)))
-                return yield* new CrewError(
-                  "STEER",
-                  "An active session and steering text are required",
-                );
-              if (!request)
-                return yield* new CrewError(
-                  "MESSAGE_ID",
-                  "Steering requires a stable request identity and trusted sender",
-                );
-              return yield* this.c.sessions.messages.send(e, request.sender, request.id, text);
-            }
-            if (action === "replan" && externalOwns(e))
+      return yield* this.withOwnedRecord(id, "control", (e) =>
+        Effect.gen({ self: this }, function* () {
+          if (action === "steer") {
+            if (!(text && this.sessionID(e)))
               return yield* new CrewError(
-                "EXTERNAL_CUSTODY",
-                "Abort and return external custody before invalidating the plan",
+                "STEER",
+                "An active session and steering text are required",
               );
-            if (action === "replan" || action === "recover_planning") {
-              if (!(!e.stop_status && e.current_phase !== "interrupted"))
-                return yield* new CrewError(
-                  "CONTROL_PAUSED",
-                  "Resume paused work explicitly before replanning",
-                );
-            }
-            if (action === "replan" && e.workflow_policy !== "full-openspec") {
+            if (!request)
               return yield* new CrewError(
-                "SCOPE_REVISION",
-                "Use abra_work_scope with the complete revised contract",
+                "MESSAGE_ID",
+                "Steering requires a stable request identity and trusted sender",
               );
-            }
-            if (action === "replan" || action === "recover_planning") {
-              if (
-                ["archiving", "delivering", "awaiting_merge", "cleaning", "completed"].includes(
-                  e.current_phase,
-                )
-              )
-                return yield* new CrewError(
-                  "REPLAN_PHASE",
-                  "Replan must precede archival/delivery",
-                );
-              if (!request)
-                return yield* new CrewError(
-                  "MESSAGE_ID",
-                  "Planning control requires a stable request identity and trusted sender",
-                );
-              const prepared = yield* this.c.planning.prepare(
-                e,
-                yield* this.project(e),
-                action,
-                request,
-                text,
+            return yield* this.c.sessions.messages.send(e, request.sender, request.id, text);
+          }
+          if (action === "replan" && externalOwns(e))
+            return yield* new CrewError(
+              "EXTERNAL_CUSTODY",
+              "Abort and return external custody before invalidating the plan",
+            );
+          if (action === "replan" || action === "recover_planning") {
+            if (!(!e.stop_status && e.current_phase !== "interrupted"))
+              return yield* new CrewError(
+                "CONTROL_PAUSED",
+                "Resume paused work explicitly before replanning",
               );
-              if (!prepared.ready) return e;
-              const issue = yield* this.c.work.show(e.issue_id);
-              if (issue.status === "blocked") yield* this.c.work.resume(e.issue_id, e.execution_id);
-              yield* this.c.transitions.move(e, "planning", {
-                active_role: removeOwnedField,
-                plan_fingerprint: removeOwnedField,
-                verification_receipt: removeOwnedField,
-                review_receipt: removeOwnedField,
-                retry_instructions: text ?? removeOwnedField,
-              });
-              yield* this.launch(e, "explore");
-              return e;
-            }
+          }
+          if (action === "replan" && e.workflow_policy !== "full-openspec") {
+            return yield* new CrewError(
+              "SCOPE_REVISION",
+              "Use abra_work_scope with the complete revised contract",
+            );
+          }
+          if (action === "replan" || action === "recover_planning") {
             if (
-              !["blocked", "failed", "interrupted", "recovery_required"].includes(e.current_phase)
+              ["archiving", "delivering", "awaiting_merge", "cleaning", "completed"].includes(
+                e.current_phase,
+              )
             )
-              return yield* new CrewError("CONTROL_PHASE", "Execution does not need retry/resume");
-            if (!(e.stop_status !== "requested"))
+              return yield* new CrewError("REPLAN_PHASE", "Replan must precede archival/delivery");
+            if (!request)
               return yield* new CrewError(
-                "STOP_PENDING",
-                "Wait for owned operation and native worker termination before replacing a writer",
+                "MESSAGE_ID",
+                "Planning control requires a stable request identity and trusted sender",
               );
-            if (e.stop_status === "confirmed")
-              yield* this.c.planning.continue(e, yield* this.project(e));
-            const changes: ExecutionPatch = { stop_status: removeOwnedField };
-            let phase = e.resume_phase;
-            if (
-              action === "retry" &&
-              phase === "verifying" &&
-              e.workflow_policy === "full-openspec" &&
-              e.review_receipt?.passed &&
-              !specVerificationPassed(e.review_receipt.spec_verification)
-            ) {
-              changes.review_receipt = removeOwnedField;
-              changes.verification_receipt = removeOwnedField;
-              changes.retry_instructions =
-                text ?? "Complete specification verification for the approved change";
-            } else if (
-              action === "retry" &&
-              phase === "verifying" &&
-              (e.review_receipt?.passed === false || text)
-            ) {
-              if (
-                e.review_receipt?.passed === false &&
-                e.review_receipt.scope_status !== "in_scope" &&
-                e.decisions?.some(
-                  (d) => d.generation === e.control_generation && d.status === "open",
-                )
-              )
-                return yield* new CrewError(
-                  "REVIEW_SCOPE_DECISION",
-                  "Resolve the Review scope conflict before retrying; use replan for changed requirements or revise the short scope",
-                );
-              changes.retry_instructions = text ?? e.review_receipt?.findings ?? removeOwnedField;
-              changes.review_receipt = removeOwnedField;
-              changes.verification_receipt = removeOwnedField;
-              phase = "applying";
-            }
-            if (!phase)
-              return yield* new CrewError("RECOVERY_REQUIRED", "No verifiable resume checkpoint");
-            yield* this.idle(e);
+            const prepared = yield* this.c.planning.prepare(
+              e,
+              yield* this.project(e),
+              action,
+              request,
+              text,
+            );
+            if (!prepared.ready) return e;
             const issue = yield* this.c.work.show(e.issue_id);
+            if (issue.status === "blocked") yield* this.c.work.resume(e.issue_id, e.execution_id);
+            yield* this.c.transitions.move(e, "planning", {
+              active_role: removeOwnedField,
+              plan_fingerprint: removeOwnedField,
+              verification_receipt: removeOwnedField,
+              review_receipt: removeOwnedField,
+              retry_instructions: text ?? removeOwnedField,
+            });
+            yield* this.launch(e, "explore");
+            return e;
+          }
+          if (!["blocked", "failed", "interrupted", "recovery_required"].includes(e.current_phase))
+            return yield* new CrewError("CONTROL_PHASE", "Execution does not need retry/resume");
+          if (!(e.stop_status !== "requested"))
+            return yield* new CrewError(
+              "STOP_PENDING",
+              "Wait for owned operation and native worker termination before replacing a writer",
+            );
+          if (e.stop_status === "confirmed")
+            yield* this.c.planning.continue(e, yield* this.project(e));
+          const changes: ExecutionPatch = { stop_status: removeOwnedField };
+          let phase = e.resume_phase;
+          if (
+            action === "retry" &&
+            phase === "verifying" &&
+            e.workflow_policy === "full-openspec" &&
+            e.review_receipt?.passed &&
+            !specVerificationPassed(e.review_receipt.spec_verification)
+          ) {
+            changes.review_receipt = removeOwnedField;
+            changes.verification_receipt = removeOwnedField;
+            changes.retry_instructions =
+              text ?? "Complete specification verification for the approved change";
+          } else if (
+            action === "retry" &&
+            phase === "verifying" &&
+            (e.review_receipt?.passed === false || text)
+          ) {
             if (
-              !(
-                issue.assignee === e.execution_id ||
-                (phase === "claiming" && issue.status === "open" && !issue.assignee)
-              )
+              e.review_receipt?.passed === false &&
+              e.review_receipt.scope_status !== "in_scope" &&
+              e.decisions?.some((d) => d.generation === e.control_generation && d.status === "open")
             )
               return yield* new CrewError(
-                "CLAIM_LOST",
-                "Cannot resume work owned by another execution",
+                "REVIEW_SCOPE_DECISION",
+                "Resolve the Review scope conflict before retrying; use replan for changed requirements or revise the short scope",
               );
-            if (issue.status === "blocked") yield* this.c.work.resume(e.issue_id, e.execution_id);
-            if ((phase === "claiming" || phase === "provisioning") && !e.capacity_reservation)
-              changes.capacity_observed_idle = true;
-            yield* this.c.transitions.move(e, phase, changes);
-            if (
-              e.capacity_wait ||
-              ["claiming", "provisioning", "awaiting_plan_approval", "awaiting_merge"].includes(
-                phase,
-              )
+            changes.retry_instructions = text ?? e.review_receipt?.findings ?? removeOwnedField;
+            changes.review_receipt = removeOwnedField;
+            changes.verification_receipt = removeOwnedField;
+            phase = "applying";
+          }
+          if (!phase)
+            return yield* new CrewError("RECOVERY_REQUIRED", "No verifiable resume checkpoint");
+          yield* this.idle(e);
+          const issue = yield* this.c.work.show(e.issue_id);
+          if (
+            !(
+              issue.assignee === e.execution_id ||
+              (phase === "claiming" && issue.status === "open" && !issue.assignee)
             )
-              return yield* this.reconcileExecution(e);
-            if (["exploring", "planning", "applying", "researching"].includes(phase)) {
-              yield* this.launch(
-                e,
-                phase === "researching" ? "research" : phase === "applying" ? "apply" : "explore",
-              );
-              return e;
-            }
-            return yield* this.checkpointExecution(e);
-          }),
-        ),
+          )
+            return yield* new CrewError(
+              "CLAIM_LOST",
+              "Cannot resume work owned by another execution",
+            );
+          if (issue.status === "blocked") yield* this.c.work.resume(e.issue_id, e.execution_id);
+          if ((phase === "claiming" || phase === "provisioning") && !e.capacity_reservation)
+            changes.capacity_observed_idle = true;
+          yield* this.c.transitions.move(e, phase, changes);
+          if (
+            e.capacity_wait ||
+            ["claiming", "provisioning", "awaiting_plan_approval", "awaiting_merge"].includes(phase)
+          )
+            return yield* this.reconcileExecution(e);
+          if (["exploring", "planning", "applying", "researching"].includes(phase)) {
+            yield* this.launch(
+              e,
+              phase === "researching" ? "research" : phase === "applying" ? "apply" : "explore",
+            );
+            return e;
+          }
+          return yield* this.checkpointExecution(e);
+        }),
       );
     }.bind(this),
     domainEffect,
@@ -656,55 +646,45 @@ export class Advancement {
       return yield* Effect.forEach(
         records,
         (record) =>
-          this.c.operations
-            .owned(record.issue_id, OperationAction.make("reconcile"), () =>
-              domainEffect(
-                Effect.gen({ self: this }, function* () {
-                  const e = yield* this.get(record.issue_id);
-                  return yield* this.reconcileExecution(e).pipe(
-                    Effect.catch((error) =>
-                      domainEffect(
-                        Effect.gen({ self: this }, function* () {
-                          if (e.stop_status === "requested")
-                            return yield* this.c.records.saveOwned(
-                              {
-                                ...e,
-                                error_or_recovery_reason: error.message,
-                              },
-                              ["error_or_recovery_reason"],
-                            );
-                          const corrected = yield* this.correctFailure(e, error);
-                          if (corrected) return corrected;
-                          if (
-                            error.code === "FORGE_OBSERVATION_FAILED" &&
-                            e.current_phase === "awaiting_merge"
-                          )
-                            return yield* this.c.finalization.wait(e, {
-                              category: "retryable",
-                              code: error.code,
-                              reason: error.message,
-                              owner: "forge",
-                            });
-                          return yield* this.c.transitions.fail(
-                            e,
-                            error,
-                            ["VERIFICATION_FAILED", "REVIEW_FAILED"].includes(error.code)
-                              ? "blocked"
-                              : "recovery_required",
-                          );
-                        }),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            )
-            .pipe(
-              Effect.catchIf(
-                (error) => ["LOCKED", "STOP_REQUESTED", "STALE_OPERATION"].includes(error.code),
-                () => this.get(record.issue_id),
+          this.withOwnedRecord(record.issue_id, "reconcile", (e) =>
+            this.reconcileExecution(e).pipe(
+              Effect.catch((error) =>
+                domainEffect(
+                  Effect.gen({ self: this }, function* () {
+                    if (e.stop_status === "requested")
+                      return yield* this.c.records.saveOwned(
+                        { ...e, error_or_recovery_reason: error.message },
+                        ["error_or_recovery_reason"],
+                      );
+                    const corrected = yield* this.correctFailure(e, error);
+                    if (corrected) return corrected;
+                    if (
+                      error.code === "FORGE_OBSERVATION_FAILED" &&
+                      e.current_phase === "awaiting_merge"
+                    )
+                      return yield* this.c.finalization.wait(e, {
+                        category: "retryable",
+                        code: error.code,
+                        reason: error.message,
+                        owner: "forge",
+                      });
+                    return yield* this.c.transitions.fail(
+                      e,
+                      error,
+                      ["VERIFICATION_FAILED", "REVIEW_FAILED"].includes(error.code)
+                        ? "blocked"
+                        : "recovery_required",
+                    );
+                  }),
+                ),
               ),
             ),
+          ).pipe(
+            Effect.catchIf(
+              (error) => ["LOCKED", "STOP_REQUESTED", "STALE_OPERATION"].includes(error.code),
+              () => this.get(record.issue_id),
+            ),
+          ),
         { concurrency: Math.max(2, this.c.config.max_workers) },
       );
     }.bind(this),

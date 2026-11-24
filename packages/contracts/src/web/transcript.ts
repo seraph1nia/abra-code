@@ -85,11 +85,23 @@ export function nativeAguiMessages(messages: readonly TranscriptMessage[]): Mess
   });
 }
 
+type OpenTextStream = { id: string; hasContent: boolean };
+
+const metadataSubset = (
+  previous: Record<string, unknown> | undefined,
+  next: Record<string, unknown> | undefined,
+) => {
+  if (!previous) return true;
+  if (!next) return false;
+  return Object.keys(previous).every((key) => key in next);
+};
+
 /** Incremental text and tool arguments retain native IDs. Incompatible structure,
  * argument rewrites and native-only result/status fields recover a complete view. */
 export function nativeMessageEvents(
   before: readonly TranscriptMessage[],
   after: readonly TranscriptMessage[],
+  streaming?: { openText?: OpenTextStream },
 ): Event[] {
   const old = nativeAguiMessages(before),
     next = nativeAguiMessages(after);
@@ -114,12 +126,22 @@ export function nativeMessageEvents(
     return [snapshot()];
   const events: Event[] = [];
   let reconcile = false;
+  let openText: OpenTextStream | undefined = streaming?.openText
+    ? { ...streaming.openText }
+    : undefined;
+  let openTextAdvanced = false;
+  const closeOpenText = () => {
+    if (!openText) return;
+    events.push({ type: EventType.TEXT_MESSAGE_END, messageId: openText.id });
+    openText = undefined;
+  };
   for (let i = 0; i < next.length; i++) {
     const message = next[i]!,
       prior = old[i];
     if (JSON.stringify(message) === JSON.stringify(prior)) continue;
     if (message.role === "tool") {
       if (prior) return [snapshot()];
+      closeOpenText();
       events.push({
         type: EventType.TOOL_CALL_RESULT,
         messageId: message.id,
@@ -142,18 +164,30 @@ export function nativeMessageEvents(
     if (JSON.stringify(prior?.metadata ?? message.metadata) !== JSON.stringify(message.metadata))
       return [snapshot()];
     const delta = message.content.slice(oldText.length);
-    if (!prior || delta) {
-      events.push({
-        type: EventType.TEXT_MESSAGE_START,
-        messageId: message.id,
-        role: message.role,
-        metadata: message.metadata,
-      });
-      if (delta)
-        events.push({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: message.id, delta });
-      events.push({ type: EventType.TEXT_MESSAGE_END, messageId: message.id });
-    }
     const calls = message.role === "assistant" ? (message.toolCalls ?? []) : [];
+    const keepOpen =
+      streaming !== undefined &&
+      message.role === "assistant" &&
+      i === next.length - 1 &&
+      calls.length === 0;
+    if (!prior || delta) {
+      if (openText && openText.id !== message.id) closeOpenText();
+      if (!openText) {
+        events.push({
+          type: EventType.TEXT_MESSAGE_START,
+          messageId: message.id,
+          role: message.role,
+          metadata: message.metadata,
+        });
+        openText = { id: message.id, hasContent: false };
+      }
+      if (delta) {
+        events.push({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: message.id, delta });
+        openText.hasContent = true;
+        openTextAdvanced = true;
+      }
+      if (!keepOpen) closeOpenText();
+    }
     const previousCalls = prior?.role === "assistant" ? (prior.toolCalls ?? []) : [];
     if (previousCalls.length > calls.length) return [snapshot()];
     for (let c = 0; c < calls.length; c++) {
@@ -166,7 +200,8 @@ export function nativeMessageEvents(
           !call.function.arguments.startsWith(previous.function.arguments))
       )
         return [snapshot()];
-      if (!previous)
+      if (!previous) {
+        closeOpenText();
         events.push({
           type: EventType.TOOL_CALL_START,
           toolCallId: call.id,
@@ -174,19 +209,29 @@ export function nativeMessageEvents(
           parentMessageId: message.id,
           metadata: call.metadata,
         });
+      }
       const args = call.function.arguments.slice(previous?.function.arguments.length ?? 0);
       if (args) events.push({ type: EventType.TOOL_CALL_ARGS, toolCallId: call.id, delta: args });
-      const streaming = call.metadata?.abracode_native_status === "streaming";
-      if (!streaming && (!previous || previous.metadata?.abracode_native_status === "streaming"))
+      const streamingCall = call.metadata?.abracode_native_status === "streaming";
+      const emittedEnd =
+        !streamingCall && (!previous || previous.metadata?.abracode_native_status === "streaming");
+      if (emittedEnd)
         events.push({
           type: EventType.TOOL_CALL_END,
           toolCallId: call.id,
           metadata: call.metadata,
         });
-      if (previous && JSON.stringify(previous.metadata) !== JSON.stringify(call.metadata))
+      if (
+        previous &&
+        JSON.stringify(previous.metadata) !== JSON.stringify(call.metadata) &&
+        !(emittedEnd && metadataSubset(previous.metadata, call.metadata))
+      )
         reconcile = true;
     }
   }
+  // When an already-streamed open text message receives a no-delta update (e.g.
+  // session.text.ended or turn idle), close it cleanly once instead of leaving it dangling.
+  if (openText && !openTextAdvanced && openText.hasContent) closeOpenText();
   return reconcile ? [...events, snapshot()] : events;
 }
 
@@ -194,6 +239,17 @@ export function nativeMessageEvents(
 export class NativeMessageCursor {
   private previous: readonly TranscriptMessage[] = [];
   private open = new Set<string>();
+  private openText: OpenTextStream | undefined;
+  close(): Event[] {
+    const output: Event[] = [];
+    if (this.openText) {
+      output.push({ type: EventType.TEXT_MESSAGE_END, messageId: this.openText.id });
+      this.openText = undefined;
+    }
+    for (const toolCallId of this.open) output.push({ type: EventType.TOOL_CALL_END, toolCallId });
+    this.open.clear();
+    return output;
+  }
   update(messages: readonly TranscriptMessage[], baseline = false): Event[] {
     let events = baseline
       ? [
@@ -202,7 +258,7 @@ export class NativeMessageCursor {
             messages: nativeAguiMessages(messages),
           } satisfies Event,
         ]
-      : nativeMessageEvents(this.previous, messages);
+      : nativeMessageEvents(this.previous, messages, { openText: this.openText });
     const active = new Set(this.open);
     for (const event of events) {
       if (event.type === EventType.TOOL_CALL_START) active.add(event.toolCallId);
@@ -216,16 +272,18 @@ export class NativeMessageCursor {
     const output: Event[] = [];
     for (const event of events) {
       if (event.type === EventType.TOOL_CALL_END && !this.open.has(event.toolCallId)) continue;
+      if (event.type === EventType.TEXT_MESSAGE_END && this.openText?.id !== event.messageId)
+        continue;
       if (event.type === EventType.MESSAGES_SNAPSHOT) {
-        output.push(
-          ...[...this.open].map((toolCallId): Event => ({
-            type: EventType.TOOL_CALL_END,
-            toolCallId,
-          })),
-        );
-        this.open.clear();
+        output.push(...this.close());
       }
       output.push(event);
+      if (event.type === EventType.TEXT_MESSAGE_START)
+        this.openText = { id: event.messageId, hasContent: false };
+      if (event.type === EventType.TEXT_MESSAGE_CONTENT && this.openText?.id === event.messageId)
+        this.openText.hasContent = true;
+      if (event.type === EventType.TEXT_MESSAGE_END && this.openText?.id === event.messageId)
+        this.openText = undefined;
       if (event.type === EventType.TOOL_CALL_START) this.open.add(event.toolCallId);
       if (event.type === EventType.TOOL_CALL_END) this.open.delete(event.toolCallId);
     }

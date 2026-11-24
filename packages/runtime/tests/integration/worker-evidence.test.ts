@@ -6,7 +6,7 @@ import { launchReportBrowser } from "@abracode/report-export/browser";
 import { fixture } from "../fixtures.ts";
 import { goal } from "../helpers/work-goal.ts";
 import { run } from "../effects.ts";
-import { RequestId, RelativePath } from "../../src/identities.ts";
+import { RequestId, RelativePath } from "@abracode/contracts/identities";
 
 test("a repository Playwright trace and versioned references survive removal of the producing files", async (t) => {
   const f = await run(fixture);

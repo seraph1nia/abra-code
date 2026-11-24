@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 import { Effect, Schema } from "effect";
 import { Agent } from "@opencode/schema/agent";
 import { Skill } from "@opencode/schema/skill";
-import { AbsolutePath, Timestamp, ToolName } from "../identities.ts";
-import { WorkerModelSchema } from "../contracts.ts";
+import { AbsolutePath, Timestamp, ToolName } from "@abracode/contracts/identities";
+import { WorkerModelSchema } from "@abracode/contracts/primitives";
 import { CrewError, type Role, type Policy } from "../domain.ts";
-import { type CapabilityRequirements } from "./capability-contracts.ts";
+import { type CapabilityRequirements } from "@abracode/agents/capabilities";
 import { capabilityRequirements } from "./role-policy.ts";
 
 export const digestText = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -115,29 +115,4 @@ export function missingTools(
 }
 
 /** Registry reads do not await cold-location activation in the pinned native server. */
-export function awaitWorkerPlugin(
-  inventory: Effect.Effect<
-    readonly Pick<import("@opencode/schema/plugin").Plugin.Info, "id" | "state">[],
-    CrewError
-  >,
-  attempts = 50,
-  delay = 100,
-) {
-  return Effect.gen(function* () {
-    for (let attempt = 0; attempt < attempts; attempt++) {
-      const plugins = yield* inventory;
-      const crew = plugins.find((plugin) => plugin.id === "abracode");
-      if (crew?.state.status === "active") return;
-      if (crew?.state.status === "failed")
-        return yield* new CrewError(
-          "WORKER_PLUGIN_FAILED",
-          "AbraCode activation failed at the worker location; repair its native plugin configuration before retrying",
-        );
-      if (attempt + 1 < attempts) yield* Effect.sleep(delay);
-    }
-    return yield* new CrewError(
-      "INVENTORY_UNAVAILABLE",
-      "Worker-location AbraCode activation has not settled; retain admission intent and retry after initialization",
-    );
-  });
-}
+export { awaitWorkerPluginActivation as awaitWorkerPlugin } from "./plugin-activation.ts";

@@ -1,39 +1,42 @@
-import { progress, completedProgress } from "../opencode/progress.ts";
-import { OperationAction } from "../identities.ts";
-import {
-  LockKey,
-  OperationId,
-  IssueId,
-  ExecutionId,
-  BranchName,
-  RepositoryId,
-  SessionId,
-} from "../identities.ts";
-
-import { consumesRetained, scanCapacity, unknownCapacity } from "../workflow/capacity.ts";
-import { createExecution } from "../workflow/execution.ts";
-
-import { Clock, Effect } from "effect";
-import { inputFingerprint } from "../workflow/operations.ts";
-import { observePreflight } from "../workflow/finishing-readiness.ts";
-import { domainEffect } from "../effect.ts";
-
 import { randomUUID } from "node:crypto";
-import { access, readFile } from "../filesystem.ts";
 import { join } from "node:path";
-import { collectForm } from "../workflow/authorization.ts";
+import {
+  BranchName,
+  ExecutionId,
+  IssueId,
+  LockKey,
+  OperationAction,
+  OperationId,
+  type RepositoryId,
+  type SessionId,
+} from "@abracode/contracts/identities";
+import { Clock, Effect } from "effect";
 import { decode } from "../decode.ts";
-import { json } from "../process.ts";
-import { DiscoverySchema } from "../openspec/adapter.ts";
-import { OpenSpecConfigSchema, parseYaml } from "./contracts.ts";
-import { CrewError, identifier, type SetupExecution, type Config } from "../domain.ts";
-import { type Records, type ExecutionOwnedField } from "../storage/store.ts";
-import { type Git } from "../git/repository.ts";
+import {
+  CrewError,
+  identifier,
+  type Config,
+  type Project,
+  type SetupExecution,
+} from "../domain.ts";
+import { domainEffect } from "../effect.ts";
+import { readFile, retainedEntry } from "../filesystem.ts";
 import { type Delivery } from "../git/delivery.ts";
+import { type Git } from "../git/repository.ts";
 import { type RepositorySources } from "../git/source.ts";
 import { type Workspaces } from "../git/workspaces.ts";
+import { completedProgress, progress } from "../opencode/progress.ts";
 import { type Runtime } from "../opencode/runtime.ts";
+import { DiscoverySchema } from "../openspec/adapter.ts";
+import { json } from "../process.ts";
 import { type Locks } from "../storage/lock.ts";
+import { type ExecutionOwnedField, type Records } from "../storage/store.ts";
+import { collectForm } from "../workflow/authorization.ts";
+import { consumesRetained, scanCapacity, unknownCapacity } from "../workflow/capacity.ts";
+import { createExecution } from "../workflow/execution.ts";
+import { observePreflight } from "../workflow/finishing-readiness.ts";
+import { inputFingerprint } from "../workflow/operations.ts";
+import { OpenSpecConfigSchema, parseYaml } from "./contracts.ts";
 
 interface SetupDependencies {
   records: Records;
@@ -45,35 +48,53 @@ interface SetupDependencies {
   config: Config;
   locks: Locks;
 }
+
+const allowedSetupFiles = new Set([
+  "openspec/config.yaml",
+  "openspec/changes/archive/.gitkeep",
+  "openspec/specs/.gitkeep",
+]);
+
+type SetupAction = "prepare" | "deliver" | "approve" | "finish";
+
 // Setup has native resources and delivery checkpoints, but is not a WorkGraph execution.
 export class ProjectSetup {
   constructor(private c: SetupDependencies) {}
+
   private readiness = Effect.fn("ProjectSetup.readiness")(
-    function* (this: ProjectSetup, p: import("../domain.ts").Project, e: SetupExecution) {
+    function* (this: ProjectSetup, p: Project, e: SetupExecution) {
       for (const session of [
         e.explore_session_id,
         e.apply_session_id,
         e.review_session_id,
         e.research_session_id,
-      ])
-        if (session && (yield* this.c.runtime.session(session)).busy)
+      ]) {
+        if (session && (yield* this.c.runtime.session(session)).busy) {
           return yield* new CrewError(
             "WRITER_BUSY",
             "An active or queued writer prevents setup merge",
           );
+        }
+      }
       const observation = yield* observePreflight(this.c.git, this.c.workspaces, p, e);
       e.finishing = { ...e.finishing, schema_version: 1, preflight: observation };
       yield* this.save(e, ["finishing"]);
-      if (observation.status !== "ready")
+      if (observation.status !== "ready") {
         return yield* new CrewError(
           "CLEANUP_PREFLIGHT",
           `Setup merge waits for retained-file disposition: ${JSON.stringify(observation.paths)}${observation.truncated ? " (incomplete sample)" : ""}`,
         );
-      if (e.archived_tree !== (yield* this.c.git.tree(e.worktree_directory!)))
+      }
+      if (
+        !e.worktree_directory ||
+        e.archived_tree !== (yield* this.c.git.tree(e.worktree_directory))
+      ) {
         return yield* new CrewError("SETUP_CHANGED", "Prepared setup tree changed before merge");
+      }
     }.bind(this),
     domainEffect,
   );
+
   private save = Effect.fn("ProjectSetup.save")(
     function* (this: ProjectSetup, e: SetupExecution, fields: readonly ExecutionOwnedField[]) {
       yield* this.c.records.saveSetupOwned(e, fields);
@@ -81,11 +102,12 @@ export class ProjectSetup {
     }.bind(this),
     domainEffect,
   );
+
   run = Effect.fn("ProjectSetup.run")(
     function* (
       this: ProjectSetup,
       id: RepositoryId,
-      action: "prepare" | "deliver" | "approve" | "finish",
+      action: SetupAction,
       supervisor: SessionId,
       initialize: boolean,
     ) {
@@ -101,6 +123,7 @@ export class ProjectSetup {
     }.bind(this),
     completedProgress("setup"),
   );
+
   private recordFailure(id: RepositoryId, message: string) {
     return Effect.gen({ self: this }, function* () {
       const e = yield* this.c.records.setup(id);
@@ -111,6 +134,7 @@ export class ProjectSetup {
       }
     });
   }
+
   reconcileQueued = Effect.fn("ProjectSetup.reconcileQueued")(
     function* (this: ProjectSetup) {
       const queued = (yield* this.c.records.setupScan()).values
@@ -150,254 +174,270 @@ export class ProjectSetup {
       }
     }.bind(this),
   );
-  private runInternal = Effect.fn("ProjectSetup.runInternal")(
-    function* (
-      this: ProjectSetup,
-      id: RepositoryId,
-      action: "prepare" | "deliver" | "approve" | "finish",
-      supervisor: SessionId,
-      initialize: boolean,
-    ) {
-      const registered = yield* this.c.records.project(id);
-      if (!registered)
-        return yield* new CrewError("PROJECT_MISSING", "Repository is not registered");
-      let e: SetupExecution | undefined = yield* this.c.records.setup(id);
-      if (e && e.delivery_policy !== registered.delivery)
+
+  private admitSetup(
+    id: RepositoryId,
+    registered: Project,
+    waiting: SetupExecution | undefined,
+    action: SetupAction,
+    supervisor: SessionId,
+    initialize: boolean,
+  ) {
+    return Effect.gen({ self: this }, function* () {
+      if (waiting && action !== "prepare") {
+        return yield* new CrewError("SETUP_PHASE", "Setup is queued for preparation");
+      }
+      if (!waiting && !(action === "prepare" && initialize)) {
         return yield* new CrewError(
-          "POLICY_DRIFT",
-          "Setup delivery policy changed; preserve resources and repair",
-        );
-      if (!e || e.current_phase === "queued") {
-        const waiting = e;
-        if (waiting && action !== "prepare")
-          return yield* new CrewError("SETUP_PHASE", "Setup is queued for preparation");
-        if (!waiting && !(action === "prepare" && initialize))
-          return yield* new CrewError(
-            "OPENSPEC_AUTHORIZATION",
-            "Prepare setup with initialize_openspec:true only when initialization is authorized",
-          );
-        e = yield* this.c.records.coordinateCommit(() =>
-          domainEffect(
-            Effect.gen({ self: this }, function* () {
-              const scan = yield* scanCapacity(this.c.records);
-              if (scan.diagnostics.length) return yield* unknownCapacity();
-              const retained = [...scan.executions, ...scan.setups].filter(consumesRetained);
-              const reason =
-                retained.length >= this.c.config.max_executions
-                  ? "Waiting for global execution slot capacity"
-                  : retained.filter((x) => x.repository_id === id).length >=
-                      registered.max_executions
-                    ? "Waiting for repository execution slot capacity"
-                    : undefined;
-              if (waiting) {
-                if (reason === waiting.error_or_recovery_reason && reason) return waiting;
-                waiting.error_or_recovery_reason = reason;
-                waiting.current_phase = reason ? "queued" : "provisioning";
-                return yield* this.save(waiting, ["current_phase", "error_or_recovery_reason"]);
-              }
-              const executionID = ExecutionId.make(`abra-setup-${randomUUID()}`);
-              const setup = yield* createExecution(
-                registered,
-                {
-                  issue_id: IssueId.make(`setup-${id}`),
-                  repository_id: id,
-                  execution_id: executionID,
-                  workflow_policy: "full-openspec",
-                  current_phase: reason ? "queued" : "provisioning",
-                  setup: true,
-                  branch: BranchName.make(`setup/${executionID}`),
-                  openspec_change: "",
-                  supervisor_session_id: supervisor,
-                },
-                this.c.config,
-              );
-              setup.error_or_recovery_reason = reason;
-              yield* this.c.records.create(setup);
-              return setup;
-            }),
-          ),
+          "OPENSPEC_AUTHORIZATION",
+          "Prepare setup with initialize_openspec:true only when initialization is authorized",
         );
       }
-      if (e.current_phase === "queued") return e;
-      const p = { ...registered, target_branch: e.target_branch ?? registered.target_branch };
-      if (e.current_phase === "completed") return e;
-      const operation = {
-        id: OperationId.make(`op-${randomUUID()}`),
-        action: OperationAction.make(`setup-${action}`),
-        status: "prepared" as const,
-        generation: e.control_generation,
-        fingerprint: inputFingerprint(e),
-        expected: `Reconcile setup ${action} against retained native branch/worktree and delivery identities`,
-        started_at: yield* Clock.currentTimeMillis,
-      };
-      yield* this.c.records.beginOperation(e, operation);
-      yield* progress({ stage: "setup", status: "started" });
-      if (action === "prepare") {
-        if (e.current_phase !== "provisioning") return e;
-        if (!p.project_id) {
-          p.project_id = yield* this.c.runtime.project(p.path);
-          yield* this.c.records.saveProject({
-            ...registered,
-            project_id: p.project_id,
-          });
-        }
-        if (!e.base_commit) {
-          const base = yield* this.c.sources.base(p, e.execution_id);
-          e.base_commit = base.commit;
-          e.target_branch = base.target_branch;
-          yield* this.save(e, ["base_commit", "target_branch"]);
-        }
-        if (
-          !e.worktree_directory &&
-          (yield* this.c.sources.inspect(p.path, e.base_commit)).openspec_config !== null
-        ) {
-          yield* this.c.records.saveProject({
-            ...registered,
-            project_id: p.project_id,
-            openspec: true,
-            target_branch: e.target_branch!,
-            inspected_commit: e.base_commit,
-          });
-          e.current_phase = "completed";
-          return yield* this.save(e, ["current_phase"]);
-        }
-        yield* this.c.workspaces.provision(p, e, (fields) => this.save(e!, fields));
-        const path = e.worktree_directory!;
-        if (!(yield* access(join(path, "openspec/config.yaml")).pipe(Effect.isSuccess)))
-          yield* this.c.git.runner.run(
-            this.c.config.commands.openspec,
-            ["init", "--tools", "none", "--no-animation", path],
-            path,
-          );
-        const files = [
-          yield* this.c.git.run(path, ["diff", "--name-only", e.base_commit!, "--"]),
-          yield* this.c.git.run(path, ["ls-files", "--others", "--exclude-standard"]),
-        ].flatMap((output) => output.split("\n").filter(Boolean));
-        const allowed = new Set([
-          "openspec/config.yaml",
-          "openspec/changes/archive/.gitkeep",
-          "openspec/specs/.gitkeep",
-        ]);
-        if (!(files.length > 0 && files.every((name) => allowed.has(name))))
-          return yield* new CrewError(
-            "SETUP_CONTENT",
-            `Setup may only initialize OpenSpec configuration and directory placeholders; preserve unexpected files for inspection: ${files.join(", ")}`,
-          );
-        // Inspect the generated configuration through the real repository-local CLI.
-        const config = yield* decode(
-          OpenSpecConfigSchema,
-          yield* parseYaml(
-            yield* readFile(join(path, "openspec/config.yaml"), "utf8"),
-            "Generated OpenSpec configuration",
-          ),
-          "Generated OpenSpec configuration",
-        );
-        if (!(config && typeof config.schema === "string"))
-          return yield* new CrewError(
-            "SETUP_CONFIG",
-            "Generated OpenSpec configuration must name a schema",
-          );
-        const schemas = yield* json(
-          this.c.git.runner,
-          DiscoverySchema,
+      return yield* this.c.records.coordinateCommit(() =>
+        domainEffect(
+          Effect.gen({ self: this }, function* () {
+            const scan = yield* scanCapacity(this.c.records);
+            if (scan.diagnostics.length) return yield* unknownCapacity();
+            const retained = [...scan.executions, ...scan.setups].filter(consumesRetained);
+            const reason =
+              retained.length >= this.c.config.max_executions
+                ? "Waiting for global execution slot capacity"
+                : retained.filter((x) => x.repository_id === id).length >= registered.max_executions
+                  ? "Waiting for repository execution slot capacity"
+                  : undefined;
+            if (waiting) {
+              if (reason === waiting.error_or_recovery_reason && reason) return waiting;
+              waiting.error_or_recovery_reason = reason;
+              waiting.current_phase = reason ? "queued" : "provisioning";
+              return yield* this.save(waiting, ["current_phase", "error_or_recovery_reason"]);
+            }
+            const executionID = ExecutionId.make(`abra-setup-${randomUUID()}`);
+            const setup = yield* createExecution(
+              registered,
+              {
+                issue_id: IssueId.make(`setup-${id}`),
+                repository_id: id,
+                execution_id: executionID,
+                workflow_policy: "full-openspec",
+                current_phase: reason ? "queued" : "provisioning",
+                setup: true,
+                branch: BranchName.make(`setup/${executionID}`),
+                openspec_change: "",
+                supervisor_session_id: supervisor,
+              },
+              this.c.config,
+            );
+            setup.error_or_recovery_reason = reason;
+            yield* this.c.records.create(setup);
+            return setup;
+          }),
+        ),
+      );
+    });
+  }
+
+  private prepare(registered: Project, p: Project, e: SetupExecution) {
+    return Effect.gen({ self: this }, function* () {
+      if (e.current_phase !== "provisioning") return e;
+      if (!p.project_id) {
+        p.project_id = yield* this.c.runtime.project(p.path);
+        yield* this.c.records.saveProject({ ...registered, project_id: p.project_id });
+      }
+      if (!e.base_commit) {
+        const base = yield* this.c.sources.base(p, e.execution_id);
+        e.base_commit = base.commit;
+        e.target_branch = base.target_branch;
+        yield* this.save(e, ["base_commit", "target_branch"]);
+      }
+      if (
+        !e.worktree_directory &&
+        (yield* this.c.sources.inspect(p.path, e.base_commit)).openspec_config !== null
+      ) {
+        yield* this.c.records.saveProject({
+          ...registered,
+          project_id: p.project_id,
+          openspec: true,
+          target_branch: e.target_branch ?? registered.target_branch,
+          inspected_commit: e.base_commit,
+        });
+        e.current_phase = "completed";
+        return yield* this.save(e, ["current_phase"]);
+      }
+      yield* this.c.workspaces.provision(p, e, (fields) => this.save(e, fields));
+      const path = e.worktree_directory;
+      if (!path) return yield* new CrewError("WORKTREE", "Prepare the setup worktree first");
+      if (!(yield* retainedEntry(join(path, "openspec/config.yaml"), "file"))) {
+        yield* this.c.git.runner.run(
           this.c.config.commands.openspec,
-          ["schemas", "--json"],
+          ["init", "--tools", "none", "--no-animation", path],
           path,
         );
-        if (!schemas.some((s) => s.name === config.schema))
-          return yield* new CrewError(
-            "SETUP_SCHEMA",
-            "Generated configuration names an unavailable schema",
-          );
-        yield* this.c.git.run(path, ["add", "--", ...files]);
-        e.archived_tree = yield* this.c.git.tree(path);
-        e.current_phase = "planning";
-        return yield* this.save(e, ["archived_tree", "current_phase"]);
       }
-      if (!e.worktree_directory)
-        return yield* new CrewError("WORKTREE", "Prepare the setup worktree first");
-      if (action === "deliver") {
-        if (!["planning", "delivering"].includes(e.current_phase))
-          return yield* new CrewError("SETUP_PHASE", "Setup is not ready for delivery");
-        yield* this.c.git.validate(p, e);
-        if (
-          !(
-            (yield* this.c.git.tree(e.worktree_directory)) === e.archived_tree &&
-            !(yield* this.c.git.run(e.worktree_directory, ["diff", "--name-only"])) &&
-            !(yield* this.c.git.run(e.worktree_directory, [
-              "ls-files",
-              "--others",
-              "--exclude-standard",
-            ]))
-          )
-        )
-          return yield* new CrewError(
-            "SETUP_CHANGED",
-            "Prepared setup content changed; preserve it for inspection",
-          );
-        e.current_phase = "delivering";
-        yield* this.save(e, ["current_phase"]);
-        const commit = yield* this.c.git.commit(
-          e.worktree_directory,
-          e.issue_id,
-          `Initialize OpenSpec for ${p.id}`,
+      const files = [
+        yield* this.c.git.run(path, ["diff", "--name-only", e.base_commit, "--"]),
+        yield* this.c.git.run(path, ["ls-files", "--others", "--exclude-standard"]),
+      ].flatMap((output) => output.split("\n").filter(Boolean));
+      if (!(files.length > 0 && files.every((name) => allowedSetupFiles.has(name)))) {
+        return yield* new CrewError(
+          "SETUP_CONTENT",
+          `Setup may only initialize OpenSpec configuration and directory placeholders; preserve unexpected files for inspection: ${files.join(", ")}`,
         );
-        yield* this.c.git.assertCommitTree(e.worktree_directory, commit, e.archived_tree!);
-        const result = yield* this.c.delivery.deliver(p, e, {
-          commit,
-          destination: { kind: "initial", pr: e.pull_request_reference },
-        });
-        if (result.commit !== commit)
-          return yield* new CrewError(
-            "DELIVERY_CHANGED",
-            "Published setup commit differs from the reviewed tree",
-          );
-        e.delivered_commit = commit;
-        e.pull_request_reference = result.pr;
-        e.current_phase = "awaiting_merge";
-        return yield* this.save(e, ["delivered_commit", "pull_request_reference", "current_phase"]);
       }
-      if (!["awaiting_merge", "cleaning"].includes(e.current_phase))
-        return yield* new CrewError("SETUP_PHASE", "Deliver setup before approval or cleanup");
-      if (e.current_phase === "awaiting_merge") {
-        yield* this.c.git.validate(p, e);
-        if (
-          !(
-            (yield* this.c.git.head(e.worktree_directory)) === e.delivered_commit &&
-            !(yield* this.c.git.dirty(e.worktree_directory))
-          )
-        )
-          return yield* new CrewError("SETUP_CHANGED", "Delivered setup worktree changed");
-        if (action === "approve") {
-          if (!(p.delivery === "github-pr"))
-            return yield* new CrewError(
-              "DELIVERY_POLICY",
-              "Branch delivery does not require merge approval",
-            );
+      // Inspect the generated configuration through the real repository-local CLI.
+      const config = yield* decode(
+        OpenSpecConfigSchema,
+        yield* parseYaml(
+          yield* readFile(join(path, "openspec/config.yaml"), "utf8"),
+          "Generated OpenSpec configuration",
+        ),
+        "Generated OpenSpec configuration",
+      );
+      if (!(config && typeof config.schema === "string")) {
+        return yield* new CrewError(
+          "SETUP_CONFIG",
+          "Generated OpenSpec configuration must name a schema",
+        );
+      }
+      const schemas = yield* json(
+        this.c.git.runner,
+        DiscoverySchema,
+        this.c.config.commands.openspec,
+        ["schemas", "--json"],
+        path,
+      );
+      if (!schemas.some((s) => s.name === config.schema)) {
+        return yield* new CrewError(
+          "SETUP_SCHEMA",
+          "Generated configuration names an unavailable schema",
+        );
+      }
+      yield* this.c.git.run(path, ["add", "--", ...files]);
+      e.archived_tree = yield* this.c.git.tree(path);
+      e.current_phase = "planning";
+      return yield* this.save(e, ["archived_tree", "current_phase"]);
+    });
+  }
 
-          const pr = yield* this.c.delivery.inspect(p, e);
-          if (
-            !(
-              pr &&
-              pr.url === e.pull_request_reference &&
-              pr.headRefOid === e.delivered_commit &&
-              pr.baseRefName === e.target_branch
-            )
-          )
-            return yield* new CrewError("PR_HEAD", "Setup PR identity changed before approval");
-          yield* this.readiness(p, e);
-          const { decision, receipt } = yield* collectForm(
-            e,
-            this.c.records,
-            this.c.runtime,
-            { kind: "merge", session_id: supervisor, fingerprint: e.delivered_commit! },
-            `Authorize OpenSpec setup merge for ${id}`,
-          );
-          if (decision === "pending")
-            return { setup: e, approval_required: true, form_id: receipt.form_id };
-          if (decision === "rejected")
-            return yield* new CrewError("APPROVAL_REJECTED", "Human rejected the setup merge");
-        }
+  private deliver(p: Project, e: SetupExecution) {
+    return Effect.gen({ self: this }, function* () {
+      const worktree = e.worktree_directory;
+      if (!worktree) return yield* new CrewError("WORKTREE", "Prepare the setup worktree first");
+      if (!["planning", "delivering"].includes(e.current_phase)) {
+        return yield* new CrewError("SETUP_PHASE", "Setup is not ready for delivery");
+      }
+      yield* this.c.git.validate(p, e);
+      if (
+        !(
+          e.archived_tree &&
+          (yield* this.c.git.tree(worktree)) === e.archived_tree &&
+          !(yield* this.c.git.run(worktree, ["diff", "--name-only"])) &&
+          !(yield* this.c.git.run(worktree, ["ls-files", "--others", "--exclude-standard"]))
+        )
+      ) {
+        return yield* new CrewError(
+          "SETUP_CHANGED",
+          "Prepared setup content changed; preserve it for inspection",
+        );
+      }
+      e.current_phase = "delivering";
+      yield* this.save(e, ["current_phase"]);
+      const commit = yield* this.c.git.commit(
+        worktree,
+        e.issue_id,
+        `Initialize OpenSpec for ${p.id}`,
+      );
+      yield* this.c.git.assertCommitTree(worktree, commit, e.archived_tree);
+      const result = yield* this.c.delivery.deliver(p, e, {
+        commit,
+        destination: { kind: "initial", pr: e.pull_request_reference },
+      });
+      if (result.commit !== commit) {
+        return yield* new CrewError(
+          "DELIVERY_CHANGED",
+          "Published setup commit differs from the reviewed tree",
+        );
+      }
+      e.delivered_commit = commit;
+      e.pull_request_reference = result.pr;
+      e.current_phase = "awaiting_merge";
+      return yield* this.save(e, ["delivered_commit", "pull_request_reference", "current_phase"]);
+    });
+  }
+
+  private verifyDeliveredWorktree(p: Project, e: SetupExecution) {
+    return Effect.gen({ self: this }, function* () {
+      const worktree = e.worktree_directory;
+      if (!worktree) return yield* new CrewError("WORKTREE", "Prepare the setup worktree first");
+      yield* this.c.git.validate(p, e);
+      if (
+        !(
+          (yield* this.c.git.head(worktree)) === e.delivered_commit &&
+          !(yield* this.c.git.dirty(worktree))
+        )
+      ) {
+        return yield* new CrewError("SETUP_CHANGED", "Delivered setup worktree changed");
+      }
+    });
+  }
+
+  private approve(id: RepositoryId, p: Project, e: SetupExecution, supervisor: SessionId) {
+    return Effect.gen({ self: this }, function* () {
+      if (!e.worktree_directory) {
+        return yield* new CrewError("WORKTREE", "Prepare the setup worktree first");
+      }
+      if (!["awaiting_merge", "cleaning"].includes(e.current_phase)) {
+        return yield* new CrewError("SETUP_PHASE", "Deliver setup before approval or cleanup");
+      }
+      if (e.current_phase !== "awaiting_merge") return undefined;
+      yield* this.verifyDeliveredWorktree(p, e);
+      if (p.delivery !== "github-pr") {
+        return yield* new CrewError(
+          "DELIVERY_POLICY",
+          "Branch delivery does not require merge approval",
+        );
+      }
+      const pr = yield* this.c.delivery.inspect(p, e);
+      if (
+        !(
+          pr &&
+          pr.url === e.pull_request_reference &&
+          pr.headRefOid === e.delivered_commit &&
+          pr.baseRefName === e.target_branch
+        )
+      ) {
+        return yield* new CrewError("PR_HEAD", "Setup PR identity changed before approval");
+      }
+      if (!e.delivered_commit) {
+        return yield* new CrewError("SETUP_PHASE", "Deliver setup before approval or cleanup");
+      }
+      yield* this.readiness(p, e);
+      const { decision, receipt } = yield* collectForm(
+        e,
+        this.c.records,
+        this.c.runtime,
+        { kind: "merge", session_id: supervisor, fingerprint: e.delivered_commit },
+        `Authorize OpenSpec setup merge for ${id}`,
+      );
+      if (decision === "pending") {
+        return { setup: e, approval_required: true as const, form_id: receipt.form_id };
+      }
+      if (decision === "rejected") {
+        return yield* new CrewError("APPROVAL_REJECTED", "Human rejected the setup merge");
+      }
+      return undefined;
+    });
+  }
+
+  private finish(registered: Project, p: Project, e: SetupExecution, worktreeVerified = false) {
+    return Effect.gen({ self: this }, function* () {
+      if (!e.worktree_directory) {
+        return yield* new CrewError("WORKTREE", "Prepare the setup worktree first");
+      }
+      if (!["awaiting_merge", "cleaning"].includes(e.current_phase)) {
+        return yield* new CrewError("SETUP_PHASE", "Deliver setup before approval or cleanup");
+      }
+      if (e.current_phase === "awaiting_merge") {
+        if (!worktreeVerified) yield* this.verifyDeliveredWorktree(p, e);
         if (
           p.delivery === "github-pr" &&
           (yield* this.c.delivery.inspect(p, e))?.state !== "MERGED"
@@ -406,16 +446,17 @@ export class ProjectSetup {
             !(
               e.merge_approval_required === false ||
               e.approval_receipts.some(
-                (a) => a.fingerprint === e!.delivered_commit && a.authorized_at,
+                (a) => a.fingerprint === e.delivered_commit && a.authorized_at,
               )
             )
-          )
+          ) {
             return yield* new CrewError(
               "MERGE_APPROVAL",
               "Human authorization is required before setup merge",
             );
+          }
           yield* this.readiness(p, e);
-          const result = yield* this.c.delivery.merge(p, e, undefined, () => this.readiness(p, e!));
+          const result = yield* this.c.delivery.merge(p, e, undefined, () => this.readiness(p, e));
           if (result.category !== "completed") {
             e.error_or_recovery_reason = result.reason;
             return yield* this.save(e, ["error_or_recovery_reason"]);
@@ -425,14 +466,15 @@ export class ProjectSetup {
         e.current_phase = "cleaning";
         yield* this.save(e, ["delivery_receipt", "current_phase"]);
       }
-      const blocker = yield* this.c.workspaces.retire(p, e, (fields) => this.save(e!, fields));
-      if (blocker)
+      const blocker = yield* this.c.workspaces.retire(p, e, (fields) => this.save(e, fields));
+      if (blocker) {
         return yield* new CrewError(
           blocker.paths.some((path) => path.category === "untracked")
             ? "DIRTY_WORKTREE"
             : "IGNORED_WORK",
           `Setup cleanup blocked; preserve retained paths ${JSON.stringify(blocker.paths).slice(0, 4096)}${blocker.truncated ? " (truncated sample)" : ""} before retrying setup finish`,
         );
+      }
       // A preserved branch alone does not make the default branch ready for normal work.
       const base = yield* this.c.sources.fetch(
         p.path,
@@ -448,6 +490,57 @@ export class ProjectSetup {
       });
       e.current_phase = "completed";
       return yield* this.save(e, ["current_phase"]);
+    });
+  }
+
+  private runInternal = Effect.fn("ProjectSetup.runInternal")(
+    function* (
+      this: ProjectSetup,
+      id: RepositoryId,
+      action: SetupAction,
+      supervisor: SessionId,
+      initialize: boolean,
+    ) {
+      const registered = yield* this.c.records.project(id);
+      if (!registered) {
+        return yield* new CrewError("PROJECT_MISSING", "Repository is not registered");
+      }
+      let e: SetupExecution | undefined = yield* this.c.records.setup(id);
+      if (e && e.delivery_policy !== registered.delivery) {
+        return yield* new CrewError(
+          "POLICY_DRIFT",
+          "Setup delivery policy changed; preserve resources and repair",
+        );
+      }
+      if (!e || e.current_phase === "queued") {
+        e = yield* this.admitSetup(id, registered, e, action, supervisor, initialize);
+      }
+      if (e.current_phase === "queued" || e.current_phase === "completed") return e;
+      const p = { ...registered, target_branch: e.target_branch ?? registered.target_branch };
+      const operation = {
+        id: OperationId.make(`op-${randomUUID()}`),
+        action: OperationAction.make(`setup-${action}`),
+        status: "prepared" as const,
+        generation: e.control_generation,
+        fingerprint: inputFingerprint(e),
+        expected: `Reconcile setup ${action} against retained native branch/worktree and delivery identities`,
+        started_at: yield* Clock.currentTimeMillis,
+      };
+      yield* this.c.records.beginOperation(e, operation);
+      yield* progress({ stage: "setup", status: "started" });
+      switch (action) {
+        case "prepare":
+          return yield* this.prepare(registered, p, e);
+        case "deliver":
+          return yield* this.deliver(p, e);
+        case "approve": {
+          const pending = yield* this.approve(id, p, e, supervisor);
+          if (pending) return pending;
+          return yield* this.finish(registered, p, e, true);
+        }
+        case "finish":
+          return yield* this.finish(registered, p, e, false);
+      }
     }.bind(this),
     domainEffect,
   );

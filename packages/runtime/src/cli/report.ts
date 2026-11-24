@@ -1,69 +1,100 @@
-import { sourceInstallationRoot } from "../installation.ts";
+/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 FileSystem and NodeHttpServer APIs. */
 import { createServer } from "node:http";
-import { readFile, writeFile, lstat } from "node:fs/promises";
 import { resolve } from "node:path";
-import { Effect } from "effect";
-import { AbsolutePath } from "../identities.ts";
-import { readReportDocument } from "../presentation/report-document.ts";
-import { ReactDocumentRenderer } from "../workflow/report-export.ts";
-import { validatePortableHTML, maximumHTMLBytes } from "../workflow/report-build.ts";
+import { NodeHttpServer } from "@effect/platform-node";
+import { ByteSize, Console, Effect, FileSystem } from "effect";
+import { HttpServerRequest, HttpServerResponse } from "effect/http";
+import { CrewError } from "../domain.ts";
+import { AbsolutePath } from "@abracode/contracts/identities";
+import { sourceInstallationRoot } from "../installation.ts";
+import { readReportDocument } from "@abracode/contracts/presentation/report-document";
 import { ProcessRunner } from "../process.ts";
+import { maximumHTMLBytes, validatePortableHTML } from "../reporting/report-build.ts";
+import { ReactDocumentRenderer } from "../reporting/report-export.ts";
 
-const usage =
-  "Usage: pnpm report:export <saved.json> <new.html> | pnpm report:preview <export.html> [port]";
-const [mode, input, output, ...extra] = process.argv.slice(2);
-if (mode === "--help" || !input) console.log(usage);
-else if (extra.length || !["export", "preview"].includes(mode ?? "")) throw new Error(usage);
-else {
-  const path = resolve(input),
-    stat = await lstat(path);
-  if (
-    !stat.isFile() ||
-    stat.isSymbolicLink() ||
-    stat.size > (mode === "export" ? 1024 * 1024 : maximumHTMLBytes)
-  )
-    throw new Error("A bounded regular saved report file is required.");
-  const text = await readFile(path, "utf8");
-  if (mode === "export") {
-    if (!output) throw new Error(usage);
+const readBoundedReportFile = (input: string, maxBytes: number) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = resolve(input);
+    const stat = yield* fs
+      .lstat(path)
+      .pipe(Effect.mapError((cause) => CrewError.from(cause.reason.cause ?? cause)));
+    if (stat.type !== "File" || ByteSize.toBigInt(stat.size) > BigInt(maxBytes))
+      return yield* new CrewError(
+        "REPORT_INPUT",
+        "A bounded regular saved report file is required.",
+      );
+    return yield* fs
+      .readFileString(path, "utf8")
+      .pipe(Effect.mapError((cause) => CrewError.from(cause.reason.cause ?? cause)));
+  });
+
+export const runReportPrepare = Effect.gen(function* () {
+  const renderer = new ReactDocumentRenderer(
+    AbsolutePath.make(sourceInstallationRoot()),
+    new ProcessRunner(),
+  );
+  const prepared = yield* renderer.prepare;
+  yield* Console.log(`Portable renderer: ${prepared}`);
+});
+
+export const runReportExport = (input: string, output: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const text = yield* readBoundedReportFile(input, 1024 * 1024);
     const parsed = readReportDocument(text);
-    if (!parsed.supported) throw new Error(parsed.reason);
+    if (!parsed.supported) return yield* new CrewError("REPORT_DOCUMENT", parsed.reason);
     const renderer = new ReactDocumentRenderer(
       AbsolutePath.make(sourceInstallationRoot()),
       new ProcessRunner(),
     );
-    const bundle = await Effect.runPromise(renderer.acquire);
-    const html = await Effect.runPromise(bundle.render(parsed.document));
-    await writeFile(resolve(output), html, { flag: "wx", mode: 0o600 });
-    console.log(`Exported ${Buffer.byteLength(html)} bytes to ${resolve(output)}`);
-  } else {
-    validatePortableHTML(text);
-    const port = Number(output ?? "4174");
+    const bundle = yield* renderer.acquire;
+    const html = yield* bundle.render(parsed.document);
+    const target = resolve(output);
+    yield* fs
+      .writeFileString(target, html, { flag: "wx", mode: 0o600 })
+      .pipe(Effect.mapError((cause) => CrewError.from(cause.reason.cause ?? cause)));
+    yield* Console.log(`Exported ${Buffer.byteLength(html)} bytes to ${target}`);
+  });
+
+export const runReportPreview = (input: string, port: number) =>
+  Effect.gen(function* () {
     if (!Number.isInteger(port) || port < 0 || port > 65535)
-      throw new Error("Port must be 0–65535.");
-    const server = createServer((request, response) => {
-      if (request.method !== "GET" || request.url !== "/") {
-        response.writeHead(404);
-        response.end();
-        return;
-      }
-      response.writeHead(200, {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-store",
-        "content-security-policy":
-          "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; media-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'",
-        "x-content-type-options": "nosniff",
-      });
-      response.end(text);
+      return yield* new CrewError("REPORT_PORT", "Port must be 0–65535.");
+    const text = yield* readBoundedReportFile(input, maximumHTMLBytes);
+    yield* Effect.try({
+      try: () => validatePortableHTML(text),
+      catch: CrewError.from,
     });
-    server.listen(port, "127.0.0.1", () => {
-      const address = server.address();
-      console.log(
-        `Report preview: http://127.0.0.1:${typeof address === "object" && address ? address.port : port}/\nKeep this terminal open. Ctrl+C stops only this preview.`,
-      );
-    });
-    const stop = () => server.close(() => process.exit(0));
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
-  }
-}
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const server = yield* NodeHttpServer.make(() => createServer(), {
+          port,
+          host: "127.0.0.1",
+          gracefulShutdownTimeout: "1 second",
+        });
+        if (!("port" in server.address))
+          return yield* new CrewError("REPORT_PREVIEW", "Expected a loopback TCP listener");
+        const handler = Effect.gen(function* () {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          if (request.method !== "GET" || request.url !== "/")
+            return HttpServerResponse.empty({ status: 404 });
+          return HttpServerResponse.text(text, {
+            status: 200,
+            contentType: "text/html; charset=utf-8",
+            headers: {
+              "cache-control": "no-store",
+              "content-security-policy":
+                "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; media-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'",
+              "x-content-type-options": "nosniff",
+            },
+          });
+        });
+        yield* server.serve(handler).pipe(Effect.provide(NodeHttpServer.layerHttpServices));
+        yield* Console.log(
+          `Report preview: http://127.0.0.1:${server.address.port}/\nKeep this terminal open. Ctrl+C stops only this preview.`,
+        );
+        return yield* Effect.never;
+      }),
+    );
+  });

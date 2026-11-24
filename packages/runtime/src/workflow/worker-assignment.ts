@@ -1,5 +1,5 @@
 import { type Execution, type Role } from "../domain.ts";
-import { type SessionId } from "../identities.ts";
+import { type SessionId } from "@abracode/contracts/identities";
 import { phaseRole } from "./roles.ts";
 
 export const workerSessionID = (e: Execution, role = e.active_role) =>

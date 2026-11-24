@@ -1,51 +1,60 @@
-import { Effect, Schema } from "effect";
-import { Session, SessionMessage } from "@opencode/client/effect";
-import { createHash } from "node:crypto";
-import { CrewError, ensure, type Config } from "../domain.ts";
-import { LockKey, RequestId, SessionId, type IssueId, timestamp } from "../identities.ts";
-import { decode, decodeJSON } from "../decode.ts";
-import { domainEffect } from "../effect.ts";
-import { type Records } from "../storage/store.ts";
-import { type Locks } from "../storage/lock.ts";
-import { type Runtime, type SessionState } from "../opencode/runtime.ts";
-import { type WorkGraph } from "../work/graph.ts";
+import { Effect } from "effect";
+import { SessionMessage } from "@opencode/client/effect";
 import {
-  BatchResultSchema,
-  normalizeBatch,
-  type BatchInput,
-  type BatchResult,
-} from "../work/batch.ts";
-import { type Obligations } from "./obligations.ts";
+  type IssueId,
+  type LeadId,
+  LockKey,
+  type MessageId,
+  type RequestId,
+  type SessionId,
+  timestamp,
+} from "@abracode/contracts/identities";
 import {
   requestHistoryError,
   requestPromptIDs,
   requiresResponse,
   type MessageSendSchema,
-} from "./message-contracts.ts";
+} from "@abracode/contracts/workflow/message-contracts";
+import { decode } from "../decode.ts";
+import { ensure, type Config, type CrewError } from "../domain.ts";
+import { domainEffect } from "../effect.ts";
+import { type Runtime, type SessionState } from "../opencode/runtime.ts";
+import { type Locks } from "../storage/lock.ts";
+import { type Records } from "../storage/store.ts";
+import { type BatchInput, type BatchResult } from "../work/batch.ts";
+import { type WorkGraph } from "../work/graph.ts";
+import { readDiagnosticCapacity } from "./diagnostic-budget.ts";
+import { deliverSyntheticNotice } from "./durable-outbox.ts";
 import {
-  reminderDecision,
-  reminderTarget,
-  pendingReminder,
-  queuedReminder,
-  suppressReminder,
-  reserveReminder,
-} from "./response-recovery.ts";
-import { admitNativeRequest } from "./messages.ts";
-import {
-  LeadActionSchema,
-  LeadControlSchema,
   LeadRecordSchema,
   leadKey,
   readLeads,
-  leadAccounting,
   type LeadAction,
   type LeadControl,
   type LeadRecord,
 } from "./lead-contracts.ts";
-const key = (parts: readonly unknown[]) =>
-  RequestId.make(`lead-${createHash("sha256").update(JSON.stringify(parts)).digest("hex")}`);
-const json = (value: unknown) =>
-  decodeJSON(Schema.Json, JSON.stringify(value), "Project lead result");
+import {
+  controlLead,
+  createLeadRequest,
+  executeLeadAction,
+  leadRequestKey,
+  mapRequest,
+  verifyLeadPrompt,
+  withRecoveryStatus,
+  type LeadControlDeps,
+} from "./leads-control.ts";
+import { type Obligations } from "./obligations.ts";
+import {
+  admitNativeRequest,
+  formatNativeState,
+  isUnresolvedRecovery,
+  reconcileReminderTransport,
+  renderReminderPrompt,
+  reserveReminder,
+  runResponseRecovery,
+  suppressReminder,
+  type RecoveryStatus,
+} from "./response-recovery.ts";
 
 /** Management principals are separate from phase workers. Native sessions own context;
  * this bounded ledger owns only scope, routing and proposals, under controller locks. */
@@ -67,6 +76,32 @@ export class Leads {
     ) => Effect.Effect<unknown, CrewError>,
     private memory?: import("../memory/service.ts").AgentMemory,
   ) {}
+
+  private controlDeps(): LeadControlDeps {
+    return {
+      config: this.config,
+      records: this.records,
+      work: this.work,
+      runtime: this.runtime,
+      locks: this.locks,
+      obligations: this.obligations,
+      createBatch: this.createBatch,
+      message: this.message,
+      memory: this.memory,
+      commit: (fn) => this.commit(fn),
+      save: (record) => this.save(record),
+      principal: this.principal,
+      current: (session, revision) => this.current(session, revision),
+      scoped: (lead, issue) => this.scoped(lead, issue),
+      root: (parent) => this.root(parent),
+      reconcileOne: this.reconcileOne,
+    };
+  }
+
+  private commit<A>(fn: () => Effect.Effect<A, CrewError>) {
+    return this.records.coordinateCommit(() => domainEffect(fn()));
+  }
+
   private save(record: LeadRecord) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
@@ -74,11 +109,9 @@ export class Leads {
         const prior = yield* this.records.store.get(leadKey(r.id));
         if (prior !== undefined) {
           const old = yield* decode(LeadRecordSchema, prior, "Retained lead registration");
-          const requests = new Map(
-            r.requests.map((item) => [item.request.request_id, item.request]),
-          );
+          const byId = new Map(r.requests.map((item) => [item.request.request_id, item.request]));
           for (const item of old.requests) {
-            const current = requests.get(item.request.request_id);
+            const current = byId.get(item.request.request_id);
             ensure(current, "MESSAGE_HISTORY", "Retained lead request cannot be removed");
             const error = requestHistoryError(item.request, current);
             ensure(!error, "MESSAGE_HISTORY", error ?? "Invalid lead request history");
@@ -88,12 +121,41 @@ export class Leads {
       }),
     );
   }
+
+  private readById = (id: LeadId) =>
+    this.records.store
+      .get(leadKey(id))
+      .pipe(
+        Effect.flatMap((raw) =>
+          raw === undefined
+            ? Effect.undefined
+            : decode(LeadRecordSchema, raw, "Retained lead registration"),
+        ),
+      );
+
+  private updateLead = (
+    id: LeadId,
+    fallback: LeadRecord,
+    transform: (current: LeadRecord) => LeadRecord | undefined,
+  ) =>
+    this.commit(() =>
+      Effect.gen({ self: this }, function* () {
+        const current = yield* this.readById(id);
+        if (!current) return fallback;
+        const next = transform(current);
+        if (!next) return current;
+        yield* this.save(next);
+        return next;
+      }),
+    );
+
   principal = (session: SessionId) =>
     readLeads(this.records).pipe(
       Effect.map((ls) =>
         ls.find((l) => l.session_id === session || l.retired_sessions.includes(session)),
       ),
     );
+
   private current(session: SessionId, revision: number) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
@@ -112,6 +174,7 @@ export class Leads {
       }),
     );
   }
+
   private scoped(l: LeadRecord, issue: IssueId) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
@@ -125,11 +188,15 @@ export class Leads {
       }),
     );
   }
+
   private root(parent: SessionId) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
+        const supervisor = yield* this.records.supervisor();
+        const leads = yield* readLeads(this.records);
         ensure(
-          (yield* this.records.supervisor()) === parent && !(yield* this.principal(parent)),
+          supervisor === parent &&
+            !leads.some((l) => l.session_id === parent || l.retired_sessions.includes(parent)),
           "ABRA_REQUIRED",
           "Retained parent Abra required",
         );
@@ -139,464 +206,55 @@ export class Leads {
           "ABRA_REQUIRED",
           "Central Abra required",
         );
+        return leads;
       }),
     );
   }
+
+  private assertLeadSession(
+    state: SessionState,
+    message = "Management recipient moved or changed agent",
+  ) {
+    ensure(
+      state.directory === this.config.home && state.agent === "project-lead",
+      "LEAD_SESSION",
+      message,
+    );
+  }
+
   control = Effect.fn("Leads.control")(
     function* (this: Leads, parent: SessionId, raw: LeadControl) {
-      const input = yield* decode(LeadControlSchema, raw, "Lead control");
-      yield* this.root(parent);
-      if (input.action === "status")
-        return yield* json(
-          (yield* readLeads(this.records)).filter((l) => !input.id || l.id === input.id),
-        );
-      return yield* this.locks.with(LockKey.make(`lead-${input.id}`), () =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            let l = (yield* readLeads(this.records)).find((r) => r.id === input.id);
-            if (input.action === "register") {
-              const repositories = [...input.repositories].sort();
-              if (
-                l &&
-                l.parent_session_id === parent &&
-                l.revision === input.expected_revision &&
-                l.enabled === input.enabled &&
-                JSON.stringify(l.repositories) === JSON.stringify(repositories) &&
-                JSON.stringify(l.model) === JSON.stringify(input.model)
-              ) {
-                yield* this.reconcileOne(l);
-                return yield* json((yield* readLeads(this.records)).find((r) => r.id === l!.id));
-              }
-              if (l && l.revision !== input.expected_revision) {
-                // Same committed declaration is a retry, never a scope/session adoption.
-                ensure(
-                  l.revision === input.expected_revision + 1 &&
-                    JSON.stringify(l.repositories) === JSON.stringify(repositories) &&
-                    JSON.stringify(l.model) === JSON.stringify(input.model) &&
-                    l.enabled === input.enabled &&
-                    l.parent_session_id === parent,
-                  "LEAD_REVISION",
-                  "Registration changed; inspect current revision",
-                );
-              } else {
-                ensure(
-                  l ? l.parent_session_id === parent : input.expected_revision === 0,
-                  "LEAD_REVISION",
-                  "Current expected registration revision required",
-                );
-                for (const repo of repositories)
-                  ensure(
-                    yield* this.records.project(repo),
-                    "LEAD_SCOPE",
-                    "Registered repositories required",
-                  );
-                const changed =
-                  l &&
-                  (JSON.stringify(l.repositories) !== JSON.stringify(repositories) ||
-                    JSON.stringify(l.model) !== JSON.stringify(input.model));
-                ensure(
-                  !changed || (!l!.enabled && !l!.active && !l!.stop_pending),
-                  "LEAD_ACTIVE",
-                  "Disable and confirm stop before changing scope or model",
-                );
-                ensure(
-                  !l || l.retired_sessions.length < 32 || !changed,
-                  "LEAD_LIMIT",
-                  "Lead session revision limit reached",
-                );
-                ensure(
-                  l || (yield* readLeads(this.records)).length < 32,
-                  "LEAD_LIMIT",
-                  "Registration limit reached",
-                );
-                const old = l;
-                l = {
-                  schema_version: 1,
-                  id: input.id,
-                  revision: (old?.revision ?? 0) + 1,
-                  repositories,
-                  parent_session_id: parent,
-                  session_id: changed || !old ? Session.ID.create() : old.session_id,
-                  retired_sessions: changed
-                    ? [...old!.retired_sessions, old!.session_id]
-                    : (old?.retired_sessions ?? []),
-                  model: input.model,
-                  enabled: input.enabled,
-                  provisioned: changed ? false : (old?.provisioned ?? false),
-                  active: old?.active ?? false,
-                  stop_pending: !changed && !!old?.provisioned && !input.enabled,
-                  requests:
-                    old?.requests.map((r) => ({
-                      ...r,
-                      request: ["answered", "cancelled", "superseded"].includes(r.request.status)
-                        ? r.request
-                        : { ...r.request, status: "superseded" as const },
-                    })) ?? [],
-                  proposals: old?.proposals ?? [],
-                };
-                yield* this.records.coordinateCommit(() => this.save(l!));
-              }
-              yield* this.reconcileOne(l!);
-              return yield* json((yield* readLeads(this.records)).find((r) => r.id === input.id));
-            }
-            ensure(
-              l &&
-                l.parent_session_id === parent &&
-                l.enabled &&
-                l.revision === input.revision &&
-                !l.stop_pending,
-              "LEAD_REVISION",
-              "Current enabled lead required",
-            );
-            if (input.action === "message")
-              return yield* json(
-                yield* this.request(l, input.issue_id, input.request_id, input.body),
-              );
-            const p = l.proposals.find((p) => p.request_id === input.request_id);
-            ensure(
-              p && p.revision === l.revision,
-              "LEAD_PROPOSAL",
-              "Current retained proposal required",
-            );
-            if (!p.accepted) {
-              const accepted = yield* this.createBatch(p.batch, parent).pipe(
-                Effect.flatMap((r) => decode(BatchResultSchema, r, "Accepted lead proposal")),
-              );
-              l = { ...l, proposals: l.proposals.map((r) => (r === p ? { ...r, accepted } : r)) };
-              yield* this.records.coordinateCommit(() => this.save(l!));
-            }
-            return yield* json(l.proposals.find((p) => p.request_id === input.request_id));
-          }),
-        ),
-      );
+      return yield* controlLead(this.controlDeps(), parent, raw);
     }.bind(this),
     domainEffect,
   );
 
   action = Effect.fn("Leads.action")(
     function* (this: Leads, session: SessionId, raw: LeadAction) {
-      const a = yield* decode(LeadActionSchema, raw, "Lead action");
-      // Short commits revalidate the native principal under the same controller lock
-      // as disable, proposals and routine decision answers.
-      const principal = yield* this.current(session, a.revision);
-      if (a.action === "memory_read" || a.action === "memory_search") {
-        return yield* this.locks.with(LockKey.make(`lead-${principal.id}`), () =>
-          Effect.gen({ self: this }, function* () {
-            const live = yield* this.current(session, a.revision);
-            const native = yield* this.runtime.session(session);
-            if (native.agent !== "project-lead" || native.directory !== this.config.home)
-              return yield* new CrewError("LEAD_SESSION", "Lead session moved or changed agent.");
-            if (!this.memory?.enabled || !live.repositories.includes(a.repository_id))
-              return yield* new CrewError(
-                "LEAD_FORBIDDEN",
-                "Select an enabled, assigned repository.",
-              );
-            const result =
-              a.action === "memory_read"
-                ? yield* this.memory.read(a.repository_id, a)
-                : yield* this.memory.search(a.repository_id, a);
-            return yield* json(result);
-          }),
-        );
-      }
-      return yield* this.locks.with(LockKey.make(`lead-${principal.id}`), () =>
-        this.records
-          .coordinateCommit(() =>
-            domainEffect(
-              Effect.gen({ self: this }, function* () {
-                let l = yield* this.current(session, a.revision);
-                if (a.action === "status") {
-                  if (a.issue_id) yield* this.scoped(l, a.issue_id);
-                  const tasks = (yield* this.work.list)
-                    .filter(
-                      (t) =>
-                        l.repositories.includes(t.repository_id) &&
-                        (!a.issue_id || a.issue_id === t.id),
-                    )
-                    .slice(0, 128);
-                  const summaries = [];
-                  for (const t of tasks) {
-                    const e = yield* this.records.execution(t.id);
-                    summaries.push({
-                      id: t.id,
-                      repository_id: t.repository_id,
-                      title: t.title,
-                      description: t.description,
-                      status: t.status,
-                      workflow_policy: t.workflow_policy,
-                      phase: e?.current_phase,
-                      decisions: e?.decisions
-                        ?.filter((d) => d.status === "open")
-                        .map((d) => ({
-                          key: d.key,
-                          generation: d.generation,
-                          owner: d.owner,
-                          question: d.question,
-                        })),
-                      findings: e?.messages?.filter((m) => m.type === "finding").slice(-20),
-                      report: e?.report_receipt
-                        ? { report_id: e.report_receipt.report_id, hash: e.report_receipt.hash }
-                        : undefined,
-                    });
-                  }
-                  return yield* json({
-                    id: l.id,
-                    revision: l.revision,
-                    repositories: l.repositories,
-                    tasks: summaries,
-                    requests: l.requests.slice(-20),
-                    proposals: l.proposals.slice(-8),
-                    snapshot_at: yield* timestamp,
-                  });
-                }
-                if (a.action === "reply") {
-                  const r = l.requests.find((r) => r.request.request_id === a.request_id)?.request;
-                  ensure(
-                    r &&
-                      r.generation === l.revision &&
-                      r.recipient_session_id === session &&
-                      ["admission_uncertain", "admitted", "acknowledged", "answered"].includes(
-                        r.status,
-                      ),
-                    "MESSAGE_SENDER",
-                    "Expected current correlated lead request required",
-                  );
-                  ensure(
-                    !r.reply || r.reply.body === a.body,
-                    "MESSAGE_REBIND",
-                    "Request already has another answer",
-                  );
-                  const now = yield* timestamp;
-                  l = {
-                    ...l,
-                    requests: l.requests.map((item) =>
-                      item.request === r && !r.reply
-                        ? {
-                            ...item,
-                            request: {
-                              ...r,
-                              status: "answered",
-                              acknowledged_at: now,
-                              reply: { body: a.body, evidence: [], at: now },
-                            },
-                          }
-                        : item,
-                    ),
-                  };
-                  yield* this.save(l);
-                  return yield* json(l.requests.find((r) => r.request.request_id === a.request_id));
-                }
-                if (a.action === "propose") {
-                  const batch = normalizeBatch(a.batch);
-                  for (const task of batch.tasks) {
-                    ensure(
-                      l.repositories.includes(task.repository_id),
-                      "LEAD_SCOPE",
-                      "Proposed task is outside lead scope",
-                    );
-                    for (const d of task.dependencies ?? [])
-                      if (d.type === "existing") yield* this.scoped(l, d.issue_id);
-                    if (task.report_reference)
-                      yield* this.scoped(l, task.report_reference.issue_id);
-                  }
-                  const old = l.proposals.find((p) => p.request_id === a.batch.request_id);
-                  const proposed = {
-                    ...batch,
-                    request_id: key([l.id, l.revision, a.batch.request_id]),
-                  };
-                  ensure(
-                    !old ||
-                      (old.revision === l.revision &&
-                        JSON.stringify(old.batch) === JSON.stringify(proposed)),
-                    "LEAD_REBIND",
-                    "Proposal identity cannot be rebound",
-                  );
-                  ensure(old || l.proposals.length < 32, "LEAD_LIMIT", "Proposal limit reached");
-                  if (!old) {
-                    l = {
-                      ...l,
-                      proposals: [
-                        ...l.proposals,
-                        {
-                          request_id: a.batch.request_id,
-                          revision: l.revision,
-                          batch: proposed,
-                          notice_id: SessionMessage.ID.create(),
-                        },
-                      ],
-                    };
-                    yield* this.save(l);
-                  }
-                  return yield* json(l.proposals.find((p) => p.request_id === a.batch.request_id));
-                }
-                yield* this.scoped(l, a.issue_id);
-                if (a.action === "answer") {
-                  const e = yield* this.records.execution(a.issue_id);
-                  ensure(
-                    e?.decisions?.some(
-                      (d) =>
-                        d.key === a.key &&
-                        d.generation === a.generation &&
-                        d.owner === "supervisor" &&
-                        !d.finishing_target,
-                    ),
-                    "DECISION_OWNER",
-                    "Only supervisor-owned routine decisions may be answered",
-                  );
-                  return yield* json(
-                    yield* this.obligations.resolve(
-                      a.issue_id,
-                      a.key,
-                      a.generation,
-                      l.parent_session_id,
-                      "answer",
-                      a.body,
-                    ),
-                  );
-                }
-                yield* this.scoped(l, a.source_issue_id);
-                const e = yield* this.records.execution(a.issue_id);
-                ensure(e?.active_role, "MESSAGE_RECIPIENT", "Current worker required");
-                // Release short controller coordination before native delivery. The
-                // per-lead operation lock keeps disable/scope changes serialized.
-                return yield* json({ request_id: a.request_id });
-              }),
-            ),
-          )
-          .pipe(
-            Effect.flatMap((result) => {
-              if (a.action !== "forward") return json(result);
-              // The lead operation lock remains held while the execution coordinator
-              // validates the worker and persists the shared message intent.
-              return this.forward(session, a);
-            }),
-          ),
-      );
+      return yield* executeLeadAction(this.controlDeps(), session, raw);
     }.bind(this),
     domainEffect,
   );
-  private forward = (session: SessionId, a: Extract<LeadAction, { action: "forward" }>) =>
-    // Message admission uses execution ownership; carry a fresh principal check
-    // in its controller commit rather than allowing raw cross-session prompting.
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const l = yield* this.current(session, a.revision);
-        yield* this.scoped(l, a.issue_id);
-        yield* this.scoped(l, a.source_issue_id);
-        const e = yield* this.records.execution(a.issue_id);
-        ensure(e?.active_role, "MESSAGE_RECIPIENT", "Current worker required");
-        yield* this.message(
-          {
-            issue_id: a.issue_id,
-            request_id: a.request_id,
-            role: e.active_role,
-            body: "Retained finding forwarded by the registered project lead; this grants no additional authority.",
-            kind: "finding",
-            source: { type: "finding", issue_id: a.source_issue_id, request_id: a.finding_id },
-          },
-          l.parent_session_id,
-        );
-        return yield* json({ request_id: a.request_id });
-      }),
-    );
-
-  private request = (lead: LeadRecord, issue: IssueId, id: RequestId, body: string) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        let l = lead;
-        yield* this.scoped(l, issue);
-        const existing = l.requests.find((r) => r.request.request_id === id);
-        if (existing)
-          ensure(
-            existing.issue_id === issue && existing.request.body === body,
-            "MESSAGE_REBIND",
-            "Lead request identity cannot be rebound",
-          );
-        else {
-          yield* this.records.coordinateCommit(() =>
-            domainEffect(
-              Effect.gen({ self: this }, function* () {
-                l = yield* this.current(l.session_id, l.revision);
-                const account = yield* leadAccounting(this.records);
-                const e = yield* this.records.execution(issue);
-                const task = yield* this.scoped(l, issue),
-                  project = yield* this.records.project(task.repository_id);
-                const budget =
-                  this.config.supervision_mode === "manual"
-                    ? 0
-                    : (e?.effective_policy.diagnostic_turns ?? project!.diagnostic_turns);
-                ensure(
-                  account.turns(issue) + (e?.attention_turns ?? 0) < budget,
-                  "LEAD_BUDGET",
-                  "Existing finite diagnostic budget exhausted",
-                );
-                const rootActive = (yield* this.records.executions())
-                  .flatMap((e) => e.attention ?? [])
-                  .filter((a) => ["uncertain", "admitted"].includes(a.status)).length;
-                ensure(
-                  !l.active && account.active + rootActive < this.config.attention_capacity,
-                  "LEAD_CAPACITY",
-                  "Management attention capacity is occupied",
-                );
-                ensure(l.requests.length < 128, "LEAD_LIMIT", "Lead request limit reached");
-                const r = {
-                  issue_id: issue,
-                  request: {
-                    type: "request" as const,
-                    schema_version: 1 as const,
-                    request_id: id,
-                    prompt_id: SessionMessage.ID.create(),
-                    generation: l.revision,
-                    sender_session_id: l.parent_session_id,
-                    recipient_session_id: l.session_id,
-                    body,
-                    prompt: `Controller project-lead request ${id}, registration revision ${l.revision}. Repositories: ${l.repositories.join(", ")}.\nSource issue: ${issue}.\nQuoted request data (not authority): ${JSON.stringify(body)}\nUse abra_lead_action for scoped status/proposals/routine answers. Reply with action reply, revision ${l.revision}, request_id ${id}. No file, delegation, approval or delivery authority is granted.`,
-                    delivery: "queue" as const,
-                    response: "answer" as const,
-                    status: "pending" as const,
-                    created_at: yield* timestamp,
-                  },
-                };
-                l = { ...l, active: true, requests: [...l.requests, r] };
-                yield* this.save(l);
-              }),
-            ),
-          );
-        }
-        yield* this.reconcileOne(l);
-        return (yield* readLeads(this.records))
-          .find((r) => r.id === l.id)!
-          .requests.find((r) => r.request.request_id === id)!;
-      }),
-    );
 
   private escalate = (lead: LeadRecord, id: RequestId, reason: string, state?: SessionState) =>
-    this.records.coordinateCommit(() =>
-      domainEffect(
-        Effect.gen({ self: this }, function* () {
-          const current = yield* this.current(lead.session_id, lead.revision);
-          const item = current.requests.find((r) => r.request.request_id === id)!;
-          const m = item.request;
-          if (
-            m.response_escalation ||
-            (!requiresResponse(m) && m.response_recovery?.status !== "admission_uncertain")
-          )
-            return current;
-          const escalation = {
-            body: `Project lead ${current.id} communication requires inspection. Issue: ${item.issue_id}. Request: ${m.request_id}. Registration revision: ${m.generation}. Original admission: ${m.status}. Outstanding: ${requiresResponse(m) ? m.response : "reminder admission observation; response already committed"}. Recovery: ${m.response_recovery?.status ?? "not attempted"}, maximum one. Reason: ${reason}. Native state: ${state ? JSON.stringify({ busy: state.busy, executing: state.executing, outcome: state.outcome, completion: state.assignment?.completion }) : "unavailable"}. Inspect abra_lead_control status and the native lead session; explicitly stop/revise or issue authorized follow-up if needed. This notice grants no task, scope, approval or delivery authority.`,
-            notice_id: SessionMessage.ID.create(),
-            created_at: yield* timestamp,
-          };
-          const next = {
-            ...current,
-            requests: current.requests.map((r) =>
-              r === item ? { ...r, request: { ...m, response_escalation: escalation } } : r,
-            ),
-          };
-          yield* this.save(next);
-          return next;
-        }),
-      ),
+    this.commit(() =>
+      Effect.gen({ self: this }, function* () {
+        const current = yield* this.current(lead.session_id, lead.revision);
+        const item = current.requests.find((r) => r.request.request_id === id)!;
+        const m = item.request;
+        if (m.response_escalation || !isUnresolvedRecovery(m)) return current;
+        const escalation = {
+          body: `Project lead ${current.id} communication requires inspection. Issue: ${item.issue_id}. Request: ${m.request_id}. Registration revision: ${m.generation}. Original admission: ${m.status}. Outstanding: ${requiresResponse(m) ? m.response : "reminder admission observation; response already committed"}. Recovery: ${m.response_recovery?.status ?? "not attempted"}, maximum one. Reason: ${reason}. Native state: ${formatNativeState(state)}. Inspect abra_lead_control status and the native lead session; explicitly stop/revise or issue authorized follow-up if needed. This notice grants no task, scope, approval or delivery authority.`,
+          notice_id: SessionMessage.ID.create(),
+          created_at: yield* timestamp,
+        };
+        const next = mapRequest(current, id, (r) => ({
+          ...r,
+          request: { ...r.request, response_escalation: escalation },
+        }));
+        yield* this.save(next);
+        return next;
+      }),
     );
 
   /** Per-lead operation ownership; only record/budget reservations take coordination. */
@@ -604,196 +262,110 @@ export class Leads {
     domainEffect(
       Effect.gen({ self: this }, function* () {
         let l = yield* this.current(lead.session_id, lead.revision);
-        let item = l.requests.find((r) => r.request.request_id === id)!;
-        let m = item.request;
+        const m = l.requests.find((r) => r.request.request_id === id)!.request;
         if (!requiresResponse(m) && !m.response_recovery) return l;
-        let recovery = m.response_recovery;
-        if (recovery?.status === "suppressed")
-          return requiresResponse(m)
-            ? yield* this.escalate(
-                l,
-                id,
-                "Reserved reminder suppressed before admission; explicit recovery required",
-              )
-            : l;
-        const input = reminderTarget(m);
-        let state = yield* this.runtime.session(l.session_id, input.prompt_id);
-        ensure(
-          state.directory === this.config.home && state.agent === "project-lead",
-          "LEAD_SESSION",
-          "Management recipient moved or changed agent",
-        );
-        const admission = yield* this.runtime.promptAdmission(
-          l.session_id,
-          input.prompt_id,
-          input.prompt,
-        );
-        if (!recovery) {
-          const decision = reminderDecision(m, state, admission);
-          if (decision.action === "wait") return l;
-          if (decision.action === "escalate")
-            return yield* this.escalate(l, id, decision.reason, state);
-          const prepared = yield* this.records.coordinateCommit(() =>
-            domainEffect(
+        const escalate = (reason: string, state?: SessionState) =>
+          this.escalate(l, id, reason, state).pipe(
+            Effect.tap((next) =>
+              Effect.sync(() => {
+                l = next;
+              }),
+            ),
+            Effect.asVoid,
+          );
+        yield* runResponseRecovery(this.runtime, {
+          sessionId: l.session_id,
+          request: m,
+          manual: this.config.supervision_mode === "manual",
+          reconcileExisting: true,
+          validateState: (state) => this.assertLeadSession(state),
+          escalate,
+          reserve: (completion) =>
+            this.commit(() =>
               Effect.gen({ self: this }, function* () {
                 const current = yield* this.current(l.session_id, l.revision);
                 const original = current.requests.find((r) => r.request.request_id === id)!;
+                l = current;
                 if (!requiresResponse(original.request) || original.request.response_recovery)
-                  return { lead: current };
+                  return { kind: "skip" } as const;
                 const task = yield* this.scoped(current, original.issue_id);
                 const project = yield* this.records.project(task.repository_id);
                 const e = yield* this.records.execution(original.issue_id);
-                const account = yield* leadAccounting(this.records);
                 const budget = e?.effective_policy.diagnostic_turns ?? project!.diagnostic_turns;
                 if (this.config.supervision_mode === "manual")
-                  return { lead: current, reason: "Manual posture requires explicit recovery" };
-                if (account.turns(original.issue_id) + (e?.attention_turns ?? 0) >= budget)
                   return {
-                    lead: current,
+                    kind: "escalate",
+                    reason: "Manual posture requires explicit recovery",
+                  } as const;
+                const capacity = yield* readDiagnosticCapacity(this.records, original.issue_id, {
+                  attentionTurns: e?.attention_turns,
+                  budget,
+                  excludeCurrentLeadActive: current.active,
+                });
+                if (capacity.exhausted)
+                  return {
+                    kind: "escalate",
                     reason: "Diagnostic budget exhausted; no reminder admitted",
-                  };
-                const rootActive = (yield* this.records.executions())
-                  .flatMap((e) => e.attention ?? [])
-                  .filter((a) => ["uncertain", "admitted"].includes(a.status)).length;
-                if (
-                  account.active - (current.active ? 1 : 0) + rootActive >=
-                  this.config.attention_capacity
-                )
+                  } as const;
+                if (capacity.totalActive >= this.config.attention_capacity)
                   return {
-                    lead: current,
+                    kind: "escalate",
                     reason: "Management capacity unavailable; no reminder admitted",
-                  };
+                  } as const;
                 const attempt = yield* reserveReminder(
-                  state.assignment!.completion!,
-                  `AbraCode response-only reminder for original project-lead request ${id}, registration revision ${l.revision}. Its admitted native turn completed without the required answer. Do not repeat its substantive task, create work or broaden scope. Use abra_lead_action action reply, revision ${l.revision}, ORIGINAL request_id ${id}. No approval or delivery authority is granted.`,
+                  completion,
+                  renderReminderPrompt("lead", { requestId: id, generation: l.revision }),
                 );
                 const next = {
-                  ...current,
+                  ...mapRequest(current, id, (r) => ({
+                    ...r,
+                    request: { ...r.request, response_recovery: attempt },
+                  })),
                   active: true,
-                  requests: current.requests.map((r) =>
-                    r === original
-                      ? { ...r, request: { ...r.request, response_recovery: attempt } }
-                      : r,
-                  ),
                 };
                 yield* this.save(next);
-                return { lead: next };
+                l = next;
+                return {
+                  kind: "reserved",
+                  request: next.requests.find((r) => r.request.request_id === id)!.request,
+                } as const;
               }),
             ),
-          );
-          l = prepared.lead;
-          if (prepared.reason) return yield* this.escalate(l, id, prepared.reason, state);
-          item = l.requests.find((r) => r.request.request_id === id)!;
-          m = item.request;
-          recovery = m.response_recovery;
-          if (!recovery) return l;
-        }
-        const submitted = recovery.status === "pending";
-        if (submitted) {
-          state = yield* this.runtime.session(l.session_id);
-          ensure(
-            state.directory === this.config.home && state.agent === "project-lead",
-            "LEAD_SESSION",
-            "Management recipient moved before reminder admission",
-          );
-          const action = pendingReminder(state);
-          if (action === "wait") return l;
-          l = yield* this.records.coordinateCommit(() =>
-            domainEffect(
-              Effect.gen({ self: this }, function* () {
-                const current = yield* this.current(l.session_id, l.revision);
-                const request = current.requests.find((r) => r.request.request_id === id)!;
-                const suppress =
-                  suppressReminder(request.request, this.config.supervision_mode === "manual") ||
-                  action === "suppress";
-                const next = {
-                  ...current,
-                  requests: current.requests.map((r) =>
-                    r === request
-                      ? {
-                          ...r,
-                          request: {
-                            ...r.request,
-                            response_recovery: {
-                              ...r.request.response_recovery!,
-                              status: suppress
-                                ? ("suppressed" as const)
-                                : ("admission_uncertain" as const),
-                            },
-                          },
-                        }
-                      : r,
-                  ),
-                };
-                yield* this.save(next);
-                return next;
-              }),
-            ),
-          );
-          if (
-            l.requests.find((r) => r.request.request_id === id)!.request.response_recovery!
-              .status === "suppressed"
-          )
-            return yield* this.escalate(
-              l,
-              id,
-              "Reminder suppressed before native admission",
-              state,
-            );
-          yield* this.runtime.prompt(l.session_id, recovery.prompt, recovery.prompt_id);
-        } else if (admission === "absent") {
-          return yield* this.escalate(
-            l,
-            id,
-            "Recovery admission uncertain; preserve the original native identity",
-            state,
-          );
-        }
-        if (recovery.status !== "admitted")
-          l = yield* this.records.coordinateCommit(() =>
-            domainEffect(
-              Effect.gen({ self: this }, function* () {
-                const current = yield* this.current(l.session_id, l.revision);
-                const next = {
-                  ...current,
-                  requests: current.requests.map((r) =>
-                    r.request.request_id === id
-                      ? {
-                          ...r,
-                          request: {
-                            ...r.request,
-                            response_recovery: {
-                              ...r.request.response_recovery!,
-                              status: "admitted" as const,
-                            },
-                          },
-                        }
-                      : r,
-                  ),
-                };
-                yield* this.save(next);
-                return next;
-              }),
-            ),
-          );
-        if (submitted) return l;
-        if (admission === "queued") {
-          const action = queuedReminder(state);
-          if (action === "escalate")
-            return yield* this.escalate(
-              l,
-              id,
-              "Lead stopped with the reminder still queued",
-              state,
-            );
-          if (action === "wake") {
-            yield* this.current(l.session_id, l.revision);
-            yield* this.runtime.prompt(l.session_id, recovery.prompt, recovery.prompt_id);
-          }
-        }
-        const decision = reminderDecision(m, state, admission);
-        if (decision.action === "escalate")
-          return yield* this.escalate(l, id, decision.reason, state);
+          transport: (request, observed) =>
+            reconcileReminderTransport(this.runtime, {
+              sessionId: l.session_id,
+              request,
+              observedState: observed?.state,
+              observedAdmission: observed?.admission,
+              readState: () => this.runtime.session(l.session_id),
+              validateState: (state) =>
+                this.assertLeadSession(
+                  state,
+                  "Management recipient moved before reminder admission",
+                ),
+              setStatus: (status) =>
+                this.commit(() =>
+                  Effect.gen({ self: this }, function* () {
+                    const current = yield* this.current(l.session_id, l.revision);
+                    const item = current.requests.find((r) => r.request.request_id === id)!;
+                    const suppressed =
+                      status === "admission_uncertain" &&
+                      suppressReminder(item.request, this.config.supervision_mode === "manual");
+                    const finalStatus: RecoveryStatus = suppressed ? "suppressed" : status;
+                    const next = withRecoveryStatus(current, id, finalStatus);
+                    yield* this.save(next);
+                    l = next;
+                    return finalStatus !== "suppressed";
+                  }),
+                ),
+              beforeWake: this.current(l.session_id, l.revision).pipe(Effect.asVoid),
+              escalate,
+              absentReason: "Recovery admission uncertain; preserve the original native identity",
+              pendingStoppedReason: "Reminder suppressed before native admission",
+              concurrentSuppressReason: "Reminder suppressed before native admission",
+              queuedStoppedReason: "Lead stopped with the reminder still queued",
+            }),
+        });
         return l;
       }),
     ).pipe(
@@ -806,7 +378,7 @@ export class Leads {
       ),
     );
 
-  private reconcileOne = (lead: LeadRecord) =>
+  private reconcileOne = (lead: LeadRecord): Effect.Effect<LeadRecord, CrewError> =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
         let l = lead;
@@ -816,23 +388,23 @@ export class Leads {
               .filter((r) => r.request.recipient_session_id === l.session_id)
               .flatMap((r) => requestPromptIDs(r.request));
             yield* this.runtime.interrupt(l.session_id, owned[0], owned.slice(1));
-            const state = yield* this.runtime.session(l.session_id);
-            ensure(!state.busy, "LEAD_STOP", "Management session stop remains uncertain");
-            yield* this.records.coordinateCommit(() =>
-              this.save({ ...l, active: false, stop_pending: false }),
+            ensure(
+              !(yield* this.runtime.session(l.session_id)).busy,
+              "LEAD_STOP",
+              "Management session stop remains uncertain",
             );
+            l = { ...l, active: false, stop_pending: false };
+            yield* this.commit(() => this.save(l));
           }
-          return;
+          return l;
         }
         if (!l.provisioned) {
           yield* this.runtime.managementSession(l.session_id, l.parent_session_id, l.model, l.id);
           l = { ...l, provisioned: true };
-          yield* this.records.coordinateCommit(() => this.save(l));
+          yield* this.commit(() => this.save(l));
         }
-        const recipient = yield* this.runtime.session(l.session_id);
-        ensure(
-          recipient.directory === this.config.home && recipient.agent === "project-lead",
-          "LEAD_SESSION",
+        this.assertLeadSession(
+          yield* this.runtime.session(l.session_id),
           "Management session moved or changed agent before admission",
         );
         for (const item of l.requests) {
@@ -845,31 +417,22 @@ export class Leads {
           )
             continue;
           const confirmed = yield* admitNativeRequest(this.runtime, m, (status) =>
-            this.records.coordinateCommit(() =>
-              domainEffect(
-                Effect.gen({ self: this }, function* () {
-                  const current = yield* this.current(l.session_id, l.revision);
-                  l = {
-                    ...current,
-                    requests: current.requests.map((r) =>
-                      r.request.prompt_id === m.prompt_id &&
-                      !["answered", "acknowledged"].includes(r.request.status)
-                        ? { ...r, request: { ...r.request, status } }
-                        : r,
-                    ),
-                  };
-                  yield* this.save(l);
-                }),
-              ),
+            this.commit(() =>
+              Effect.gen({ self: this }, function* () {
+                const current = yield* this.current(l.session_id, l.revision);
+                l = mapRequest(current, m.request_id, (r) =>
+                  r.request.prompt_id === m.prompt_id &&
+                  !["answered", "acknowledged"].includes(r.request.status)
+                    ? { ...r, request: { ...r.request, status } }
+                    : r,
+                );
+                yield* this.save(l);
+              }),
             ),
           );
-          if (!confirmed) return;
+          if (!confirmed) return l;
           const state = yield* this.runtime.session(l.session_id);
-          if (state.directory !== this.config.home || state.agent !== "project-lead")
-            return yield* new CrewError(
-              "LEAD_SESSION",
-              "Management session moved or changed agent",
-            );
+          this.assertLeadSession(state, "Management session moved or changed agent");
           if (
             m.status !== "pending" &&
             state.executing === false &&
@@ -880,36 +443,32 @@ export class Leads {
           l = yield* this.recoverResponse(l, m.request_id);
         }
         const state = yield* this.runtime.session(l.session_id);
-        if (
-          !state.busy &&
-          !state.completion_pending &&
-          !l.requests.some(
-            (r) =>
-              r.request.generation === l.revision &&
-              (["pending", "admission_uncertain"].includes(r.request.status) ||
-                ["pending", "admission_uncertain"].includes(
-                  r.request.response_recovery?.status ?? "",
-                )),
-          )
-        ) {
-          yield* this.records.coordinateCommit(() =>
-            domainEffect(
-              Effect.gen({ self: this }, function* () {
-                const current = yield* this.current(l.session_id, l.revision);
-                if (current.active) yield* this.save({ ...current, active: false });
-              }),
-            ),
+        const hasPending = l.requests.some(
+          (r) =>
+            r.request.generation === l.revision &&
+            (["pending", "admission_uncertain"].includes(r.request.status) ||
+              ["pending", "admission_uncertain"].includes(
+                r.request.response_recovery?.status ?? "",
+              )),
+        );
+        if (!state.busy && !state.completion_pending && !hasPending) {
+          l = yield* this.commit(() =>
+            Effect.gen({ self: this }, function* () {
+              const current = yield* this.current(l.session_id, l.revision);
+              if (!current.active) return current;
+              const idle = { ...current, active: false };
+              yield* this.save(idle);
+              return idle;
+            }),
           );
         }
+        return l;
       }),
     ).pipe(
       Effect.tapError((error) =>
         Effect.forEach(
           lead.requests.filter(
-            (item) =>
-              !item.request.response_escalation &&
-              (requiresResponse(item.request) ||
-                item.request.response_recovery?.status === "admission_uncertain"),
+            (item) => !item.request.response_escalation && isUnresolvedRecovery(item.request),
           ),
           (item) =>
             this.escalate(
@@ -920,6 +479,7 @@ export class Leads {
         ),
       ),
     );
+
   private notices = (lead: LeadRecord) =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
@@ -928,80 +488,108 @@ export class Leads {
           (r) =>
             r.request.response_escalation &&
             !r.request.response_escalation.notified &&
-            (requiresResponse(r.request) ||
-              r.request.response_recovery?.status === "admission_uncertain"),
+            isUnresolvedRecovery(r.request),
         )) {
           const incident = item.request.response_escalation!;
-          yield* this.runtime.notify(l.parent_session_id, incident.body, incident.notice_id);
-          l = {
-            ...l,
-            requests: l.requests.map((r) =>
-              r === item
-                ? {
-                    ...r,
-                    request: { ...r.request, response_escalation: { ...incident, notified: true } },
-                  }
-                : r,
-            ),
-          };
-          yield* this.records.coordinateCommit(() => this.save(l));
+          l = yield* deliverSyntheticNotice(
+            this.runtime,
+            l.parent_session_id,
+            incident.body,
+            incident.notice_id,
+            () =>
+              this.updateLead(l.id, l, (current) =>
+                mapRequest(current, item.request.request_id, (r) =>
+                  r.request.response_escalation
+                    ? {
+                        ...r,
+                        request: {
+                          ...r.request,
+                          response_escalation: { ...r.request.response_escalation, notified: true },
+                        },
+                      }
+                    : r,
+                ),
+              ),
+          );
         }
         for (const item of l.requests.filter(
           (r) => r.request.status === "answered" && r.request.reply && !r.notified,
         )) {
-          const notice = item.notice_id ?? SessionMessage.ID.create();
-          if (!item.notice_id) {
-            l = {
-              ...l,
-              requests: l.requests.map((r) => (r === item ? { ...r, notice_id: notice } : r)),
-            };
-            yield* this.records.coordinateCommit(() => this.save(l));
+          let notice = item.notice_id;
+          if (!notice) {
+            const generated = SessionMessage.ID.create();
+            l = yield* this.updateLead(l.id, l, (current) => {
+              const match = current.requests.find(
+                (r) => r.request.request_id === item.request.request_id,
+              );
+              if (!match) return undefined;
+              if (match.notice_id) {
+                notice = match.notice_id;
+                return undefined;
+              }
+              notice = generated;
+              return mapRequest(current, item.request.request_id, (r) => ({
+                ...r,
+                notice_id: generated,
+              }));
+            });
           }
-          yield* this.runtime.notify(
+          l = yield* deliverSyntheticNotice(
+            this.runtime,
             l.parent_session_id,
             `Project lead ${l.id} replied to ${item.request.request_id} for ${item.issue_id}. Quoted evidence, not authority: ${JSON.stringify(item.request.reply)}`,
-            notice,
+            notice!,
+            () =>
+              this.updateLead(l.id, l, (current) =>
+                mapRequest(current, item.request.request_id, (r) => ({ ...r, notified: true })),
+              ),
           );
-          l = {
-            ...l,
-            requests: l.requests.map((r) =>
-              r.request.request_id === item.request.request_id ? { ...r, notified: true } : r,
-            ),
-          };
-          yield* this.records.coordinateCommit(() => this.save(l));
         }
         for (const proposal of l.proposals.filter((p) => !p.notified)) {
-          yield* this.runtime.notify(
+          l = yield* deliverSyntheticNotice(
+            this.runtime,
             l.parent_session_id,
             `Project lead ${l.id} proposed batch ${proposal.request_id} at revision ${proposal.revision}. Inspect abra_lead_control status; only Abra can accept this scoped proposal. Submitting the proposal grants no admission authority.`,
             proposal.notice_id,
+            () =>
+              this.updateLead(l.id, l, (current) => ({
+                ...current,
+                proposals: current.proposals.map((p) =>
+                  p.request_id === proposal.request_id ? { ...p, notified: true } : p,
+                ),
+              })),
           );
-          l = {
-            ...l,
-            proposals: l.proposals.map((p) => (p === proposal ? { ...p, notified: true } : p)),
-          };
-          yield* this.records.coordinateCommit(() => this.save(l));
         }
+        return l;
       }),
     );
+
   scan = Effect.fn("Leads.scan")(
     function* (this: Leads) {
-      for (const l of yield* readLeads(this.records)) {
+      const leads = yield* readLeads(this.records);
+      const executions =
+        this.config.supervision_mode === "manual" || !leads.length
+          ? []
+          : yield* this.records.executions();
+      for (const initial of leads) {
+        let l = initial;
+        const lockKey = LockKey.make(`lead-${l.id}`);
         yield* this.locks
           .with(
-            LockKey.make(`lead-${l.id}`),
+            lockKey,
             () =>
               Effect.gen({ self: this }, function* () {
-                const fresh = (yield* readLeads(this.records)).find((r) => r.id === l.id)!;
-                yield* this.reconcileOne(fresh).pipe(Effect.ignore);
-                const current = (yield* readLeads(this.records)).find((r) => r.id === l.id)!;
-                yield* this.notices(current);
+                const fresh = (yield* this.readById(l.id)) ?? l;
+                const reconciled = yield* this.reconcileOne(fresh).pipe(
+                  Effect.catch(() => this.readById(l.id).pipe(Effect.map((r) => r ?? fresh))),
+                );
+                l = yield* this.notices(reconciled);
               }),
             { waitSeconds: 0 },
           )
           .pipe(Effect.ignore);
         if (!l.enabled || this.config.supervision_mode === "manual") continue;
-        for (const e of yield* this.records.executions()) {
+        for (const e of executions) {
           if (!l.repositories.includes(e.repository_id)) continue;
           const decision = e.decisions?.find(
             (d) =>
@@ -1016,18 +604,32 @@ export class Leads {
               ? e.current_phase
               : undefined;
           if (!state) continue;
-          const id = key([l.id, l.revision, e.execution_id, e.control_generation, state]);
+          const id = leadRequestKey([
+            l.id,
+            l.revision,
+            e.execution_id,
+            e.control_generation,
+            state,
+          ]);
           if (l.requests.some((r) => r.request.request_id === id)) continue;
           yield* this.locks
             .with(
-              LockKey.make(`lead-${l.id}`),
+              lockKey,
               () =>
-                this.request(
-                  l,
-                  e.issue_id,
-                  id,
-                  `Work ${e.issue_id}: ${state}. ${decision?.question ?? "Inspect retained scoped status and report useful findings to Abra."}`,
-                ),
+                Effect.gen({ self: this }, function* () {
+                  const current = yield* this.readById(l.id);
+                  if (!current || !current.enabled) return;
+                  l = current;
+                  if (l.requests.some((r) => r.request.request_id === id)) return;
+                  yield* createLeadRequest(
+                    this.controlDeps(),
+                    l,
+                    e.issue_id,
+                    id,
+                    `Work ${e.issue_id}: ${state}. ${decision?.question ?? "Inspect retained scoped status and report useful findings to Abra."}`,
+                  );
+                  l = (yield* this.readById(l.id)) ?? l;
+                }),
               { waitSeconds: 0 },
             )
             .pipe(Effect.ignore);
@@ -1036,72 +638,7 @@ export class Leads {
     }.bind(this),
     domainEffect,
   );
-  prompt = (
-    session: SessionId,
-    id: import("../identities.ts").MessageId,
-    text: string,
-    delivery: string,
-  ) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const l = yield* this.principal(session);
-        if (!l) return false;
-        const m = l.requests.find(
-          (r) => r.request.prompt_id === id || r.request.response_recovery?.prompt_id === id,
-        )?.request;
-        const recovery = m?.response_recovery?.prompt_id === id ? m.response_recovery : undefined;
-        ensure(
-          l.enabled &&
-            !l.stop_pending &&
-            l.session_id === session &&
-            m &&
-            m.generation === l.revision &&
-            (recovery?.prompt ?? m.prompt) === text &&
-            (recovery ? "queue" : m.delivery) === delivery &&
-            (!recovery || ["admission_uncertain", "admitted"].includes(recovery.status)) &&
-            ["admission_uncertain", "admitted", "acknowledged", "answered"].includes(m.status),
-          "LEAD_PROMPT",
-          "Project leads accept only retained controller requests",
-        );
-        if (recovery?.status === "admission_uncertain" && !requiresResponse(m)) {
-          yield* this.records.coordinateCommit(() =>
-            domainEffect(
-              Effect.gen({ self: this }, function* () {
-                const current = yield* this.current(session, l.revision);
-                const request = current.requests.find(
-                  (r) => r.request.request_id === m.request_id,
-                )!;
-                if (
-                  requiresResponse(request.request) ||
-                  request.request.response_recovery?.status !== "admission_uncertain"
-                )
-                  return;
-                yield* this.save({
-                  ...current,
-                  requests: current.requests.map((r) =>
-                    r === request
-                      ? {
-                          ...r,
-                          request: {
-                            ...r.request,
-                            response_recovery: {
-                              ...r.request.response_recovery!,
-                              status: "suppressed",
-                            },
-                          },
-                        }
-                      : r,
-                  ),
-                });
-              }),
-            ),
-          );
-          return yield* new CrewError(
-            "LEAD_PROMPT",
-            "Original lead answer already committed; unused reminder suppressed",
-          );
-        }
-        return true;
-      }),
-    );
+
+  prompt = (session: SessionId, id: MessageId, text: string, delivery: string) =>
+    verifyLeadPrompt(this.controlDeps(), session, id, text, delivery);
 }

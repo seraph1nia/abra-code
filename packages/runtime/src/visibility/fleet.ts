@@ -1,6 +1,6 @@
-import { Timestamp } from "../identities.ts";
+import { Timestamp } from "@abracode/contracts/identities";
 import type { WorkItem } from "./protocol.ts";
-import { taskAttention } from "./attention.ts";
+import { taskAttention } from "@abracode/contracts/visibility/attention";
 import { fleetStates, type FleetState } from "@abracode/contracts/visibility/fleet";
 export * from "@abracode/contracts/visibility/fleet";
 /** Local calendar boundaries include the host's daylight-saving transitions. */

@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Schema } from "effect";
-import { workerHistoryMessage, WorkerHistoryPageSchema } from "../../src/web/worker-history.ts";
-import { SessionId, Timestamp } from "../../src/identities.ts";
+import {
+  workerHistoryMessage,
+  WorkerHistoryPageSchema,
+} from "@abracode/contracts/web/worker-history";
+import { SessionId, Timestamp } from "@abracode/contracts/identities";
 import type { TranscriptMessage } from "../../src/web/contracts.ts";
 
 test("worker history preserves message/tool identities and ordering with explicit UTF-8 excerpt bounds", () => {

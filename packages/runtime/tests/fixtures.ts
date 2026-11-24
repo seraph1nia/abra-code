@@ -14,7 +14,7 @@ import {
   type Runtime,
   type SessionState,
 } from "../src/opencode/runtime.ts";
-import * as Id from "../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { domainEffect } from "../src/effect.ts";
 import { Effect, Exit, Schema, Scope, Semaphore } from "effect";
 import { mkdtemp, mkdir, writeFile, readFile, rename } from "../src/filesystem.ts";

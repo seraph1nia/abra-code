@@ -4,7 +4,7 @@ import type { OpenCodeClient } from "@opencode/client/effect";
 import type { Session } from "@opencode/schema/session";
 import { CrewError } from "../../domain.ts";
 import { domainEffect } from "../../effect.ts";
-import type { SessionId } from "../../identities.ts";
+import type { SessionId } from "@abracode/contracts/identities";
 import { projectNativeMessage, type ToolPresenter } from "./messages.ts";
 
 export type AuthorizedConnection = { client: OpenCodeClient; session: Session.Info };
@@ -27,10 +27,19 @@ export class NativeSessionReader {
     this.cursors.add(cursor);
     if (this.cursors.size > 500) this.cursors.delete(this.cursors.values().next().value!);
   }
+  private finishRead() {
+    this.reading = false;
+    for (const event of this.queued.splice(0)) this.projection.apply(event);
+  }
   read(options: { transcript?: boolean; inbox?: boolean } = {}) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
         const { client, session } = yield* this.authorized();
+        const busy = Boolean(
+          session.time.busy &&
+          (!session.time.idle ||
+            DateTime.toEpochMillis(session.time.busy) > DateTime.toEpochMillis(session.time.idle)),
+        );
         if (options.transcript) this.reading = true;
         const page = options.transcript
           ? yield* client.message.list({ sessionID: this.sessionID, limit: 100, order: "desc" })
@@ -40,12 +49,6 @@ export class NativeSessionReader {
           ? yield* client.session.inbox.list({ sessionID: this.sessionID })
           : undefined;
         if (page) {
-          const busy = Boolean(
-            session.time.busy &&
-            (!session.time.idle ||
-              DateTime.toEpochMillis(session.time.busy) >
-                DateTime.toEpochMillis(session.time.idle)),
-          );
           this.projection.baseline(
             [...page.data].reverse(),
             busy,
@@ -53,19 +56,13 @@ export class NativeSessionReader {
             true,
           );
           this.initialized = true;
-          this.reading = false;
-          for (const event of this.queued.splice(0)) this.projection.apply(event);
+          this.finishRead();
         }
         return {
           client,
           session,
           page,
-          busy: Boolean(
-            session.time.busy &&
-            (!session.time.idle ||
-              DateTime.toEpochMillis(session.time.busy) >
-                DateTime.toEpochMillis(session.time.idle)),
-          ),
+          busy,
           model: session.model
             ? `${session.model.providerID}/${session.model.id}${session.model.variant ? `#${session.model.variant}` : ""}`
             : undefined,
@@ -77,10 +74,7 @@ export class NativeSessionReader {
       }).pipe(
         Effect.ensuring(
           Effect.sync(() => {
-            if (options.transcript) {
-              this.reading = false;
-              for (const event of this.queued.splice(0)) this.projection.apply(event);
-            }
+            if (options.transcript && this.reading) this.finishRead();
           }),
         ),
       ),

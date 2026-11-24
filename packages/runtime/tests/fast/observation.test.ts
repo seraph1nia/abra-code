@@ -2,7 +2,7 @@ import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { TestClock } from "effect/testing";
 import { Effect, Scope, Exit, Fiber, Layer } from "effect";
-import { ExecutionId, IssueId, MessageId, ObligationKey } from "../../src/identities.ts";
+import { ExecutionId, IssueId, MessageId, ObligationKey } from "@abracode/contracts/identities";
 import {
   mergeChanges,
   workInvalidationKeys,
@@ -123,7 +123,10 @@ test("native event scopes respect controller home and session ownership across n
     }),
     { all: true },
   );
-  assert.deepEqual(read("session.text.delta", { sessionID: "ses_abra" }), { transcript: true });
+  assert.equal(read("session.text.delta", { sessionID: "ses_abra" }), undefined);
+  assert.deepEqual(read("session.execution.started", { sessionID: "ses_abra" }), {
+    transcript: true,
+  });
   assert.deepEqual(read("form.replied", { sessionID: "ses_abra" }), { attention: true });
   assert.deepEqual(read("form.created", { form: { sessionID: "ses_abra" } }), { attention: true });
   assert.deepEqual(read("session.inbox.enqueued", { sessionID: "ses_abra" }), {

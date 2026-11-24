@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { type Commit, type RepositorySlug } from "../identities.ts";
+import { type Commit, type RepositorySlug } from "@abracode/contracts/identities";
 import { type Check } from "./check-contracts.ts";
 import { ensure, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";

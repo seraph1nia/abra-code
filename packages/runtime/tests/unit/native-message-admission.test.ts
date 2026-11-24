@@ -6,11 +6,11 @@ import { decode } from "../../src/decode.ts";
 import { type Context } from "@opencode/plugin/effect/plugin";
 import { NativeRuntime } from "../../src/opencode/runtime.ts";
 import { CrewError } from "../../src/domain.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { responseState } from "../../src/workflow/messages.ts";
-import { messageRequests } from "../../src/workflow/message-contracts.ts";
+import { messageRequests } from "@abracode/contracts/workflow/message-contracts";
 import { nativeActivity } from "../../src/visibility/supervision.ts";
 
 test("native context with unfinished input cannot establish idle from an earlier active snapshot", async (t) => {

@@ -1,9 +1,18 @@
 import type { Git } from "../git/repository.ts";
 import { captureEvidence, captureReference } from "./worker-evidence.ts";
-import type { CaptureInput, WorkerReference } from "@abracode/contracts/web/worker-evidence";
-import type { AbsolutePath } from "../identities.ts";
-import { QuestionIdentity, IssueId, ObligationKey, SessionId } from "../identities.ts";
-
+import {
+  CaptureInputSchema,
+  type CaptureInput,
+  type RetainedReference,
+  type WorkerReference,
+} from "@abracode/contracts/web/worker-evidence";
+import type { AbsolutePath } from "@abracode/contracts/identities";
+import {
+  QuestionIdentity,
+  IssueId,
+  ObligationKey,
+  SessionId,
+} from "@abracode/contracts/identities";
 import { Clock, Effect } from "effect";
 import { Form } from "@opencode/schema/form";
 import { CrewError, type Execution } from "../domain.ts";
@@ -14,7 +23,7 @@ import { type WorkGraph } from "../work/graph.ts";
 import { type Coordination } from "./coordination.ts";
 import { isActiveWorker } from "./worker-assignment.ts";
 import { decode } from "../decode.ts";
-import { createHash } from "node:crypto";
+import { canonicalJSON } from "../presentation/identity.ts";
 import {
   type FinishingTarget,
   type FinishingAnswer,
@@ -26,6 +35,14 @@ import {
   type Decision,
   type DeclaredWait,
 } from "./obligation-contracts.ts";
+import { appendDecision } from "./decision-ledger.ts";
+import {
+  collectPendingDecisions,
+  openFinishingDecision,
+  reconsiderFinishingDecision,
+  supersedeResidueDecisions,
+} from "./finishing-dispositions.ts";
+
 export class Obligations {
   constructor(
     private records: Records,
@@ -36,135 +53,10 @@ export class Obligations {
     private git: Git,
   ) {}
   /** Fresh absence resolves only the residue questions inspected by the owning operation. */
-  supersedeResidue = Effect.fn("Obligations.supersedeResidue")(
-    function* (this: Obligations, e: Execution, keys: readonly ObligationKey[]) {
-      const now = yield* Clock.currentTimeMillis;
-      const saved = yield* this.records.update(e.issue_id, (current) => {
-        if (
-          current.control_generation !== e.control_generation ||
-          current.operation?.id !== e.operation?.id
-        )
-          throw new CrewError("STALE_OPERATION", "Residue inspection ownership changed");
-        const resolved = new Set(
-          current.decisions
-            ?.filter(
-              (d) =>
-                d.generation === e.control_generation &&
-                d.status === "open" &&
-                d.finishing_target?.kind === "residue" &&
-                keys.includes(d.key),
-            )
-            .map((d) => d.key),
-        );
-        return {
-          ...current,
-          decisions: current.decisions?.map((d) =>
-            resolved.has(d.key) && d.generation === e.control_generation
-              ? { ...d, status: "superseded" as const, resolved_at: now }
-              : d,
-          ),
-          finishing: current.finishing
-            ? {
-                ...current.finishing,
-                current_question: current.decisions?.some(
-                  (d) =>
-                    d.key === current.finishing?.current_question &&
-                    d.generation === e.control_generation &&
-                    d.status === "open" &&
-                    !resolved.has(d.key),
-                )
-                  ? current.finishing.current_question
-                  : undefined,
-                routing: current.finishing.routing?.map((r) =>
-                  r.generation === e.control_generation && resolved.has(r.key)
-                    ? { ...r, status: "superseded" as const, observed_at: now }
-                    : r,
-                ),
-              }
-            : undefined,
-        };
-      });
-      synchronizeExecution(e, saved);
-    }.bind(this),
-    domainEffect,
-  );
-  openFinishing = Effect.fn("Obligations.openFinishing")(
-    function* (this: Obligations, e: Execution, target: FinishingTarget, question: string) {
-      const digest = createHash("sha256")
-        .update(
-          target.kind === "planning_baseline_adoption"
-            ? canonicalJSON(target)
-            : JSON.stringify(target),
-        )
-        .digest("hex")
-        .slice(0, 40);
-      const key = ObligationKey.make(`finishing-${digest}`);
-      const now = yield* Clock.currentTimeMillis;
-      const saved = yield* this.records.update(e.issue_id, (current) => {
-        if (
-          current.control_generation !== e.control_generation ||
-          current.operation?.id !== e.operation?.id
-        )
-          throw new CrewError("STALE_OPERATION", "Finishing decision ownership changed");
-        if (current.decisions?.some((d) => d.key === key && d.generation === target.generation))
-          return current.finishing?.current_question === key
-            ? undefined
-            : {
-                ...current,
-                finishing: { ...current.finishing, schema_version: 1, current_question: key },
-              };
-        if ((current.decisions?.length ?? 0) >= 256)
-          throw new CrewError("DECISION_LIMIT", "Decision history is full");
-        return {
-          ...current,
-          decisions: [
-            ...(current.decisions ?? []).map((d) =>
-              d.status === "open" &&
-              d.generation === target.generation &&
-              d.finishing_target?.kind === target.kind
-                ? { ...d, status: "superseded" as const, resolved_at: now }
-                : d,
-            ),
-            {
-              schema_version: 1,
-              key,
-              generation: target.generation,
-              scope:
-                target.kind === "planning_baseline_adoption"
-                  ? "Prospective planning baseline adoption"
-                  : "Finishing existing work",
-              question: question.slice(0, 8192),
-              owner: "user",
-              session_id: "controller",
-              opened_at: now,
-              status: "open",
-              finishing_target: target,
-            },
-          ],
-          finishing: {
-            ...current.finishing,
-            schema_version: 1,
-            current_question: key,
-            routing: [
-              ...(current.finishing?.routing ?? []),
-              {
-                schema_version: 1,
-                generation: target.generation,
-                key,
-                status: "undelivered",
-                attempts: 0,
-                next_check_at: now,
-                observed_at: now,
-              },
-            ],
-          },
-        };
-      });
-      synchronizeExecution(e, saved);
-      return key;
-    }.bind(this),
-    domainEffect,
-  );
+  supersedeResidue = (e: Execution, keys: readonly ObligationKey[]) =>
+    supersedeResidueDecisions(this.records, e, keys);
+  openFinishing = (e: Execution, target: FinishingTarget, question: string) =>
+    openFinishingDecision(this.records, e, target, question);
   private assigned = Effect.fn("Obligations.assigned")(
     function* (this: Obligations, session: SessionId, generation: number) {
       const e = yield* this.records.workerAssignment(session);
@@ -201,11 +93,6 @@ export class Obligations {
               );
             return existing;
           }
-          if (!((e.decisions?.length ?? 0) < 256))
-            return yield* new CrewError(
-              "DECISION_LIMIT",
-              "Decision history is full; inspect retained work",
-            );
           const decision: Decision = {
             ...a,
             schema_version: 1,
@@ -213,7 +100,11 @@ export class Obligations {
             opened_at: yield* Clock.currentTimeMillis,
             status: "open",
           };
-          e.decisions = [...(e.decisions ?? []), decision];
+          e.decisions = appendDecision(
+            e.decisions,
+            decision,
+            "Decision history is full; inspect retained work",
+          );
           yield* this.records.saveOwned(e, ["decisions"]);
           return decision;
         }),
@@ -226,62 +117,106 @@ export class Obligations {
     capture?: CaptureInput,
     references?: readonly WorkerReference[],
   ) =>
-    this.coordination.with(() =>
-      domainEffect(
-        Effect.gen({ self: this }, function* () {
-          const e = yield* this.assigned(session, generation);
-          if (!(summary.length > 0 && summary.length <= 8192))
-            return yield* new CrewError("PROGRESS", "Progress must contain 1–8192 characters");
-          if (capture) {
-            const receipt = yield* captureEvidence(
-              this.records.store,
-              this.home,
-              e,
-              session,
-              capture,
-            );
-            if (!e.worker_evidence?.some((r) => r.request_id === receipt.request_id))
-              e.worker_evidence = [...(e.worker_evidence ?? []), receipt];
-          }
-          if (references?.length) {
-            const items = [...(e.worker_references ?? [])];
-            for (const source of references) {
-              if (
-                items.some(
-                  (r) =>
-                    r.session_id === session &&
-                    r.generation === generation &&
-                    canonicalJSON(r.source) === canonicalJSON(source),
-                )
+    domainEffect(
+      Effect.gen({ self: this }, function* () {
+        const initial = yield* this.assigned(session, generation);
+        if (!(summary.length > 0 && summary.length <= 8192))
+          return yield* new CrewError("PROGRESS", "Progress must contain 1–8192 characters");
+        const receipt = capture
+          ? yield* captureEvidence(this.records.store, this.home, initial, session, capture)
+          : undefined;
+        const capturedRefs: RetainedReference[] = [];
+        if (references?.length) {
+          const items = [...(initial.worker_references ?? [])];
+          for (const source of references) {
+            if (
+              items.some(
+                (r) =>
+                  r.session_id === session &&
+                  r.generation === generation &&
+                  canonicalJSON(r.source) === canonicalJSON(source),
               )
-                continue;
-              if (items.length >= 64)
-                return yield* new CrewError("WORKER_EVIDENCE", "Reference history is full");
-              items.push(yield* captureReference(this.git, e, session, source));
-            }
-            e.worker_references = items;
+            )
+              continue;
+            if (items.length >= 64)
+              return yield* new CrewError("WORKER_EVIDENCE", "Reference history is full");
+            const ref = yield* captureReference(this.git, initial, session, source);
+            items.push(ref);
+            capturedRefs.push(ref);
           }
-          e.progress = {
-            schema_version: 1,
-            generation,
-            session_id: session,
-            summary,
-            source: "worker",
-            at: yield* Clock.currentTimeMillis,
-          };
-          yield* this.records.saveOwned(e, [
-            "progress",
-            ...(capture ? ["worker_evidence" as const] : []),
-            ...(references?.length ? ["worker_references" as const] : []),
-          ]);
-          return {
-            ...e.progress,
-            ...(capture && {
-              capture: e.worker_evidence?.find((item) => item.request_id === capture.request_id),
+        }
+        return yield* this.coordination.with(() =>
+          domainEffect(
+            Effect.gen({ self: this }, function* () {
+              const e = yield* this.assigned(session, generation);
+              if (receipt) {
+                const previous = e.worker_evidence?.find(
+                  (r) => r.request_id === receipt.request_id,
+                );
+                if (previous) {
+                  const prior = yield* decode(CaptureInputSchema, previous, "Retained evidence");
+                  const incoming = yield* decode(CaptureInputSchema, receipt, "Worker evidence");
+                  if (
+                    previous.session_id !== session ||
+                    previous.generation !== e.control_generation ||
+                    canonicalJSON(prior) !== canonicalJSON(incoming)
+                  )
+                    return yield* new CrewError(
+                      "WORKER_EVIDENCE",
+                      "Evidence request has different inputs or ownership",
+                    );
+                } else {
+                  if ((e.worker_evidence?.length ?? 0) >= 64)
+                    return yield* new CrewError(
+                      "WORKER_EVIDENCE",
+                      "The task already has 64 retained evidence items",
+                    );
+                  e.worker_evidence = [...(e.worker_evidence ?? []), receipt];
+                }
+              }
+              if (capturedRefs.length) {
+                const items = [...(e.worker_references ?? [])];
+                for (const ref of capturedRefs) {
+                  if (
+                    items.some(
+                      (r) =>
+                        r.session_id === session &&
+                        r.generation === generation &&
+                        canonicalJSON(r.source) === canonicalJSON(ref.source),
+                    )
+                  )
+                    continue;
+                  if (items.length >= 64)
+                    return yield* new CrewError("WORKER_EVIDENCE", "Reference history is full");
+                  items.push(ref);
+                }
+                e.worker_references = items;
+              }
+              e.progress = {
+                schema_version: 1,
+                generation,
+                session_id: session,
+                summary,
+                source: "worker",
+                at: yield* Clock.currentTimeMillis,
+              };
+              yield* this.records.saveOwned(e, [
+                "progress",
+                ...(capture ? ["worker_evidence" as const] : []),
+                ...(references?.length ? ["worker_references" as const] : []),
+              ]);
+              return {
+                ...e.progress,
+                ...(capture && {
+                  capture: e.worker_evidence?.find(
+                    (item) => item.request_id === capture.request_id,
+                  ),
+                }),
+              };
             }),
-          };
-        }),
-      ),
+          ),
+        );
+      }),
     );
   wait = (session: SessionId, input: typeof WaitInputSchema.Type) =>
     this.coordination.with(() =>
@@ -367,79 +302,8 @@ export class Obligations {
       let d = e.decisions?.find((d) => d.key === key && d.generation === generation);
       if (!(d && e.control_generation === generation))
         return yield* new CrewError("DECISION_STALE", "Decision generation is stale");
-      if (action === "reconsider") {
-        if (
-          !d.finishing_target ||
-          !["answered", "cancelled"].includes(d.status) ||
-          e.finishing?.current_question !== key ||
-          e.current_phase === "completed"
-        )
-          return yield* new CrewError(
-            "DECISION_RECONSIDER",
-            "Only the current resolved finishing decision can be reconsidered",
-          );
-        if ((d.finishing_history?.length ?? 0) >= 64)
-          return yield* new CrewError("DECISION_LIMIT", "Finishing form history is full");
-        const now = yield* Clock.currentTimeMillis;
-        const saved = yield* this.records.update(id, (current) => {
-          if (
-            current.control_generation !== generation ||
-            current.finishing?.current_question !== key
-          )
-            throw new CrewError("DECISION_STALE", "Finishing target changed");
-          const previous = current.decisions!.find(
-            (item) => item.key === key && item.generation === generation,
-          )!;
-          return {
-            ...current,
-            decisions: current.decisions!.map((item) =>
-              item === previous
-                ? {
-                    ...item,
-                    status: "open",
-                    answer: undefined,
-                    finishing_answer: undefined,
-                    resolved_at: undefined,
-                    form_id: undefined,
-                    form_session: undefined,
-                    finishing_history: [
-                      ...(item.finishing_history ?? []),
-                      ...(item.form_id && item.form_session
-                        ? [
-                            {
-                              form_id: item.form_id,
-                              form_session: item.form_session,
-                              target: item.finishing_target!,
-                              answer: item.finishing_answer,
-                              resolved_at: item.resolved_at ?? now,
-                            },
-                          ]
-                        : []),
-                    ],
-                  }
-                : item,
-            ),
-            finishing: {
-              ...current.finishing,
-              schema_version: 1,
-              routing: current.finishing.routing?.map((r) =>
-                r.key === key && r.generation === generation
-                  ? {
-                      ...r,
-                      status: "undelivered",
-                      attempts: 0,
-                      next_check_at: now,
-                      observed_at: now,
-                      form_id: undefined,
-                      session_id: undefined,
-                    }
-                  : r,
-              ),
-            },
-          };
-        });
-        return saved.decisions!.find((item) => item.key === key && item.generation === generation)!;
-      }
+      if (action === "reconsider")
+        return yield* reconsiderFinishingDecision(this.records, e, d, key, generation);
       if (d.status !== "open") return d;
       let finishingAnswer: FinishingAnswer | undefined;
       if (action === "collect") {
@@ -502,7 +366,7 @@ export class Obligations {
             retained.form_session!,
             retained.form_id!,
             retained.question,
-            QuestionIdentity.make(`${id}:${generation}:${key}`),
+            identity,
           );
           const result = yield* this.runtime.questionAnswer(
             retained.form_session!,
@@ -594,78 +458,12 @@ export class Obligations {
         }),
       ),
     );
-  collectPending = Effect.fn("Obligations.collectPending")(
-    function* (this: Obligations, e: Execution) {
-      for (const d of e.decisions ?? []) {
-        const now = yield* Clock.currentTimeMillis;
-        const route = e.finishing?.routing?.find(
-          (r) => r.key === d.key && r.generation === d.generation,
-        );
-        const session =
-          d.form_session ??
-          (d.finishing_target
-            ? (e.supervisor_session_id ?? (yield* this.records.supervisor()))
-            : undefined);
-        if (
-          d.status === "open" &&
-          d.generation === e.control_generation &&
-          d.owner === "user" &&
-          (d.form_session || d.finishing_target) &&
-          (!route ||
-            (route.next_check_at <= now && (route.status === "pending" || route.attempts < 8)))
-        ) {
-          const result = session
-            ? yield* Effect.result(
-                this.resolve(e.issue_id, d.key, d.generation, session, "collect"),
-              )
-            : undefined;
-          if (d.finishing_target) {
-            const saved = yield* this.records.update(e.issue_id, (current) => {
-              if (current.control_generation !== e.control_generation) return;
-              const decision = current.decisions?.find(
-                (item) => item.key === d.key && item.generation === d.generation,
-              );
-              if (!decision || decision.status !== "open") return;
-              return {
-                ...current,
-                finishing: {
-                  ...current.finishing,
-                  schema_version: 1,
-                  routing: current.finishing?.routing?.map((r) =>
-                    r.key === d.key && r.generation === d.generation
-                      ? {
-                          ...r,
-                          attempts:
-                            result?._tag === "Success" ? r.attempts : Math.min(r.attempts + 1, 8),
-                          observed_at: now,
-                          status: result?._tag === "Success" ? "pending" : "undelivered",
-                          next_check_at:
-                            now +
-                            (result?._tag === "Success"
-                              ? 0
-                              : Math.min(300_000, 30_000 * 2 ** Math.min(r.attempts, 4))),
-                          form_id: decision.form_id,
-                          session_id: decision.form_session,
-                          reason:
-                            result?._tag === "Failure"
-                              ? result.failure.message.slice(0, 8192)
-                              : !session
-                                ? "Retained Abra session unavailable"
-                                : undefined,
-                        }
-                      : r,
-                  ),
-                },
-              };
-            });
-            synchronizeExecution(e, saved);
-          } else if (result?._tag === "Failure") return yield* result.failure;
-        }
-      }
-      return (yield* this.records.execution(e.issue_id))!;
-    }.bind(this),
-    domainEffect,
-  );
+  collectPending = (e: Execution) =>
+    collectPendingDecisions(
+      this.records,
+      (id, key, generation, session) => this.resolve(id, key, generation, session, "collect"),
+      e,
+    );
   recheck = (e: Execution) =>
     this.coordination.with(() =>
       domainEffect(
@@ -740,4 +538,3 @@ export class Obligations {
     domainEffect,
   );
 }
-import { canonicalJSON } from "../presentation/identity.ts";

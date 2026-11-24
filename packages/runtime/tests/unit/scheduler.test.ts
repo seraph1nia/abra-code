@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { Agent } from "@opencode/schema/agent";
 import { Scheduler } from "../../src/scheduler/scheduler.ts";
 import { CrewError } from "../../src/domain.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { OpenCode } from "@opencode/client";
-import { roleEngineeringSkills } from "../../src/opencode/engineering-skills.ts";
+import { roleEngineeringSkills } from "@abracode/agents/engineering-skills";
 import { type Role } from "../../src/domain.ts";
-import { type SessionId } from "../../src/identities.ts";
+import { type SessionId } from "@abracode/contracts/identities";
 
 export const proofSource = `import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';

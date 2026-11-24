@@ -14,10 +14,10 @@ import {
   TranscriptMessageSchema,
   SurfaceRecordSchema,
   WorkspaceSnapshotSchema,
-} from "../../src/web/workspace-wire.ts";
+} from "@abracode/contracts/web/workspace-wire";
 
-import { catalogId } from "../../src/web/catalog.ts";
-import { WorkItemSchema } from "../../src/web/wire.ts";
+import { catalogId } from "@abracode/contracts/web/catalog";
+import { WorkItemSchema } from "@abracode/contracts/web/wire";
 import { Permission } from "@opencode/schema/permission";
 import { Form } from "@opencode/schema/form";
 
@@ -29,7 +29,7 @@ import {
   RepositoryId,
   SessionId,
   SpecSchemaName,
-} from "../../src/identities.ts";
+} from "@abracode/contracts/identities";
 import type { AttentionForm } from "../../src/web/contracts.ts";
 
 import { launchReportBrowser } from "@abracode/report-export/browser";
@@ -1310,7 +1310,7 @@ test("lost submission responses survive reload without automatic replay and reco
   const f = await fixture();
   t.onTestFinished(f.close);
   const page = await f.browser.newPage({ viewport: { width: 390, height: 844 } });
-  await page.route("**/api/copilotkit/agent/abra/run", (route) => route.abort());
+  await page.route("**/api/abra/submit", (route) => route.abort());
   await page.goto(f.origin);
   await page.getByRole("textbox", { name: "Message Abra" }).fill("Keep this exact submission");
   await page.getByRole("button", { name: "Send message", exact: true }).click();
@@ -1329,7 +1329,7 @@ test("lost submission responses survive reload without automatic replay and reco
     await page.evaluate(() => localStorage.getItem("abra-pending-ses_webfixture")),
     before,
   );
-  await page.unroute("**/api/copilotkit/agent/abra/run");
+  await page.unroute("**/api/abra/submit");
   await page.getByRole("button", { name: "Reconcile submission" }).click();
   await page.getByRole("button", { name: "Reconcile submission" }).waitFor({ state: "hidden" });
   assert.equal(f.source.submissions, 1);
@@ -2588,7 +2588,9 @@ test("chat stays mounted while the finder searches retained pages, preserving dr
   await page.getByText("I can help you build that.", { exact: true }).waitFor();
   assert.equal(f.source.submissions, 1);
   assert.equal(f.source.value.receipts.at(-1)?.delivery, "queue");
-  const stopped = page.waitForResponse((response) => response.url().endsWith("/api/abra/stop"));
+  const stopped = page.waitForResponse((response) =>
+    response.url().includes("/api/copilotkit/agent/abra/stop/"),
+  );
   await page.getByRole("button", { name: "Stop current Abra turn", exact: false }).click();
   await stopped;
   assert.equal(f.source.stops, 1);

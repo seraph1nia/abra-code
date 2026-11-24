@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
-import { ApprovalSchema } from "../../src/contracts.ts";
+import { ApprovalSchema } from "@abracode/contracts/primitives";
 import { CrewError, type Execution } from "../../src/domain.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { Records } from "../../src/storage/store.ts";
 import { MemoryStore, TestLocks } from "../fixtures.ts";
 import { run } from "../effects.ts";

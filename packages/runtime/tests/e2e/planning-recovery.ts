@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Git } from "../../src/git/repository.ts";
 import { ProcessRunner } from "../../src/process.ts";
-import { AbsolutePath } from "../../src/identities.ts";
+import { AbsolutePath } from "@abracode/contracts/identities";
 import { repo } from "../fixtures.ts";
 import { run } from "../effects.ts";
 

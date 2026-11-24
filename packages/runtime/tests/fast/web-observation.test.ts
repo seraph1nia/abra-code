@@ -7,10 +7,10 @@ import {
   type ObservationClock,
   type ObservationState,
 } from "@abracode/web/observation-client";
-import { WorkspaceStateJson } from "../../src/web/workspace-wire.ts";
+import { WorkspaceStateJson } from "@abracode/contracts/web/workspace-wire";
 import type { WorkspaceSnapshot } from "../../src/web/contracts.ts";
 import { WorkspaceFixture } from "../helpers/web.ts";
-import { MessageId, Identifier, SessionId } from "../../src/identities.ts";
+import { MessageId, Identifier, SessionId } from "@abracode/contracts/identities";
 
 const tick = async () => {
   for (let i = 0; i < 8; i++) await Promise.resolve();

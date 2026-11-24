@@ -1,6 +1,6 @@
 import { Schema } from "effect";
-import { RelativePath } from "../identities.ts";
-import { NonEmpty } from "../contracts.ts";
+import { RelativePath } from "@abracode/contracts/identities";
+import { NonEmpty } from "@abracode/contracts/primitives";
 import { ScopeDispositionSchema } from "./correction-contracts.ts";
 
 const text = NonEmpty.check(Schema.isPattern(/\S/), Schema.isMaxLength(16384));

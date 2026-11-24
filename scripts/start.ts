@@ -1,1 +1,3 @@
-import "@abracode/runtime/cli/start";
+import { runMain } from "@abracode/runtime/cli";
+
+runMain(["serve"]);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
-import { validateSnapshot, snapshotJSON } from "../../src/presentation/report-evidence.ts";
+import { validateSnapshot, snapshotJSON } from "@abracode/contracts/presentation/report-evidence";
 const snapshot = {
   schema_version: 1,
   issue_id: "fixture-issue",

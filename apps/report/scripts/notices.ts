@@ -1,12 +1,23 @@
-import { reportNoticeInputs, type NoticeInventory } from "@abracode/contracts/presentation/notices";
+import {
+  NoticeInventorySchema,
+  reportNoticeInputs,
+  type NoticeInventory,
+} from "@abracode/contracts/presentation/notices";
+import { Schema } from "effect";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+const NoticeInventoryJSON = Schema.fromJsonString(NoticeInventorySchema);
+
+export function decodeNoticeInventory(text: string): NoticeInventory {
+  return Schema.decodeSync(NoticeInventoryJSON, { reportInput: false })(text);
+}
+
 /** Only the notices actually embedded by the portable renderer affect its identity. */
 export function reportNotices(root: string) {
-  const inventory = JSON.parse(
+  const inventory = decodeNoticeInventory(
     readFileSync(resolve(root, "licenses/inventory.json"), "utf8"),
-  ) as NoticeInventory;
+  );
   return {
     project: readFileSync(resolve(root, "LICENSE"), "utf8"),
     shadcn: readFileSync(resolve(root, "licenses/shadcn-ui.txt"), "utf8"),

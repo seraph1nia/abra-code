@@ -1,6 +1,11 @@
-import { externalOwns } from "../validation/contracts.ts";
+import { externalOwns } from "@abracode/contracts/validation/contracts";
 import { admissionWait } from "../observability.ts";
-import { ExecutionId, type IssueId, type RepositoryId, type RequestId } from "../identities.ts";
+import {
+  ExecutionId,
+  type IssueId,
+  type RepositoryId,
+  type RequestId,
+} from "@abracode/contracts/identities";
 import { Clock, Effect } from "effect";
 import { domainEffect } from "../effect.ts";
 import {

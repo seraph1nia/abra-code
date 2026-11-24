@@ -8,11 +8,17 @@ import {
   requiresResponse,
   needsDisposition,
   requestPromptIDs,
-} from "./message-contracts.ts";
+} from "@abracode/contracts/workflow/message-contracts";
 import { join } from "node:path";
-import { externalOwns } from "../validation/contracts.ts";
+import { externalOwns } from "@abracode/contracts/validation/contracts";
 import { synchronizeExecution, removeOwnedField, type Records } from "../storage/store.ts";
-import { SessionId, IssueId, Timestamp, timestamp } from "../identities.ts";
+import {
+  SessionId,
+  IssueId,
+  Timestamp,
+  timestamp,
+  timestampAt,
+} from "@abracode/contracts/identities";
 import { Clock, Effect } from "effect";
 import { Session } from "@opencode/schema/session";
 import { SessionMessage } from "@opencode/schema/session-message";
@@ -122,11 +128,10 @@ export class WorkerSessions {
     }.bind(this),
     domainEffect,
   );
-  private contexts: WorkerContexts;
+  readonly contexts: WorkerContexts;
   readonly messages: Messages;
   private sessionID = workerSessionID;
   private project = (e: Execution) => this.queries.effectiveProject(e);
-  private get = (id: IssueId) => this.queries.get(id);
   private observe = Effect.fn("WorkerSessions.observe")(
     function* (this: WorkerSessions, e: Execution): Effect.fn.Return<WorkerTurn, CrewError> {
       if (!e.active_role) return { kind: "absent" };
@@ -308,7 +313,7 @@ export class WorkerSessions {
   launch = (e: Execution, role: Role) => this.admit(e, role);
   notifyCompletion = (
     session: SessionId,
-    message: import("../identities.ts").MessageId,
+    message: import("@abracode/contracts/identities").MessageId,
     issue: IssueId,
   ) =>
     this.runtime.notify(
@@ -328,6 +333,17 @@ export class WorkerSessions {
       if (e.workflow_policy === "full-openspec") yield* this.spec.assertSchema(e);
       const project = yield* this.project(e);
       if (!(yield* this.capacity.reserve(e, role, project))) return;
+      let loadedIssue: import("../domain.ts").Issue | undefined;
+      const loadIssue = () =>
+        loadedIssue
+          ? Effect.succeed(loadedIssue)
+          : this.queries.issue(e.issue_id).pipe(
+              Effect.tap((issue) =>
+                Effect.sync(() => {
+                  loadedIssue = issue;
+                }),
+              ),
+            );
       if (e.configuration_snapshot?.agent_selection_version === 1) {
         const intent = e.session_intent ?? {
           role,
@@ -340,13 +356,11 @@ export class WorkerSessions {
             "Retained preparation identity conflicts with the assigned role",
           );
         yield* this.records.commitOwned(e, { session_intent: intent });
-        yield* this.contexts
-          .prepareAgent(e, role, yield* this.queries.issue(e.issue_id), intent.prompt)
-          .pipe(
-            Effect.onInterrupt(() => this.capacity.releasePreparation(e, role)),
-            Effect.tapError((error) => this.contexts.failure(e, role, error)),
-            Effect.tapError(() => this.capacity.releasePreparation(e, role)),
-          );
+        yield* this.contexts.prepareAgent(e, role, yield* loadIssue(), intent.prompt).pipe(
+          Effect.onInterrupt(() => this.capacity.releasePreparation(e, role)),
+          Effect.tapError((error) => this.contexts.failure(e, role, error)),
+          Effect.tapError(() => this.capacity.releasePreparation(e, role)),
+        );
       }
       const environment = yield* this.runtime.preflight(e, role).pipe(
         Effect.tapError((error) => this.contexts.failure(e, role, error)),
@@ -393,7 +407,7 @@ export class WorkerSessions {
       const context = yield* this.contexts.prepare(
         { ...e, ...assignment },
         role,
-        yield* this.queries.issue(e.issue_id),
+        yield* loadIssue(),
         environment,
         id,
         prompt,
@@ -480,10 +494,7 @@ export class WorkerSessions {
           role: e.active_role,
           model: state.model,
           error: diagnosticError(state.error),
-          at:
-            state.error_at === undefined
-              ? observedAt
-              : Timestamp.make(new Date(state.error_at).toISOString()),
+          at: state.error_at === undefined ? observedAt : timestampAt(state.error_at),
         }
       : undefined;
     const error =

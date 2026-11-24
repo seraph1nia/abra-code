@@ -1,4 +1,4 @@
-import { type Commit } from "../identities.ts";
+import { type Commit } from "@abracode/contracts/identities";
 import { ensure, type ManagedExecution, type Project } from "../domain.ts";
 import { verificationCommand } from "../config/contracts.ts";
 

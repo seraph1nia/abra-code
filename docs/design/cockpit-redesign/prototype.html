@@ -1,0 +1,2483 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AbraCode Cockpit Prototype — Precision Graphite &amp; Emerald</title>
+    <style>
+      :root {
+        --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+        /* Light Mode — Precision Graphite & Emerald Telemetry */
+        --surface-0: #eef1f4;
+        --surface-1: #f6f8fa;
+        --surface-2: #ffffff;
+        --surface-3: #edf2f0;
+        --surface-hover: #e7edf0;
+
+        --border-subtle: #dfe5eb;
+        --border-strong: #c5d0db;
+
+        --ink-primary: #11181c;
+        --ink-secondary: #4a5764;
+        --ink-muted: #6c7a89;
+
+        --accent: #0d8a55;
+        --accent-hover: #0a7346;
+        --accent-ink: #ffffff;
+        --accent-soft: #e5f6ee;
+        --accent-border: #b4e4cd;
+
+        --status-running: #0284c7;
+        --status-running-bg: #e0f2fe;
+        --status-running-border: #bae6fd;
+
+        --status-attention: #b45309;
+        --status-attention-bg: #fef3c7;
+        --status-attention-border: #fde68a;
+
+        --status-danger: #dc2626;
+        --status-danger-bg: #fee2e2;
+        --status-danger-border: #fecaca;
+
+        --status-success: #047857;
+        --status-success-bg: #d1fae5;
+        --status-success-border: #a7f3d0;
+
+        --diff-add-bg: #e6ffec;
+        --diff-add-ink: #116329;
+        --diff-del-bg: #ffebe9;
+        --diff-del-ink: #a40e26;
+
+        --shadow-sm: 0 1px 2px rgb(15 23 42 / 5%);
+        --shadow-md: 0 8px 24px rgb(15 23 42 / 8%), 0 1px 2px rgb(15 23 42 / 4%);
+        --shadow-lg: 0 20px 48px rgb(15 23 42 / 18%);
+        color-scheme: light;
+      }
+
+      :root[data-theme="dark"] {
+        --surface-0: #0b0e11;
+        --surface-1: #11161b;
+        --surface-2: #171d23;
+        --surface-3: #1f272f;
+        --surface-hover: #252f39;
+
+        --border-subtle: #242d37;
+        --border-strong: #34414f;
+
+        --ink-primary: #eef3f7;
+        --ink-secondary: #9aa8b6;
+        --ink-muted: #6d7c8b;
+
+        --accent: #34d399;
+        --accent-hover: #10b981;
+        --accent-ink: #062117;
+        --accent-soft: #0f2c22;
+        --accent-border: #1b4d3b;
+
+        --status-running: #38bdf8;
+        --status-running-bg: #0c2636;
+        --status-running-border: #164863;
+
+        --status-attention: #fbbf24;
+        --status-attention-bg: #31230a;
+        --status-attention-border: #5c4010;
+
+        --status-danger: #f87171;
+        --status-danger-bg: #341519;
+        --status-danger-border: #63242b;
+
+        --status-success: #34d399;
+        --status-success-bg: #0e2b21;
+        --status-success-border: #1a4d3a;
+
+        --diff-add-bg: rgb(46 160 67 / 16%);
+        --diff-add-ink: #7ee787;
+        --diff-del-bg: rgb(248 81 73 / 16%);
+        --diff-del-ink: #ffa198;
+
+        --shadow-sm: 0 1px 2px rgb(0 0 0 / 28%);
+        --shadow-md: 0 10px 28px rgb(0 0 0 / 36%), 0 1px 0 rgb(255 255 255 / 4%) inset;
+        --shadow-lg: 0 24px 64px rgb(0 0 0 / 60%);
+        color-scheme: dark;
+      }
+
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        font-family: var(--font-sans);
+        background: var(--surface-0);
+        color: var(--ink-primary);
+        font-size: 14px;
+        line-height: 1.55;
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+      }
+      button, input, select, textarea { font: inherit; color: inherit; }
+      button { cursor: pointer; }
+      code, pre, .mono { font-family: var(--font-mono); }
+      .tabular { font-variant-numeric: tabular-nums; }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+      /* Pulse animation */
+      @keyframes pulse-ring {
+        0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent); }
+        60% { box-shadow: 0 0 0 5px color-mix(in srgb, currentColor 0%, transparent); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation: none !important; transition: none !important; }
+      }
+
+      /* ============ APP SHELL ============ */
+      .cockpit {
+        display: grid;
+        grid-template-rows: 48px minmax(0, 1fr);
+        grid-template-columns: 56px minmax(0, 1fr);
+        height: 100dvh;
+        width: 100vw;
+      }
+
+      /* TOP BAR */
+      .topbar {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 14px;
+        background: var(--surface-0);
+        border-bottom: 1px solid var(--border-subtle);
+        z-index: 20;
+      }
+      .topbar-left, .topbar-center, .topbar-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+      .brand-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        padding: 4px 8px 4px 4px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        font-weight: 650;
+        font-size: 14px;
+        letter-spacing: -0.02em;
+      }
+      .brand-btn:hover { background: var(--surface-hover); }
+      .brand-mark {
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+        background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 72%, #000));
+        color: var(--accent-ink);
+        display: grid;
+        place-items: center;
+        font-family: Georgia, serif;
+        font-size: 19px;
+        font-weight: 700;
+        line-height: 1;
+        padding-bottom: 2px;
+        box-shadow: var(--shadow-sm);
+      }
+      .live-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-2);
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--ink-secondary);
+        white-space: nowrap;
+      }
+      .live-pill.clickable:hover {
+        border-color: var(--border-strong);
+        color: var(--ink-primary);
+      }
+      .live-pill.attention {
+        background: var(--status-attention-bg);
+        border-color: var(--status-attention-border);
+        color: var(--status-attention);
+        font-weight: 600;
+      }
+      .live-pill.attention:hover { filter: brightness(1.06); }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        background: var(--ink-muted);
+      }
+      .dot.running { background: var(--status-running); color: var(--status-running); animation: pulse-ring 2.2s infinite; }
+      .dot.success { background: var(--status-success); }
+      .dot.attention { background: var(--status-attention); }
+      .dot.danger { background: var(--status-danger); }
+
+      .search-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 220px;
+        justify-content: space-between;
+        padding: 5px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-2);
+        color: var(--ink-muted);
+        font-size: 12.5px;
+        transition: border-color 120ms ease;
+      }
+      .search-pill:hover { border-color: var(--border-strong); color: var(--ink-secondary); }
+      .search-pill-left { display: inline-flex; align-items: center; gap: 7px; }
+      kbd {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        padding: 1px 5px;
+        border-radius: 5px;
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-1);
+        color: var(--ink-muted);
+      }
+
+      .layout-switch {
+        display: inline-flex;
+        padding: 2px;
+        border-radius: 8px;
+        background: var(--surface-1);
+        border: 1px solid var(--border-subtle);
+        gap: 2px;
+      }
+      .layout-switch button {
+        border: 0;
+        background: transparent;
+        color: var(--ink-secondary);
+        font-size: 12px;
+        font-weight: 500;
+        padding: 4px 8px;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .layout-switch button:hover { color: var(--ink-primary); }
+      .layout-switch button.active {
+        background: var(--surface-2);
+        color: var(--ink-primary);
+        box-shadow: var(--shadow-sm);
+      }
+
+      /* SLIM LEFT RAIL */
+      .rail {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 10px 0;
+        gap: 6px;
+        background: var(--surface-0);
+        border-right: 1px solid var(--border-subtle);
+        z-index: 15;
+      }
+      .rail-spacer { flex: 1; }
+      .rail-divider { width: 26px; height: 1px; background: var(--border-subtle); margin: 4px 0; }
+      .rail-btn {
+        position: relative;
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--ink-secondary);
+        display: grid;
+        place-items: center;
+        transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+      }
+      .rail-btn:hover { background: var(--surface-hover); color: var(--ink-primary); }
+      .rail-btn.active {
+        background: var(--accent-soft);
+        color: var(--accent);
+        border-color: var(--accent-border);
+      }
+      .rail-btn.active::before {
+        content: "";
+        position: absolute;
+        left: -8px;
+        top: 9px;
+        bottom: 9px;
+        width: 3px;
+        border-radius: 0 3px 3px 0;
+        background: var(--accent);
+      }
+      .rail-badge {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        border-radius: 999px;
+        background: var(--status-attention);
+        color: #1a1203;
+        font-size: 10px;
+        font-weight: 700;
+        display: grid;
+        place-items: center;
+      }
+      .rail-dot {
+        position: absolute;
+        top: 7px;
+        right: 7px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--status-running);
+      }
+      .rail-btn[data-tip]:hover::after {
+        content: attr(data-tip);
+        position: absolute;
+        left: 50px;
+        background: var(--surface-2);
+        color: var(--ink-primary);
+        border: 1px solid var(--border-strong);
+        padding: 4px 9px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        white-space: nowrap;
+        box-shadow: var(--shadow-md);
+        pointer-events: none;
+        z-index: 40;
+      }
+
+      /* ============ MAIN STAGE (CHAT + CANVAS) ============ */
+      .stage {
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+        height: 100%;
+        background: var(--surface-1);
+        position: relative;
+      }
+
+      /* CHAT PANE */
+      .chat-pane {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+        background: var(--surface-2);
+        transition: flex-basis 140ms ease;
+      }
+      .stage[data-mode="focus"] .chat-pane {
+        flex: 1 1 100%;
+        background: var(--surface-1);
+      }
+      .stage[data-mode="focus"] .chat-inner {
+        max-width: 780px;
+        width: 100%;
+        margin: 0 auto;
+        background: var(--surface-2);
+        border-inline: 1px solid var(--border-subtle);
+        box-shadow: var(--shadow-sm);
+      }
+      .stage[data-mode="split"] .chat-pane {
+        flex: 0 0 var(--chat-pct, 39%);
+        min-width: 340px;
+        max-width: 55%;
+      }
+      .stage[data-mode="expanded"] .chat-pane {
+        display: none;
+      }
+      .chat-inner {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+        min-width: 0;
+      }
+
+      .transcript-scroll {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 22px 24px 16px;
+      }
+      .transcript {
+        max-width: 70ch;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .msg { display: flex; flex-direction: column; gap: 6px; }
+      .msg-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+      }
+      .msg-head strong { font-weight: 600; color: var(--ink-primary); }
+      .msg-head time { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+      .msg.user { align-items: flex-end; }
+      .msg.user .msg-bubble {
+        background: var(--surface-3);
+        border: 1px solid var(--border-subtle);
+        border-radius: 14px 14px 4px 14px;
+        padding: 10px 14px;
+        max-width: 88%;
+        font-size: 14.5px;
+        line-height: 1.55;
+      }
+      .msg.abra .msg-prose {
+        font-size: 14.5px;
+        line-height: 1.65;
+        color: var(--ink-primary);
+      }
+      .msg.abra .msg-prose p { margin: 0 0 10px; }
+      .msg.abra .msg-prose p:last-child { margin-bottom: 0; }
+
+      /* Clean grouped tool pill inside Chat */
+      .tool-group {
+        border: 1px solid var(--border-subtle);
+        border-radius: 10px;
+        background: var(--surface-1);
+        overflow: hidden;
+      }
+      .tool-group > summary {
+        list-style: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 7px 11px;
+        font-size: 12.5px;
+        color: var(--ink-secondary);
+        cursor: pointer;
+        user-select: none;
+      }
+      .tool-group > summary::-webkit-details-marker { display: none; }
+      .tool-group > summary:hover { background: var(--surface-hover); color: var(--ink-primary); }
+      .tool-group-left { display: flex; align-items: center; gap: 8px; }
+      .tool-group-body {
+        border-top: 1px solid var(--border-subtle);
+        padding: 8px 11px;
+        display: grid;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--ink-secondary);
+      }
+      .tool-line { display: flex; justify-content: space-between; gap: 10px; }
+
+      /* Clean Artifact Card inside Chat (opens in Canvas) */
+      .artifact-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 11px 13px;
+        border-radius: 11px;
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-1);
+        transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+        text-align: left;
+        width: 100%;
+      }
+      .artifact-card:hover {
+        border-color: var(--accent-border);
+        background: var(--surface-3);
+      }
+      .artifact-card.staged {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .artifact-card-left { display: flex; align-items: center; gap: 11px; min-width: 0; }
+      .artifact-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        background: var(--surface-2);
+        border: 1px solid var(--border-subtle);
+        display: grid;
+        place-items: center;
+        color: var(--accent);
+        flex-shrink: 0;
+      }
+      .artifact-meta { min-width: 0; }
+      .artifact-title {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--ink-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .artifact-sub {
+        font-size: 12px;
+        color: var(--ink-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .artifact-cta {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--accent);
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+
+      /* Docked attention + composer area */
+      .composer-dock {
+        padding: 10px 20px 16px;
+        border-top: 1px solid var(--border-subtle);
+        background: var(--surface-2);
+      }
+      .composer-wrap {
+        max-width: 70ch;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .dock-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 12px;
+        border-radius: 9px;
+        background: var(--status-attention-bg);
+        border: 1px solid var(--status-attention-border);
+        color: var(--status-attention);
+        font-size: 12.5px;
+      }
+      .dock-banner-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+      .dock-banner strong { font-weight: 650; }
+      .dock-banner button {
+        border: 1px solid var(--status-attention-border);
+        background: var(--surface-2);
+        color: var(--ink-primary);
+        border-radius: 6px;
+        padding: 3px 9px;
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .dock-banner button:hover { border-color: var(--status-attention); }
+
+      .composer-box {
+        border: 1px solid var(--border-strong);
+        border-radius: 13px;
+        background: var(--surface-1);
+        box-shadow: var(--shadow-sm);
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+      }
+      .composer-box:focus-within {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+      }
+      .composer-chip {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 8px 10px 0;
+        padding: 6px 10px;
+        border-radius: 8px;
+        background: var(--surface-2);
+        border: 1px solid var(--border-subtle);
+        font-size: 12px;
+        color: var(--ink-secondary);
+      }
+      .composer-chip button {
+        border: 0;
+        background: transparent;
+        color: var(--ink-muted);
+        padding: 2px 5px;
+        border-radius: 4px;
+      }
+      .composer-chip button:hover { color: var(--ink-primary); background: var(--surface-hover); }
+      .composer-box textarea {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        padding: 11px 13px 6px;
+        resize: none;
+        min-height: 52px;
+        font-size: 14.5px;
+        line-height: 1.5;
+        outline: none;
+      }
+      .composer-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 6px 10px 9px 13px;
+      }
+      .model-tag {
+        font-size: 11.5px;
+        color: var(--ink-muted);
+        font-family: var(--font-mono);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .composer-actions { display: flex; align-items: center; gap: 6px; }
+      .send-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 9px;
+        border: 0;
+        background: var(--accent);
+        color: var(--accent-ink);
+        display: grid;
+        place-items: center;
+      }
+      .send-btn:hover { background: var(--accent-hover); }
+
+      /* RESIZE HANDLE */
+      .resize-handle {
+        width: 7px;
+        background: transparent;
+        cursor: col-resize;
+        position: relative;
+        flex-shrink: 0;
+        z-index: 10;
+      }
+      .resize-handle::after {
+        content: "";
+        position: absolute;
+        inset-block: 0;
+        left: 3px;
+        width: 1px;
+        background: var(--border-subtle);
+        transition: background 120ms ease, width 120ms ease;
+      }
+      .resize-handle:hover::after, .resize-handle.dragging::after {
+        background: var(--accent);
+        width: 3px;
+        left: 2px;
+      }
+      .stage[data-mode="focus"] .resize-handle,
+      .stage[data-mode="expanded"] .resize-handle { display: none; }
+
+      /* ============ UNIFIED CANVAS PANE ============ */
+      .canvas-pane {
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface-1);
+      }
+      .stage[data-mode="focus"] .canvas-pane { display: none; }
+
+      .canvas-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 18px;
+        background: var(--surface-2);
+        border-bottom: 1px solid var(--border-subtle);
+        flex-shrink: 0;
+      }
+      .canvas-crumbs {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .crumb-btn {
+        border: 0;
+        background: transparent;
+        color: var(--ink-secondary);
+        font-size: 13px;
+        font-weight: 500;
+        padding: 3px 6px;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .crumb-btn:hover { background: var(--surface-hover); color: var(--ink-primary); }
+      .crumb-sep { color: var(--ink-muted); font-size: 12px; }
+      .canvas-title {
+        font-size: 14.5px;
+        font-weight: 650;
+        letter-spacing: -0.015em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .canvas-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+
+      /* Horizontal Tab Bar inside Canvas */
+      .tab-bar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 18px;
+        background: var(--surface-2);
+        border-bottom: 1px solid var(--border-subtle);
+        overflow-x: auto;
+        flex-shrink: 0;
+      }
+      .tab-btn {
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: transparent;
+        padding: 9px 11px;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--ink-secondary);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+        margin-bottom: -1px;
+      }
+      .tab-btn:hover { color: var(--ink-primary); }
+      .tab-btn.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+        font-weight: 600;
+      }
+      .tab-count {
+        font-size: 11px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: var(--surface-3);
+        color: var(--ink-secondary);
+        font-variant-numeric: tabular-nums;
+      }
+      .tab-btn.active .tab-count {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      /* Sticky Contextual Approval Bar */
+      .approval-bar {
+        background: var(--status-attention-bg);
+        border-bottom: 1px solid var(--status-attention-border);
+        padding: 10px 18px;
+        flex-shrink: 0;
+      }
+      .approval-bar-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .approval-bar-info {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        color: var(--status-attention);
+        font-size: 13px;
+      }
+      .approval-drawer {
+        margin-top: 12px;
+        padding: 14px;
+        border-radius: 10px;
+        background: var(--surface-2);
+        border: 1px solid var(--status-attention-border);
+        color: var(--ink-primary);
+        display: grid;
+        gap: 10px;
+      }
+
+      /* Canvas Scroll Body */
+      .canvas-body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 18px 22px 28px;
+      }
+      .canvas-stack {
+        max-width: 1080px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      /* ============ SHARED DESIGN SYSTEM PRIMITIVES ============ */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 12.5px;
+        font-weight: 550;
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-2);
+        color: var(--ink-primary);
+        transition: background 110ms ease, border-color 110ms ease;
+        white-space: nowrap;
+      }
+      .btn:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+      .btn.primary {
+        background: var(--accent);
+        color: var(--accent-ink);
+        border-color: transparent;
+      }
+      .btn.primary:hover { background: var(--accent-hover); }
+      .btn.ghost { background: transparent; border-color: transparent; color: var(--ink-secondary); }
+      .btn.ghost:hover { background: var(--surface-hover); color: var(--ink-primary); }
+      .btn.icon { width: 30px; height: 30px; padding: 0; }
+      .btn.sm { padding: 4px 9px; font-size: 12px; }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11.5px;
+        font-weight: 600;
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-3);
+        color: var(--ink-secondary);
+        white-space: nowrap;
+      }
+      .badge.running { background: var(--status-running-bg); color: var(--status-running); border-color: var(--status-running-border); }
+      .badge.success { background: var(--status-success-bg); color: var(--status-success); border-color: var(--status-success-border); }
+      .badge.attention { background: var(--status-attention-bg); color: var(--status-attention); border-color: var(--status-attention-border); }
+      .badge.danger { background: var(--status-danger-bg); color: var(--status-danger); border-color: var(--status-danger-border); }
+
+      /* SectionCard */
+      .card {
+        background: var(--surface-2);
+        border: 1px solid var(--border-subtle);
+        border-radius: 12px;
+        box-shadow: var(--shadow-sm);
+        overflow: hidden;
+      }
+      .card.accent-left-attention { border-left: 3px solid var(--status-attention); }
+      .card.accent-left-danger { border-left: 3px solid var(--status-danger); }
+      .card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .card-title {
+        font-size: 13.5px;
+        font-weight: 650;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .card-body { padding: 14px 16px; display: grid; gap: 12px; }
+
+      /* Bento & Metric Wells */
+      .bento-4 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+      }
+      .bento-2 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 12px;
+      }
+      .metric-well {
+        padding: 12px 14px;
+        border-radius: 10px;
+        background: var(--surface-1);
+        border: 1px solid var(--border-subtle);
+        display: grid;
+        gap: 4px;
+      }
+      .metric-label { font-size: 11.5px; color: var(--ink-muted); font-weight: 550; text-transform: uppercase; letter-spacing: 0.04em; }
+      .metric-val { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 8px; }
+      .metric-sub { font-size: 12px; color: var(--ink-secondary); }
+
+      /* Toolbar / Filters */
+      .toolbar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .input, .select {
+        height: 34px;
+        padding: 0 11px;
+        border-radius: 8px;
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-2);
+        color: var(--ink-primary);
+        font-size: 13px;
+      }
+      .input { flex: 1 1 200px; }
+      .input:focus, .select:focus { border-color: var(--accent); outline: none; }
+      .seg {
+        display: inline-flex;
+        padding: 3px;
+        border-radius: 9px;
+        background: var(--surface-2);
+        border: 1px solid var(--border-subtle);
+        gap: 2px;
+      }
+      .seg button {
+        border: 0;
+        background: transparent;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 12.5px;
+        font-weight: 500;
+        color: var(--ink-secondary);
+      }
+      .seg button.active {
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      /* Scannable 2-Line ListRow */
+      .list-group {
+        background: var(--surface-2);
+        border: 1px solid var(--border-subtle);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .list-row {
+        width: 100%;
+        text-align: left;
+        border: 0;
+        border-bottom: 1px solid var(--border-subtle);
+        background: transparent;
+        padding: 12px 15px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+        transition: background 100ms ease;
+      }
+      .list-row:last-child { border-bottom: 0; }
+      .list-row:hover { background: var(--surface-3); }
+      .list-row-main { display: flex; gap: 11px; min-width: 0; flex: 1; }
+      .list-row-dot { margin-top: 6px; }
+      .list-row-text { min-width: 0; display: grid; gap: 3px; }
+      .list-row-title { font-size: 13.5px; font-weight: 600; color: var(--ink-primary); }
+      .list-row-sub { font-size: 12px; color: var(--ink-secondary); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+      .list-row-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+      /* Styled Evidence Disclosure */
+      .disclosure {
+        border: 1px solid var(--border-subtle);
+        border-radius: 10px;
+        background: var(--surface-1);
+        overflow: hidden;
+      }
+      .disclosure > summary {
+        padding: 9px 13px;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--ink-secondary);
+        cursor: pointer;
+        user-select: none;
+      }
+      .disclosure > summary:hover { color: var(--ink-primary); background: var(--surface-hover); }
+      .disclosure-body {
+        padding: 11px 13px;
+        border-top: 1px solid var(--border-subtle);
+        font-size: 12.5px;
+        color: var(--ink-secondary);
+        display: grid;
+        gap: 6px;
+      }
+
+      /* Split Diff Mock */
+      .diff-card {
+        border: 1px solid var(--border-subtle);
+        border-radius: 11px;
+        overflow: hidden;
+        background: var(--surface-2);
+      }
+      .diff-file-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 9px 14px;
+        background: var(--surface-3);
+        border-bottom: 1px solid var(--border-subtle);
+        font-size: 12.5px;
+      }
+      .diff-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.65;
+        overflow-x: auto;
+      }
+      .diff-col { border-right: 1px solid var(--border-subtle); min-width: 260px; }
+      .diff-col:last-child { border-right: 0; }
+      .diff-line { display: flex; padding: 1px 10px; gap: 10px; white-space: pre; }
+      .diff-ln { color: var(--ink-muted); width: 26px; text-align: right; user-select: none; flex-shrink: 0; }
+      .diff-line.add { background: var(--diff-add-bg); color: var(--diff-add-ink); }
+      .diff-line.del { background: var(--diff-del-bg); color: var(--diff-del-ink); }
+
+      /* Kanban Board inside A2UI Surface */
+      .kanban {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(170px, 1fr));
+        gap: 10px;
+        overflow-x: auto;
+      }
+      .kanban-col {
+        background: var(--surface-1);
+        border: 1px solid var(--border-subtle);
+        border-radius: 10px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .kanban-col-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+        font-weight: 650;
+        color: var(--ink-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding-bottom: 4px;
+      }
+      .kanban-card {
+        background: var(--surface-2);
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        padding: 10px;
+        text-align: left;
+        display: grid;
+        gap: 5px;
+        box-shadow: var(--shadow-sm);
+      }
+      .kanban-card:hover { border-color: var(--accent); }
+      .kanban-card strong { font-size: 12.5px; font-weight: 600; }
+      .kanban-card span { font-size: 11.5px; color: var(--ink-secondary); }
+
+      /* Progress bar */
+      .bar { height: 7px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+      .bar > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+      .bar.running > span { background: var(--status-running); }
+
+      /* Modals (Settings & Command Palette) */
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgb(5 10 15 / 55%);
+        backdrop-filter: blur(4px);
+        display: grid;
+        place-items: center;
+        z-index: 60;
+        padding: 20px;
+      }
+      .modal-backdrop[hidden] { display: none; }
+      .modal {
+        width: min(760px, 100%);
+        max-height: min(82dvh, 720px);
+        background: var(--surface-2);
+        border: 1px solid var(--border-strong);
+        border-radius: 14px;
+        box-shadow: var(--shadow-lg);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .palette-modal {
+        width: min(600px, 100%);
+        align-self: start;
+        margin-top: 8vh;
+      }
+      .palette-input-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 15px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .palette-input-row input {
+        flex: 1;
+        border: 0;
+        background: transparent;
+        font-size: 15px;
+        outline: none;
+      }
+      .palette-results {
+        overflow-y: auto;
+        padding: 8px;
+        display: grid;
+        gap: 2px;
+      }
+      .palette-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 9px 11px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        text-align: left;
+      }
+      .palette-item:hover { background: var(--surface-3); }
+      .palette-item-sub { font-size: 12px; color: var(--ink-muted); }
+
+      /* Dropdown popover for Recent/Views */
+      .popover-wrap { position: relative; }
+      .popover {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        width: 280px;
+        background: var(--surface-2);
+        border: 1px solid var(--border-strong);
+        border-radius: 11px;
+        box-shadow: var(--shadow-lg);
+        padding: 6px;
+        z-index: 45;
+        display: grid;
+        gap: 2px;
+      }
+      .popover[hidden] { display: none; }
+      .popover-label {
+        font-size: 11px;
+        font-weight: 650;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--ink-muted);
+        padding: 6px 8px 3px;
+      }
+      .popover button {
+        border: 0;
+        background: transparent;
+        text-align: left;
+        padding: 7px 9px;
+        border-radius: 7px;
+        font-size: 12.5px;
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .popover button:hover { background: var(--surface-3); }
+
+      /* Toast */
+      .toast {
+        position: fixed;
+        bottom: 18px;
+        right: 18px;
+        background: var(--surface-2);
+        border: 1px solid var(--accent-border);
+        color: var(--ink-primary);
+        padding: 10px 14px;
+        border-radius: 10px;
+        box-shadow: var(--shadow-lg);
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        z-index: 80;
+      }
+      .toast[hidden] { display: none; }
+
+      .muted { color: var(--ink-secondary); font-size: 12.5px; }
+      .tiny { color: var(--ink-muted); font-size: 11.5px; }
+      .prose-doc p { margin: 0 0 10px; line-height: 1.65; }
+      .prose-doc ul { margin: 0 0 10px; padding-left: 20px; }
+      .prose-doc li { margin-bottom: 4px; }
+      .row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    </style>
+  </head>
+  <body>
+    <div class="cockpit">
+      <!-- ==================== TOP BAR ==================== -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="brand-btn" id="brandBtn" title="Return to Focus Chat">
+            <span class="brand-mark" aria-hidden="true">a</span>
+            <span>AbraCode</span>
+          </button>
+          <span class="live-pill" title="Connected to main Abra thread · Work continues when you close this page">
+            <span class="dot running"></span>
+            <span>Abra · 2 workers active</span>
+          </span>
+        </div>
+
+        <div class="topbar-center">
+          <button class="search-pill" id="openPaletteBtn" aria-label="Search workspace">
+            <span class="search-pill-left">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <span>Search work, diffs, memory, commands…</span>
+            </span>
+            <kbd>⌘K</kbd>
+          </button>
+        </div>
+
+        <div class="topbar-right">
+          <button class="live-pill clickable tabular" id="capacityPill" title="Inspect fleet &amp; worker capacity">
+            <span class="dot success"></span>
+            <span>Workers 2/4 · Slots 3/6</span>
+          </button>
+          <button class="live-pill attention" id="attentionPill" title="Open pending approvals and permissions">
+            <span class="dot attention"></span>
+            <span id="attentionPillText">2 need attention</span>
+          </button>
+          <div class="layout-switch" role="group" aria-label="Workspace layout">
+            <button id="modeFocus" title="Centered Focus Chat">Chat</button>
+            <button id="modeSplit" class="active" title="Split Chat + Canvas">Split</button>
+            <button id="modeExpanded" title="Full-width Canvas">Canvas</button>
+          </div>
+        </div>
+      </header>
+
+      <!-- ==================== SLIM LEFT RAIL ==================== -->
+      <nav class="rail" aria-label="Canvas destinations">
+        <button class="rail-btn active" data-dest="work" data-tip="Work (Tasks, Sessions, Capacity)" aria-label="Work">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
+          <span class="rail-dot" aria-hidden="true"></span>
+        </button>
+        <button class="rail-btn" data-dest="github" data-tip="GitHub Inbox (PRs &amp; Issues)" aria-label="GitHub">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>
+        </button>
+        <button class="rail-btn" data-dest="thoughts" data-tip="Thoughts (Memos Notebook)" aria-label="Thoughts">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </button>
+        <button class="rail-btn" data-dest="attention" data-tip="Attention (Approvals &amp; Forms)" aria-label="Attention">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          <span class="rail-badge" id="railAttentionBadge">2</span>
+        </button>
+
+        <div class="rail-spacer"></div>
+        <div class="rail-divider"></div>
+
+        <button class="rail-btn" id="themeToggleBtn" data-tip="Toggle Light / Dark Theme" aria-label="Toggle theme">
+          <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+        </button>
+        <button class="rail-btn" id="settingsBtn" data-tip="Settings (Agents, Repos, About)" aria-label="Settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        </button>
+      </nav>
+
+      <!-- ==================== MAIN STAGE ==================== -->
+      <div class="stage" id="stage" data-mode="split">
+        <!-- ONE PERSISTENT CHAT -->
+        <section class="chat-pane" aria-label="Conversation with Abra">
+          <div class="chat-inner">
+            <div class="transcript-scroll" id="transcriptScroll">
+              <div class="transcript" id="transcript">
+                <article class="msg user">
+                  <div class="msg-head"><strong>You</strong><time>22:18</time></div>
+                  <div class="msg-bubble">Catch me up on active work across abra-code and show the board.</div>
+                </article>
+
+                <article class="msg abra">
+                  <div class="msg-head"><strong>Abra</strong><time>22:18</time></div>
+                  <details class="tool-group">
+                    <summary>
+                      <span class="tool-group-left">
+                        <span class="dot success"></span>
+                        <span>3 tools completed · Checked fleet, inspected ABRA-142, published board</span>
+                      </span>
+                      <span class="tiny">Details</span>
+                    </summary>
+                    <div class="tool-group-body">
+                      <div class="tool-line"><span><code>work_summary</code> · 4 active tasks across 2 repositories</span><span>42ms</span></div>
+                      <div class="tool-line"><span><code>verification_status</code> · ABRA-142 checks passed</span><span>18ms</span></div>
+                      <div class="tool-line"><span><code>abra_render_ui</code> · surface <code>work-board</code> rev 4</span><span>64ms</span></div>
+                    </div>
+                  </details>
+
+                  <div class="msg-prose">
+                    <p>Two workers are currently active and <strong>ABRA-142 (Unified Cockpit Shell)</strong> has finished planning and is waiting on your plan approval before Apply starts.</p>
+                    <p>I’ve staged the live work board in the Canvas, along with the updated plan and verification report for the token refactor.</p>
+                  </div>
+
+                  <!-- Clean clickable Artifact Cards instead of bloated inline widgets -->
+                  <button class="artifact-card" data-open-surface="work-board">
+                    <div class="artifact-card-left">
+                      <div class="artifact-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="4" height="15" rx="1"/></svg>
+                      </div>
+                      <div class="artifact-meta">
+                        <div class="artifact-title">Live Work Board · <code>work-board</code></div>
+                        <div class="artifact-sub">A2UI v5 Surface · Revision 4 · 4 tasks across 2 repos</div>
+                      </div>
+                    </div>
+                    <span class="artifact-cta">Open in Canvas →</span>
+                  </button>
+
+                  <button class="artifact-card" data-open-task="ABRA-142" data-tab="Plan">
+                    <div class="artifact-card-left">
+                      <div class="artifact-icon" style="color: var(--status-attention);">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                      </div>
+                      <div class="artifact-meta">
+                        <div class="artifact-title">ABRA-142 · Cockpit Shell &amp; Surface Tokens</div>
+                        <div class="artifact-sub">Plan ready · Awaiting plan approval checkpoint</div>
+                      </div>
+                    </div>
+                    <span class="artifact-cta">Inspect Plan →</span>
+                  </button>
+
+                  <button class="artifact-card" data-open-task="ABRA-139" data-tab="Verification">
+                    <div class="artifact-card-left">
+                      <div class="artifact-icon" style="color: var(--status-success);">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      </div>
+                      <div class="artifact-meta">
+                        <div class="artifact-title">ABRA-139 · Verification &amp; Review Report</div>
+                        <div class="artifact-sub">Checks passed · Independent Review clean · Ready to merge</div>
+                      </div>
+                    </div>
+                    <span class="artifact-cta">Inspect Verification →</span>
+                  </button>
+                </article>
+              </div>
+            </div>
+
+            <!-- COMPOSER DOCK -->
+            <footer class="composer-dock">
+              <div class="composer-wrap">
+                <div class="dock-banner" id="dockAttention">
+                  <div class="dock-banner-left">
+                    <span class="dot attention"></span>
+                    <span><strong>Plan approval pending</strong> · ABRA-142 (+1 permission)</span>
+                  </div>
+                  <button id="dockReviewBtn">Review in Canvas</button>
+                </div>
+
+                <form class="composer-box" id="composerForm">
+                  <div class="composer-chip" id="composerChip" hidden>
+                    <span id="composerChipText"></span>
+                    <button type="button" id="removeChipBtn" aria-label="Remove attachment">✕</button>
+                  </div>
+                  <textarea id="composerInput" placeholder="Message Abra… (try /onboard-repo, /memory, /attach-thought)" rows="2"></textarea>
+                  <div class="composer-bar">
+                    <span class="model-tag">anthropic/claude-sonnet-4 · supervisor</span>
+                    <div class="composer-actions">
+                      <button type="submit" class="send-btn" aria-label="Send message">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </footer>
+          </div>
+        </section>
+
+        <!-- DRAGGABLE DIVIDER -->
+        <div class="resize-handle" id="resizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize chat and canvas"></div>
+
+        <!-- ==================== UNIFIED CANVAS ==================== -->
+        <main class="canvas-pane" aria-label="Unified Canvas">
+          <header class="canvas-header">
+            <div class="canvas-crumbs" id="canvasCrumbs"></div>
+            <div class="canvas-header-actions">
+              <div class="popover-wrap">
+                <button class="btn sm ghost" id="recentToggleBtn">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <span>Recent &amp; Views</span>
+                </button>
+                <div class="popover" id="recentPopover" hidden>
+                  <div class="popover-label">Recently inspected</div>
+                  <button data-open-task="ABRA-142" data-tab="Overview"><span>ABRA-142 · Cockpit Shell</span><span class="tiny">Plan</span></button>
+                  <button data-open-task="ABRA-139" data-tab="Diff"><span>ABRA-139 · Token Migration</span><span class="tiny">Diff</span></button>
+                  <div class="popover-label">Retained A2UI Views</div>
+                  <button data-open-surface="work-board"><span>work-board</span><span class="tiny">rev 4</span></button>
+                </div>
+              </div>
+              <button class="btn icon ghost" id="canvasExpandBtn" title="Expand / Split Canvas" aria-label="Expand canvas">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+              </button>
+              <button class="btn icon ghost" id="canvasCloseBtn" title="Close Canvas (Focus Chat)" aria-label="Close canvas">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </header>
+
+          <!-- Dynamic Sub-Tab Bar (shown for Work Hub & Task Detail) -->
+          <div class="tab-bar" id="canvasTabs" hidden></div>
+
+          <!-- Dynamic Contextual Approval Bar (shown when inspecting a task with active bound form) -->
+          <div class="approval-bar" id="approvalBar" hidden></div>
+
+          <!-- Canvas Content -->
+          <div class="canvas-body">
+            <div class="canvas-stack" id="canvasContent"></div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- ==================== SETTINGS MODAL (SINGLE NAV, NO DOUBLE SIDEBAR) ==================== -->
+    <div class="modal-backdrop" id="settingsModal" hidden>
+      <div class="modal" role="dialog" aria-label="Settings">
+        <div class="canvas-header">
+          <div class="canvas-title">Settings</div>
+          <button class="btn icon ghost" id="closeSettingsBtn" aria-label="Close settings">✕</button>
+        </div>
+        <div class="tab-bar" id="settingsTabs">
+          <button class="tab-btn active" data-stab="agents">Agents <span class="tab-count">5</span></button>
+          <button class="tab-btn" data-stab="repos">Repositories <span class="tab-count">2</span></button>
+          <button class="tab-btn" data-stab="general">General &amp; About</button>
+        </div>
+        <div class="canvas-body" id="settingsBody"></div>
+      </div>
+    </div>
+
+    <!-- ==================== COMMAND PALETTE ⌘K ==================== -->
+    <div class="modal-backdrop" id="paletteModal" hidden>
+      <div class="modal palette-modal" role="dialog" aria-label="Command palette">
+        <div class="palette-input-row">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="paletteInput" placeholder="Search work:, diff:, github:, thought:, memory:, or > commands…" />
+          <kbd>ESC</kbd>
+        </div>
+        <div class="palette-results" id="paletteResults"></div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <script>
+      const state = {
+        mode: "split", // focus | split | expanded
+        canvas: { kind: "task", issue: "ABRA-142", tab: "Overview" },
+        workTab: "tasks",
+        workFilter: "active",
+        activityTab: "sessions",
+        selectedSession: "ses_explore_9f12",
+        approvalExpanded: false,
+        planApproved: false,
+        permissionHandled: false,
+        settingsTab: "agents",
+      };
+
+      const tasks = {
+        "ABRA-142": {
+          id: "ABRA-142",
+          title: "Adaptive Cockpit Shell & Precision Surface Tokens",
+          repo: "abra-code",
+          priority: "P1",
+          policy: "Full OpenSpec task",
+          status: "in_progress",
+          phase: "Awaiting plan approval",
+          tone: "attention",
+          native: "Idle · checkpoint bound",
+          outcomes: { approval: "Pending", delivery: "Not started", cleanup: "Not needed", closure: "Open" },
+          progress: "Explore worker produced 4-step surface token spec and unified Canvas migration plan.",
+          blockers: ["Waiting for human plan approval checkpoint before Apply admission."],
+          hasApproval: true,
+        },
+        "ABRA-139": {
+          id: "ABRA-139",
+          title: "Semantic StatusBadge & Presentation Primitives",
+          repo: "abra-code",
+          priority: "P1",
+          policy: "Full OpenSpec task",
+          status: "in_progress",
+          phase: "Ready for merge",
+          tone: "success",
+          native: "Review passed",
+          outcomes: { approval: "Approved", delivery: "Branch ready", cleanup: "Pending merge", closure: "Open" },
+          progress: "All 560 unit tests, Playwright coherence checks, and independent review passed.",
+          blockers: [],
+          hasApproval: false,
+        },
+        "ABRA-145": {
+          id: "ABRA-145",
+          title: "Streamline GitHub Inbox Filter & In-Canvas Detail",
+          repo: "abra-code",
+          priority: "P2",
+          policy: "Lightweight fix",
+          status: "in_progress",
+          phase: "Implementing",
+          tone: "running",
+          native: "Apply worker running",
+          outcomes: { approval: "Auto-accepted", delivery: "In progress", cleanup: "Not needed", closure: "Open" },
+          progress: "Replacing separate modal Sheet with unified Canvas route parameter.",
+          blockers: [],
+          hasApproval: false,
+        },
+        "API-204": {
+          id: "API-204",
+          title: "Investigate intermittent webhook retry timeout",
+          repo: "billing-api",
+          priority: "P2",
+          policy: "Research task",
+          status: "blocked",
+          phase: "Blocked on credential",
+          tone: "danger",
+          native: "Permission requested",
+          outcomes: { approval: "N/A", delivery: "Research report", cleanup: "Not needed", closure: "Open" },
+          progress: "Found race condition in backoff jitter; needs read permission on staging fixture.",
+          blockers: ["Pending native permission request for fixture directory read."],
+          hasApproval: false,
+        },
+      };
+
+      const $ = (id) => document.getElementById(id);
+
+      function showToast(msg) {
+        const el = $("toast");
+        el.innerHTML = `<span class="dot success"></span><span>${msg}</span>`;
+        el.hidden = false;
+        clearTimeout(showToast._t);
+        showToast._t = setTimeout(() => (el.hidden = true), 2600);
+      }
+
+      function pendingCount() {
+        return (state.planApproved ? 0 : 1) + (state.permissionHandled ? 0 : 1);
+      }
+
+      function updateAttentionIndicators() {
+        const n = pendingCount();
+        $("railAttentionBadge").textContent = n;
+        $("railAttentionBadge").hidden = n === 0;
+        $("attentionPill").hidden = n === 0;
+        $("attentionPillText").textContent = `${n} need attention`;
+        $("dockAttention").hidden = n === 0;
+      }
+
+      function setMode(mode) {
+        state.mode = mode;
+        $("stage").dataset.mode = mode;
+        $("modeFocus").classList.toggle("active", mode === "focus");
+        $("modeSplit").classList.toggle("active", mode === "split");
+        $("modeExpanded").classList.toggle("active", mode === "expanded");
+        updateRailActive();
+      }
+
+      function openCanvas(canvas, preferSplit = true) {
+        state.canvas = canvas;
+        state.approvalExpanded = false;
+        if (state.mode === "focus" && preferSplit) setMode("split");
+        renderCanvas();
+        updateRailActive();
+        updateStagedCards();
+      }
+
+      function updateRailActive() {
+        document.querySelectorAll(".rail-btn[data-dest]").forEach((btn) => {
+          const dest = btn.dataset.dest;
+          const active =
+            state.mode !== "focus" &&
+            (state.canvas.kind === dest ||
+              (dest === "work" && (state.canvas.kind === "task" || state.canvas.kind === "surface")) ||
+              (dest === "github" && state.canvas.kind === "github-item") ||
+              (dest === "thoughts" && state.canvas.kind === "thought-item"));
+          btn.classList.toggle("active", active);
+        });
+      }
+
+      function updateStagedCards() {
+        document.querySelectorAll(".artifact-card").forEach((card) => {
+          const isSurface = card.dataset.openSurface && state.canvas.kind === "surface";
+          const isTask = card.dataset.openTask && state.canvas.kind === "task" && state.canvas.issue === card.dataset.openTask;
+          card.classList.toggle("staged", state.mode !== "focus" && Boolean(isSurface || isTask));
+        });
+      }
+
+      function populateComposer(text, chip) {
+        const input = $("composerInput");
+        input.value = text;
+        if (chip) {
+          $("composerChipText").textContent = chip;
+          $("composerChip").hidden = false;
+        }
+        if (state.mode === "expanded") setMode("split");
+        input.focus();
+        showToast("Prepared draft in Abra composer");
+      }
+
+      function renderCanvas() {
+        const crumbs = $("canvasCrumbs");
+        const tabs = $("canvasTabs");
+        const approval = $("approvalBar");
+        const body = $("canvasContent");
+        tabs.hidden = true;
+        approval.hidden = true;
+
+        const c = state.canvas;
+
+        if (c.kind === "work") {
+          crumbs.innerHTML = `<span class="canvas-title">Work Hub</span><span class="badge">4 active</span>`;
+          tabs.hidden = false;
+          tabs.innerHTML = [
+            ["tasks", "Tasks", "4"],
+            ["sessions", "Sessions", "3"],
+            ["capacity", "Capacity", "2/4"],
+            ["recent", "Recently inspected", "2"],
+          ]
+            .map(
+              ([id, label, count]) =>
+                `<button class="tab-btn ${state.workTab === id ? "active" : ""}" data-work-tab="${id}">${label} <span class="tab-count">${count}</span></button>`,
+            )
+            .join("");
+
+          if (state.workTab === "tasks") {
+            const rows = Object.values(tasks)
+              .map(
+                (t) => `
+                <button class="list-row" data-open-task="${t.id}" data-tab="Overview">
+                  <div class="list-row-main">
+                    <span class="dot ${t.tone} list-row-dot"></span>
+                    <div class="list-row-text">
+                      <span class="list-row-title">${t.title}</span>
+                      <span class="list-row-sub">
+                        <code>${t.id}</code> · <span>${t.repo}</span> · <span>${t.policy}</span> · <span>${t.native}</span>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="list-row-right">
+                    <span class="badge ${t.tone}">${t.phase}</span>
+                    <span class="badge">${t.priority}</span>
+                  </div>
+                </button>`,
+              )
+              .join("");
+
+            body.innerHTML = `
+              <div class="toolbar">
+                <input class="input" placeholder="Filter tasks by title or ID…" />
+                <select class="select" aria-label="Repository"><option>All repositories (2)</option><option>abra-code</option><option>billing-api</option></select>
+                <div class="seg">
+                  <button class="active">Active</button>
+                  <button>Closed</button>
+                  <button>All</button>
+                </div>
+              </div>
+              <div class="list-group">${rows}</div>
+            `;
+          } else if (state.workTab === "sessions") {
+            body.innerHTML = `
+              <div class="card">
+                <div class="card-head">
+                  <span class="card-title">Retained Worker Sessions</span>
+                  <span class="tiny">Read-only · Instructions go through Abra</span>
+                </div>
+                <div class="list-group" style="border:0;border-radius:0;">
+                  <button class="list-row" data-open-task="ABRA-145" data-tab="Activity">
+                    <div class="list-row-main">
+                      <span class="dot running list-row-dot"></span>
+                      <div class="list-row-text">
+                        <span class="list-row-title">Implementation worker · ABRA-145</span>
+                        <span class="list-row-sub"><code>ses_apply_7a41</code> · claude-sonnet-4 · abra-code</span>
+                      </div>
+                    </div>
+                    <span class="badge running">Running</span>
+                  </button>
+                  <button class="list-row" data-open-task="ABRA-142" data-tab="Activity">
+                    <div class="list-row-main">
+                      <span class="dot attention list-row-dot"></span>
+                      <div class="list-row-text">
+                        <span class="list-row-title">Planning worker · ABRA-142</span>
+                        <span class="list-row-sub"><code>ses_explore_9f12</code> · claude-sonnet-4 · abra-code</span>
+                      </div>
+                    </div>
+                    <span class="badge attention">Awaiting approval</span>
+                  </button>
+                  <button class="list-row" data-open-task="ABRA-139" data-tab="Activity">
+                    <div class="list-row-main">
+                      <span class="dot success list-row-dot"></span>
+                      <div class="list-row-text">
+                        <span class="list-row-title">Review worker · ABRA-139</span>
+                        <span class="list-row-sub"><code>ses_review_4c08</code> · claude-opus-4 · abra-code</span>
+                      </div>
+                    </div>
+                    <span class="badge success">Completed</span>
+                  </button>
+                </div>
+              </div>
+            `;
+          } else if (state.workTab === "capacity") {
+            body.innerHTML = `
+              <div class="bento-4">
+                <div class="metric-well">
+                  <span class="metric-label">Active Workers</span>
+                  <span class="metric-val">2 / 4</span>
+                  <div class="bar running"><span style="width:50%"></span></div>
+                  <span class="metric-sub">Idle tasks use 0 slots</span>
+                </div>
+                <div class="metric-well">
+                  <span class="metric-label">Execution Slots</span>
+                  <span class="metric-val">3 / 6</span>
+                  <div class="bar"><span style="width:50%"></span></div>
+                  <span class="metric-sub">Across 2 repositories</span>
+                </div>
+                <div class="metric-well">
+                  <span class="metric-label">Supervision Mode</span>
+                  <span class="metric-val" style="font-size:15px;">Attended Auto</span>
+                  <span class="metric-sub">Human gates enforced</span>
+                </div>
+                <div class="metric-well">
+                  <span class="metric-label">Completed Today</span>
+                  <span class="metric-val">5</span>
+                  <span class="metric-sub">Europe/Amsterdam</span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-head">
+                  <span class="card-title">Fleet by Repository</span>
+                  <span class="tiny">Observed just now · Native coverage 4/4</span>
+                </div>
+                <div class="card-body bento-2">
+                  <div class="metric-well">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                      <strong>abra-code</strong>
+                      <span class="badge attention">1 attention</span>
+                    </div>
+                    <span class="muted">2 active · 1 awaiting approval · 1 ready for merge</span>
+                  </div>
+                  <div class="metric-well">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                      <strong>billing-api</strong>
+                      <span class="badge danger">1 blocked</span>
+                    </div>
+                    <span class="muted">1 active research task · 1 permission pending</span>
+                  </div>
+                </div>
+              </div>
+            `;
+          } else {
+            body.innerHTML = `
+              <div class="list-group">
+                <button class="list-row" data-open-task="ABRA-142" data-tab="Plan">
+                  <div class="list-row-main"><span class="dot attention list-row-dot"></span><div class="list-row-text"><span class="list-row-title">ABRA-142 · Adaptive Cockpit Shell &amp; Precision Surface Tokens</span><span class="list-row-sub">Last visited 2 min ago · Plan</span></div></div>
+                  <span class="badge attention">Open</span>
+                </button>
+                <button class="list-row" data-open-task="ABRA-139" data-tab="Diff">
+                  <div class="list-row-main"><span class="dot success list-row-dot"></span><div class="list-row-text"><span class="list-row-title">ABRA-139 · Semantic StatusBadge &amp; Presentation Primitives</span><span class="list-row-sub">Last visited 11 min ago · Diff</span></div></div>
+                  <span class="badge success">Open</span>
+                </button>
+              </div>
+            `;
+          }
+        } else if (c.kind === "task") {
+          const t = tasks[c.issue] || tasks["ABRA-142"];
+          crumbs.innerHTML = `
+            <button class="crumb-btn" data-nav-work>← Work</button>
+            <span class="crumb-sep">/</span>
+            <span class="canvas-title">${t.id} · ${t.title}</span>
+          `;
+          tabs.hidden = false;
+          const tabDefs = [
+            ["Overview", "Overview", ""],
+            ["Plan", "Plan", "3"],
+            ["Diff", "Diff", "4"],
+            ["Verification", "Verification", t.tone === "success" ? "✓" : "1"],
+            ["Activity", "Activity", "3"],
+            ["Reports", "Reports", "1"],
+          ];
+          tabs.innerHTML = tabDefs
+            .map(
+              ([id, label, count]) =>
+                `<button class="tab-btn ${c.tab === id ? "active" : ""}" data-task-tab="${id}">${label}${count ? ` <span class="tab-count">${count}</span>` : ""}</button>`,
+            )
+            .join("");
+
+          if (t.hasApproval && !state.planApproved && ["Overview", "Plan", "Diff"].includes(c.tab)) {
+            approval.hidden = false;
+            approval.innerHTML = `
+              <div class="approval-bar-row">
+                <div class="approval-bar-info">
+                  <span class="dot attention"></span>
+                  <span><strong>Bound Plan Approval</strong> waiting for <code>${t.id}</code> (fingerprint <code>sha256:9f4b…c21a</code>)</span>
+                </div>
+                <div class="row-actions">
+                  <button class="btn sm primary" id="toggleInlineApprovalBtn">${state.approvalExpanded ? "Hide Approval Form" : "Review &amp; Approve Plan"}</button>
+                </div>
+              </div>
+              ${
+                state.approvalExpanded
+                  ? `<div class="approval-drawer">
+                      <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <strong>Native Plan Approval · ${t.id}</strong>
+                        <span class="badge attention">Controller-bound checkpoint</span>
+                      </div>
+                      <p class="muted" style="margin:0;">Approving admits the Apply worker on this exact OpenSpec revision while you keep Chat and Plan visible.</p>
+                      <label style="display:grid;gap:5px;font-size:12.5px;">
+                        <span>Decision</span>
+                        <select class="select" id="approvalSelect">
+                          <option value="approve">Approve plan and admit implementation</option>
+                          <option value="revise">Request plan revision</option>
+                        </select>
+                      </label>
+                      <label style="display:grid;gap:5px;font-size:12.5px;">
+                        <span>Optional note for Abra</span>
+                        <input class="input" placeholder="e.g. Keep legacy URL bookmarks resolving cleanly" />
+                      </label>
+                      <div class="row-actions">
+                        <button class="btn primary" id="submitInlineApprovalBtn">Submit Checkpoint Decision</button>
+                        <button class="btn ghost" id="cancelInlineApprovalBtn">Cancel</button>
+                      </div>
+                    </div>`
+                  : ""
+              }
+            `;
+          }
+
+          if (c.tab === "Overview") {
+            body.innerHTML = `
+              <div class="card">
+                <div class="card-head">
+                  <div class="row-actions">
+                    <span class="badge ${t.tone}"><span class="dot ${t.tone}"></span>${t.phase}</span>
+                    <span class="badge">${t.priority}</span>
+                    <span class="badge">${t.policy}</span>
+                    <span class="tiny mono">${t.repo}</span>
+                  </div>
+                  <div class="row-actions">
+                    <button class="btn sm" data-ask="Pause work on ${t.id}.">Pause</button>
+                    <button class="btn sm" data-ask="Resume work on ${t.id}.">Resume</button>
+                    <button class="btn sm primary" data-ask="Advance work on ${t.id}.">Advance</button>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="bento-4">
+                    <div class="metric-well"><span class="metric-label">Approval</span><span class="metric-val" style="font-size:14.5px;">${state.planApproved && t.id === "ABRA-142" ? "Approved" : t.outcomes.approval}</span></div>
+                    <div class="metric-well"><span class="metric-label">Delivery</span><span class="metric-val" style="font-size:14.5px;">${t.outcomes.delivery}</span></div>
+                    <div class="metric-well"><span class="metric-label">Cleanup</span><span class="metric-val" style="font-size:14.5px;">${t.outcomes.cleanup}</span></div>
+                    <div class="metric-well"><span class="metric-label">Closure</span><span class="metric-val" style="font-size:14.5px;">${t.outcomes.closure}</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="bento-2">
+                <div class="card">
+                  <div class="card-head"><span class="card-title">Scope &amp; Latest Progress</span><span class="tiny">Updated 4m ago</span></div>
+                  <div class="card-body prose-doc">
+                    <p>${t.progress}</p>
+                    <p class="muted">Replaces route-switching full-page collection swaps with an Adaptive 2-Pane Cockpit so Abra Chat stays mounted and visible beside all evidence.</p>
+                  </div>
+                </div>
+
+                <div class="card ${t.blockers.length ? "accent-left-attention" : ""}">
+                  <div class="card-head"><span class="card-title">Open Decisions &amp; Readiness</span><span class="badge ${t.blockers.length ? "attention" : "success"}">${t.blockers.length ? t.blockers.length + " open" : "Ready"}</span></div>
+                  <div class="card-body">
+                    ${
+                      t.blockers.length
+                        ? `<p style="margin:0;font-size:13px;">${t.blockers[0]}</p>`
+                        : `<p class="muted" style="margin:0;">No blockers or pending waits on this task.</p>`
+                    }
+                    <details class="disclosure">
+                      <summary>Execution &amp; repair contract</summary>
+                      <div class="disclosure-body">
+                        <span>Schema: <code>spec-driven</code> · captured repository default</span>
+                        <span>Human plan approval: <strong>Required</strong> · policy default</span>
+                        <span>Automatic repair: 0 consumed · 2 remaining</span>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+              </div>
+            `;
+          } else if (c.tab === "Plan") {
+            body.innerHTML = `
+              <div class="toolbar">
+                <div class="seg">
+                  <button class="active">proposal.md</button>
+                  <button>design.md</button>
+                  <button>tasks.md (0/8)</button>
+                </div>
+                <button class="btn sm" data-chip="ABRA-142 · proposal.md lines 12–24" data-ask="Can we keep the top bar height at 48px and include a live worker pill?">Ask Abra about passage</button>
+              </div>
+              <div class="card">
+                <div class="card-head">
+                  <span class="card-title">proposal.md</span>
+                  <span class="tiny mono">Owned worktree · hash 9f4b82c1</span>
+                </div>
+                <div class="card-body prose-doc">
+                  <p><strong>Goal:</strong> Consolidate Work, GitHub, Thoughts, Attention, and Inspector into one Unified Canvas beside the persistent Abra Chat.</p>
+                  <ul>
+                    <li>Introduce 4-step Precision Graphite &amp; Emerald Telemetry tokens in <code>packages/presentation/src/tokens.css</code>.</li>
+                    <li>Replace Inspector <code>&lt;NativeSelect&gt;</code> with a horizontal tab bar and sticky contextual approval bar.</li>
+                    <li>Purge ~500 lines of fossil layout CSS in <code>apps/web/src/style.css</code>.</li>
+                  </ul>
+                </div>
+              </div>
+            `;
+          } else if (c.tab === "Diff") {
+            body.innerHTML = `
+              <div class="toolbar">
+                <input class="input" placeholder="Search file names or diff text…" />
+                <button class="btn sm primary" data-chip="ABRA-142 · tokens.css lines 32–41" data-ask="Let's verify contrast ratios on --surface-2 and --ink-secondary in light mode.">Ask Abra about selected lines</button>
+              </div>
+              <div class="diff-card">
+                <div class="diff-file-head">
+                  <code>packages/presentation/src/tokens.css</code>
+                  <span class="row-actions"><span class="badge success">+14</span><span class="badge danger">-8</span></span>
+                </div>
+                <div class="diff-grid">
+                  <div class="diff-col">
+                    <div class="diff-line"><span class="diff-ln">31</span><span>  font-synthesis: none;</span></div>
+                    <div class="diff-line del"><span class="diff-ln">32</span><span>- --abra-bg: #fafbf8;</span></div>
+                    <div class="diff-line del"><span class="diff-ln">33</span><span>- --abra-panel: #fff;</span></div>
+                    <div class="diff-line del"><span class="diff-ln">34</span><span>- --abra-primary: #476c36;</span></div>
+                    <div class="diff-line"><span class="diff-ln">35</span><span>  color-scheme: light;</span></div>
+                  </div>
+                  <div class="diff-col">
+                    <div class="diff-line"><span class="diff-ln">31</span><span>  font-synthesis: none;</span></div>
+                    <div class="diff-line add"><span class="diff-ln">32</span><span>+ --surface-0: #eef1f4;</span></div>
+                    <div class="diff-line add"><span class="diff-ln">33</span><span>+ --surface-1: #f6f8fa;</span></div>
+                    <div class="diff-line add"><span class="diff-ln">34</span><span>+ --surface-2: #ffffff;</span></div>
+                    <div class="diff-line add"><span class="diff-ln">35</span><span>+ --accent: #0d8a55;</span></div>
+                  </div>
+                </div>
+              </div>
+            `;
+          } else if (c.tab === "Verification") {
+            body.innerHTML = `
+              <div class="bento-2">
+                <div class="card">
+                  <div class="card-head">
+                    <span class="card-title">Controller Checks</span>
+                    <span class="badge success"><span class="dot success"></span>Passed on observed head</span>
+                  </div>
+                  <div class="card-body">
+                    <p class="muted" style="margin:0;">All required checks verified against commit <code>84c12f9a</code>.</p>
+                    <details class="disclosure" open>
+                      <summary>Check receipt · 3 commands passed</summary>
+                      <div class="disclosure-body mono">
+                        <span>✓ pnpm check</span>
+                        <span>✓ pnpm test (560 passed)</span>
+                        <span>✓ pnpm build</span>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+
+                <div class="card">
+                  <div class="card-head">
+                    <span class="card-title">Independent Review</span>
+                    <span class="badge success"><span class="dot success"></span>Clean · 0 blocking</span>
+                  </div>
+                  <div class="card-body">
+                    <p class="muted" style="margin:0;">Assessed by <code>ses_review_4c08</code> · matches observed content.</p>
+                    <details class="disclosure">
+                      <summary>Review summary &amp; PR feedback (0 actionable)</summary>
+                      <div class="disclosure-body">
+                        <span>Verified dark/light contrast, keyboard focus restoration, and zero router imports in <code>@abracode/presentation</code>.</span>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+              </div>
+            `;
+          } else if (c.tab === "Activity") {
+            body.innerHTML = `
+              <div class="seg">
+                <button class="${state.activityTab === "sessions" ? "active" : ""}" data-act="sessions">Sessions (2)</button>
+                <button class="${state.activityTab === "comms" ? "active" : ""}" data-act="comms">Communication (1)</button>
+                <button class="${state.activityTab === "leads" ? "active" : ""}" data-act="leads">Leads &amp; proposals</button>
+              </div>
+              <div class="card">
+                <div class="card-head"><span class="card-title">Planning Worker · <code>ses_explore_9f12</code></span><span class="badge success">Completed</span></div>
+                <div class="card-body">
+                  <p class="muted" style="margin:0;">Clicking any worker session card directly switches the transcript below (redundant dropdown removed).</p>
+                  <div class="metric-well">
+                    <span class="tiny">Worker · 22:14</span>
+                    <span>Drafted 4-step surface hierarchy tokens and mapped all 6 legacy routes into Unified Canvas states.</span>
+                  </div>
+                </div>
+              </div>
+            `;
+          } else {
+            body.innerHTML = `
+              <div class="card">
+                <div class="card-head">
+                  <span class="card-title">Retained Reports</span>
+                  <button class="btn sm" id="exportMockBtn">Export offline HTML</button>
+                </div>
+                <div class="list-group" style="border:0;border-radius:0;">
+                  <div class="list-row">
+                    <div class="list-row-main">
+                      <span class="dot success list-row-dot"></span>
+                      <div class="list-row-text">
+                        <span class="list-row-title">Design Audit &amp; Verification Snapshot</span>
+                        <span class="list-row-sub">JSON snapshot (a2ui-snapshot v1) · Published · Captured 22:16</span>
+                      </div>
+                    </div>
+                    <div class="list-row-right">
+                      <button class="btn sm">Download JSON</button>
+                      <button class="btn sm primary" data-open-surface="work-board">Open Snapshot</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+          }
+        } else if (c.kind === "surface") {
+          crumbs.innerHTML = `
+            <button class="crumb-btn" data-nav-work>← Work</button>
+            <span class="crumb-sep">/</span>
+            <span class="canvas-title">work-board</span>
+            <span class="badge">A2UI v5 · rev 4</span>
+          `;
+          body.innerHTML = `
+            <div class="card">
+              <div class="card-head">
+                <span class="card-title">Current Work Board (Live)</span>
+                <div class="row-actions">
+                  <span class="tiny">Updated 22:18 · Live binding</span>
+                  <button class="btn sm" id="saveSnapshotBtn">Save snapshot</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="kanban">
+                  <div class="kanban-col">
+                    <div class="kanban-col-head"><span>Planning</span><span>1</span></div>
+                    <button class="kanban-card" data-open-task="ABRA-142" data-tab="Plan">
+                      <strong>ABRA-142 · Cockpit Shell</strong>
+                      <span>Awaiting plan approval</span>
+                    </button>
+                  </div>
+                  <div class="kanban-col">
+                    <div class="kanban-col-head"><span>In Progress</span><span>1</span></div>
+                    <button class="kanban-card" data-open-task="ABRA-145" data-tab="Overview">
+                      <strong>ABRA-145 · GitHub Canvas</strong>
+                      <span>Apply worker running</span>
+                    </button>
+                  </div>
+                  <div class="kanban-col">
+                    <div class="kanban-col-head"><span>Blocked</span><span>1</span></div>
+                    <button class="kanban-card" data-open-task="API-204" data-tab="Overview">
+                      <strong>API-204 · Webhook Retry</strong>
+                      <span>Permission requested</span>
+                    </button>
+                  </div>
+                  <div class="kanban-col">
+                    <div class="kanban-col-head"><span>Ready / Done</span><span>1</span></div>
+                    <button class="kanban-card" data-open-task="ABRA-139" data-tab="Verification">
+                      <strong>ABRA-139 · StatusBadge</strong>
+                      <span>Review passed</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        } else if (c.kind === "attention") {
+          crumbs.innerHTML = `<span class="canvas-title">Attention Queue</span><span class="badge ${pendingCount() ? "attention" : "success"}">${pendingCount()} pending</span>`;
+          body.innerHTML = `
+            ${
+              !state.planApproved
+                ? `<div class="card accent-left-attention">
+                    <div class="card-head">
+                      <div>
+                        <span class="tiny mono">PLAN DECISION · ABRA-142</span>
+                        <div class="card-title">Approve OpenSpec Plan: Adaptive Cockpit Shell</div>
+                      </div>
+                      <button class="btn sm" data-open-task="ABRA-142" data-tab="Plan">Peek Plan →</button>
+                    </div>
+                    <div class="card-body">
+                      <p class="muted" style="margin:0;">Fingerprint: <code>sha256:9f4b82c10e7a…</code> · Chat remains visible on the left while you review.</p>
+                      <div class="row-actions">
+                        <button class="btn primary" id="approveFromAttentionBtn">Approve &amp; Admit Apply</button>
+                        <button class="btn" data-ask="For ABRA-142, let's adjust the plan before approval: ">Discuss with Abra</button>
+                      </div>
+                    </div>
+                  </div>`
+                : ""
+            }
+            ${
+              !state.permissionHandled
+                ? `<div class="card accent-left-danger">
+                    <div class="card-head">
+                      <div>
+                        <span class="tiny mono">NATIVE PERMISSION · API-204</span>
+                        <div class="card-title">Read external fixture directory</div>
+                      </div>
+                      <span class="badge danger">Blocked worker</span>
+                    </div>
+                    <div class="card-body">
+                      <p class="muted" style="margin:0;">Research worker requests read access to <code>/var/fixtures/billing-webhooks/</code>.</p>
+                      <div class="row-actions">
+                        <button class="btn primary" data-perm="once">Allow once</button>
+                        <button class="btn" data-perm="always">Always allow</button>
+                        <button class="btn ghost" data-perm="reject">Reject</button>
+                      </div>
+                    </div>
+                  </div>`
+                : ""
+            }
+            ${
+              pendingCount() === 0
+                ? `<div class="card"><div class="card-body"><span class="badge success">All clear</span><p class="muted" style="margin:0;">No pending approvals, forms, or permissions in the observed workspace.</p></div></div>`
+                : ""
+            }
+          `;
+        } else if (c.kind === "github") {
+          crumbs.innerHTML = `<span class="canvas-title">GitHub Inbox</span><span class="badge">2 open</span>`;
+          body.innerHTML = `
+            <div class="toolbar">
+              <input class="input" placeholder="Search GitHub PRs and issues…" />
+              <select class="select"><option>All repos</option><option>abra-code</option><option>billing-api</option></select>
+              <select class="select"><option>Open</option><option>Merged</option><option>Closed</option></select>
+              <select class="select"><option>Any Abra role</option><option>Unassigned</option><option>Review</option></select>
+            </div>
+            <div class="list-group">
+              <button class="list-row" data-open-gh="84">
+                <div class="list-row-main">
+                  <span class="dot success list-row-dot"></span>
+                  <div class="list-row-text">
+                    <span class="list-row-title">PR #84 · Refactor AG-UI observer reconnection backoff</span>
+                    <span class="list-row-sub">abra-code · @bart · open · frontend, runtime</span>
+                  </div>
+                </div>
+                <span class="badge">Unassigned</span>
+              </button>
+              <button class="list-row" data-open-gh="79">
+                <div class="list-row-main">
+                  <span class="dot running list-row-dot"></span>
+                  <div class="list-row-text">
+                    <span class="list-row-title">Issue #79 · Support keyboard shortcut hints in slim rail</span>
+                    <span class="list-row-sub">abra-code · @bart · open · ux</span>
+                  </div>
+                </div>
+                <span class="badge running">Pickup active</span>
+              </button>
+            </div>
+          `;
+        } else if (c.kind === "github-item") {
+          crumbs.innerHTML = `
+            <button class="crumb-btn" data-dest-nav="github">← GitHub</button>
+            <span class="crumb-sep">/</span>
+            <span class="canvas-title">abra-code PR #${c.num}</span>
+          `;
+          body.innerHTML = `
+            <div class="card">
+              <div class="card-head">
+                <span class="card-title">Refactor AG-UI observer reconnection backoff</span>
+                <span class="badge success">Open PR</span>
+              </div>
+              <div class="card-body prose-doc">
+                <p class="muted">Opened by @bart · Base <code>81b20c1a</code> → Head <code>d904a1e2</code></p>
+                <p>Ensures empty SSE reconnect loops respect the 1-second cooldown and preserve the last valid workspace snapshot.</p>
+                <div class="row-actions">
+                  <button class="btn primary" data-ask="Privately review https://github.com/bart/abra-code/pull/${c.num} in project abra-code.">Ask Abra to privately review</button>
+                  <button class="btn" data-ask="Pick up https://github.com/bart/abra-code/pull/${c.num} in project abra-code.">Ask Abra to pick up</button>
+                </div>
+              </div>
+            </div>
+          `;
+        } else if (c.kind === "thoughts") {
+          crumbs.innerHTML = `<span class="canvas-title">Thoughts</span><button class="btn sm primary" data-ask="Save this thought privately to my Memos notebook: ">+ Save a thought</button>`;
+          body.innerHTML = `
+            <div class="toolbar">
+              <input class="input" placeholder="Search thoughts or #tags…" />
+              <input class="input" style="flex:0 1 150px;" placeholder="#tag" />
+            </div>
+            <div class="list-group">
+              <button class="list-row" data-open-thought="1">
+                <div class="list-row-main">
+                  <span class="dot success list-row-dot"></span>
+                  <div class="list-row-text">
+                    <span class="list-row-title">Cockpit UX idea: keep the one Abra chat alive at all times and move all rich views to the Canvas</span>
+                    <span class="list-row-sub">Today 21:40 · #cockpit #design</span>
+                  </div>
+                </div>
+                <span class="badge">Used in 1 task</span>
+              </button>
+            </div>
+          `;
+        } else if (c.kind === "thought-item") {
+          crumbs.innerHTML = `
+            <button class="crumb-btn" data-dest-nav="thoughts">← Thoughts</button>
+            <span class="crumb-sep">/</span>
+            <span class="canvas-title">Memo · #cockpit</span>
+          `;
+          body.innerHTML = `
+            <div class="card">
+              <div class="card-head">
+                <span class="card-title">Personal Thought</span>
+                <span class="tiny">Today 21:40 · #cockpit #design</span>
+              </div>
+              <div class="card-body prose-doc">
+                <p>Cockpit UX idea: keep the one Abra chat alive at all times and move all rich views (Work, GitHub, diffs, A2UI boards, approvals) into a unified, resizable Canvas with real surface hierarchy.</p>
+                <div class="row-actions">
+                  <button class="btn primary" data-chip="Thought · #cockpit" data-ask="Let's turn this thought into an OpenSpec proposal.">Ask Abra about this</button>
+                  <button class="btn">Remember in Basic Memory</button>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      function renderSettings() {
+        const body = $("settingsBody");
+        document.querySelectorAll("#settingsTabs .tab-btn").forEach((b) =>
+          b.classList.toggle("active", b.dataset.stab === state.settingsTab),
+        );
+        if (state.settingsTab === "agents") {
+          body.innerHTML = `
+            <div class="canvas-stack">
+              <p class="muted" style="margin:0;">Read-only catalog of bundled and custom agent definitions loaded by this installation.</p>
+              <div class="list-group">
+                <div class="list-row"><div class="list-row-text"><span class="list-row-title">abra <span class="badge success">supervisor</span></span><span class="list-row-sub">Persistent supervisor · No direct code editing · 14 tools</span></div><span class="tiny mono">rev 24</span></div>
+                <div class="list-row"><div class="list-row-text"><span class="list-row-title">explore <span class="badge">worker</span></span><span class="list-row-sub">OpenSpec planner · Edits planning artifacts only</span></div><span class="tiny mono">rev 18</span></div>
+                <div class="list-row"><div class="list-row-text"><span class="list-row-title">apply <span class="badge running">worker</span></span><span class="list-row-sub">Implementation worker · Scoped to owned worktree</span></div><span class="tiny mono">rev 21</span></div>
+                <div class="list-row"><div class="list-row-text"><span class="list-row-title">review <span class="badge">worker</span></span><span class="list-row-sub">Independent read-only code reviewer</span></div><span class="tiny mono">rev 15</span></div>
+                <div class="list-row"><div class="list-row-text"><span class="list-row-title">research <span class="badge">worker</span></span><span class="list-row-sub">Read-only investigator · Retained reports</span></div><span class="tiny mono">rev 11</span></div>
+              </div>
+            </div>
+          `;
+        } else if (state.settingsTab === "repos") {
+          body.innerHTML = `
+            <div class="canvas-stack">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span class="muted">2 repositories onboarded</span>
+                <button class="btn sm primary" id="onboardRepoBtn">Onboard repository</button>
+              </div>
+              <div class="list-group">
+                <div class="list-row"><div class="list-row-text"><span class="list-row-title">abra-code</span><span class="list-row-sub mono">/home/bart/Projects/abra-code</span></div><span class="badge success">Ready</span></div>
+                <div class="list-row"><div class="list-row-text"><span class="list-row-title">billing-api</span><span class="list-row-sub mono">/home/bart/.abracode/clones/billing-api</span></div><span class="badge success">Ready</span></div>
+              </div>
+            </div>
+          `;
+        } else {
+          const isDark = document.documentElement.dataset.theme === "dark";
+          body.innerHTML = `
+            <div class="canvas-stack">
+              <div class="card">
+                <div class="card-head"><span class="card-title">Appearance</span></div>
+                <div class="card-body">
+                  <div class="seg">
+                    <button id="setLightBtn" class="${!isDark ? "active" : ""}">Light</button>
+                    <button id="setDarkBtn" class="${isDark ? "active" : ""}">Dark</button>
+                  </div>
+                  <p class="tiny" style="margin:0;">Also available as a 1-click toggle at the bottom of the left rail.</p>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-head"><span class="card-title">About AbraCode</span><span class="tiny mono">v0.1.0</span></div>
+                <div class="card-body">
+                  <p class="muted" style="margin:0;">Local coding orchestrator powered by OpenCode 2.3.0 and OpenSpec 2.0.0.</p>
+                  <a href="#" onclick="event.preventDefault();showToast('Opens THIRD_PARTY_NOTICES.txt')" style="color:var(--accent);font-size:13px;">Third-party notices &amp; licenses →</a>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      const paletteCommands = [
+        { label: "ABRA-142 · Adaptive Cockpit Shell", sub: "work · Awaiting plan approval", run: () => openCanvas({ kind: "task", issue: "ABRA-142", tab: "Plan" }) },
+        { label: "ABRA-139 · Semantic StatusBadge Diff", sub: "diff · 4 changed files", run: () => openCanvas({ kind: "task", issue: "ABRA-139", tab: "Diff" }) },
+        { label: "work-board (rev 4)", sub: "surface · Live A2UI Kanban board", run: () => openCanvas({ kind: "surface", id: "work-board" }) },
+        { label: "Open Attention Queue", sub: "attention · 2 pending items", run: () => openCanvas({ kind: "attention" }) },
+        { label: "PR #84 · AG-UI observer backoff", sub: "github · abra-code", run: () => openCanvas({ kind: "github-item", num: 84 }) },
+        { label: "Cockpit UX thought (#cockpit)", sub: "thought · Memos notebook", run: () => openCanvas({ kind: "thought-item", id: 1 }) },
+        { label: "Focus Chat (close Canvas)", sub: "command · Layout", run: () => setMode("focus") },
+        { label: "Toggle Light / Dark theme", sub: "command · Appearance", run: () => toggleTheme() },
+      ];
+
+      function renderPalette(q = "") {
+        const needle = q.trim().toLowerCase();
+        const items = paletteCommands.filter((c) => !needle || (c.label + " " + c.sub).toLowerCase().includes(needle));
+        $("paletteResults").innerHTML = items.length
+          ? items
+              .map(
+                (c, i) =>
+                  `<button class="palette-item" data-pidx="${paletteCommands.indexOf(c)}"><span>${c.label}</span><span class="palette-item-sub">${c.sub}</span></button>`,
+              )
+              .join("")
+          : `<div class="muted" style="padding:14px;">No matches found.</div>`;
+      }
+
+      function toggleTheme(force) {
+        const next = force ?? (document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+        document.documentElement.dataset.theme = next;
+        if (!$("settingsModal").hidden) renderSettings();
+        showToast(`Switched to ${next === "dark" ? "Dark" : "Light"} theme`);
+      }
+
+      /* ============ EVENT WIRING ============ */
+      $("brandBtn").onclick = () => setMode("focus");
+      $("modeFocus").onclick = () => setMode("focus");
+      $("modeSplit").onclick = () => setMode("split");
+      $("modeExpanded").onclick = () => setMode("expanded");
+      $("canvasCloseBtn").onclick = () => setMode("focus");
+      $("canvasExpandBtn").onclick = () => setMode(state.mode === "expanded" ? "split" : "expanded");
+      $("capacityPill").onclick = () => { state.workTab = "capacity"; openCanvas({ kind: "work" }); };
+      $("attentionPill").onclick = () => openCanvas({ kind: "attention" });
+      $("dockReviewBtn").onclick = () => openCanvas({ kind: "attention" });
+      $("themeToggleBtn").onclick = () => toggleTheme();
+      $("settingsBtn").onclick = () => { $("settingsModal").hidden = false; renderSettings(); };
+      $("closeSettingsBtn").onclick = () => ($("settingsModal").hidden = true);
+      $("settingsModal").onclick = (e) => { if (e.target === $("settingsModal")) $("settingsModal").hidden = true; };
+
+      $("openPaletteBtn").onclick = () => {
+        $("paletteModal").hidden = false;
+        $("paletteInput").value = "";
+        renderPalette("");
+        $("paletteInput").focus();
+      };
+      $("paletteModal").onclick = (e) => { if (e.target === $("paletteModal")) $("paletteModal").hidden = true; };
+      $("paletteInput").oninput = (e) => renderPalette(e.target.value);
+      $("paletteResults").onclick = (e) => {
+        const btn = e.target.closest("[data-pidx]");
+        if (!btn) return;
+        $("paletteModal").hidden = true;
+        paletteCommands[Number(btn.dataset.pidx)].run();
+      };
+
+      $("recentToggleBtn").onclick = (e) => {
+        e.stopPropagation();
+        $("recentPopover").hidden = !$("recentPopover").hidden;
+      };
+      document.addEventListener("click", () => ($("recentPopover").hidden = true));
+
+      document.querySelectorAll(".rail-btn[data-dest]").forEach((btn) => {
+        btn.onclick = () => {
+          const dest = btn.dataset.dest;
+          if (state.mode !== "focus" && state.canvas.kind === dest) {
+            setMode("focus");
+            return;
+          }
+          openCanvas({ kind: dest });
+        };
+      });
+
+      document.addEventListener("click", (e) => {
+        const t = e.target.closest("[data-open-task]");
+        if (t) { openCanvas({ kind: "task", issue: t.dataset.openTask, tab: t.dataset.tab || "Overview" }); return; }
+        const s = e.target.closest("[data-open-surface]");
+        if (s) { openCanvas({ kind: "surface", id: s.dataset.openSurface }); return; }
+        const wt = e.target.closest("[data-work-tab]");
+        if (wt) { state.workTab = wt.dataset.workTab; renderCanvas(); return; }
+        const tt = e.target.closest("[data-task-tab]");
+        if (tt) { state.canvas.tab = tt.dataset.taskTab; renderCanvas(); return; }
+        const act = e.target.closest("[data-act]");
+        if (act) { state.activityTab = act.dataset.act; renderCanvas(); return; }
+        if (e.target.closest("[data-nav-work]")) { openCanvas({ kind: "work" }); return; }
+        const dn = e.target.closest("[data-dest-nav]");
+        if (dn) { openCanvas({ kind: dn.dataset.destNav }); return; }
+        const gh = e.target.closest("[data-open-gh]");
+        if (gh) { openCanvas({ kind: "github-item", num: Number(gh.dataset.openGh) }); return; }
+        const th = e.target.closest("[data-open-thought]");
+        if (th) { openCanvas({ kind: "thought-item", id: Number(th.dataset.openThought) }); return; }
+        const ask = e.target.closest("[data-ask]");
+        if (ask) { populateComposer(ask.dataset.ask, ask.dataset.chip); return; }
+        const stab = e.target.closest("[data-stab]");
+        if (stab) { state.settingsTab = stab.dataset.stab; renderSettings(); return; }
+        if (e.target.id === "toggleInlineApprovalBtn") { state.approvalExpanded = !state.approvalExpanded; renderCanvas(); return; }
+        if (e.target.id === "cancelInlineApprovalBtn") { state.approvalExpanded = false; renderCanvas(); return; }
+        if (e.target.id === "submitInlineApprovalBtn" || e.target.id === "approveFromAttentionBtn") {
+          state.planApproved = true;
+          state.approvalExpanded = false;
+          tasks["ABRA-142"].phase = "Implementing";
+          tasks["ABRA-142"].tone = "running";
+          tasks["ABRA-142"].blockers = [];
+          updateAttentionIndicators();
+          renderCanvas();
+          showToast("Checkpoint approved · Apply worker admitted");
+          return;
+        }
+        const perm = e.target.closest("[data-perm]");
+        if (perm) {
+          state.permissionHandled = true;
+          tasks["API-204"].phase = "Researching";
+          tasks["API-204"].tone = "running";
+          tasks["API-204"].blockers = [];
+          updateAttentionIndicators();
+          renderCanvas();
+          showToast(`Permission ${perm.dataset.perm === "reject" ? "denied" : "allowed"}`);
+          return;
+        }
+        if (e.target.id === "onboardRepoBtn") {
+          $("settingsModal").hidden = true;
+          populateComposer("Onboard repository: ");
+          return;
+        }
+        if (e.target.id === "setLightBtn") toggleTheme("light");
+        if (e.target.id === "setDarkBtn") toggleTheme("dark");
+        if (e.target.id === "saveSnapshotBtn") showToast("Saved immutable JSON snapshot");
+        if (e.target.id === "exportMockBtn") showToast("Exported offline HTML report");
+      });
+
+      $("removeChipBtn").onclick = () => ($("composerChip").hidden = true);
+
+      $("composerForm").onsubmit = (e) => {
+        e.preventDefault();
+        const text = $("composerInput").value.trim();
+        if (!text) return;
+        const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const article = document.createElement("article");
+        article.className = "msg user";
+        article.innerHTML = `<div class="msg-head"><strong>You</strong><time>${now}</time></div><div class="msg-bubble"></div>`;
+        article.querySelector(".msg-bubble").textContent = text;
+        $("transcript").appendChild(article);
+        $("composerInput").value = "";
+        $("composerChip").hidden = true;
+        $("transcriptScroll").scrollTop = $("transcriptScroll").scrollHeight;
+        showToast("Admitted message to Abra");
+      };
+
+      /* Keyboard shortcuts */
+      window.addEventListener("keydown", (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+          e.preventDefault();
+          $("openPaletteBtn").click();
+        } else if (e.key === "Escape") {
+          if (!$("paletteModal").hidden) $("paletteModal").hidden = true;
+          else if (!$("settingsModal").hidden) $("settingsModal").hidden = true;
+        }
+      });
+
+      /* Draggable Split Handle */
+      const handle = $("resizeHandle");
+      let dragging = false;
+      handle.addEventListener("pointerdown", (e) => {
+        dragging = true;
+        handle.classList.add("dragging");
+        handle.setPointerCapture(e.pointerId);
+      });
+      handle.addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        const rect = $("stage").getBoundingClientRect();
+        const pct = Math.max(28, Math.min(54, ((e.clientX - rect.left) / rect.width) * 100));
+        $("stage").style.setProperty("--chat-pct", pct.toFixed(1) + "%");
+      });
+      handle.addEventListener("pointerup", () => {
+        dragging = false;
+        handle.classList.remove("dragging");
+      });
+
+      /* Initial Render */
+      updateAttentionIndicators();
+      renderCanvas();
+      updateRailActive();
+      updateStagedCards();
+    </script>
+  </body>
+</html>

@@ -3,10 +3,10 @@ import { test, vi } from "vite-plus/test";
 import { Effect } from "effect";
 import { MemoryStore, TestLocks, fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { checkSurfaceDraft, SurfacePublications } from "../../src/web/surface-publications.ts";
-import { validateSurface, catalogId } from "../../src/web/surfaces.ts";
-import { Reports } from "../../src/workflow/reports.ts";
+import { validateSurface, catalogId } from "@abracode/contracts/web/surfaces";
+import { Reports } from "../../src/reporting/reports.ts";
 
 test(
   "diagram preflight refuses partial surface and report publication while preserving original retries",

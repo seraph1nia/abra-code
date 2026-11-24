@@ -1,40 +1,35 @@
-import { workerSessionIDs, hasWorkerSession } from "../workflow/worker-assignment.ts";
-import { visualReportHistoryError } from "../workflow/report-contracts.ts";
-import { isDeepStrictEqual } from "node:util";
-import { PlanningSchema, planningHistoryError } from "../workflow/planning-contracts.ts";
 import { createHash, randomUUID } from "node:crypto";
 import {
-  MessageIntentsSchema,
-  messageHistoryError,
-  needsDisposition,
-} from "../workflow/message-contracts.ts";
-import { retainedFinding, type FeedbackPage } from "../workflow/feedback-contracts.ts";
-import { providerFailure } from "../observability.ts";
-import { ExecutionStateSchema } from "./contracts.ts";
-import { committedScope } from "../visibility/invalidations.ts";
-import {
-  StorageKey,
-  StoragePrefix,
   IssueId,
   RepositoryId,
   SessionId,
+  StorageKey,
+  StoragePrefix,
   timestamp,
-} from "../identities.ts";
-
-import { domainEffect } from "../effect.ts";
+  type FindingId,
+  type FindingRevisionId,
+} from "@abracode/contracts/identities";
+import {
+  retainedFinding,
+  type FeedbackPage,
+} from "@abracode/contracts/workflow/feedback-contracts";
+import { needsDisposition } from "@abracode/contracts/workflow/message-contracts";
+import { Effect, Schema } from "effect";
+import { decode } from "../decode.ts";
 import {
   CrewError,
   ensure,
   type Execution,
-  type Project,
-  type SetupExecution,
   type ManagedExecution,
+  type Project,
   type SavedExecution,
+  type SetupExecution,
 } from "../domain.ts";
-import { Effect, Schema } from "effect";
-import { type StorageDomain } from "@opencode/plugin/effect/storage";
-
-import { decode, decodeJSON } from "../decode.ts";
+import { domainEffect } from "../effect.ts";
+import { providerFailure } from "../observability.ts";
+import { committedScope } from "../visibility/invalidations.ts";
+import { Coordination } from "../workflow/coordination.ts";
+import { hasWorkerSession, workerSessionIDs } from "../workflow/worker-assignment.ts";
 import {
   ExecutionRecordSchema,
   ProjectRecordSchema,
@@ -42,74 +37,33 @@ import {
   executionRecordFields,
   type RecordDiagnostic,
 } from "./contracts.ts";
-
-import { Coordination } from "../workflow/coordination.ts";
+import {
+  newWorkerFailureRole,
+  validateExecutionTransition,
+  type SavedManagedRecord,
+} from "./invariants.ts";
 import { type Locks } from "./lock.ts";
+import { isLegacyRecord, isRecordObject, normalizeRecord } from "./migrations.ts";
+import { type Store } from "./native-store.ts";
 
-export interface Store {
-  get(key: StorageKey): Effect.Effect<unknown, CrewError>;
-  set<T>(key: StorageKey, value: T): Effect.Effect<void, CrewError>;
-  entries(
-    prefix: StoragePrefix,
-  ): Effect.Effect<Array<{ key: StorageKey; value: unknown }>, CrewError>;
-}
-export class NativeStore implements Store {
-  constructor(private storage: StorageDomain) {}
-  get(key: StorageKey) {
-    return domainEffect(this.storage.get(key));
-  }
-  set<T>(key: StorageKey, value: T) {
-    return domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const encoded = yield* Effect.try({
-          try: () => JSON.stringify(value),
-          catch: () => new CrewError("INVALID_RECORD", `Cannot encode ${key}`),
-        });
-        if (encoded === undefined)
-          return yield* new CrewError("INVALID_RECORD", `Cannot encode ${key}`);
-        const json = yield* decodeJSON(Schema.Json, encoded, key);
-        yield* this.storage.set(key, json).pipe(Effect.uninterruptible);
-      }),
-    );
-  }
-  page(prefix: StoragePrefix, after: string | undefined, limit: number) {
-    return domainEffect(this.storage.scan({ prefix, after, limit })).pipe(
-      Effect.map((page) => ({
-        entries: page.entries.map((entry) => ({ ...entry, key: StorageKey.make(entry.key) })),
-        next: page.next,
-      })),
-    );
-  }
-  entries(prefix: StoragePrefix) {
-    return domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const result: Array<{ key: StorageKey; value: unknown }> = [];
-        let after: string | undefined;
-        do {
-          const page = yield* this.storage.scan({ prefix, after, limit: 100 });
-          result.push(
-            ...page.entries.map((entry) => ({ ...entry, key: StorageKey.make(entry.key) })),
-          );
-          after = page.next;
-        } while (after);
-        return result;
-      }),
-    );
-  }
-}
+export { NativeStore, type Store } from "./native-store.ts";
+
 const executionSchema = ExecutionRecordSchema;
 const setupSchema = SetupRecordSchema;
 const projectSchema = ProjectRecordSchema;
 const observationKey = StorageKey.make("observation/records-revision");
-function object(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
+const projectOwnedFields = new Set(Object.keys(ProjectRecordSchema.fields));
+const executionOwnedFields = new Set(Object.keys(executionRecordFields));
+const terminalWorkerPhases = new Set<string>(["completed", "cancelled", "archived"]);
+const maxWorkerTickets = 2048;
+
 /** Replace owned fields, including absence. Unknown additive evidence stays on disk. */
 export function synchronizeExecution(target: object, source: ManagedExecution) {
-  for (const field of Object.keys(executionRecordFields))
+  for (const field of executionOwnedFields)
     if (!(field in source)) Reflect.deleteProperty(target, field);
   Object.assign(target, source);
 }
+
 /** Identity/control replacement is separate from a writer's explicitly owned fields. */
 export type ExecutionOwnedField = Exclude<
   keyof Execution,
@@ -131,6 +85,7 @@ export type ExecutionPatch = {
     | Exclude<Execution[K], undefined>
     | (undefined extends Execution[K] ? typeof removeOwnedField : never);
 };
+
 function applyPatch<E extends ManagedExecution>(current: E, patch: ExecutionPatch): E {
   const next = { ...current };
   for (const [field, value] of Object.entries(patch)) {
@@ -140,12 +95,24 @@ function applyPatch<E extends ManagedExecution>(current: E, patch: ExecutionPatc
   }
   return next;
 }
+
+function unknownExtensions(original: unknown, owned: ReadonlySet<string>): Record<string, unknown> {
+  return isRecordObject(original)
+    ? Object.fromEntries(Object.entries(original).filter(([field]) => !owned.has(field)))
+    : {};
+}
+
 export class Records {
+  private coordination?: Coordination;
+  private workerTickets = new Map<SessionId, IssueId>();
+
+  constructor(public store: Store) {}
+
   feedback = (
     id: IssueId,
     page = 0,
-    finding_id?: string,
-    revision?: string,
+    finding_id?: FindingId,
+    revision?: FindingRevisionId | string,
   ): Effect.Effect<FeedbackPage, CrewError> =>
     domainEffect(
       Effect.gen({ self: this }, function* () {
@@ -158,7 +125,8 @@ export class Records {
         ensure(e, "EXECUTION_MISSING", "No retained execution for feedback history");
         const f = e.feedback,
           offset = page * 20;
-        const exact = finding_id && revision ? retainedFinding(f, finding_id, revision) : undefined;
+        const exact =
+          finding_id && revision ? retainedFinding(f, { id: finding_id, revision }) : undefined;
         if (finding_id !== undefined || revision !== undefined)
           ensure(
             exact,
@@ -207,89 +175,43 @@ export class Records {
         };
       }),
     );
-  private coordination?: Coordination;
-  constructor(public store: Store) {}
+
   /** Captured under coordinateRead alongside the records described by this stamp. */
   readonly observationRevision = Effect.suspend(() => this.store.get(observationKey)).pipe(
     Effect.flatMap((value) => decode(Schema.UndefinedOr(Schema.String), value, observationKey)),
   );
+
   coordinate(locks: Locks) {
     return (this.coordination ??= new Coordination(locks));
   }
-  coordinateCommit<A>(action: () => Effect.Effect<A, CrewError>) {
+
+  coordinateCommit<A, E, R>(
+    action: () => Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E | CrewError, R> {
     return this.coordination ? this.coordination.with(action) : action();
   }
+
   /** Observers never queue ahead of control writes or hold a lock for external reads. */
-  coordinateRead<A>(action: () => Effect.Effect<A, CrewError>) {
+  coordinateRead<A, E, R>(
+    action: () => Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E | CrewError, R> {
     return this.coordination
       ? this.coordination.with(action, { waitSeconds: 0, shared: true })
       : Effect.fail(
           new CrewError("OBSERVATION_UNAVAILABLE", "Retained-state coordination is unavailable"),
         );
   }
-  /** Read-only normalization. Only a coordinated save writes a migration and its original. */
-  private normalize(key: StorageKey, raw: unknown) {
-    ensure(object(raw), "INVALID_RECORD", `${key}: Expected a record`);
-    ensure(
-      raw.schema_version === undefined || raw.schema_version === 1,
-      "UNSUPPORTED_RECORD_VERSION",
-      `${key}: Unsupported record version; preserve data and use a compatible runtime`,
-    );
-    const expectedID = key.slice(key.indexOf("/") + 1);
-    ensure(
-      (key.startsWith("project/")
-        ? raw.id
-        : key.startsWith("setup/")
-          ? raw.repository_id
-          : raw.issue_id) === expectedID,
-      "RECORD_IDENTITY",
-      `${key}: Record identity does not match its key`,
-    );
-    if (key.startsWith("project/"))
-      return {
-        diagnostic_turns: 1,
-        repair_rounds: 0,
-        generated_paths: [],
-        merge_method: "merge",
-        ci_policy: "all-reported",
-        allow_no_checks: false,
-        max_executions: raw.max_workers,
-        branch_policy: "fixed",
-        managed: false,
-        ...raw,
-        ...(raw.schema_version === undefined ? { schema_version: 1, revision: 1 } : {}),
-      };
-    if (raw.schema_version === 1) return raw;
-    const setup = key.startsWith("setup/");
-    return {
-      ...raw,
-      schema_version: 1,
-      revision: 1,
-      control_generation: 0,
-      ...(setup ? { plan_approval_required: false } : {}),
-      effective_policy: {
-        verification: object(raw.verification_receipt) ? raw.verification_receipt.commands : [],
-        delivery: raw.delivery_policy,
-        plan_approval: setup ? false : raw.plan_approval_required,
-        merge_approval: raw.merge_approval_required,
-        merge_method: "merge",
-        ci_policy: "all-reported",
-        allow_no_checks: false,
-        generated_paths: [],
-        diagnostic_turns: 1,
-        repair_rounds: 0,
-      },
-    };
-  }
+
   private read<S extends Schema.ConstraintDecoder<unknown>>(key: StorageKey, schema: S) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
         const raw = yield* this.store.get(key);
         if (raw === undefined) return undefined;
-        return yield* decode(schema, this.normalize(key, raw), key);
+        return yield* decode(schema, normalizeRecord(key, raw), key);
       }),
     );
   }
+
   private scan<S extends Schema.ConstraintDecoder<unknown>>(prefix: StoragePrefix, schema: S) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
@@ -299,7 +221,7 @@ export class Records {
           const result = yield* Effect.result(
             domainEffect(
               Effect.suspend(() =>
-                decode(schema, this.normalize(entry.key, entry.value), entry.key),
+                decode(schema, normalizeRecord(entry.key, entry.value), entry.key),
               ),
             ),
           );
@@ -318,35 +240,58 @@ export class Records {
       }),
     );
   }
+
   projectScan(): Effect.Effect<{ values: Project[]; diagnostics: RecordDiagnostic[] }, CrewError> {
     return this.scan(StoragePrefix.make("project/"), projectSchema);
   }
+
   executionScan(): Effect.Effect<
     { values: SavedExecution[]; diagnostics: RecordDiagnostic[] },
     CrewError
   > {
     return this.scan(StoragePrefix.make("execution/"), executionSchema);
   }
+
   setupScan(): Effect.Effect<
     { values: SetupExecution[]; diagnostics: RecordDiagnostic[] },
     CrewError
   > {
     return this.scan(StoragePrefix.make("setup/"), setupSchema);
   }
+
   projects() {
     return this.projectScan().pipe(Effect.map((s) => s.values));
   }
+
   project(id: RepositoryId): Effect.Effect<Project | undefined, CrewError> {
     return this.read(StorageKey.make(`project/${id}`), projectSchema);
   }
+
   executions() {
     return this.executionScan().pipe(Effect.map((s) => s.values));
   }
-  private workerTickets = new Map<SessionId, IssueId>();
+
   rememberWorkers(execution: Execution) {
-    for (const session of workerSessionIDs(execution))
-      if (session) this.workerTickets.set(session, execution.issue_id);
+    if (terminalWorkerPhases.has(execution.current_phase)) {
+      for (const session of workerSessionIDs(execution)) {
+        if (session) this.workerTickets.delete(session);
+      }
+      for (const [session, issueId] of this.workerTickets) {
+        if (issueId === execution.issue_id) this.workerTickets.delete(session);
+      }
+      return;
+    }
+    for (const session of workerSessionIDs(execution)) {
+      if (!session) continue;
+      this.workerTickets.delete(session);
+      this.workerTickets.set(session, execution.issue_id);
+      if (this.workerTickets.size > maxWorkerTickets) {
+        const oldest = this.workerTickets.keys().next().value;
+        if (oldest !== undefined) this.workerTickets.delete(oldest);
+      }
+    }
   }
+
   workerAssignment = Effect.fn("Records.workerAssignment")(
     function* (this: Records, session: SessionId) {
       const ticket = this.workerTickets.get(session);
@@ -375,263 +320,93 @@ export class Records {
       return found;
     }.bind(this),
   );
+
   execution(id: IssueId): Effect.Effect<SavedExecution | undefined, CrewError> {
     return this.read(StorageKey.make(`execution/${id}`), executionSchema);
   }
+
   setup(id: RepositoryId): Effect.Effect<SetupExecution | undefined, CrewError> {
     return this.read(StorageKey.make(`setup/${id}`), setupSchema);
   }
+
   supervisor() {
     return this.store
       .get(StorageKey.make("supervisor/session"))
       .pipe(Effect.flatMap((v) => decode(Schema.UndefinedOr(SessionId), v, "Supervisor session")));
   }
+
   export() {
     return this.store
       .entries(StoragePrefix.make(""))
       .pipe(Effect.map((entries) => ({ format: "abracode-plugin-records-v1", entries })));
   }
+
   diagnostics() {
-    return Effect.all([this.projectScan(), this.executionScan(), this.setupScan()]).pipe(
-      Effect.map((scans) => scans.flatMap((s) => s.diagnostics)),
-    );
+    return Effect.all([this.projectScan(), this.executionScan(), this.setupScan()], {
+      concurrency: "unbounded",
+    }).pipe(Effect.map((scans) => scans.flatMap((s) => s.diagnostics)));
   }
-  private write<S extends Schema.ConstraintDecoder<unknown>>(
+
+  private commitRecord<T extends { revision: number }>(
+    key: StorageKey,
+    original: unknown,
+    record: Record<string, unknown>,
+    decoded: T,
+  ) {
+    return Effect.gen({ self: this }, function* () {
+      if (isLegacyRecord(original)) {
+        const backup = StorageKey.make(`legacy-original/${key}`);
+        if ((yield* this.store.get(backup)) === undefined) yield* this.store.set(backup, original);
+      }
+      // Fence derived readers before writing the record. An interruption
+      // between these writes leaves summaries stale rather than falsely current.
+      yield* this.store.set(observationKey, randomUUID());
+      // Preserve additive unknown evidence when updating fields owned by this version.
+      yield* this.store.set(key, { ...record, ...decoded });
+      yield* committedScope(
+        key.startsWith("execution/")
+          ? {
+              issues: [IssueId.make(key.slice("execution/".length))],
+              finder: true,
+              attention: true,
+            }
+          : { projects: true, finder: true, work_all: true },
+      );
+      return decoded;
+    });
+  }
+
+  private writeManagedRecord<S extends typeof executionSchema | typeof setupSchema>(
     key: StorageKey,
     schema: S,
-    value: object,
+    value: ManagedExecution,
     control = false,
-  ) {
+  ): Effect.Effect<S["Type"], CrewError> {
     return this.coordinateCommit(() =>
       domainEffect(
         Effect.gen({ self: this }, function* () {
           const original = yield* this.store.get(key);
-          const prior =
+          const prior: SavedManagedRecord | undefined =
             original === undefined
               ? undefined
-              : yield* decode(schema, this.normalize(key, original), key);
-          const owned = new Set(
-            Object.keys(
-              key.startsWith("project/") ? ProjectRecordSchema.fields : executionRecordFields,
-            ),
-          );
-          const extensions = object(original)
-            ? Object.fromEntries(Object.entries(original).filter(([field]) => !owned.has(field)))
-            : {};
-          const record = {
-            ...extensions,
+              : yield* decode(schema, normalizeRecord(key, original), key);
+          if (prior) yield* validateExecutionTransition(key, prior, value, control);
+          const record: Record<string, unknown> = {
+            ...unknownExtensions(original, executionOwnedFields),
             ...value,
             schema_version: 1,
-            revision: object(prior) && typeof prior.revision === "number" ? prior.revision + 1 : 1,
+            revision: prior ? prior.revision + 1 : 1,
           };
-          if (!key.startsWith("project/") && object(prior) && object(value)) {
-            if (
-              (control ? Number(prior.control_generation) + 1 : prior.control_generation) !==
-              value.control_generation
-            )
-              return yield* new CrewError(
-                "STALE_OPERATION",
-                `${key}: Control generation changed; discard stale result`,
-              );
-          }
-          if (!key.startsWith("project/") && object(prior) && object(value)) {
-            if (!control && object(prior.operation) && object(value.operation)) {
-              if (
-                !(
-                  (prior.operation.id === value.operation.id &&
-                    prior.operation.fingerprint === value.operation.fingerprint &&
-                    prior.operation.generation === value.operation.generation) ||
-                  (value.operation.status === "prepared" && value.revision === prior.revision)
-                )
-              )
-                return yield* new CrewError(
-                  "STALE_OPERATION",
-                  `${key}: Operation identity changed; discard stale result`,
-                );
-            }
-            if (value.revision !== prior.revision)
-              return yield* new CrewError(
-                "STALE_REVISION",
-                `${key}: Record revision changed; reread or commit only explicitly owned fields`,
-              );
-          }
-          if (!key.startsWith("project/") && object(prior) && object(value)) {
-            if (prior.openspec_schema !== value.openspec_schema)
-              return yield* new CrewError(
-                "SCHEMA_REBIND",
-                `${key}: Captured schema selection is immutable`,
-              );
-            const before = prior.openspec_schema_binding,
-              after = value.openspec_schema_binding;
-            if (
-              (before === undefined && after !== undefined) ||
-              (object(before) &&
-                (before.state === "bound"
-                  ? !isDeepStrictEqual(before, after)
-                  : !object(after) || before.selection_source !== after.selection_source))
-            )
-              return yield* new CrewError(
-                "SCHEMA_REBIND",
-                `${key}: Schema binding cannot be removed, rebound or fabricated for a legacy execution`,
-              );
-          }
-          if (!key.startsWith("project/") && object(prior) && object(value) && !control) {
-            if (JSON.stringify(prior.effective_policy) !== JSON.stringify(value.effective_policy))
-              return yield* new CrewError(
-                "POLICY_DRIFT",
-                `${key}: Effective execution policy is immutable without an explicit revision`,
-              );
-          }
-          if (
-            !key.startsWith("project/") &&
-            object(prior) &&
-            object(value) &&
-            prior.configuration_snapshot !== undefined &&
-            (!value.configuration_snapshot ||
-              !isDeepStrictEqual(
-                JSON.parse(JSON.stringify(prior.configuration_snapshot)),
-                JSON.parse(JSON.stringify(value.configuration_snapshot)),
-              ))
-          )
-            return yield* new CrewError(
-              "CONFIG_SNAPSHOT",
-              "Captured execution model selections cannot be rewritten or removed",
-            );
-          if (
-            !key.startsWith("project/") &&
-            object(prior) &&
-            Array.isArray(prior.rounds) &&
-            object(value)
-          ) {
-            if (
-              !(
-                Array.isArray(value.rounds) &&
-                value.rounds.length >= prior.rounds.length &&
-                JSON.stringify(value.rounds.slice(0, prior.rounds.length)) ===
-                  JSON.stringify(prior.rounds)
-              )
-            )
-              return yield* new CrewError(
-                "ROUND_HISTORY",
-                "Correction history cannot be rewritten or removed",
-              );
-          }
-          if (object(prior) && object(value)) {
-            if (
-              Array.isArray(prior.external_history) &&
-              (!Array.isArray(value.external_history) ||
-                JSON.stringify(value.external_history.slice(0, prior.external_history.length)) !==
-                  JSON.stringify(prior.external_history))
-            )
-              return yield* new CrewError(
-                "EXTERNAL_HISTORY",
-                "External run history cannot be rewritten or removed",
-              );
-            if (
-              object(prior.external_validation) &&
-              prior.external_validation.custody !== "returned"
-            ) {
-              const next = object(value.external_validation)
-                ? value.external_validation
-                : undefined;
-              for (const field of [
-                "nonce",
-                "submitted_head",
-                "intent_digest",
-                "validation_generation",
-                "preflight",
-              ])
-                if (
-                  !next ||
-                  JSON.stringify(next[field]) !== JSON.stringify(prior.external_validation[field])
-                )
-                  return yield* new CrewError(
-                    "EXTERNAL_IDENTITY",
-                    "Active external launch cannot be rebound or removed",
-                  );
-            }
-          }
-          if (object(prior) && object(prior.feedback) && Array.isArray(prior.feedback.history)) {
-            const next = object(value) && object(value.feedback) ? value.feedback : undefined;
-            if (
-              !next ||
-              !Array.isArray(next.history) ||
-              JSON.stringify(next.history.slice(0, prior.feedback.history.length)) !==
-                JSON.stringify(prior.feedback.history)
-            )
-              return yield* new CrewError(
-                "FEEDBACK_HISTORY",
-                "Retained feedback history cannot be removed or rewritten",
-              );
-          }
-          if (object(prior) && Array.isArray(prior.visual_reports)) {
-            const error = visualReportHistoryError(
-              prior.visual_reports,
-              Reflect.get(record, "visual_reports"),
-            );
-            if (error) return yield* new CrewError("REPORT_HISTORY", error);
-          }
-          if (object(prior) && Schema.is(MessageIntentsSchema)(prior.messages)) {
-            const next = yield* decode(
-              MessageIntentsSchema,
-              Reflect.get(record, "messages"),
-              "Message history",
-            );
-            const error = messageHistoryError(prior.messages, next);
-            if (error) return yield* new CrewError("MESSAGE_HISTORY", error);
-          }
-          if (object(prior) && Schema.is(PlanningSchema)(prior.planning)) {
-            const next = yield* decode(
-              PlanningSchema,
-              Reflect.get(record, "planning"),
-              "Planning history",
-            );
-            const error = planningHistoryError(prior.planning, next);
-            if (error) return yield* new CrewError("PLANNING_HISTORY", error);
-          }
           const decoded = yield* decode(schema, record, key);
-          if (!object(decoded))
-            return yield* new CrewError("INVALID_RECORD", `${key}: Expected decoded record`);
-          if (object(original) && original.schema_version === undefined) {
-            const backup = StorageKey.make(`legacy-original/${key}`);
-            if ((yield* this.store.get(backup)) === undefined)
-              yield* this.store.set(backup, original);
-          }
-          // Fence derived readers before writing the record. An interruption
-          // between these writes leaves summaries stale rather than falsely current.
-          yield* this.store.set(observationKey, randomUUID());
-          // Preserve additive unknown evidence when updating fields owned by this version.
-          yield* this.store.set(key, { ...record, ...decoded });
-          yield* committedScope(
-            key.startsWith("execution/")
-              ? {
-                  issues: [IssueId.make(key.slice("execution/".length))],
-                  finder: true,
-                  attention: true,
-                }
-              : { projects: true, finder: true, work_all: true },
-          );
-          const failure = object(decoded) ? decoded.worker_failure : undefined;
-          const previous = object(prior) ? prior.worker_failure : undefined;
-          const failureSchema = ExecutionStateSchema.fields.worker_failure;
-          if (
-            failure &&
-            Schema.is(failureSchema)(failure) &&
-            failure.role &&
-            (!previous ||
-              !Schema.is(failureSchema)(previous) ||
-              previous.session_id !== failure.session_id ||
-              previous.prompt_id !== failure.prompt_id ||
-              previous.role !== failure.role ||
-              JSON.stringify(previous.error) !== JSON.stringify(failure.error))
-          )
-            yield* providerFailure(failure.role);
-
+          yield* this.commitRecord(key, original, record, decoded);
+          const failureRole = newWorkerFailureRole(prior, decoded);
+          if (failureRole) yield* providerFailure(failureRole);
           return decoded;
         }),
       ),
     );
   }
+
   private assertOwner(e: ManagedExecution, current: ManagedExecution) {
     ensure(
       current.execution_id === e.execution_id &&
@@ -643,6 +418,7 @@ export class Records {
       "Owned aggregate update was superseded",
     );
   }
+
   private owned<E extends ManagedExecution>(
     e: ManagedExecution,
     current: E,
@@ -656,6 +432,7 @@ export class Records {
     }
     return next;
   }
+
   /** Commit explicitly owned fields against current progress and decision history. */
   saveOwned(e: Execution, fields: readonly ExecutionOwnedField[]) {
     return this.update(e.issue_id, (current) => this.owned(e, current, fields)).pipe(
@@ -663,12 +440,14 @@ export class Records {
       Effect.as(e),
     );
   }
+
   patchOwned(e: Execution, patch: ExecutionPatch) {
     return this.update(e.issue_id, (current) => {
       this.assertOwner(e, current);
       return applyPatch(current, patch);
     });
   }
+
   /** Shared lifecycle handles observe the committed aggregate only after the write succeeds. */
   commitOwned<E extends ManagedExecution>(
     e: E,
@@ -692,6 +471,7 @@ export class Records {
       ),
     );
   }
+
   /** Setup uses the same field ownership contract without becoming a graph execution. */
   saveSetupOwned(e: SetupExecution, fields: readonly ExecutionOwnedField[]) {
     return this.coordinateCommit(() =>
@@ -706,6 +486,7 @@ export class Records {
       ),
     );
   }
+
   /** Initial retention is distinct from a revision-checked replacement. */
   create<E extends ManagedExecution>(e: E, patch: ExecutionPatch = {}) {
     return this.coordinateCommit(() =>
@@ -727,6 +508,7 @@ export class Records {
       ),
     );
   }
+
   /** Replace an operation only while its previous execution/generation/operation still owns it. */
   beginOperation<E extends ManagedExecution>(e: E, operation: NonNullable<E["operation"]>) {
     return this.coordinateCommit(() =>
@@ -750,6 +532,7 @@ export class Records {
       ),
     );
   }
+
   /** Read, validate and change current state under the same commit lock. */
   saveFinishing(e: Execution, fields: readonly (keyof NonNullable<Execution["finishing"]>)[]) {
     return this.update(e.issue_id, (current) => {
@@ -772,6 +555,7 @@ export class Records {
       Effect.as(e),
     );
   }
+
   /** Read, validate and change current state under the same commit lock. */
   update(id: IssueId, change: (current: Execution) => Execution | undefined) {
     return this.coordinateCommit(() =>
@@ -785,6 +569,7 @@ export class Records {
       ),
     );
   }
+
   saveControl(e: Execution) {
     return Effect.gen({ self: this }, function* () {
       const generation = e.control_generation + 1;
@@ -797,37 +582,60 @@ export class Records {
         a.generation !== generation && !["handled", "superseded"].includes(a.status)
           ? {
               ...a,
-              status: "superseded",
+              status: "superseded" as const,
               disposition: `Superseded by control generation ${generation}`,
             }
           : a,
       );
-      return yield* this.write(
+      const saved = yield* this.writeManagedRecord(
         StorageKey.make(`execution/${e.issue_id}`),
         executionSchema,
         { ...e, control_generation: generation, messages, attention, updated_at: yield* timestamp },
         true,
-      ).pipe(
-        Effect.tap((saved) => Effect.sync(() => synchronizeExecution(e, saved))),
-        Effect.as(e),
       );
+      synchronizeExecution(e, saved);
+      this.rememberWorkers(e);
+      return e;
     });
   }
+
   saveProject(p: Project): Effect.Effect<Project, CrewError> {
-    return this.write(StorageKey.make(`project/${p.id}`), projectSchema, p);
+    const key = StorageKey.make(`project/${p.id}`);
+    return this.coordinateCommit(() =>
+      domainEffect(
+        Effect.gen({ self: this }, function* () {
+          const original = yield* this.store.get(key);
+          const prior =
+            original === undefined
+              ? undefined
+              : yield* decode(projectSchema, normalizeRecord(key, original), key);
+          const record: Record<string, unknown> = {
+            ...unknownExtensions(original, projectOwnedFields),
+            ...p,
+            schema_version: 1,
+            revision: prior ? prior.revision + 1 : 1,
+          };
+          const decoded = yield* decode(projectSchema, record, key);
+          return yield* this.commitRecord(key, original, record, decoded);
+        }),
+      ),
+    );
   }
+
   saveSetup(e: SetupExecution) {
     return this.saveExecution(e, true).pipe(Effect.as(e));
   }
+
   save(e: Execution) {
     return this.saveExecution(e, false).pipe(Effect.as(e));
   }
+
   private saveExecution = Effect.fn("Records.saveExecution")(
     function* (this: Records, e: ManagedExecution, setup: boolean) {
       const key = StorageKey.make(
         `${setup ? "setup" : "execution"}/${setup ? e.repository_id : e.issue_id}`,
       );
-      const saved = yield* this.write(key, setup ? setupSchema : executionSchema, {
+      const saved = yield* this.writeManagedRecord(key, setup ? setupSchema : executionSchema, {
         ...e,
         updated_at: yield* timestamp,
       });

@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { Commit, NonEmpty, Count, Positive } from "../primitives.ts";
+import { Commit, NonEmpty, Count, Positive, exactParseOptions as exact } from "../primitives.ts";
 import {
   FindingId,
   IssueId,
@@ -10,7 +10,6 @@ import {
   RelativePath,
 } from "../identities.ts";
 
-const exact = { parseOptions: { onExcessProperty: "error" as const }, reportInput: false };
 export const TaskSectionSchema = Schema.Literals([
   "summary",
   "plan",

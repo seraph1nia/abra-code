@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Effect } from "effect";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { fleetCounts, fleetState, localDay } from "../../src/visibility/fleet.ts";
 import { type WorkItem, WorkSnapshotSchema } from "../../src/visibility/protocol.ts";
 import { Visibility } from "../../src/visibility/read-model.ts";

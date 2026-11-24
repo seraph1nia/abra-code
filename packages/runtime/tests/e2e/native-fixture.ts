@@ -31,11 +31,11 @@ import { browserCalls, browserPage, assertBrowserWorker, browserIsolation } from
 import { capturePreSuite, assertPreSuiteAfterRestart } from "./engineering-recovery.ts";
 import { engineeringCalls, assertEngineeringWorker } from "./engineering.ts";
 import { installSpecialist, assertSpecialistRequest, agentFixture } from "./agents.ts";
-import { engineeringSkills } from "../../src/opencode/engineering-skills.ts";
+import { engineeringSkills } from "@abracode/agents/engineering-skills";
 import { workerContextCapabilities } from "./worker-context.ts";
 import { WorkerContextSummarySchema } from "../../src/workflow/worker-context-contracts.ts";
 import { prFeedbackLifecycle } from "./pr-feedback.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { run } from "../effects.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";

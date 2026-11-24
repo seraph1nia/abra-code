@@ -1,14 +1,141 @@
-import { type IssueId } from "../identities.ts";
+import { type IssueId } from "@abracode/contracts/identities";
 import { type Operations } from "./operations.ts";
 import { type WorkerSessions } from "./sessions.ts";
 import { Effect } from "effect";
-import { CrewError, terminal, type Execution, type Phase } from "../domain.ts";
+import {
+  CrewError,
+  terminal,
+  type Execution,
+  type ManagedExecution,
+  type Phase,
+} from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { type Records, type ExecutionPatch, removeOwnedField } from "../storage/store.ts";
 import { type WorkGraph } from "../work/graph.ts";
 import { type Runtime } from "../opencode/runtime.ts";
 import { type Coordination } from "./coordination.ts";
 import { type Queries } from "./queries.ts";
+
+const INTERRUPTED_PHASES = ["blocked", "failed", "interrupted", "recovery_required"] as const;
+const ACTIVE_PHASES = [
+  "claiming",
+  "provisioning",
+  "exploring",
+  "planning",
+  "awaiting_plan_approval",
+  "researching",
+  "applying",
+  "validating_external",
+  "verifying",
+  "archiving",
+  "delivering",
+  "awaiting_merge",
+  "cleaning",
+] as const;
+
+export const ALLOWED_TRANSITIONS: Record<Phase, readonly Phase[]> = {
+  queued: ["claiming", "provisioning", "planning", "completed", ...INTERRUPTED_PHASES],
+  claiming: ["provisioning", "planning", "awaiting_plan_approval", ...INTERRUPTED_PHASES],
+  provisioning: ["exploring", "planning", "awaiting_plan_approval", ...INTERRUPTED_PHASES],
+  exploring: ["planning", "awaiting_plan_approval", ...INTERRUPTED_PHASES],
+  planning: ["planning", "awaiting_plan_approval", ...INTERRUPTED_PHASES],
+  awaiting_plan_approval: [
+    "awaiting_plan_approval",
+    "planning",
+    "applying",
+    "researching",
+    "verifying",
+    ...INTERRUPTED_PHASES,
+  ],
+  researching: ["planning", "awaiting_plan_approval", "cleaning", ...INTERRUPTED_PHASES],
+  applying: [
+    "applying",
+    "planning",
+    "awaiting_plan_approval",
+    "validating_external",
+    "verifying",
+    ...INTERRUPTED_PHASES,
+  ],
+  validating_external: [
+    "validating_external",
+    "planning",
+    "awaiting_plan_approval",
+    "verifying",
+    ...INTERRUPTED_PHASES,
+  ],
+  verifying: ["planning", "awaiting_plan_approval", "applying", "archiving", ...INTERRUPTED_PHASES],
+  archiving: ["delivering", "planning", "applying", ...INTERRUPTED_PHASES],
+  delivering: ["awaiting_merge", "planning", "applying", ...INTERRUPTED_PHASES],
+  awaiting_merge: ["cleaning", "planning", "applying", "verifying", ...INTERRUPTED_PHASES],
+  cleaning: ["completed", ...INTERRUPTED_PHASES],
+  completed: [],
+  blocked: [...ACTIVE_PHASES, ...INTERRUPTED_PHASES],
+  interrupted: [...ACTIVE_PHASES, ...INTERRUPTED_PHASES],
+  failed: [...ACTIVE_PHASES, ...INTERRUPTED_PHASES],
+  recovery_required: [...ACTIVE_PHASES, ...INTERRUPTED_PHASES],
+};
+
+export function canTransition(from: Phase, to: Phase): boolean {
+  return ALLOWED_TRANSITIONS[from].includes(to);
+}
+
+export function assertTransition(from: Phase, to: Phase): void {
+  if (!canTransition(from, to))
+    throw new CrewError(
+      "INVALID_TRANSITION",
+      `Invalid workflow phase transition: ${from} -> ${to}`,
+    );
+}
+
+export interface DeliveryArtifactResetOptions {
+  readonly clearDeliveryArtifacts?: boolean;
+  readonly clearDeliveredCommit?: boolean;
+  readonly clearForgeObservation?: boolean;
+  readonly clearReviewSession?: boolean;
+  readonly clearPlanningArtifacts?: boolean;
+  readonly clearReportArtifacts?: boolean;
+}
+
+/** Shared typed field-removal patch for resetting delivery/verification/planning artifacts. */
+export function resetDeliveryArtifactsPatch(
+  options: DeliveryArtifactResetOptions = {},
+): ExecutionPatch {
+  return {
+    verification_receipt: removeOwnedField,
+    review_receipt: removeOwnedField,
+    active_role: removeOwnedField,
+    capacity_reservation: removeOwnedField,
+    ...(options.clearDeliveryArtifacts && {
+      delivery_receipt: removeOwnedField,
+      delivery_wait: removeOwnedField,
+      archive_path: removeOwnedField,
+      archived_tree: removeOwnedField,
+    }),
+    ...(options.clearDeliveredCommit && { delivered_commit: removeOwnedField }),
+    ...(options.clearForgeObservation && { forge_observation: removeOwnedField }),
+    ...(options.clearReviewSession && { review_session_id: removeOwnedField }),
+    ...(options.clearPlanningArtifacts && {
+      plan_fingerprint: removeOwnedField,
+      explore_session_id: removeOwnedField,
+      apply_session_id: removeOwnedField,
+      review_session_id: removeOwnedField,
+    }),
+    ...(options.clearReportArtifacts && {
+      report_intent: removeOwnedField,
+      report_receipt: removeOwnedField,
+      report_acceptance_met: removeOwnedField,
+    }),
+  };
+}
+
+/** In-place variant for control-generation saves (e.g. scope revisions) that write the full aggregate. */
+export function resetDeliveryArtifacts(
+  e: Execution,
+  options: DeliveryArtifactResetOptions = {},
+): void {
+  const patch = resetDeliveryArtifactsPatch(options);
+  for (const field of Object.keys(patch)) Reflect.deleteProperty(e, field);
+}
 
 /** Phase writes, failure reflection and notifications share one lifecycle implementation. */
 export class ExecutionTransitions {
@@ -40,6 +167,7 @@ export class ExecutionTransitions {
             const e = yield* this.queries.get(id);
             if (terminal(e))
               return yield* new CrewError("CONTROL_PHASE", "Completed work cannot be paused");
+            assertTransition(e.current_phase, "interrupted");
             if (
               e.current_phase !== "interrupted" &&
               !(
@@ -54,6 +182,7 @@ export class ExecutionTransitions {
           }),
         ),
       );
+      yield* this.operations.notifyControl(id);
       yield* this.operations.stop(id);
       return yield* this.operations
         .quiescent(id, () =>
@@ -78,12 +207,17 @@ export class ExecutionTransitions {
       this: ExecutionTransitions,
       e: Execution,
       phase: Phase,
-      changes: ExecutionPatch = {},
+      changes: ExecutionPatch | ((current: ManagedExecution) => ExecutionPatch) = {},
     ) {
-      return yield* this.records.commitOwned(e, {
-        ...changes,
-        current_phase: phase,
-        error_or_recovery_reason: removeOwnedField,
+      assertTransition(e.current_phase, phase);
+      return yield* this.records.commitOwned(e, (current) => {
+        assertTransition(current.current_phase, phase);
+        const resolved = typeof changes === "function" ? changes(current) : changes;
+        return {
+          ...resolved,
+          current_phase: phase,
+          error_or_recovery_reason: removeOwnedField,
+        };
       });
     }.bind(this),
     domainEffect,
@@ -115,8 +249,12 @@ export class ExecutionTransitions {
       yield* this.coordination.with(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
+            assertTransition(e.current_phase, phase);
+            const keepResume = ["blocked", "failed", "recovery_required", "interrupted"].includes(
+              e.current_phase,
+            );
             yield* this.records.commitOwned(e, {
-              resume_phase: e.current_phase,
+              ...(!keepResume && { resume_phase: e.current_phase }),
               current_phase: phase,
               error_or_recovery_reason: reason,
               ...(release && {

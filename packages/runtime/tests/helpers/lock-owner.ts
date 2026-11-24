@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { AbsolutePath, LockKey } from "../../src/identities.ts";
+import { AbsolutePath, LockKey } from "@abracode/contracts/identities";
 import { FileLocks } from "../../src/storage/lock.ts";
 
 // Keep this fixture alive while it owns the lock; the binding starts no child.

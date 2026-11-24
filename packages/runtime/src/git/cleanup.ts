@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { Effect } from "effect";
-import { AbsolutePath, Fingerprint, RelativePath } from "../identities.ts";
+import { AbsolutePath, Fingerprint, RelativePath } from "@abracode/contracts/identities";
 import { CrewError } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { type Git } from "./repository.ts";
-import { type CleanupBlocker } from "./retirement-contracts.ts";
+import { type CleanupBlocker } from "@abracode/contracts/git/retirement-contracts";
 
 export type CleanupSample = Pick<CleanupBlocker, "paths" | "truncated" | "fingerprint">;
 

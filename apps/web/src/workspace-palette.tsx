@@ -2,7 +2,7 @@
 import { useContext, useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { SearchDialog } from "@abracode/presentation/ui/search-dialog";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
@@ -20,6 +20,7 @@ import {
   agentsQuery,
   repositoriesQuery,
   bootstrapQuery,
+  exportDocument,
 } from "./data.ts";
 import { queries } from "./work-data.ts";
 import {
@@ -44,6 +45,7 @@ export type PaletteActions = {
 type Props = PaletteActions & {
   workspace?: WorkspaceSnapshot;
   selected?: string;
+  artifact?: Extract<ResourceSelection, { action: "open_artifact" }>;
   resume?: WorkspaceSearch;
   review?: () => void;
   inspect?: (target: ResourceSelection) => void;
@@ -56,6 +58,7 @@ type Props = PaletteActions & {
   };
 };
 const emptyDraft = Atom.make(undefined);
+const idleResult = Atom.make(AsyncResult.initial<never, never>());
 export default function WorkspacePalette({
   origin,
   initialSource,
@@ -64,6 +67,7 @@ export default function WorkspacePalette({
   finder,
   workspace,
   selected,
+  artifact,
   resume,
   review,
   inspect,
@@ -91,14 +95,17 @@ export default function WorkspacePalette({
     const timer = setTimeout(() => setSettled(input), 180);
     return () => clearTimeout(timer);
   }, [input]);
-  const active = (source: Source) => !!input && input === settled && (!filter || filter === source);
+  const explicit = Boolean(filter);
+  const remoteReady = Boolean(input) && input === settled && (explicit || query.length >= 2);
+  const active = (source: Source) => remoteReady && (!filter || filter === source);
+  const activeExplicit = (source: Source) => remoteReady && filter === source;
   const snapshot = useSource(
     !workspace &&
-      (active("session") ||
-        active("attention") ||
-        active("message") ||
-        active("surface") ||
-        active("review")),
+      (activeExplicit("session") ||
+        activeExplicit("attention") ||
+        activeExplicit("message") ||
+        activeExplicit("surface") ||
+        activeExplicit("review")),
     () => bootstrapQuery,
   );
   const current = workspace ?? snapshot.data;
@@ -107,7 +114,7 @@ export default function WorkspacePalette({
     session: string;
     cursor: string;
   }>();
-  const pubs = useSource(!!current && (active("surface") || active("review")), () =>
+  const pubs = useSource(!!current && (activeExplicit("surface") || activeExplicit("review")), () =>
     WorkspaceApi.query("workspace", "publications", {
       query: {
         search: query,
@@ -118,36 +125,46 @@ export default function WorkspacePalette({
             : undefined,
       },
       reactivityKeys: ["publications/" + current?.session_id],
-      timeToLive: "0 seconds",
+      timeToLive: "15 seconds",
     }),
   );
-  const reviews = useSource(active("review"), () => reviewListQuery());
+  const reviews = useSource(activeExplicit("review"), () => reviewListQuery());
   const work = useSource(active("work"), () =>
     queries.find({ search: query, state: "all", limit: 8 }),
   );
   const workers = useSource(active("session"), () =>
     WorkspaceApi.query("work", "sessions", {
       query: { search: query, limit: 8 },
-      timeToLive: "0 seconds",
+      timeToLive: "15 seconds",
     }),
   );
   const notebook = query.startsWith("#") ? { tag: query.slice(1) } : { text: query };
   const notes = useSource(active("thought"), () =>
-    WorkspaceApi.query("work", "thoughtList", { query: notebook, timeToLive: "0 seconds" }),
+    WorkspaceApi.query("work", "thoughtList", { query: notebook, timeToLive: "15 seconds" }),
   );
   function github(state: "OPEN" | "CLOSED" | "MERGED") {
     return WorkspaceApi.query("work", "githubInbox", {
       query: { search: query, state },
-      timeToLive: "0 seconds",
+      timeToLive: "15 seconds",
     });
   }
   const opened = useSource(active("github"), () => github("OPEN"));
-  const closed = useSource(active("github"), () => github("CLOSED"));
-  const merged = useSource(active("github"), () => github("MERGED"));
+  const closed = useSource(activeExplicit("github"), () => github("CLOSED"));
+  const merged = useSource(activeExplicit("github"), () => github("MERGED"));
   const agents = useSource(active("agent"), () => agentsQuery);
   const memory = useMemorySource(active("memory"), filter === "memory", query);
   const repos = useSource(active("repo"), () => repositoriesQuery);
   const draft = useAtomValue(current ? workspaceDraft(current.session_id) : emptyDraft);
+  const artifactSummary = useAtomValue(
+    artifact
+      ? queries.artifactSummary(artifact.issue_id, artifact.request_id, artifact.hash)
+      : idleResult,
+  );
+  const exportState = useAtomValue(
+    artifact
+      ? exportDocument(`${artifact.issue_id}/${artifact.request_id}/${artifact.hash}`)
+      : idleResult,
+  );
   const lower = query.toLowerCase();
   const hits: Hit[] = [];
   const add = (
@@ -190,7 +207,14 @@ export default function WorkspacePalette({
       to: destinationFor(location.pathname) ?? "/",
       search: (previous) => ({ collection: previous.collection, ...search }),
     });
-  const evidence = useEvidenceSource(active("evidence"), input, query, evidenceKind, go, reader);
+  const evidence = useEvidenceSource(
+    activeExplicit("evidence"),
+    input,
+    query,
+    evidenceKind,
+    go,
+    reader,
+  );
   hits.push(...evidence.hits);
   for (const row of reviews.data?.reviews ?? [])
     add(
@@ -320,15 +344,23 @@ export default function WorkspacePalette({
       "Open",
       () => void navigate({ to: "/", search: resume }),
     );
-  const exportButton = selected && document.getElementById("export-report-" + selected);
-  if (exportButton && exportButton instanceof HTMLButtonElement && !exportButton.disabled)
+  const canExportReport =
+    Boolean(artifact) &&
+    AsyncResult.isSuccess(artifactSummary) &&
+    artifactSummary.value.hash === artifact?.hash &&
+    artifactSummary.value.format === "a2ui-snapshot" &&
+    !exportState.waiting;
+  if (canExportReport && artifact)
     add(
       "command",
       "export-report",
       "Open report export controls",
-      selected!,
+      artifact.issue_id,
       "Open",
-      () => requestAnimationFrame(() => exportButton.focus()),
+      () =>
+        requestAnimationFrame(() => {
+          document.getElementById("export-report-" + artifact.issue_id)?.focus();
+        }),
       ["download report"],
     );
   if (review)
@@ -509,7 +541,7 @@ export default function WorkspacePalette({
   report("Repositories", repos);
   report("Workspace", snapshot);
   if (work.data && !work.data.entries.length) status.push("No matching work.");
-  if (input !== settled) status.push("Searching…");
+  if (input !== settled && (explicit || query.length >= 2)) status.push("Searching…");
   if (active("message")) {
     status.push("Messages cover the observed conversation window.");
     if (history?.loading) status.push("Loading earlier messages…");
@@ -563,9 +595,12 @@ export default function WorkspacePalette({
     h.identity.toLowerCase() === lower ? 0 : h.label.toLowerCase() === lower ? 1 : 2;
   const [expanded, setExpanded] = useState<Partial<Record<Source, number>>>({});
   const counts = new Map<Source, number>();
-  const unique = hits.filter(
-    (hit, index) => hits.findIndex((other) => other.id === hit.id) === index,
-  );
+  const seen = new Set<string>();
+  const unique = hits.filter((hit) => {
+    if (seen.has(hit.id)) return false;
+    seen.add(hit.id);
+    return true;
+  });
   const rows = unique
     .filter((h) => {
       if (filter && h.source !== filter) return false;

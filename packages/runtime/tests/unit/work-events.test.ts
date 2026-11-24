@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
-import { workEvents } from "../../src/presentation/work-events.ts";
+import { workEvents } from "@abracode/contracts/presentation/work-events";
 import { WorkspaceFixture } from "../helpers/web.ts";
-import { ObligationKey, SessionId, Timestamp, IssueId } from "../../src/identities.ts";
+import { ObligationKey, SessionId, Timestamp, IssueId } from "@abracode/contracts/identities";
 
 test("generated timelines sort captured cross-task events without inventing missing times or resolutions", () => {
   const task = new WorkspaceFixture().value.work.work[0];

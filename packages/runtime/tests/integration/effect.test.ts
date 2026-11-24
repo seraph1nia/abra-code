@@ -1,5 +1,5 @@
 import { goal as workGoal } from "../helpers/work-goal.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";

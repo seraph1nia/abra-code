@@ -1,12 +1,12 @@
 import { observeChecks } from "./checks.ts";
 import { type Check } from "./check-contracts.ts";
-import { CheckName, ErrorCode, timestamp } from "../identities.ts";
+import { CheckName, ErrorCode, timestamp } from "@abracode/contracts/identities";
 
 import { Effect, Schema } from "effect";
 import { type ManagedExecution, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { decode } from "../decode.ts";
-import { Count } from "../contracts.ts";
+import { Count } from "@abracode/contracts/primitives";
 import { Forge, RuleSchema, RequiredParameters, ProtectionSchema, type PR } from "./forge.ts";
 import { type OperationResult } from "../workflow/results.ts";
 

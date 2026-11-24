@@ -14,7 +14,7 @@ import {
   SessionId,
   RequestId,
   StorageKey,
-} from "../../src/identities.ts";
+} from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
 import type { Runner } from "../../src/process.ts";
 import type { InboxQuery, InboxTarget } from "@abracode/contracts/visibility/github-inbox";

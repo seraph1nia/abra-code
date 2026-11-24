@@ -1,6 +1,6 @@
 import { type Execution, type Issue, type Role } from "../domain.ts";
 import { legacyReviewProfile } from "../opencode/role-policy.ts";
-import { engineeringGuidance } from "../opencode/engineering-skills.ts";
+import { engineeringGuidance } from "@abracode/agents/engineering-skills";
 export function workerPrompt(e: Execution, issue: Issue, role: Role) {
   const common = `You are the AbraCode ${role} for issue ${issue.id}: ${issue.title}.\n${issue.description ?? ""}\n${e.retry_instructions ? `Recovery feedback: ${e.retry_instructions}\n` : ""}Control generation: ${e.control_generation}. Retained answers: ${JSON.stringify((e.decisions ?? []).filter((d) => d.status === "answered").map((d) => ({ key: d.key, answer: d.answer })))}.\nBase commit: ${e.base_commit}.\nWorktree: ${e.worktree_directory}\nOpenSpec change: ${e.openspec_change}.\nRetained schema: ${e.openspec_schema_binding?.state === "bound" ? e.openspec_schema_binding.name : "original metadata; historical content evidence unavailable"}. Human plan approval required: ${e.plan_approval_required}.\nRead repository AGENTS.md, the registered role instructions and abra-openspec-execution for policy-specific procedures. Remain in the assigned role/worktree.\n${engineeringGuidance(role, e.workflow_policy)}`;
 

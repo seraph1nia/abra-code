@@ -199,7 +199,7 @@ export class ExecutionRecovery {
         const role = e.capacity_wait.role;
         if (role === "apply") {
           if (e.workflow_policy === "full-openspec") yield* this.c.spec.plan(e);
-          yield* this.assertPlan(e, p);
+          yield* this.assertPlan(e);
         }
         if (role === "review") {
           if (
@@ -228,7 +228,6 @@ export class ExecutionRecovery {
         if (turn.kind === "stopped")
           return yield* this.c.transitions.fail(e, turn.error, turn.phase);
         if (turn.kind === "completed" && e.resume_after_decision) {
-          delete e.resume_after_decision;
           yield* this.launch(e, turn.role);
           return e;
         }
@@ -241,7 +240,7 @@ export class ExecutionRecovery {
           yield* this.c.spec.create(e);
         if (e.current_phase === "applying") {
           if (e.workflow_policy === "full-openspec") yield* this.c.spec.plan(e);
-          yield* this.assertPlan(e, p);
+          yield* this.assertPlan(e);
         }
         yield* this.launch(e, pendingRole);
         return e;

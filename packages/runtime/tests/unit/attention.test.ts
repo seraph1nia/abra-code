@@ -1,6 +1,6 @@
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { toolPresentation } from "../../src/web/tool-presentation.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";

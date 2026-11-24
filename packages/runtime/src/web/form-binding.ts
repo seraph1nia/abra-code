@@ -1,5 +1,5 @@
 import type { Form } from "@opencode/schema/form";
-import type { CheckpointSchema } from "./workspace-wire.ts";
+import type { CheckpointSchema } from "@abracode/contracts/web/workspace-wire";
 /** A current controller observation and the exact native metadata must agree. */
 export function checkpointMatchesForm(
   form: Form.Info,

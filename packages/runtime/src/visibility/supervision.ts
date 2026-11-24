@@ -1,6 +1,6 @@
 import { type Execution, type ReadinessBlocker } from "../domain.ts";
 import type { SessionState } from "../opencode/runtime.ts";
-import type { Timestamp } from "../identities.ts";
+import type { Timestamp } from "@abracode/contracts/identities";
 import type { SupervisionSummary } from "@abracode/contracts/visibility/supervision";
 export * from "@abracode/contracts/visibility/supervision";
 export const nativeActivity = (

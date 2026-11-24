@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { test, vi } from "vite-plus/test";
 import { Schema } from "effect";
 import { Agent } from "@opencode/schema/agent";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { LeadRecordSchema, leadKey, readLeads } from "../../src/workflow/lead-contracts.ts";
-import { LeadEvidencePageSchema } from "../../src/visibility/lead-observation.ts";
+import { LeadEvidencePageSchema } from "@abracode/contracts/visibility/lead-observation";
 import { visibility } from "../../src/visibility/protocol.ts";
-import { WorkSnapshotSchema as BrowserWorkSnapshot } from "../../src/web/wire.ts";
+import { WorkSnapshotSchema as BrowserWorkSnapshot } from "@abracode/contracts/web/wire";
 import { Visibility } from "../../src/visibility/read-model.ts";
 
 const parent = Id.SessionId.make("ses_lead-observer");

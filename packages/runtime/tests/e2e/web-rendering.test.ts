@@ -9,9 +9,13 @@ import { join } from "node:path";
 import { Effect, Exit, Scope } from "effect";
 import { WorkspaceFixture } from "../helpers/web.ts";
 import { workspaceServer } from "../../src/web/server.ts";
-import { catalogId, workComponentNames, type WorkComponentName } from "../../src/web/catalog.ts";
-import { validateSurface } from "../../src/web/surfaces.ts";
-import { IssueId, ObligationKey } from "../../src/identities.ts";
+import {
+  catalogId,
+  workComponentNames,
+  type WorkComponentName,
+} from "@abracode/contracts/web/catalog";
+import { validateSurface } from "@abracode/contracts/web/surfaces";
+import { IssueId, ObligationKey } from "@abracode/contracts/identities";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 
 test("upstream A2UI renders every work widget, replaces revisions and retains valid state after malformed SSE", async (t) => {

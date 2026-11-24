@@ -1,10 +1,10 @@
-import { retainedFinding } from "../workflow/feedback-contracts.ts";
+import { retainedFinding } from "@abracode/contracts/workflow/feedback-contracts";
 import { presentationHash } from "../presentation/identity.ts";
 import { Effect, Schema } from "effect";
 import { CrewError } from "../domain.ts";
 import type { Queries } from "../workflow/queries.ts";
 import { historicalWorkers } from "../workflow/worker-assignment.ts";
-import { ResourceSelectionSchema } from "./resources.ts";
+import { ResourceSelectionSchema } from "@abracode/contracts/web/resources";
 
 /** Ownership is checked before transcript, document or artifact bytes are requested. */
 export function resolveOwnedResource(

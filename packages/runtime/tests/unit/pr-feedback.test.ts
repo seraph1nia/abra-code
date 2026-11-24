@@ -9,8 +9,8 @@ import { run } from "../effects.ts";
 import { forgeFixture } from "../forge.ts";
 import { GitHubDelivery } from "../../src/git/delivery.ts";
 import { FeedbackService, pendingFindings } from "../../src/workflow/feedback.ts";
-import { FeedbackSchema, mergeFeedback } from "../../src/workflow/feedback-contracts.ts";
-import * as Id from "../../src/identities.ts";
+import { FeedbackSchema, mergeFeedback } from "@abracode/contracts/workflow/feedback-contracts";
+import * as Id from "@abracode/contracts/identities";
 
 for (const current of ["failure", "success"] as const)
   test(`canonical checks keep app and status identity with current ${current}`, async (t) => {

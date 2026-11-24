@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { Count, PolicySchema, RoleSchema, ApprovalSchema } from "../contracts.ts";
+import { Count, PolicySchema, RoleSchema, ApprovalSchema } from "@abracode/contracts/primitives";
 import {
   AbsolutePath,
   Commit,
@@ -10,7 +10,7 @@ import {
   RepositoryId,
   SessionId,
   Timestamp,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 import {
   WorkerEnvironmentSchema,
   ToolObservationSchema,

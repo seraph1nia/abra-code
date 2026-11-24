@@ -3,12 +3,15 @@ import {
   EvidenceReceiptSchema,
 } from "@abracode/contracts/web/worker-evidence";
 import { CheckResultSchema } from "@abracode/contracts/web/verification";
-import { SchemaBinding } from "../openspec/schema-contracts.ts";
+import { SchemaBinding } from "@abracode/contracts/openspec/schema-contracts";
 import { ProjectDispatchSchema } from "../config/dispatch.ts";
 import { ConfigurationSnapshotSchema } from "../config/snapshot.ts";
-import { MessageIntentsSchema, validMessageGenerations } from "../workflow/message-contracts.ts";
-import { ExternalRecord } from "../validation/contracts.ts";
-import { FeedbackSchema, ProvisionalSchema } from "../workflow/feedback-contracts.ts";
+import {
+  MessageIntentsSchema,
+  validMessageGenerations,
+} from "@abracode/contracts/workflow/message-contracts";
+import { ExternalRecord } from "@abracode/contracts/validation/contracts";
+import { FeedbackSchema, ProvisionalSchema } from "@abracode/contracts/workflow/feedback-contracts";
 import {
   DeliveryPolicySchema,
   BranchPolicySchema,
@@ -25,7 +28,7 @@ import {
   RoleSchema,
   WorkerModelSchema,
   PhaseSchema,
-} from "../contracts.ts";
+} from "@abracode/contracts/primitives";
 import {
   FormId,
   IssueId,
@@ -46,10 +49,16 @@ import {
   Timestamp,
   Fingerprint,
   GitTree,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 
-import { OperationIntentSchema, DeliveryWaitSchema } from "../workflow/operation-contracts.ts";
-export { OperationIntentSchema, DeliveryWaitSchema } from "../workflow/operation-contracts.ts";
+import {
+  OperationIntentSchema,
+  DeliveryWaitSchema,
+} from "@abracode/contracts/workflow/operation-contracts";
+export {
+  OperationIntentSchema,
+  DeliveryWaitSchema,
+} from "@abracode/contracts/workflow/operation-contracts";
 import { RoundSchema, ScopeDispositionSchema } from "../workflow/correction-contracts.ts";
 import { PatchAssessment, SpecVerificationSchema } from "../workflow/review-contracts.ts";
 import { ScopeRecordSchema } from "../work/scope.ts";
@@ -57,19 +66,19 @@ import {
   VisualBuildsSchema,
   ReportIntentSchema,
   ReportReceiptSchema,
-} from "../workflow/report-contracts.ts";
-import { AttentionSchema } from "../workflow/attention-contracts.ts";
+} from "../reporting/report-contracts.ts";
+import { AttentionSchema } from "@abracode/contracts/workflow/attention-contracts";
 import {
   DecisionSchema,
   DeclaredWaitSchema,
   ProgressSchema,
 } from "../workflow/obligation-contracts.ts";
-import { GeneratedPathsSchema } from "../config/paths.ts";
+import { GeneratedPathsSchema } from "@abracode/contracts/config/paths";
 import {
   DirectoryIdentitySchema,
   RetirementSchema,
   CleanupBlockerSchema,
-} from "../git/retirement-contracts.ts";
+} from "@abracode/contracts/git/retirement-contracts";
 import { Schema } from "effect";
 import { PlanningSchema, validPlanningGenerations } from "../workflow/planning-contracts.ts";
 import { FinishingSchema, validFinishingGenerations } from "../workflow/finishing-contracts.ts";
@@ -78,7 +87,7 @@ import { ForgeObservationSchema } from "../git/readiness-contracts.ts";
 
 import { VerificationSchema } from "../config/contracts.ts";
 
-export { PhaseSchema } from "../contracts.ts";
+export { PhaseSchema } from "@abracode/contracts/primitives";
 import {
   AutomationFields,
   QualityFields,
@@ -460,4 +469,4 @@ export const SetupRecordSchema = Schema.Struct({
     return true;
   }),
 );
-export { RecordDiagnosticSchema, type RecordDiagnostic } from "../contracts.ts";
+export { RecordDiagnosticSchema, type RecordDiagnostic } from "@abracode/contracts/primitives";

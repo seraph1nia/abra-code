@@ -4,8 +4,8 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Effect, Schema } from "effect";
-import { AbsolutePath, Executable, GitRemote } from "../identities.ts";
-import { Count, NonEmpty } from "../contracts.ts";
+import { AbsolutePath, Executable, GitRemote } from "@abracode/contracts/identities";
+import { Count, NonEmpty } from "@abracode/contracts/primitives";
 import { CrewError, ensure, type Execution, type Project } from "../domain.ts";
 import { decode } from "../decode.ts";
 import { domainEffect } from "../effect.ts";
@@ -19,7 +19,7 @@ import {
   SkippedSteps,
   BranchSync,
   type ExternalRecord,
-} from "./contracts.ts";
+} from "@abracode/contracts/validation/contracts";
 
 export const intentDigest = (intent: string) => createHash("sha256").update(intent).digest("hex");
 export function machineDocument<S extends Schema.Constraint>(schema: S, output: string) {
@@ -64,20 +64,25 @@ export class NoMistakes {
     };
   }
   private call(e: Execution, args: string[], boundedWait = false) {
-    ensure(e.worktree_directory, "WORKTREE", "External validation requires an owned worktree");
-    const config = this.settings(e);
-    return this.runner.run(
-      config.bin,
-      args,
-      e.worktree_directory,
-      { NM_HOME: config.home },
-      {
-        deadline_ms: boundedWait ? 45000 : 15000,
-        max_output_bytes: 512 * 1024,
-        allowed_exit_codes: args[0] === "axi" ? [1, 2] : undefined,
-        trim: false,
-      },
-    );
+    return Effect.suspend(() => {
+      if (!e.worktree_directory)
+        return Effect.fail(
+          new CrewError("WORKTREE", "External validation requires an owned worktree"),
+        );
+      const config = this.settings(e);
+      return this.runner.run(
+        config.bin,
+        args,
+        e.worktree_directory,
+        { NM_HOME: config.home },
+        {
+          deadline_ms: boundedWait ? 45000 : 15000,
+          max_output_bytes: 512 * 1024,
+          allowed_exit_codes: args[0] === "axi" ? [1, 2] : undefined,
+          trim: false,
+        },
+      );
+    });
   }
   private document(e: Execution, args: string[], boundedWait = false) {
     return this.call(e, args, boundedWait).pipe(
@@ -91,14 +96,20 @@ export class NoMistakes {
   preflight = Effect.fn("NoMistakes.preflight")(
     function* (this: NoMistakes, p: Project, e: Execution) {
       const config = this.settings(e);
-      const version = yield* this.call(e, ["--version"]);
+      const [version, help, homeOutput] = yield* Effect.all(
+        [
+          this.call(e, ["--version"]),
+          this.call(e, ["axi", "run", "--help"]),
+          this.call(e, ["axi"]),
+        ],
+        { concurrency: "unbounded" },
+      );
       ensure(
         /^no-mistakes version v?1\.84\.0(?:\s|$)/.test(version.trim()) ||
           /^no-mistakes v?1\.84\.0(?:\s|$)/.test(version.trim()),
         "EXTERNAL_VERSION",
         "Only no-mistakes v1.84.0 has a supported contract",
       );
-      const help = yield* this.call(e, ["axi", "run", "--help"]);
       for (const flag of [
         "--launch-nonce",
         "--validation-generation",
@@ -112,9 +123,7 @@ export class NoMistakes {
           "EXTERNAL_FEATURE",
           "Required no-mistakes launch feature is unavailable",
         );
-      const home = yield* this.call(e, ["axi"]).pipe(
-        Effect.flatMap((out) => machineDocument(Home, out)),
-      );
+      const home = yield* machineDocument(Home, homeOutput);
       ensure(
         home.daemon === "running",
         "EXTERNAL_DAEMON",
@@ -174,6 +183,10 @@ export class NoMistakes {
     domainEffect,
   );
   start(e: Execution, r: ExternalRecord) {
+    if (!e.target_branch)
+      return Effect.fail(
+        new CrewError("EXTERNAL_TARGET", "External validation requires a target branch"),
+      );
     return this.document(
       e,
       [
@@ -182,7 +195,7 @@ export class NoMistakes {
         "--intent",
         r.intent,
         "--base-branch",
-        e.target_branch!,
+        e.target_branch,
         "--skip",
         SkippedSteps.join(","),
         "--no-publish-intent",
@@ -199,7 +212,10 @@ export class NoMistakes {
   status(e: Execution, run?: string) {
     return this.document(e, ["axi", "status", ...(run ? ["--run", run] : [])]);
   }
-  respond(e: Execution, response: typeof import("./contracts.ts").ExternalResponse.Type) {
+  respond(
+    e: Execution,
+    response: typeof import("@abracode/contracts/validation/contracts").ExternalResponse.Type,
+  ) {
     return this.document(
       e,
       [
@@ -236,10 +252,19 @@ export class NoMistakes {
       ensure(
         expectedRemote &&
           sync.target.url &&
-          remoteIdentity(GitRemote.make(sync.target.url), e.worktree_directory) ===
-            remoteIdentity(expectedRemote, e.worktree_directory) &&
           (!sync.target.ref || sync.target.ref === `refs/heads/${e.branch}`) &&
           !sync.pipeline.pushed_head,
+        "EXTERNAL_TARGET",
+        "External synchronization target differs from controller-owned unpublished delivery",
+      );
+      const targetRemote = yield* decode(
+        GitRemote,
+        sync.target.url,
+        "External synchronization target remote",
+      );
+      ensure(
+        remoteIdentity(targetRemote, e.worktree_directory) ===
+          remoteIdentity(expectedRemote, e.worktree_directory),
         "EXTERNAL_TARGET",
         "External synchronization target differs from controller-owned unpublished delivery",
       );

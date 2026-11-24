@@ -6,7 +6,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CrewError } from "../../src/domain.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { workGraphAt } from "../helpers/work-database.ts";
 import { Queries } from "../../src/workflow/queries.ts";
 import { Coordination } from "../../src/workflow/coordination.ts";

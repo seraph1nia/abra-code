@@ -1,5 +1,5 @@
 import { ensure, type Project } from "../domain.ts";
-import { CIPolicySchema, PolicySchema } from "../contracts.ts";
+import { CIPolicySchema, PolicySchema } from "@abracode/contracts/primitives";
 import {
   QualityProfile,
   AutomationSchema,

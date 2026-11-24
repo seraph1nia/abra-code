@@ -1,6 +1,11 @@
 import { removeOwnedField } from "../storage/store.ts";
 import { Clock, Effect } from "effect";
-import { ErrorCode, OperationAction, type IssueId, type SessionId } from "../identities.ts";
+import {
+  ErrorCode,
+  OperationAction,
+  type IssueId,
+  type SessionId,
+} from "@abracode/contracts/identities";
 import { CrewError, ensure, type Execution, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { type Records } from "../storage/store.ts";
@@ -14,7 +19,11 @@ import { type Queries } from "./queries.ts";
 import { type Corrections } from "./corrections.ts";
 import { type ExecutionTransitions } from "./transitions.ts";
 import { type CorrectionInputSchema } from "./correction-contracts.ts";
-import { type ActionInput, type FeedbackInput, feedbackPending } from "./feedback-contracts.ts";
+import {
+  type ActionInput,
+  type FeedbackInput,
+  feedbackPending,
+} from "@abracode/contracts/workflow/feedback-contracts";
 import { type OperationResult } from "./results.ts";
 import { FeedbackService } from "./feedback.ts";
 import { PRActions } from "./pr-actions.ts";
@@ -42,12 +51,7 @@ export class PRFeedback {
     this.actions = new PRActions(c.records, c.delivery, c.runtime);
   }
   private project(e: Execution) {
-    return this.c.records.project(e.repository_id).pipe(
-      Effect.filterOrFail(
-        (p) => p !== undefined,
-        () => new CrewError("PROJECT_MISSING", "Execution repository registration is unavailable"),
-      ),
-    );
+    return this.c.queries.effectiveProject(e);
   }
   correct = (input: typeof CorrectionInputSchema.Type) =>
     this.c.operations.owned(input.issue_id, OperationAction.make("correct"), () =>

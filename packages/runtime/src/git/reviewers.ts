@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { NonEmpty } from "../contracts.ts";
+import { NonEmpty } from "@abracode/contracts/primitives";
 import { ensure, type ManagedExecution, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { type Git } from "./repository.ts";

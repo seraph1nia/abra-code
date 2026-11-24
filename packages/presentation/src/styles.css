@@ -92,20 +92,6 @@ output:not([class~="inline-status"]) {
   min-width: 0;
   max-width: 100%;
 }
-.surface-column {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-.surface-row {
-  display: flex;
-  gap: 15px;
-  flex-wrap: wrap;
-}
-.surface-row > * {
-  flex: 1;
-  min-width: 150px;
-}
 .surface-binding {
   font-size: 12px;
   color: var(--muted-foreground);
@@ -318,13 +304,6 @@ output:not([class~="inline-status"]) {
   font-size: 12px;
   color: var(--muted-foreground);
 }
-.dependency-edge {
-  border-left: 1px solid var(--line);
-  margin: -8px 0 16px 18px;
-  padding: 6px 15px;
-  color: var(--muted-foreground);
-  font-size: 12px;
-}
 
 .report-preview,
 .report-export iframe {
@@ -486,9 +465,6 @@ output:not([class~="inline-status"]) {
   color: var(--warning);
   font-size: 12px;
 }
-.structured-evidence {
-  font-size: 12px;
-}
 .prose {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -594,8 +570,18 @@ output:not([class~="inline-status"]) {
   background: var(--bg);
 }
 .review-enlarged {
+  margin: auto;
+  width: min(960px, calc(100vw - 2rem));
   max-height: 90dvh;
   overflow: auto;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--panel);
+}
+.review-enlarged::backdrop {
+  background: rgb(0 0 0 / 45%);
 }
 .review-enlarged img {
   display: block;
@@ -610,19 +596,6 @@ output:not([class~="inline-status"]) {
 .review-disclosure > summary {
   cursor: pointer;
   font-weight: 600;
-}
-
-.review-enlarged {
-  margin: auto;
-  width: min(960px, calc(100vw - 2rem));
-  padding: 1.25rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  color: var(--ink);
-  background: var(--panel);
-}
-.review-enlarged::backdrop {
-  background: rgb(0 0 0 / 45%);
 }
 .review-preview-header {
   display: flex;
@@ -784,7 +757,12 @@ output:not([class~="inline-status"]) {
   --a2ui-column-gap: 0;
   --a2ui-list-gap: 0;
   --a2ui-text-color-text: currentColor;
-  --_a2ui-text-margin: 0.5rem;
+}
+.generated-surface[data-work-catalog="v5"] a2ui-basic-text {
+  margin: 0.5rem;
+}
+.generated-surface[data-work-catalog="v5"] a2ui-basic-button a2ui-basic-text {
+  margin: 0;
 }
 .generated-surface[data-work-catalog="v5"] :is(.catalog-image, .catalog-player) {
   margin: 0.5rem;

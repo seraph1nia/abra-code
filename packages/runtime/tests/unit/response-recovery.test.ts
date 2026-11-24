@@ -7,11 +7,11 @@ import { SessionMessage } from "@opencode/schema/session-message";
 import { type Context } from "@opencode/plugin/effect/plugin";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { decode } from "../../src/decode.ts";
 import { NativeRuntime, type Runtime } from "../../src/opencode/runtime.ts";
 import { responseState } from "../../src/workflow/messages.ts";
-import { messageRequests } from "../../src/workflow/message-contracts.ts";
+import { messageRequests } from "@abracode/contracts/workflow/message-contracts";
 
 import { CrewError } from "../../src/domain.ts";
 import { requireOwnedPrompt, installGuards } from "../../src/opencode/guards.ts";

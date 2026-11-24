@@ -10,12 +10,13 @@ import {
 import { thoughtSubmissionMarker, selectionMarker } from "@abracode/contracts/web/workspace-wire";
 import type { Context } from "@opencode/plugin/effect/plugin";
 import type { Tool } from "@opencode/schema/tool";
-import { RequestId, RepositoryId } from "../identities.ts";
+import { RequestId, RepositoryId } from "@abracode/contracts/identities";
 import { hash } from "../memory/collections.ts";
 import { CrewError } from "../domain.ts";
 import type { Controller } from "../workflow/controller.ts";
-import { verifiedWorkerCaller, originatingUserMessage } from "./tool-caller.ts";
+import { originatingUserMessage } from "./tool-caller.ts";
 import { workerToolAllowed } from "./role-policy.ts";
+import { assertSupervisor, assertVerifiedWorker } from "./session-authority.ts";
 import { defineTool } from "./tool-definition.ts";
 
 const forbidden = () => new CrewError("MEMORY_SCOPE", "Current authorized memory scope required.");
@@ -23,16 +24,14 @@ export function memoryTools(ctx: Context, c: Controller, central: boolean) {
   const origin = (call: Tool.Context) =>
     originatingUserMessage(ctx, call.sessionID, call.messageID);
   const supervisor = (call: Tool.Context) =>
-    Effect.gen(function* () {
-      const native = yield* c.queries.session(call.sessionID);
-      if (
-        !central ||
-        call.agent !== "abra" ||
-        native.agent !== "abra" ||
-        native.directory !== c.queries.settings.home ||
-        native.metadata?.abracode_supervisor_home !== native.directory
-      )
-        return yield* forbidden();
+    assertSupervisor(c, call.sessionID, {
+      central,
+      agent: call.agent,
+      verifyNative: true,
+      requireSupervisorMetadata: true,
+      checkNotWorker: false,
+      code: "MEMORY_SCOPE",
+      message: "Current authorized memory scope required.",
     });
   const scope = (call: Tool.Context, tool: string, repo?: RepositoryId) =>
     Effect.gen(function* () {
@@ -51,12 +50,13 @@ export function memoryTools(ctx: Context, c: Controller, central: boolean) {
         call.agent !== native.agent
       )
         return yield* forbidden();
-      const { role, profile } = yield* verifiedWorkerCaller(
+      const { role, profile } = yield* assertVerifiedWorker(
         assignment,
         call,
         c.queries.capturedWorkerPrompt(assignment),
         origin(call).pipe(Effect.map((user) => user?.id)),
-      ).pipe(Effect.mapError(forbidden));
+        { code: "MEMORY_SCOPE", message: "Current authorized memory scope required." },
+      );
       if (!workerToolAllowed(role, profile, tool)) return yield* forbidden();
       return assignment.repository_id;
     });

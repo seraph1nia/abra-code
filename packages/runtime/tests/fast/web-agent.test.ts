@@ -6,8 +6,8 @@ import { SessionMessage } from "@opencode/schema/session-message";
 import { AbstractAgent } from "@ag-ui/client";
 import { EventType } from "@ag-ui/core";
 import { from, lastValueFrom, toArray } from "rxjs";
-import { Fingerprint, FormId, IssueId, timestampAt } from "../../src/identities.ts";
-import { WorkspaceStateJson } from "../../src/web/workspace-wire.ts";
+import { Fingerprint, FormId, IssueId, timestampAt } from "@abracode/contracts/identities";
+import { WorkspaceStateJson } from "@abracode/contracts/web/workspace-wire";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Clock, Deferred, Effect, Exit, Fiber, Scope, Stream, Schema, PubSub } from "effect";
@@ -447,7 +447,10 @@ test("native adapter runs without workspace, finder or report data and cloned ho
 });
 
 test("transport completion follows each admitted input across queue, steer, failures and same-ID recovery", async () => {
-  const receipts = new Map<string, import("../../src/web/workspace-wire.ts").SubmissionReceipt>();
+  const receipts = new Map<
+    string,
+    import("@abracode/contracts/web/workspace-wire").SubmissionReceipt
+  >();
   let prompts = 0;
   const input = (key: string, runId = key) => ({
     threadId: "ses_causal",

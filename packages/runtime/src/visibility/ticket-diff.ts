@@ -1,6 +1,6 @@
-import { RelativePath, Commit, timestamp, IssueId } from "../identities.ts";
+import { RelativePath, timestamp, IssueId } from "@abracode/contracts/identities";
 
-import { ContentHash } from "../identities.ts";
+import { ContentHash } from "@abracode/contracts/identities";
 import { digest } from "../digest.ts";
 import type { DiffSelection } from "@abracode/contracts/web/resources";
 import { parsePatch } from "diff";
@@ -13,6 +13,7 @@ import { type Queries } from "../workflow/queries.ts";
 import { type Git } from "../git/repository.ts";
 import { type DiffScope, type WorkDiff } from "./protocol.ts";
 import { documentLimit } from "./documents.ts";
+import { resolveCommit } from "./archived-plans.ts";
 
 /** Owns comparison identity and bounded, lazy patch reads. Never stages or refreshes the index. */
 export class TicketDiff {
@@ -51,21 +52,17 @@ export class TicketDiff {
         return empty("Historical diff unavailable: no delivered commit was retained.");
       const path = historical ? p.path : e.worktree_directory;
       yield* this.c.git.validate(p, historical ? undefined : e);
-      const base = Commit.make(
-        yield* this.c.git.run(path, [
-          "rev-parse",
-          "--verify",
-          "--end-of-options",
-          `${scope === "uncommitted" ? "HEAD" : e.base_commit}^{commit}`,
-        ]),
+      const base = yield* resolveCommit(
+        this.c.git,
+        path,
+        scope === "uncommitted" ? "HEAD" : e.base_commit,
+        "Diff base commit",
       );
-      const head = Commit.make(
-        yield* this.c.git.run(path, [
-          "rev-parse",
-          "--verify",
-          "--end-of-options",
-          `${historical ? e.delivered_commit : "HEAD"}^{commit}`,
-        ]),
+      const head = yield* resolveCommit(
+        this.c.git,
+        path,
+        historical ? e.delivered_commit! : "HEAD",
+        "Diff head commit",
       );
       const { files, preview, limited } = yield* compareChanges(
         this.c.git,

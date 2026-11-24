@@ -13,13 +13,13 @@ import {
 import { join, dirname } from "node:path";
 import { Effect } from "effect";
 import { CrewError } from "../../src/domain.ts";
-import { RequestId, AbsolutePath } from "../../src/identities.ts";
+import { RequestId, AbsolutePath } from "@abracode/contracts/identities";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { installSource } from "../e2e/install.ts";
 import { reportDocument } from "../helpers/report-document.ts";
 import { ProcessRunner, type Runner } from "../../src/process.ts";
-import { ReactDocumentRenderer, validateDocumentHTML } from "../../src/workflow/report-export.ts";
+import { ReactDocumentRenderer, validateDocumentHTML } from "../../src/reporting/report-export.ts";
 
 /** No browser/native journey: exercise real compiler preparation and persisted reuse. */
 test(

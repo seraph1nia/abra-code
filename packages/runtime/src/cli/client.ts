@@ -1,22 +1,34 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect platform APIs are required by the native adapters and covered by integration tests. */
-import { spawn } from "node:child_process";
+/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 child process and service discovery APIs. */
 import { join } from "node:path";
 import { Service } from "@opencode/client/effect/service";
-import { NodeFileSystem } from "@effect/platform-node";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
+import { ChildProcess } from "effect/process";
+import { assertFreshPaths } from "../config/host.ts";
+import {
+  resolveConfigurationPath,
+  resolveInstallationHome,
+  runtimePaths,
+} from "../config/identity.ts";
+import { loadConfig } from "../config/load.ts";
+import { configuration } from "../config/protocol.ts";
+import { CrewError } from "../domain.ts";
 import { realpath } from "../filesystem.ts";
+import { AbsolutePath } from "@abracode/contracts/identities";
 import { makeClient } from "../opencode/client.ts";
 import { findSupervisor } from "../opencode/supervisor.ts";
-import { runtimePaths, configurationPath } from "../config/identity.ts";
-import { configuration } from "../config/protocol.ts";
-import { AbsolutePath } from "../identities.ts";
-import { CrewError } from "../domain.ts";
-import { assertFreshPaths } from "../config/host.ts";
-import { loadConfig } from "../config/load.ts";
-await Effect.runPromise(
+
+export interface ClientOptions {
+  readonly pair: boolean;
+  readonly auth: boolean;
+  readonly url: Option.Option<string>;
+  readonly extra: ReadonlyArray<string>;
+}
+
+export const runClient = (options: ClientOptions) =>
   Effect.gen(function* () {
-    const home = yield* realpath(process.env.ABRACODE_HOME ?? process.cwd());
+    const home = yield* realpath(yield* resolveInstallationHome);
     yield* assertFreshPaths(yield* loadConfig(home));
+    const configPath = yield* resolveConfigurationPath(home);
     const state = join(home, ".abracode/state");
     const endpoint = yield* Service.discover({
       file: join(state, "opencode/service.json"),
@@ -38,37 +50,36 @@ await Effect.runPromise(
       {
         session_id: supervisor.id,
         action: "status",
-        config_path: AbsolutePath.make(configurationPath(home)),
+        config_path: AbsolutePath.make(configPath),
       },
       { location: { directory: AbsolutePath.make(home) } },
     );
-    const extra = process.argv.slice(2);
-    const args = extra.includes("--pair")
-      ? ["pair", ...extra.filter((a) => a !== "--pair")]
-      : extra.includes("--auth")
-        ? ["auth", "login", "--server", endpoint.url, ...extra.filter((a) => a !== "--auth")]
-        : ["--server", endpoint.url, "--session", supervisor.id, home];
-    const code = yield* Effect.callback<number, CrewError>((resume) => {
-      const child = spawn(join(home, "node_modules/.bin/opencode"), args, {
-        stdio: "inherit",
-        env: {
-          ...process.env,
-          XDG_STATE_HOME: state,
-          ABRACODE_HOME: home,
-          OPENCODE_CONFIG: runtimePaths(home).hostConfig,
-          OPENCODE_CONFIG_DIR: join(home, ".abracode/config/opencode"),
-          ABRACODE_CONFIG: configurationPath(home),
-          ...(endpoint.auth ? { OPENCODE_PASSWORD: endpoint.auth.password } : {}),
-        },
-      });
-      child.once("error", (cause) => resume(Effect.fail(CrewError.from(cause))));
-      child.once("exit", (code) => resume(Effect.succeed(code ?? 1)));
-      return Effect.sync(() => {
-        if (child.exitCode === null && child.signalCode === null) child.kill();
-      });
-    });
+    const serverUrl = Option.getOrElse(options.url, () => endpoint.url);
+    const args = options.pair
+      ? ["pair", ...options.extra]
+      : options.auth
+        ? ["auth", "login", "--server", serverUrl, ...options.extra]
+        : ["--server", serverUrl, "--session", supervisor.id, home, ...options.extra];
+    const code = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const child = yield* ChildProcess.make(join(home, "node_modules/.bin/opencode"), args, {
+          stdin: "inherit",
+          stdout: "inherit",
+          stderr: "inherit",
+          extendEnv: true,
+          env: {
+            XDG_STATE_HOME: state,
+            ABRACODE_HOME: home,
+            OPENCODE_CONFIG: runtimePaths(home).hostConfig,
+            OPENCODE_CONFIG_DIR: join(home, ".abracode/config/opencode"),
+            ABRACODE_CONFIG: configPath,
+            ...(endpoint.auth ? { OPENCODE_PASSWORD: endpoint.auth.password } : {}),
+          },
+        });
+        return yield* child.exitCode;
+      }),
+    ).pipe(Effect.mapError((cause) => CrewError.from(cause.reason.cause ?? cause)));
     yield* Effect.sync(() => {
-      process.exitCode = code;
+      process.exitCode = Number(code);
     });
-  }).pipe(Effect.provide(NodeFileSystem.layer)),
-);
+  });

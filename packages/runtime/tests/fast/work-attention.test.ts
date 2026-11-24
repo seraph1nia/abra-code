@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Schema } from "effect";
-import { taskAttention } from "../../src/visibility/attention.ts";
-import { WorkSummarySchema } from "../../src/visibility/work-summary.ts";
+import { taskAttention } from "@abracode/contracts/visibility/attention";
+import { WorkSummarySchema } from "@abracode/contracts/visibility/work-summary";
 
 const work = (fields: Record<string, unknown>) =>
   Schema.decodeSync(WorkSummarySchema)({

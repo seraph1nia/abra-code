@@ -2,10 +2,10 @@ import { Effect } from "effect";
 import type { Context } from "@opencode/plugin/effect/plugin";
 import type { Tool } from "@opencode/schema/tool";
 import { CrewError, type Execution } from "../domain.ts";
-import type { SessionId, MessageId } from "../identities.ts";
+import type { SessionId, MessageId } from "@abracode/contracts/identities";
 import { isActiveWorker } from "../workflow/worker-assignment.ts";
 import type { WorkerContext } from "../workflow/worker-context-contracts.ts";
-import { requireOwnedPrompt } from "./guards.ts";
+import { requireOwnedPromptEffect } from "./guards.ts";
 
 export const originatingUserMessage = (ctx: Context, session: SessionId, message: MessageId) =>
   Effect.gen(function* () {
@@ -43,9 +43,10 @@ export const verifiedWorkerCaller = (
     const prompt = yield* origin;
     if (!prompt)
       return yield* new CrewError("WORKER_CALLER", "Tool call lacks current assignment provenance");
-    yield* Effect.try({
-      try: () => requireOwnedPrompt(assignment, call.sessionID, prompt),
-      catch: () => new CrewError("WORKER_CALLER", "Tool call belongs to a stale assignment"),
-    });
+    yield* requireOwnedPromptEffect(assignment, call.sessionID, prompt).pipe(
+      Effect.mapError(
+        () => new CrewError("WORKER_CALLER", "Tool call belongs to a stale assignment"),
+      ),
+    );
     return { role, profile: context.prepared.profile };
   });

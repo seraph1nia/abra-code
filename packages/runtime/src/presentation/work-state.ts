@@ -3,7 +3,10 @@ export const leadNeedsAttention = (lead: LeadSummary) =>
   lead.outstanding_count > 0 ||
   lead.pending_proposals.length > 0 ||
   (lead.enabled && ["unavailable", "stopping"].includes(lead.state));
-import { type Communication, requiresResponse } from "../workflow/message-contracts.ts";
+import {
+  type Communication,
+  requiresResponse,
+} from "@abracode/contracts/workflow/message-contracts";
 export function communicationLabel(record: Communication) {
   if (record.type === "finding") return "Finding retained";
   if (record.status === "pending") return "Pending controller admission";

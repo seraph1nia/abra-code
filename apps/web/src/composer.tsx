@@ -17,18 +17,18 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type RefObject,
 } from "react";
 import type { Submission } from "@abracode/contracts/web/workspace-wire";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Composer owns draft/admission subscriptions independently of transcript presentation. */
-import { useAtom, useAtomValue } from "@effect/atom-react";
-import { Exit } from "effect";
+import { useAtomValue } from "@effect/atom-react";
+import { useCopilotKit } from "@copilotkit/react-core/v2/context";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { ArrowUp, Square } from "@abracode/presentation/icons";
 import { Button } from "@abracode/presentation/ui/button";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
 import { Textarea } from "@abracode/presentation/ui/textarea";
-import { stopMutation, memoryEnabledQuery } from "./data.ts";
-import { requestError } from "./request-error.ts";
+import { memoryEnabledQuery } from "./data.ts";
 import { useWorkspaceDraft } from "./workspace-state/draft.ts";
 import { useWorkspaceAdmission } from "./workspace-state/admission.ts";
 const ComposerSuggestions = lazy(() =>
@@ -42,6 +42,7 @@ export function Composer({
   consumed,
   pickThought,
   updateDraftLock,
+  textareaRef,
   isReady,
   refresh,
   error,
@@ -54,6 +55,7 @@ export function Composer({
   consumed: () => void;
   pickThought: (consume?: { text: string; start: number; end: number }) => void;
   updateDraftLock: (locked: boolean) => void;
+  textareaRef?: RefObject<HTMLTextAreaElement | null>;
   isReady: boolean;
   refresh: () => void;
   error: string;
@@ -81,9 +83,10 @@ export function Composer({
   useLayoutEffect(() => {
     updateDraftLock(!isReady || Boolean(pending) || admitting);
   }, [updateDraftLock, pending, admitting, isReady]);
-  const [stopResult, stop] = useAtom(stopMutation, { mode: "promiseExit" });
+  const { copilotkit } = useCopilotKit();
 
-  const textarea = useRef<HTMLTextAreaElement>(null);
+  const localTextarea = useRef<HTMLTextAreaElement>(null);
+  const textarea = textareaRef ?? localTextarea;
   const [token, setToken] = useState<ReturnType<typeof slashToken>>();
   const openSearch = useContext(OpenSearch);
   const enabled = useAtomValue(memoryEnabledQuery);
@@ -123,7 +126,18 @@ export function Composer({
       }
       setToken(undefined);
     },
-    [isReady, pending, admitting, draft, edit, pickThought, setError, openSearch, memoryAvailable],
+    [
+      isReady,
+      pending,
+      admitting,
+      draft,
+      edit,
+      pickThought,
+      setError,
+      openSearch,
+      memoryAvailable,
+      textarea,
+    ],
   );
   useEffect(() => {
     if (command && handled.current !== command && isReady) {
@@ -302,12 +316,14 @@ export function Composer({
                 variant="outline"
                 type="button"
                 aria-label="Stop current Abra turn"
-                disabled={stopResult.waiting}
+                disabled={!isReady}
                 onClick={() => {
-                  void stop({ payload: {} }).then((result) => {
-                    if (Exit.isSuccess(result)) refresh();
-                    else setError(requestError(result.cause));
-                  });
+                  const agent = copilotkit.getAgent("abra-workspace");
+                  if (!agent) {
+                    setError("Stop is unavailable while reconnecting to Abra.");
+                    return;
+                  }
+                  copilotkit.stopAgent({ agent });
                 }}
               >
                 <Square aria-hidden="true" /> Stop

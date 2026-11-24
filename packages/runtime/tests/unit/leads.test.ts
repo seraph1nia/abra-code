@@ -6,7 +6,7 @@ import { Agent } from "@opencode/schema/agent";
 import { Tool } from "@opencode/schema/tool";
 import { type Context } from "@opencode/plugin/effect/plugin";
 import { type ToolEditor } from "@opencode/plugin/effect/tool";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
 
 import { LeadRecordSchema, readLeads, leadAccounting } from "../../src/workflow/lead-contracts.ts";

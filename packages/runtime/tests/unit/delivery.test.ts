@@ -2,7 +2,7 @@ import { publicationDestination } from "../../src/workflow/publication-destinati
 import { CrewError } from "../../src/domain.ts";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { run } from "../effects.ts";
 import { domainEffect } from "../../src/effect.ts";
 import { Effect } from "effect";

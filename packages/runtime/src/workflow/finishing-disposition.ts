@@ -1,28 +1,25 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { Effect } from "effect";
-import { AbsolutePath, ContentHash, Fingerprint, timestamp } from "../identities.ts";
+import { Effect, Schema } from "effect";
+import { AbsolutePath, ContentHash, Fingerprint, timestamp } from "@abracode/contracts/identities";
 import { CrewError, type Execution } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { type Git } from "../git/repository.ts";
 import { type CleanupSample } from "../git/cleanup.ts";
 import { inspectGeneratedPath, sameDirectory, directoryIdentity } from "../git/retirement.ts";
-import { GeneratedPathSchema, GeneratedPathsSchema } from "../config/paths.ts";
-import { Schema } from "effect";
+import { GeneratedPathSchema, GeneratedPathsSchema } from "@abracode/contracts/config/paths";
 import { decode } from "../decode.ts";
 import { lstat, pathExists } from "../filesystem.ts";
-import { type Records } from "../storage/store.ts";
+import { removeOwnedField, type Records } from "../storage/store.ts";
 import { type FinishingTarget } from "./finishing-contracts.ts";
 
 const fileHash = Effect.fn("Finishing.fileHash")(function* (git: Git, e: Execution, path: string) {
   let cursor = e.worktree_directory!;
-  for (const [i, part] of path.split("/").entries()) {
+  const parts = path.split("/");
+  for (const [i, part] of parts.entries()) {
     cursor = AbsolutePath.make(join(cursor, part));
     const stat = yield* lstat(cursor);
-    if (
-      stat.isSymbolicLink() ||
-      (i === path.split("/").length - 1 ? !stat.isFile() : !stat.isDirectory())
-    )
+    if (stat.isSymbolicLink() || (i === parts.length - 1 ? !stat.isFile() : !stat.isDirectory()))
       return yield* new CrewError(
         "FINISHING_PATH",
         "Inclusion requires an exact regular file with real directory ancestors",
@@ -43,18 +40,31 @@ export const residueTarget = Effect.fn("Finishing.residueTarget")(function* (
 ) {
   if (!e.worktree_identity)
     return yield* new CrewError("OWNERSHIP", "Retained worktree identity required");
-  const directories: Extract<FinishingTarget, { kind: "residue" }>["directories"][number][] = [];
-  const files: Extract<FinishingTarget, { kind: "residue" }>["files"][number][] = [];
-  for (const item of sample.paths) {
-    if (item.kind === "directory" && Schema.is(GeneratedPathSchema)(item.path)) {
-      const inspected = yield* Effect.result(inspectGeneratedPath(git, e, item.path));
-      if (inspected._tag === "Success")
-        directories.push({ path: item.path, identity: inspected.success });
-    } else if (item.kind === "file") {
-      const hashed = yield* Effect.result(fileHash(git, e, item.path));
-      if (hashed._tag === "Success") files.push({ path: item.path, hash: hashed.success });
-    }
-  }
+  type DirEntry = Extract<FinishingTarget, { kind: "residue" }>["directories"][number];
+  type FileEntry = Extract<FinishingTarget, { kind: "residue" }>["files"][number];
+  const classified = yield* Effect.forEach(
+    sample.paths,
+    (item): Effect.Effect<{ dir?: DirEntry; file?: FileEntry }> => {
+      if (item.kind === "directory" && Schema.is(GeneratedPathSchema)(item.path))
+        return Effect.result(inspectGeneratedPath(git, e, item.path)).pipe(
+          Effect.map((inspected) =>
+            inspected._tag === "Success"
+              ? { dir: { path: item.path, identity: inspected.success } }
+              : {},
+          ),
+        );
+      if (item.kind === "file")
+        return Effect.result(fileHash(git, e, item.path)).pipe(
+          Effect.map((hashed) =>
+            hashed._tag === "Success" ? { file: { path: item.path, hash: hashed.success } } : {},
+          ),
+        );
+      return Effect.succeed({});
+    },
+    { concurrency: 4 },
+  );
+  const directories: DirEntry[] = classified.flatMap((c) => (c.dir ? [c.dir] : []));
+  const files: FileEntry[] = classified.flatMap((c) => (c.file ? [c.file] : []));
   const target = {
     schema_version: 1 as const,
     kind: "residue" as const,
@@ -126,37 +136,47 @@ export const applyDispositions = Effect.fn("Finishing.applyDispositions")(functi
         ],
         "Execution cleanup policy",
       );
-      for (const dir of selected) {
-        const current = yield* inspectGeneratedPath(git, e, dir.path);
-        if (!sameDirectory(current, dir.identity))
-          return yield* new CrewError(
-            "CLEANUP_REPLACEMENT",
-            "Selected directory was replaced before authorization",
-          );
-      }
-      e.finishing = {
-        ...e.finishing,
-        schema_version: 1,
-        authorizations: [
-          ...(e.finishing?.authorizations ?? []),
-          {
-            schema_version: 1,
-            generation: e.control_generation,
-            revision: (e.finishing?.authorizations?.at(-1)?.revision ?? 0) + 1,
-            key: d.key,
-            form_id: d.form_id,
-            session_id: d.form_session,
-            authorized_at: yield* timestamp,
-            worktree: target.worktree,
-            fingerprint: target.fingerprint,
-            directories: selected,
-          },
-        ],
-      };
-      e.finishing = { ...e.finishing, preflight: undefined };
-      yield* records.saveFinishing(e, ["authorizations", "preflight"]);
-      delete e.cleanup_blocker;
-      yield* records.saveOwned(e, ["cleanup_blocker"]);
+      yield* Effect.forEach(
+        selected,
+        (dir) =>
+          inspectGeneratedPath(git, e, dir.path).pipe(
+            Effect.flatMap((current) =>
+              sameDirectory(current, dir.identity)
+                ? Effect.void
+                : Effect.fail(
+                    new CrewError(
+                      "CLEANUP_REPLACEMENT",
+                      "Selected directory was replaced before authorization",
+                    ),
+                  ),
+            ),
+          ),
+        { concurrency: 4 },
+      );
+      const authorizedAt = yield* timestamp;
+      yield* records.commitOwned(e, (current) => ({
+        finishing: {
+          ...current.finishing,
+          schema_version: 1,
+          preflight: undefined,
+          authorizations: [
+            ...(current.finishing?.authorizations ?? []),
+            {
+              schema_version: 1,
+              generation: e.control_generation,
+              revision: (current.finishing?.authorizations?.at(-1)?.revision ?? 0) + 1,
+              key: d.key,
+              form_id: d.form_id!,
+              session_id: d.form_session!,
+              authorized_at: authorizedAt,
+              worktree: target.worktree,
+              fingerprint: target.fingerprint,
+              directories: selected,
+            },
+          ],
+        },
+        cleanup_blocker: removeOwnedField,
+      }));
     } else if (answer.action === "include") {
       if (e.current_phase === "cleaning")
         return yield* new CrewError(
@@ -173,16 +193,21 @@ export const applyDispositions = Effect.fn("Finishing.applyDispositions")(functi
         )
       )
         continue;
-      for (const file of selected) {
-        if (
-          !(yield* pathExists(join(e.worktree_directory!, file.path))) ||
-          file.hash !== (yield* fileHash(git, e, file.path))
-        )
-          return yield* new CrewError(
-            "DECISION_STALE",
-            "Selected file content changed; request fresh adoption",
-          );
-      }
+      yield* Effect.forEach(
+        selected,
+        (file) =>
+          Effect.gen(function* () {
+            if (
+              !(yield* pathExists(join(e.worktree_directory!, file.path))) ||
+              file.hash !== (yield* fileHash(git, e, file.path))
+            )
+              return yield* new CrewError(
+                "DECISION_STALE",
+                "Selected file content changed; request fresh adoption",
+              );
+          }),
+        { concurrency: 4 },
+      );
       const prior = e.finishing?.inclusions?.find(
         (i) => i.key === d.key && i.generation === d.generation,
       );
@@ -212,17 +237,28 @@ export const applyDispositions = Effect.fn("Finishing.applyDispositions")(functi
             ],
       };
       yield* records.saveFinishing(e, ["inclusions"]);
-      for (const file of selected)
+      if (selected.length)
         yield* git.run(e.worktree_directory!, [
           "--literal-pathspecs",
           "add",
           "--force",
           "--",
-          file.path,
+          ...selected.map((file) => file.path),
         ]);
-      for (const file of selected)
-        if (file.hash !== (yield* fileHash(git, e, file.path)))
-          return yield* new CrewError("DECISION_STALE", "Selected file changed while staging");
+      yield* Effect.forEach(
+        selected,
+        (file) =>
+          fileHash(git, e, file.path).pipe(
+            Effect.flatMap((hash) =>
+              file.hash === hash
+                ? Effect.void
+                : Effect.fail(
+                    new CrewError("DECISION_STALE", "Selected file changed while staging"),
+                  ),
+            ),
+          ),
+        { concurrency: 4 },
+      );
       if ((yield* git.candidateTree(e.worktree_directory!)) !== intended)
         return yield* new CrewError("DECISION_STALE", "Other content changed during inclusion");
       const staged = yield* git.fingerprint(e.worktree_directory!);

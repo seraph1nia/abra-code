@@ -1,1 +1,3 @@
-import "@abracode/runtime/cli/stop";
+import { runMain } from "@abracode/runtime/cli";
+
+runMain(["stop"]);

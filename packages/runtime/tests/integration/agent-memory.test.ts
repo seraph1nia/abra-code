@@ -17,7 +17,7 @@ import { resolveConfig } from "../../src/config/load.ts";
 import { AgentMemory } from "../../src/memory/service.ts";
 import { memoryDirectory } from "../../src/memory/provider.ts";
 import { hash, MemoryCollections } from "../../src/memory/collections.ts";
-import { AbsolutePath, RepositoryId, RequestId } from "../../src/identities.ts";
+import { AbsolutePath, RepositoryId, RequestId } from "@abracode/contracts/identities";
 import type { Project } from "../../src/domain.ts";
 import type { PersonalThoughts } from "../../src/work/thoughts.ts";
 

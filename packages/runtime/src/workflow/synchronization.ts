@@ -1,16 +1,18 @@
 import { Effect } from "effect";
-import { ChangeName, timestamp } from "../identities.ts";
+import { ChangeName, timestamp } from "@abracode/contracts/identities";
 import { CrewError, type Execution } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { type Git } from "../git/repository.ts";
 import { type Records } from "../storage/store.ts";
 import { sameDirectory } from "../git/retirement.ts";
 import { type PublicationObservation } from "./finishing-readiness.ts";
+import { assertTransition, resetDeliveryArtifactsPatch } from "./transitions.ts";
 
 export const activeSynchronization = (e: Execution) => {
   const attempt = e.finishing?.synchronization?.at(-1);
   return attempt && !["published", "failed"].includes(attempt.stage) ? attempt : undefined;
 };
+
 export function synchronizationAuthority(e: Execution, observation: PublicationObservation) {
   const receipt = (kind: "adopt" | "additional_attempt") =>
     e.decisions?.find((d) => {
@@ -166,54 +168,29 @@ export const admitSynchronization = Effect.fn("Synchronization.admit")(function*
       "SYNCHRONIZATION_STALE",
       "Content changed during synchronization staging",
     );
-  e.finishing = {
-    ...e.finishing,
-    schema_version: 1,
-    synchronization: e.finishing.synchronization!.map((a) =>
-      a.ordinal === ordinal
-        ? { ...a, planning_base_tree: planningBase, stage: revision ? "planning" : "verifying" }
-        : a,
-    ),
-  };
-  yield* records.saveFinishing(e, ["synchronization"]);
-  delete e.verification_receipt;
-  delete e.review_receipt;
-  delete e.delivery_receipt;
-  delete e.delivery_wait;
-  delete e.forge_observation;
-  delete e.active_role;
-  delete e.capacity_reservation;
-  delete e.archived_tree;
-  delete e.archive_path;
+  const nextStage = revision ? ("planning" as const) : ("verifying" as const);
+  assertTransition(e.current_phase, nextStage);
   // Historical sessions remain managed and cannot gain a new conversational entry point.
-  delete e.review_session_id;
-  e.retry_instructions = `Synchronize existing content revision ${ordinal}. Assess only the retained work already present; do not implement new fixes or widen accepted scope. Preserve all historical archives. ${revision ? "Prepare a new revision plan describing existing implemented work, with accurate completed tasks. This authorizes planning artifacts only; after approval the controller runs checks and independent Review without Apply." : "Independent Review must confirm existing edits fit the approved scope."}`;
-  if (revision) {
-    e.openspec_change = ChangeName.make(`${e.openspec_change}-sync${ordinal}`);
-    e.planning_base_commit = observation.head;
-    delete e.plan_fingerprint;
-    delete e.explore_session_id;
-    delete e.apply_session_id;
-    e.current_phase = "planning";
-  } else e.current_phase = "verifying";
-  yield* records.saveOwned(e, [
-    "verification_receipt",
-    "review_receipt",
-    "delivery_receipt",
-    "delivery_wait",
-    "forge_observation",
-    "active_role",
-    "capacity_reservation",
-    "archived_tree",
-    "archive_path",
-    "review_session_id",
-    "retry_instructions",
-    "openspec_change",
-    "planning_base_commit",
-    "plan_fingerprint",
-    "explore_session_id",
-    "apply_session_id",
-    "current_phase",
-  ]);
-  return revision ? ("planning" as const) : ("verifying" as const);
+  yield* records.commitOwned(e, (current) => ({
+    ...resetDeliveryArtifactsPatch({
+      clearDeliveryArtifacts: true,
+      clearForgeObservation: true,
+      clearReviewSession: true,
+      clearPlanningArtifacts: revision,
+    }),
+    finishing: {
+      ...current.finishing,
+      schema_version: 1,
+      synchronization: current.finishing?.synchronization?.map((a) =>
+        a.ordinal === ordinal ? { ...a, planning_base_tree: planningBase, stage: nextStage } : a,
+      ),
+    },
+    retry_instructions: `Synchronize existing content revision ${ordinal}. Assess only the retained work already present; do not implement new fixes or widen accepted scope. Preserve all historical archives. ${revision ? "Prepare a new revision plan describing existing implemented work, with accurate completed tasks. This authorizes planning artifacts only; after approval the controller runs checks and independent Review without Apply." : "Independent Review must confirm existing edits fit the approved scope."}`,
+    ...(revision && {
+      openspec_change: ChangeName.make(`${e.openspec_change}-sync${ordinal}`),
+      planning_base_commit: observation.head,
+    }),
+    current_phase: nextStage,
+  }));
+  return nextStage;
 }, domainEffect);

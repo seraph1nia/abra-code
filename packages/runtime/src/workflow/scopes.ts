@@ -1,12 +1,15 @@
-import { externalOwns } from "../validation/contracts.ts";
-import { ObligationKey } from "../identities.ts";
+import { externalOwns } from "@abracode/contracts/validation/contracts";
+import { ObligationKey } from "@abracode/contracts/identities";
 import { Clock, Effect } from "effect";
 import { type Execution, type Issue, CrewError } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { decode, decodeJSON } from "../decode.ts";
 import { ScopeSchema, completeScope, scopeIdentity, type Scope } from "../work/scope.ts";
 import { type Records } from "../storage/store.ts";
+import { appendDecision, makeControllerDecision } from "./decision-ledger.ts";
+import { assertTransition, resetDeliveryArtifacts } from "./transitions.ts";
 export { scopeIdentity } from "../work/scope.ts";
+
 export class Scopes {
   constructor(private records: Records) {}
   initialize = Effect.fn("Scopes.initialize")(
@@ -27,21 +30,17 @@ export class Scopes {
               (d) => d.key === "scope-contract" && d.generation === e.control_generation,
             )
           ) {
-            e.decisions = [
-              ...(e.decisions ?? []),
-              {
-                schema_version: 1,
+            e.decisions = appendDecision(
+              e.decisions,
+              makeControllerDecision({
                 key: ObligationKey.make("scope-contract"),
                 generation: e.control_generation,
                 scope: e.workflow_policy,
                 question:
                   "Provide the scoped work contract as JSON with goal, nonempty acceptance array, and constraints array. This answer does not approve the scope.",
-                owner: "user",
-                session_id: "controller",
-                opened_at: yield* Clock.currentTimeMillis,
-                status: "open",
-              },
-            ];
+                openedAt: yield* Clock.currentTimeMillis,
+              }),
+            );
           }
           yield* this.records.saveOwned(e, ["decisions"]);
           return false;
@@ -90,6 +89,7 @@ export class Scopes {
       saveControl: (e: Execution) => Effect.Effect<unknown, CrewError>,
     ) {
       const contract = yield* this.validateRevision(e, input);
+      assertTransition(e.current_phase, "awaiting_plan_approval");
       if (e.scope) e.scope_history = [...(e.scope_history ?? []), e.scope];
       const revision = (e.scope?.revision ?? 0) + 1;
       e.scope = {
@@ -100,14 +100,8 @@ export class Scopes {
       };
       e.plan_fingerprint = e.scope.fingerprint;
       if (e.report_receipt) e.report_history = [...(e.report_history ?? []), e.report_receipt];
-      delete e.report_intent;
-      delete e.report_receipt;
-      delete e.report_acceptance_met;
-      delete e.capacity_reservation;
+      resetDeliveryArtifacts(e, { clearReportArtifacts: true });
       e.capacity_observed_idle = true;
-      delete e.verification_receipt;
-      delete e.review_receipt;
-      delete e.active_role;
       e.decisions = e.decisions?.map((d) =>
         d.status === "open" ? { ...d, status: "superseded" as const } : d,
       );

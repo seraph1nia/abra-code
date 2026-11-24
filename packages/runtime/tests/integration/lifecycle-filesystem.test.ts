@@ -9,7 +9,7 @@ import { test, vi } from "vite-plus/test";
 import { CrewError } from "../../src/domain.ts";
 import { RepositorySources } from "../../src/git/source.ts";
 import { Workspaces } from "../../src/git/workspaces.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { OpenSpec } from "../../src/openspec/adapter.ts";
 import { createExecution } from "../../src/workflow/execution.ts";
 import { retainedExecution } from "../helpers/retained-execution.ts";

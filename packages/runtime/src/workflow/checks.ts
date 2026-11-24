@@ -7,13 +7,13 @@ import {
   IssueId,
   SessionId,
   RelativePath,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 
 import type { CheckpointEvidence } from "./authorization.ts";
 import { Clock, Effect } from "effect";
 import { CrewError, type Execution, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import { removeOwnedField, synchronizeExecution, type Records } from "../storage/store.ts";
+import { removeOwnedField, type Records } from "../storage/store.ts";
 import { type Git } from "../git/repository.ts";
 import { type OpenSpec } from "../openspec/adapter.ts";
 import { verificationCommand } from "../config/contracts.ts";
@@ -45,7 +45,7 @@ export class CodingChecks {
   private launch = (e: Execution, role: "review") => this.sessions.launch(e, role);
   private get = (id: IssueId) => this.queries.get(id);
   assertPlan = Effect.fn("CodingChecks.assertPlan")(
-    function* (this: CodingChecks, e: Execution, _p: Project) {
+    function* (this: CodingChecks, e: Execution) {
       if (e.workflow_policy === "full-openspec") yield* this.spec.assertSchema(e);
       return yield* this.checkpoints.assertPlan(e);
     }.bind(this),
@@ -54,7 +54,7 @@ export class CodingChecks {
   verify = Effect.fn("CodingChecks.verify")(
     function* (this: CodingChecks, e: Execution, p: Project) {
       if (e.workflow_policy === "full-openspec") yield* this.spec.implemented(e);
-      const approved = yield* this.assertPlan(e, p);
+      const approved = yield* this.assertPlan(e);
       if (!(p.verification.length > 0))
         return yield* new CrewError(
           "CHECKS_MISSING",
@@ -80,59 +80,81 @@ export class CodingChecks {
             "OPERATION_MISSING",
             "Verification requires owned operation identity",
           );
+        const operationId = e.operation.id;
         e.command_wait = {
-          operation_id: e.operation.id,
+          operation_id: operationId,
           command: JSON.stringify([file, ...args]),
           started_at: started,
           deadline_at: started + options.deadline_ms,
         };
         yield* this.records.saveOwned(e, ["command_wait"]);
         let lastOutput = started - 1000;
-        const result = yield* Effect.result(
-          this.git.runner.run(Executable.make(file), args, approved.worktree_directory, env, {
-            ...options,
-            onProgress: (output) => {
-              if (output.at - lastOutput < 1000) return Effect.void;
-              lastOutput = output.at;
-              return progress({
-                stage: "verify",
-                status: "running",
-                completed,
-                total: p.verification.length,
-                stdout_bytes: output.stdout_bytes,
-                stderr_bytes: output.stderr_bytes,
-              }).pipe(
-                Effect.andThen(
-                  this.records
-                    .update(e.issue_id, (current) => {
-                      if (
-                        current.control_generation !== e.control_generation ||
-                        current.command_wait?.operation_id !== e.command_wait?.operation_id
-                      )
-                        return;
-                      return {
-                        ...current,
-                        progress: {
-                          schema_version: 1,
-                          generation: e.control_generation,
-                          session_id: e.apply_session_id ?? e.execution_id,
-                          at: output.at,
-                          source: "command",
-                          summary: `${file}: ${output.stdout_bytes} stdout / ${output.stderr_bytes} stderr bytes`,
-                          identity: ActivityId.make(
-                            `command:${output.stdout_bytes}:${output.stderr_bytes}`,
-                          ),
-                        },
-                      };
-                    })
-                    .pipe(Effect.asVoid),
-                ),
-              );
-            },
-          }),
+        let cleared = false;
+        const result = yield* Effect.gen({ self: this }, function* () {
+          const outcome = yield* Effect.result(
+            this.git.runner.run(Executable.make(file), args, approved.worktree_directory, env, {
+              ...options,
+              onProgress: (output) => {
+                if (output.at - lastOutput < 1000) return Effect.void;
+                lastOutput = output.at;
+                return progress({
+                  stage: "verify",
+                  status: "running",
+                  completed,
+                  total: p.verification.length,
+                  stdout_bytes: output.stdout_bytes,
+                  stderr_bytes: output.stderr_bytes,
+                }).pipe(
+                  Effect.andThen(
+                    this.records
+                      .update(e.issue_id, (current) => {
+                        if (
+                          current.control_generation !== e.control_generation ||
+                          current.command_wait?.operation_id !== operationId
+                        )
+                          return;
+                        return {
+                          ...current,
+                          progress: {
+                            schema_version: 1,
+                            generation: e.control_generation,
+                            session_id: e.apply_session_id ?? e.execution_id,
+                            at: output.at,
+                            source: "command",
+                            summary: `${file}: ${output.stdout_bytes} stdout / ${output.stderr_bytes} stderr bytes`,
+                            identity: ActivityId.make(
+                              `command:${output.stdout_bytes}:${output.stderr_bytes}`,
+                            ),
+                          },
+                        };
+                      })
+                      .pipe(Effect.asVoid),
+                  ),
+                );
+              },
+            }),
+          );
+          delete e.command_wait;
+          yield* this.records.saveOwned(e, ["command_wait"]);
+          cleared = true;
+          return outcome;
+        }).pipe(
+          Effect.ensuring(
+            Effect.suspend(() => {
+              if (cleared) return Effect.void;
+              cleared = true;
+              delete e.command_wait;
+              return this.records
+                .update(e.issue_id, (current) => {
+                  if (current.command_wait?.operation_id !== operationId) return;
+                  const next = { ...current };
+                  delete next.command_wait;
+                  return next;
+                })
+                .pipe(Effect.ignore);
+            }),
+          ),
         );
-        delete e.command_wait;
-        yield* this.records.saveOwned(e, ["command_wait"]);
         if (result._tag === "Failure")
           return yield* new CrewError(
             "VERIFICATION_FAILED",
@@ -157,26 +179,27 @@ export class CodingChecks {
           "Checks modified tracked/untracked content; preserve or ignore generated output and retry",
         );
       const synchronization = activeSynchronization(e);
-      if (synchronization)
-        e.finishing = {
-          ...e.finishing,
-          schema_version: 1,
-          synchronization: e.finishing!.synchronization!.map((attempt) =>
-            attempt.ordinal === synchronization.ordinal
-              ? { ...attempt, stage: "reviewing" }
-              : attempt,
-          ),
-        };
-      if (synchronization) yield* this.records.saveFinishing(e, ["synchronization"]);
       const at = yield* timestamp;
       const check = {
         fingerprint: before,
         at,
         commands: p.verification.map((command) => verificationCommand(command).argv.join(" ")),
       };
-      const verified = yield* this.records.patchOwned(e, {
+      yield* this.records.commitOwned(e, (current) => ({
+        ...(synchronization &&
+          current.finishing?.synchronization && {
+            finishing: {
+              ...current.finishing,
+              schema_version: 1,
+              synchronization: current.finishing.synchronization.map((attempt) =>
+                attempt.ordinal === synchronization.ordinal
+                  ? { ...attempt, stage: "reviewing" as const }
+                  : attempt,
+              ),
+            },
+          }),
         check_history: [
-          ...(e.check_history ?? []).filter((item) => item.fingerprint !== before),
+          ...(current.check_history ?? []).filter((item) => item.fingerprint !== before),
           check,
         ].slice(-16),
         verification_receipt: {
@@ -186,8 +209,7 @@ export class CodingChecks {
         },
         review_receipt: removeOwnedField,
         review_coverage: removeOwnedField,
-      });
-      synchronizeExecution(e, verified);
+      }));
       yield* this.launch(e, "review");
       return e;
     }.bind(this),

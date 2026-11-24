@@ -1,13 +1,12 @@
-import { verifyDiagrams } from "../workflow/diagrams.ts";
+import { verifyDiagrams } from "../reporting/diagrams.ts";
 import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
 import {
   bindingRequirements,
   selectBindingRows,
   type BindingCoverage,
 } from "@abracode/contracts/web/bindings";
-import { committedScope } from "../visibility/invalidations.ts";
-import { canonicalJSON as stable, presentationHash as hash } from "../presentation/identity.ts";
-import { PresentationAssociations } from "../presentation/associations.ts";
+import { presentationHash as hash } from "../presentation/identity.ts";
+import type { PresentationAssociations } from "../presentation/associations.ts";
 import { createHash } from "node:crypto";
 import { Effect, Schema } from "effect";
 import { CrewError } from "../domain.ts";
@@ -21,15 +20,23 @@ import {
   StorageKey,
   StoragePrefix,
   type Timestamp,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 import type { Store } from "../storage/store.ts";
 import type { Locks } from "../storage/lock.ts";
-import { SurfaceRecordSchema, PresentationAttachmentSchema } from "./workspace-wire.ts";
-import { normalizeSurface, validateSurface, type WorkSurface } from "./surfaces.ts";
-import { ComponentId } from "./catalog.ts";
-import { WorkItemSchema } from "./wire.ts";
+import {
+  SurfaceRecordSchema,
+  PresentationAttachmentSchema,
+} from "@abracode/contracts/web/workspace-wire";
+import {
+  normalizeSurface,
+  validateSurface,
+  type WorkSurface,
+} from "@abracode/contracts/web/surfaces";
+import { ComponentId } from "@abracode/contracts/web/catalog";
+import { WorkItemSchema } from "@abracode/contracts/web/wire";
 import { compactSurface, loadSurfaceRecord, observedSurface } from "./surface-records.ts";
 import type { SurfaceRecord } from "./contracts.ts";
+import { PublicationStore } from "./publication-store.ts";
 
 type SurfaceObservation = Effect.Effect<
   {
@@ -114,18 +121,28 @@ const conflict = (message: string) => new CrewError("UI_SURFACE_CONFLICT", messa
 /** One owner for immutable layout publication and its repairable indexes.
  * Reads never repair or publish. Native startup/retry performs bounded recovery. */
 export class SurfacePublications {
+  private readonly publications: PublicationStore;
   constructor(
     private store: Store,
-    private locks: Locks,
-  ) {}
-  private immutable(key: StorageKey, value: unknown) {
-    return Effect.gen({ self: this }, function* () {
-      const prior = yield* this.store.get(key);
-      if (prior !== undefined) {
-        if (stable(prior) !== stable(value))
-          return yield* conflict("Retained presentation identity cannot be rebound");
-      } else yield* this.store.set(key, value);
+    locks: Locks,
+    associations?: PresentationAssociations,
+  ) {
+    this.publications = new PublicationStore({
+      store,
+      locks,
+      associations,
+      lockKey: LockKey.make("web-surfaces"),
+      conflict,
+      headPrefix: (session) => StoragePrefix.make(`web/surface-head/${session}/`),
+      headKey,
     });
+  }
+  private immutable(key: StorageKey, value: unknown) {
+    return this.publications.immutable(
+      key,
+      value,
+      "Retained presentation identity cannot be rebound",
+    );
   }
   private publication(value: unknown, key: string) {
     return Effect.gen(function* () {
@@ -143,12 +160,12 @@ export class SurfacePublications {
   private commit(publication: Publication) {
     return Effect.gen({ self: this }, function* () {
       const { record, message_id, call_id } = publication;
-      const session = record.session_id,
+      const session = SessionId.make(record.session_id),
         surface = record.surface.createSurface.surfaceId;
       const identity = callHash(message_id, call_id);
-      const key = headKey(session, surface),
-        raw = yield* this.store.get(key);
-      const head = raw === undefined ? undefined : yield* decodeHead(raw, session, surface);
+      const head = yield* this.publications.readHead(session, surface, (raw) =>
+        decodeHead(raw, session, surface),
+      );
       if (head?.pending && head.pending.record.tool_call_id !== record.tool_call_id)
         return yield* conflict("Another presentation reservation needs reconciliation");
       yield* this.immutable(publicationKey(session, identity), publication);
@@ -172,81 +189,69 @@ export class SurfacePublications {
           return yield* conflict("Surface revision is already owned by another native call");
       }
       yield* this.associate({
-        session_id: SessionId.make(session),
+        session_id: session,
         message_id,
         tool_call_id: call_id,
         source: "tool",
         target: { kind: "surface", surface_id: surface, revision: record.revision },
       });
-      yield* this.store.set(key, {
+      yield* this.publications.finalizeHead(session, surface, {
         schema_version: 1,
         session_id: session,
         surface_id: surface,
         next_revision: Math.max(head?.next_revision ?? 1, record.revision + 1),
         committed_revision: Math.max(head?.committed_revision ?? 0, record.revision),
       });
-      yield* committedScope({ presentations: true });
     });
   }
   private recoverPending(session: SessionId, isolate = false) {
-    return Effect.gen({ self: this }, function* () {
-      const heads = yield* this.store.entries(StoragePrefix.make(`web/surface-head/${session}/`));
-      const diagnostics: { surface_id: string; unavailable: string }[] = [];
-      // There are at most sixteen surface heads per retained Abra session. No
-      // publication-history scan is needed to repair a missing receipt/association.
-      for (const row of heads) {
-        const recovered = yield* Effect.gen({ self: this }, function* () {
-          const surface = row.key.slice(`web/surface-head/${session}/`.length);
-          const head = yield* decodeHead(row.value, session, surface);
-          if (head.pending) yield* this.commit(yield* this.publication(head.pending, row.key));
-        }).pipe(Effect.result);
-        if (recovered._tag === "Failure") {
-          if (!isolate) return yield* recovered.failure;
-          diagnostics.push({
-            surface_id: row.key.split("/").at(-1) ?? "unavailable",
-            unavailable: "Generated-view recovery is unavailable; retained evidence was preserved.",
-          });
-        }
-      }
-      return diagnostics;
+    // There are at most sixteen surface heads per retained Abra session. No
+    // publication-history scan is needed to repair a missing receipt/association.
+    return this.publications.recover(session, {
+      isolate,
+      decodeHead: (surface, raw) =>
+        decodeHead(raw, session, surface).pipe(
+          Effect.map((head) => ({ head, pending: head.pending })),
+        ),
+      commit: (pending, key) =>
+        this.publication(pending, key).pipe(Effect.flatMap((pub) => this.commit(pub))),
+      onFailure: (surface) =>
+        Effect.succeed({
+          surface_id: surface || "unavailable",
+          unavailable: "Generated-view recovery is unavailable; retained evidence was preserved.",
+        }),
     });
   }
   recover(session: SessionId) {
-    return this.locks.with(LockKey.make("web-surfaces"), () => this.recoverPending(session, true));
+    return this.publications.withLock(() => this.recoverPending(session, true));
   }
   associate(attachment: typeof PresentationAttachmentSchema.Type) {
-    return new PresentationAssociations(this.store, this.locks).associate(attachment);
+    return this.publications.associations.associate(attachment);
   }
   associations(session: SessionId, messages: readonly MessageId[]) {
     return Effect.gen({ self: this }, function* () {
-      const page = yield* new PresentationAssociations(this.store, this.locks).read(
-        session,
-        messages,
+      const page = yield* this.publications.associations.read(session, messages);
+      return yield* this.publications.filterAttachments(
+        page,
+        "surface",
+        (entry) =>
+          this.read(session, entry.target.surface_id, entry.target.revision).pipe(
+            Effect.result,
+            Effect.map((record) => {
+              if (
+                record._tag === "Success" &&
+                record.success.message_id === entry.message_id &&
+                record.success.tool_call_id === `${entry.message_id}/${entry.tool_call_id}`
+              )
+                return "keep" as const;
+              return record._tag === "Failure" &&
+                record.failure.code === "SURFACE_REVISION_UNAVAILABLE"
+                ? ("skip" as const)
+                : ("diagnostic" as const);
+            }),
+          ),
+        "Surface attachment has no confirmed publication.",
       );
-      const entries: typeof page.entries = [];
-      for (const entry of page.entries) {
-        if (entry.target.kind === "surface") {
-          const record = yield* this.read(
-            session,
-            entry.target.surface_id,
-            entry.target.revision,
-          ).pipe(Effect.result);
-          if (
-            record._tag === "Failure" ||
-            record.success.message_id !== entry.message_id ||
-            record.success.tool_call_id !== `${entry.message_id}/${entry.tool_call_id}`
-          ) {
-            if (record._tag !== "Failure" || record.failure.code !== "SURFACE_REVISION_UNAVAILABLE")
-              page.diagnostics.push({
-                message_id: entry.message_id,
-                unavailable: "Surface attachment has no confirmed publication.",
-              });
-            continue;
-          }
-        }
-        entries.push(entry);
-      }
-      return { ...page, entries, diagnostics: page.diagnostics.slice(0, 200) };
     });
   }
   searchCommitted(session: SessionId, surface: string, revision: number) {
@@ -359,7 +364,7 @@ export class SurfacePublications {
     input: { session_id: SessionId; message_id: MessageId; call_id: string; surface: WorkSurface },
     observe: SurfaceObservation,
   ) {
-    return this.locks.with(LockKey.make("web-surfaces"), () =>
+    return this.publications.withLock(() =>
       domainEffect(
         Effect.gen({ self: this }, function* () {
           yield* this.recoverPending(input.session_id);
@@ -460,15 +465,19 @@ export class SurfacePublications {
               StorageKey.make(`web/surface-legacy/${input.session_id}/${id}/${previous.revision}`),
               previous,
             );
-          yield* this.store.set(headKey(input.session_id, id), {
-            schema_version: 1,
-            session_id: input.session_id,
-            surface_id: id,
-            next_revision: revision + 1,
-            committed_revision: committed,
-            pending: publication,
-          });
-          yield* this.commit(publication);
+          yield* this.publications.reserveAndCommit(
+            input.session_id,
+            id,
+            {
+              schema_version: 1,
+              session_id: input.session_id,
+              surface_id: id,
+              next_revision: revision + 1,
+              committed_revision: committed,
+              pending: publication,
+            },
+            () => this.commit(publication),
+          );
           return { surface_id: id, revision, version: "1.0" as const };
         }),
       ),

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { access, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { OpenSpec } from "../../src/openspec/adapter.ts";
 import { type Runner } from "../../src/process.ts";
 import { fixture } from "../fixtures.ts";

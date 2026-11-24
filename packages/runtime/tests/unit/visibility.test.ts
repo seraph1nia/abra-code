@@ -1,6 +1,6 @@
 import { workBriefing } from "../../src/visibility/briefing.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
 import { run } from "../effects.ts";
 import { domainEffect } from "../../src/effect.ts";

@@ -1,4 +1,4 @@
-import { Clock, Effect, Metric } from "effect";
+import { Duration, Effect, Metric } from "effect";
 import { type Role, type ManagedExecution } from "./domain.ts";
 export const observerRequests = Metric.counter("abracode.observer.requests", { incremental: true });
 export const admissionWaits = Metric.counter("abracode.admission.waits", { incremental: true });
@@ -24,16 +24,7 @@ export const admissionWait = (role: Role) =>
 export const providerFailure = (role: Role) =>
   Metric.update(providerFailures.pipe(Metric.withAttributes({ role })), 1);
 export const measureReconcile = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  Effect.gen(function* () {
-    const started = yield* Clock.currentTimeMillis;
-    return yield* effect.pipe(
-      Effect.ensuring(
-        Clock.currentTimeMillis.pipe(
-          Effect.flatMap((ended) => Metric.update(reconcileDuration, Math.max(0, ended - started))),
-        ),
-      ),
-    );
-  });
+  effect.pipe(Effect.trackDuration(reconcileDuration, Duration.toMillis));
 export function correlate<A, E, R>(
   effect: Effect.Effect<A, E, R>,
   e: ManagedExecution | undefined,

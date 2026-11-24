@@ -1,1 +1,3 @@
-import "@abracode/runtime/cli/report-shell";
+import { runMain } from "@abracode/runtime/cli";
+
+runMain(["report", "prepare"]);

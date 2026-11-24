@@ -1,6 +1,12 @@
 import { Schema } from "effect";
-import { Count, NonEmpty } from "../contracts.ts";
-import { ChangeName, ArtifactId, RelativePath, SpecSchemaName, TaskId } from "../identities.ts";
+import { Count, NonEmpty } from "@abracode/contracts/primitives";
+import {
+  ChangeName,
+  ArtifactId,
+  RelativePath,
+  SpecSchemaName,
+  TaskId,
+} from "@abracode/contracts/identities";
 export const SpecArtifactSchema = Schema.Struct({
   id: ArtifactId,
   status: Schema.Literals(["done", "ready", "blocked", "skipped"]),

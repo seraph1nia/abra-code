@@ -4,7 +4,7 @@ import { test } from "vite-plus/test";
 import { Effect } from "effect";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { CrewError, type Execution, type ReadinessBlocker } from "../../src/domain.ts";
 import {
   supervisionSummary,

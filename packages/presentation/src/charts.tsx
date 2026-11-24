@@ -7,7 +7,14 @@ import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { scaleUtc } from "@tanstack/charts/scales/time";
 import type { ChartInput, WorkProps } from "@abracode/contracts/web/catalog";
 
-const palette = ["#568661", "#5286b2", "#d29449", "#9c72ae", "#cb726b", "#459e9b"];
+const palette = [
+  "var(--chart-1, #568661)",
+  "var(--chart-2, #5286b2)",
+  "var(--chart-3, #d29449)",
+  "var(--chart-4, #9c72ae)",
+  "var(--chart-5, #cb726b)",
+  "var(--chart-6, #459e9b)",
+] as const;
 const category = {
   scale: () => scaleBand<string>().padding(0.2),
   axis: {

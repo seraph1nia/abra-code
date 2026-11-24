@@ -43,13 +43,43 @@ export interface NativeAgentSource {
   notifyAdmission: Effect.Effect<void>;
   updates: Stream.Stream<NativeObservation>;
 }
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const same = (a: unknown, b: unknown) => Object.is(a, b) || JSON.stringify(a) === JSON.stringify(b);
+const plainObject = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+const escapePointer = (key: string) => key.replaceAll("~", "~0").replaceAll("/", "~1");
+
+/** Compute minimal RFC 6902 JSON Patch operations recursively across plain objects. */
+export function jsonPatch(
+  prior: Record<string, unknown>,
+  next: Record<string, unknown>,
+  prefix = "",
+  delta: JsonPatch = [],
+): JsonPatch {
+  if (Object.is(prior, next)) return delta;
+  for (const key of new Set([...Object.keys(prior), ...Object.keys(next)])) {
+    const before = prior[key];
+    const after = next[key];
+    if (Object.is(before, after)) continue;
+    const path = `${prefix}/${escapePointer(key)}`;
+    if (after === undefined) {
+      if (before !== undefined) delta.push({ op: "remove", path });
+    } else if (before === undefined) {
+      delta.push({ op: "add", path, value: after });
+    } else if (plainObject(before) && plainObject(after)) {
+      jsonPatch(before, after, path, delta);
+    } else if (!same(before, after)) {
+      delta.push({ op: "replace", path, value: after });
+    }
+  }
+  return delta;
+}
+
 /** Each observer owns a projection cursor, never native execution or retained history. */
 function projection() {
   let previous: Extract<NativeObservation, { type: "snapshot" }> | undefined;
   const cursor = new NativeMessageCursor();
   let previousState: Record<string, unknown> | undefined;
-  return (event: NativeObservation): readonly Event[] => {
+  const push = (event: NativeObservation): readonly Event[] => {
     if (event.type === "custom") return [event.event];
     const before = previous,
       order = event.order;
@@ -69,27 +99,15 @@ function projection() {
     previous = event;
     const messages = cursor.update(event.native.messages, baseline);
     const state = event.state?.(baseline);
+    if (!state) return messages;
     const priorState = previousState;
     previousState = state;
-    if (!state) return messages;
     if (baseline || !priorState)
       return [...messages, { type: EventType.STATE_SNAPSHOT, snapshot: state }];
-    const delta: JsonPatch = [];
-    for (const key of new Set([...Object.keys(priorState!), ...Object.keys(state)])) {
-      const prior = priorState![key],
-        value = state[key];
-      if (same(prior, value)) continue;
-      if (value === undefined)
-        delta.push({ op: "remove", path: `/${key.replaceAll("~", "~0").replaceAll("/", "~1")}` });
-      else
-        delta.push({
-          op: prior === undefined ? "add" : "replace",
-          path: `/${key.replaceAll("~", "~0").replaceAll("/", "~1")}`,
-          value,
-        });
-    }
+    const delta = jsonPatch(priorState, state);
     return delta.length ? [...messages, { type: EventType.STATE_DELTA, delta }] : messages;
   };
+  return { push, close: () => cursor.close() };
 }
 /** Effect/Observable cancellation detaches the scoped observer; it never calls Stop. */
 const observable = (stream: Stream.Stream<Event, CrewError>) =>
@@ -190,14 +208,15 @@ export class NativeAgentAdapter {
                 }),
               ),
               Stream.takeUntil(() => terminal !== undefined),
-              Stream.flatMap((event) => Stream.fromIterable(project(event))),
+              Stream.flatMap((event) => Stream.fromIterable(project.push(event))),
             ),
           ),
         ),
       );
       const finish = Stream.unwrap(
         Effect.sync(() =>
-          Stream.succeed(
+          Stream.fromIterable([
+            ...project.close(),
             terminal?.outcome === "succeeded"
               ? ({
                   type: EventType.RUN_FINISHED,
@@ -213,7 +232,7 @@ export class NativeAgentAdapter {
                       ? "Native execution was interrupted"
                       : "Native completion is not established; reconnect without resubmitting input"),
                 } satisfies Event),
-          ),
+          ]),
         ),
       );
       return observable(
@@ -245,7 +264,7 @@ export class NativeAgentAdapter {
           try: () => {
             this.assert(thread, agent);
             return this.source.updates.pipe(
-              Stream.flatMap((event) => Stream.fromIterable(project(event))),
+              Stream.flatMap((event) => Stream.fromIterable(project.push(event))),
             );
           },
           catch: CrewError.from,
@@ -256,11 +275,18 @@ export class NativeAgentAdapter {
           Stream.succeed({ type: EventType.RUN_STARTED, threadId: thread, runId } satisfies Event),
           Stream.concat(
             observation,
-            Stream.succeed({
-              type: EventType.RUN_FINISHED,
-              threadId: thread,
-              runId,
-            } satisfies Event),
+            Stream.unwrap(
+              Effect.sync(() =>
+                Stream.fromIterable([
+                  ...project.close(),
+                  {
+                    type: EventType.RUN_FINISHED,
+                    threadId: thread,
+                    runId,
+                  } satisfies Event,
+                ]),
+              ),
+            ),
           ),
         ),
       );

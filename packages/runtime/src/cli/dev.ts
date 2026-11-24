@@ -1,43 +1,40 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect process lifecycle; the native service remains independently owned. */
-import { NodeRuntime } from "@effect/platform-node";
+/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 child process lifecycle APIs. */
 import { Console, Effect, Schedule } from "effect";
 import { ChildProcess } from "effect/process";
-import { sourceInstallationRoot } from "../installation.ts";
 import { CrewError } from "../domain.ts";
-import { provideProcess } from "../platform.ts";
+import { sourceInstallationRoot } from "../installation.ts";
 import { makeWorkspaceClient } from "../web/client.ts";
 import { connectDevNotebook } from "./dev-notebook.ts";
 
-const args = process.argv.slice(2);
-if (args.includes("--help")) {
-  console.log(
-    "Usage: pnpm dev [--port 5173] [--backend-port 4098]\nStarts or restarts Docker Compose and the native service, then serves Vite React HMR and automatic Effect HTTP backend reloads.",
-  );
-} else {
-  const program = Effect.scoped(
+export interface DevOptions {
+  readonly port: number;
+  readonly backendPort: number;
+  readonly open: boolean;
+}
+
+const browserOpener = (): string | undefined =>
+  process.platform === "darwin" ? "open" : process.platform === "linux" ? "xdg-open" : undefined;
+
+export const runDev = (options: DevOptions) =>
+  Effect.scoped(
     Effect.gen(function* () {
-      let port = 5173,
-        backendPort = 4098;
-      for (let index = 0; index < args.length; index++) {
-        const flag = args[index];
-        const value = args[++index];
-        if (
-          !["--port", "--backend-port"].includes(flag) ||
-          !/^\d+$/.test(value ?? "") ||
-          Number(value) < 1 ||
-          Number(value) > 65535
-        )
-          return yield* new CrewError(
-            "DEV_ARGUMENTS",
-            "Usage: pnpm dev [--port 5173] [--backend-port 4098]",
-          );
-        if (flag === "--port") port = Number(value);
-        else backendPort = Number(value);
-      }
+      const { port, backendPort } = options;
+      if (
+        !Number.isInteger(port) ||
+        port < 1 ||
+        port > 65535 ||
+        !Number.isInteger(backendPort) ||
+        backendPort < 1 ||
+        backendPort > 65535
+      )
+        return yield* new CrewError(
+          "DEV_ARGUMENTS",
+          "Usage: pnpm dev [--port 5173] [--backend-port 4098]",
+        );
       if (port === backendPort)
         return yield* new CrewError("DEV_ARGUMENTS", "Frontend and backend ports must differ");
       const home = sourceInstallationRoot();
-      const options = {
+      const childOptions = {
         cwd: home,
         env: {
           ABRACODE_DEV_PORT: String(port),
@@ -65,18 +62,18 @@ if (args.includes("--help")) {
           "--wait-timeout",
           "60",
         ],
-        options,
+        childOptions,
       );
       const composeCode = yield* compose.exitCode;
-      if (composeCode !== 0)
+      if (Number(composeCode) !== 0)
         return yield* new CrewError(
           "DEV_COMPOSE",
           `Docker Compose startup failed (${composeCode})`,
         );
       yield* connectDevNotebook(home);
-      const restart = yield* ChildProcess.make("pnpm", ["service:restart"], options);
+      const restart = yield* ChildProcess.make("pnpm", ["service:restart"], childOptions);
       const restartCode = yield* restart.exitCode;
-      if (restartCode !== 0)
+      if (Number(restartCode) !== 0)
         return yield* new CrewError(
           "DEV_SERVICE_RESTART",
           `Native service restart failed (${restartCode})`,
@@ -96,12 +93,13 @@ if (args.includes("--help")) {
           "packages/runtime/src/**",
           "--include",
           "packages/contracts/src/**",
-          "scripts/web.ts",
+          "scripts/cli.ts",
+          "web",
           "--port",
           String(backendPort),
           "--no-open",
         ],
-        options,
+        childOptions,
       );
       const ready = makeWorkspaceClient(`http://127.0.0.1:${backendPort}`).pipe(
         Effect.flatMap((client) => client.workspace.bootstrap()),
@@ -120,11 +118,29 @@ if (args.includes("--help")) {
       const frontend = yield* ChildProcess.make(
         "pnpm",
         ["--filter", "@abracode/web", "dev"],
-        options,
+        childOptions,
       );
+      const url = `http://127.0.0.1:${port}`;
       yield* Console.log(
-        `Abra development: http://127.0.0.1:${port}\nReact edits use Vite HMR; backend edits restart the Effect HTTP adapter. Ctrl+C stops development servers and preserves native work.`,
+        `Abra development: ${url}\nReact edits use Vite HMR; backend edits restart the Effect HTTP adapter. Ctrl+C stops development servers and preserves native work.`,
       );
+      if (options.open) {
+        const opener = browserOpener();
+        if (opener) {
+          yield* Effect.scoped(
+            Effect.gen(function* () {
+              const child = yield* ChildProcess.make(opener, [url], {
+                cwd: home,
+                detached: false,
+                stdin: "ignore",
+                stdout: "ignore",
+                stderr: "ignore",
+              });
+              yield* child.exitCode;
+            }),
+          ).pipe(Effect.timeout("5 seconds"), Effect.ignore);
+        }
+      }
       return yield* Effect.raceFirst(
         backend.exitCode.pipe(
           Effect.flatMap(
@@ -136,6 +152,4 @@ if (args.includes("--help")) {
         ),
       );
     }),
-  ).pipe(provideProcess);
-  NodeRuntime.runMain(program);
-}
+  );

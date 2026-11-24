@@ -14,16 +14,16 @@ import {
   workCatalogDocument,
   workComponents,
   validationCatalog,
-} from "../../src/web/catalog.ts";
+} from "@abracode/contracts/web/catalog";
 import {
   SurfaceSchema,
   normalizeSurface,
   validateSurface,
   surfaceResources,
   referencedWorkIds,
-} from "../../src/web/surfaces.ts";
+} from "@abracode/contracts/web/surfaces";
 import { loadSurfaceRecord, compactSurface } from "../../src/web/surface-records.ts";
-import { WorkspaceStateJson, WorkspaceStateSchema } from "../../src/web/workspace-wire.ts";
+import { WorkspaceStateJson, WorkspaceStateSchema } from "@abracode/contracts/web/workspace-wire";
 import { webGateway } from "../../src/web/protocol.ts";
 import { WorkspaceFixture } from "../helpers/web.ts";
 

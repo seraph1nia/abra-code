@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { IssueId, RequestId, ExecutionId, RepositoryId } from "../../src/identities.ts";
+import { IssueId, RequestId, ExecutionId, RepositoryId } from "@abracode/contracts/identities";
 import type { NewIssue, WorkEvent } from "../../src/work/graph.ts";
 import { Effect, Exit, Scope } from "effect";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { AbsolutePath } from "../../src/identities.ts";
+import { AbsolutePath } from "@abracode/contracts/identities";
 import { SqliteWorkGraph } from "../../src/work/graph.ts";
 import { run } from "../effects.ts";
 

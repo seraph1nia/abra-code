@@ -1,1 +1,3 @@
-import "@abracode/runtime/cli/config";
+import { runMain } from "@abracode/runtime/cli";
+
+runMain(["config"]);

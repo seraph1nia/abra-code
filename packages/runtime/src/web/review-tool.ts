@@ -5,16 +5,20 @@ import {
   ReviewSurfaceSourceSchema,
   ReviewPlanSourceSchema,
   ReviewReportSourceSchema,
+  ReviewSourceSchema,
   ReviewPublishSchema,
   ReviewSelectionSchema,
+  ReviewReferenceSchema,
+  ReviewViewSchema,
   type ReviewSource,
 } from "@abracode/contracts/web/reviews";
-import { AbsolutePath, ContentHash, type SessionId } from "../identities.ts";
+import { AbsolutePath, ContentHash, type SessionId } from "@abracode/contracts/identities";
 import { CrewError } from "../domain.ts";
 import { defineTool } from "../opencode/tool-definition.ts";
 import type { Controller } from "../workflow/controller.ts";
 import { NativeStore } from "../storage/store.ts";
 import { FileLocks } from "../storage/lock.ts";
+import { PresentationAssociations } from "../presentation/associations.ts";
 import { SurfacePublications } from "./surface-publications.ts";
 import { presentationHash } from "../presentation/identity.ts";
 import { Reviews, type ReviewSourceReader } from "./reviews.ts";
@@ -24,7 +28,8 @@ export function nativeReviews(ctx: Context, controller: Controller) {
   const locks = new FileLocks(
     AbsolutePath.make(join(controller.queries.settings.home, ".abracode/locks")),
   );
-  const surfaces = new SurfacePublications(store, locks);
+  const associations = new PresentationAssociations(store, locks);
+  const surfaces = new SurfacePublications(store, locks, associations);
   const source: ReviewSourceReader = (session, selection) =>
     Effect.gen(function* () {
       if (selection.kind === "surface") {
@@ -76,7 +81,7 @@ export function nativeReviews(ctx: Context, controller: Controller) {
         );
       return { text, ...(root ? { root } : {}) };
     });
-  const reviews = new Reviews(store, locks, source);
+  const reviews = new Reviews(store, locks, source, surfaces, associations);
   const resolveSource = (session: SessionId, selection: typeof sourceQuery.Type) =>
     Effect.gen(function* (): Effect.fn.Return<ReviewSource, CrewError> {
       if (selection.kind === "report") return selection;
@@ -122,22 +127,21 @@ export function reviewTool({ reviews, resolveSource }: NativeReviewOwner) {
       Schema.Struct({ action: Schema.Literal("read"), ...ReviewSelectionSchema.fields }),
       Schema.Struct({ action: Schema.Literal("source"), source: sourceQuery }),
     ]),
-    output: Schema.Json,
+    output: Schema.Union([
+      ReviewReferenceSchema,
+      ReviewViewSchema,
+      Schema.Struct({ source: ReviewSourceSchema }),
+    ]),
     run: (input, session, call) =>
       Effect.gen(function* () {
         if (input.action === "publish")
-          return JSON.parse(
-            JSON.stringify(
-              yield* reviews.publish(session, call.messageID, call.id, {
-                review: input.review,
-                ...(input.previews ? { previews: input.previews } : {}),
-              }),
-            ),
-          );
-        if (input.action === "read")
-          return JSON.parse(JSON.stringify(yield* reviews.read(session, input)));
+          return yield* reviews.publish(session, call.messageID, call.id, {
+            review: input.review,
+            ...(input.previews ? { previews: input.previews } : {}),
+          });
+        if (input.action === "read") return yield* reviews.read(session, input);
         const source = yield* resolveSource(session, input.source);
-        return JSON.parse(JSON.stringify({ source }));
+        return { source };
       }),
   });
 }

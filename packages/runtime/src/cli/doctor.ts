@@ -1,122 +1,40 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect platform APIs are required by the native adapters and covered by integration tests. */
-import { checkMemoryVersion, memoryError } from "../memory/provider.ts";
-import { Executable } from "../identities.ts";
-import { Effect, Console } from "effect";
-import { ProcessRunner } from "../process.ts";
-import { loadConfig } from "../config/load.ts";
-import { NodeFileSystem } from "@effect/platform-node";
+/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 service discovery APIs. */
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { AbsolutePath } from "@opencode/client/effect";
 import { Service } from "@opencode/client/effect/service";
-import { makeClient } from "../opencode/client.ts";
-import { visibility } from "../visibility/protocol.ts";
-import { join } from "node:path";
-import { FileLocks } from "../storage/lock.ts";
-import { LockKey } from "../identities.ts";
-import { modelRoles } from "../config/identity.ts";
+import { Console, Effect } from "effect";
+import { modelRoles, resolveInstallationHome } from "../config/identity.ts";
+import { loadConfig } from "../config/load.ts";
 import { mkdtemp, rm } from "../filesystem.ts";
-import { tmpdir } from "node:os";
-await Effect.runPromise(
-  Effect.gen(function* () {
-    const config = yield* loadConfig(process.env.ABRACODE_HOME ?? process.cwd());
-    const runner = new ProcessRunner();
-    if (config.memory?.enabled) {
-      const executable = config.memory.executable;
-      yield* Effect.scoped(
-        Effect.gen(function* () {
-          const root = yield* Effect.acquireRelease(
-            mkdtemp(join(tmpdir(), "abra-memory-doctor-")),
-            (p) => rm(p, { recursive: true, force: true }).pipe(Effect.orDie),
-          );
-          yield* Effect.tryPromise({
-            try: (signal) => checkMemoryVersion(executable, root, signal),
-            catch: memoryError,
-          });
-          yield* Console.log("Basic Memory 1.0.0 available for local stdio.");
-        }),
-      ).pipe(
-        Effect.catch((error) =>
-          Console.error(error.message).pipe(
-            Effect.tap(() =>
-              Effect.sync(() => {
-                process.exitCode = 1;
-              }),
-            ),
-          ),
-        ),
-      );
-    }
-    const browser = join(config.home, "node_modules/.bin/agent-browser");
-    yield* Console.log(
-      `Capacity: ${config.max_workers} active workers; ${config.max_executions ?? config.max_workers} execution slots`,
-    );
-    const endpoint = yield* Service.discover({
-      file: join(config.home, ".abracode/state/opencode/service.json"),
-      version: "2.3.0",
-    }).pipe(Effect.provide(NodeFileSystem.layer));
-    if (endpoint) {
-      const client = yield* makeClient(endpoint);
-      yield* client.model.list({ location: { directory: AbsolutePath.make(config.home) } }).pipe(
-        Effect.timeout("5 seconds"),
-        Effect.flatMap((inventory) =>
-          Effect.forEach(modelRoles, (role) => {
-            const selected = config.models.overrides?.[role] ?? config.models.default;
-            const model = inventory.data.find(
-              (m) => m.providerID === selected.providerID && m.id === selected.id,
-            );
-            const ready =
-              model?.enabled &&
-              (!selected.variant ||
-                selected.variant === "default" ||
-                model.variants.some((v) => v.id === selected.variant));
-            return Console.log(
-              `${role === "supervisor" ? "Abra" : role}: ${ready ? "native model/variant available" : "configured model/variant unavailable"}; provider authentication unverified until a request succeeds`,
-            ).pipe(
-              Effect.andThen(
-                Effect.sync(() => {
-                  if (!ready) process.exitCode = 1;
-                }),
-              ),
-            );
-          }),
-        ),
-        Effect.catch(() =>
-          Console.log(
-            "Live model inventory unavailable; provider/model/variant readiness unverified.",
-          ),
-        ),
-      );
-      yield* client
-        .rpc(visibility)
-        .snapshot({}, { location: { directory: AbsolutePath.make(config.home) } })
-        .pipe(
-          Effect.timeout("5 seconds"),
-          Effect.flatMap((snapshot) =>
-            Console.log({ record_diagnostics: snapshot.record_diagnostics ?? [] }),
-          ),
-          Effect.catch((error) =>
-            Console.error(
-              `Record inspection unavailable: ${error instanceof Error ? error.message : "Native inspection failed"}`,
-            ),
-          ),
-        );
-    } else
-      yield* Console.log(
-        "Record inspection and live provider/model/variant readiness unverified: service is not running; no records were rewritten.",
-      );
+import { Executable, LockKey } from "@abracode/contracts/identities";
+import { checkMemoryVersion, memoryError } from "../memory/provider.ts";
+import { makeClient } from "../opencode/client.ts";
+import { ProcessRunner } from "../process.ts";
+import { FileLocks } from "../storage/lock.ts";
+import { visibility } from "../visibility/protocol.ts";
+
+export const runDoctor = Effect.gen(function* () {
+  const config = yield* loadConfig(yield* resolveInstallationHome);
+  const runner = new ProcessRunner();
+  if (config.memory?.enabled) {
+    const executable = config.memory.executable;
     yield* Effect.scoped(
       Effect.gen(function* () {
         const root = yield* Effect.acquireRelease(
-          mkdtemp(join(tmpdir(), "abracode-doctor-lock-")),
-          (root) => rm(root, { recursive: true, force: true }).pipe(Effect.orDie),
+          mkdtemp(join(tmpdir(), "abra-memory-doctor-")),
+          (p) => rm(p, { recursive: true, force: true }).pipe(Effect.orDie),
         );
-        yield* new FileLocks(root).with(LockKey.make("doctor"), () =>
-          Console.log("fs-ext: native kernel locking available"),
-        );
+        yield* Effect.tryPromise({
+          try: (signal) => checkMemoryVersion(executable, root, signal),
+          catch: memoryError,
+        });
+        yield* Console.log("Basic Memory 1.0.0 available for local stdio.");
       }),
     ).pipe(
       Effect.catch((error) =>
-        Console.error(`fs-ext: ${error.message}`).pipe(
-          Effect.andThen(
+        Console.error(error.message).pipe(
+          Effect.tap(() =>
             Effect.sync(() => {
               process.exitCode = 1;
             }),
@@ -124,14 +42,97 @@ await Effect.runPromise(
         ),
       ),
     );
-    for (const [bin, args] of [
-      [join(config.home, "node_modules/.bin/opencode"), ["--version"]],
-      [browser, ["--version"]],
-      [config.commands.openspec, ["--version"]],
-      ["git", ["--version"]],
-      [config.commands.forge, ["--version"]],
-    ] as const) {
-      yield* runner
+  }
+  const browser = join(config.home, "node_modules/.bin/agent-browser");
+  yield* Console.log(
+    `Capacity: ${config.max_workers} active workers; ${config.max_executions ?? config.max_workers} execution slots`,
+  );
+  const endpoint = yield* Service.discover({
+    file: join(config.home, ".abracode/state/opencode/service.json"),
+    version: "2.3.0",
+  });
+  if (endpoint) {
+    const client = yield* makeClient(endpoint);
+    yield* client.model.list({ location: { directory: AbsolutePath.make(config.home) } }).pipe(
+      Effect.timeout("5 seconds"),
+      Effect.flatMap((inventory) =>
+        Effect.forEach(modelRoles, (role) => {
+          const selected = config.models.overrides?.[role] ?? config.models.default;
+          const model = inventory.data.find(
+            (m) => m.providerID === selected.providerID && m.id === selected.id,
+          );
+          const ready =
+            model?.enabled &&
+            (!selected.variant ||
+              selected.variant === "default" ||
+              model.variants.some((v) => v.id === selected.variant));
+          return Console.log(
+            `${role === "supervisor" ? "Abra" : role}: ${ready ? "native model/variant available" : "configured model/variant unavailable"}; provider authentication unverified until a request succeeds`,
+          ).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                if (!ready) process.exitCode = 1;
+              }),
+            ),
+          );
+        }),
+      ),
+      Effect.catch(() =>
+        Console.log(
+          "Live model inventory unavailable; provider/model/variant readiness unverified.",
+        ),
+      ),
+    );
+    yield* client
+      .rpc(visibility)
+      .snapshot({}, { location: { directory: AbsolutePath.make(config.home) } })
+      .pipe(
+        Effect.timeout("5 seconds"),
+        Effect.flatMap((snapshot) =>
+          Console.log({ record_diagnostics: snapshot.record_diagnostics ?? [] }),
+        ),
+        Effect.catch((error) =>
+          Console.error(
+            `Record inspection unavailable: ${error instanceof Error ? error.message : "Native inspection failed"}`,
+          ),
+        ),
+      );
+  } else
+    yield* Console.log(
+      "Record inspection and live provider/model/variant readiness unverified: service is not running; no records were rewritten.",
+    );
+  yield* Effect.scoped(
+    Effect.gen(function* () {
+      const root = yield* Effect.acquireRelease(
+        mkdtemp(join(tmpdir(), "abracode-doctor-lock-")),
+        (root) => rm(root, { recursive: true, force: true }).pipe(Effect.orDie),
+      );
+      yield* new FileLocks(root).with(LockKey.make("doctor"), () =>
+        Console.log("fs-ext: native kernel locking available"),
+      );
+    }),
+  ).pipe(
+    Effect.catch((error) =>
+      Console.error(`fs-ext: ${error.message}`).pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            process.exitCode = 1;
+          }),
+        ),
+      ),
+    ),
+  );
+  const checks = [
+    [join(config.home, "node_modules/.bin/opencode"), ["--version"]],
+    [browser, ["--version"]],
+    [config.commands.openspec, ["--version"]],
+    ["git", ["--version"]],
+    [config.commands.forge, ["--version"]],
+  ] as const;
+  yield* Effect.forEach(
+    checks,
+    ([bin, args]) =>
+      runner
         .run(Executable.make(bin), [...args], config.home, undefined, {
           deadline_ms: 5000,
           max_output_bytes: 8192,
@@ -153,10 +154,10 @@ await Effect.runPromise(
               ),
             ),
           ),
-        );
-    }
-    yield* Console.log(
-      "Browser setup (explicit, as the service user): pnpm browser:install, or set AGENT_BROWSER_EXECUTABLE_PATH to compatible system Chromium. Linux libraries must be installed separately; see docs/operations.md. Chrome is needed only for browser work. No browser was launched or repaired by this check.",
-    );
-  }),
-);
+        ),
+    { concurrency: "unbounded" },
+  );
+  yield* Console.log(
+    "Browser setup (explicit, as the service user): pnpm browser:install, or set AGENT_BROWSER_EXECUTABLE_PATH to compatible system Chromium. Linux libraries must be installed separately; see docs/operations.md. Chrome is needed only for browser work. No browser was launched or repaired by this check.",
+  );
+});

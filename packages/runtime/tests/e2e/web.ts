@@ -11,7 +11,7 @@ import { OpenCode } from "@opencode/client";
 import { Permission } from "@opencode/schema/permission";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 import { runtimePaths } from "../../src/config/identity.ts";
-import { AbsolutePath } from "../../src/identities.ts";
+import { AbsolutePath } from "@abracode/contracts/identities";
 
 /** Drive the shipped CopilotKit v2 UI against one disposable, retained native Abra. */
 export async function webJourney(

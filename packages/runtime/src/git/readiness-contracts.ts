@@ -1,6 +1,6 @@
 import { Schema } from "effect";
-import { CheckName, Commit, Timestamp } from "../identities.ts";
-import { Count, Positive, CIPolicySchema } from "../contracts.ts";
+import { CheckName, Commit, Timestamp } from "@abracode/contracts/identities";
+import { Count, Positive, CIPolicySchema } from "@abracode/contracts/primitives";
 import { CheckFields, CheckSource } from "./check-contracts.ts";
 export const ForgeObservationSchema = Schema.Struct({
   head: Commit,

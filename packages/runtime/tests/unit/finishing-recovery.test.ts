@@ -6,7 +6,7 @@ import { Effect } from "effect";
 import { fixture, delivered } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { CrewError } from "../../src/domain.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { admitSynchronization } from "../../src/workflow/synchronization.ts";
 import { observePublication } from "../../src/workflow/finishing-readiness.ts";
 import { NativeRuntime } from "../../src/opencode/runtime.ts";

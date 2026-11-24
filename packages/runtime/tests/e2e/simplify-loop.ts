@@ -5,7 +5,7 @@ import { repo } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { Git } from "../../src/git/repository.ts";
 import { ProcessRunner } from "../../src/process.ts";
-import { AbsolutePath, IssueId } from "../../src/identities.ts";
+import { AbsolutePath, IssueId } from "@abracode/contracts/identities";
 
 type Call = { name: string; args: any };
 /** Deterministic native worker script; these cases measure contracts, not model judgment. */

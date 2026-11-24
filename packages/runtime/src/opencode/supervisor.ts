@@ -1,4 +1,4 @@
-import { AbsolutePath } from "../identities.ts";
+import { AbsolutePath } from "@abracode/contracts/identities";
 import { domainEffect } from "../effect.ts";
 import { Effect } from "effect";
 import { type OpenCodeClient } from "@opencode/client/effect";
@@ -9,9 +9,8 @@ export function findSupervisor(client: OpenCodeClient, home: AbsolutePath) {
       do {
         const page = yield* client.session.list({
           directory: home,
-          order: "asc",
           limit: 100,
-          cursor,
+          ...(cursor ? { cursor } : { order: "asc" as const }),
         });
         const session = page.data.find((s) => s.metadata?.abracode_supervisor_home === home);
         if (session) return session;

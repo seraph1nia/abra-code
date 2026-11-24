@@ -123,7 +123,10 @@ export function Thoughts({ discuss }: { discuss: (ref: ThoughtReference) => void
                     </Read>
                   )}
                 </details>
-                <RememberThought key={JSON.stringify(item.reference)} item={item} />
+                <RememberThought
+                  key={`${item.reference.instance}:${item.reference.account}:${item.reference.name}:${item.reference.wording_hash}`}
+                  item={item}
+                />
                 <Button onClick={() => discuss(item.reference)}>Ask Abra about this</Button>
               </article>
             )}

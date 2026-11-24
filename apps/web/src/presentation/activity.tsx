@@ -1,5 +1,5 @@
 import { destinationFor } from "../navigation.ts";
-import { useSearch, useNavigate } from "@tanstack/react-router";
+import { useSearch, useNavigate, useRouterState } from "@tanstack/react-router";
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
 import { activitySections, searchForResource } from "../navigation.ts";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@abracode/presentation/ui/tabs";
@@ -15,8 +15,9 @@ const labels = {
   leads: "Leads & proposals",
 };
 export function ActivityPanel({ work, inspect }: { work: WebWorkItem; inspect: Inspect }) {
-  const route = useSearch({ from: "__root__" }),
-    navigate = useNavigate({ from: destinationFor(window.location.pathname) ?? "/" });
+  const route = useSearch({ from: "__root__" });
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const navigate = useNavigate({ from: destinationFor(pathname) ?? "/" });
   const section = route.activity ?? "sessions";
   return (
     <Tabs

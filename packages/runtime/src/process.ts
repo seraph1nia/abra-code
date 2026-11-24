@@ -1,6 +1,6 @@
-import { type AbsolutePath, type Executable } from "./identities.ts";
+import { type AbsolutePath, type Executable } from "@abracode/contracts/identities";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.0.1 process API; cancellation contracts are integration tested. */
-import { Clock, Effect, Stream, type Schema } from "effect";
+import { Clock, Effect, Semaphore, Stream, type Schema } from "effect";
 import { ChildProcess } from "effect/process";
 import { provideProcess } from "./platform.ts";
 import { CrewError } from "./domain.ts";
@@ -68,34 +68,73 @@ export class ProcessRunner implements Runner {
               killSignal: "SIGTERM",
               forceKillAfter: "1 second",
             });
+            const PROGRESS_INTERVAL_NANOS = 1_000_000_000n;
+            const TAIL_LIMIT = 8192;
+            const progressLock = Semaphore.makeUnsafe(1);
             let stdoutSize = 0,
-              stderrSize = 0,
-              lastProgress = -Infinity;
-            let tail = Buffer.alloc(0);
+              stderrSize = 0;
+            let lastProgressNanos: bigint | undefined;
+            const tailChunks: Buffer[] = [];
+            let tailBytes = 0;
+            const pushTail = (buf: Buffer) => {
+              if (buf.byteLength === 0) return;
+              if (buf.byteLength >= TAIL_LIMIT) {
+                tailChunks.length = 0;
+                tailChunks.push(buf.subarray(-TAIL_LIMIT));
+                tailBytes = TAIL_LIMIT;
+                return;
+              }
+              tailChunks.push(buf);
+              tailBytes += buf.byteLength;
+              while (tailChunks.length > 1 && tailBytes - tailChunks[0]!.byteLength >= TAIL_LIMIT) {
+                tailBytes -= tailChunks.shift()!.byteLength;
+              }
+            };
+            const renderTail = () => {
+              if (tailChunks.length === 0) return "";
+              const combined =
+                tailChunks.length === 1 ? tailChunks[0]! : Buffer.concat(tailChunks, tailBytes);
+              const sliced =
+                combined.byteLength > TAIL_LIMIT ? combined.subarray(-TAIL_LIMIT) : combined;
+              tailChunks.length = 0;
+              tailChunks.push(sliced);
+              tailBytes = sliced.byteLength;
+              return sliced.toString("utf8");
+            };
             const collect = (stream: typeof child.stdout, kind: "stdout" | "stderr") =>
               Effect.gen(function* () {
                 const chunks: Buffer[] = [];
                 yield* Stream.runForEach(stream, (chunk) =>
                   Effect.gen(function* () {
-                    if (kind === "stdout") stdoutSize += chunk.byteLength;
-                    else stderrSize += chunk.byteLength;
-                    if ((kind === "stdout" ? stdoutSize : stderrSize) > limit)
-                      return yield* new CrewError(
-                        "COMMAND_OUTPUT_LIMIT",
-                        `${file} ${args[0] ?? ""}: ${kind} output exceeds ${limit} bytes`,
-                      );
-                    chunks.push(Buffer.from(chunk));
-                    tail = Buffer.concat([tail, chunk]).subarray(-8192);
-                    const now = yield* Clock.currentTimeMillis;
-                    if (options?.onProgress && now - lastProgress >= 1000) {
-                      lastProgress = now;
-                      yield* options.onProgress({
-                        at: now,
-                        stdout_bytes: stdoutSize,
-                        stderr_bytes: stderrSize,
-                        tail: tail.toString("utf8"),
-                      });
-                    }
+                    const copied = Buffer.from(chunk);
+                    chunks.push(copied);
+                    yield* progressLock.withPermits(1)(
+                      Effect.gen(function* () {
+                        if (kind === "stdout") stdoutSize += copied.byteLength;
+                        else stderrSize += copied.byteLength;
+                        if ((kind === "stdout" ? stdoutSize : stderrSize) > limit)
+                          return yield* new CrewError(
+                            "COMMAND_OUTPUT_LIMIT",
+                            `${file} ${args[0] ?? ""}: ${kind} output exceeds ${limit} bytes`,
+                          );
+                        if (!options?.onProgress) return;
+                        pushTail(copied);
+                        const nowNanos = yield* Clock.monotonicTimeNanos;
+                        if (
+                          lastProgressNanos === undefined ||
+                          nowNanos - lastProgressNanos >= PROGRESS_INTERVAL_NANOS
+                        ) {
+                          lastProgressNanos = nowNanos;
+                          const at = yield* Clock.currentTimeMillis;
+                          yield* options.onProgress({
+                            at,
+                            stdout_bytes: stdoutSize,
+                            stderr_bytes: stderrSize,
+                            tail: renderTail(),
+                          });
+                        }
+                      }),
+                    );
                   }),
                 );
                 return Buffer.concat(chunks).toString("utf8");

@@ -9,7 +9,7 @@ import { OpenSpec } from "../../src/openspec/adapter.ts";
 import { ProcessRunner, type Runner } from "../../src/process.ts";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { verifiedSpec } from "../helpers/spec-review.ts";
 
 // Each case owns its Git repositories, native schema and controller. Overlap

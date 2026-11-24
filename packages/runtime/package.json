@@ -7,18 +7,7 @@
   "exports": {
     ".": "./src/workflow/public-api.ts",
     "./plugin": "./src/plugin/index.ts",
-    "./cli/client": "./src/cli/client.ts",
-    "./cli/config-apply": "./src/cli/config-apply.ts",
-    "./cli/config-schema": "./src/cli/config-schema.ts",
-    "./cli/config": "./src/cli/config.ts",
-    "./cli/dev": "./src/cli/dev.ts",
-    "./cli/doctor": "./src/cli/doctor.ts",
-    "./cli/launch": "./src/cli/launch.ts",
-    "./cli/report": "./src/cli/report.ts",
-    "./cli/start": "./src/cli/start.ts",
-    "./cli/stop": "./src/cli/stop.ts",
-    "./cli/web": "./src/cli/web.ts",
-    "./cli/report-shell": "./src/cli/report-shell.ts"
+    "./cli": "./src/cli/main.ts"
   },
   "scripts": {
     "check": "tsc --noEmit"

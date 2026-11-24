@@ -1,6 +1,6 @@
 import { publicationDestination } from "../../src/workflow/publication-destination.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { Effect } from "effect";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";

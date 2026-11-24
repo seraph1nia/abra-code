@@ -1,7 +1,7 @@
 /* oxlint-disable effecttsgo/unstable-api-usage -- Scoped browser observation and typed HTTP atoms. */
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { useAtomSet } from "@effect/atom-react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Exit } from "effect";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
@@ -15,7 +15,9 @@ import {
   type WorkspaceSearch,
 } from "../navigation.ts";
 export function useWorkspaceNavigation(route: WorkspaceSearch, beforeNavigate: () => void) {
-  const navigate = useNavigate({ from: destinationFor(window.location.pathname) ?? "/" });
+  const router = useRouter();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const navigate = useNavigate({ from: destinationFor(pathname) ?? "/" });
   const resolve = useAtomSet(resolveResource, { mode: "promiseExit" });
   const selectionRequest = useRef(0);
   const inspectorOrigin = useRef<HTMLElement | null>(null);
@@ -60,14 +62,14 @@ export function useWorkspaceNavigation(route: WorkspaceSearch, beforeNavigate: (
         inspectorOrigin.current = origin;
         beforeNavigate();
         void navigate({
-          to: destinationFor(window.location.pathname) ?? "/",
+          to: destinationFor(router.state.location.pathname) ?? "/",
           search: { collection: route.collection, ...searchForResource(result.value) },
           resetScroll: false,
         });
       }
       void openTarget();
     },
-    [resolve, navigate, beforeNavigate, route.collection],
+    [resolve, navigate, router, beforeNavigate, route.collection],
   );
   const openSurface = useCallback(
     (surface: NonNullable<WorkspaceSearch["surface"]>) => {

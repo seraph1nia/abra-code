@@ -1,7 +1,7 @@
-import { IssueId, ReportId, ContentHash, Fingerprint } from "../identities.ts";
+import { IssueId, ReportId, ContentHash, Fingerprint } from "@abracode/contracts/identities";
 import { Schema } from "effect";
 import { createHash } from "node:crypto";
-import { NonEmpty } from "../contracts.ts";
+import { NonEmpty } from "@abracode/contracts/primitives";
 const text = NonEmpty.check(Schema.isMaxLength(8192));
 const list = Schema.Array(text).check(Schema.isMaxLength(64));
 export const ScopeDraftSchema = Schema.Struct({

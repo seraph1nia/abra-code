@@ -1,17 +1,19 @@
 import { Clock, Effect } from "effect";
-import { FormId, Fingerprint, type SessionId } from "../identities.ts";
+import { FormId, Fingerprint, type SessionId } from "@abracode/contracts/identities";
 import { ensure, type Execution, type Project, type CrewError } from "../domain.ts";
 import { synchronizeExecution, type Records } from "../storage/store.ts";
 import { type Delivery } from "../git/delivery.ts";
 import { type Runtime } from "../opencode/runtime.ts";
 import { digest } from "../digest.ts";
-import { type ActionInput } from "./feedback-contracts.ts";
-import { actionFindings, type CurrentAction } from "./action-contracts.ts";
+import { type ActionInput } from "@abracode/contracts/workflow/feedback-contracts";
+import { actionFindings, type CurrentAction } from "@abracode/contracts/workflow/action-contracts";
 import { type ActionOutcome } from "../git/action-contracts.ts";
 import { prepareAction } from "./action-policy.ts";
 import { normalizeAction, confirmedAction, preparedInput, targetKey } from "./action-state.ts";
 import { actionPlan } from "./action-plan.ts";
 import { domainEffect } from "../effect.ts";
+import { collectApprovalForm } from "./decision-ledger.ts";
+import { nextCheckAt } from "./durable-outbox.ts";
 
 const staleCodes = new Set(["FINDING_STALE", "THREAD_CHANGED"]);
 const permanentCodes = new Set([
@@ -72,7 +74,7 @@ export class PRActions {
         code: error.code,
         reason: error.message.slice(0, 8192),
         retryable: !permanentCodes.has(error.code) && !staleCodes.has(error.code),
-        next_check_at: now + 30000,
+        next_check_at: nextCheckAt(now, 1),
       },
     });
   }
@@ -165,13 +167,13 @@ export class PRActions {
         const session = action.session_id ?? actor;
         action = { ...action, form_id: form, session_id: session };
         yield* this.save(e, action);
-        yield* this.runtime.requestApproval(
+        const decision = yield* collectApprovalForm(
+          this.runtime,
           session,
           form,
           `GitHub ${action.kind}: ${action.pr}\\nHead: ${action.head}\\n${JSON.stringify(action.target)}`,
           Fingerprint.make(action.id),
         );
-        const decision = yield* this.runtime.approval(session, form);
         if (decision === "pending") return e;
         if (decision === "rejected") {
           yield* this.save(e, { ...action, status: "rejected", result: "Human rejected action" });

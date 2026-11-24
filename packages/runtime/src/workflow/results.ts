@@ -1,5 +1,5 @@
-import { type ErrorCode } from "../identities.ts";
-import { type FailureCategory } from "../contracts.ts";
+import { type ErrorCode } from "@abracode/contracts/identities";
+import { type FailureCategory } from "@abracode/contracts/primitives";
 /** Expected external conditions are values; unsafe mutations still fail closed. */
 export type OperationResult<A = void> =
   | { category: "completed"; value: A }
@@ -11,4 +11,5 @@ export type OperationResult<A = void> =
     }
   | { category: "verification" | "recovery"; code: ErrorCode; reason: string };
 
-export type DeliveryWait = typeof import("./operation-contracts.ts").DeliveryWaitSchema.Type;
+export type DeliveryWait =
+  typeof import("@abracode/contracts/workflow/operation-contracts").DeliveryWaitSchema.Type;

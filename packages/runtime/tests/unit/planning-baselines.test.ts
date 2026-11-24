@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdir, symlink, chmod, rename, unlink, cp } from "
 import { join, resolve } from "node:path";
 import { Effect, Schema } from "effect";
 import { createWorkflow } from "../../src/opencode/application.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { applying, planned, fixture, MemoryStore } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { planningHistoryError } from "../../src/workflow/planning-contracts.ts";

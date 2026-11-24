@@ -1,33 +1,17 @@
-import { originatingUserMessage } from "./tool-caller.ts";
-import { workerProfile } from "../config/snapshot.ts";
-import { readWorkerContext, compatibleContext } from "../workflow/worker-context.ts";
-import {
-  resolveSkills,
-  resolveCapturedSkills,
-  awaitWorkerPlugin,
-  type WorkerEnvironment,
-} from "./worker-environment.ts";
-import { workerPermissions, leadPermissions, legacyReviewProfile } from "./role-policy.ts";
-import { workerBrowser } from "./browser.ts";
-import { provisionedEvidence } from "../workflow/evidence.ts";
-import {
-  StorageKey,
-  ToolName,
-  Timestamp,
-  QuestionIdentity,
+import { Deferred, Effect, Exit } from "effect";
+import { Agent, type OpenCodeClient } from "@opencode/client/effect";
+import { Service } from "@opencode/client/effect/service";
+import type { Context } from "@opencode/plugin/effect/plugin";
+import type {
   AbsolutePath,
-  ActivityId,
-  Fingerprint,
   Commit,
+  Fingerprint,
   FormId,
   MessageId,
   NativeProjectId,
+  QuestionIdentity,
   SessionId,
-} from "../identities.ts";
-
-import { provideFileSystem } from "../platform.ts";
-import { makeClient, memoSuccessful } from "./client.ts";
-import { domainEffect } from "../effect.ts";
+} from "@abracode/contracts/identities";
 import {
   CrewError,
   type Config,
@@ -35,69 +19,42 @@ import {
   type Project,
   type Role,
   type WorkerModel,
-  type WorkerError,
 } from "../domain.ts";
-import { DateTime, Effect, Schema } from "effect";
-import { Session, SessionMessage, Agent, Model } from "@opencode/client/effect";
-import { Service } from "@opencode/client/effect/service";
-import { type Context } from "@opencode/plugin/effect/plugin";
-import { createHash } from "node:crypto";
+import { domainEffect } from "../effect.ts";
+import { provideFileSystem } from "../platform.ts";
+import { runtimePaths } from "../config/identity.ts";
+import { workerProfile } from "../config/snapshot.ts";
+import { NativeStore, Records } from "../storage/store.ts";
+import { provisionedEvidence } from "../workflow/evidence.ts";
+import type { FinishingTarget } from "../workflow/finishing-contracts.ts";
+import { workerBrowser } from "./browser.ts";
+import { makeClient, OPENCODE_VERSION } from "./client.ts";
 import {
-  FinishingAnswerSchema,
-  validFinishingAnswer,
-  type FinishingAnswer,
-  type FinishingTarget,
-} from "../workflow/finishing-contracts.ts";
-import { Records, NativeStore } from "../storage/store.ts";
-import { decode } from "../decode.ts";
-import { WorkerModelSchema } from "../contracts.ts";
+  readApproval,
+  readDisposition,
+  readQuestionAnswer,
+  requestApproval,
+  requestDisposition,
+  requestQuestion,
+  type DispositionAnswer,
+  type QuestionAnswer,
+} from "./forms.ts";
+import { nativeSession, nativeWorktree } from "./native-call.ts";
+import { checkWorkerInventory, preflightWorker, validateModelSelection } from "./preflight.ts";
+import { leadPermissions, workerPermissions } from "./role-policy.ts";
+import {
+  observePromptAdmissions,
+  observePromptOrigin,
+  observeSession,
+  type PromptAdmission,
+  type PromptIdentity,
+  type SessionState,
+} from "./session-observer.ts";
+import type { WorkerEnvironment } from "./worker-environment.ts";
 
-import {
-  diagnosticText,
-  summarizeContext,
-  nativeIdle,
-  type MessageSummary,
-} from "./diagnostics.ts";
-export interface SessionState {
-  executing?: boolean;
-  /** Context has a consumed input without a later native completion observation. */
-  completion_pending?: boolean;
-  /** One native inbox observation, never persisted as controller authority. */
-  queued_prompt_ids?: readonly MessageId[];
-  outcome_prompt_id?: MessageId;
-  assignment?: {
-    id: MessageId;
-    outcome?: typeof Session.Info.Type.outcome;
-    completion?: { id: MessageId; at: number };
-    error?: WorkerError;
-    at?: number;
-  };
-  activity?: { identity: ActivityId; at: number; summary: string };
-  id: SessionId;
-  directory: AbsolutePath;
-  outcome?: typeof Session.Info.Type.outcome;
-  busy: boolean;
-  metadata?: Record<string, unknown>;
-  model?: WorkerModel;
-  agent?: Agent.ID;
-  error?: WorkerError;
-  error_at?: number;
-  diagnostic_error?: string;
-  recent_messages?: MessageSummary[];
-  available_tools?: {
-    model: WorkerModel;
-    names: ToolName[];
-    at: Timestamp;
-  };
-}
-export type QuestionAnswer =
-  | { status: "pending" | "cancelled"; answer?: never }
-  | { status: "answered"; answer: string };
-export type DispositionAnswer =
-  | { status: "pending" | "cancelled" }
-  | { status: "answered"; answer: FinishingAnswer };
-export type PromptAdmission = "queued" | "consumed" | "absent";
-export type PromptIdentity = { prompt_id: MessageId; prompt: string };
+export { OPENCODE_VERSION, checkWorkerInventory };
+export type { DispositionAnswer, PromptAdmission, PromptIdentity, QuestionAnswer, SessionState };
+
 export interface Runtime {
   managementSession(
     id: SessionId,
@@ -189,171 +146,43 @@ export interface Runtime {
     form: FormId,
   ): Effect.Effect<"pending" | "approved" | "rejected", CrewError>;
 }
+
 export class NativeRuntime implements Runtime {
-  // Construct only the lazy cache here, never a discovery request during setup.
-  private acquired = Effect.runSync(memoSuccessful(Effect.suspend(() => this.discoverClient())));
+  // Lazy, single-flight client acquisition; failures never poison later discovery.
+  private cachedClient: OpenCodeClient | undefined;
+  private acquiring: Deferred.Deferred<OpenCodeClient, CrewError> | undefined;
+
   constructor(
     private ctx: Context,
     private config: Config,
   ) {}
-  client = Effect.fn("NativeRuntime.client")(() => this.acquired);
-  requestDisposition = Effect.fn("NativeRuntime.requestDisposition")(
-    function* (
-      this: NativeRuntime,
-      sessionID: SessionId,
-      id: FormId,
-      question: string,
-      identity: QuestionIdentity,
-      target: FinishingTarget,
-    ) {
-      const forms = (yield* this.client()).session.form;
-      const fingerprint = createHash("sha256")
-        .update(
-          target.kind === "planning_baseline_adoption"
-            ? canonicalJSON(target)
-            : JSON.stringify(target),
-        )
-        .digest("hex");
-      const existing = yield* forms
-        .get({ sessionID, formID: id })
-        .pipe(Effect.catchTag("FormNotFoundError", () => Effect.void));
-      if (existing) {
-        if (
-          existing.metadata?.decision_identity !== identity ||
-          existing.metadata?.finishing_target !== fingerprint
-        )
-          return yield* new CrewError(
-            "DECISION_FORM",
-            "Finishing form belongs to another exact target",
-          );
-        return existing.id;
-      }
-      const residue = target.kind === "residue" ? target : undefined;
-      const planning = target.kind === "planning_baseline_adoption";
-      return (yield* forms.create({
-        sessionID,
-        id,
-        title: question.slice(0, 512),
-        metadata: {
-          source: "abracode",
-          kind: "mcp-elicitation",
-          decision_identity: identity,
-          finishing_target: fingerprint,
-        },
-        fields: [
-          {
-            key: "action",
-            type: "string",
-            required: true,
-            custom: false,
-            default: "defer",
-            title: "Choose how to handle this work",
-            description: planning
-              ? "Adopt this exact current Git-defined source as a NEW baseline, not historical reconstruction. This grants no implementation, publication, merge or cleanup authority. Fresh plan approval, checks and independent Review remain required. Exact offer: " +
-                JSON.stringify(target)
-              : residue
-                ? "Generated directories: authorize disposal of generated contents in the selected exact directories after delivery is preserved. Include: send selected files through scope assessment, checks and Review. Preserve: move selected items elsewhere, then automatic inspection must confirm absence. Defer: keep everything and wait."
-                : "Authorize assessment of this exact retained content only; this grants no repair, merge or arbitrary deletion permission.",
-            options: [
-              ...(residue
-                ? [
-                    ...(residue.directories.length
-                      ? [{ value: "generated", label: "Authorize generated-directory cleanup" }]
-                      : []),
-                    ...(residue.files.length
-                      ? [{ value: "include", label: "Include files in delivery" }]
-                      : []),
-                    { value: "preserve", label: "I will preserve selected items elsewhere" },
-                  ]
-                : [
-                    {
-                      value: "authorize",
-                      label: planning
-                        ? "Adopt this exact new planning baseline"
-                        : "Authorize this exact assessment",
-                    },
-                    ...(planning ? [{ value: "reject", label: "Reject this baseline" }] : []),
-                  ]),
-              { value: "defer", label: "Defer and preserve everything" },
-            ],
-          },
-          ...(residue
-            ? (["generated", "include", "preserve"] as const).flatMap((action) => {
-                const paths =
-                  action === "generated"
-                    ? residue.directories.map((d) => d.path)
-                    : action === "include"
-                      ? residue.files.map((f) => f.path)
-                      : residue.paths.map((p) => p.path);
-                return paths.length
-                  ? [
-                      {
-                        key: `${action}_paths`,
-                        type: "multiselect" as const,
-                        required: true,
-                        custom: false,
-                        title: "Exact paths",
-                        minItems: 1,
-                        maxItems: 64,
-                        when: [{ key: "action", op: "eq" as const, value: action }],
-                        options: paths.map((path) => ({
-                          value: path,
-                          label: JSON.stringify(path),
-                        })),
-                      },
-                    ]
-                  : [];
-              })
-            : []),
-        ],
-      })).id;
-    }.bind(this),
-    domainEffect,
-  );
-  disposition = Effect.fn("NativeRuntime.disposition")(
-    function* (
-      this: NativeRuntime,
-      sessionID: SessionId,
-      formID: FormId,
-      identity: QuestionIdentity,
-      target: FinishingTarget,
-    ) {
-      const form = yield* (yield* this.client()).session.form.get({ sessionID, formID });
-      const fingerprint = createHash("sha256")
-        .update(
-          target.kind === "planning_baseline_adoption"
-            ? canonicalJSON(target)
-            : JSON.stringify(target),
-        )
-        .digest("hex");
-      if (
-        form.metadata?.decision_identity !== identity ||
-        form.metadata?.finishing_target !== fingerprint
-      )
-        return yield* new CrewError("DECISION_FORM", "Finishing answer belongs to another target");
-      if (form.state.status !== "answered") return { status: form.state.status };
-      const action = yield* decode(
-        FinishingAnswerSchema.fields.action,
-        form.state.answer.action,
-        "Native finishing action",
+
+  client = Effect.fn("NativeRuntime.client")(
+    function* (this: NativeRuntime) {
+      if (this.cachedClient) return this.cachedClient;
+      if (this.acquiring) return yield* Deferred.await(this.acquiring);
+      return yield* Effect.uninterruptibleMask((restore) =>
+        Effect.gen(
+          function* (this: NativeRuntime) {
+            if (this.cachedClient) return this.cachedClient;
+            if (this.acquiring) return yield* restore(Deferred.await(this.acquiring));
+            const deferred = Deferred.makeUnsafe<OpenCodeClient, CrewError>();
+            this.acquiring = deferred;
+            const exit = yield* Effect.exit(restore(this.discoverClient()));
+            this.acquiring = undefined;
+            if (Exit.isSuccess(exit)) {
+              this.cachedClient = exit.value;
+              yield* Deferred.succeed(deferred, exit.value);
+              return exit.value;
+            }
+            yield* Deferred.failCause(deferred, exit.cause);
+            return yield* Effect.failCause(exit.cause);
+          }.bind(this),
+        ),
       );
-      const answer = yield* decode(
-        FinishingAnswerSchema,
-        {
-          action,
-          paths: form.state.answer[`${action}_paths`] ?? [],
-        },
-        "Native finishing answer",
-      );
-      if (!validFinishingAnswer(target, answer))
-        return yield* new CrewError(
-          "DECISION_ANSWER",
-          "Disposition is outside the exact retained target",
-        );
-      return { status: "answered" as const, answer };
     }.bind(this),
-    domainEffect,
   );
+
   private discoverClient = Effect.fn("NativeRuntime.discoverClient")(
     function* (this: NativeRuntime) {
       const endpoint = this.config.server_url
@@ -367,7 +196,10 @@ export class NativeRuntime implements Runtime {
                 }
               : undefined,
           }
-        : yield* Service.discover().pipe(provideFileSystem);
+        : yield* Service.discover({
+            file: runtimePaths(this.config.home).service,
+            version: OPENCODE_VERSION,
+          }).pipe(provideFileSystem);
       if (!endpoint)
         return yield* new CrewError(
           "SERVER_ENDPOINT",
@@ -377,6 +209,41 @@ export class NativeRuntime implements Runtime {
     }.bind(this),
     domainEffect,
   );
+
+  requestDisposition = Effect.fn("NativeRuntime.requestDisposition")(
+    function* (
+      this: NativeRuntime,
+      sessionID: SessionId,
+      id: FormId,
+      question: string,
+      identity: QuestionIdentity,
+      target: FinishingTarget,
+    ) {
+      return yield* requestDisposition(
+        yield* this.client(),
+        sessionID,
+        id,
+        question,
+        identity,
+        target,
+      );
+    }.bind(this),
+    domainEffect,
+  );
+
+  disposition = Effect.fn("NativeRuntime.disposition")(
+    function* (
+      this: NativeRuntime,
+      sessionID: SessionId,
+      formID: FormId,
+      identity: QuestionIdentity,
+      target: FinishingTarget,
+    ) {
+      return yield* readDisposition(yield* this.client(), sessionID, formID, identity, target);
+    }.bind(this),
+    domainEffect,
+  );
+
   project = Effect.fn("NativeRuntime.project")(
     function* (this: NativeRuntime, path: AbsolutePath) {
       return (yield* (yield* this.client()).location.get({
@@ -385,15 +252,14 @@ export class NativeRuntime implements Runtime {
     }.bind(this),
     domainEffect,
   );
+
   inventory = Effect.fn("NativeRuntime.inventory")(
     function* (this: NativeRuntime, projectID: NativeProjectId) {
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
-      return (yield* this.ctx.worktree
-        .list({ projectID: projectID })
-        .pipe(Effect.mapError(CrewError.from))).map((x) => x.directory);
+      return (yield* nativeWorktree(this.ctx).list({ projectID })).map((x) => x.directory);
     }.bind(this),
     domainEffect,
   );
+
   createWorktree = Effect.fn("NativeRuntime.createWorktree")(
     function* (this: NativeRuntime, p: Project, e: ManagedExecution, root: AbsolutePath) {
       if (!p.project_id)
@@ -403,35 +269,31 @@ export class NativeRuntime implements Runtime {
           "BASE_COMMIT",
           "Record the fetched base before native provisioning",
         );
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
-      return (yield* this.ctx.worktree
-        .create({
-          projectID: p.project_id,
-          from: p.path,
-          directory: root,
-          name: e.execution_id,
-          branch: e.base_commit,
-        })
-        .pipe(Effect.mapError(CrewError.from))).directory;
+      return (yield* nativeWorktree(this.ctx).create({
+        projectID: p.project_id,
+        from: p.path,
+        directory: root,
+        name: e.execution_id,
+        branch: e.base_commit,
+      })).directory;
     }.bind(this),
     domainEffect,
   );
+
   removeWorktree = Effect.fn("NativeRuntime.removeWorktree")(
     function* (this: NativeRuntime, p: Project, e: ManagedExecution) {
       const evidence = yield* provisionedEvidence(e);
       if (!(p.project_id && e.worktree_directory))
         return yield* new CrewError("OWNERSHIP", "Missing native ownership");
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
-      yield* this.ctx.worktree
-        .remove({
-          projectID: p.project_id,
-          directory: evidence.worktree_directory,
-          force: false,
-        })
-        .pipe(Effect.mapError(CrewError.from));
+      yield* nativeWorktree(this.ctx).remove({
+        projectID: p.project_id,
+        directory: evidence.worktree_directory,
+        force: false,
+      });
     }.bind(this),
     domainEffect,
   );
+
   private permissions = Effect.fn("NativeRuntime.permissions")(
     function* (this: NativeRuntime, e: ManagedExecution, role: Role, id: SessionId) {
       const projects = yield* new Records(new NativeStore(this.ctx.storage)).projects();
@@ -444,16 +306,15 @@ export class NativeRuntime implements Runtime {
     }.bind(this),
     domainEffect,
   );
+
   refreshPermissions = Effect.fn("NativeRuntime.refreshPermissions")(
     function* (this: NativeRuntime, e: ManagedExecution, role: Role, id: SessionId) {
       const permissions = yield* this.permissions(e, role, id);
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Public native session updates declare unknown failures; preserve the adapter boundary.
-      yield* this.ctx.session
-        .update({ sessionID: id, permissions })
-        .pipe(Effect.mapError(CrewError.from));
+      yield* nativeSession(this.ctx).update({ sessionID: id, permissions });
     }.bind(this),
     domainEffect,
   );
+
   managementSession = Effect.fn("NativeRuntime.managementSession")(
     function* (
       this: NativeRuntime,
@@ -464,29 +325,18 @@ export class NativeRuntime implements Runtime {
     ) {
       const client = yield* this.client();
       const location = { directory: this.config.home };
-      const [agents, models] = yield* Effect.all([
-        client.agent.list({ location }),
-        client.model.list({ location }),
-      ]);
+      const [agents, models] = yield* Effect.all(
+        [client.agent.list({ location }), client.model.list({ location })],
+        { concurrency: "unbounded" },
+      );
       if (!agents.data.some((a) => a.id === "project-lead"))
         return yield* new CrewError("LEAD_PROFILE", "Static project-lead agent is unavailable");
-      const selected = models.data.find(
-        (m) => m.providerID === model.providerID && m.id === model.id,
-      );
-      if (!selected || !selected.enabled || !selected.capabilities.tools)
-        return yield* new CrewError(
-          "MODEL_UNAVAILABLE",
-          "Project-lead model is unavailable or lacks tools",
-        );
-      if (
-        model.variant &&
-        model.variant !== "default" &&
-        !selected.variants.some((v) => v.id === model.variant)
-      )
-        return yield* new CrewError(
-          "MODEL_VARIANT_UNAVAILABLE",
-          "Project-lead variant is unavailable",
-        );
+      yield* validateModelSelection(model, models.data, {
+        unavailable: "Project-lead model is unavailable or lacks tools",
+        variantUnavailable: () => "Project-lead variant is unavailable",
+        capabilityCode: "MODEL_UNAVAILABLE",
+        capabilityMessage: "Project-lead model is unavailable or lacks tools",
+      });
       const existing = yield* client.session
         .get({ sessionID: id })
         .pipe(Effect.catchTag("SessionNotFoundError", () => Effect.void));
@@ -520,26 +370,24 @@ export class NativeRuntime implements Runtime {
     }.bind(this),
     domainEffect,
   );
+
   createSession = Effect.fn("NativeRuntime.createSession")(
     function* (this: NativeRuntime, e: ManagedExecution, role: Role, id: SessionId) {
       if (!e.worktree_directory) return yield* new CrewError("WORKTREE", "Missing worktree");
       const profile = workerProfile(e, role, this.config);
       const permissions = yield* this.permissions(e, role, id);
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
-      const session = yield* this.ctx.session
-        .create({
-          id: id,
-          title: `${e.issue_id} · ${role}`,
-          location: { directory: e.worktree_directory! },
-          agent: profile?.agent ?? Agent.ID.make("build"),
-          ...((profile?.model ?? e.worker_model)
-            ? { model: (profile?.model ?? e.worker_model)! }
-            : {}),
-          metadata: { abracode: { issue_id: e.issue_id, execution_id: e.execution_id, role } },
-          permissions,
-        })
-        .pipe(Effect.mapError(CrewError.from));
-      if (!(session.location.directory === e.worktree_directory))
+      const session = yield* nativeSession(this.ctx).create({
+        id,
+        title: `${e.issue_id} · ${role}`,
+        location: { directory: e.worktree_directory },
+        agent: profile?.agent ?? Agent.ID.make("build"),
+        ...((profile?.model ?? e.worker_model)
+          ? { model: (profile?.model ?? e.worker_model)! }
+          : {}),
+        metadata: { abracode: { issue_id: e.issue_id, execution_id: e.execution_id, role } },
+        permissions,
+      });
+      if (session.location.directory !== e.worktree_directory)
         return yield* new CrewError(
           "SESSION_LOCATION",
           "OpenCode created a session at the wrong location",
@@ -548,168 +396,36 @@ export class NativeRuntime implements Runtime {
     }.bind(this),
     domainEffect,
   );
+
   sessionOwner = (id: SessionId) =>
-    // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown on native session lookup.
-    this.ctx.session.get({ sessionID: id }).pipe(
-      Effect.map((info) => {
-        const metadata = info.metadata?.abracode;
-        const issue_id =
-          typeof metadata === "object" &&
-          metadata !== null &&
-          "issue_id" in metadata &&
-          typeof metadata.issue_id === "string"
-            ? metadata.issue_id
-            : undefined;
-        return { issue_id, directory: info.location.directory };
-      }),
-      Effect.mapError(CrewError.from),
-    );
+    nativeSession(this.ctx)
+      .get({ sessionID: id })
+      .pipe(
+        Effect.map((info) => {
+          const metadata = info.metadata?.abracode;
+          const issue_id =
+            typeof metadata === "object" &&
+            metadata !== null &&
+            "issue_id" in metadata &&
+            typeof metadata.issue_id === "string"
+              ? metadata.issue_id
+              : undefined;
+          return { issue_id, directory: info.location.directory };
+        }),
+      );
+
   session = Effect.fn("NativeRuntime.session")(
     function* (this: NativeRuntime, id: SessionId, assignment?: MessageId) {
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
-      const s = yield* this.ctx.session
-        .get({ sessionID: id })
-        .pipe(Effect.mapError(CrewError.from));
-      const client = yield* this.client();
-      const active = yield* client.session.active();
-      const pending = yield* client.session.inbox.list({ sessionID: id });
-      let diagnostic_error: string | undefined;
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
-      const context = yield* this.ctx.session.context({ sessionID: id }).pipe(
-        Effect.catch((error) =>
-          domainEffect(
-            Effect.sync(() => {
-              diagnostic_error = diagnosticText(CrewError.from(error).message);
-              return [];
-            }),
-          ),
-        ),
-        Effect.mapError(CrewError.from),
-      );
-      let history = context;
-      if (
-        assignment &&
-        !active[id] &&
-        pending.length === 0 &&
-        !context.some((m) => m.type === "user" && m.id === assignment)
-      ) {
-        // Native context starts at the latest compaction. Read bounded native
-        // history using only server-issued cursors; never mirror it in records.
-        const descending: SessionMessage.Info[] = [];
-        let cursor: string | undefined;
-        for (let page = 0; page < 20; page++) {
-          const result = yield* client.message.list({
-            sessionID: id,
-            limit: 200,
-            ...(cursor ? { cursor } : { order: "desc" as const }),
-          });
-          descending.push(...result.data);
-          if (
-            result.data.some((m) => m.type === "user" && m.id === assignment) ||
-            !result.cursor.next
-          )
-            break;
-          cursor = result.cursor.next;
-        }
-        history = descending.toReversed();
-        if (!history.some((m) => m.type === "user" && m.id === assignment))
-          diagnostic_error =
-            "Assignment outcome unavailable within the bounded native history observation";
-      }
-      const encoded = yield* Schema.encodeEffect(Schema.Array(SessionMessage.Info))(history);
-      const start = assignment
-        ? encoded.findIndex((m) => m.type === "user" && m.id === assignment)
-        : -1;
-      let end = -1;
-      if (start >= 0)
-        for (let index = start + 1; index < encoded.length; index++) {
-          const message = encoded[index]!;
-          if (message.type === "idle") end = index;
-          else if (
-            end >= 0 &&
-            !["assistant", "agent-switched", "model-switched", "location-switched"].includes(
-              message.type,
-            )
-          )
-            break;
-        }
-      const idle = end < 0 ? undefined : nativeIdle(encoded.slice(start, end + 1));
-      const observedIdle = nativeIdle(encoded);
-      const bound = end < 0 ? undefined : summarizeContext(encoded.slice(0, end + 1));
-      const lastIdle = encoded.findLastIndex((m) => m.type === "idle");
-      // Session, active, inbox and context are separate native reads. A queued
-      // input can be consumed between them. Later unfinished context must not
-      // turn an earlier empty active/inbox snapshot into verified idleness.
-      // Native interruption can finish a consumed input without appending an
-      // idle context message. Its server-owned idle timestamp is still evidence
-      // of completion, provided it is strictly later than the trailing input.
-      const terminalAt = s.time?.idle ? DateTime.toEpochMillis(s.time.idle) : -Infinity;
-      const unfinished = encoded
-        .slice(lastIdle + 1)
-        .some((m) => (m.type === "user" || m.type === "assistant") && m.time.created >= terminalAt);
-      if (unfinished && !active[id] && pending.length === 0)
-        diagnostic_error ??=
-          "Native context contains input without a later verified completion; execution outcome is unconfirmed";
-      const outcomePrompt =
-        lastIdle < 0
-          ? undefined
-          : encoded.slice(0, lastIdle + 1).findLast((m) => m.type === "user");
-      return {
-        id: s.id,
-        agent: s.agent ?? Agent.ID.make("build"),
-        directory: s.location.directory,
-        outcome:
-          s.outcome === "succeeded" ||
-          s.outcome === undefined ||
-          (observedIdle && s.time?.idle && observedIdle.time.created > terminalAt)
-            ? (observedIdle?.outcome ?? s.outcome)
-            : s.outcome,
-        busy: !!active[id] || pending.length > 0,
-        executing: !!active[id],
-        completion_pending: unfinished,
-        queued_prompt_ids: pending.map((item) => MessageId.make(item.id)),
-        outcome_prompt_id: outcomePrompt ? MessageId.make(outcomePrompt.id) : undefined,
-        assignment: assignment
-          ? {
-              id: assignment,
-              outcome: idle?.type === "idle" ? idle.outcome : undefined,
-              completion: idle ? { id: MessageId.make(idle.id), at: idle.time.created } : undefined,
-              error: bound?.error,
-              at: bound?.error_at,
-            }
-          : undefined,
-        metadata: s.metadata,
-        ...summarizeContext(encoded),
-        available_tools: yield* new NativeStore(this.ctx.storage)
-          .get(StorageKey.make(`worker-tools/${id}`))
-          .pipe(
-            Effect.flatMap((value) =>
-              decode(
-                Schema.UndefinedOr(
-                  Schema.Struct({
-                    model: WorkerModelSchema,
-                    names: Schema.mutable(Schema.Array(ToolName)),
-                    at: Timestamp,
-                  }),
-                ),
-                value,
-                `worker-tools/${id}`,
-              ),
-            ),
-          ),
-        ...(diagnostic_error ? { diagnostic_error } : {}),
-      };
+      return yield* observeSession(this.ctx, yield* this.client(), id, assignment);
     }.bind(this),
     domainEffect,
   );
+
   supervisorModel: (id?: SessionId) => Effect.Effect<WorkerModel | undefined, CrewError> =
     Effect.fn("NativeRuntime.supervisorModel")(
       function* (this: NativeRuntime, id?: SessionId) {
         if (id) {
-          // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
-          const context = yield* this.ctx.session
-            .context({ sessionID: id })
-            .pipe(Effect.mapError(CrewError.from));
+          const context = yield* nativeSession(this.ctx).context({ sessionID: id });
           const assistant = context.findLast((m) => m.type === "assistant");
           if (assistant?.type === "assistant") return assistant.model;
         }
@@ -725,201 +441,44 @@ export class NativeRuntime implements Runtime {
       }.bind(this),
       domainEffect,
     );
+
   switchModel = Effect.fn("NativeRuntime.switchModel")(
     function* (this: NativeRuntime, id: SessionId, model: WorkerModel) {
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
-      yield* this.ctx.session
-        .switchModel({ sessionID: id, model: model })
-        .pipe(Effect.mapError(CrewError.from));
+      yield* nativeSession(this.ctx).switchModel({ sessionID: id, model });
     }.bind(this),
     domainEffect,
   );
+
   switchAgent = Effect.fn("NativeRuntime.switchAgent")(
     function* (this: NativeRuntime, id: SessionId, agent: Agent.ID) {
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Public native session operations declare unknown failures; retain the typed adapter boundary.
-      const current = yield* this.ctx.session
-        .get({ sessionID: id })
-        .pipe(Effect.mapError(CrewError.from));
+      const current = yield* nativeSession(this.ctx).get({ sessionID: id });
       if ((current.agent ?? Agent.ID.make("build")) === agent) return;
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Public native session operations declare unknown failures; retain the typed adapter boundary.
-      yield* this.ctx.session
-        .switchAgent({ sessionID: id, agent })
-        .pipe(Effect.mapError(CrewError.from));
+      yield* nativeSession(this.ctx).switchAgent({ sessionID: id, agent });
     }.bind(this),
     domainEffect,
   );
+
   preflight = Effect.fn("NativeRuntime.preflight")(
     function* (this: NativeRuntime, e: ManagedExecution, role: Role, promptID?: MessageId) {
-      if (!e.worktree_directory)
-        return yield* new CrewError("WORKTREE", "Worker inventory requires the owned worktree");
-      const client = yield* this.client();
-      const sessionID = e[`${role}_session_id`];
-      if (promptID && sessionID) {
-        const admitted = yield* Effect.all([
-          client.session.inbox.list({ sessionID }),
-          client.session.context({ sessionID }),
-        ]);
-        if (
-          admitted[0].some((item) => item.id === promptID) ||
-          admitted[1].some((message) => message.id === promptID)
-        )
-          return;
-      }
-      const captured =
-        promptID && e.worker_context_id
-          ? yield* readWorkerContext(new NativeStore(this.ctx.storage), e.worker_context_id)
-          : undefined;
-      if (captured) {
-        if (!sessionID || !promptID)
-          return yield* new CrewError(
-            "CONTEXT_ASSIGNMENT",
-            "Captured context lacks a retained native admission identity",
-          );
-        compatibleContext(captured, {
-          execution_id: e.execution_id,
-          generation: e.control_generation,
-          role,
-          session_id: sessionID,
-          prompt_id: promptID,
-        });
-      }
-      let profile = captured
-        ? {
-            agent: captured.environment.agent,
-            model: captured.environment.model,
-          }
-        : workerProfile(e, role, this.config);
-      if (!captured && !e.configuration_snapshot && sessionID) {
-        // Missing historical snapshots cannot adopt current worker configuration.
-        // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Pinned native API declares unknown; normalize at the adapter boundary.
-        const historical = yield* this.ctx.session
-          .get({ sessionID })
-          .pipe(Effect.mapError(CrewError.from));
-        profile = {
-          agent: historical.agent ?? Agent.ID.make("build"),
-          model: e.worker_model ?? historical.model,
-        };
-      }
-      const requirements =
-        captured?.schema_version === 2
-          ? captured.prepared.profile.requirements
-          : e.configuration_snapshot?.definitions?.[role]?.requirements;
-      const effectiveProfile = {
-        ...profile,
-        required_skills: [
-          ...(requirements?.required_skills ?? []),
-          ...(profile?.required_skills ?? []),
-        ],
-        required_tools: [
-          ...(requirements?.required_tools ?? []),
-          ...(profile?.required_tools ?? []),
-        ],
-      };
-      const location = { directory: e.worktree_directory };
-      yield* awaitWorkerPlugin(
-        client.plugin.list({ location }).pipe(
-          Effect.map((inventory) => inventory.data),
-          Effect.mapError(
-            () =>
-              new CrewError(
-                "INVENTORY_UNAVAILABLE",
-                "Worker-location plugin inventory unavailable; retry after native activation",
-              ),
-          ),
-        ),
-      );
-      const [agents, models, skills] = yield* Effect.all(
-        [
-          client.agent.list({ location }),
-          client.model.list({ location }),
-          client.skill.list({ location }),
-        ],
-        { concurrency: "unbounded" },
-      ).pipe(
-        Effect.mapError(
-          () =>
-            new CrewError(
-              "INVENTORY_UNAVAILABLE",
-              "Worker-location inventory unavailable; preserve the admission intent and retry after repair",
-            ),
-        ),
-      );
-      const selected = yield* checkWorkerInventory(
-        profile,
-        e.worker_model,
-        role,
-        agents.data,
-        models.data,
-      );
-      return {
-        ...selected,
-        ...(yield* captured
-          ? resolveCapturedSkills(role, captured.environment, skills.data, e.worktree_directory)
-          : resolveSkills(
-              role,
-              e.workflow_policy,
-              effectiveProfile,
-              skills.data,
-              e.worktree_directory,
-              !legacyReviewProfile(e.configuration_snapshot?.definitions?.[role]),
-            )),
-      };
+      return yield* preflightWorker(this.ctx, yield* this.client(), this.config, e, role, promptID);
     }.bind(this),
     domainEffect,
   );
+
   promptAdmission = Effect.fn("NativeRuntime.promptAdmission")(
     function* (this: NativeRuntime, sessionID: SessionId, id: MessageId, text: string) {
       return (yield* this.promptAdmissions(sessionID, [{ prompt_id: id, prompt: text }])).get(id)!;
     }.bind(this),
     domainEffect,
   );
+
   promptAdmissions = Effect.fn("NativeRuntime.promptAdmissions")(
     function* (this: NativeRuntime, sessionID: SessionId, requests: readonly PromptIdentity[]) {
-      const observations = new Map<MessageId, PromptAdmission>();
-      if (!requests.length) return observations;
-      const client = yield* this.client();
-      const [inbox, context] = yield* Effect.all([
-        client.session.inbox.list({ sessionID }),
-        client.session.context({ sessionID }),
-      ]);
-      const queuedByID = new Map(inbox.map((item) => [item.id, item]));
-      const consumedByID = new Map(context.map((item) => [item.id, item]));
-      for (const { prompt_id: id, prompt: text } of requests) {
-        const queued = queuedByID.get(id);
-        const consumed =
-          consumedByID.get(id) ??
-          (!queued
-            ? yield* client.session.message
-                .get({ sessionID, messageID: id })
-                .pipe(Effect.catchTag("MessageNotFoundError", () => Effect.void))
-            : undefined);
-        const payload =
-          queued?.type === "user"
-            ? queued.payload
-            : consumed?.type === "user"
-              ? consumed
-              : undefined;
-        if (!queued && !consumed) {
-          observations.set(id, "absent");
-          continue;
-        }
-        if (
-          !payload ||
-          payload.text !== text ||
-          payload.files?.length ||
-          payload.agents?.length ||
-          payload.skills?.length
-        )
-          return yield* new CrewError(
-            "MESSAGE_REBIND",
-            "Native prompt differs from retained controller intent",
-          );
-        observations.set(id, queued ? "queued" : "consumed");
-      }
-      return observations;
+      return yield* observePromptAdmissions(yield* this.client(), sessionID, requests);
     }.bind(this),
     domainEffect,
   );
+
   prompt = Effect.fn("NativeRuntime.prompt")(
     function* (
       this: NativeRuntime,
@@ -928,19 +487,19 @@ export class NativeRuntime implements Runtime {
       id: MessageId,
       steer = false,
     ) {
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
-      yield* this.ctx.session
+      yield* nativeSession(this.ctx)
         .prompt({
-          sessionID: sessionID,
-          id: id,
+          sessionID,
+          id,
           text,
           delivery: steer ? "steer" : "queue",
           metadata: { source: "abracode" },
         })
-        .pipe(Effect.mapError(CrewError.from), Effect.uninterruptible);
+        .pipe(Effect.uninterruptible);
     }.bind(this),
     domainEffect,
   );
+
   interrupt = Effect.fn("NativeRuntime.interrupt")(
     function* (
       this: NativeRuntime,
@@ -951,25 +510,15 @@ export class NativeRuntime implements Runtime {
       const owned = new Set([...(promptID ? [promptID] : []), ...additional]);
       const client = owned.size ? yield* this.client() : undefined;
       if (client) {
-        const pending = yield* client.session.inbox.list({ sessionID: sessionID });
+        const pending = yield* client.session.inbox.list({ sessionID });
         for (const item of pending.filter((item) => owned.has(item.id)))
-          yield* client.session.inbox.cancel({
-            sessionID: sessionID,
-            inboxID: item.id,
-          });
+          yield* client.session.inbox.cancel({ sessionID, inboxID: item.id });
       }
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
-      yield* this.ctx.session
-        .interrupt({ sessionID: sessionID, resume: false })
-        .pipe(Effect.mapError(CrewError.from));
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
-      yield* this.ctx.session.wait({ sessionID: sessionID }).pipe(Effect.mapError(CrewError.from));
+      const sessions = nativeSession(this.ctx);
+      yield* sessions.interrupt({ sessionID, resume: false });
+      yield* sessions.wait({ sessionID });
       if (client) {
-        if (
-          (yield* client.session.inbox.list({ sessionID: sessionID })).some((item) =>
-            owned.has(item.id),
-          )
-        )
+        if ((yield* client.session.inbox.list({ sessionID })).some((item) => owned.has(item.id)))
           return yield* new CrewError(
             "PROMPT_PENDING",
             "Owned prompt remains queued; stop is not confirmed",
@@ -978,16 +527,17 @@ export class NativeRuntime implements Runtime {
     }.bind(this),
     domainEffect,
   );
+
   notify = Effect.fn("NativeRuntime.notify")(
     function* (this: NativeRuntime, sessionID: SessionId, text: string, id?: MessageId) {
       if (id) {
         const client = yield* this.client();
-        const pending = (yield* client.session.inbox.list({ sessionID })).find(
-          (item) => item.id === id,
+        const [inbox, context] = yield* Effect.all(
+          [client.session.inbox.list({ sessionID }), client.session.context({ sessionID })],
+          { concurrency: "unbounded" },
         );
-        const recorded = (yield* client.session.context({ sessionID })).find(
-          (item) => item.id === id,
-        );
+        const pending = inbox.find((item) => item.id === id);
+        const recorded = context.find((item) => item.id === id);
         if (pending || recorded) {
           if (
             (pending && (pending.type !== "synthetic" || pending.payload.text !== text)) ||
@@ -1000,24 +550,23 @@ export class NativeRuntime implements Runtime {
           return;
         }
       }
-      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- OpenCode declares unknown here; the adapter maps it to CrewError or a plugin defect.
-      yield* this.ctx.session
-        .synthetic({
-          sessionID: sessionID,
-          id,
-          text,
-          metadata: { source: "abracode", notification: true },
-        })
-        .pipe(Effect.mapError(CrewError.from));
+      yield* nativeSession(this.ctx).synthetic({
+        sessionID,
+        id,
+        text,
+        metadata: { source: "abracode", notification: true },
+      });
     }.bind(this),
     domainEffect,
   );
+
   promptOrigin = Effect.fn("NativeRuntime.promptOrigin")(
     function* (this: NativeRuntime, session: SessionId, message: MessageId) {
-      return (yield* originatingUserMessage(this.ctx, session, message))?.id;
+      return yield* observePromptOrigin(this.ctx, session, message);
     }.bind(this),
     domainEffect,
   );
+
   requestQuestion = Effect.fn("NativeRuntime.requestQuestion")(
     function* (
       this: NativeRuntime,
@@ -1026,49 +575,18 @@ export class NativeRuntime implements Runtime {
       question: string,
       identity: QuestionIdentity,
     ) {
-      const forms = (yield* this.client()).session.form;
-      const existing = yield* forms
-        .get({ sessionID: session, formID: id })
-        .pipe(Effect.catchTag("FormNotFoundError", () => Effect.void));
-      if (existing) {
-        if (!(existing.metadata?.decision_identity === identity))
-          return yield* new CrewError("DECISION_FORM", "Form belongs to another question");
-        return existing.id;
-      }
-      return (yield* forms.create({
-        sessionID: session,
-        id: id,
-        title: question.slice(0, 512),
-        metadata: { source: "abracode", kind: "mcp-elicitation", decision_identity: identity },
-        fields: [
-          {
-            key: "answer",
-            type: "string",
-            required: true,
-            minLength: 1,
-            maxLength: 8192,
-            title: "Answer this question",
-          },
-        ],
-      })).id;
+      return yield* requestQuestion(yield* this.client(), session, id, question, identity);
     }.bind(this),
     domainEffect,
   );
+
   questionAnswer = Effect.fn("NativeRuntime.questionAnswer")(
     function* (this: NativeRuntime, session: SessionId, id: FormId) {
-      const form = yield* (yield* this.client()).session.form.get({
-        sessionID: session,
-        formID: id,
-      });
-      if (form.state.status === "cancelled") return { status: "cancelled" as const };
-      if (form.state.status !== "answered") return { status: "pending" as const };
-      const answer = form.state.answer.answer;
-      if (!(typeof answer === "string" && answer.length > 0 && answer.length <= 8192))
-        return yield* new CrewError("DECISION_ANSWER", "Invalid native question answer");
-      return { status: "answered" as const, answer };
+      return yield* readQuestionAnswer(yield* this.client(), session, id);
     }.bind(this),
     domainEffect,
   );
+
   requestApproval = Effect.fn("NativeRuntime.requestApproval")(
     function* (
       this: NativeRuntime,
@@ -1077,36 +595,11 @@ export class NativeRuntime implements Runtime {
       title: string,
       fingerprint: Fingerprint | Commit,
     ) {
-      const forms = (yield* this.client()).session.form;
-      const existing = yield* forms
-        .get({ sessionID: sessionID, formID: id })
-        .pipe(Effect.catchTag("FormNotFoundError", () => Effect.void));
-      if (existing) {
-        if (!(existing.metadata?.fingerprint === fingerprint))
-          return yield* new CrewError(
-            "APPROVAL_FORM",
-            "Existing native form belongs to another checkpoint",
-          );
-        return existing.id;
-      }
-      return (yield* forms.create({
-        sessionID: sessionID,
-        id: id,
-        title,
-        metadata: { source: "abracode", kind: "mcp-elicitation", fingerprint },
-        fields: [
-          {
-            key: "authorize",
-            type: "boolean",
-            required: true,
-            title: "Authorize this exact checkpoint",
-            default: false,
-          },
-        ],
-      })).id;
+      return yield* requestApproval(yield* this.client(), sessionID, id, title, fingerprint);
     }.bind(this),
     domainEffect,
   );
+
   approval: (
     sessionID: SessionId,
     formID: FormId,
@@ -1114,72 +607,8 @@ export class NativeRuntime implements Runtime {
     "NativeRuntime.approval",
   )(
     function* (this: NativeRuntime, sessionID: SessionId, formID: FormId) {
-      const f = yield* (yield* this.client()).session.form.get({
-        sessionID: sessionID,
-        formID: formID,
-      });
-      return f.state.status === "answered"
-        ? f.state.answer.authorize === true
-          ? "approved"
-          : "rejected"
-        : f.state.status === "cancelled"
-          ? "rejected"
-          : "pending";
+      return yield* readApproval(yield* this.client(), sessionID, formID);
     }.bind(this),
     domainEffect,
   );
 }
-
-/** Validate only the native inventory fields needed for admission. */
-export const checkWorkerInventory = (
-  profile: Config["workers"][Role],
-  inherited: WorkerModel | undefined,
-  role: Role,
-  agents: readonly Pick<Agent.Info, "id" | "model">[],
-  models: readonly Pick<
-    Model.Info,
-    "id" | "providerID" | "variants" | "capabilities" | "enabled"
-  >[],
-) =>
-  Effect.gen(function* () {
-    const agentID = profile?.agent ?? Agent.ID.make("build");
-    const agent: Pick<Agent.Info, "id" | "model"> | undefined =
-      agents.find((a) => a.id === agentID) ??
-      (profile?.agent === undefined ? Agent.Info.default(agentID) : undefined);
-    if (!agent)
-      return yield* new CrewError(
-        "AGENT_UNAVAILABLE",
-        `Configured ${role} agent ${agentID} is absent from the worker location (available: ${agents
-          .map((a) => a.id)
-          .join(",")
-          .slice(0, 512)})`,
-      );
-    const selected = profile?.model ?? inherited ?? agent.model;
-    if (!selected)
-      return yield* new CrewError(
-        "MODEL_UNAVAILABLE",
-        "No effective worker model is selected; preserve the admission intent",
-      );
-    const model = models.find((m) => m.providerID === selected.providerID && m.id === selected.id);
-    if (!model || !model.enabled)
-      return yield* new CrewError(
-        "MODEL_UNAVAILABLE",
-        `Selected ${role} model is absent from the worker location`,
-      );
-    if (
-      selected.variant &&
-      selected.variant !== "default" &&
-      !model.variants.some((v) => v.id === selected.variant)
-    )
-      return yield* new CrewError(
-        "MODEL_VARIANT_UNAVAILABLE",
-        `Selected model variant ${selected.variant} is absent from the worker location (${model.variants.map((v) => v.id).join(",")})`,
-      );
-    if (!model.capabilities.tools)
-      return yield* new CrewError(
-        "MODEL_CAPABILITY",
-        "The selected worker model does not support tools",
-      );
-    return { agent: agentID, model: selected };
-  });
-import { canonicalJSON } from "../presentation/identity.ts";

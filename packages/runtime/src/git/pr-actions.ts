@@ -1,8 +1,8 @@
 import { Effect, Schema } from "effect";
-import { NonEmpty, Positive } from "../contracts.ts";
+import { NonEmpty, Positive } from "@abracode/contracts/primitives";
 import { CrewError, ensure, type Project, type ManagedExecution } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import { type CurrentAction } from "../workflow/action-contracts.ts";
+import { type CurrentAction } from "@abracode/contracts/workflow/action-contracts";
 import {
   type ActionPreparation,
   type ActionOutcome,
@@ -108,18 +108,30 @@ export class GitHubPRActions implements PRActionAdapter {
             "REVIEWER_SELF",
             "PR author cannot review their own pull request",
           );
-          for (const user of users)
-            ensure(
-              yield* reviewerPermission(this.forge, p, repo.full_name, "user", user),
-              "REVIEWER_PERMISSION",
-              "Selected reviewer does not have write access",
-            );
-          for (const team of teams)
-            ensure(
-              yield* reviewerPermission(this.forge, p, repo.full_name, "team", team),
-              "REVIEWER_PERMISSION",
-              "Selected team cannot review this repository",
-            );
+          const checks = [
+            ...users.map((name) => ({
+              kind: "user" as const,
+              name,
+              message: "Selected reviewer does not have write access",
+            })),
+            ...teams.map((name) => ({
+              kind: "team" as const,
+              name,
+              message: "Selected team cannot review this repository",
+            })),
+          ];
+          yield* Effect.forEach(
+            checks,
+            (check) =>
+              reviewerPermission(this.forge, p, repo.full_name, check.kind, check.name).pipe(
+                Effect.flatMap((allowed) =>
+                  allowed
+                    ? Effect.void
+                    : Effect.fail(new CrewError("REVIEWER_PERMISSION", check.message)),
+                ),
+              ),
+            { concurrency: 4 },
+          );
           return request({ kind: "reviewers", endpoint, users, teams });
         }
         case "reply": {

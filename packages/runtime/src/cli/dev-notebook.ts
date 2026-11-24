@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { Console, Effect, Redacted, Schema } from "effect";
+import { resolveInstallationHome } from "../config/identity.ts";
+import { loadPersonalConfig } from "../config/load.ts";
+import { devNotebookPath, readDevNotebook } from "../config/memos.ts";
 import { decode } from "../decode.ts";
 import { CrewError } from "../domain.ts";
 import { rename, rm, writeFile } from "../filesystem.ts";
-import { AbsolutePath, Executable, LockKey } from "../identities.ts";
-import { installationHome } from "../config/identity.ts";
-import { loadPersonalConfig } from "../config/load.ts";
-import { devNotebookPath, readDevNotebook } from "../config/memos.ts";
+import { AbsolutePath, Executable, LockKey } from "@abracode/contracts/identities";
 import { ProcessRunner } from "../process.ts";
 import { FileLocks } from "../storage/lock.ts";
 
@@ -52,7 +52,7 @@ const post = (body: unknown, bearer?: string): RequestInit => ({
 
 export const connectDevNotebook = (sourceRoot: string) =>
   Effect.gen(function* () {
-    const config = yield* loadPersonalConfig(installationHome());
+    const config = yield* loadPersonalConfig(yield* resolveInstallationHome);
     if (config.memos) return;
     const port = yield* new ProcessRunner().run(
       Executable.make("docker"),

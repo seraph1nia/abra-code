@@ -22,14 +22,28 @@ import {
 import { PrepareDiagramSelectionSchema } from "@abracode/contracts/web/diagram-actions";
 import { AgentCatalogSchema } from "@abracode/contracts/web/agent-settings";
 import { DiagramPreparationSchema } from "@abracode/contracts/presentation/diagrams";
-import { ReportExportSchema } from "../presentation/report-export-contract.ts";
+import { ReportExportSchema } from "@abracode/contracts/presentation/report-export-contract";
 import { Rpc } from "@opencode/plugin/rpc";
 import { Schema } from "effect";
-import { SessionId, IssueId, RequestId, MessageId, ContentHash } from "../identities.ts";
-import { ComponentId } from "./catalog.ts";
-import { ArtifactSchema, DocumentArtifactSchema, ArtifactSummarySchema } from "./wire.ts";
-import { SaveSurfaceSchema, ExportDocumentSchema, ReadExportSchema } from "./report-actions.ts";
-import { ResourceSelectionSchema } from "./resources.ts";
+import {
+  SessionId,
+  IssueId,
+  RequestId,
+  MessageId,
+  ContentHash,
+} from "@abracode/contracts/identities";
+import { ComponentId } from "@abracode/contracts/web/catalog";
+import {
+  ArtifactSchema,
+  DocumentArtifactSchema,
+  ArtifactSummarySchema,
+} from "@abracode/contracts/web/wire";
+import {
+  SaveSurfaceSchema,
+  ExportDocumentSchema,
+  ReadExportSchema,
+} from "@abracode/contracts/web/report-actions";
+import { ResourceSelectionSchema } from "@abracode/contracts/web/resources";
 import {
   ReceiptSchema,
   ReceiptLookupSchema,
@@ -41,7 +55,7 @@ import {
   CheckpointSchema,
   NativeHistorySchema,
   PresentationPageSchema,
-} from "./workspace-wire.ts";
+} from "@abracode/contracts/web/workspace-wire";
 
 const errors = { refused: Schema.toStandardSchemaV1(Schema.Struct({ code: Schema.String })) };
 const method = <I, O>(input: Schema.Codec<I, unknown>, output: Schema.Codec<O, unknown>) => ({

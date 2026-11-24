@@ -1,4 +1,4 @@
-import { OperationAction } from "../identities.ts";
+import { OperationAction } from "@abracode/contracts/identities";
 import { type Capacity } from "./capacity.ts";
 import { type WorkGraph } from "../work/graph.ts";
 import { type Operations } from "./operations.ts";
@@ -6,7 +6,7 @@ import { type Queries } from "./queries.ts";
 import { type WorkerSessions } from "./sessions.ts";
 import { randomUUID } from "node:crypto";
 import { Clock, Effect } from "effect";
-import { ObligationKey, FormId, Fingerprint, type SessionId } from "../identities.ts";
+import { ObligationKey, FormId, Fingerprint, type SessionId } from "@abracode/contracts/identities";
 import { ensure, type Execution, type Project } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { removeOwnedField, synchronizeExecution, type Records } from "../storage/store.ts";
@@ -19,8 +19,11 @@ import {
   type ExternalRecord,
   type ExternalDocument,
   type ValidationInput,
-} from "../validation/contracts.ts";
+} from "@abracode/contracts/validation/contracts";
 import { digest } from "../digest.ts";
+import { collectApprovalForm, openControllerDecision } from "./decision-ledger.ts";
+import { nextCheckAt } from "./durable-outbox.ts";
+import { assertTransition } from "./transitions.ts";
 
 /** Owns one external writer, retained protocol admissions, and explicit custody return. */
 export class ExternalValidation {
@@ -45,8 +48,7 @@ export class ExternalValidation {
         Effect.gen({ self: this }, function* () {
           const e = yield* this.admission.queries.get(input.issue_id);
           yield* this.admission.sessions.idle(e);
-          const p = yield* this.records.project(e.repository_id);
-          ensure(p, "PROJECT_MISSING", "Execution repository registration is unavailable");
+          const p = yield* this.admission.queries.effectiveProject(e);
           return yield* this.control(e, p, input, actor);
         }),
       ),
@@ -79,42 +81,15 @@ export class ExternalValidation {
   private question = Effect.fn("ExternalValidation.question")(
     function* (this: ExternalValidation, e: Execution, question: string) {
       const r = e.external_validation!;
-      const key = ObligationKey.make(
-        `external-${r.nonce}-${digest(r.observation?.gate ?? r.status).slice(0, 16)}`,
-      );
-      const at = yield* Clock.currentTimeMillis;
-      const saved = yield* this.records.update(e.issue_id, (current) => {
-        ensure(
-          current.control_generation === e.control_generation &&
-            current.operation?.id === e.operation?.id,
-          "STALE_OPERATION",
-          "External decision was superseded",
-        );
-        if (current.decisions?.some((d) => d.key === key)) return;
-        ensure(
-          (current.decisions?.length ?? 0) < 256,
-          "DECISION_LIMIT",
-          "External decision history requires inspection",
-        );
-        return {
-          ...current,
-          decisions: [
-            ...(current.decisions ?? []),
-            {
-              schema_version: 1,
-              key,
-              generation: current.control_generation,
-              scope: current.workflow_policy,
-              question: question.slice(0, 8192),
-              owner: "user",
-              session_id: "controller",
-              opened_at: at,
-              status: "open",
-            },
-          ],
-        };
+      yield* openControllerDecision(this.records, e, {
+        key: ObligationKey.make(
+          `external-${r.nonce}-${digest(r.observation?.gate ?? r.status).slice(0, 16)}`,
+        ),
+        question,
+        matchAnyGeneration: true,
+        staleMessage: "External decision was superseded",
+        limitMessage: "External decision history requires inspection",
       });
-      synchronizeExecution(e, saved);
     }.bind(this),
     domainEffect,
   );
@@ -194,7 +169,7 @@ export class ExternalValidation {
       status: terminal ? "terminal" : doc.gate ? "gated" : "running",
       custody: "external",
       observed_at: now,
-      next_check_at: now + 30000,
+      next_check_at: nextCheckAt(now, 1),
       error: undefined,
     };
   }
@@ -212,6 +187,7 @@ export class ExternalValidation {
         );
         yield* this.records.commitOwned(e, { implementation_head: head });
         if (r?.status === "adopted" && r.adoption?.head === head) {
+          assertTransition(e.current_phase, "verifying");
           return yield* this.records.commitOwned(e, { current_phase: "verifying" });
         }
         const preflight = yield* this.engine.preflight(p, e);
@@ -239,6 +215,7 @@ export class ExternalValidation {
           next_check_at: now,
           responses: [],
         };
+        assertTransition(e.current_phase, "validating_external");
         yield* this.records.commitOwned(e, {
           external_validation: r,
           current_phase: "validating_external",
@@ -255,7 +232,7 @@ export class ExternalValidation {
           ...r,
           custody: "uncertain",
           error: result.failure.message.slice(0, 8192),
-          next_check_at: now + 30000,
+          next_check_at: nextCheckAt(now, 1),
         });
         return e;
       }
@@ -312,8 +289,7 @@ export class ExternalValidation {
         "External result needs an explicit recovery decision",
       );
       yield* this.save(e, { ...r, custody: "uncertain" });
-      const project = yield* this.records.project(e.repository_id);
-      ensure(project, "PROJECT_MISSING", "External custody repository registration is unavailable");
+      const project = yield* this.admission.queries.effectiveProject(e);
       yield* this.git.validate(project, e);
       const sync = yield* this.engine.sync(e, true, project.remote);
       ensure(
@@ -345,6 +321,8 @@ export class ExternalValidation {
       const at = yield* Clock.currentTimeMillis;
       yield* this.settleQuestions(e, r, at);
       const succeeded = this.success(r);
+      const nextPhase = succeeded ? ("verifying" as const) : ("blocked" as const);
+      assertTransition(e.current_phase, nextPhase);
       return yield* this.records.commitOwned(e, {
         external_validation: {
           ...r,
@@ -355,7 +333,7 @@ export class ExternalValidation {
         },
         verification_receipt: removeOwnedField,
         review_receipt: removeOwnedField,
-        current_phase: succeeded ? "verifying" : "blocked",
+        current_phase: nextPhase,
         ...(!succeeded && { resume_phase: "applying" as const }),
       });
     }.bind(this),
@@ -400,14 +378,14 @@ export class ExternalValidation {
           status: "prepared" as const,
         };
         yield* this.records.commitOwned(e, { validation_setup: setup });
-        yield* this.runtime.requestApproval(
+        const setupDecision = yield* collectApprovalForm(
+          this.runtime,
           setup.session_id,
           setup.form_id,
           `Initialize no-mistakes for ${p.path}. This installs repository gate metadata, hooks/remotes, may install user-level skills, and may start the configured daemon. Executable: ${this.engine.settings(e).bin}; runtime home: ${this.engine.settings(e).home}.`,
           Fingerprint.make(digest([p.id, this.engine.settings(e)])),
         );
-        if ((yield* this.runtime.approval(setup.session_id, setup.form_id)) !== "approved")
-          return e;
+        if (setupDecision !== "approved") return e;
         if (setup.status === "prepared") {
           yield* this.records.commitOwned(e, { validation_setup: { ...setup, status: "running" } });
           const result = yield* Effect.result(this.engine.setup(e));
@@ -479,13 +457,13 @@ export class ExternalValidation {
         };
         r = { ...r, responses: [...r.responses.filter((x) => x.id !== id), response] };
         yield* this.save(e, r);
-        yield* this.runtime.requestApproval(
+        const decision = yield* collectApprovalForm(
+          this.runtime,
           response.session_id,
           response.form_id,
           `External ${response.action} for run ${r.launch!.run_id}, gate ${gate.step}: ${JSON.stringify(gate)}\nSelected findings: ${ids.join(", ")}\nInstructions: ${response.instructions}\nThis explicitly authorizes this gate response, including any displayed scope/protected-path/verification exception.`,
           Fingerprint.make(id),
         );
-        const decision = yield* this.runtime.approval(response.session_id, response.form_id);
         if (decision === "pending") return e;
         response = { ...response, status: decision === "approved" ? "running" : "rejected" };
         r = { ...r, responses: r.responses.map((x) => (x.id === id ? response! : x)) };
@@ -525,13 +503,14 @@ export class ExternalValidation {
       }
       // Abort/adoption are explicit recovery operations; a concrete human form authorizes the target run.
       const form = FormId.make(`frm_external_${digest([r.nonce, input.action]).slice(0, 24)}`);
-      yield* this.runtime.requestApproval(
+      const recoveryDecision = yield* collectApprovalForm(
+        this.runtime,
         actor,
         form,
         `External ${input.action} for exact run ${r.launch.run_id}, submitted head ${r.submitted_head}. Preserve all pipeline commits and return custody through the engine's offered guarded action.`,
         Fingerprint.make(digest([r.nonce, input.action])),
       );
-      if ((yield* this.runtime.approval(actor, form)) !== "approved") return e;
+      if (recoveryDecision !== "approved") return e;
       yield* this.settleQuestions(e, r, yield* Clock.currentTimeMillis, form);
       if (input.action === "abort") {
         const status = yield* this.engine.status(e, r.launch.run_id);

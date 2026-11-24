@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveConfig } from "../../src/config/load.ts";
 import { PersonalThoughts } from "../../src/work/thoughts.ts";
-import { AbsolutePath, RequestId } from "../../src/identities.ts";
+import { AbsolutePath, RequestId } from "@abracode/contracts/identities";
 import { AgentMemory } from "../../src/memory/service.ts";
 import { run } from "../effects.ts";
 
@@ -239,7 +239,7 @@ test("publishing a Thought validates the live private selection before contactin
 
 test("durable save reservations reconcile concurrent writes and lost responses without changing the wording", async (t) => {
   const f = await notebook((fn) => t.onTestFinished(fn));
-  const { RequestId } = await import("../../src/identities.ts");
+  const { RequestId } = await import("@abracode/contracts/identities");
   const path = AbsolutePath.make(join(f.root, "graph.sqlite"));
   const input = { request_id: RequestId.make("trip-1"), content: "  first\nsecond\r\n" };
   const save = (request = input) =>
@@ -266,7 +266,7 @@ test("ordinary intake keeps only the accepted excerpt and replays after an exter
   const f = await notebook((fn) => t.onTestFinished(fn));
   const { fixture } = await import("../fixtures.ts");
   const { WorkIntake } = await import("../../src/work/intake.ts");
-  const { RepositoryId, SessionId, RequestId } = await import("../../src/identities.ts");
+  const { RepositoryId, SessionId, RequestId } = await import("@abracode/contracts/identities");
   const app = await run(fixture);
   t.onTestFinished(() => run(app.close()));
   f.state.text = "private context\naccepted words";

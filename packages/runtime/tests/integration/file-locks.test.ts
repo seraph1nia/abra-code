@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Deferred, Effect, Exit, Fiber, Scope } from "effect";
-import { AbsolutePath, LockKey } from "../../src/identities.ts";
+import { AbsolutePath, LockKey } from "@abracode/contracts/identities";
 import { FileLocks } from "../../src/storage/lock.ts";
 import { run } from "../effects.ts";
 

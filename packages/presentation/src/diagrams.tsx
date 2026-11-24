@@ -73,18 +73,18 @@ export function DiagramView({
 }) {
   const identity = useId().replace(/[^a-zA-Z0-9_-]/g, "_");
   const sourceSVG = prepared?.svg;
+  const dialog = useRef<HTMLDialogElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const [expanded, setExpanded] = useState(false);
   const svg = useMemo(
     () => (sourceSVG ? namespaceSVG(sourceSVG, identity) : undefined),
     [sourceSVG, identity],
   );
   const expandedSVG = useMemo(
-    () => (sourceSVG ? namespaceSVG(sourceSVG, `${identity}-expanded`) : undefined),
-    [sourceSVG, identity],
+    () => (expanded && sourceSVG ? namespaceSVG(sourceSVG, `${identity}-expanded`) : undefined),
+    [expanded, sourceSVG, identity],
   );
-  const dialog = useRef<HTMLDialogElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const [zoom, setZoom] = useState(1);
-  const [expanded, setExpanded] = useState(false);
   return (
     <figure className="mermaid-diagram" data-diagram-state={svg ? "ready" : "source"}>
       <figcaption>
@@ -159,10 +159,7 @@ export function DiagramView({
               role="img"
               aria-label={title}
             >
-              <div
-                style={{ zoom }}
-                dangerouslySetInnerHTML={{ __html: expanded ? expandedSVG! : "" }}
-              />
+              <div style={{ zoom }} dangerouslySetInnerHTML={{ __html: expandedSVG ?? "" }} />
             </div>
             {/* oxlint-enable jsx-a11y/prefer-tag-over-role */}
           </dialog>

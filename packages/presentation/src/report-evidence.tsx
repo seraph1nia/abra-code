@@ -1,7 +1,7 @@
 import { DiagramView } from "./diagrams.tsx";
 export type { PreparedReportDiagram } from "./diagrams.tsx";
 import type { PreparedReportDiagram } from "./diagrams.tsx";
-import { useId, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import type {
   ReportSnapshot,
   SourceReference,
@@ -61,17 +61,19 @@ export function ReportEvidence({
 }) {
   const [filter, setFilter] = useState("");
   const filterId = useId();
+  const findings = useMemo(() => {
+    if (!snapshot || section !== "findings") return [];
+    const query = filter.toLowerCase();
+    return snapshot.findings.filter((finding) =>
+      `${finding.title} ${finding.category} ${finding.summary}`.toLowerCase().includes(query),
+    );
+  }, [snapshot, section, filter]);
   if (!snapshot)
     return (
       <section className="report-evidence" data-report-section={section}>
         <output>Captured report evidence is unavailable for this view.</output>
       </section>
     );
-  const findings = snapshot.findings.filter((finding) =>
-    `${finding.title} ${finding.category} ${finding.summary}`
-      .toLowerCase()
-      .includes(filter.toLowerCase()),
-  );
   return (
     <section className="report-evidence space-y-3" data-report-section={section}>
       <p className="surface-binding">

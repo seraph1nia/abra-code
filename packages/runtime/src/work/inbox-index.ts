@@ -6,7 +6,7 @@ import {
   type InboxTarget,
   type InboxQuery,
 } from "@abracode/contracts/visibility/github-inbox";
-import { IssueId, type RepositoryId } from "../identities.ts";
+import { IssueId, type RepositoryId } from "@abracode/contracts/identities";
 import { CrewError, ensure } from "../domain.ts";
 import { decodeSync } from "../decode.ts";
 
@@ -71,7 +71,11 @@ export class InboxIndex {
       action();
       this.db.exec("COMMIT");
     } catch (e) {
-      this.db.exec("ROLLBACK");
+      try {
+        if (this.db.isTransaction) this.db.exec("ROLLBACK");
+      } catch {
+        // Preserve original error if rollback fails or already rolled back.
+      }
       throw e;
     }
   }

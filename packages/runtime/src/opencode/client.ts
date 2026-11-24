@@ -3,6 +3,9 @@ import { OpenCode } from "@opencode/client/effect";
 import { Service, type Endpoint } from "@opencode/client/effect/service";
 import { Effect, Exit, Duration } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+
+export const OPENCODE_VERSION = "2.3.0";
+
 /** Capture authentication in the HTTP client used by every native request. */
 export const makeClient = (endpoint: Endpoint) =>
   Effect.gen(function* () {

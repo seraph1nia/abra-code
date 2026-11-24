@@ -1,4 +1,4 @@
-import { LockKey, AbsolutePath } from "../identities.ts";
+import { LockKey, AbsolutePath } from "@abracode/contracts/identities";
 import { spawn } from "node:child_process";
 import { mkdir, open } from "node:fs/promises";
 import { join } from "node:path";
@@ -61,7 +61,7 @@ export class FileLocks implements Locks {
           }),
           // Closing the owning descriptor releases the lock. Never unlink the
           // path: another process may already have opened the same inode.
-          (file) => Effect.promise(() => file.close()),
+          (file) => Effect.tryPromise(() => file.close()).pipe(Effect.ignore),
         );
         const started = yield* Clock.monotonicTimeNanos;
         while (true) {
@@ -110,9 +110,35 @@ export class FileLocks implements Locks {
           Effect.callback<void>((resume) => {
             if (child.exitCode !== null || child.signalCode !== null || !child.pid)
               return resume(Effect.void);
-            child.once("close", () => resume(Effect.void));
+            let done = false;
+            const finish = () => {
+              if (done) return;
+              done = true;
+              clearTimeout(forceKill);
+              child.off("close", finish);
+              child.off("exit", finish);
+              child.off("error", finish);
+              resume(Effect.void);
+            };
+            const forceKill = setTimeout(() => {
+              if (child.exitCode === null && child.signalCode === null) {
+                try {
+                  child.kill("SIGKILL");
+                } catch {
+                  // Process already exited between check and SIGKILL.
+                }
+              }
+            }, 1000);
+            forceKill.unref?.();
+            child.once("close", finish);
+            child.once("exit", finish);
+            child.once("error", finish);
             child.stdin.end();
-            child.kill("SIGTERM");
+            try {
+              child.kill("SIGTERM");
+            } catch {
+              finish();
+            }
           }),
       );
       yield* Effect.callback<void, CrewError>((resume) => {

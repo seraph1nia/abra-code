@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Schema } from "effect";
-import { IssueId, RepositoryId } from "../../src/identities.ts";
+import { IssueId, RepositoryId } from "@abracode/contracts/identities";
 import { Visibility } from "../../src/visibility/read-model.ts";
-import { WorkPageSchema } from "../../src/visibility/discovery-contracts.ts";
+import { WorkPageSchema } from "@abracode/contracts/visibility/discovery-contracts";
 import { fixture, planned } from "../fixtures.ts";
 import { run } from "../effects.ts";
 

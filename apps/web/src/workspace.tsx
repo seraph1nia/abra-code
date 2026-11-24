@@ -1,8 +1,23 @@
+/* oxlint-disable effecttsgo/unstable-api-usage -- Workspace presentation consumes the typed Effect atom layer. */
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useAtomSet, useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
+import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
+import { Button } from "@abracode/presentation/ui/button";
 import { BriefingForms } from "./presentation/tool-context.ts";
+import { useNativeToolRendering } from "./presentation/tools.tsx";
 import { RunCommand, composerCommands, type ComposerCommand } from "./workspace-commands.ts";
 import { ReaderSplit } from "./reader-split.tsx";
 import { useMediaQuery } from "./use-media-query.ts";
-import { type Destination, destinations } from "./navigation.ts";
+import {
+  OpenSurface,
+  destinations,
+  resourceFromSearch,
+  workspaceSearch,
+  type Destination,
+  type WorkspaceSearch,
+} from "./navigation.ts";
 import { AttentionPanel } from "./attention-panel-loader.tsx";
 import { Palette } from "./palette-loader.tsx";
 import type { PaletteActions } from "./workspace-palette.tsx";
@@ -16,21 +31,21 @@ import {
   AttachSelection,
   type DraftAttachment,
 } from "./workspace-state/draft.ts";
-import { Link, useNavigate, useRouter } from "@tanstack/react-router";
-
 import { useWorkspaceNavigation } from "./workspace-state/navigation.ts";
-import { useTranscriptViewport } from "./workspace-state/viewport.ts";
-
-/* oxlint-disable effecttsgo/unstable-api-usage -- Workspace presentation consumes the typed Effect atom layer. */
-import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  groupByMessage,
+  unattachedSurfaces,
+  unmatchedWorkAttention,
+  useInspectionMemory,
+  usePhoneEscape,
+  useTranscriptScroll,
+} from "./workspace-state/use-transcript-scroll.ts";
 import { WorkspaceProvider } from "./workspace-provider.tsx";
-import { useAtomSet, useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { AsyncResult } from "effect/reactivity";
-import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { bootstrapQuery } from "./data.ts";
 import { useWorkspace } from "./use-workspace.ts";
 import { requestError } from "./request-error.ts";
 import { deferred } from "./deferred.tsx";
+
 const RetainedSurfaces = deferred<
   React.ComponentProps<typeof import("./presentation/attachments.tsx").RetainedSurfaces>
 >(
@@ -59,15 +74,6 @@ const Inspector = deferred<React.ComponentProps<typeof import("./inspector.tsx")
   "Work inspection",
   "deferred-panel",
 );
-import {
-  OpenSurface,
-  workspaceSearch,
-  resourceFromSearch,
-  type WorkspaceSearch,
-} from "./navigation.ts";
-import { useNativeToolRendering } from "./presentation/tools.tsx";
-
-import { Button } from "@abracode/presentation/ui/button";
 
 type LayoutProps = {
   route: WorkspaceSearch;
@@ -113,6 +119,7 @@ export function Application(props: LayoutProps) {
     </WorkspaceProvider>
   );
 }
+
 function Workspace({
   initial,
   route,
@@ -142,10 +149,10 @@ function Workspace({
   } = useWorkspace(initial);
   const wide = useMediaQuery("(min-width: 1251px)");
   const [retainedViews, setRetainedViews] = useState(false);
+  const [thoughtToken, setThoughtToken] = useState<{ text: string; start: number; end: number }>();
 
   const runCommand = useContext(RunCommand);
   const navigate = useNavigate();
-  const router = useRouter();
   const inspecting = Boolean(
     resourceFromSearch(route) || route.surface || route.retained || route.review,
   );
@@ -153,55 +160,29 @@ function Workspace({
   const chatVisible = active && !phoneCanvas && (destination === "/" || inspecting);
   const collectionVisible = !inspecting && destination !== "/";
   const attentionOpen = destination === "/attention" && !inspecting;
-  const memoryKey = "abra-canvas-v1-" + initial.session_id;
-  const [lastInspection, setLastInspection] = useState<WorkspaceSearch | undefined>(() => {
-    try {
-      const saved = workspaceSearch(JSON.parse(sessionStorage.getItem(memoryKey) ?? "{}"));
-      if (saved.surface || saved.retained || saved.review || resourceFromSearch(saved))
-        return saved;
-    } catch {
-      /* Storage can be disabled in private browsing. */
-    }
-  });
-  if (active && inspecting && route !== lastInspection) setLastInspection(route);
-  useEffect(() => {
-    if (!active) return;
-    if (route.view) {
-      const next = route.view === "canvas" ? lastInspection : undefined;
-      void navigate({ to: next ? "/" : "/work", search: next ?? {}, replace: true });
-    } else if (inspecting) {
-      try {
-        sessionStorage.setItem(memoryKey, JSON.stringify(route));
-      } catch {
-        /* Direct links still work when storage is unavailable. */
-      }
-    }
-  }, [active, inspecting, memoryKey, navigate, lastInspection, route]);
-  const viewport = useTranscriptViewport(
-    messages,
-    loadingHistory,
-    `${resourceFromSearch(route)?.issue_id ?? ""}/${destination}/${chatVisible}`,
-  );
-  useEffect(
-    () => router.subscribe("onBeforeNavigate", viewport.rememberPosition),
-    [router, viewport.rememberPosition],
-  );
+
+  const lastInspection = useInspectionMemory(initial.session_id, route, active, inspecting);
+  const { viewport, composerRef, focusComposer, selectedMessage, foundMessage } =
+    useTranscriptScroll({
+      sessionId: workspace.session_id,
+      messages,
+      loadingHistory,
+      route,
+      destination,
+      active,
+      chatVisible,
+      phoneCanvas,
+      inspecting,
+      isReady,
+      focusChat,
+      didFocus,
+    });
 
   const navigation = useWorkspaceNavigation(route, viewport.rememberPosition);
   const { selected, tab, inspect, setTab, closeInspector, returnInspectorFocus } = navigation;
   const { scroller, transcript, bottom } = viewport;
-  const selectedMessage = route.message;
-  const foundMessage =
-    selectedMessage?.session_id === workspace.session_id &&
-    messages.some((m) => m.id === selectedMessage.message_id);
-  useEffect(() => {
-    if (foundMessage && active && selectedMessage) {
-      const element = document.getElementById("message-" + selectedMessage.message_id);
-      element?.scrollIntoView({ block: "center" });
-      element?.focus({ preventScroll: true });
-    }
-  }, [active, foundMessage, selectedMessage]);
-  const [thoughtToken, setThoughtToken] = useState<{ text: string; start: number; end: number }>();
+  usePhoneEscape(phoneCanvas, Boolean(palette), closeInspector);
+
   const setDraft = useAtomSet(workspaceDraft(initial.session_id));
   const attachmentIndex = useMemo(
     () => groupByMessage(presentations.entries),
@@ -219,54 +200,19 @@ function Workspace({
   const managementAttention = workspace.work.management?.entries ?? [];
   const attention =
     workspace.forms.filter((item) => item.active).length + workspace.permissions.length;
-  const workAttention = (workspace.work.fleet?.attention ?? []).filter(
-    (entry) =>
-      !workspace.forms.some(
-        (item) =>
-          item.active &&
-          (entry.form_id === item.form.id ||
-            (item.checkpoint?.issue_id === entry.issue_id &&
-              ((entry.key === "plan-approval" && item.checkpoint.kind === "plan") ||
-                (entry.key === "merge-approval" && item.checkpoint.kind === "merge")))),
-      ),
-  );
+  const workAttention = unmatchedWorkAttention(workspace);
   const work = workspace.work.work.find((w) => w.issue_id === selected);
   const historyWritable = useRecordInspection(
     workspace.session_id,
     active ? selected : undefined,
     work?.title,
   );
-  const attachedViews = new Set(
-    presentations.entries.flatMap((entry) =>
-      entry.target.kind === "surface"
-        ? [`${entry.target.surface_id}/${entry.target.revision}`]
-        : [],
-    ),
-  );
-  for (const message of messages)
-    for (const tool of message.tools ?? [])
-      if (tool.presentation?.kind === "surface")
-        attachedViews.add(`${tool.presentation.surface_id}/${tool.presentation.revision}`);
-  const otherViews = workspace.surfaces.filter(
-    (record) =>
-      "unavailable" in record ||
-      !attachedViews.has(
-        `${"surface" in record ? record.surface.createSurface.surfaceId : record.surface_id}/${record.revision}`,
-      ),
-  );
+  const otherViews = unattachedSurfaces(workspace.surfaces, presentations.entries, messages);
+
   function open(id: string, nextTab = "Overview") {
     const target = resourceFromSearch(workspaceSearch({ issue: id, tab: nextTab }));
     if (target) inspect(target);
   }
-  useEffect(() => {
-    if (!phoneCanvas) return;
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented && !palette) closeInspector();
-    };
-    window.addEventListener("keydown", escape);
-    return () => window.removeEventListener("keydown", escape);
-  }, [phoneCanvas, closeInspector, palette]);
-
   function focusForm(id: string, binding?: string) {
     const form = workspace.forms.find(
       (item) => item.active && item.form.id === id && (!binding || item.binding === binding),
@@ -277,33 +223,9 @@ function Workspace({
       );
       return;
     }
-
     navigation.focusForm(id, form.binding);
   }
 
-  function focusComposer() {
-    const composer = document.querySelector<HTMLTextAreaElement>('[aria-label="Message Abra"]');
-    if (
-      !chatVisible ||
-      phoneCanvas ||
-      (inspecting && (route.canvas || matchMedia("(max-width: 1250px)").matches))
-    ) {
-      void navigate({ to: "/", search: {} }).then(() =>
-        requestAnimationFrame(() => composer?.focus()),
-      );
-    } else {
-      composer?.focus();
-    }
-  }
-
-  useEffect(() => {
-    if (focusChat && chatVisible && !inspecting && !route.view && isReady) {
-      document
-        .querySelector<HTMLTextAreaElement>('[aria-label="Message Abra"]')
-        ?.focus({ preventScroll: true });
-      didFocus();
-    }
-  }, [focusChat, chatVisible, inspecting, route.view, isReady, didFocus]);
   const draftLocked = useRef(true);
   const updateDraftLock = useCallback((locked: boolean) => {
     draftLocked.current = locked;
@@ -319,12 +241,12 @@ function Workspace({
     setDraft({ attachment });
     focusComposer();
   }
-
   function ask(text: string) {
     if (!canPrepare()) return;
     setDraft({ append: text });
     focusComposer();
   }
+
   const picker = palette && (
     <Palette
       {...palette}
@@ -336,6 +258,7 @@ function Workspace({
         load: () => void loadHistory(viewport.beforeHistory),
       }}
       selected={selected}
+      artifact={route.resource?.action === "open_artifact" ? route.resource : undefined}
       resume={lastInspection}
       chat={palette.chat}
       inspect={inspect}
@@ -553,6 +476,7 @@ function Workspace({
                 </Button>
               )}
               <Composer
+                textareaRef={composerRef}
                 updateDraftLock={updateDraftLock}
                 pickThought={(consume) => {
                   setThoughtToken(consume);
@@ -597,14 +521,4 @@ function Workspace({
     </OpenSurface.Provider>
   );
   return <PrepareSurfaceMessage.Provider value={ask}>{panels}</PrepareSurfaceMessage.Provider>;
-}
-
-function groupByMessage<A extends { message_id: string }>(entries: readonly A[]) {
-  const result = new Map<string, A[]>();
-  for (const entry of entries) {
-    const group = result.get(entry.message_id) ?? [];
-    group.push(entry);
-    result.set(entry.message_id, group);
-  }
-  return result;
 }

@@ -3,10 +3,10 @@ import { coveredReportDocument } from "../helpers/report-document.ts";
 import assert from "node:assert/strict";
 import { expect, test } from "vite-plus/test";
 import { workspaceBrowserFixture } from "../helpers/workspace-browser.ts";
-import { catalogId } from "../../src/web/catalog.ts";
-import { validateSurface } from "../../src/web/surfaces.ts";
+import { catalogId } from "@abracode/contracts/web/catalog";
+import { validateSurface } from "@abracode/contracts/web/surfaces";
 import { Schema } from "effect";
-import { WorkspaceSnapshotSchema } from "../../src/web/workspace-wire.ts";
+import { WorkspaceSnapshotSchema } from "@abracode/contracts/web/workspace-wire";
 
 function diagramRecord(
   source: Awaited<ReturnType<typeof workspaceBrowserFixture>>["source"],

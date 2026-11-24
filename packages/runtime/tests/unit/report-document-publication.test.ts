@@ -13,15 +13,15 @@ import {
   MessageId,
   IssueId,
   Timestamp,
-} from "../../src/identities.ts";
+} from "@abracode/contracts/identities";
 import { SurfacePublications } from "../../src/web/surface-publications.ts";
-import { validateSurface, catalogId } from "../../src/web/surfaces.ts";
+import { validateSurface, catalogId } from "@abracode/contracts/web/surfaces";
 import { Visibility } from "../../src/visibility/read-model.ts";
 import { PresentationAssociations } from "../../src/presentation/associations.ts";
 import { CrewError } from "../../src/domain.ts";
-import { ReportDocuments } from "../../src/workflow/report-documents.ts";
-import { validateReportDocument } from "../../src/presentation/report-document.ts";
-import { reportHash } from "../../src/workflow/report-build.ts";
+import { ReportDocuments } from "../../src/reporting/report-documents.ts";
+import { validateReportDocument } from "@abracode/contracts/presentation/report-document";
+import { reportHash } from "../../src/reporting/report-build.ts";
 
 async function prepare() {
   const f = await run(fixture);

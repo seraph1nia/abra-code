@@ -4,7 +4,7 @@ import { type Config } from "../domain.ts";
 import { batchItemRequest, type BatchInput } from "./batch.ts";
 import { completeScope } from "./scope.ts";
 import { codingPolicy } from "../config/policy.ts";
-import { RequestId, SessionId } from "../identities.ts";
+import { RequestId, SessionId } from "@abracode/contracts/identities";
 
 import { Effect } from "effect";
 import { createHash } from "node:crypto";

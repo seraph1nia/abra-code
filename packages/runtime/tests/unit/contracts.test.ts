@@ -1,4 +1,4 @@
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { Effect, Schema } from "effect";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -12,7 +12,7 @@ import {
   Commit,
   Identifier,
   PolicySchema,
-} from "../../src/contracts.ts";
+} from "@abracode/contracts/primitives";
 import { SpecStatusSchema, ApplyStatusSchema } from "../../src/openspec/adapter.ts";
 import { PRSchema } from "../../src/git/delivery.ts";
 import { fixture } from "../fixtures.ts";

@@ -1,12 +1,18 @@
-import { AbsolutePath, RelativePath } from "../identities.ts";
-import { DirectoryIdentitySchema, RetirementSchema } from "./retirement-contracts.ts";
-export { DirectoryIdentitySchema, RetirementSchema } from "./retirement-contracts.ts";
+import { AbsolutePath, RelativePath } from "@abracode/contracts/identities";
+import {
+  DirectoryIdentitySchema,
+  RetirementSchema,
+} from "@abracode/contracts/git/retirement-contracts";
+export {
+  DirectoryIdentitySchema,
+  RetirementSchema,
+} from "@abracode/contracts/git/retirement-contracts";
 import { Effect } from "effect";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { CrewError, type ManagedExecution } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { identityStat, lstat, pathExists, readdir, readlink, realpath, rm } from "../filesystem.ts";
-import { GeneratedPathsSchema } from "../config/paths.ts";
+import { GeneratedPathsSchema } from "@abracode/contracts/config/paths";
 import { decode } from "../decode.ts";
 import { type Git } from "./repository.ts";
 export const directoryIdentity = Effect.fn("directoryIdentity")(function* (path: AbsolutePath) {

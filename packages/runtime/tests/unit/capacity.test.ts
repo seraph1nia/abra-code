@@ -1,6 +1,6 @@
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import { verifiedSpec } from "../helpers/spec-review.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { Clock, Deferred, Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import { test } from "vite-plus/test";

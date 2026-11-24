@@ -1,4 +1,4 @@
-import { SessionId, Fingerprint, Commit, timestamp } from "../identities.ts";
+import { SessionId, Fingerprint, Commit, timestamp } from "@abracode/contracts/identities";
 
 import { Effect } from "effect";
 import { Form } from "@opencode/schema/form";
@@ -20,6 +20,10 @@ import { approvedEvidence } from "./evidence.ts";
 import { currentPlanning } from "./planning-contracts.ts";
 
 type Kind = "plan" | "merge";
+type ApprovalTarget =
+  | { kind: "plan"; fingerprint: Fingerprint }
+  | { kind: "merge"; fingerprint: Commit };
+type ApprovalCheckpoint = ApprovalTarget & { session_id: SessionId };
 const retainedIdentity = (e: ManagedExecution, kind: Kind) =>
   kind === "plan" ? e.plan_fingerprint : e.delivered_commit;
 const currentReceipts = (e: Execution, kind: Kind) =>
@@ -131,21 +135,24 @@ export class Authorizations {
   collect = Effect.fn("Authorizations.collect")(
     function* (this: Authorizations, e: Execution, kind: Kind, supervisor: SessionId) {
       yield* assertApprovalActor(e, supervisor);
-      if (kind === "plan" && e.workflow_policy === "full-openspec")
-        yield* this.validatePlanning?.(e) ?? Effect.void;
-      const fingerprint = kind === "plan" ? yield* this.evidence.plan(e) : e.delivered_commit;
-      if (
-        kind === "plan" &&
-        e.workflow_policy !== "full-openspec" &&
-        !(e.scope && e.scope.fingerprint === fingerprint && e.plan_fingerprint === fingerprint)
-      )
-        return yield* new CrewError(
-          "SCOPE_CHANGED",
-          "Scoped contract changed; explicitly revise and approve it",
-        );
-      if (!fingerprint || (kind === "plan" && fingerprint !== e.plan_fingerprint))
-        return yield* new CrewError("STALE_CHECKPOINT", "Checkpoint changed");
-      return yield* this.collectIdentity(e, kind, supervisor, fingerprint);
+      if (kind === "plan") {
+        if (e.workflow_policy === "full-openspec") yield* this.validatePlanning?.(e) ?? Effect.void;
+        const fingerprint = yield* this.evidence.plan(e);
+        if (
+          e.workflow_policy !== "full-openspec" &&
+          !(e.scope && e.scope.fingerprint === fingerprint && e.plan_fingerprint === fingerprint)
+        )
+          return yield* new CrewError(
+            "SCOPE_CHANGED",
+            "Scoped contract changed; explicitly revise and approve it",
+          );
+        if (!fingerprint || fingerprint !== e.plan_fingerprint)
+          return yield* new CrewError("STALE_CHECKPOINT", "Checkpoint changed");
+        return yield* this.collectIdentity(e, supervisor, { kind: "plan", fingerprint });
+      }
+      const fingerprint = e.delivered_commit;
+      if (!fingerprint) return yield* new CrewError("STALE_CHECKPOINT", "Checkpoint changed");
+      return yield* this.collectIdentity(e, supervisor, { kind: "merge", fingerprint });
     }.bind(this),
     domainEffect,
   );
@@ -161,12 +168,11 @@ export class Authorizations {
             : undefined;
       if (!kind) return;
       for (const receipt of currentReceipts(e, kind).filter((a) => !a.authorized_at)) {
-        const { decision } = yield* this.collectIdentity(
-          e,
-          kind,
-          receipt.session_id,
-          receipt.fingerprint,
-        );
+        const target: ApprovalTarget =
+          receipt.kind === "plan"
+            ? { kind: "plan", fingerprint: receipt.fingerprint }
+            : { kind: "merge", fingerprint: receipt.fingerprint };
+        const { decision } = yield* this.collectIdentity(e, receipt.session_id, target);
         if (decision === "rejected") return kind;
       }
     }.bind(this),
@@ -174,21 +180,19 @@ export class Authorizations {
   );
 
   private collectIdentity = Effect.fn("Authorizations.collectIdentity")(
-    function* (
-      this: Authorizations,
-      e: Execution,
-      kind: Kind,
-      supervisor: SessionId,
-      fingerprint: Fingerprint | Commit,
-    ) {
+    function* (this: Authorizations, e: Execution, supervisor: SessionId, target: ApprovalTarget) {
       yield* assertApprovalActor(e, supervisor);
+      const checkpoint: ApprovalCheckpoint =
+        target.kind === "plan"
+          ? { kind: "plan", fingerprint: target.fingerprint, session_id: supervisor }
+          : { kind: "merge", fingerprint: target.fingerprint, session_id: supervisor };
       return yield* collectForm(
         e,
         this.records,
         this.runtime,
-        { kind, session_id: supervisor, fingerprint },
-        `Authorize ${kind} for ${e.issue_id} (${fingerprint.slice(0, 12)})`,
-        kind === "plan" && e.workflow_policy === "full-openspec"
+        checkpoint,
+        `Authorize ${target.kind} for ${e.issue_id} (${target.fingerprint.slice(0, 12)})`,
+        target.kind === "plan" && e.workflow_policy === "full-openspec"
           ? () => this.validatePlanning?.(e) ?? Effect.void
           : undefined,
       );
@@ -201,7 +205,7 @@ export const collectForm = Effect.fn("Authorizations.collectForm")(function* (
   e: ManagedExecution,
   records: Records,
   runtime: Runtime,
-  checkpoint: Pick<Approval, "kind" | "fingerprint" | "session_id">,
+  checkpoint: ApprovalCheckpoint,
   title: string,
   validate?: () => Effect.Effect<void, CrewError>,
 ) {
@@ -217,11 +221,22 @@ export const collectForm = Effect.fn("Authorizations.collectForm")(function* (
   const reserved = yield* records.commitOwned(e, (current) => {
     assertCurrent(current);
     if (current.approval_receipts.some(active)) return;
+    const entry: Approval =
+      checkpoint.kind === "plan"
+        ? {
+            kind: "plan",
+            fingerprint: checkpoint.fingerprint,
+            session_id: checkpoint.session_id,
+            form_id: Form.ID.create(),
+          }
+        : {
+            kind: "merge",
+            fingerprint: checkpoint.fingerprint,
+            session_id: checkpoint.session_id,
+            form_id: Form.ID.create(),
+          };
     return {
-      approval_receipts: [
-        ...current.approval_receipts,
-        { ...checkpoint, form_id: Form.ID.create() },
-      ],
+      approval_receipts: [...current.approval_receipts, entry],
     };
   });
   const receipt = reserved.approval_receipts.find(active)!;

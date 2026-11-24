@@ -1,6 +1,7 @@
 import type { Effect } from "effect";
 import type { CrewError, Execution, WorkerModel } from "../domain.ts";
-import type { FormId, IssueId, SessionId, ToolName } from "../identities.ts";
+import type { FormId, IssueId, SessionId, ToolName } from "@abracode/contracts/identities";
+import type { BindingRead, BindingSelection } from "@abracode/contracts/web/bindings";
 import type { Scope } from "../work/scope.ts";
 import type { WorkInput } from "../work/intake.ts";
 import type { BatchInput, BatchResultSchema } from "../work/batch.ts";
@@ -8,7 +9,7 @@ import type { Issue } from "../work/model.ts";
 import type { Queries } from "./queries.ts";
 import type { PRFeedback } from "./pr-feedback.ts";
 import type { ExternalValidation } from "./external-validation.ts";
-import type { Reports } from "./reports.ts";
+import type { Reports } from "../reporting/reports.ts";
 import type { AttentionService } from "./attention.ts";
 import type { Obligations } from "./obligations.ts";
 import type { Messages } from "./messages.ts";
@@ -43,7 +44,6 @@ export interface ExecutionCommands {
     kind: "plan" | "merge",
     supervisor: SessionId,
   ): Result<Execution | { execution: Execution; approval_required: boolean; form_id: FormId }>;
-  finish(id: IssueId): Result<Execution>;
   reviseScope(id: IssueId, scope: Scope): Result<Execution>;
   reconcile(id?: IssueId): Result<Execution[]>;
   recordSupervisor(session: SessionId): Result<void>;
@@ -63,12 +63,14 @@ export interface ExecutionCommands {
       | "replan"
       | "recover_planning",
     text?: string,
-    request?: { id: import("../identities.ts").RequestId; sender: SessionId },
+    request?: { id: import("@abracode/contracts/identities").RequestId; sender: SessionId },
   ): Result<Execution>;
   workMessage(
-    input: typeof import("./message-contracts.ts").MessageSendSchema.Type,
+    input: typeof import("@abracode/contracts/workflow/message-contracts").MessageSendSchema.Type,
     sender: SessionId,
-  ): Result<typeof import("./message-contracts.ts").MessageIntentSchema.Type>;
+  ): Result<
+    typeof import("@abracode/contracts/workflow/message-contracts").MessageIntentSchema.Type
+  >;
   readonly close: Effect.Effect<void>;
 }
 export interface PublicationCommands {
@@ -120,4 +122,5 @@ export interface ControllerServices {
   readonly communication: CommunicationCommands;
   readonly contexts: ContextCommands;
   readonly leads: LeadCommands;
+  readonly readBinding?: (selection: BindingSelection) => Result<BindingRead>;
 }

@@ -1,5 +1,5 @@
-import { validateSurface } from "../../src/web/surfaces.ts";
-import { catalogId, catalogIds, workCatalogs } from "../../src/web/catalog.ts";
+import { validateSurface } from "@abracode/contracts/web/surfaces";
+import { catalogId, catalogIds, workCatalogs } from "@abracode/contracts/web/catalog";
 import { presentationHash } from "../../src/presentation/identity.ts";
 import { NativeSessionProjection } from "../../src/opencode/agui/native-state.ts";
 import { SessionMessage } from "@opencode/schema/session-message";
@@ -9,7 +9,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
-import { SessionId, Timestamp, RepositoryId } from "../../src/identities.ts";
+import { SessionId, Timestamp, RepositoryId } from "@abracode/contracts/identities";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Exercises the pinned Effect 4 HTTP API transport. */
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -17,9 +17,9 @@ import { request } from "node:http";
 import { Effect, Exit, Scope, PubSub, Stream, Schema } from "effect";
 import { HttpApiClient } from "effect/http-api";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
-import { workspaceApi } from "../../src/web/http-api.ts";
+import { workspaceApi } from "@abracode/contracts/web/http-api";
 import { workspaceServer } from "../../src/web/server.ts";
-import { RequestId, ContentHash, IssueId } from "../../src/identities.ts";
+import { RequestId, ContentHash, IssueId } from "@abracode/contracts/identities";
 import { WorkspaceFixture } from "../helpers/web.ts";
 import { CrewError } from "../../src/domain.ts";
 import { nativeRpcError, readWorkReport } from "../../src/web/native-errors.ts";
@@ -54,9 +54,17 @@ test("shared HttpApiClient validates workspace reads, payloads and typed failure
   );
   assert.equal(snapshot.session_id, web.backend.sessionID);
   assert.equal(snapshot.work.work[0].title, "Build a single workspace");
-  assert.deepEqual(await Effect.runPromise(web.client.workspace.stop({ payload: {} })), {
-    stopped: true,
-  });
+  const stopResponse = await fetch(
+    `${web.origin}/api/copilotkit/agent/abra/stop/${web.backend.sessionID}`,
+    {
+      method: "POST",
+      headers: { origin: web.origin, "content-type": "application/json" },
+      body: "{}",
+    },
+  );
+  assert.equal(stopResponse.status, 200);
+  const stopBody = (await stopResponse.json()) as { stopped?: boolean };
+  assert.equal(stopBody.stopped, true);
   assert.equal(web.backend.stops, 1);
   const invalid = await fetch(`${web.origin}/api/form/reply`, {
     method: "POST",
@@ -241,7 +249,7 @@ test("Effect HTTP boundary rejects foreign origins, raw native routes and encode
   );
   assert.equal(
     (
-      await fetch(`${web.origin}/api/abra/stop`, {
+      await fetch(`${web.origin}/api/copilotkit/agent/abra/stop/${web.backend.sessionID}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: "{}",

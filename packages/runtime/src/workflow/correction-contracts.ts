@@ -7,9 +7,16 @@ import {
   RelativePath,
   PullRequestUrl,
   SessionId,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 import { Schema } from "effect";
-import { Count, Positive, NonEmpty, Commit, ApprovalSchema, RoleSchema } from "../contracts.ts";
+import {
+  Count,
+  Positive,
+  NonEmpty,
+  Commit,
+  ApprovalSchema,
+  RoleSchema,
+} from "@abracode/contracts/primitives";
 export const ScopeDispositionSchema = Schema.Literals(["in_scope", "scope_change", "uncertain"]);
 export const ForgeFindingSchema = Schema.Struct({
   id: FindingId,

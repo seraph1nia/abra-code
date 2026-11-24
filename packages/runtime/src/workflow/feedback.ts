@@ -8,8 +8,8 @@ import {
   mergeFeedback,
   actionable,
   type Feedback,
-} from "./feedback-contracts.ts";
-import { type SessionId } from "../identities.ts";
+} from "@abracode/contracts/workflow/feedback-contracts";
+import { type SessionId } from "@abracode/contracts/identities";
 
 /** Called under issue operation ownership; observing and classifying never grant mutation authority. */
 export class FeedbackService {

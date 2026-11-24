@@ -20,7 +20,7 @@ import {
   timestamp,
   type AbsolutePath,
   type SessionId,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 import { decode } from "../decode.ts";
 import type { Store } from "../storage/store.ts";
 import { canonicalJSON } from "../presentation/identity.ts";

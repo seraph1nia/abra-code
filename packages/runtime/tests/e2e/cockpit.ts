@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { Effect, Exit, Scope } from "effect";
 import type { Endpoint } from "@opencode/client/effect/service";
 import { launchReportBrowser, reportBrowserExecutable } from "@abracode/report-export/browser";
-import { AbsolutePath } from "../../src/identities.ts";
+import { AbsolutePath } from "@abracode/contracts/identities";
 import { NativeWebBackend } from "../../src/web/backend.ts";
 import { workspaceServer } from "../../src/web/server.ts";
 import { CrewError } from "../../src/domain.ts";

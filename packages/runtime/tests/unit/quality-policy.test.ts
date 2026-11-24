@@ -13,7 +13,7 @@ import { ProjectInputSchema } from "../../src/config/contracts.ts";
 import { createExecution } from "../../src/workflow/execution.ts";
 import { SqliteWorkGraph } from "../../src/work/graph.ts";
 import { normalizeIssue } from "../../src/work/model.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 

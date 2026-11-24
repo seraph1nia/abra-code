@@ -11,7 +11,7 @@ import {
   type Role,
   type WorkerModel,
 } from "../domain.ts";
-import { Count, RoleSchema } from "../contracts.ts";
+import { Count, RoleSchema } from "@abracode/contracts/primitives";
 import {
   AbsolutePath,
   ExecutionId,
@@ -19,7 +19,7 @@ import {
   SessionId,
   StorageKey,
   timestamp,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 import { type Records, type Store } from "../storage/store.ts";
 import { decode } from "../decode.ts";
 import { domainEffect } from "../effect.ts";
@@ -402,7 +402,7 @@ export class WorkerContexts {
       role: Role,
       session: SessionId,
       model: WorkerModel,
-      names: import("../identities.ts").ToolName[],
+      names: import("@abracode/contracts/identities").ToolName[],
     ) {
       if (!isActiveWorker(e, session, { role }))
         return yield* new CrewError(

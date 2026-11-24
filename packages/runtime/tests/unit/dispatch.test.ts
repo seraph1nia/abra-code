@@ -8,12 +8,12 @@ import {
   resolveDispatch,
   validateDispatch,
 } from "../../src/config/dispatch.ts";
-import { WorkerModelSchema } from "../../src/contracts.ts";
+import { WorkerModelSchema } from "@abracode/contracts/primitives";
 import { captureConfiguration } from "../../src/config/snapshot.ts";
 import { normalizeIssue } from "../../src/work/model.ts";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 const model = (id: string, variant?: string) =>
   Schema.decodeSync(WorkerModelSchema)({
     providerID: "fixture",

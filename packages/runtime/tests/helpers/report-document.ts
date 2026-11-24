@@ -1,5 +1,8 @@
-import { validateReportDocument, reportCatalogs } from "../../src/presentation/report-document.ts";
-import { catalogId } from "../../src/web/catalog.ts";
+import {
+  validateReportDocument,
+  reportCatalogs,
+} from "@abracode/contracts/presentation/report-document";
+import { catalogId } from "@abracode/contracts/web/catalog";
 import { WorkspaceFixture } from "./web.ts";
 
 export function reportDocument() {

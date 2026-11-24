@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { CrewError } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { realpath } from "../filesystem.ts";
-import { AbsolutePath, Commit, RelativePath } from "../identities.ts";
+import { AbsolutePath, Commit, RelativePath } from "@abracode/contracts/identities";
 import { type Git } from "./repository.ts";
 import { type WorkDiff } from "../visibility/protocol.ts";
 import { documentLimit } from "../visibility/documents.ts";

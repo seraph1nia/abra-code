@@ -8,7 +8,7 @@ import { Forge } from "../../src/git/forge.ts";
 import { actionsEvidence } from "../../src/git/actions.ts";
 import { GitHubPRActions } from "../../src/git/pr-actions.ts";
 import { CrewError } from "../../src/domain.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 
 for (const mode of ["available", "logs-unavailable", "incomplete-jobs", "foreign-head"] as const)
   test(`Actions evidence ${mode} preserves bounded, independent failure detail`, async (t) => {

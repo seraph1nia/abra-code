@@ -1,15 +1,15 @@
-import { isActiveWorker } from "../workflow/worker-assignment.ts";
 import { Effect } from "effect";
 import {
   DiagramVerifyInputSchema,
   DiagramVerificationSchema,
 } from "@abracode/contracts/presentation/diagrams";
 import type { Controller } from "../workflow/controller.ts";
-import { prepareDiagrams } from "../workflow/diagrams.ts";
+import { prepareDiagrams } from "../reporting/diagrams.ts";
 import { CrewError } from "../domain.ts";
 import { defineTool } from "./tool-definition.ts";
 import { roleFor } from "./guards.ts";
 import { policyAllows } from "./role-policy.ts";
+import { assertActiveWorker, assertSupervisor } from "./session-authority.ts";
 
 export function mermaidVerifierTool(controller: Controller, central: boolean) {
   return defineTool({
@@ -27,8 +27,14 @@ export function mermaidVerifierTool(controller: Controller, central: boolean) {
         if (assignment) {
           const role = roleFor(assignment, session);
           const captured = yield* controller.queries.capturedWorkerPrompt(assignment);
+          yield* assertActiveWorker(controller, session, {
+            execution: assignment,
+            role,
+            generation: captured.generation,
+            code: "DIAGRAM_ROLE",
+            message: "Current managed diagram-verifier role required",
+          });
           if (
-            !isActiveWorker(assignment, session, { role, generation: captured.generation }) ||
             captured.session_id !== session ||
             captured.role !== role ||
             !policyAllows(role, "abra_mermaid_verify") ||
@@ -41,17 +47,16 @@ export function mermaidVerifierTool(controller: Controller, central: boolean) {
               "Current managed diagram-verifier role required",
             );
         } else {
-          if (
-            !central ||
-            call.agent !== "abra" ||
-            native.agent !== "abra" ||
-            native.directory !== controller.queries.settings.home ||
-            native.metadata?.abracode_supervisor_home !== controller.queries.settings.home
-          )
-            return yield* new CrewError(
-              "ABRA_REQUIRED",
-              "Use the central Abra or a current assigned worker",
-            );
+          yield* assertSupervisor(controller, session, {
+            central,
+            agent: call.agent,
+            verifyNative: true,
+            nativeSession: native,
+            requireSupervisorMetadata: true,
+            checkNotWorker: false,
+            code: "ABRA_REQUIRED",
+            message: "Use the central Abra or a current assigned worker",
+          });
           yield* controller.guardAttention(session, call.messageID, true);
           yield* controller.recordSupervisor(session);
         }

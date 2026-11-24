@@ -5,7 +5,6 @@ import { defineConfig } from "vite-plus";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
-import { mermaidDiagrams } from "./scripts/mermaid-plugin.ts";
 
 export function exportConfiguration(
   options: {
@@ -41,9 +40,6 @@ export function exportConfiguration(
           ];
         },
       },
-      mermaidDiagrams({
-        cacheDir: options.cacheDir ? resolve(options.cacheDir, "mermaid") : undefined,
-      }),
       react(),
       tailwindcss(),
       viteSingleFile(),

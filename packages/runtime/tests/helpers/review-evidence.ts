@@ -1,6 +1,6 @@
-import * as Id from "../../src/identities.ts";
-import { type FeedbackPage } from "../../src/workflow/feedback-contracts.ts";
-import { type ExternalRecord } from "../../src/validation/contracts.ts";
+import * as Id from "@abracode/contracts/identities";
+import { type FeedbackPage } from "@abracode/contracts/workflow/feedback-contracts";
+import { type ExternalRecord } from "@abracode/contracts/validation/contracts";
 
 export const externalFixture = (): ExternalRecord => {
   const branch = Id.BranchName.make("work/fixture"),

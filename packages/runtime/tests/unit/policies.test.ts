@@ -1,7 +1,7 @@
 import { workBriefing } from "../../src/visibility/briefing.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { deliveryOutcome } from "../../src/workflow/delivery-outcome.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { access, readFile, writeFile } from "node:fs/promises";

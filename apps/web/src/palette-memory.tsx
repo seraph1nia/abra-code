@@ -8,6 +8,10 @@ import { type Hit, useSource, sourceFeedback } from "./palette-source.ts";
 import { requestError } from "./request-error.ts";
 import type { MemoryReference } from "@abracode/contracts/visibility/memory";
 import { Button } from "@abracode/presentation/ui/button";
+
+const memoryReferenceKey = (reference: MemoryReference) =>
+  `${reference.scope.kind === "shared" ? "shared" : reference.scope.repository_id}:${reference.path}:${reference.revision}`;
+
 export function useMemorySource(active: boolean, filtered: boolean, query: string) {
   const enabled = useAtomValue(memoryEnabledQuery);
   const memoryAvailable = AsyncResult.isSuccess(enabled) && enabled.value;
@@ -27,7 +31,7 @@ export function useMemorySource(active: boolean, filtered: boolean, query: strin
     const scope =
       reference.scope.kind === "shared" ? "All projects" : reference.scope.repository_id;
     hits.push({
-      id: "memory/" + JSON.stringify(reference),
+      id: "memory/" + memoryReferenceKey(reference),
       source: "memory",
       identity: reference.path,
       label: title,
@@ -77,7 +81,7 @@ export function useMemorySource(active: boolean, filtered: boolean, query: strin
   );
   const reader = note && (
     <MemoryNote
-      key={JSON.stringify(note)}
+      key={memoryReferenceKey(note)}
       reference={note}
       repository={memoryRepo}
       back={() => setNote(undefined)}

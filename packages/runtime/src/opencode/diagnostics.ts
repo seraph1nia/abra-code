@@ -1,9 +1,16 @@
-import { Schema } from "effect";
-import { WorkerModelSchema } from "../contracts.ts";
-import { ToolName, ActivityId, MessageId } from "../identities.ts";
+import { DateTime } from "effect";
+import {
+  ActivityId,
+  MessageId,
+  ModelId,
+  ModelVariant,
+  ProviderId,
+  ToolName,
+} from "@abracode/contracts/identities";
 import { createHash } from "node:crypto";
 import { type SessionMessage } from "@opencode/schema/session-message";
 import { type WorkerError, type WorkerModel } from "../domain.ts";
+
 export function diagnosticText(text: string, limit = 1500): string {
   let result = text;
   for (const [name, value] of Object.entries(process.env))
@@ -18,19 +25,26 @@ export function diagnosticText(text: string, limit = 1500): string {
     .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, "$1[redacted]@")
     .slice(0, limit);
 }
+
 export const diagnosticError = (error: WorkerError): WorkerError => ({
   type: diagnosticText(error.type, 100),
   message: diagnosticText(error.message),
   ...(error.status === undefined ? {} : { status: error.status }),
 });
-type NativeMessage = typeof SessionMessage.Info.Encoded;
+
+/** Extract epoch milliseconds from a decoded DateTime or raw numeric timestamp. */
+export const messageCreatedAt = (created: DateTime.DateTime | number): number =>
+  typeof created === "number" ? created : DateTime.toEpochMillis(created);
+
+export type DiagnosticMessage = SessionMessage.Info | typeof SessionMessage.Info.Encoded;
 type NativeTool = Extract<
-  Extract<NativeMessage, { type: "assistant" }>["content"][number],
+  Extract<DiagnosticMessage, { type: "assistant" }>["content"][number],
   { type: "tool" }
 >;
+
 export interface MessageSummary {
   id: MessageId;
-  type: NativeMessage["type"];
+  type: DiagnosticMessage["type"];
   at: number;
   text?: string;
   tools?: Array<{
@@ -39,10 +53,11 @@ export interface MessageSummary {
     error?: WorkerError;
   }>;
 }
+
 /** Native queue execution can emit adjacent failed/succeeded idle markers.
  * An empty success marker is not evidence that the failed turn recovered. */
-export function nativeIdle(messages: readonly NativeMessage[]) {
-  let idle: Extract<NativeMessage, { type: "idle" }> | undefined;
+export function nativeIdle<M extends DiagnosticMessage>(messages: readonly M[]) {
+  let idle: Extract<M, { type: "idle" }> | undefined;
   let executionEvidence = false;
   for (const message of messages) {
     if (message.type === "user" || message.type === "assistant") executionEvidence = true;
@@ -53,12 +68,13 @@ export function nativeIdle(messages: readonly NativeMessage[]) {
       message.outcome !== "succeeded" ||
       executionEvidence
     )
-      idle = message;
+      idle = message as Extract<M, { type: "idle" }>;
     executionEvidence = false;
   }
   return idle;
 }
-export function summarizeContext(messages: readonly (typeof SessionMessage.Info.Encoded)[]) {
+
+export function summarizeContext(messages: readonly DiagnosticMessage[]) {
   const assistant = messages.findLast((m) => m.type === "assistant");
   const lastAssistant = messages.findLastIndex((m) => m.type === "assistant");
   const lastIdle = messages.findLastIndex((m) => m.type === "idle");
@@ -67,7 +83,13 @@ export function summarizeContext(messages: readonly (typeof SessionMessage.Info.
     terminal && "error" in terminal && terminal.error ? diagnosticError(terminal.error) : undefined;
   const model: WorkerModel | undefined =
     assistant?.type === "assistant"
-      ? Schema.decodeSync(WorkerModelSchema)(assistant.model)
+      ? {
+          providerID: ProviderId.make(assistant.model.providerID),
+          id: ModelId.make(assistant.model.id),
+          ...(assistant.model.variant !== undefined
+            ? { variant: ModelVariant.make(assistant.model.variant) }
+            : {}),
+        }
       : undefined;
   const meaningful =
     assistant?.type === "assistant"
@@ -84,7 +106,7 @@ export function summarizeContext(messages: readonly (typeof SessionMessage.Info.
               .update(JSON.stringify(meaningful))
               .digest("hex"),
           ),
-          at: assistant.time.created,
+          at: messageCreatedAt(assistant.time.created),
           summary: diagnosticText(
             meaningful
               .map((p) =>
@@ -103,11 +125,11 @@ export function summarizeContext(messages: readonly (typeof SessionMessage.Info.
     activity,
     model,
     error,
-    error_at: error ? terminal?.time.created : undefined,
+    error_at: error && terminal ? messageCreatedAt(terminal.time.created) : undefined,
     recent_messages: messages.slice(-12).map((m): MessageSummary => ({
       id: MessageId.make(m.id),
       type: m.type,
-      at: m.time.created,
+      at: messageCreatedAt(m.time.created),
       ...(m.type === "assistant"
         ? {
             text: diagnosticText(

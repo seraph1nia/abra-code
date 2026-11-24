@@ -1,4 +1,4 @@
-import type { ArtifactId } from "../identities.ts";
+import type { ArtifactId } from "@abracode/contracts/identities";
 import { ensure } from "../domain.ts";
 import type { SpecStatus, ApplyStatus } from "./contracts.ts";
 

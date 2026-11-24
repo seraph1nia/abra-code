@@ -4,7 +4,8 @@ import { lstat, realpath, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { rendererStyleInputs } from "./renderer-styles.ts";
 import { build, type Plugin } from "vite-plus";
-import { reportNoticeInputs, type NoticeInventory } from "@abracode/contracts/presentation/notices";
+import { reportNoticeInputs } from "@abracode/contracts/presentation/notices";
+import { decodeNoticeInventory } from "./notices.ts";
 
 export { portableRendererABI as rendererABI } from "@abracode/contracts/presentation/report-export-contract";
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
@@ -134,7 +135,6 @@ export function rendererManifest(installation: string): Plugin {
         "packages/contracts/src/presentation/report-export-contract.ts",
         "apps/report/scripts/renderer-manifest.ts",
         "apps/report/scripts/renderer-styles.ts",
-        "apps/report/scripts/prepare-diagrams.ts",
         "apps/report/scripts/diagrams.ts",
         "apps/report/scripts/preparation.ts",
         "apps/report/scripts/diagram-batch.ts",
@@ -161,9 +161,9 @@ export function rendererManifest(installation: string): Plugin {
         await add(resolve(actual, "package.json"));
       }
       const notices = reportNoticeInputs(
-        JSON.parse(
+        decodeNoticeInventory(
           await readFile(resolve(canonical, "licenses/inventory.json"), "utf8"),
-        ) as NoticeInventory,
+        ),
       );
       for (const item of notices)
         for (const sha of item.evidence) {

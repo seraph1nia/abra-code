@@ -1,4 +1,4 @@
-import { StorageKey } from "../../src/identities.ts";
+import { StorageKey } from "@abracode/contracts/identities";
 import { Effect } from "effect";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";

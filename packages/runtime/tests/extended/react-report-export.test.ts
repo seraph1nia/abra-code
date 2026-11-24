@@ -1,6 +1,6 @@
 import { analysisCharts } from "../helpers/chart-fixtures.ts";
 import { mixedDiagrams, denseFlowchart } from "../helpers/diagram-fixtures.ts";
-import { validateReportDocument } from "../../src/presentation/report-document.ts";
+import { validateReportDocument } from "@abracode/contracts/presentation/report-document";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import assert from "node:assert/strict";
@@ -11,7 +11,7 @@ import { pathToFileURL } from "node:url";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { coveredReportDocument } from "../helpers/report-document.ts";
-import { ReactDocumentRenderer } from "../../src/workflow/report-export.ts";
+import { ReactDocumentRenderer } from "../../src/reporting/report-export.ts";
 import { ProcessRunner } from "../../src/process.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 import { installSource } from "../e2e/install.ts";

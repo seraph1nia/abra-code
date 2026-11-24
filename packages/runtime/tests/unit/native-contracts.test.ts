@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { Clock, Effect, Schema, FileSystem } from "effect";
 import { TestClock } from "effect/testing";
 import { Model } from "@opencode/schema/model";
-import { WorkerModelSchema, WorkerErrorSchema } from "../../src/contracts.ts";
-import { Timestamp, timestamp } from "../../src/identities.ts";
+import { WorkerModelSchema, WorkerErrorSchema } from "@abracode/contracts/primitives";
+import { Timestamp, timestamp } from "@abracode/contracts/identities";
 import { WorkInputSchema, normalizeIssue } from "../../src/work/model.ts";
 import { decodeJSON } from "../../src/decode.ts";
 import { run } from "../effects.ts";
@@ -13,7 +13,7 @@ import { CrewError } from "../../src/domain.ts";
 import { domainEffect } from "../../src/effect.ts";
 import { ProvisionedEvidenceSchema, DeliveredEvidenceSchema } from "../../src/workflow/evidence.ts";
 import { expectTypeOf } from "vite-plus/test";
-import { AbsolutePath, Commit } from "../../src/identities.ts";
+import { AbsolutePath, Commit } from "@abracode/contracts/identities";
 import { memoSuccessful } from "../../src/opencode/client.ts";
 import { readFile } from "../../src/filesystem.ts";
 
@@ -183,7 +183,7 @@ test("adapter preconditions fail in the typed channel before invoking commands",
   const { OpenSpec } = await import("../../src/openspec/adapter.ts");
   const { Forge } = await import("../../src/git/forge.ts");
   const { forgeFixture } = await import("../forge.ts");
-  const Id = await import("../../src/identities.ts");
+  const Id = await import("@abracode/contracts/identities");
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const e = await run(planned(f));

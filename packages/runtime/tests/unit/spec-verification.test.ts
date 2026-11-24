@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { fixture, applying } from "../fixtures.ts";
 import { verifiedSpec } from "../helpers/spec-review.ts";
 import { run } from "../effects.ts";
-import { RepositoryId, SessionId, RequestId } from "../../src/identities.ts";
+import { RepositoryId, SessionId, RequestId } from "@abracode/contracts/identities";
 import { type SpecVerification } from "../../src/workflow/review-contracts.ts";
 
 const newFixture = () => run(fixture);
@@ -37,12 +37,12 @@ test("superseded verification cannot commit its receipt or launch Review", async
   const e = await run(applying(f));
   f.spec.done = true;
   f.runtime.success(e.apply_session_id!);
-  const patch = f.records.patchOwned.bind(f.records);
-  f.records.patchOwned = (owner, fields) =>
+  const commit = f.records.commitOwned.bind(f.records);
+  f.records.commitOwned = (owner, fields) =>
     Effect.gen(function* () {
       const current = (yield* f.records.execution(owner.issue_id))!;
       yield* f.records.saveControl(current);
-      return yield* patch(owner, fields);
+      return yield* commit(owner, fields);
     });
   const creates = f.runtime.creates;
   await assert.rejects(run(f.controller.advance(e.issue_id)), /superseded/);

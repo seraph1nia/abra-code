@@ -5,15 +5,15 @@ import { FileLocks } from "../storage/lock.ts";
 import type { Context } from "@opencode/plugin/effect/plugin";
 import type { Controller } from "../workflow/controller.ts";
 import { NativeStore } from "../storage/store.ts";
-import { AbsolutePath, IssueId, Timestamp } from "../identities.ts";
+import { AbsolutePath, IssueId, Timestamp } from "@abracode/contracts/identities";
 import { domainEffect } from "../effect.ts";
 import { defineTool } from "../opencode/tool-definition.ts";
 import { Visibility } from "../visibility/read-model.ts";
 import { CrewError } from "../domain.ts";
-import { surfaceResources } from "./surfaces.ts";
+import { surfaceResources } from "@abracode/contracts/web/surfaces";
 import { resolveOwnedResource } from "./resource-selection.ts";
-import { ComponentId } from "./catalog.ts";
-import { SurfacePublicationSchema } from "./presentation-contracts.ts";
+import { ComponentId } from "@abracode/contracts/web/catalog";
+import { SurfacePublicationSchema } from "@abracode/contracts/web/presentation-contracts";
 import { checkSurfaceDraft, SurfacePublications } from "./surface-publications.ts";
 
 export function workSurfaceTool(ctx: Context, controller: Controller) {

@@ -1,4 +1,4 @@
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { Effect, Fiber, Schedule } from "effect";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";

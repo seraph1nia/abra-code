@@ -5,14 +5,14 @@ import type {
   ExportDocumentSchema,
 } from "@abracode/contracts/web/report-actions";
 /* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4 HTTP atoms are the browser query boundary. */
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { Atom, AtomHttpApi, Reactivity } from "effect/reactivity";
 import { Form } from "@opencode/schema/form";
 import { Permission } from "@opencode/schema/permission";
 import { workspaceApi } from "@abracode/contracts/web/http-api";
 import { IssueId } from "@abracode/contracts/identities";
-import type { PrepareDiagramSelection } from "@abracode/contracts/web/diagram-actions";
+import { PrepareDiagramSelectionSchema } from "@abracode/contracts/web/diagram-actions";
 
 export class WorkspaceApi extends AtomHttpApi.Service<WorkspaceApi>()("WorkspaceApi", {
   api: workspaceApi,
@@ -52,26 +52,32 @@ export const diagramQuery = Atom.family((key: string) =>
   WorkspaceApi.runtime
     .atom(
       Effect.gen(function* () {
-        const selection = JSON.parse(key) as PrepareDiagramSelection;
+        const selection = yield* Schema.decodeEffect(
+          Schema.fromJsonString(PrepareDiagramSelectionSchema),
+        )(key);
         const client = yield* WorkspaceApi;
         return yield* client.workspace.prepareDiagrams({ payload: selection });
       }),
     )
     .pipe(Atom.setIdleTTL(0)),
 );
-export const bindingQuery = (selection: BindingSelection) =>
-  WorkspaceApi.query("work", "binding", {
+const bindingQueryFamily = Atom.family((key: string) => {
+  const [mode, rawIds = ""] = key.split(":");
+  const unfiltered = mode === "all";
+  const ids = rawIds ? rawIds.split(",") : [];
+  return WorkspaceApi.query("work", "binding", {
     query: {
-      issue_ids: [...new Set(selection.ids)].sort().map((id) => IssueId.make(id)),
-      include_population: selection.unfiltered,
+      issue_ids: ids.map((id) => IssueId.make(id)),
+      include_population: unfiltered,
     },
-    reactivityKeys: [
-      "work-observed",
-      ...(selection.unfiltered ? ["work-finder"] : []),
-      ...selection.ids.map(workKey),
-    ],
+    reactivityKeys: ["work-observed", ...(unfiltered ? ["work-finder"] : []), ...ids.map(workKey)],
     timeToLive: "0 seconds",
   });
+});
+export const bindingQuery = (selection: BindingSelection) => {
+  const ids = [...new Set(selection.ids)].sort();
+  return bindingQueryFamily(`${selection.unfiltered ? "all" : "ids"}:${ids.join(",")}`);
+};
 // A separate mutation per observed binding prevents concurrent forms sharing results.
 export const formReply = Atom.family((_binding: string) =>
   WorkspaceApi.runtime.fn<{
@@ -91,7 +97,7 @@ export const permissionReply = Atom.family((_binding: string) =>
     Effect.flatMap(WorkspaceApi, (client) => client.workspace.replyPermission({ payload })),
   ),
 );
-export const stopMutation = WorkspaceApi.mutation("workspace", "stop");
+export const submitMutation = WorkspaceApi.mutation("workspace", "submit");
 export const resolveResource = WorkspaceApi.mutation("work", "resolve");
 export const saveSurface = Atom.family((_request: string) =>
   WorkspaceApi.runtime.fn<typeof SaveSurfaceSchema.Type>()((payload) =>

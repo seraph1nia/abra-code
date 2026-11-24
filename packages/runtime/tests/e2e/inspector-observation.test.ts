@@ -7,7 +7,7 @@ import { Schema } from "effect";
 import { ReceiptSchema, selectionMarker } from "@abracode/contracts/web/workspace-wire";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { IssueId } from "../../src/identities.ts";
+import { IssueId } from "@abracode/contracts/identities";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 import { workspaceBrowserFixture } from "../helpers/workspace-browser.ts";
 

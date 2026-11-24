@@ -10,7 +10,7 @@ import {
   WorkItemSchema,
   DecisionSchema,
   DeclaredWaitSchema,
-} from "../../src/web/wire.ts";
+} from "@abracode/contracts/web/wire";
 import { Visibility } from "../../src/visibility/read-model.ts";
 import { fixture, planned } from "../fixtures.ts";
 import { run } from "../effects.ts";

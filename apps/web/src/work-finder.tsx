@@ -34,12 +34,8 @@ export function WorkFinder({
   const state = query.state;
   const offset = collection?.work?.offset ?? 0;
   const settled = collection?.work?.search ?? "";
-  const [search, setSearch] = useState(settled);
-  const [previous, setPrevious] = useState(settled);
-  if (previous !== settled) {
-    setPrevious(settled);
-    setSearch(settled);
-  }
+  const [draft, setDraft] = useState<{ base: string; value: string }>();
+  const search = draft && draft.base === settled ? draft.value : settled;
   const section = collection?.section ?? "tasks";
   function update(change: Partial<WorkDiscovery>) {
     void navigate({
@@ -56,7 +52,7 @@ export function WorkFinder({
         to: "/work",
         replace: true,
         search: { collection: { ...collection, work: { ...collection?.work, search, offset: 0 } } },
-      });
+      }).then(() => setDraft((current) => (current?.value === search ? undefined : current)));
     }, 200);
     return () => clearTimeout(timer);
   }, [search, settled, shown, collection, navigate]);
@@ -94,7 +90,7 @@ export function WorkFinder({
             placeholder="Search work…"
             maxLength={256}
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => setDraft({ base: settled, value: event.target.value })}
           />
           <NativeSelect
             aria-label="Project"

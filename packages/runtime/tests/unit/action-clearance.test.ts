@@ -6,7 +6,7 @@ import { TestClock } from "effect/testing";
 import { deliveredPR, noEffect } from "../helpers/delivered-pr.ts";
 import { run } from "../effects.ts";
 import { forgeFixture } from "../forge.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 
 import { GitHubDelivery, type Delivery } from "../../src/git/delivery.ts";
 import { CrewError } from "../../src/domain.ts";

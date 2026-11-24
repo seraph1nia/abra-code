@@ -1,4 +1,4 @@
-import { ErrorCode } from "./identities.ts";
+import { ErrorCode } from "@abracode/contracts/identities";
 import { Data, Schema } from "effect";
 import {
   ApprovalSchema,
@@ -6,13 +6,14 @@ import {
   PolicySchema,
   RoleSchema,
   WorkerModelSchema,
-} from "./contracts.ts";
-export type ReadinessBlocker = typeof import("./contracts.ts").ReadinessBlockerSchema.Type;
+} from "@abracode/contracts/primitives";
+export type ReadinessBlocker =
+  typeof import("@abracode/contracts/primitives").ReadinessBlockerSchema.Type;
 export type Policy = typeof PolicySchema.Type;
 export type Role = typeof RoleSchema.Type;
 export type WorkerModel = typeof WorkerModelSchema.Type;
-export type WorkerError = typeof import("./contracts.ts").WorkerErrorSchema.Type;
-export type Phase = typeof import("./contracts.ts").PhaseSchema.Type;
+export type WorkerError = typeof import("@abracode/contracts/primitives").WorkerErrorSchema.Type;
+export type Phase = typeof import("@abracode/contracts/primitives").PhaseSchema.Type;
 export type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 export type Project = Mutable<typeof import("./storage/contracts.ts").ProjectRecordSchema.Type>;
 export type { Issue } from "./work/model.ts";
@@ -26,11 +27,11 @@ type ExecutionState = Mutable<
 > & { approval_receipts: Approval[] };
 export type Execution = ExecutionState & {
   setup?: false;
-  openspec_change: import("./identities.ts").ChangeName;
+  openspec_change: import("@abracode/contracts/identities").ChangeName;
 };
 export type SetupExecution = ExecutionState & {
   setup: true;
-  openspec_change: import("./identities.ts").ChangeName | "";
+  openspec_change: import("@abracode/contracts/identities").ChangeName | "";
 };
 export type ManagedExecution = Execution | SetupExecution;
 export type SavedExecution = Mutable<
@@ -45,13 +46,14 @@ export class CrewError extends Data.TaggedError("CrewError")<{
 }> {
   static from(this: void, cause: unknown): CrewError {
     if (cause instanceof CrewError) return cause;
-    const code =
+    const rawCode =
       typeof cause === "object" &&
       cause !== null &&
       "code" in cause &&
       typeof cause.code === "string"
-        ? cause.code
-        : "UNEXPECTED";
+        ? cause.code.trim()
+        : "";
+    const code = rawCode.length > 0 ? rawCode : "UNEXPECTED";
     const message =
       typeof cause === "object" &&
       cause !== null &&

@@ -1,4 +1,4 @@
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { Clock, Deferred, Effect, Fiber, Schedule } from "effect";
 import { TestClock } from "effect/testing";
 import { test } from "vite-plus/test";

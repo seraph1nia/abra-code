@@ -1,5 +1,5 @@
 import { createWorkflow } from "../../src/opencode/application.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { Clock, Effect } from "effect";
 import { TestClock } from "effect/testing";
 import { test } from "vite-plus/test";

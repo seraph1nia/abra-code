@@ -16,6 +16,10 @@ import { Schema } from "effect";
 
 export { Identifier, Commit } from "./identities.ts";
 
+export const exactParseOptions = {
+  parseOptions: { onExcessProperty: "error" as const },
+  reportInput: false,
+} as const;
 export const NonEmpty = Schema.NonEmptyString;
 export const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 export const Positive = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
@@ -24,14 +28,24 @@ export const PolicySchema = Schema.Literals(["full-openspec", "research-only", "
 export const RoleSchema = Schema.Literals(["explore", "apply", "review", "research"]);
 export const CommandArgs = Schema.Array(NonEmpty).check(Schema.isMinLength(1));
 export const WorkerModelSchema = Model.Ref;
-export const ApprovalSchema = Schema.Struct({
-  kind: Schema.Literals(["plan", "merge"]),
-  fingerprint: Schema.Union([Fingerprint, Commit]),
+const approvalFields = {
   form_id: FormId,
   session_id: SessionId,
   authorized_at: Schema.mutableKey(Schema.optional(Timestamp)),
   rejected_at: Schema.mutableKey(Schema.optional(Timestamp)),
-}).check(
+};
+export const ApprovalSchema = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("plan"),
+    fingerprint: Fingerprint,
+    ...approvalFields,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("merge"),
+    fingerprint: Commit,
+    ...approvalFields,
+  }),
+]).check(
   Schema.makeFilter(
     (a) => !(a.authorized_at && a.rejected_at) || "Approval cannot be both authorized and rejected",
   ),

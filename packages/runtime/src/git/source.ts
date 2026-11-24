@@ -6,13 +6,13 @@ import {
   RemoteIdentity,
   ExecutionId,
   RepositoryId,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 
 import { domainEffect } from "../effect.ts";
 import { Effect, Schema } from "effect";
 import { decode, decodeJSON } from "../decode.ts";
 import { PackageSchema } from "../config/contracts.ts";
-import { NonEmpty } from "../contracts.ts";
+import { NonEmpty } from "@abracode/contracts/primitives";
 import { retainedEntry, mkdir, readFile, rename, writeFile } from "../filesystem.ts";
 import { isAbsolute, join, resolve } from "node:path";
 import { CrewError, ensure, identifier, type Project } from "../domain.ts";
@@ -47,8 +47,15 @@ export function remoteIdentity(remote: GitRemote, cwd?: AbsolutePath): RemoteIde
     "REMOTE",
     "Remote URLs cannot include query strings or fragments",
   );
-  if (url.protocol === "file:")
-    return RemoteIdentity.make(resolve(decodeURIComponent(url.pathname)));
+  if (url.protocol === "file:") {
+    let pathname: string;
+    try {
+      pathname = decodeURIComponent(url.pathname);
+    } catch {
+      ensure(false, "REMOTE", "Invalid repository URL");
+    }
+    return RemoteIdentity.make(resolve(pathname));
+  }
   let path = url.pathname.replace(/\/+$/, "").replace(/\.git$/, "");
   if (url.hostname.toLowerCase() === "github.com") path = path.toLowerCase();
   ensure(path.length > 1, "REMOTE", "Remote must identify a repository");

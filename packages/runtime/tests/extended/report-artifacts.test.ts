@@ -7,10 +7,10 @@ import { Effect } from "effect";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { ProcessRunner, type Runner } from "../../src/process.ts";
-import { ReactDocumentRenderer } from "../../src/workflow/report-export.ts";
-import { ReportExports } from "../../src/workflow/report-exports.ts";
-import { Reports } from "../../src/workflow/reports.ts";
-import * as Id from "../../src/identities.ts";
+import { ReactDocumentRenderer } from "../../src/reporting/report-export.ts";
+import { ReportExports } from "../../src/reporting/report-exports.ts";
+import { Reports } from "../../src/reporting/reports.ts";
+import * as Id from "@abracode/contracts/identities";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 import { installSource } from "../e2e/install.ts";
 

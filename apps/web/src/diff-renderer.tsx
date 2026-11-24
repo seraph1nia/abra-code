@@ -1,7 +1,7 @@
 import { destinationFor } from "./navigation.ts";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
 import type { SelectedLineRange, FileDiffMetadata } from "@pierre/diffs";
 import { IssueId } from "@abracode/contracts/identities";
 import { AskAbra } from "./presentation/ask-abra.tsx";
@@ -26,7 +26,8 @@ export default function DiffRenderer({
   theme: "light" | "dark";
 }) {
   const search = useSearch({ from: "__root__" });
-  const navigate = useNavigate({ from: destinationFor(location.pathname) ?? "/" });
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const navigate = useNavigate({ from: destinationFor(pathname) ?? "/" });
   const routeKey = JSON.stringify([issue, search.file, search.scope]);
   const [edit, setEdit] = useState({ routeKey, text: search.file ?? "" });
   const filter = edit.routeKey === routeKey ? edit.text : (search.file ?? "");

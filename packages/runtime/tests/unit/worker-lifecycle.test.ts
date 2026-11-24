@@ -1,7 +1,7 @@
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { writeFile } from "../../src/filesystem.ts";
 import { join } from "node:path";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Deferred, Effect, Fiber } from "effect";

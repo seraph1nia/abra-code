@@ -3,13 +3,19 @@ import { diagnosticText } from "../opencode/diagnostics.ts";
 import { declarationDigest, saveDeclaration, saveDeclarationOutcome } from "./declarations.ts";
 import { type Config } from "../domain.ts";
 import { registrationPolicy } from "./policy.ts";
-import { Executable, LockKey, AbsolutePath, BranchName, RepositoryId } from "../identities.ts";
+import {
+  Executable,
+  LockKey,
+  AbsolutePath,
+  BranchName,
+  RepositoryId,
+} from "@abracode/contracts/identities";
 
 import { createHash } from "node:crypto";
 import { type Locks } from "../storage/lock.ts";
 import { domainEffect } from "../effect.ts";
 import { Effect } from "effect";
-import { retainedEntry, access, readFile, readdir } from "../filesystem.ts";
+import { retainedEntry, access, readFile, readdirIfPresent } from "../filesystem.ts";
 import { join } from "node:path";
 import { CrewError, identifier, type Project, type OnboardInput } from "../domain.ts";
 import { type Records } from "../storage/store.ts";
@@ -33,15 +39,20 @@ export class Onboarding {
     id: RepositoryId,
     action: () => Effect.Effect<A, import("../domain.ts").CrewError>,
   ) {
-    return this.locks
-      ? this.locks.with(
-          LockKey.make(
-            `registration-${createHash("sha256").update(identifier(id)).digest("hex").slice(0, 40)}`,
-          ),
-          action,
-          { waitSeconds: 0 },
-        )
-      : action();
+    return Effect.gen({ self: this }, function* () {
+      if (!this.locks) return yield* action();
+      const validId = yield* Effect.try({
+        try: () => identifier(id),
+        catch: CrewError.from,
+      });
+      return yield* this.locks.with(
+        LockKey.make(
+          `registration-${createHash("sha256").update(validId).digest("hex").slice(0, 40)}`,
+        ),
+        action,
+        { waitSeconds: 0 },
+      );
+    });
   }
   inspect = (input: OnboardInput) => this.owned(input.id, () => this.inspectOwned(input));
   private inspectOwned = Effect.fn("Onboarding.inspect")(
@@ -103,7 +114,21 @@ export class Onboarding {
             target_branch:
               input.target_branch ??
               previous?.target_branch ??
-              BranchName.make(yield* this.git.run(identity.path, ["branch", "--show-current"])),
+              (yield* this.git
+                .run(identity.path, ["branch", "--show-current"])
+                .pipe(
+                  Effect.flatMap((current) =>
+                    decode(BranchName, current, "Current Git branch").pipe(
+                      Effect.mapError(
+                        () =>
+                          new CrewError(
+                            "BRANCH",
+                            "Repository is in detached HEAD state; check out a branch or specify target_branch",
+                          ),
+                      ),
+                    ),
+                  ),
+                )),
             commit: yield* this.git.head(identity.path),
           };
       const branch = base.target_branch;
@@ -181,16 +206,7 @@ export class Onboarding {
         "Repository verification commands",
       );
       const skills =
-        snapshot?.skills ??
-        (yield* readdir(join(identity.path, ".agents/skills")).pipe(
-          Effect.catch(() =>
-            domainEffect(
-              Effect.sync(() => {
-                return [];
-              }),
-            ),
-          ),
-        ));
+        snapshot?.skills ?? (yield* readdirIfPresent(join(identity.path, ".agents/skills")));
       const instructions = snapshot?.agents_md ?? (yield* exists(join(identity.path, "AGENTS.md")));
       return {
         project: p,

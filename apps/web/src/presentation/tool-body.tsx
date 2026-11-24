@@ -17,7 +17,27 @@ import {
   ArtifactCard,
   type Inspect,
 } from "@abracode/presentation/cards";
-import { BriefingForms, ObservationContext } from "./tool-context.ts";
+import { BriefingForms, ObservationContext, attachmentKey } from "./tool-context.ts";
+import type { ResourceSelection } from "@abracode/contracts/web/resources";
+
+function resourceKey(target: ResourceSelection): string {
+  switch (target.action) {
+    case "open_task":
+      return `task:${target.issue_id}:${target.section ?? ""}:${target.activity ?? ""}`;
+    case "open_changes":
+      return `changes:${target.issue_id}:${target.scope ?? ""}:${target.file ?? ""}:${target.head ?? ""}`;
+    case "open_finding":
+      return `finding:${target.issue_id}:${target.finding_id}:${target.revision ?? ""}`;
+    case "open_passage":
+      return `passage:${target.issue_id}:${target.file}:${target.start}:${target.end}:${target.hash}`;
+    case "open_session":
+      return `session:${target.issue_id}:${target.session_id}`;
+    case "open_decision":
+      return `decision:${target.issue_id}:${target.key}`;
+    case "open_artifact":
+      return `artifact:${target.issue_id}:${target.request_id}:${target.hash}`;
+  }
+}
 function ResultList<T>({
   items,
   total,
@@ -85,7 +105,7 @@ function BriefingSources({
                 (!link.fingerprint || f.checkpoint.fingerprint === link.fingerprint),
             );
           return (
-            <li key={JSON.stringify([link.target, link.form_id, link.label])}>
+            <li key={`${resourceKey(link.target)}:${link.form_id ?? ""}:${link.label}`}>
               <Button variant="link" onClick={() => inspect(link.target)}>
                 {link.title} · {link.label}
               </Button>
@@ -298,7 +318,7 @@ export function ObservedTool({ toolCallId }: { toolCallId: string }) {
         )
         .map((attachment) => (
           <MessageAttachment
-            key={JSON.stringify(attachment)}
+            key={attachmentKey(attachment)}
             attachment={attachment}
             work={observation.work}
             inspect={inspect}

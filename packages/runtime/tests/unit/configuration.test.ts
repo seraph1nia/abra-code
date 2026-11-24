@@ -202,7 +202,7 @@ test("documented attended opt-in resolves without changing shipped defaults or r
   const { readFile } = await import("node:fs/promises");
   const { fixture, planned } = await import("../fixtures.ts");
   const { registrationPolicy, planPolicy } = await import("../../src/config/policy.ts");
-  const { RepositoryId, IssueId } = await import("../../src/identities.ts");
+  const { RepositoryId, IssueId } = await import("@abracode/contracts/identities");
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const e = await run(planned(f, IssueId.make("before-opt-in")));

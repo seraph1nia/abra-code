@@ -5,8 +5,8 @@ import { fixture, delivered } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { PRActions } from "../../src/workflow/pr-actions.ts";
 import { CrewError } from "../../src/domain.ts";
-import { feedbackPending } from "../../src/workflow/feedback-contracts.ts";
-import * as Id from "../../src/identities.ts";
+import { feedbackPending } from "@abracode/contracts/workflow/feedback-contracts";
+import * as Id from "@abracode/contracts/identities";
 
 async function prepared(t: { onTestFinished: (f: () => Promise<void>) => void }) {
   const f = await run(fixture);
@@ -44,7 +44,7 @@ test("lost ready response reconciles the original outbox action without another 
       prepare: (
         _p: typeof p,
         _e: typeof e,
-        action: import("../../src/workflow/action-contracts.ts").CurrentAction,
+        action: import("@abracode/contracts/workflow/action-contracts").CurrentAction,
       ) =>
         Effect.succeed({
           kind: "write" as const,

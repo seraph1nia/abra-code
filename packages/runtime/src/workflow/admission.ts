@@ -5,7 +5,7 @@ import type { WorkGraph } from "../work/graph.ts";
 import type { OpenSpec } from "../openspec/adapter.ts";
 import type { Git } from "../git/repository.ts";
 import type { Runtime } from "../opencode/runtime.ts";
-import type { Reports } from "./reports.ts";
+import type { Reports } from "../reporting/reports.ts";
 import type { Queries } from "./queries.ts";
 import type { Coordination } from "./coordination.ts";
 import type { Operations } from "./operations.ts";
@@ -24,7 +24,7 @@ import {
   IssueId,
   OperationAction,
   SessionId,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 import { WorkIntake, type WorkInput } from "../work/intake.ts";
 import { BatchInputSchema, type BatchInput } from "../work/batch.ts";
 import { decode } from "../decode.ts";
@@ -49,7 +49,10 @@ interface Dependencies {
 
 /** Owns validated intake, claim/capacity admission and resumable provisioning. */
 export class WorkAdmission {
-  constructor(private c: Dependencies) {}
+  private readonly intake: WorkIntake;
+  constructor(private c: Dependencies) {
+    this.intake = new WorkIntake(c.work, c.records, c.config.default_workflow, c.config);
+  }
   private get = (id: IssueId) => this.c.queries.get(id);
   private project = (e: Execution) => this.c.queries.effectiveProject(e);
   private launch = (...args: Parameters<Dependencies["sessions"]["launch"]>) =>
@@ -97,16 +100,14 @@ export class WorkAdmission {
       source?: import("../work/inbox-index.ts").SourceLink,
     ) {
       input = yield* this.prepareIntake(input);
+      const external = yield* this.c.queries.readinessContext();
       return yield* this.locked(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
-            const issue = yield* new WorkIntake(
-              this.c.work,
-              this.c.records,
-              this.c.config.default_workflow,
-              this.c.config,
-            ).create(input, supervisor, source);
-            const readiness = (yield* this.c.queries.readinessFor([issue.id])).get(issue.id);
+            const issue = yield* this.intake.create(input, supervisor, source);
+            const readiness = (yield* this.c.queries.readinessFor([issue.id], external)).get(
+              issue.id,
+            );
             return { issue, readiness };
           }),
         ),
@@ -136,17 +137,14 @@ export class WorkAdmission {
           ],
         });
       }
+      const external = yield* this.c.queries.readinessContext();
       return yield* this.locked(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
-            const result = yield* new WorkIntake(
-              this.c.work,
-              this.c.records,
-              this.c.config.default_workflow,
-              this.c.config,
-            ).createBatch({ ...input, tasks }, supervisor);
+            const result = yield* this.intake.createBatch({ ...input, tasks }, supervisor);
             const readiness = yield* this.c.queries.readinessFor(
               result.tasks.map((task) => task.issue.id),
+              external,
             );
             return {
               ...result,
@@ -165,10 +163,11 @@ export class WorkAdmission {
     function* (this: WorkAdmission, id: IssueId, supervisor?: SessionId) {
       const existing = yield* this.c.records.execution(id);
       if (existing) return { action: "reconcile", execution: existing } as const;
+      const external = yield* this.c.queries.readinessContext();
       const e = yield* this.c.coordination.with(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
-            const candidate = (yield* this.c.queries.readinessFor([id])).get(id);
+            const candidate = (yield* this.c.queries.readinessFor([id], external)).get(id);
             if (!candidate?.eligible)
               return yield* new CrewError(
                 "NOT_READY",

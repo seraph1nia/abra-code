@@ -21,7 +21,7 @@ import { retainedExecution } from "../helpers/retained-execution.ts";
 import { Capacity } from "../../src/workflow/capacity.ts";
 import { fixtureConfig, fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { join } from "node:path";
 import { writeFile } from "../../src/filesystem.ts";
 import type { AgentDefinition } from "@abracode/agents";

@@ -52,8 +52,8 @@ export const FindingSchema = Schema.Struct({
   ),
 });
 export type Finding = typeof FindingSchema.Type;
-export { ActionSchema, type PRAction } from "./action-contracts.ts";
-import { ActionSchema, ActionKind } from "./action-contracts.ts";
+export { ActionSchema, FindingRevision, type PRAction } from "./action-contracts.ts";
+import { ActionSchema, ActionKind, type FindingRevision } from "./action-contracts.ts";
 export const FeedbackSchema = Schema.Struct({
   schema_version: Schema.Literal(1),
   head: Commit,
@@ -83,10 +83,21 @@ export const FeedbackSchema = Schema.Struct({
 export type Feedback = typeof FeedbackSchema.Type;
 export function retainedFinding(
   feedback: Pick<Feedback, "findings" | "history"> | undefined,
-  id: string,
+  finding: FindingRevision,
+): Finding | undefined;
+export function retainedFinding(
+  feedback: Pick<Feedback, "findings" | "history"> | undefined,
+  id: FindingId,
   revision: string,
+): Finding | undefined;
+export function retainedFinding(
+  feedback: Pick<Feedback, "findings" | "history"> | undefined,
+  idOrFinding: FindingId | FindingRevision,
+  revision?: string,
 ) {
-  const matches = (finding: Finding) => finding.id === id && finding.revision === revision;
+  const id = typeof idOrFinding === "string" ? idOrFinding : idOrFinding.id;
+  const rev = typeof idOrFinding === "string" ? revision : idOrFinding.revision;
+  const matches = (finding: Finding) => finding.id === id && finding.revision === rev;
   return feedback?.findings.find(matches) ?? feedback?.history.find(matches);
 }
 export const FeedbackInput = Schema.Struct({

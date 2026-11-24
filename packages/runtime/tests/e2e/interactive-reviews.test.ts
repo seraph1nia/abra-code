@@ -10,7 +10,7 @@ import { reviewDefinition, previewPNG } from "../helpers/interactive-reviews.ts"
 import { MemoryStore, TestLocks } from "../fixtures.ts";
 import { Reviews } from "../../src/web/reviews.ts";
 import { WebAdmissions } from "../../src/web/gateway.ts";
-import { AbsolutePath, MessageId, RelativePath } from "../../src/identities.ts";
+import { AbsolutePath, MessageId, RelativePath } from "@abracode/contracts/identities";
 
 test("interactive A2UI review shares drafts, enlarges designs, restores feedback and links a real published revision", async (t) => {
   const fixture = await workspaceBrowserFixture();

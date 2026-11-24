@@ -2,7 +2,7 @@ import { section, stateLabel } from "../../src/presentation/work-state.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Effect, Schema } from "effect";
-import * as Id from "../../src/identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import { delivered, fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import {
@@ -11,7 +11,7 @@ import {
   deliveryAction,
 } from "../../src/workflow/delivery-outcome.ts";
 import { ExecutionBusy } from "../../src/workflow/operations.ts";
-import { CleanupBlockerSchema } from "../../src/git/retirement-contracts.ts";
+import { CleanupBlockerSchema } from "@abracode/contracts/git/retirement-contracts";
 import { CrewError } from "../../src/domain.ts";
 
 test("outcome is read-only, receipt-bound and distinguishes approval, delivery, retirement and closure", async (t) => {

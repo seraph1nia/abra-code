@@ -4,7 +4,7 @@ import { Deferred, Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import { WebAdmissions } from "../../src/web/gateway.ts";
 import { CrewError } from "../../src/domain.ts";
-import { SessionId, StorageKey, type MessageId } from "../../src/identities.ts";
+import { SessionId, StorageKey, type MessageId } from "@abracode/contracts/identities";
 import { MemoryStore, TestLocks } from "../fixtures.ts";
 
 const session = SessionId.make("ses_web");
@@ -194,7 +194,7 @@ test("adapter receipt time uses the supplied clock and retained time survives cl
 test("selected submissions reconcile captured input across concurrent retries, edits and restart", async () => {
   const store = new MemoryStore(),
     locks = new TestLocks();
-  const { IssueId, RelativePath, ContentHash } = await import("../../src/identities.ts");
+  const { IssueId, RelativePath, ContentHash } = await import("@abracode/contracts/identities");
   const selection = {
     kind: "diff" as const,
     issue_id: IssueId.make("abra-web"),

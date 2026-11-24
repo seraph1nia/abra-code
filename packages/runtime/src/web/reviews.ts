@@ -27,7 +27,7 @@ import {
   StorageKey,
   StoragePrefix,
   timestamp,
-} from "../identities.ts";
+} from "@abracode/contracts/identities";
 import { CrewError } from "../domain.ts";
 import { decode } from "../decode.ts";
 import { domainEffect } from "../effect.ts";
@@ -38,6 +38,7 @@ import { canonicalJSON, presentationHash } from "../presentation/identity.ts";
 import { SurfacePublications } from "./surface-publications.ts";
 import { PresentationAssociations } from "../presentation/associations.ts";
 import { committedScope } from "../visibility/invalidations.ts";
+import { PublicationStore } from "./publication-store.ts";
 
 const digest = (bytes: Uint8Array) =>
   ContentHash.make(createHash("sha256").update(bytes).digest("hex"));
@@ -79,21 +80,34 @@ export interface ReviewAdmissions {
 
 /** Immutable reviews, assets and response reservations; observation never writes. */
 export class Reviews {
-  private associations: PresentationAssociations;
+  private readonly publications: PublicationStore;
+  private readonly surfaces: SurfacePublications;
   constructor(
     private store: Store,
-    private locks: Locks,
+    locks: Locks,
     private source: ReviewSourceReader,
+    surfaces?: SurfacePublications,
+    associations?: PresentationAssociations,
   ) {
-    this.associations = new PresentationAssociations(store, locks);
+    const sharedAssociations = associations ?? new PresentationAssociations(store, locks);
+    this.publications = new PublicationStore({
+      store,
+      locks,
+      associations: sharedAssociations,
+      lockKey: LockKey.make("web-reviews"),
+      conflict: fail,
+      headPrefix: (session) => StoragePrefix.make(`web/review/${session}/head/`),
+      headKey: (session, id) => key(session, `head/${id}`),
+      maxHeads: 32,
+    });
+    this.surfaces = surfaces ?? new SurfacePublications(store, locks, sharedAssociations);
   }
   private immutable(id: StorageKey, value: unknown) {
-    return Effect.gen({ self: this }, function* () {
-      const old = yield* this.store.get(id);
-      if (old !== undefined && canonicalJSON(old) !== canonicalJSON(value))
-        return yield* fail("Retained review identity conflicts with existing content");
-      if (old === undefined) yield* this.store.set(id, value);
-    });
+    return this.publications.immutable(
+      id,
+      value,
+      "Retained review identity conflicts with existing content",
+    );
   }
   private publication(value: unknown) {
     return Effect.gen(function* () {
@@ -117,10 +131,9 @@ export class Reviews {
     };
   }
   private head(session: SessionId, id: ReviewID, metadataOnly = false) {
-    return Effect.gen({ self: this }, function* () {
-      const raw = yield* this.store.get(key(session, `head/${id}`));
-      return raw === undefined ? undefined : yield* this.decodeHead(session, id, raw, metadataOnly);
-    });
+    return this.publications.readHead(session, id, (raw) =>
+      this.decodeHead(session, id, raw, metadataOnly),
+    );
   }
   private decodeHead(session: SessionId, id: ReviewID, raw: unknown, metadataOnly = false) {
     return Effect.gen({ self: this }, function* (): Effect.fn.Return<Head, CrewError> {
@@ -145,7 +158,9 @@ export class Reviews {
         const prior =
           predecessor.revision > 0
             ? yield* this.rawRecord(session, predecessor).pipe(
-                Effect.flatMap((record) => this.associations.retained(this.attachment(record))),
+                Effect.flatMap((record) =>
+                  this.publications.associations.retained(this.attachment(record)),
+                ),
                 Effect.result,
               )
             : undefined;
@@ -181,13 +196,16 @@ export class Reviews {
         saved,
       );
       yield* this.immutable(key(r.session_id, `record/${id}/${r.revision}`), saved);
-      yield* this.associations.associate(this.attachment(r));
-      yield* this.store.set(key(r.session_id, `head/${id}`), {
-        schema_version: 1,
-        committed: { review_id: id, revision: r.revision },
-      } satisfies Head);
-      yield* this.clearDiagnostic(r.session_id, id);
-      yield* committedScope({ presentations: true });
+      yield* this.publications.associations.associate(this.attachment(r));
+      yield* this.publications.finalizeHead(
+        r.session_id,
+        id,
+        {
+          schema_version: 1,
+          committed: { review_id: id, revision: r.revision },
+        } satisfies Head,
+        () => this.clearDiagnostic(r.session_id, id),
+      );
       return reviewReference(r);
     });
   }
@@ -201,36 +219,36 @@ export class Reviews {
     );
   }
   recover(session: SessionId) {
-    return this.locks.with(LockKey.make("web-reviews"), () =>
-      Effect.gen({ self: this }, function* () {
-        const prefix = StoragePrefix.make(`web/review/${session}/head/`);
-        const rows = yield* this.store.entries(prefix);
-        for (const row of rows.slice(0, 32)) {
-          const id = row.key.slice(prefix.length);
-          const result = yield* Effect.gen({ self: this }, function* () {
-            const reviewID = yield* decode(
-              ReviewSelectionSchema.fields.review_id,
-              id,
-              "Review head key",
-            );
-            const head = yield* this.decodeHead(session, reviewID, row.value);
-            if (head.pending) yield* this.commit(head.pending);
-            else yield* this.clearDiagnostic(session, reviewID);
-          }).pipe(Effect.result);
-          if (result._tag === "Failure") {
-            yield* this.store
+    return this.publications.withLock(() =>
+      this.publications
+        .recover(session, {
+          isolate: true,
+          decodeHead: (rawId, raw) =>
+            Effect.gen({ self: this }, function* () {
+              const reviewID = yield* decode(
+                ReviewSelectionSchema.fields.review_id,
+                rawId,
+                "Review head key",
+              );
+              const head = yield* this.decodeHead(session, reviewID, raw);
+              return { head: { reviewID, head }, pending: head.pending };
+            }),
+          commit: (pending) => this.commit(pending),
+          onClean: (_rawId, { reviewID }) => this.clearDiagnostic(session, reviewID),
+          onFailure: (rawId) =>
+            this.store
               .set(
-                key(session, `diagnostic/${id}`),
+                key(session, `diagnostic/${rawId}`),
                 "Publication recovery is unavailable. Retained evidence was preserved.",
               )
               .pipe(
                 Effect.catch((error) =>
                   Effect.logWarning("Unable to retain review recovery diagnostics", error.code),
                 ),
-              );
-          }
-        }
-      }),
+                Effect.as(undefined),
+              ),
+        })
+        .pipe(Effect.asVoid),
     );
   }
   private capture(
@@ -301,14 +319,13 @@ export class Reviews {
     call: string,
     input: typeof ReviewPublishSchema.Type,
   ) {
-    return this.locks.with(LockKey.make("web-reviews"), () =>
+    return this.publications.withLock(() =>
       domainEffect(
         Effect.gen({ self: this }, function* () {
           const value = yield* decode(ReviewPublishSchema, input, "Review input");
           const id = value.review.review_id,
             inputHash = presentationHash(value),
             callKey = key(session, `call/${presentationHash([message, call])}`);
-          const headKey = key(session, `head/${id}`);
           let head = yield* this.head(session, id);
           const old = yield* this.store.get(callKey);
           if (old !== undefined) {
@@ -398,12 +415,16 @@ export class Reviews {
           };
           const saved = { record: { ...record, hash: recordHash(record) }, input_hash: inputHash };
           yield* decode(ReviewRecordSchema, saved.record, "Published review");
-          yield* this.store.set(headKey, {
-            schema_version: 1,
-            ...(head?.committed ? { committed: head.committed } : {}),
-            pending: saved,
-          } satisfies Head);
-          return yield* this.commit(saved);
+          return yield* this.publications.reserveAndCommit(
+            session,
+            id,
+            {
+              schema_version: 1,
+              ...(head?.committed ? { committed: head.committed } : {}),
+              pending: saved,
+            } satisfies Head,
+            () => this.commit(saved),
+          );
         }),
       ),
     );
@@ -509,30 +530,27 @@ export class Reviews {
   }
   presentations(session: SessionId, messages: readonly MessageId[]) {
     return Effect.gen({ self: this }, function* () {
-      const { entries, diagnostics, truncated } = yield* new SurfacePublications(
-        this.store,
-        this.locks,
-      ).associations(session, messages);
-      const visible: typeof entries = [];
-      for (const entry of entries) {
-        if (entry.target.kind !== "review") {
-          visible.push(entry);
-          continue;
-        }
-        const result = yield* this.committedRecord(session, entry.target).pipe(Effect.result);
-        if (
-          result._tag === "Success" &&
-          result.success.record.message_id === entry.message_id &&
-          result.success.record.call_id === entry.tool_call_id
-        )
-          visible.push(entry);
-        else if (result._tag !== "Failure" || result.failure.code !== "REVIEW_PENDING")
-          diagnostics.push({
-            message_id: entry.message_id,
-            unavailable: "A retained review attachment has no confirmed publication.",
-          });
-      }
-      return { entries: visible, diagnostics: diagnostics.slice(0, 200), truncated };
+      const page = yield* this.surfaces.associations(session, messages);
+      return yield* this.publications.filterAttachments(
+        page,
+        "review",
+        (entry) =>
+          this.committedRecord(session, entry.target).pipe(
+            Effect.result,
+            Effect.map((result) => {
+              if (
+                result._tag === "Success" &&
+                result.success.record.message_id === entry.message_id &&
+                result.success.record.call_id === entry.tool_call_id
+              )
+                return "keep" as const;
+              return result._tag === "Failure" && result.failure.code === "REVIEW_PENDING"
+                ? ("skip" as const)
+                : ("diagnostic" as const);
+            }),
+          ),
+        "A retained review attachment has no confirmed publication.",
+      );
     });
   }
   asset(session: SessionId, selection: ReviewSelection & { hash: ContentHash }) {
@@ -594,7 +612,7 @@ export class Reviews {
   submit(session: SessionId, input: ReviewSubmit, admissions: ReviewAdmissions) {
     return domainEffect(
       Effect.gen({ self: this }, function* () {
-        const reserved = yield* this.locks.with(LockKey.make("web-reviews"), () =>
+        const reserved = yield* this.publications.withLock(() =>
           Effect.gen({ self: this }, function* () {
             const value = yield* decode(ReviewSubmitSchema, input, "Review response");
             const responseKey = key(session, `response/${value.request_id}`),

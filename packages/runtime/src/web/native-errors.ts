@@ -1,7 +1,7 @@
 import { Effect, Result, Schema } from "effect";
-import { ErrorCode } from "../identities.ts";
+import { ErrorCode } from "@abracode/contracts/identities";
 import { CrewError } from "../domain.ts";
-import type { WorkReportSchema } from "./wire.ts";
+import type { WorkReportSchema } from "@abracode/contracts/web/wire";
 
 // OpenCode 2.3.0 RPC handler failures carry the domain code in data, not code.
 const nativeFailure = Schema.Struct({

@@ -5,6 +5,24 @@ import { parse } from "yaml";
 import { AgentDefinitionError } from "./errors.ts";
 import { engineeringSkills } from "./engineering-skills.ts";
 
+const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
+
+export function parseFrontmatter(source: string): {
+  readonly frontmatter?: string;
+  readonly body: string;
+} {
+  const match = FRONTMATTER.exec(source);
+  return match ? { frontmatter: match[1], body: match[2] } : { body: source };
+}
+
+export const centralOnlySkillNames: readonly string[] = [
+  "express",
+  "orchestration",
+  "project-onboarding",
+  "recovery",
+  "thoughts",
+];
+
 export const skillNames = (central: boolean) => [
   ...(central
     ? [
@@ -42,8 +60,8 @@ export const readSkill = Effect.fn("Agents.readSkill")(function* (root: string, 
         }),
     ),
   );
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/.exec(source);
-  if (!match)
+  const { frontmatter, body } = parseFrontmatter(source);
+  if (frontmatter === undefined)
     return yield* new AgentDefinitionError({
       code: "INVALID_SKILL",
       definition: "skills",
@@ -51,7 +69,7 @@ export const readSkill = Effect.fn("Agents.readSkill")(function* (root: string, 
       message: `Invalid skill frontmatter: ${name}`,
     });
   const metadata = yield* Effect.try({
-    try: () => parse(match[1]),
+    try: () => parse(frontmatter),
     catch: () =>
       new AgentDefinitionError({
         code: "INVALID_SKILL",
@@ -78,7 +96,7 @@ export const readSkill = Effect.fn("Agents.readSkill")(function* (root: string, 
     name: `abra-${name}`,
     description: description.description,
     path: file,
-    content: match[2],
+    content: body,
   }).pipe(
     Effect.mapError(
       () =>

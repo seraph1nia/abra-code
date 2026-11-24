@@ -1,5 +1,5 @@
 import { presentationHash } from "../../src/presentation/identity.ts";
-import { FindingId } from "../../src/identities.ts";
+import { FindingId } from "@abracode/contracts/identities";
 import { feedbackFixture } from "../helpers/review-evidence.ts";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
@@ -8,7 +8,7 @@ import { fixture, planned } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { resolveOwnedResource } from "../../src/web/resource-selection.ts";
 import { workspaceSearch, resourceFromSearch, searchForResource } from "@abracode/web/navigation";
-import { ResourceSelectionSchema, type ResourceSelection } from "../../src/web/resources.ts";
+import { ResourceSelectionSchema, type ResourceSelection } from "@abracode/contracts/web/resources";
 
 test("resource resolution accepts owned sessions and rejects foreign sessions and artifact revisions", async (t) => {
   const f = await run(fixture);

@@ -1,22 +1,24 @@
+import { MemoryBody, MemoryPage } from "@abracode/contracts/visibility/memory";
 import { ReviewChangesPage } from "../git/review-changes.ts";
 import { EvidenceDataSchema, EvidenceReceiptSchema } from "@abracode/contracts/web/worker-evidence";
-import { SessionObservationSchema } from "./session-observation-contracts.ts";
+import { SessionObservationSchema } from "@abracode/contracts/opencode/session-observation-contracts";
 import { ExecutionContractSchema } from "../visibility/execution-contract.ts";
-export { SessionObservationSchema } from "./session-observation-contracts.ts";
+export { SessionObservationSchema } from "@abracode/contracts/opencode/session-observation-contracts";
 import { SelectionSourceSchema } from "../config/dispatch.ts";
 import { SupervisionSummarySchema, SupervisionAggregateSchema } from "../visibility/supervision.ts";
 import { DeliveryOutcomeSchema, OperationInProgressSchema } from "../workflow/delivery-outcome.ts";
+import { LeadRecordSchema, LeadRequestSchema } from "../workflow/lead-contracts.ts";
 import {
   CommunicationSchema,
   MessageIntentSchema,
   MessagesPageSchema,
-} from "../workflow/message-contracts.ts";
+} from "@abracode/contracts/workflow/message-contracts";
 import { WorkerContextSummarySchema } from "../workflow/worker-context-contracts.ts";
 import { ReviewerSuggestions } from "../git/reviewers.ts";
-import { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
+import { FeedbackPageSchema } from "@abracode/contracts/workflow/feedback-contracts";
 import { Schema } from "effect";
 
-import * as Id from "../identities.ts";
+import * as Id from "@abracode/contracts/identities";
 import {
   Count,
   PhaseSchema,
@@ -24,9 +26,9 @@ import {
   ReadinessBlockerSchema,
   RecordDiagnosticSchema,
   WorkerModelSchema,
-} from "../contracts.ts";
+} from "@abracode/contracts/primitives";
 import { ExecutionStateSchema, ProjectRecordSchema } from "../storage/contracts.ts";
-import { BatchItemResultSchema, BatchResultSchema } from "../work/batch.ts";
+import { BatchInputSchema, BatchItemResultSchema, BatchResultSchema } from "../work/batch.ts";
 import { IssueSchema } from "../work/model.ts";
 import {
   DecisionSchema,
@@ -34,7 +36,7 @@ import {
   DeclaredWaitSchema,
 } from "../workflow/obligation-contracts.ts";
 import { ForgeFindingSchema } from "../workflow/correction-contracts.ts";
-import { VisualBuildSummarySchema, ReportReceiptSchema } from "../workflow/report-contracts.ts";
+import { VisualBuildSummarySchema, ReportReceiptSchema } from "../reporting/report-contracts.ts";
 import { SpecStatusSchema, ApplyStatusSchema, InstructionsSchema } from "../openspec/contracts.ts";
 import { VerificationSchema } from "../config/contracts.ts";
 import { WorkEventSchema } from "../work/graph.ts";
@@ -98,7 +100,65 @@ const retainedSource = Schema.Struct({
   captured_at: Id.Timestamp,
   execution_revision: Schema.optional(Count),
 });
+const leadProposal = Schema.Struct({
+  request_id: Id.RequestId,
+  revision: Count,
+  batch: BatchInputSchema,
+  accepted: Schema.optional(BatchResultSchema),
+  notice_id: Id.MessageId,
+  notified: Schema.optional(Schema.Boolean),
+});
+const leadTaskSummary = Schema.Struct({
+  id: Id.IssueId,
+  repository_id: Id.RepositoryId,
+  title: Schema.String,
+  description: Schema.String,
+  status: IssueSchema.fields.status,
+  workflow_policy: IssueSchema.fields.workflow_policy,
+  phase: Schema.optional(PhaseSchema),
+  decisions: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        key: Id.ObligationKey,
+        generation: Count,
+        owner: DecisionSchema.fields.owner,
+        question: Schema.String,
+      }),
+    ),
+  ),
+  findings: Schema.optional(Schema.Array(CommunicationSchema)),
+  report: Schema.optional(
+    Schema.Struct({
+      report_id: ReportReceiptSchema.fields.report_id,
+      hash: ReportReceiptSchema.fields.hash,
+    }),
+  ),
+});
+const leadStatus = Schema.Struct({
+  id: Id.LeadId,
+  revision: Count,
+  repositories: LeadRecordSchema.fields.repositories,
+  tasks: Schema.Array(leadTaskSummary),
+  requests: Schema.Array(LeadRequestSchema),
+  proposals: Schema.Array(leadProposal),
+  snapshot_at: Id.Timestamp,
+});
 export const toolOutputs = {
+  lead_control: Schema.Union([
+    Schema.Array(LeadRecordSchema),
+    LeadRecordSchema,
+    LeadRequestSchema,
+    leadProposal,
+  ]),
+  lead_action: Schema.Union([
+    MemoryBody,
+    MemoryPage,
+    leadStatus,
+    LeadRequestSchema,
+    leadProposal,
+    DecisionSchema,
+    Schema.Struct({ request_id: Id.RequestId }),
+  ]),
   work_message: MessageIntentSchema,
   worker_reply: CommunicationSchema,
   work_messages: MessagesPageSchema,
