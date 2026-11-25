@@ -13,7 +13,7 @@ import {
   CardDescription,
   CardContent,
 } from "@abracode/presentation/ui/card";
-import { Badge } from "@abracode/presentation/ui/badge";
+import { StatusBadge, statusTone } from "@abracode/presentation/cockpit";
 import { FindingCard, Evidence } from "@abracode/presentation/cards";
 const words = (value: string) =>
   value
@@ -87,7 +87,9 @@ export function ReviewsPanel({ issue }: { issue: IssueId }) {
                     <CardHeader>
                       <CardTitle>
                         {words(action.kind)}{" "}
-                        <Badge variant="secondary">{words(action.status)}</Badge>
+                        <StatusBadge tone={statusTone(action.status)}>
+                          {words(action.status)}
+                        </StatusBadge>
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -190,7 +192,7 @@ function ExternalEvidence({
     <Card size="sm">
       <CardHeader>
         <CardTitle>
-          {title} <Badge variant="secondary">{words(record.status)}</Badge>
+          {title} <StatusBadge tone={statusTone(record.status)}>{words(record.status)}</StatusBadge>
         </CardTitle>
         <CardDescription>
           {observation?.outcome

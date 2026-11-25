@@ -3,45 +3,68 @@ import { createPortal } from "react-dom";
 
 const DesktopSplit = lazy(() => import("./desktop-split.tsx"));
 
-/** One stable host keeps the native form, transcript and composer mounted while panels move. */
+/** Stable hosts keep the transcript, composer and Canvas hubs mounted while panels move. */
 export function ReaderSplit({
   chat,
   reader,
   split,
   showChat,
+  focusMode = false,
 }: {
   chat: ReactNode;
   reader: ReactNode;
   split: boolean;
   showChat: boolean;
+  focusMode?: boolean;
 }) {
-  const [host] = useState(() => {
+  const [chatHost] = useState(() => {
     const node = document.createElement("div");
     node.className = "chat-host";
     return node;
   });
-  const mount = useCallback(
+  const [readerHost] = useState(() => {
+    const node = document.createElement("div");
+    node.className = "reader-host";
+    return node;
+  });
+  const mountChat = useCallback(
     (element: HTMLDivElement | null) => {
-      if (element) {
-        element.append(host);
-      }
+      if (element) element.append(chatHost);
     },
-    [host],
+    [chatHost],
   );
-  const placement = <div className="chat-placement" ref={mount} />;
+  const mountReader = useCallback(
+    (element: HTMLDivElement | null) => {
+      if (element) element.append(readerHost);
+    },
+    [readerHost],
+  );
+  const chatPlacement = <div className="chat-placement" ref={mountChat} />;
+  const readerPlacement = <div className="reader-placement" ref={mountReader} />;
   return (
     <>
-      {createPortal(chat, host)}
-      <div className="conversation-panes" hidden={!showChat}>
+      {createPortal(chat, chatHost)}
+      {createPortal(reader, readerHost)}
+      <div
+        className={focusMode ? "conversation-panes is-focus" : "conversation-panes"}
+        hidden={!showChat}
+      >
         {split ? (
-          <Suspense fallback={placement}>
-            <DesktopSplit chat={placement} reader={reader} />
+          <Suspense
+            fallback={
+              <div className="split-fallback">
+                {chatPlacement}
+                {readerPlacement}
+              </div>
+            }
+          >
+            <DesktopSplit chat={chatPlacement} reader={readerPlacement} />
           </Suspense>
         ) : (
-          placement
+          chatPlacement
         )}
       </div>
-      {!split && reader}
+      {!split && readerPlacement}
     </>
   );
 }

@@ -121,6 +121,11 @@ export function useTranscriptScroll({
   }, [active, foundMessage, selectedMessage]);
 
   const focusComposer = useCallback(() => {
+    const desktop = !phoneCanvas && !matchMedia("(max-width: 1250px)").matches;
+    if (desktop && !route.canvas) {
+      requestAnimationFrame(() => composerRef.current?.focus());
+      return;
+    }
     if (
       !chatVisible ||
       phoneCanvas ||

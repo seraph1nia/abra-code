@@ -27,69 +27,159 @@
 
 @layer base {
   :root {
-    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     font-synthesis: none;
-    --abra-bg: #fafbf8;
-    --abra-ink: #242722;
-    --abra-panel: #fff;
-    --abra-soft: #f3f5ef;
-    --abra-muted: #626b5b;
-    --abra-line: #e4e8de;
-    --abra-primary: #476c36;
-    --abra-primary-ink: #fff;
-    --abra-tint: #edf3e7;
-    --abra-danger: #b13e30;
-    --warning: #82551d;
-    --status-neutral: #626b5b;
-    --status-open: #476c36;
-    --status-progress: #82551d;
-    --status-blocked: #b13e30;
-    --attention-ink: #82551d;
-    --attention-bg: #fff0d2;
-    --chart-1: #568661;
-    --chart-2: #5286b2;
-    --chart-3: #d29449;
-    --chart-4: #9c72ae;
-    --chart-5: #cb726b;
-    --chart-6: #459e9b;
-    --shadow: 0 8px 28px #1b2f1410;
+    /* Precision Graphite & Emerald Telemetry — Light */
+    --surface-0: #eef1f4;
+    --surface-1: #f6f8fa;
+    --surface-2: #ffffff;
+    --surface-3: #edf2f0;
+    --surface-hover: #e6ecf0;
+
+    --border-subtle: #dfe5eb;
+    --border-strong: #c4cfda;
+
+    --ink-primary: #11181c;
+    --ink-secondary: #4a5764;
+    --ink-muted: #667584;
+
+    --accent-primary: #0d8a55;
+    --accent-hover: #0a7346;
+    --accent-ink: #ffffff;
+    --accent-soft: #e5f6ee;
+    --accent-border: #b4e4cd;
+
+    --status-running: #0284c7;
+    --status-running-bg: #e0f2fe;
+    --status-running-border: #bae6fd;
+
+    --status-attention: #b45309;
+    --status-attention-bg: #fef3c7;
+    --status-attention-border: #fde68a;
+
+    --status-danger: #dc2626;
+    --status-danger-bg: #fee2e2;
+    --status-danger-border: #fecaca;
+
+    --status-success: #047857;
+    --status-success-bg: #d1fae5;
+    --status-success-border: #a7f3d0;
+
+    /* Semantic aliases consumed across workspace, shadcn, A2UI & reports */
+    --abra-bg: var(--surface-1);
+    --abra-ink: var(--ink-primary);
+    --abra-panel: var(--surface-2);
+    --abra-soft: var(--surface-3);
+    --abra-muted: var(--ink-secondary);
+    --abra-line: var(--border-subtle);
+    --abra-primary: var(--accent-primary);
+    --abra-primary-ink: var(--accent-ink);
+    --abra-tint: var(--accent-soft);
+    --abra-danger: var(--status-danger);
+
+    --warning: var(--status-attention);
+    --status-neutral: var(--ink-muted);
+    --status-open: var(--status-success);
+    --status-progress: var(--status-running);
+    --status-blocked: var(--status-danger);
+    --attention-ink: var(--status-attention);
+    --attention-bg: var(--status-attention-bg);
+
+    --chart-1: #0d8a55;
+    --chart-2: #0284c7;
+    --chart-3: #d97706;
+    --chart-4: #7c3aed;
+    --chart-5: #dc2626;
+    --chart-6: #0d9488;
+
+    --shadow-sm: 0 1px 2px rgb(15 23 42 / 5%);
+    --shadow-md: 0 8px 24px rgb(15 23 42 / 8%), 0 1px 2px rgb(15 23 42 / 4%);
+    --shadow-lg: 0 20px 48px rgb(15 23 42 / 16%);
+    --shadow: var(--shadow-md);
     color-scheme: light;
   }
+
   :root[data-theme="dark"] {
-    --abra-bg: #151914;
-    --abra-ink: #e4eadc;
-    --abra-panel: #1c211a;
-    --abra-soft: #242b21;
-    --abra-muted: #a2af94;
-    --abra-line: #333c2e;
-    --abra-primary: #a1c58b;
-    --abra-primary-ink: #15200f;
-    --abra-tint: #2b3a22;
-    --abra-danger: #ef9b8e;
-    --warning: #ddb273;
-    --status-neutral: #a2af94;
-    --status-open: #a1c58b;
-    --status-progress: #ddb273;
-    --status-blocked: #ef9b8e;
-    --attention-ink: #efcc93;
-    --attention-bg: #3c3020;
-    --chart-1: #7cb088;
-    --chart-2: #76aad4;
-    --chart-3: #e0a862;
-    --chart-4: #b991cb;
-    --chart-5: #de8a83;
-    --chart-6: #68bdbc;
+    /* Precision Graphite & Emerald Telemetry — Dark */
+    --surface-0: #0b0e11;
+    --surface-1: #11161b;
+    --surface-2: #171d23;
+    --surface-3: #1f272f;
+    --surface-hover: #252f39;
+
+    --border-subtle: #242d37;
+    --border-strong: #354250;
+
+    --ink-primary: #eef3f7;
+    --ink-secondary: #9aa8b6;
+    --ink-muted: #768696;
+
+    --accent-primary: #34d399;
+    --accent-hover: #10b981;
+    --accent-ink: #062117;
+    --accent-soft: #0f2c22;
+    --accent-border: #1b4d3b;
+
+    --status-running: #38bdf8;
+    --status-running-bg: #0c2636;
+    --status-running-border: #164863;
+
+    --status-attention: #fbbf24;
+    --status-attention-bg: #31230a;
+    --status-attention-border: #5c4010;
+
+    --status-danger: #f87171;
+    --status-danger-bg: #341519;
+    --status-danger-border: #63242b;
+
+    --status-success: #34d399;
+    --status-success-bg: #0e2b21;
+    --status-success-border: #1a4d3a;
+
+    --abra-bg: var(--surface-1);
+    --abra-ink: var(--ink-primary);
+    --abra-panel: var(--surface-2);
+    --abra-soft: var(--surface-3);
+    --abra-muted: var(--ink-secondary);
+    --abra-line: var(--border-subtle);
+    --abra-primary: var(--accent-primary);
+    --abra-primary-ink: var(--accent-ink);
+    --abra-tint: var(--accent-soft);
+    --abra-danger: var(--status-danger);
+
+    --warning: var(--status-attention);
+    --status-neutral: var(--ink-muted);
+    --status-open: var(--status-success);
+    --status-progress: var(--status-running);
+    --status-blocked: var(--status-danger);
+    --attention-ink: var(--status-attention);
+    --attention-bg: var(--status-attention-bg);
+
+    --chart-1: #34d399;
+    --chart-2: #38bdf8;
+    --chart-3: #fbbf24;
+    --chart-4: #a78bfa;
+    --chart-5: #f87171;
+    --chart-6: #2dd4bf;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 28%);
+    --shadow-md: 0 10px 28px rgb(0 0 0 / 34%), 0 1px 0 rgb(255 255 255 / 4%) inset;
+    --shadow-lg: 0 24px 64px rgb(0 0 0 / 56%);
+    --shadow: var(--shadow-md);
     color-scheme: dark;
   }
+
   * {
     box-sizing: border-box;
   }
   body {
     margin: 0;
-    background: var(--background);
+    background: var(--surface-0);
     color: var(--foreground);
     font-size: 14px;
     line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
   }
   button,
   input,
@@ -103,7 +193,7 @@
   }
   :focus-visible {
     outline: 2px solid var(--primary);
-    outline-offset: 3px;
+    outline-offset: 2px;
   }
   h1,
   h2,
@@ -113,30 +203,30 @@
     margin: 0;
   }
   h1 {
-    font-size: 25px;
-    font-weight: 550;
-    letter-spacing: -0.7px;
+    font-size: 22px;
+    font-weight: 650;
+    letter-spacing: -0.025em;
   }
   h2 {
-    font-size: 20px;
-    font-weight: 550;
-    letter-spacing: -0.4px;
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
   }
   h3 {
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
+    letter-spacing: -0.01em;
   }
   h4 {
-    font-size: 13px;
-    font-weight: 550;
-    text-transform: capitalize;
+    font-size: 12.5px;
+    font-weight: 600;
   }
   a {
     color: var(--primary);
   }
   pre,
   code {
-    font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   }
   pre {
     white-space: pre-wrap;
@@ -150,17 +240,18 @@
     min-width: 0;
   }
 }
+
 /* Upstream renderer tokens inherit the same theme, including portalled widgets. */
 .generated-views,
 .generated-surface {
-  --a2ui-color-background: var(--bg);
+  --a2ui-color-background: var(--surface-1);
   --a2ui-color-on-background: var(--ink);
-  --a2ui-color-surface: var(--panel);
+  --a2ui-color-surface: var(--surface-2);
   --a2ui-color-on-surface: var(--ink);
   --a2ui-color-primary: var(--primary);
   --a2ui-color-on-primary: var(--primary-foreground);
-  --a2ui-color-border: var(--line);
-  --a2ui-color-input: var(--panel);
+  --a2ui-color-border: var(--border-subtle);
+  --a2ui-color-input: var(--surface-2);
   --a2ui-color-on-input: var(--ink);
   --a2ui-border-radius: var(--radius);
   --a2ui-font-size: 14px;
@@ -172,7 +263,7 @@
 @layer components {
   :root,
   [data-copilotkit] {
-    --radius: 0.5rem;
+    --radius: 0.625rem;
     --background: var(--abra-bg);
     --foreground: var(--abra-ink);
     --card: var(--abra-panel);
@@ -189,7 +280,7 @@
     --accent-foreground: var(--abra-ink);
     --destructive: var(--abra-danger);
     --border: var(--abra-line);
-    --input: var(--abra-line);
+    --input: var(--border-strong);
     --ring: var(--abra-primary);
     --bg: var(--abra-bg);
     --ink: var(--abra-ink);

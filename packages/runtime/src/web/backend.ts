@@ -60,6 +60,7 @@ export const projectMessage = (message: SessionMessage.Info) =>
 
 const subscribedSessionEventTypes = [
   "session.agent.selected",
+  "session.archived",
   "session.compaction.started",
   "session.compaction.ended",
   "session.compaction.failed",
@@ -69,12 +70,18 @@ const subscribedSessionEventTypes = [
   "session.execution.succeeded",
   "session.execution.failed",
   "session.execution.interrupted",
+  "session.forked",
   "session.inbox.enqueued",
   "session.inbox.delivered",
   "session.inbox.cancelled",
   "session.inbox.delivery.changed",
+  "session.instructions.updated",
   "session.metadata.updated",
   "session.model.selected",
+  "session.moved",
+  "session.permissions",
+  "session.reasoning.started",
+  "session.reasoning.ended",
   "session.renamed",
   "session.retry.scheduled",
   "session.revert.cleared",
@@ -82,7 +89,10 @@ const subscribedSessionEventTypes = [
   "session.revert.staged",
   "session.shell.started",
   "session.shell.ended",
+  "session.skill.activated",
   "session.step.started",
+  "session.step.first-token",
+  "session.step.streamed",
   "session.step.ended",
   "session.step.failed",
   "session.synthetic",
@@ -96,6 +106,8 @@ const subscribedSessionEventTypes = [
   "session.tool.progress",
   "session.tool.success",
   "session.tool.failed",
+  "session.unarchived",
+  "session.viewed",
 ] as const;
 
 const subscribedEventTypes = [

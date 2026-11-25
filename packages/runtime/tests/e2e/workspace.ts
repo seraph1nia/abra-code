@@ -406,9 +406,9 @@ export async function workspaceJourney(input: {
     ).length;
     await nativeCard().getByRole("button", { name: "Inspect task", exact: true }).click();
     await page
-      .locator('select[aria-label="Work details"] option:checked')
-      .filter({ hasText: "Overview" })
-      .waitFor({ state: "attached" });
+      .getByRole("tablist", { name: "Work details", exact: true })
+      .getByRole("tab", { name: "Overview", exact: true, selected: true })
+      .waitFor();
     assert.equal(
       (await input.client.session.context({ sessionID: input.session })).filter(
         (message) => message.type === "user",
@@ -635,15 +635,15 @@ export async function workspaceJourney(input: {
     ).filter((message) => message.type === "user").length;
     await page.getByRole("button", { name: "Inspect execution changes", exact: true }).click();
     await page
-      .locator('select[aria-label="Work details"] option:checked')
-      .filter({ hasText: "Diff" })
-      .waitFor({ state: "attached" });
+      .getByRole("tablist", { name: "Work details", exact: true })
+      .getByRole("tab", { name: "Diff", exact: true, selected: true })
+      .waitFor();
     await page.goBack();
     await page.getByRole("button", { name: "Open retained reports", exact: true }).click();
     await page
-      .locator('select[aria-label="Work details"] option:checked')
-      .filter({ hasText: "Reports" })
-      .waitFor({ state: "attached" });
+      .getByRole("tablist", { name: "Work details", exact: true })
+      .getByRole("tab", { name: "Reports", exact: true, selected: true })
+      .waitFor();
     assert.equal(
       (await input.client.session.context({ sessionID: input.session })).filter(
         (message) => message.type === "user",
@@ -817,7 +817,10 @@ export async function workspaceJourney(input: {
         assert.ok(Array.isArray(decisions.decisions));
         assert.ok(communication.total >= communication.entries.length);
         assert.ok(checks.finding_total >= checks.findings.length);
-        await page.getByLabel("Work details", { exact: true }).selectOption("Activity");
+        await page
+          .getByRole("tablist", { name: "Work details", exact: true })
+          .getByRole("tab", { name: "Activity", exact: true })
+          .click();
         await page.getByRole("heading", { name: "Worker transcript", exact: true }).waitFor();
         await page.getByLabel("Read-only worker session", { exact: true }).selectOption(worker);
         await page.getByRole("tab", { name: "Communication", exact: true }).click();
@@ -998,7 +1001,10 @@ export async function workspaceJourney(input: {
             )?.active,
             "Recreated native form keeps the current checkpoint identity",
           );
-          await page.getByLabel("Work details", { exact: true }).selectOption("Overview");
+          await page
+            .getByRole("tablist", { name: "Work details", exact: true })
+            .getByRole("tab", { name: "Overview", exact: true })
+            .click();
           await page
             .getByRole("button", { name: "Review current plan approval", exact: true })
             .click();

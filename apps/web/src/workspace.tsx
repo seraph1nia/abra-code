@@ -5,6 +5,7 @@ import { useAtomSet, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { Button } from "@abracode/presentation/ui/button";
+import { Bell, Expand, Minimize2, PanelRight } from "@abracode/presentation/icons";
 import { BriefingForms } from "./presentation/tool-context.ts";
 import { useNativeToolRendering } from "./presentation/tools.tsx";
 import { RunCommand, composerCommands, type ComposerCommand } from "./workspace-commands.ts";
@@ -150,16 +151,21 @@ function Workspace({
   const wide = useMediaQuery("(min-width: 1251px)");
   const [retainedViews, setRetainedViews] = useState(false);
   const [thoughtToken, setThoughtToken] = useState<{ text: string; start: number; end: number }>();
+  const [expanded, setExpanded] = useState(false);
 
   const runCommand = useContext(RunCommand);
   const navigate = useNavigate();
   const inspecting = Boolean(
     resourceFromSearch(route) || route.surface || route.retained || route.review,
   );
-  const phoneCanvas = phone && (inspecting || Boolean(route.view));
-  const chatVisible = active && !phoneCanvas && (destination === "/" || inspecting);
   const collectionVisible = !inspecting && destination !== "/";
   const attentionOpen = destination === "/attention" && !inspecting;
+  const desktopCanvasOpen = wide && (inspecting || collectionVisible);
+  const desktopExpanded = desktopCanvasOpen && expanded && !route.canvas;
+  const phoneCanvas = phone && (inspecting || Boolean(route.view));
+  const chatVisible =
+    active && !phoneCanvas && (wide ? !desktopExpanded : destination === "/" || inspecting);
+  const focusMode = wide && !desktopCanvasOpen;
 
   const lastInspection = useInspectionMemory(initial.session_id, route, active, inspecting);
   const { viewport, composerRef, focusComposer, selectedMessage, foundMessage } =
@@ -201,6 +207,10 @@ function Workspace({
   const attention =
     workspace.forms.filter((item) => item.active).length + workspace.permissions.length;
   const workAttention = unmatchedWorkAttention(workspace);
+  const totalAttention = attention + workAttention.length + managementAttention.length;
+  const activeWorkCount = workspace.work.work.filter(
+    (item) => item.issue_status !== "closed",
+  ).length;
   const work = workspace.work.work.find((w) => w.issue_id === selected);
   const historyWritable = useRecordInspection(
     workspace.session_id,
@@ -233,17 +243,20 @@ function Workspace({
   function canPrepare() {
     if (!draftLocked.current) return true;
     setError("Wait for the pending submission before editing this draft.");
+    if (desktopExpanded) setExpanded(false);
     focusComposer();
     return false;
   }
   function attach(attachment: DraftAttachment) {
     if (!canPrepare()) return;
     setDraft({ attachment });
+    if (desktopExpanded) setExpanded(false);
     focusComposer();
   }
   function ask(text: string) {
     if (!canPrepare()) return;
     setDraft({ append: text });
+    if (desktopExpanded) setExpanded(false);
     focusComposer();
   }
 
@@ -267,6 +280,102 @@ function Workspace({
     />
   );
   const sheet = active && inspecting && !phone && (!wide || route.canvas);
+
+  const collectionHubs = (
+    <div className="canvas-hub-host" hidden={!collectionVisible}>
+      <section
+        data-scroll-restoration-id={"collection-" + destination}
+        className="collection-page"
+        hidden={!collectionVisible || attentionOpen}
+      >
+        {destination === "/work" && (
+          <WorkFinder
+            shown={collectionVisible}
+            workspace={workspace}
+            open={open}
+            inspect={inspect}
+          />
+        )}
+        {destination === "/github" && collectionVisible && (
+          <GithubInbox projects={workspace.projects} open={open} ask={ask} />
+        )}
+        {destination === "/thoughts" && collectionVisible && (
+          <Thoughts
+            discuss={(thought) => {
+              if (!canPrepare()) return;
+              setDraft({ thought, consume: thoughtToken });
+              setThoughtToken(undefined);
+              if (desktopExpanded) setExpanded(false);
+              focusComposer();
+            }}
+          />
+        )}
+        {destination === "/more" && (
+          <nav aria-label="More destinations" className="more-nav">
+            <Link to="/github">GitHub</Link>
+            <Link to="/settings">Settings</Link>
+          </nav>
+        )}
+        {collectionVisible && destination === "/work" && route.collection?.section === "recent" && (
+          <RecentlyInspected
+            writable={historyWritable}
+            session={workspace.session_id}
+            work={workspace.work.work}
+            open={open}
+          />
+        )}
+      </section>
+      <div className="collection-page" hidden={!attentionOpen}>
+        {!(attention + workAttention.length + managementAttention.length) && (
+          <div className="empty-attention">
+            <h2>Attention</h2>
+            <p className="muted">No pending attention in the observed workspace.</p>
+          </div>
+        )}
+        {(attentionOpen || workspace.forms.length > 0 || workspace.permissions.length > 0) && (
+          <AttentionPanel
+            workspace={workspace}
+            workAttention={workAttention}
+            attention={attention}
+            attentionOpen={attentionOpen}
+            refresh={refresh}
+            open={open}
+            inspect={inspect}
+          />
+        )}
+      </div>
+    </div>
+  );
+
+  const inspectorView = (selected || route.surface || route.retained || route.review) && (
+    <AttachSelection.Provider value={attach}>
+      <Inspector
+        picker={sheet ? picker : undefined}
+        issue={selected}
+        surface={route.surface}
+        retained={route.retained}
+        review={route.review}
+        work={work}
+        tab={tab}
+        setTab={setTab}
+        close={() => closeInspector()}
+        returnFocus={returnInspectorFocus}
+        forms={workspace.forms}
+        focusForm={focusForm}
+        inspect={inspect}
+        ask={ask}
+        refresh={refresh}
+      />
+    </AttachSelection.Provider>
+  );
+
+  const canvasPane = (
+    <div className="unified-canvas" hidden={wide ? !desktopCanvasOpen : !inspecting}>
+      {wide && collectionHubs}
+      {inspectorView}
+    </div>
+  );
+
   const panels = (
     <OpenSurface.Provider value={navigation.openSurface}>
       {!sheet && picker}
@@ -281,107 +390,128 @@ function Workspace({
       >
         {!phone && (
           <header className="topbar">
-            <h1>{destinations[destination]}</h1>
-            <div className="topbar-end">
+            <div className="topbar-left">
+              <Link
+                to="/"
+                search={{}}
+                className="brand-home-link"
+                onClick={() => setExpanded(false)}
+              >
+                <span className="brand-mark" aria-hidden="true">
+                  a
+                </span>
+                <span className="brand-name">AbraCode</span>
+              </Link>
+              <span className="topbar-sep" aria-hidden="true" />
+              <h1 className="topbar-heading">{destinations[destination]}</h1>
               {connectionError || workspace.busy ? (
-                <output>{connectionError ? "Reconnecting" : "Abra is working"}</output>
-              ) : null}
-              {!wide && <SearchTrigger />}
+                <output
+                  className={
+                    connectionError ? "telemetry-pill is-warning" : "telemetry-pill is-running"
+                  }
+                >
+                  <span className="telemetry-dot" aria-hidden="true" />
+                  {connectionError ? "Reconnecting" : "Abra is working"}
+                </output>
+              ) : (
+                <span className="telemetry-pill is-ready" aria-hidden="true">
+                  <span className="telemetry-dot" />
+                  Connected
+                </span>
+              )}
+            </div>
+            <div className="topbar-center">
+              <SearchTrigger />
+            </div>
+            <div className="topbar-end">
+              {wide && (
+                <>
+                  <Link
+                    to="/work"
+                    search={{ collection: { section: "capacity" } }}
+                    className="telemetry-pill is-interactive"
+                    onClick={() => setExpanded(false)}
+                  >
+                    <span className="telemetry-dot" aria-hidden="true" />
+                    <span>
+                      {activeWorkCount} active {activeWorkCount === 1 ? "task" : "tasks"}
+                    </span>
+                  </Link>
+                  {totalAttention > 0 && (
+                    <Link
+                      to="/attention"
+                      search={{}}
+                      className="telemetry-pill is-attention is-interactive"
+                      onClick={() => setExpanded(false)}
+                    >
+                      <Bell aria-hidden="true" />
+                      <span>{totalAttention} pending</span>
+                    </Link>
+                  )}
+                  <fieldset className="layout-mode-group" aria-label="Workspace layout">
+                    <button
+                      type="button"
+                      className={focusMode ? "layout-mode-btn is-active" : "layout-mode-btn"}
+                      onClick={() => {
+                        setExpanded(false);
+                        void navigate({ to: "/", search: {} });
+                      }}
+                    >
+                      Chat
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        desktopCanvasOpen && !desktopExpanded
+                          ? "layout-mode-btn is-active"
+                          : "layout-mode-btn"
+                      }
+                      onClick={() => {
+                        setExpanded(false);
+                        if (!desktopCanvasOpen) {
+                          if (lastInspection) void navigate({ to: "/", search: lastInspection });
+                          else void navigate({ to: "/work", search: {} });
+                        }
+                      }}
+                    >
+                      <PanelRight aria-hidden="true" />
+                      Split
+                    </button>
+                    {desktopCanvasOpen && !route.canvas && (
+                      <button
+                        type="button"
+                        className={
+                          desktopExpanded ? "layout-mode-btn is-active" : "layout-mode-btn"
+                        }
+                        aria-label={desktopExpanded ? "Show chat beside canvas" : "Expand canvas"}
+                        onClick={() => setExpanded((value) => !value)}
+                      >
+                        {desktopExpanded ? (
+                          <Minimize2 aria-hidden="true" />
+                        ) : (
+                          <Expand aria-hidden="true" />
+                        )}
+                      </button>
+                    )}
+                  </fieldset>
+                </>
+              )}
             </div>
           </header>
         )}
-        <section
-          data-scroll-restoration-id={"collection-" + destination}
-          className="collection-page"
-          hidden={!collectionVisible || attentionOpen}
-        >
-          {destination === "/work" && (
-            <WorkFinder
-              shown={collectionVisible}
-              workspace={workspace}
-              open={open}
-              inspect={inspect}
-            />
-          )}
-          {destination === "/github" && collectionVisible && (
-            <GithubInbox projects={workspace.projects} open={open} ask={ask} />
-          )}
-          {destination === "/thoughts" && collectionVisible && (
-            <Thoughts
-              discuss={(thought) => {
-                if (!canPrepare()) return;
-                setDraft({ thought, consume: thoughtToken });
-                setThoughtToken(undefined);
-                focusComposer();
-              }}
-            />
-          )}
-          {destination === "/more" && (
-            <nav aria-label="More destinations">
-              <Link to="/github">GitHub</Link>
-              <Link to="/settings">Settings</Link>
-            </nav>
-          )}
-          {collectionVisible &&
-            destination === "/work" &&
-            route.collection?.section === "recent" && (
-              <RecentlyInspected
-                writable={historyWritable}
-                session={workspace.session_id}
-                work={workspace.work.work}
-                open={open}
-              />
-            )}
-        </section>
-        <div className="collection-page" hidden={!attentionOpen}>
-          <h1>Attention</h1>
-          {!(attention + workAttention.length + managementAttention.length) && (
-            <p>No pending attention in the observed workspace.</p>
-          )}
-          {(attentionOpen || workspace.forms.length > 0 || workspace.permissions.length > 0) && (
-            <AttentionPanel
-              workspace={workspace}
-              workAttention={workAttention}
-              attention={attention}
-              attentionOpen={attentionOpen}
-              refresh={refresh}
-              open={open}
-              inspect={inspect}
-            />
-          )}
-        </div>
+        {!wide && collectionHubs}
         <ReaderSplit
-          split={wide && inspecting && !route.canvas}
+          split={wide && desktopCanvasOpen && !desktopExpanded && !route.canvas}
           showChat={chatVisible}
+          focusMode={focusMode}
           chat={
             <main className="main-pane">
               {selectedMessage && !foundMessage && (
-                <output>
+                <output className="chat-notice">
                   {selectedMessage.session_id !== workspace.session_id
                     ? "This message belongs to another conversation."
                     : "This message is outside the observed history. Earlier pages may contain it."}
                 </output>
-              )}
-              {attention > 0 && (
-                <Button
-                  className="attention-shortcut"
-                  variant="ghost"
-                  onClick={() => {
-                    const form = workspace.forms.find((f) => f.active);
-                    if (form) focusForm(form.form.id);
-                    else
-                      void navigate({
-                        to: "/attention",
-                        hash:
-                          "permission-" +
-                          workspace.permissions[0]?.request.id +
-                          "-" +
-                          workspace.permissions[0]?.binding,
-                      });
-                  }}
-                >
-                  Review next
-                </Button>
               )}
               {phone && (connectionError || workspace.busy) && (
                 <output className="connection">
@@ -415,10 +545,21 @@ function Workspace({
                   )}
                   {!messages.length && (
                     <section className="welcome">
-                      <span className="brand-mark" aria-hidden="true">
+                      <span className="brand-mark welcome-mark" aria-hidden="true">
                         a
-                      </span>{" "}
-                      Abra
+                      </span>
+                      <h2>Abra</h2>
+                      <p className="muted">
+                        Your persistent supervisor. Coordinate tasks, review plans and diffs, or
+                        open any hub in the Canvas beside this thread.
+                      </p>
+                      {!workspace.projects.length && (
+                        <div className="welcome-actions">
+                          <Button variant="outline" onClick={() => runCommand(composerCommands[0])}>
+                            Add a project
+                          </Button>
+                        </div>
+                      )}
                     </section>
                   )}
                   <BriefingForms.Provider value={workspace.forms}>
@@ -461,19 +602,50 @@ function Workspace({
                       )}
                     </details>
                   )}
+                  <div ref={bottom} />
+                </div>
+              </div>
+              {attention > 0 && (
+                <div className="composer-attention-dock">
+                  <div className="composer-attention-bar">
+                    <span className="composer-attention-text">
+                      <Bell aria-hidden="true" />
+                      <strong>
+                        {attention} pending {attention === 1 ? "decision" : "decisions"}
+                      </strong>
+                    </span>
+                    <Button
+                      className="attention-shortcut"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const form = workspace.forms.find((f) => f.active);
+                        if (form) focusForm(form.form.id);
+                        else
+                          void navigate({
+                            to: "/attention",
+                            hash:
+                              "permission-" +
+                              workspace.permissions[0]?.request.id +
+                              "-" +
+                              workspace.permissions[0]?.binding,
+                          });
+                      }}
+                    >
+                      Review next
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {workspace.inbox.length > 0 && (
+                <div className="composer-queue-dock">
                   {workspace.inbox.map((item) => (
                     <div className="queued-message" key={item.id}>
                       <span className="pill">Queued · {item.delivery}</span>
                       <p>{item.text}</p>
                     </div>
                   ))}
-                  <div ref={bottom} />
                 </div>
-              </div>
-              {!messages.length && !workspace.projects.length && (
-                <Button variant="ghost" onClick={() => runCommand(composerCommands[0])}>
-                  Add a project
-                </Button>
               )}
               <Composer
                 textareaRef={composerRef}
@@ -494,28 +666,7 @@ function Workspace({
               />
             </main>
           }
-          reader={
-            (selected || route.surface || route.retained || route.review) && (
-              <AttachSelection.Provider value={attach}>
-                <Inspector
-                  picker={sheet ? picker : undefined}
-                  issue={selected}
-                  surface={route.surface}
-                  retained={route.retained}
-                  review={route.review}
-                  work={work}
-                  tab={tab}
-                  setTab={setTab}
-                  close={() => closeInspector()}
-                  returnFocus={returnInspectorFocus}
-                  forms={workspace.forms}
-                  focusForm={focusForm}
-                  inspect={inspect}
-                  ask={ask}
-                />
-              </AttachSelection.Provider>
-            )
-          }
+          reader={wide ? canvasPane : inspectorView}
         />
       </div>
     </OpenSurface.Provider>

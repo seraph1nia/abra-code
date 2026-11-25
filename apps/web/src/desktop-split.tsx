@@ -7,16 +7,21 @@ import {
 } from "@abracode/presentation/ui/resizable";
 
 const preference = "abra-reader-percent";
-let sessionWidth = 39;
+const defaultWidth = 58;
+const minWidth = 30;
+const maxWidth = 70;
+let sessionWidth = defaultWidth;
+
 function readWidth() {
   try {
     const value = Number(localStorage.getItem(preference));
-    if (Number.isFinite(value) && value >= 30 && value <= 55) return value;
+    if (Number.isFinite(value) && value >= minWidth && value <= maxWidth) return value;
   } catch {
     return sessionWidth;
   }
-  return 39;
+  return defaultWidth;
 }
+
 export default function DesktopSplit({ chat, reader }: { chat: ReactNode; reader: ReactNode }) {
   const [width, setWidth] = useState(readWidth);
   const ref = useGroupRef();
@@ -36,7 +41,7 @@ export default function DesktopSplit({ chat, reader }: { chat: ReactNode; reader
       groupRef={ref}
       onLayoutChanged={(layout, meta) => {
         if (!meta.isUserInteraction || !Number.isFinite(layout.reader)) return;
-        const percent = Math.max(30, Math.min(55, layout.reader));
+        const percent = Math.max(minWidth, Math.min(maxWidth, layout.reader));
         sessionWidth = percent;
         setWidth(percent);
         try {
@@ -46,11 +51,16 @@ export default function DesktopSplit({ chat, reader }: { chat: ReactNode; reader
         }
       }}
     >
-      <ResizablePanel id="chat" minSize="45%">
+      <ResizablePanel id="chat" minSize="30%">
         {chat}
       </ResizablePanel>
       <ResizableHandle aria-label="Chat width" withHandle />
-      <ResizablePanel id="reader" defaultSize={width + "%"} minSize="30%" maxSize="55%">
+      <ResizablePanel
+        id="reader"
+        defaultSize={width + "%"}
+        minSize={minWidth + "%"}
+        maxSize={maxWidth + "%"}
+      >
         {reader}
       </ResizablePanel>
     </ResizablePanelGroup>

@@ -6,7 +6,8 @@
     <title>AbraCode Cockpit Prototype — Precision Graphite &amp; Emerald</title>
     <style>
       :root {
-        --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --font-sans:
+          ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 
         /* Light Mode — Precision Graphite & Emerald Telemetry */
@@ -103,8 +104,11 @@
         color-scheme: dark;
       }
 
-      * { box-sizing: border-box; }
-      html, body {
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
         margin: 0;
         height: 100%;
         font-family: var(--font-sans);
@@ -115,19 +119,46 @@
         overflow: hidden;
         -webkit-font-smoothing: antialiased;
       }
-      button, input, select, textarea { font: inherit; color: inherit; }
-      button { cursor: pointer; }
-      code, pre, .mono { font-family: var(--font-mono); }
-      .tabular { font-variant-numeric: tabular-nums; }
-      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      code,
+      pre,
+      .mono {
+        font-family: var(--font-mono);
+      }
+      .tabular {
+        font-variant-numeric: tabular-nums;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
 
       /* Pulse animation */
       @keyframes pulse-ring {
-        0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent); }
-        60% { box-shadow: 0 0 0 5px color-mix(in srgb, currentColor 0%, transparent); }
+        0%,
+        100% {
+          box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent);
+        }
+        60% {
+          box-shadow: 0 0 0 5px color-mix(in srgb, currentColor 0%, transparent);
+        }
       }
       @media (prefers-reduced-motion: reduce) {
-        *, *::before, *::after { animation: none !important; transition: none !important; }
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
       }
 
       /* ============ APP SHELL ============ */
@@ -151,7 +182,9 @@
         border-bottom: 1px solid var(--border-subtle);
         z-index: 20;
       }
-      .topbar-left, .topbar-center, .topbar-right {
+      .topbar-left,
+      .topbar-center,
+      .topbar-right {
         display: flex;
         align-items: center;
         gap: 10px;
@@ -169,12 +202,18 @@
         font-size: 14px;
         letter-spacing: -0.02em;
       }
-      .brand-btn:hover { background: var(--surface-hover); }
+      .brand-btn:hover {
+        background: var(--surface-hover);
+      }
       .brand-mark {
         width: 26px;
         height: 26px;
         border-radius: 7px;
-        background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 72%, #000));
+        background: linear-gradient(
+          135deg,
+          var(--accent),
+          color-mix(in srgb, var(--accent) 72%, #000)
+        );
         color: var(--accent-ink);
         display: grid;
         place-items: center;
@@ -208,7 +247,9 @@
         color: var(--status-attention);
         font-weight: 600;
       }
-      .live-pill.attention:hover { filter: brightness(1.06); }
+      .live-pill.attention:hover {
+        filter: brightness(1.06);
+      }
       .dot {
         width: 7px;
         height: 7px;
@@ -216,10 +257,20 @@
         flex-shrink: 0;
         background: var(--ink-muted);
       }
-      .dot.running { background: var(--status-running); color: var(--status-running); animation: pulse-ring 2.2s infinite; }
-      .dot.success { background: var(--status-success); }
-      .dot.attention { background: var(--status-attention); }
-      .dot.danger { background: var(--status-danger); }
+      .dot.running {
+        background: var(--status-running);
+        color: var(--status-running);
+        animation: pulse-ring 2.2s infinite;
+      }
+      .dot.success {
+        background: var(--status-success);
+      }
+      .dot.attention {
+        background: var(--status-attention);
+      }
+      .dot.danger {
+        background: var(--status-danger);
+      }
 
       .search-pill {
         display: inline-flex;
@@ -235,8 +286,15 @@
         font-size: 12.5px;
         transition: border-color 120ms ease;
       }
-      .search-pill:hover { border-color: var(--border-strong); color: var(--ink-secondary); }
-      .search-pill-left { display: inline-flex; align-items: center; gap: 7px; }
+      .search-pill:hover {
+        border-color: var(--border-strong);
+        color: var(--ink-secondary);
+      }
+      .search-pill-left {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
       kbd {
         font-family: var(--font-mono);
         font-size: 11px;
@@ -267,7 +325,9 @@
         align-items: center;
         gap: 5px;
       }
-      .layout-switch button:hover { color: var(--ink-primary); }
+      .layout-switch button:hover {
+        color: var(--ink-primary);
+      }
       .layout-switch button.active {
         background: var(--surface-2);
         color: var(--ink-primary);
@@ -285,8 +345,15 @@
         border-right: 1px solid var(--border-subtle);
         z-index: 15;
       }
-      .rail-spacer { flex: 1; }
-      .rail-divider { width: 26px; height: 1px; background: var(--border-subtle); margin: 4px 0; }
+      .rail-spacer {
+        flex: 1;
+      }
+      .rail-divider {
+        width: 26px;
+        height: 1px;
+        background: var(--border-subtle);
+        margin: 4px 0;
+      }
       .rail-btn {
         position: relative;
         width: 40px;
@@ -297,9 +364,15 @@
         color: var(--ink-secondary);
         display: grid;
         place-items: center;
-        transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+        transition:
+          background 120ms ease,
+          color 120ms ease,
+          border-color 120ms ease;
       }
-      .rail-btn:hover { background: var(--surface-hover); color: var(--ink-primary); }
+      .rail-btn:hover {
+        background: var(--surface-hover);
+        color: var(--ink-primary);
+      }
       .rail-btn.active {
         background: var(--accent-soft);
         color: var(--accent);
@@ -417,16 +490,28 @@
         gap: 20px;
       }
 
-      .msg { display: flex; flex-direction: column; gap: 6px; }
+      .msg {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
       .msg-head {
         display: flex;
         align-items: center;
         gap: 8px;
         font-size: 12px;
       }
-      .msg-head strong { font-weight: 600; color: var(--ink-primary); }
-      .msg-head time { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
-      .msg.user { align-items: flex-end; }
+      .msg-head strong {
+        font-weight: 600;
+        color: var(--ink-primary);
+      }
+      .msg-head time {
+        color: var(--ink-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .msg.user {
+        align-items: flex-end;
+      }
       .msg.user .msg-bubble {
         background: var(--surface-3);
         border: 1px solid var(--border-subtle);
@@ -441,8 +526,12 @@
         line-height: 1.65;
         color: var(--ink-primary);
       }
-      .msg.abra .msg-prose p { margin: 0 0 10px; }
-      .msg.abra .msg-prose p:last-child { margin-bottom: 0; }
+      .msg.abra .msg-prose p {
+        margin: 0 0 10px;
+      }
+      .msg.abra .msg-prose p:last-child {
+        margin-bottom: 0;
+      }
 
       /* Clean grouped tool pill inside Chat */
       .tool-group {
@@ -463,9 +552,18 @@
         cursor: pointer;
         user-select: none;
       }
-      .tool-group > summary::-webkit-details-marker { display: none; }
-      .tool-group > summary:hover { background: var(--surface-hover); color: var(--ink-primary); }
-      .tool-group-left { display: flex; align-items: center; gap: 8px; }
+      .tool-group > summary::-webkit-details-marker {
+        display: none;
+      }
+      .tool-group > summary:hover {
+        background: var(--surface-hover);
+        color: var(--ink-primary);
+      }
+      .tool-group-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
       .tool-group-body {
         border-top: 1px solid var(--border-subtle);
         padding: 8px 11px;
@@ -474,7 +572,11 @@
         font-size: 12px;
         color: var(--ink-secondary);
       }
-      .tool-line { display: flex; justify-content: space-between; gap: 10px; }
+      .tool-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+      }
 
       /* Clean Artifact Card inside Chat (opens in Canvas) */
       .artifact-card {
@@ -486,7 +588,10 @@
         border-radius: 11px;
         border: 1px solid var(--border-subtle);
         background: var(--surface-1);
-        transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+        transition:
+          border-color 120ms ease,
+          background 120ms ease,
+          transform 120ms ease;
         text-align: left;
         width: 100%;
       }
@@ -498,7 +603,12 @@
         border-color: var(--accent);
         background: var(--accent-soft);
       }
-      .artifact-card-left { display: flex; align-items: center; gap: 11px; min-width: 0; }
+      .artifact-card-left {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        min-width: 0;
+      }
       .artifact-icon {
         width: 34px;
         height: 34px;
@@ -510,7 +620,9 @@
         color: var(--accent);
         flex-shrink: 0;
       }
-      .artifact-meta { min-width: 0; }
+      .artifact-meta {
+        min-width: 0;
+      }
       .artifact-title {
         font-size: 13.5px;
         font-weight: 600;
@@ -562,8 +674,15 @@
         color: var(--status-attention);
         font-size: 12.5px;
       }
-      .dock-banner-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
-      .dock-banner strong { font-weight: 650; }
+      .dock-banner-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .dock-banner strong {
+        font-weight: 650;
+      }
       .dock-banner button {
         border: 1px solid var(--status-attention-border);
         background: var(--surface-2);
@@ -574,14 +693,18 @@
         font-weight: 600;
         white-space: nowrap;
       }
-      .dock-banner button:hover { border-color: var(--status-attention); }
+      .dock-banner button:hover {
+        border-color: var(--status-attention);
+      }
 
       .composer-box {
         border: 1px solid var(--border-strong);
         border-radius: 13px;
         background: var(--surface-1);
         box-shadow: var(--shadow-sm);
-        transition: border-color 120ms ease, box-shadow 120ms ease;
+        transition:
+          border-color 120ms ease,
+          box-shadow 120ms ease;
       }
       .composer-box:focus-within {
         border-color: var(--accent);
@@ -607,7 +730,10 @@
         padding: 2px 5px;
         border-radius: 4px;
       }
-      .composer-chip button:hover { color: var(--ink-primary); background: var(--surface-hover); }
+      .composer-chip button:hover {
+        color: var(--ink-primary);
+        background: var(--surface-hover);
+      }
       .composer-box textarea {
         width: 100%;
         border: 0;
@@ -634,7 +760,11 @@
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      .composer-actions { display: flex; align-items: center; gap: 6px; }
+      .composer-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
       .send-btn {
         width: 32px;
         height: 32px;
@@ -645,7 +775,9 @@
         display: grid;
         place-items: center;
       }
-      .send-btn:hover { background: var(--accent-hover); }
+      .send-btn:hover {
+        background: var(--accent-hover);
+      }
 
       /* RESIZE HANDLE */
       .resize-handle {
@@ -663,15 +795,20 @@
         left: 3px;
         width: 1px;
         background: var(--border-subtle);
-        transition: background 120ms ease, width 120ms ease;
+        transition:
+          background 120ms ease,
+          width 120ms ease;
       }
-      .resize-handle:hover::after, .resize-handle.dragging::after {
+      .resize-handle:hover::after,
+      .resize-handle.dragging::after {
         background: var(--accent);
         width: 3px;
         left: 2px;
       }
       .stage[data-mode="focus"] .resize-handle,
-      .stage[data-mode="expanded"] .resize-handle { display: none; }
+      .stage[data-mode="expanded"] .resize-handle {
+        display: none;
+      }
 
       /* ============ UNIFIED CANVAS PANE ============ */
       .canvas-pane {
@@ -682,7 +819,9 @@
         flex-direction: column;
         background: var(--surface-1);
       }
-      .stage[data-mode="focus"] .canvas-pane { display: none; }
+      .stage[data-mode="focus"] .canvas-pane {
+        display: none;
+      }
 
       .canvas-header {
         display: flex;
@@ -712,8 +851,14 @@
         align-items: center;
         gap: 4px;
       }
-      .crumb-btn:hover { background: var(--surface-hover); color: var(--ink-primary); }
-      .crumb-sep { color: var(--ink-muted); font-size: 12px; }
+      .crumb-btn:hover {
+        background: var(--surface-hover);
+        color: var(--ink-primary);
+      }
+      .crumb-sep {
+        color: var(--ink-muted);
+        font-size: 12px;
+      }
       .canvas-title {
         font-size: 14.5px;
         font-weight: 650;
@@ -754,7 +899,9 @@
         white-space: nowrap;
         margin-bottom: -1px;
       }
-      .tab-btn:hover { color: var(--ink-primary); }
+      .tab-btn:hover {
+        color: var(--ink-primary);
+      }
       .tab-btn.active {
         color: var(--accent);
         border-bottom-color: var(--accent);
@@ -833,20 +980,41 @@
         border: 1px solid var(--border-subtle);
         background: var(--surface-2);
         color: var(--ink-primary);
-        transition: background 110ms ease, border-color 110ms ease;
+        transition:
+          background 110ms ease,
+          border-color 110ms ease;
         white-space: nowrap;
       }
-      .btn:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+      .btn:hover {
+        background: var(--surface-hover);
+        border-color: var(--border-strong);
+      }
       .btn.primary {
         background: var(--accent);
         color: var(--accent-ink);
         border-color: transparent;
       }
-      .btn.primary:hover { background: var(--accent-hover); }
-      .btn.ghost { background: transparent; border-color: transparent; color: var(--ink-secondary); }
-      .btn.ghost:hover { background: var(--surface-hover); color: var(--ink-primary); }
-      .btn.icon { width: 30px; height: 30px; padding: 0; }
-      .btn.sm { padding: 4px 9px; font-size: 12px; }
+      .btn.primary:hover {
+        background: var(--accent-hover);
+      }
+      .btn.ghost {
+        background: transparent;
+        border-color: transparent;
+        color: var(--ink-secondary);
+      }
+      .btn.ghost:hover {
+        background: var(--surface-hover);
+        color: var(--ink-primary);
+      }
+      .btn.icon {
+        width: 30px;
+        height: 30px;
+        padding: 0;
+      }
+      .btn.sm {
+        padding: 4px 9px;
+        font-size: 12px;
+      }
 
       .badge {
         display: inline-flex;
@@ -861,10 +1029,26 @@
         color: var(--ink-secondary);
         white-space: nowrap;
       }
-      .badge.running { background: var(--status-running-bg); color: var(--status-running); border-color: var(--status-running-border); }
-      .badge.success { background: var(--status-success-bg); color: var(--status-success); border-color: var(--status-success-border); }
-      .badge.attention { background: var(--status-attention-bg); color: var(--status-attention); border-color: var(--status-attention-border); }
-      .badge.danger { background: var(--status-danger-bg); color: var(--status-danger); border-color: var(--status-danger-border); }
+      .badge.running {
+        background: var(--status-running-bg);
+        color: var(--status-running);
+        border-color: var(--status-running-border);
+      }
+      .badge.success {
+        background: var(--status-success-bg);
+        color: var(--status-success);
+        border-color: var(--status-success-border);
+      }
+      .badge.attention {
+        background: var(--status-attention-bg);
+        color: var(--status-attention);
+        border-color: var(--status-attention-border);
+      }
+      .badge.danger {
+        background: var(--status-danger-bg);
+        color: var(--status-danger);
+        border-color: var(--status-danger-border);
+      }
 
       /* SectionCard */
       .card {
@@ -874,8 +1058,12 @@
         box-shadow: var(--shadow-sm);
         overflow: hidden;
       }
-      .card.accent-left-attention { border-left: 3px solid var(--status-attention); }
-      .card.accent-left-danger { border-left: 3px solid var(--status-danger); }
+      .card.accent-left-attention {
+        border-left: 3px solid var(--status-attention);
+      }
+      .card.accent-left-danger {
+        border-left: 3px solid var(--status-danger);
+      }
       .card-head {
         display: flex;
         align-items: center;
@@ -891,7 +1079,11 @@
         align-items: center;
         gap: 8px;
       }
-      .card-body { padding: 14px 16px; display: grid; gap: 12px; }
+      .card-body {
+        padding: 14px 16px;
+        display: grid;
+        gap: 12px;
+      }
 
       /* Bento & Metric Wells */
       .bento-4 {
@@ -912,9 +1104,25 @@
         display: grid;
         gap: 4px;
       }
-      .metric-label { font-size: 11.5px; color: var(--ink-muted); font-weight: 550; text-transform: uppercase; letter-spacing: 0.04em; }
-      .metric-val { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 8px; }
-      .metric-sub { font-size: 12px; color: var(--ink-secondary); }
+      .metric-label {
+        font-size: 11.5px;
+        color: var(--ink-muted);
+        font-weight: 550;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .metric-val {
+        font-size: 18px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .metric-sub {
+        font-size: 12px;
+        color: var(--ink-secondary);
+      }
 
       /* Toolbar / Filters */
       .toolbar {
@@ -923,7 +1131,8 @@
         flex-wrap: wrap;
         gap: 8px;
       }
-      .input, .select {
+      .input,
+      .select {
         height: 34px;
         padding: 0 11px;
         border-radius: 8px;
@@ -932,8 +1141,14 @@
         color: var(--ink-primary);
         font-size: 13px;
       }
-      .input { flex: 1 1 200px; }
-      .input:focus, .select:focus { border-color: var(--accent); outline: none; }
+      .input {
+        flex: 1 1 200px;
+      }
+      .input:focus,
+      .select:focus {
+        border-color: var(--accent);
+        outline: none;
+      }
       .seg {
         display: inline-flex;
         padding: 3px;
@@ -977,14 +1192,45 @@
         gap: 14px;
         transition: background 100ms ease;
       }
-      .list-row:last-child { border-bottom: 0; }
-      .list-row:hover { background: var(--surface-3); }
-      .list-row-main { display: flex; gap: 11px; min-width: 0; flex: 1; }
-      .list-row-dot { margin-top: 6px; }
-      .list-row-text { min-width: 0; display: grid; gap: 3px; }
-      .list-row-title { font-size: 13.5px; font-weight: 600; color: var(--ink-primary); }
-      .list-row-sub { font-size: 12px; color: var(--ink-secondary); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-      .list-row-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+      .list-row:last-child {
+        border-bottom: 0;
+      }
+      .list-row:hover {
+        background: var(--surface-3);
+      }
+      .list-row-main {
+        display: flex;
+        gap: 11px;
+        min-width: 0;
+        flex: 1;
+      }
+      .list-row-dot {
+        margin-top: 6px;
+      }
+      .list-row-text {
+        min-width: 0;
+        display: grid;
+        gap: 3px;
+      }
+      .list-row-title {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--ink-primary);
+      }
+      .list-row-sub {
+        font-size: 12px;
+        color: var(--ink-secondary);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      .list-row-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+      }
 
       /* Styled Evidence Disclosure */
       .disclosure {
@@ -1001,7 +1247,10 @@
         cursor: pointer;
         user-select: none;
       }
-      .disclosure > summary:hover { color: var(--ink-primary); background: var(--surface-hover); }
+      .disclosure > summary:hover {
+        color: var(--ink-primary);
+        background: var(--surface-hover);
+      }
       .disclosure-body {
         padding: 11px 13px;
         border-top: 1px solid var(--border-subtle);
@@ -1035,12 +1284,34 @@
         line-height: 1.65;
         overflow-x: auto;
       }
-      .diff-col { border-right: 1px solid var(--border-subtle); min-width: 260px; }
-      .diff-col:last-child { border-right: 0; }
-      .diff-line { display: flex; padding: 1px 10px; gap: 10px; white-space: pre; }
-      .diff-ln { color: var(--ink-muted); width: 26px; text-align: right; user-select: none; flex-shrink: 0; }
-      .diff-line.add { background: var(--diff-add-bg); color: var(--diff-add-ink); }
-      .diff-line.del { background: var(--diff-del-bg); color: var(--diff-del-ink); }
+      .diff-col {
+        border-right: 1px solid var(--border-subtle);
+        min-width: 260px;
+      }
+      .diff-col:last-child {
+        border-right: 0;
+      }
+      .diff-line {
+        display: flex;
+        padding: 1px 10px;
+        gap: 10px;
+        white-space: pre;
+      }
+      .diff-ln {
+        color: var(--ink-muted);
+        width: 26px;
+        text-align: right;
+        user-select: none;
+        flex-shrink: 0;
+      }
+      .diff-line.add {
+        background: var(--diff-add-bg);
+        color: var(--diff-add-ink);
+      }
+      .diff-line.del {
+        background: var(--diff-del-bg);
+        color: var(--diff-del-ink);
+      }
 
       /* Kanban Board inside A2UI Surface */
       .kanban {
@@ -1079,14 +1350,34 @@
         gap: 5px;
         box-shadow: var(--shadow-sm);
       }
-      .kanban-card:hover { border-color: var(--accent); }
-      .kanban-card strong { font-size: 12.5px; font-weight: 600; }
-      .kanban-card span { font-size: 11.5px; color: var(--ink-secondary); }
+      .kanban-card:hover {
+        border-color: var(--accent);
+      }
+      .kanban-card strong {
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+      .kanban-card span {
+        font-size: 11.5px;
+        color: var(--ink-secondary);
+      }
 
       /* Progress bar */
-      .bar { height: 7px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
-      .bar > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
-      .bar.running > span { background: var(--status-running); }
+      .bar {
+        height: 7px;
+        border-radius: 999px;
+        background: var(--surface-3);
+        overflow: hidden;
+      }
+      .bar > span {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        background: var(--accent);
+      }
+      .bar.running > span {
+        background: var(--status-running);
+      }
 
       /* Modals (Settings & Command Palette) */
       .modal-backdrop {
@@ -1099,7 +1390,9 @@
         z-index: 60;
         padding: 20px;
       }
-      .modal-backdrop[hidden] { display: none; }
+      .modal-backdrop[hidden] {
+        display: none;
+      }
       .modal {
         width: min(760px, 100%);
         max-height: min(82dvh, 720px);
@@ -1147,11 +1440,18 @@
         background: transparent;
         text-align: left;
       }
-      .palette-item:hover { background: var(--surface-3); }
-      .palette-item-sub { font-size: 12px; color: var(--ink-muted); }
+      .palette-item:hover {
+        background: var(--surface-3);
+      }
+      .palette-item-sub {
+        font-size: 12px;
+        color: var(--ink-muted);
+      }
 
       /* Dropdown popover for Recent/Views */
-      .popover-wrap { position: relative; }
+      .popover-wrap {
+        position: relative;
+      }
       .popover {
         position: absolute;
         top: calc(100% + 6px);
@@ -1166,7 +1466,9 @@
         display: grid;
         gap: 2px;
       }
-      .popover[hidden] { display: none; }
+      .popover[hidden] {
+        display: none;
+      }
       .popover-label {
         font-size: 11px;
         font-weight: 650;
@@ -1186,7 +1488,9 @@
         justify-content: space-between;
         gap: 8px;
       }
-      .popover button:hover { background: var(--surface-3); }
+      .popover button:hover {
+        background: var(--surface-3);
+      }
 
       /* Toast */
       .toast {
@@ -1205,14 +1509,35 @@
         gap: 8px;
         z-index: 80;
       }
-      .toast[hidden] { display: none; }
+      .toast[hidden] {
+        display: none;
+      }
 
-      .muted { color: var(--ink-secondary); font-size: 12.5px; }
-      .tiny { color: var(--ink-muted); font-size: 11.5px; }
-      .prose-doc p { margin: 0 0 10px; line-height: 1.65; }
-      .prose-doc ul { margin: 0 0 10px; padding-left: 20px; }
-      .prose-doc li { margin-bottom: 4px; }
-      .row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      .muted {
+        color: var(--ink-secondary);
+        font-size: 12.5px;
+      }
+      .tiny {
+        color: var(--ink-muted);
+        font-size: 11.5px;
+      }
+      .prose-doc p {
+        margin: 0 0 10px;
+        line-height: 1.65;
+      }
+      .prose-doc ul {
+        margin: 0 0 10px;
+        padding-left: 20px;
+      }
+      .prose-doc li {
+        margin-bottom: 4px;
+      }
+      .row-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
     </style>
   </head>
   <body>
@@ -1224,7 +1549,10 @@
             <span class="brand-mark" aria-hidden="true">a</span>
             <span>AbraCode</span>
           </button>
-          <span class="live-pill" title="Connected to main Abra thread · Work continues when you close this page">
+          <span
+            class="live-pill"
+            title="Connected to main Abra thread · Work continues when you close this page"
+          >
             <span class="dot running"></span>
             <span>Abra · 2 workers active</span>
           </span>
@@ -1233,7 +1561,17 @@
         <div class="topbar-center">
           <button class="search-pill" id="openPaletteBtn" aria-label="Search workspace">
             <span class="search-pill-left">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
               <span>Search work, diffs, memory, commands…</span>
             </span>
             <kbd>⌘K</kbd>
@@ -1241,11 +1579,19 @@
         </div>
 
         <div class="topbar-right">
-          <button class="live-pill clickable tabular" id="capacityPill" title="Inspect fleet &amp; worker capacity">
+          <button
+            class="live-pill clickable tabular"
+            id="capacityPill"
+            title="Inspect fleet &amp; worker capacity"
+          >
             <span class="dot success"></span>
             <span>Workers 2/4 · Slots 3/6</span>
           </button>
-          <button class="live-pill attention" id="attentionPill" title="Open pending approvals and permissions">
+          <button
+            class="live-pill attention"
+            id="attentionPill"
+            title="Open pending approvals and permissions"
+          >
             <span class="dot attention"></span>
             <span id="attentionPillText">2 need attention</span>
           </button>
@@ -1259,29 +1605,133 @@
 
       <!-- ==================== SLIM LEFT RAIL ==================== -->
       <nav class="rail" aria-label="Canvas destinations">
-        <button class="rail-btn active" data-dest="work" data-tip="Work (Tasks, Sessions, Capacity)" aria-label="Work">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
+        <button
+          class="rail-btn active"
+          data-dest="work"
+          data-tip="Work (Tasks, Sessions, Capacity)"
+          aria-label="Work"
+        >
+          <svg
+            width="19"
+            height="19"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.9"
+          >
+            <rect x="3" y="3" width="7" height="7" rx="1.5" />
+            <rect x="14" y="3" width="7" height="7" rx="1.5" />
+            <rect x="14" y="14" width="7" height="7" rx="1.5" />
+            <rect x="3" y="14" width="7" height="7" rx="1.5" />
+          </svg>
           <span class="rail-dot" aria-hidden="true"></span>
         </button>
-        <button class="rail-btn" data-dest="github" data-tip="GitHub Inbox (PRs &amp; Issues)" aria-label="GitHub">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>
+        <button
+          class="rail-btn"
+          data-dest="github"
+          data-tip="GitHub Inbox (PRs &amp; Issues)"
+          aria-label="GitHub"
+        >
+          <svg
+            width="19"
+            height="19"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.9"
+          >
+            <circle cx="18" cy="18" r="3" />
+            <circle cx="6" cy="6" r="3" />
+            <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+            <line x1="6" y1="9" x2="6" y2="21" />
+          </svg>
         </button>
-        <button class="rail-btn" data-dest="thoughts" data-tip="Thoughts (Memos Notebook)" aria-label="Thoughts">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        <button
+          class="rail-btn"
+          data-dest="thoughts"
+          data-tip="Thoughts (Memos Notebook)"
+          aria-label="Thoughts"
+        >
+          <svg
+            width="19"
+            height="19"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.9"
+          >
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
         </button>
-        <button class="rail-btn" data-dest="attention" data-tip="Attention (Approvals &amp; Forms)" aria-label="Attention">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <button
+          class="rail-btn"
+          data-dest="attention"
+          data-tip="Attention (Approvals &amp; Forms)"
+          aria-label="Attention"
+        >
+          <svg
+            width="19"
+            height="19"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.9"
+          >
+            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+          </svg>
           <span class="rail-badge" id="railAttentionBadge">2</span>
         </button>
 
         <div class="rail-spacer"></div>
         <div class="rail-divider"></div>
 
-        <button class="rail-btn" id="themeToggleBtn" data-tip="Toggle Light / Dark Theme" aria-label="Toggle theme">
-          <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+        <button
+          class="rail-btn"
+          id="themeToggleBtn"
+          data-tip="Toggle Light / Dark Theme"
+          aria-label="Toggle theme"
+        >
+          <svg
+            id="themeIcon"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.9"
+          >
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2" />
+            <path d="M12 20v2" />
+            <path d="m4.93 4.93 1.41 1.41" />
+            <path d="m17.66 17.66 1.41 1.41" />
+            <path d="M2 12h2" />
+            <path d="M20 12h2" />
+            <path d="m6.34 17.66-1.41 1.41" />
+            <path d="m19.07 4.93-1.41 1.41" />
+          </svg>
         </button>
-        <button class="rail-btn" id="settingsBtn" data-tip="Settings (Agents, Repos, About)" aria-label="Settings">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        <button
+          class="rail-btn"
+          id="settingsBtn"
+          data-tip="Settings (Agents, Repos, About)"
+          aria-label="Settings"
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.9"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
+            />
+          </svg>
         </button>
       </nav>
 
@@ -1294,7 +1744,9 @@
               <div class="transcript" id="transcript">
                 <article class="msg user">
                   <div class="msg-head"><strong>You</strong><time>22:18</time></div>
-                  <div class="msg-bubble">Catch me up on active work across abra-code and show the board.</div>
+                  <div class="msg-bubble">
+                    Catch me up on active work across abra-code and show the board.
+                  </div>
                 </article>
 
                 <article class="msg abra">
@@ -1303,31 +1755,64 @@
                     <summary>
                       <span class="tool-group-left">
                         <span class="dot success"></span>
-                        <span>3 tools completed · Checked fleet, inspected ABRA-142, published board</span>
+                        <span
+                          >3 tools completed · Checked fleet, inspected ABRA-142, published
+                          board</span
+                        >
                       </span>
                       <span class="tiny">Details</span>
                     </summary>
                     <div class="tool-group-body">
-                      <div class="tool-line"><span><code>work_summary</code> · 4 active tasks across 2 repositories</span><span>42ms</span></div>
-                      <div class="tool-line"><span><code>verification_status</code> · ABRA-142 checks passed</span><span>18ms</span></div>
-                      <div class="tool-line"><span><code>abra_render_ui</code> · surface <code>work-board</code> rev 4</span><span>64ms</span></div>
+                      <div class="tool-line">
+                        <span><code>work_summary</code> · 4 active tasks across 2 repositories</span
+                        ><span>42ms</span>
+                      </div>
+                      <div class="tool-line">
+                        <span><code>verification_status</code> · ABRA-142 checks passed</span
+                        ><span>18ms</span>
+                      </div>
+                      <div class="tool-line">
+                        <span
+                          ><code>abra_render_ui</code> · surface <code>work-board</code> rev 4</span
+                        ><span>64ms</span>
+                      </div>
                     </div>
                   </details>
 
                   <div class="msg-prose">
-                    <p>Two workers are currently active and <strong>ABRA-142 (Unified Cockpit Shell)</strong> has finished planning and is waiting on your plan approval before Apply starts.</p>
-                    <p>I’ve staged the live work board in the Canvas, along with the updated plan and verification report for the token refactor.</p>
+                    <p>
+                      Two workers are currently active and
+                      <strong>ABRA-142 (Unified Cockpit Shell)</strong> has finished planning and is
+                      waiting on your plan approval before Apply starts.
+                    </p>
+                    <p>
+                      I’ve staged the live work board in the Canvas, along with the updated plan and
+                      verification report for the token refactor.
+                    </p>
                   </div>
 
                   <!-- Clean clickable Artifact Cards instead of bloated inline widgets -->
                   <button class="artifact-card" data-open-surface="work-board">
                     <div class="artifact-card-left">
                       <div class="artifact-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="4" height="15" rx="1"/></svg>
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        >
+                          <rect x="3" y="3" width="5" height="18" rx="1" />
+                          <rect x="10" y="3" width="5" height="12" rx="1" />
+                          <rect x="17" y="3" width="4" height="15" rx="1" />
+                        </svg>
                       </div>
                       <div class="artifact-meta">
                         <div class="artifact-title">Live Work Board · <code>work-board</code></div>
-                        <div class="artifact-sub">A2UI v5 Surface · Revision 4 · 4 tasks across 2 repos</div>
+                        <div class="artifact-sub">
+                          A2UI v5 Surface · Revision 4 · 4 tasks across 2 repos
+                        </div>
                       </div>
                     </div>
                     <span class="artifact-cta">Open in Canvas →</span>
@@ -1335,12 +1820,26 @@
 
                   <button class="artifact-card" data-open-task="ABRA-142" data-tab="Plan">
                     <div class="artifact-card-left">
-                      <div class="artifact-icon" style="color: var(--status-attention);">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                      <div class="artifact-icon" style="color: var(--status-attention)">
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        >
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <path d="M14 2v6h6" />
+                        </svg>
                       </div>
                       <div class="artifact-meta">
-                        <div class="artifact-title">ABRA-142 · Cockpit Shell &amp; Surface Tokens</div>
-                        <div class="artifact-sub">Plan ready · Awaiting plan approval checkpoint</div>
+                        <div class="artifact-title">
+                          ABRA-142 · Cockpit Shell &amp; Surface Tokens
+                        </div>
+                        <div class="artifact-sub">
+                          Plan ready · Awaiting plan approval checkpoint
+                        </div>
                       </div>
                     </div>
                     <span class="artifact-cta">Inspect Plan →</span>
@@ -1348,12 +1847,26 @@
 
                   <button class="artifact-card" data-open-task="ABRA-139" data-tab="Verification">
                     <div class="artifact-card-left">
-                      <div class="artifact-icon" style="color: var(--status-success);">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      <div class="artifact-icon" style="color: var(--status-success)">
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        >
+                          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                          <polyline points="22 4 12 14.01 9 11.01" />
+                        </svg>
                       </div>
                       <div class="artifact-meta">
-                        <div class="artifact-title">ABRA-139 · Verification &amp; Review Report</div>
-                        <div class="artifact-sub">Checks passed · Independent Review clean · Ready to merge</div>
+                        <div class="artifact-title">
+                          ABRA-139 · Verification &amp; Review Report
+                        </div>
+                        <div class="artifact-sub">
+                          Checks passed · Independent Review clean · Ready to merge
+                        </div>
                       </div>
                     </div>
                     <span class="artifact-cta">Inspect Verification →</span>
@@ -1376,14 +1889,30 @@
                 <form class="composer-box" id="composerForm">
                   <div class="composer-chip" id="composerChip" hidden>
                     <span id="composerChipText"></span>
-                    <button type="button" id="removeChipBtn" aria-label="Remove attachment">✕</button>
+                    <button type="button" id="removeChipBtn" aria-label="Remove attachment">
+                      ✕
+                    </button>
                   </div>
-                  <textarea id="composerInput" placeholder="Message Abra… (try /onboard-repo, /memory, /attach-thought)" rows="2"></textarea>
+                  <textarea
+                    id="composerInput"
+                    placeholder="Message Abra… (try /onboard-repo, /memory, /attach-thought)"
+                    rows="2"
+                  ></textarea>
                   <div class="composer-bar">
                     <span class="model-tag">anthropic/claude-sonnet-4 · supervisor</span>
                     <div class="composer-actions">
                       <button type="submit" class="send-btn" aria-label="Send message">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                        >
+                          <path d="m5 12 7-7 7 7" />
+                          <path d="M12 19V5" />
+                        </svg>
                       </button>
                     </div>
                   </div>
@@ -1394,7 +1923,13 @@
         </section>
 
         <!-- DRAGGABLE DIVIDER -->
-        <div class="resize-handle" id="resizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize chat and canvas"></div>
+        <div
+          class="resize-handle"
+          id="resizeHandle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize chat and canvas"
+        ></div>
 
         <!-- ==================== UNIFIED CANVAS ==================== -->
         <main class="canvas-pane" aria-label="Unified Canvas">
@@ -1403,22 +1938,70 @@
             <div class="canvas-header-actions">
               <div class="popover-wrap">
                 <button class="btn sm ghost" id="recentToggleBtn">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
                   <span>Recent &amp; Views</span>
                 </button>
                 <div class="popover" id="recentPopover" hidden>
                   <div class="popover-label">Recently inspected</div>
-                  <button data-open-task="ABRA-142" data-tab="Overview"><span>ABRA-142 · Cockpit Shell</span><span class="tiny">Plan</span></button>
-                  <button data-open-task="ABRA-139" data-tab="Diff"><span>ABRA-139 · Token Migration</span><span class="tiny">Diff</span></button>
+                  <button data-open-task="ABRA-142" data-tab="Overview">
+                    <span>ABRA-142 · Cockpit Shell</span><span class="tiny">Plan</span>
+                  </button>
+                  <button data-open-task="ABRA-139" data-tab="Diff">
+                    <span>ABRA-139 · Token Migration</span><span class="tiny">Diff</span>
+                  </button>
                   <div class="popover-label">Retained A2UI Views</div>
-                  <button data-open-surface="work-board"><span>work-board</span><span class="tiny">rev 4</span></button>
+                  <button data-open-surface="work-board">
+                    <span>work-board</span><span class="tiny">rev 4</span>
+                  </button>
                 </div>
               </div>
-              <button class="btn icon ghost" id="canvasExpandBtn" title="Expand / Split Canvas" aria-label="Expand canvas">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+              <button
+                class="btn icon ghost"
+                id="canvasExpandBtn"
+                title="Expand / Split Canvas"
+                aria-label="Expand canvas"
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polyline points="15 3 21 3 21 9" />
+                  <polyline points="9 21 3 21 3 15" />
+                  <line x1="21" y1="3" x2="14" y2="10" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
               </button>
-              <button class="btn icon ghost" id="canvasCloseBtn" title="Close Canvas (Focus Chat)" aria-label="Close canvas">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              <button
+                class="btn icon ghost"
+                id="canvasCloseBtn"
+                title="Close Canvas (Focus Chat)"
+                aria-label="Close canvas"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
               </button>
             </div>
           </header>
@@ -1442,11 +2025,17 @@
       <div class="modal" role="dialog" aria-label="Settings">
         <div class="canvas-header">
           <div class="canvas-title">Settings</div>
-          <button class="btn icon ghost" id="closeSettingsBtn" aria-label="Close settings">✕</button>
+          <button class="btn icon ghost" id="closeSettingsBtn" aria-label="Close settings">
+            ✕
+          </button>
         </div>
         <div class="tab-bar" id="settingsTabs">
-          <button class="tab-btn active" data-stab="agents">Agents <span class="tab-count">5</span></button>
-          <button class="tab-btn" data-stab="repos">Repositories <span class="tab-count">2</span></button>
+          <button class="tab-btn active" data-stab="agents">
+            Agents <span class="tab-count">5</span>
+          </button>
+          <button class="tab-btn" data-stab="repos">
+            Repositories <span class="tab-count">2</span>
+          </button>
           <button class="tab-btn" data-stab="general">General &amp; About</button>
         </div>
         <div class="canvas-body" id="settingsBody"></div>
@@ -1457,8 +2046,21 @@
     <div class="modal-backdrop" id="paletteModal" hidden>
       <div class="modal palette-modal" role="dialog" aria-label="Command palette">
         <div class="palette-input-row">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          <input id="paletteInput" placeholder="Search work:, diff:, github:, thought:, memory:, or > commands…" />
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            id="paletteInput"
+            placeholder="Search work:, diff:, github:, thought:, memory:, or > commands…"
+          />
           <kbd>ESC</kbd>
         </div>
         <div class="palette-results" id="paletteResults"></div>
@@ -1492,8 +2094,14 @@
           phase: "Awaiting plan approval",
           tone: "attention",
           native: "Idle · checkpoint bound",
-          outcomes: { approval: "Pending", delivery: "Not started", cleanup: "Not needed", closure: "Open" },
-          progress: "Explore worker produced 4-step surface token spec and unified Canvas migration plan.",
+          outcomes: {
+            approval: "Pending",
+            delivery: "Not started",
+            cleanup: "Not needed",
+            closure: "Open",
+          },
+          progress:
+            "Explore worker produced 4-step surface token spec and unified Canvas migration plan.",
           blockers: ["Waiting for human plan approval checkpoint before Apply admission."],
           hasApproval: true,
         },
@@ -1507,8 +2115,14 @@
           phase: "Ready for merge",
           tone: "success",
           native: "Review passed",
-          outcomes: { approval: "Approved", delivery: "Branch ready", cleanup: "Pending merge", closure: "Open" },
-          progress: "All 560 unit tests, Playwright coherence checks, and independent review passed.",
+          outcomes: {
+            approval: "Approved",
+            delivery: "Branch ready",
+            cleanup: "Pending merge",
+            closure: "Open",
+          },
+          progress:
+            "All 560 unit tests, Playwright coherence checks, and independent review passed.",
           blockers: [],
           hasApproval: false,
         },
@@ -1522,7 +2136,12 @@
           phase: "Implementing",
           tone: "running",
           native: "Apply worker running",
-          outcomes: { approval: "Auto-accepted", delivery: "In progress", cleanup: "Not needed", closure: "Open" },
+          outcomes: {
+            approval: "Auto-accepted",
+            delivery: "In progress",
+            cleanup: "Not needed",
+            closure: "Open",
+          },
           progress: "Replacing separate modal Sheet with unified Canvas route parameter.",
           blockers: [],
           hasApproval: false,
@@ -1537,8 +2156,14 @@
           phase: "Blocked on credential",
           tone: "danger",
           native: "Permission requested",
-          outcomes: { approval: "N/A", delivery: "Research report", cleanup: "Not needed", closure: "Open" },
-          progress: "Found race condition in backoff jitter; needs read permission on staging fixture.",
+          outcomes: {
+            approval: "N/A",
+            delivery: "Research report",
+            cleanup: "Not needed",
+            closure: "Open",
+          },
+          progress:
+            "Found race condition in backoff jitter; needs read permission on staging fixture.",
           blockers: ["Pending native permission request for fixture directory read."],
           hasApproval: false,
         },
@@ -1591,7 +2216,8 @@
           const active =
             state.mode !== "focus" &&
             (state.canvas.kind === dest ||
-              (dest === "work" && (state.canvas.kind === "task" || state.canvas.kind === "surface")) ||
+              (dest === "work" &&
+                (state.canvas.kind === "task" || state.canvas.kind === "surface")) ||
               (dest === "github" && state.canvas.kind === "github-item") ||
               (dest === "thoughts" && state.canvas.kind === "thought-item"));
           btn.classList.toggle("active", active);
@@ -1601,7 +2227,10 @@
       function updateStagedCards() {
         document.querySelectorAll(".artifact-card").forEach((card) => {
           const isSurface = card.dataset.openSurface && state.canvas.kind === "surface";
-          const isTask = card.dataset.openTask && state.canvas.kind === "task" && state.canvas.issue === card.dataset.openTask;
+          const isTask =
+            card.dataset.openTask &&
+            state.canvas.kind === "task" &&
+            state.canvas.issue === card.dataset.openTask;
           card.classList.toggle("staged", state.mode !== "focus" && Boolean(isSurface || isTask));
         });
       }
@@ -1804,7 +2433,11 @@
             )
             .join("");
 
-          if (t.hasApproval && !state.planApproved && ["Overview", "Plan", "Diff"].includes(c.tab)) {
+          if (
+            t.hasApproval &&
+            !state.planApproved &&
+            ["Overview", "Plan", "Diff"].includes(c.tab)
+          ) {
             approval.hidden = false;
             approval.innerHTML = `
               <div class="approval-bar-row">
@@ -2235,9 +2868,9 @@
 
       function renderSettings() {
         const body = $("settingsBody");
-        document.querySelectorAll("#settingsTabs .tab-btn").forEach((b) =>
-          b.classList.toggle("active", b.dataset.stab === state.settingsTab),
-        );
+        document
+          .querySelectorAll("#settingsTabs .tab-btn")
+          .forEach((b) => b.classList.toggle("active", b.dataset.stab === state.settingsTab));
         if (state.settingsTab === "agents") {
           body.innerHTML = `
             <div class="canvas-stack">
@@ -2291,19 +2924,53 @@
       }
 
       const paletteCommands = [
-        { label: "ABRA-142 · Adaptive Cockpit Shell", sub: "work · Awaiting plan approval", run: () => openCanvas({ kind: "task", issue: "ABRA-142", tab: "Plan" }) },
-        { label: "ABRA-139 · Semantic StatusBadge Diff", sub: "diff · 4 changed files", run: () => openCanvas({ kind: "task", issue: "ABRA-139", tab: "Diff" }) },
-        { label: "work-board (rev 4)", sub: "surface · Live A2UI Kanban board", run: () => openCanvas({ kind: "surface", id: "work-board" }) },
-        { label: "Open Attention Queue", sub: "attention · 2 pending items", run: () => openCanvas({ kind: "attention" }) },
-        { label: "PR #84 · AG-UI observer backoff", sub: "github · abra-code", run: () => openCanvas({ kind: "github-item", num: 84 }) },
-        { label: "Cockpit UX thought (#cockpit)", sub: "thought · Memos notebook", run: () => openCanvas({ kind: "thought-item", id: 1 }) },
-        { label: "Focus Chat (close Canvas)", sub: "command · Layout", run: () => setMode("focus") },
-        { label: "Toggle Light / Dark theme", sub: "command · Appearance", run: () => toggleTheme() },
+        {
+          label: "ABRA-142 · Adaptive Cockpit Shell",
+          sub: "work · Awaiting plan approval",
+          run: () => openCanvas({ kind: "task", issue: "ABRA-142", tab: "Plan" }),
+        },
+        {
+          label: "ABRA-139 · Semantic StatusBadge Diff",
+          sub: "diff · 4 changed files",
+          run: () => openCanvas({ kind: "task", issue: "ABRA-139", tab: "Diff" }),
+        },
+        {
+          label: "work-board (rev 4)",
+          sub: "surface · Live A2UI Kanban board",
+          run: () => openCanvas({ kind: "surface", id: "work-board" }),
+        },
+        {
+          label: "Open Attention Queue",
+          sub: "attention · 2 pending items",
+          run: () => openCanvas({ kind: "attention" }),
+        },
+        {
+          label: "PR #84 · AG-UI observer backoff",
+          sub: "github · abra-code",
+          run: () => openCanvas({ kind: "github-item", num: 84 }),
+        },
+        {
+          label: "Cockpit UX thought (#cockpit)",
+          sub: "thought · Memos notebook",
+          run: () => openCanvas({ kind: "thought-item", id: 1 }),
+        },
+        {
+          label: "Focus Chat (close Canvas)",
+          sub: "command · Layout",
+          run: () => setMode("focus"),
+        },
+        {
+          label: "Toggle Light / Dark theme",
+          sub: "command · Appearance",
+          run: () => toggleTheme(),
+        },
       ];
 
       function renderPalette(q = "") {
         const needle = q.trim().toLowerCase();
-        const items = paletteCommands.filter((c) => !needle || (c.label + " " + c.sub).toLowerCase().includes(needle));
+        const items = paletteCommands.filter(
+          (c) => !needle || (c.label + " " + c.sub).toLowerCase().includes(needle),
+        );
         $("paletteResults").innerHTML = items.length
           ? items
               .map(
@@ -2315,7 +2982,8 @@
       }
 
       function toggleTheme(force) {
-        const next = force ?? (document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+        const next =
+          force ?? (document.documentElement.dataset.theme === "dark" ? "light" : "dark");
         document.documentElement.dataset.theme = next;
         if (!$("settingsModal").hidden) renderSettings();
         showToast(`Switched to ${next === "dark" ? "Dark" : "Light"} theme`);
@@ -2327,14 +2995,23 @@
       $("modeSplit").onclick = () => setMode("split");
       $("modeExpanded").onclick = () => setMode("expanded");
       $("canvasCloseBtn").onclick = () => setMode("focus");
-      $("canvasExpandBtn").onclick = () => setMode(state.mode === "expanded" ? "split" : "expanded");
-      $("capacityPill").onclick = () => { state.workTab = "capacity"; openCanvas({ kind: "work" }); };
+      $("canvasExpandBtn").onclick = () =>
+        setMode(state.mode === "expanded" ? "split" : "expanded");
+      $("capacityPill").onclick = () => {
+        state.workTab = "capacity";
+        openCanvas({ kind: "work" });
+      };
       $("attentionPill").onclick = () => openCanvas({ kind: "attention" });
       $("dockReviewBtn").onclick = () => openCanvas({ kind: "attention" });
       $("themeToggleBtn").onclick = () => toggleTheme();
-      $("settingsBtn").onclick = () => { $("settingsModal").hidden = false; renderSettings(); };
+      $("settingsBtn").onclick = () => {
+        $("settingsModal").hidden = false;
+        renderSettings();
+      };
       $("closeSettingsBtn").onclick = () => ($("settingsModal").hidden = true);
-      $("settingsModal").onclick = (e) => { if (e.target === $("settingsModal")) $("settingsModal").hidden = true; };
+      $("settingsModal").onclick = (e) => {
+        if (e.target === $("settingsModal")) $("settingsModal").hidden = true;
+      };
 
       $("openPaletteBtn").onclick = () => {
         $("paletteModal").hidden = false;
@@ -2342,7 +3019,9 @@
         renderPalette("");
         $("paletteInput").focus();
       };
-      $("paletteModal").onclick = (e) => { if (e.target === $("paletteModal")) $("paletteModal").hidden = true; };
+      $("paletteModal").onclick = (e) => {
+        if (e.target === $("paletteModal")) $("paletteModal").hidden = true;
+      };
       $("paletteInput").oninput = (e) => renderPalette(e.target.value);
       $("paletteResults").onclick = (e) => {
         const btn = e.target.closest("[data-pidx]");
@@ -2370,29 +3049,77 @@
 
       document.addEventListener("click", (e) => {
         const t = e.target.closest("[data-open-task]");
-        if (t) { openCanvas({ kind: "task", issue: t.dataset.openTask, tab: t.dataset.tab || "Overview" }); return; }
+        if (t) {
+          openCanvas({ kind: "task", issue: t.dataset.openTask, tab: t.dataset.tab || "Overview" });
+          return;
+        }
         const s = e.target.closest("[data-open-surface]");
-        if (s) { openCanvas({ kind: "surface", id: s.dataset.openSurface }); return; }
+        if (s) {
+          openCanvas({ kind: "surface", id: s.dataset.openSurface });
+          return;
+        }
         const wt = e.target.closest("[data-work-tab]");
-        if (wt) { state.workTab = wt.dataset.workTab; renderCanvas(); return; }
+        if (wt) {
+          state.workTab = wt.dataset.workTab;
+          renderCanvas();
+          return;
+        }
         const tt = e.target.closest("[data-task-tab]");
-        if (tt) { state.canvas.tab = tt.dataset.taskTab; renderCanvas(); return; }
+        if (tt) {
+          state.canvas.tab = tt.dataset.taskTab;
+          renderCanvas();
+          return;
+        }
         const act = e.target.closest("[data-act]");
-        if (act) { state.activityTab = act.dataset.act; renderCanvas(); return; }
-        if (e.target.closest("[data-nav-work]")) { openCanvas({ kind: "work" }); return; }
+        if (act) {
+          state.activityTab = act.dataset.act;
+          renderCanvas();
+          return;
+        }
+        if (e.target.closest("[data-nav-work]")) {
+          openCanvas({ kind: "work" });
+          return;
+        }
         const dn = e.target.closest("[data-dest-nav]");
-        if (dn) { openCanvas({ kind: dn.dataset.destNav }); return; }
+        if (dn) {
+          openCanvas({ kind: dn.dataset.destNav });
+          return;
+        }
         const gh = e.target.closest("[data-open-gh]");
-        if (gh) { openCanvas({ kind: "github-item", num: Number(gh.dataset.openGh) }); return; }
+        if (gh) {
+          openCanvas({ kind: "github-item", num: Number(gh.dataset.openGh) });
+          return;
+        }
         const th = e.target.closest("[data-open-thought]");
-        if (th) { openCanvas({ kind: "thought-item", id: Number(th.dataset.openThought) }); return; }
+        if (th) {
+          openCanvas({ kind: "thought-item", id: Number(th.dataset.openThought) });
+          return;
+        }
         const ask = e.target.closest("[data-ask]");
-        if (ask) { populateComposer(ask.dataset.ask, ask.dataset.chip); return; }
+        if (ask) {
+          populateComposer(ask.dataset.ask, ask.dataset.chip);
+          return;
+        }
         const stab = e.target.closest("[data-stab]");
-        if (stab) { state.settingsTab = stab.dataset.stab; renderSettings(); return; }
-        if (e.target.id === "toggleInlineApprovalBtn") { state.approvalExpanded = !state.approvalExpanded; renderCanvas(); return; }
-        if (e.target.id === "cancelInlineApprovalBtn") { state.approvalExpanded = false; renderCanvas(); return; }
-        if (e.target.id === "submitInlineApprovalBtn" || e.target.id === "approveFromAttentionBtn") {
+        if (stab) {
+          state.settingsTab = stab.dataset.stab;
+          renderSettings();
+          return;
+        }
+        if (e.target.id === "toggleInlineApprovalBtn") {
+          state.approvalExpanded = !state.approvalExpanded;
+          renderCanvas();
+          return;
+        }
+        if (e.target.id === "cancelInlineApprovalBtn") {
+          state.approvalExpanded = false;
+          renderCanvas();
+          return;
+        }
+        if (
+          e.target.id === "submitInlineApprovalBtn" ||
+          e.target.id === "approveFromAttentionBtn"
+        ) {
           state.planApproved = true;
           state.approvalExpanded = false;
           tasks["ABRA-142"].phase = "Implementing";

@@ -20,7 +20,7 @@ import {
   CardDescription,
   CardContent,
 } from "@abracode/presentation/ui/card";
-import { Badge } from "@abracode/presentation/ui/badge";
+import { StatusBadge, statusTone } from "@abracode/presentation/cockpit";
 import {
   CommunicationCard,
   DecisionCard,
@@ -141,7 +141,8 @@ function WaitCard({ wait }: { wait: typeof DeclaredWaitSchema.Type }) {
     <Card size="sm" data-presentation="wait">
       <CardHeader>
         <CardTitle>
-          {words(wait.kind)} wait <Badge variant="secondary">{words(wait.status)}</Badge>
+          {words(wait.kind)} wait{" "}
+          <StatusBadge tone={statusTone(wait.status)}>{words(wait.status)}</StatusBadge>
         </CardTitle>
         <CardDescription>Owner: {wait.owner}</CardDescription>
       </CardHeader>

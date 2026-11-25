@@ -1,6 +1,7 @@
 import { WorkCapacity } from "./work-capacity.tsx";
 import { WorkspaceApi } from "./data.ts";
 import type { Inspect } from "@abracode/presentation/cards";
+import { SectionCard, StatusBadge, statusTone } from "@abracode/presentation/cockpit";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
@@ -16,13 +17,11 @@ import { NativeSelect } from "@abracode/presentation/ui/native-select";
 
 export function WorkFinder({
   shown,
-
   workspace,
   open,
   inspect,
 }: {
   shown: boolean;
-
   workspace: WorkspaceSnapshot;
   inspect: Inspect;
   open: (id: string, tab?: "Reports") => void;
@@ -52,38 +51,45 @@ export function WorkFinder({
         to: "/work",
         replace: true,
         search: { collection: { ...collection, work: { ...collection?.work, search, offset: 0 } } },
-      }).then(() => setDraft((current) => (current?.value === search ? undefined : current)));
+      });
     }, 200);
     return () => clearTimeout(timer);
   }, [search, settled, shown, collection, navigate]);
+
   const content = (
     <>
-      <div className="sidebar-heading">
-        <h2>Work</h2>
-      </div>
-      <nav aria-label="Work sections" className="work-sections">
-        {(["tasks", "sessions", "capacity", "recent"] as const).map((key) => (
-          <Link
-            key={key}
-            to="/work"
-            search={{
-              collection: { ...collection, section: key, work: { ...collection?.work, offset: 0 } },
-            }}
-            aria-current={section === key ? "page" : undefined}
-          >
-            {
+      <div className="hub-header">
+        <div>
+          <h2>Work</h2>
+        </div>
+        <nav aria-label="Work sections" className="work-sections">
+          {(["tasks", "sessions", "capacity", "recent"] as const).map((key) => (
+            <Link
+              key={key}
+              to="/work"
+              search={{
+                collection: {
+                  ...collection,
+                  section: key,
+                  work: { ...collection?.work, offset: 0 },
+                },
+              }}
+              aria-current={section === key ? "page" : undefined}
+            >
               {
-                tasks: "Tasks",
-                sessions: "Sessions",
-                capacity: "Capacity",
-                recent: "Recently inspected",
-              }[key]
-            }
-          </Link>
-        ))}
-      </nav>
+                {
+                  tasks: "Tasks",
+                  sessions: "Sessions",
+                  capacity: "Capacity",
+                  recent: "Recently inspected",
+                }[key]
+              }
+            </Link>
+          ))}
+        </nav>
+      </div>
       {section !== "recent" && (
-        <>
+        <div className="hub-toolbar">
           <Input
             className="search"
             aria-label="Search work"
@@ -110,7 +116,24 @@ export function WorkFinder({
               </option>
             ))}
           </NativeSelect>
-        </>
+          {section === "tasks" && (
+            <fieldset className="work-filters" aria-label="Task state">
+              {(["active", "closed", "all"] as const).map((next) => (
+                <Button
+                  key={next}
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={state === next}
+                  onClick={() => {
+                    update({ state: next });
+                  }}
+                >
+                  {next === "active" ? "Active" : next === "closed" ? "Closed" : "All"}
+                </Button>
+              ))}
+            </fieldset>
+          )}
+        </div>
       )}
       {section === "capacity" && (
         <RequestState query={queries.find({ ...query, limit: 1 })}>
@@ -125,90 +148,115 @@ export function WorkFinder({
           })}
         >
           {(page) => (
-            <>
-              <Link to="/" search={{}}>
-                Abra · Main conversation
-              </Link>
-              <p>
+            <SectionCard
+              title="Retained worker sessions"
+              actions={
+                <Link to="/" search={{}} className="hub-inline-link">
+                  Abra · Main conversation
+                </Link>
+              }
+            >
+              <p className="muted">
                 {page.total} retained worker sessions. Open a worker to check its native history.
               </p>
-              {page.entries.map((row) => (
-                <Button
-                  key={row.issue_id + row.session_id}
-                  onClick={() =>
-                    inspect({
-                      action: "open_session",
-                      issue_id: row.issue_id,
-                      session_id: row.session_id,
-                    })
-                  }
-                >
-                  {row.role} · {row.session_id} · {row.title} · {row.association} ·{" "}
-                  {row.availability}
-                </Button>
-              ))}
-              {offset > 0 && (
-                <Button onClick={() => update({ offset: Math.max(0, offset - 30) })}>
-                  Previous sessions
-                </Button>
+              <div className="list-group">
+                {page.entries.map((row) => (
+                  <Button
+                    key={row.issue_id + row.session_id}
+                    variant="ghost"
+                    className="list-row h-auto whitespace-normal"
+                    onClick={() =>
+                      inspect({
+                        action: "open_session",
+                        issue_id: row.issue_id,
+                        session_id: row.session_id,
+                      })
+                    }
+                  >
+                    <div className="list-row-main">
+                      <span className="list-row-title">
+                        {row.role} · {row.title}
+                      </span>
+                      <span className="list-row-sub">
+                        <code>{row.session_id}</code> · {row.association}
+                      </span>
+                    </div>
+                    <StatusBadge tone={statusTone(row.availability)}>
+                      {row.availability}
+                    </StatusBadge>
+                  </Button>
+                ))}
+                {!page.entries.length && <p className="empty-note">No matching worker sessions.</p>}
+              </div>
+              {(offset > 0 || page.next_offset !== undefined) && (
+                <div className="finder-pagination">
+                  {offset > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => update({ offset: Math.max(0, offset - 30) })}
+                    >
+                      Previous sessions
+                    </Button>
+                  )}
+                  {page.next_offset !== undefined && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => update({ offset: page.next_offset })}
+                    >
+                      Next sessions
+                    </Button>
+                  )}
+                </div>
               )}
-              {page.next_offset !== undefined && (
-                <Button onClick={() => update({ offset: page.next_offset })}>Next sessions</Button>
-              )}
-            </>
+            </SectionCard>
           )}
         </RequestState>
       )}
       {section === "tasks" && (
-        <>
-          <h3>Local work</h3>
-          <div className="work-filters">
-            {(["active", "closed", "all"] as const).map((next) => (
-              <Button
-                key={next}
-                variant="ghost"
-                aria-pressed={state === next}
-                onClick={() => {
-                  update({ state: next });
-                }}
-              >
-                {next === "active" ? "Active" : next === "closed" ? "Closed" : "All"}
-              </Button>
-            ))}
-          </div>
-          {
-            <RequestState query={queries.find(query)}>
-              {(page) => (
-                <>
-                  <p className="muted">
-                    {page.total} matching task{page.total === 1 ? "" : "s"}
-                    {state === "active" && " · Active work includes queued and waiting tasks."}
-                  </p>
-                  <nav className="work-list" aria-label="Work results">
-                    {page.entries.map((work) => (
-                      <div key={work.issue_id}>
-                        <Button
-                          variant="ghost"
-                          className="work-nav h-auto flex-col items-stretch whitespace-normal"
-                          onClick={() => open(work.issue_id)}
-                        >
-                          <div>
-                            <span className={`status-dot ${work.issue_status}`} />
+        <RequestState query={queries.find(query)}>
+          {(page) => (
+            <>
+              <p className="muted">
+                {page.total} matching task{page.total === 1 ? "" : "s"}
+                {state === "active" && " · Active work includes queued and waiting tasks."}
+              </p>
+              <nav className="work-list list-group" aria-label="Work results">
+                {page.entries.map((work) => {
+                  const statusLabel = work.phase
+                    ? phaseLabel(work.phase)
+                    : work.issue_status === "closed"
+                      ? "Closed"
+                      : "Retained work";
+                  return (
+                    <div key={work.issue_id} className="work-list-item">
+                      <Button
+                        variant="ghost"
+                        className="work-nav list-row h-auto whitespace-normal"
+                        onClick={() => open(work.issue_id)}
+                      >
+                        <div className="work-nav-left">
+                          <span className={`status-dot ${work.issue_status}`} />
+                          <div className="work-nav-text">
                             <span className="work-title">{work.title}</span>
+                            <small>
+                              <code>{work.issue_id}</code>
+                              {work.repository_id && ` · ${work.repository_id}`}
+                              {work.capacity_wait && " · Waiting for capacity"}
+                              {work.blockers.length > 0 && ` · ${work.blockers.join("; ")}`}
+                              {work.supervision &&
+                                ` · Native ${work.supervision.native_activity.replaceAll("_", " ")}`}
+                            </small>
                           </div>
-                          <small>
-                            {work.phase
-                              ? phaseLabel(work.phase)
-                              : work.issue_status === "closed"
-                                ? "Closed"
-                                : "Retained work"}
-                            {work.capacity_wait && " · Waiting for capacity"}
-                            {work.blockers.length > 0 && ` · ${work.blockers.join("; ")}`}
-                            {work.supervision &&
-                              ` · Native ${work.supervision.native_activity.replaceAll("_", " ")}`}
-                          </small>
-                        </Button>
-                        {work.capacity_wait && (
+                        </div>
+                        <div className="work-nav-badges">
+                          <StatusBadge tone={statusTone(statusLabel)}>{statusLabel}</StatusBadge>
+                          <StatusBadge tone="neutral">P{work.priority}</StatusBadge>
+                        </div>
+                      </Button>
+                      {work.capacity_wait && (
+                        <div className="work-row-aux">
                           <Link
                             to="/work"
                             search={{
@@ -220,36 +268,38 @@ export function WorkFinder({
                           >
                             Inspect capacity
                           </Link>
-                        )}
-                      </div>
-                    ))}
-                  </nav>
-                  {!page.entries.length && <p className="empty-note">No matching work.</p>}
-                  <div className="finder-pagination">
-                    <Button
-                      variant="outline"
-                      disabled={offset === 0}
-                      onClick={() => update({ offset: Math.max(0, offset - 50) })}
-                    >
-                      Previous
-                    </Button>
-                    <span className="muted">
-                      {page.entries.length ? offset + 1 : 0}–{offset + page.entries.length} of{" "}
-                      {page.total}
-                    </span>
-                    <Button
-                      variant="outline"
-                      disabled={page.next_offset === undefined}
-                      onClick={() => update({ offset: page.next_offset })}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </>
-              )}
-            </RequestState>
-          }
-        </>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {!page.entries.length && <p className="empty-note">No matching work.</p>}
+              </nav>
+              <div className="finder-pagination">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={offset === 0}
+                  onClick={() => update({ offset: Math.max(0, offset - 50) })}
+                >
+                  Previous
+                </Button>
+                <span className="muted tabular">
+                  {page.entries.length ? offset + 1 : 0}–{offset + page.entries.length} of{" "}
+                  {page.total}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page.next_offset === undefined}
+                  onClick={() => update({ offset: page.next_offset })}
+                >
+                  Next
+                </Button>
+              </div>
+            </>
+          )}
+        </RequestState>
       )}
     </>
   );

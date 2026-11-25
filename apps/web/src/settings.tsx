@@ -2,6 +2,8 @@ import { RunCommand, composerCommands } from "./workspace-commands.ts";
 import { useTheme } from "./theme.tsx";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
 import { Button } from "@abracode/presentation/ui/button";
+import { SectionCard, StatusBadge } from "@abracode/presentation/cockpit";
+import { ArrowLeft, ArrowUpRight } from "@abracode/presentation/icons";
 import { SearchTrigger } from "./search-trigger.tsx";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useState, useLayoutEffect, useContext } from "react";
@@ -46,7 +48,9 @@ function AgentDetails({ agent }: { agent: AgentDefinitionView }) {
         <span className="agent-summary">
           <span className="agent-title">
             <strong>{agent.id}</strong>
-            <span className="agent-mode">{agent.mode}</span>
+            <StatusBadge tone={agent.mode === "primary" ? "success" : "neutral"}>
+              {agent.mode}
+            </StatusBadge>
           </span>
           <span className="muted">{agent.description}</span>
         </span>
@@ -181,35 +185,38 @@ export function Settings() {
   return (
     <div className="settings-page">
       <header className="topbar">
-        <div className="brand">
-          <Link to="/" className="settings-link brand-home" aria-label="AbraCode main chat">
+        <div className="topbar-left">
+          <Link to="/" className="brand-home-link" aria-label="AbraCode main chat">
             <span className="brand-mark" aria-hidden="true">
               a
             </span>
-            <strong>AbraCode</strong>
+            <strong className="brand-name">AbraCode</strong>
           </Link>
-          <span className="topbar-divider" />
+          <span className="topbar-sep" aria-hidden="true" />
           <span className="muted">Settings</span>
         </div>
-        <nav aria-label="Main navigation">
+        <div className="topbar-center">
           <SearchTrigger />
-          <Link to="/" className="settings-link">
-            Back to workspace
+        </div>
+        <nav aria-label="Main navigation" className="topbar-end">
+          <Link to="/" className="settings-back-link">
+            <ArrowLeft aria-hidden="true" />
+            <span>Back to workspace</span>
           </Link>
         </nav>
       </header>
       <div className="settings-layout">
         <nav className="settings-nav" aria-label="Settings">
-          <Link className="settings-link" to="/settings" activeOptions={{ exact: true }}>
+          <Link className="settings-tab" to="/settings" activeOptions={{ exact: true }}>
             Agents
           </Link>
-          <Link className="settings-link" to="/settings/repositories">
+          <Link className="settings-tab" to="/settings/repositories">
             Repositories
           </Link>
-          <Link className="settings-link" to="/settings/appearance">
+          <Link className="settings-tab" to="/settings/appearance">
             Appearance
           </Link>
-          <Link className="settings-link" to="/settings/about">
+          <Link className="settings-tab" to="/settings/about">
             About
           </Link>
         </nav>
@@ -223,15 +230,17 @@ export function Settings() {
 
 export function AgentSettings() {
   return (
-    <>
+    <div className="settings-stack">
       <div className="settings-heading">
-        <h1>Agents</h1>
-        <span className="agent-mode">Read only</span>
+        <div>
+          <h1>Agents</h1>
+          <p className="muted settings-intro">
+            Agent definitions loaded by this installation. Expand an agent to inspect its
+            configuration. Changes are made in code.
+          </p>
+        </div>
+        <StatusBadge tone="neutral">Read only</StatusBadge>
       </div>
-      <p className="muted settings-intro">
-        Agent definitions loaded by this installation. Expand an agent to inspect its configuration.
-        Changes are made in code.
-      </p>
       <RequestState query={agentsQuery}>
         {({ agents }) =>
           agents.length ? (
@@ -250,11 +259,13 @@ export function AgentSettings() {
               </p>
             </>
           ) : (
-            <p className="settings-empty">No agents are defined in this installation.</p>
+            <SectionCard>
+              <p className="settings-empty">No agents are defined in this installation.</p>
+            </SectionCard>
           )
         }
       </RequestState>
-    </>
+    </div>
   );
 }
 
@@ -262,12 +273,16 @@ export function RepositorySettings() {
   const hash = useRouterState({ select: (state) => state.location.hash });
   const run = useContext(RunCommand);
   return (
-    <>
+    <div className="settings-stack">
       <div className="settings-heading">
         <h1>Repositories</h1>
-        <span className="agent-mode">Read only</span>
+        <div className="row-actions">
+          <StatusBadge tone="neutral">Read only</StatusBadge>
+          <Button size="sm" onClick={() => run(composerCommands[0])}>
+            Onboard repository
+          </Button>
+        </div>
       </div>
-      <Button onClick={() => run(composerCommands[0])}>Onboard repository</Button>
       <RequestState query={repositoriesQuery}>
         {(repositories) =>
           repositories.length ? (
@@ -299,42 +314,63 @@ export function RepositorySettings() {
               </ul>
             </>
           ) : (
-            <p className="settings-empty">No repositories have been onboarded yet.</p>
+            <SectionCard>
+              <p className="settings-empty">No repositories have been onboarded yet.</p>
+            </SectionCard>
           )
         }
       </RequestState>
-    </>
+    </div>
   );
 }
 
 export function AppearanceSettings() {
   const { theme, setTheme } = useTheme();
   return (
-    <>
+    <div className="settings-stack">
       <h1>Appearance</h1>
-      <NativeSelect
-        aria-label="Color theme"
-        value={theme}
-        onChange={(e) =>
-          setTheme(
-            e.target.value === "dark" || e.target.value === "light" ? e.target.value : "system",
-          )
-        }
-      >
-        <option value="system">System theme</option>
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-      </NativeSelect>
-    </>
+      <SectionCard title="Color theme">
+        <p className="muted">
+          Choose Light, Dark, or follow your operating system. You can also toggle theme directly
+          from the bottom of the desktop rail.
+        </p>
+        <div className="appearance-control">
+          <NativeSelect
+            aria-label="Color theme"
+            value={theme}
+            onChange={(e) =>
+              setTheme(
+                e.target.value === "dark" || e.target.value === "light" ? e.target.value : "system",
+              )
+            }
+          >
+            <option value="system">System theme</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </NativeSelect>
+        </div>
+      </SectionCard>
+    </div>
   );
 }
+
 export function AboutSettings() {
   return (
-    <>
+    <div className="settings-stack">
       <h1>About AbraCode</h1>
-      <a href="/THIRD_PARTY_NOTICES.txt" target="_blank" rel="noreferrer">
-        Third-party licenses
-      </a>
-    </>
+      <SectionCard title="Installation &amp; licenses">
+        <p className="muted">
+          AbraCode is a local coding orchestrator powered by OpenCode and OpenSpec.
+        </p>
+        <a
+          href="/THIRD_PARTY_NOTICES.txt"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 text-sm font-medium underline underline-offset-4"
+        >
+          Third-party licenses <ArrowUpRight aria-hidden="true" />
+        </a>
+      </SectionCard>
+    </div>
   );
 }

@@ -17,6 +17,7 @@ import { SessionId } from "@abracode/contracts/identities";
 import { useCanvasRead } from "../canvas-refresh.tsx";
 import { OpenSurface, type WorkspaceSearch } from "../navigation.ts";
 import { Button } from "@abracode/presentation/ui/button";
+import { LayoutGrid, ChevronRight } from "@abracode/presentation/icons";
 import { deferred } from "../deferred.tsx";
 
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
@@ -122,30 +123,64 @@ function SurfacePreview({ record, inspect }: { record: SurfaceRecord; inspect: I
   const heading = components.find(
     (c) => c.component === "Text" && typeof c.text === "string",
   )?.text;
+  const actionLabel = components.some((c) => c.component === "WorkTable")
+    ? "Open comparison"
+    : components.some((c) => c.component === "Kanban")
+      ? "Open board"
+      : "Open view";
   return (
     <div className="surface-preview">
       {rich ? (
-        <p>{typeof heading === "string" ? heading.slice(0, 180) : "Generated work view"}</p>
+        <div className="artifact-card-row">
+          <div className="artifact-card-left">
+            <span className="artifact-icon" aria-hidden="true">
+              <LayoutGrid />
+            </span>
+            <div className="artifact-meta">
+              <strong className="artifact-title">
+                {typeof heading === "string" ? heading.slice(0, 180) : "Generated work view"}
+              </strong>
+              <span className="artifact-sub">
+                <code>{surfaceId}</code> · revision {record.revision}
+              </span>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              open({
+                session_id: SessionId.make(record.session_id),
+                surface_id: surfaceId,
+                revision: record.revision,
+              })
+            }
+          >
+            {actionLabel}
+            <ChevronRight aria-hidden="true" />
+          </Button>
+        </div>
       ) : (
-        <BoundSurface record={record} inspect={inspect} />
+        <>
+          <BoundSurface record={record} inspect={inspect} />
+          <div className="button-row">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                open({
+                  session_id: SessionId.make(record.session_id),
+                  surface_id: surfaceId,
+                  revision: record.revision,
+                })
+              }
+            >
+              {actionLabel}
+              <ChevronRight aria-hidden="true" />
+            </Button>
+          </div>
+        </>
       )}
-      <Button
-        variant="outline"
-        onClick={() =>
-          open({
-            session_id: SessionId.make(record.session_id),
-            surface_id: surfaceId,
-            revision: record.revision,
-          })
-        }
-      >
-        Open{" "}
-        {components.some((c) => c.component === "WorkTable")
-          ? "comparison"
-          : components.some((c) => c.component === "Kanban")
-            ? "board"
-            : "view"}
-      </Button>
     </div>
   );
 }

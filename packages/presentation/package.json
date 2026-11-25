@@ -30,6 +30,7 @@
     "./ui/textarea": "./src/ui/textarea.tsx",
     "./ui/tooltip": "./src/ui/tooltip.tsx",
     "./cards": "./src/cards.tsx",
+    "./cockpit": "./src/cockpit.tsx",
     "./report-document": "./src/report-document.tsx",
     "./report-evidence": "./src/report-evidence.tsx",
     "./work-widgets": "./src/work-widgets.tsx",

@@ -242,7 +242,7 @@ test("upstream A2UI renders every work widget, replaces revisions and retains va
       const style = getComputedStyle(element);
       return [style.fontSize, style.fontWeight];
     }),
-    ["25px", "550"],
+    ["14px", "600"],
   );
   assert.equal(await page.locator('[data-a2ui-renderer="upstream"]').count(), 1);
   assert.equal(await page.locator(".surface-widget").count(), 8);

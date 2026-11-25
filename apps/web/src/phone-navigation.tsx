@@ -1,6 +1,14 @@
 import { Link } from "@tanstack/react-router";
 import { useLayoutEffect, type RefObject } from "react";
+import { MessageSquare, LayoutGrid, PenLine, Layers } from "@abracode/presentation/icons";
 import { destinations, type CollectionState } from "./navigation.ts";
+
+const phoneIcons = {
+  "/": MessageSquare,
+  "/work": LayoutGrid,
+  "/thoughts": PenLine,
+  "/more": Layers,
+} as const;
 
 export default function PhoneNavigation({
   saved,
@@ -37,17 +45,21 @@ export default function PhoneNavigation({
   }, [shell]);
   return (
     <nav className="phone-navigation" aria-label="Workspace">
-      {(["/", "/work", "/thoughts", "/more"] as const).map((to) => (
-        <Link
-          key={to}
-          to={to}
-          search={{ collection: saved[to] }}
-          activeOptions={{ exact: true, includeSearch: false }}
-          aria-current={to === "/more" && more ? "page" : undefined}
-        >
-          {destinations[to]}
-        </Link>
-      ))}
+      {(["/", "/work", "/thoughts", "/more"] as const).map((to) => {
+        const Icon = phoneIcons[to];
+        return (
+          <Link
+            key={to}
+            to={to}
+            search={{ collection: saved[to] }}
+            activeOptions={{ exact: true, includeSearch: false }}
+            aria-current={to === "/more" && more ? "page" : undefined}
+          >
+            <Icon aria-hidden="true" />
+            <span>{destinations[to]}</span>
+          </Link>
+        );
+      })}
     </nav>
   );
 }

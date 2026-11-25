@@ -2,9 +2,12 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
+import { EvidenceDisclosure, SectionCard, StatusBadge } from "@abracode/presentation/cockpit";
+import { AlertTriangle } from "@abracode/presentation/icons";
 import { Button } from "@abracode/presentation/ui/button";
 import { deferred } from "../deferred.tsx";
 import { NativeForm, NativePermission } from "../native-attention.tsx";
+
 const LeadsPanel = deferred<React.ComponentProps<typeof import("./leads.tsx").LeadsPanel>>(
   () => import("./leads.tsx").then((module) => ({ default: module.LeadsPanel })),
   "Lead history",
@@ -42,98 +45,136 @@ export function AttentionPanel({
     if (!attentionOpen || !bound) return;
     const container = section.current;
     if (!container) return;
+    let raf = 0;
     const focus = () => {
       const target = document.getElementById(hash);
-      if (!target || !container.contains(target)) return false;
+      if (!target || !container.contains(target) || !target.isConnected) return false;
       if (!target.contains(document.activeElement)) target.focus({ preventScroll: true });
+      if (document.activeElement !== target && !target.contains(document.activeElement))
+        return false;
       target.scrollIntoView({ block: "nearest" });
       return true;
     };
     if (focus()) return;
+    const schedule = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (focus()) observer.disconnect();
+      });
+    };
     const observer = new MutationObserver(() => {
       if (focus()) observer.disconnect();
+      else schedule();
     });
     observer.observe(container, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    schedule();
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
   }, [hash, attentionOpen, bound]);
   const nextForm = workspace.forms.find((item) => item.active && item.checkpoint?.active);
   const owners = [...new Set(workAttention.map((entry) => entry.owner))];
+  const totalCount = attention + workAttention.length + managementAttention.length;
+
   return (
-    <>
-      <section
-        ref={section}
-        className="attention"
-        hidden={!attentionOpen}
-        aria-label="Needs your attention"
-      >
-        <div className="section-heading">
-          <span className="attention-symbol">!</span>
-          <h2>Needs your attention</h2>
-          <span className="count">
-            {attention + workAttention.length + managementAttention.length}
-          </span>
-        </div>
-        {hash && !bound && /^(form|permission)-/.test(hash) && (
-          <output>
+    <section
+      ref={section}
+      className="attention inspector-stack"
+      hidden={!attentionOpen}
+      aria-label="Needs your attention"
+    >
+      <div className="section-heading">
+        <AlertTriangle aria-hidden="true" className="attention-icon" />
+        <h2>Needs your attention</h2>
+        <StatusBadge tone={totalCount > 0 ? "attention" : "success"}>{totalCount}</StatusBadge>
+      </div>
+      {hash && !bound && /^(form|permission)-/.test(hash) && (
+        <output className="error-banner">
+          <span>
             The selected request has closed or its binding has changed. Review the current requests
-            below.{" "}
-            {nextForm && (
-              <Link to="/attention" hash={"form-" + nextForm.form.id + "-" + nextForm.binding}>
-                Open next decision
-              </Link>
-            )}
-          </output>
-        )}
-        {workspace.work_unavailable && <output>{workspace.work_unavailable}</output>}
-        {attention > 0 && <h3>Your forms and permissions</h3>}
-        {workspace.forms.map((item) => (
-          <NativeForm key={`${item.form.id}-${item.binding}`} item={item} refresh={refresh} />
-        ))}
-        {workspace.permissions.map((item) => (
-          <NativePermission key={item.request.id} item={item} refresh={refresh} />
-        ))}
-        {owners.map((owner) => (
-          <section key={owner} aria-label={"Obligations for " + owner}>
-            <h3>{owner === "user" ? "Your work" : owner}</h3>
+            below.
+          </span>
+          {nextForm && (
+            <Link to="/attention" hash={"form-" + nextForm.form.id + "-" + nextForm.binding}>
+              Open next decision
+            </Link>
+          )}
+        </output>
+      )}
+      {workspace.work_unavailable && (
+        <output className="error-banner">{workspace.work_unavailable}</output>
+      )}
+      {attention > 0 && (
+        <div className="inspector-stack">
+          <h3 className="eyebrow">Your forms and permissions</h3>
+          {workspace.forms.map((item) => (
+            <NativeForm key={`${item.form.id}-${item.binding}`} item={item} refresh={refresh} />
+          ))}
+          {workspace.permissions.map((item) => (
+            <NativePermission key={item.request.id} item={item} refresh={refresh} />
+          ))}
+        </div>
+      )}
+      {owners.map((owner) => (
+        <SectionCard
+          key={owner}
+          title={owner === "user" ? "Your work" : owner}
+          aria-label={"Obligations for " + owner}
+        >
+          <div className="list-group">
             {workAttention
               .filter((entry) => entry.owner === owner)
               .map((entry) => (
-                <div className="work-attention" key={`${entry.issue_id}:${entry.key}`}>
-                  <Button variant="ghost" onClick={() => open(entry.issue_id)}>
-                    {entry.title} · {entry.reason}
-                  </Button>
-                  <p className="muted">
-                    {entry.owner === "user" ? "You" : entry.owner} · {entry.next_action}
-                  </p>
+                <div className="work-attention list-row" key={`${entry.issue_id}:${entry.key}`}>
+                  <div className="list-row-main">
+                    <Button
+                      variant="ghost"
+                      className="work-attention-btn h-auto whitespace-normal"
+                      onClick={() => open(entry.issue_id)}
+                    >
+                      {entry.title} · {entry.reason}
+                    </Button>
+                    <p className="muted">
+                      {entry.owner === "user" ? "You" : entry.owner} · {entry.next_action}
+                    </p>
+                  </div>
                 </div>
               ))}
-          </section>
-        ))}
-        {managementAttention.length > 0 && <h3>Lead requests and proposals</h3>}
-        {managementAttention.map((entry) => (
-          <LazyLeadAttention
-            key={`${entry.lead_id}/${entry.repository_id}`}
-            entry={entry}
-            inspect={inspect}
-          />
-        ))}
-        {workspace.work.management?.truncated && (
-          <output>Lead attention coverage is limited to 20 repository/lead pairs.</output>
-        )}
-        {(workspace.work.management?.diagnostic_count ?? 0) > 0 && (
-          <output>
-            Some retained lead evidence is unavailable. Inspect scoped lead diagnostics before
-            assuming there is no pending work.
-          </output>
-        )}
-        {workspace.work.fleet?.attention_truncated && (
-          <output className="muted">
-            Attention coverage is limited. Additional retained obligations may be available through
-            Work.
-          </output>
-        )}
-      </section>
-    </>
+          </div>
+        </SectionCard>
+      ))}
+      {managementAttention.length > 0 && (
+        <SectionCard title="Lead requests and proposals">
+          <div className="inspector-stack">
+            {managementAttention.map((entry) => (
+              <LazyLeadAttention
+                key={`${entry.lead_id}/${entry.repository_id}`}
+                entry={entry}
+                inspect={inspect}
+              />
+            ))}
+          </div>
+        </SectionCard>
+      )}
+      {workspace.work.management?.truncated && (
+        <output className="muted">
+          Lead attention coverage is limited to 20 repository/lead pairs.
+        </output>
+      )}
+      {(workspace.work.management?.diagnostic_count ?? 0) > 0 && (
+        <output className="muted">
+          Some retained lead evidence is unavailable. Inspect scoped lead diagnostics before
+          assuming there is no pending work.
+        </output>
+      )}
+      {workspace.work.fleet?.attention_truncated && (
+        <output className="muted">
+          Attention coverage is limited. Additional retained obligations may be available through
+          Work.
+        </output>
+      )}
+    </section>
   );
 }
 
@@ -146,11 +187,13 @@ function LazyLeadAttention({
 }) {
   const [opened, setOpened] = useState(false);
   return (
-    <details data-management-attention onToggle={(event) => setOpened(event.currentTarget.open)}>
-      <summary>
-        {entry.lead_id} · {entry.repository_id} · {entry.unanswered} unanswered · {entry.proposals}{" "}
-        unaccepted proposals
-      </summary>
+    <EvidenceDisclosure
+      data-management-attention
+      summary={`${entry.lead_id} · ${entry.repository_id} · ${entry.unanswered} unanswered · ${entry.proposals} unaccepted proposals`}
+      open={opened}
+      onToggle={setOpened}
+      className="management-attention-item"
+    >
       {opened && (
         <LeadsPanel
           repository={entry.repository_id}
@@ -158,6 +201,6 @@ function LazyLeadAttention({
           inspect={inspect}
         />
       )}
-    </details>
+    </EvidenceDisclosure>
   );
 }

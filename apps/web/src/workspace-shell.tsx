@@ -1,5 +1,5 @@
 import { RunCommand, type ComposerCommand } from "./workspace-commands.ts";
-import { OpenSearch } from "./search-trigger.tsx";
+import { OpenSearch, SearchTrigger } from "./search-trigger.tsx";
 import { Palette } from "./palette-loader.tsx";
 import {
   Outlet,
@@ -11,6 +11,16 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  MessageSquare,
+  LayoutGrid,
+  GitPullRequest,
+  PenLine,
+  Bell,
+  Settings as SettingsIcon,
+  Sun,
+  Moon,
+} from "@abracode/presentation/icons";
 import { Application } from "./workspace.tsx";
 import {
   destinations,
@@ -18,9 +28,17 @@ import {
   destinationFor,
   type CollectionState,
 } from "./navigation.ts";
-import { SearchTrigger } from "./search-trigger.tsx";
 import PhoneNavigation from "./phone-navigation.tsx";
 import { useMediaQuery } from "./use-media-query.ts";
+import { useTheme } from "./theme.tsx";
+
+const railIcons = {
+  "/": MessageSquare,
+  "/work": LayoutGrid,
+  "/github": GitPullRequest,
+  "/thoughts": PenLine,
+  "/attention": Bell,
+} as const;
 
 export function WorkspaceShell() {
   const path = useRouterState({ select: (state) => state.location.pathname });
@@ -72,6 +90,7 @@ export function WorkspaceShell() {
   const settings = useMatch({ from: "/settings", shouldThrow: false });
   const phone = useMediaQuery("(max-width: 760px)");
   const shell = useRef<HTMLDivElement>(null);
+  const { resolved, setTheme } = useTheme();
 
   const navigate = useNavigate();
   const [search, setSearch] = useState<{ origin: HTMLElement; source?: "memory" }>();
@@ -132,35 +151,46 @@ export function WorkspaceShell() {
         },
       }
     : undefined;
-  const links = (Object.entries(destinations) as [keyof typeof destinations, string][])
-    .filter(([to]) => to !== "/more")
-    .map(([to, label]) => (
+
+  const destinationEntries = (
+    Object.entries(destinations) as [keyof typeof destinations, string][]
+  ).filter(([to]) => to !== "/more");
+
+  const menuLinks = destinationEntries.map(([to, label]) => (
+    <Link
+      key={to}
+      to={to}
+      search={{ collection: saved[to] }}
+      activeOptions={{ exact: true, includeSearch: false }}
+    >
+      {label}
+    </Link>
+  ));
+
+  const railLinks = destinationEntries.map(([to, label]) => {
+    const Icon = railIcons[to as keyof typeof railIcons];
+    return (
       <Link
         key={to}
         to={to}
         search={{ collection: saved[to] }}
         activeOptions={{ exact: true, includeSearch: false }}
+        className="rail-link"
+        data-tip={label}
+        aria-label={label}
+        aria-current={workspace && destination === to ? "page" : undefined}
       >
-        {label}
+        <Icon aria-hidden="true" />
+        <span className="sr-only">{label}</span>
       </Link>
-    ));
-  const navigation = (
-    <>
-      {links}
-      <Link to="/settings">Settings</Link>
-    </>
-  );
+    );
+  });
+
   return (
     <RunCommand.Provider
       value={(action) => {
         setCommand({ action });
-        if (
-          workspace &&
-          !tablet &&
-          (route.issue || route.surface || route.review || route.retained) &&
-          !route.canvas
-        )
-          return;
+        if (workspace && !tablet && !route.canvas) return;
         void navigate({ to: "/", search: {} });
       }}
     >
@@ -170,8 +200,11 @@ export function WorkspaceShell() {
             (phone ? (
               <>
                 <header className="phone-tools">
-                  <SearchTrigger />
-                  <Link to="/attention">Attention</Link>
+                  <SearchTrigger compact />
+                  <Link to="/attention" className="phone-attention-link">
+                    <Bell aria-hidden="true" />
+                    <span>Attention</span>
+                  </Link>
                 </header>
                 <PhoneNavigation
                   shell={shell}
@@ -182,12 +215,40 @@ export function WorkspaceShell() {
             ) : tablet ? (
               <details key={path} className="destination-menu">
                 <summary>Destinations</summary>
-                <nav aria-label="Workspace">{navigation}</nav>
+                <nav aria-label="Workspace">
+                  {menuLinks}
+                  <Link to="/settings">Settings</Link>
+                </nav>
               </details>
             ) : (
               <nav className="destination-rail" aria-label="Workspace">
-                <SearchTrigger />
-                {navigation}
+                <div className="rail-group">{railLinks}</div>
+                <div className="rail-spacer" />
+                <div className="rail-footer">
+                  <button
+                    type="button"
+                    className="rail-link rail-action"
+                    data-tip={
+                      resolved === "dark" ? "Switch to light theme" : "Switch to dark theme"
+                    }
+                    aria-label={
+                      resolved === "dark" ? "Switch to light theme" : "Switch to dark theme"
+                    }
+                    onClick={() => setTheme(resolved === "dark" ? "light" : "dark")}
+                  >
+                    {resolved === "dark" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
+                  </button>
+                  <Link
+                    to="/settings"
+                    className="rail-link"
+                    data-tip="Settings"
+                    aria-label="Settings"
+                    aria-current={settings ? "page" : undefined}
+                  >
+                    <SettingsIcon aria-hidden="true" />
+                    <span className="sr-only">Settings</span>
+                  </Link>
+                </div>
               </nav>
             ))}
           {hasWorkspace && (

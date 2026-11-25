@@ -227,23 +227,25 @@ test("Verification uses one responsive canvas and keyboard resizing preserves th
   const page = await f.browser.newPage({ viewport: { width: 1600, height: 980 } });
   await page.goto(f.origin + "/?issue=abra-web&tab=Feedback");
   await page.getByLabel("Message Abra").fill("Keep this question");
-  await page.getByLabel("Work details", { exact: true }).selectOption("Verification");
+  await page
+    .getByRole("tablist", { name: "Work details", exact: true })
+    .getByRole("tab", { name: "Verification", exact: true })
+    .click();
   const width = page.getByRole("separator", { name: "Chat width" });
   const panel = page.getByRole("complementary", { name: "Work inspector" });
   const before = (await panel.boundingBox())!.width;
   await width.press("ArrowLeft");
   assert.ok((await panel.boundingBox())!.width > before);
   await page.goBack();
-  await page.waitForFunction(
-    () =>
-      document.querySelector<HTMLSelectElement>('[aria-label="Work details"]')?.value ===
-      "Activity",
-  );
+  await page
+    .getByRole("tablist", { name: "Work details", exact: true })
+    .getByRole("tab", { name: "Activity", exact: true, selected: true })
+    .waitFor();
   await page.goForward();
   await page.setViewportSize({ width: 390, height: 830 });
   await page
     .getByRole("complementary", { name: "Work inspector" })
-    .getByLabel("Work details", { exact: true })
+    .getByRole("tablist", { name: "Work details", exact: true })
     .waitFor();
   await page.getByRole("button", { name: "Close inspector", exact: true }).click();
   assert.equal(await page.getByLabel("Message Abra").inputValue(), "Keep this question");
@@ -564,15 +566,15 @@ test("canvas refresh reads each visible section once and Retry recovers only its
     if (url.pathname.startsWith("/api/work/"))
       reads.push(url.pathname.slice(10) + "/" + url.searchParams.get("issue_id"));
   });
-  await page.goto(f.origin + "/?issue=abra-web&tab=Verification");
+  await page.goto(f.origin + "/?issue=abra-web&tab=Overview");
   await page.getByText("No retained decisions.", { exact: true }).waitFor();
-  await page.getByText("No check receipt is available.", { exact: true }).waitFor();
+  await page.getByText("Details for Build a single workspace", { exact: true }).waitFor();
   reads.length = 0;
   f.failedReads.add("decisions");
   await page.getByRole("button", { name: "Refresh canvas" }).click();
   const failure = page.locator(".inspector").getByRole("alert");
   await failure.getByText("Showing the last successful observation.").waitFor();
-  assert.deepEqual(reads.toSorted(), ["decisions/abra-web", "verification/abra-web"]);
+  assert.deepEqual(reads.toSorted(), ["decisions/abra-web", "overview/abra-web"]);
   reads.length = 0;
   f.failedReads.delete("decisions");
   await failure.getByRole("button", { name: "Retry" }).click();
@@ -603,7 +605,7 @@ test("a deliberate reader split follows open tabs and tasks through reload and p
   await page.mouse.up();
   await page.waitForFunction(() => Number(localStorage.getItem("abra-reader-percent")) >= 30);
   const saved = await page.evaluate(() => Number(localStorage.getItem("abra-reader-percent")));
-  assert.notEqual(saved, 39);
+  assert.notEqual(saved, 58);
   await peer.waitForFunction(
     (expected) =>
       Math.abs(
@@ -626,7 +628,7 @@ test("a deliberate reader split follows open tabs and tasks through reload and p
   await fresh.evaluate(() => localStorage.setItem("abra-reader-percent", "broken"));
   await fresh.reload();
   await handle(fresh).waitFor();
-  assert.equal(Number(await handle(fresh).getAttribute("aria-valuenow")), 61);
+  assert.equal(Number(await handle(fresh).getAttribute("aria-valuenow")), 42);
   await fresh.evaluate(() => {
     Storage.prototype.setItem = () => {
       throw new Error("blocked");

@@ -12,8 +12,8 @@ import type { IssueId } from "@abracode/contracts/identities";
 import { phaseLabel } from "@abracode/contracts/presentation/work-state";
 import { actionable } from "@abracode/contracts/workflow/feedback-contracts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card.tsx";
-import { Badge } from "./ui/badge.tsx";
 import { Button } from "./ui/button.tsx";
+import { StatusBadge, statusTone, type StatusTone } from "./cockpit.tsx";
 
 export type Inspect = (target: ResourceSelection) => void;
 const words = (value: string) => value.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
@@ -24,33 +24,42 @@ const role = (value: string) =>
     review: "Review worker",
     research: "Research worker",
   })[value] ?? words(value);
+
 export function Evidence({ children }: { children: ReactNode }) {
   return (
     <details className="presentation-evidence">
-      <summary>Evidence & provenance</summary>
+      <summary>Evidence &amp; provenance</summary>
       <div>{children}</div>
     </details>
   );
 }
+
 function Frame({
   kind,
   title,
   status,
+  tone,
   description,
   children,
 }: {
   kind: string;
   title: string;
   status?: string;
+  tone?: StatusTone;
   description?: string;
   children: ReactNode;
 }) {
+  const resolvedTone = tone ?? statusTone(status);
   return (
     <Card size="sm" className="presentation-card" data-presentation={kind}>
       <CardHeader>
         <div className="presentation-heading">
           <CardTitle>{title}</CardTitle>
-          {status && <Badge variant="secondary">{status}</Badge>}
+          {status && (
+            <StatusBadge tone={resolvedTone} dot={resolvedTone !== "neutral"}>
+              {status}
+            </StatusBadge>
+          )}
         </div>
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
@@ -58,6 +67,7 @@ function Frame({
     </Card>
   );
 }
+
 export function VerificationLink({ work, inspect }: { work: WorkSummary; inspect: Inspect }) {
   if (!work.last_check && !work.review_result && !work.latest_evidence) return null;
   const label = work.review_result
@@ -77,6 +87,7 @@ export function VerificationLink({ work, inspect }: { work: WorkSummary; inspect
     </Button>
   );
 }
+
 export function TaskCard({
   task,
   current,
@@ -103,18 +114,20 @@ export function TaskCard({
       status={status}
       description={task.progress?.summary ?? task.outcome?.next_action}
     >
-      {current && inspect && <VerificationLink work={current} inspect={inspect} />}
-      {inspect && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            inspect({ action: "open_task", issue_id: task.issue_id, section: "summary" })
-          }
-        >
-          Inspect task
-        </Button>
-      )}
+      <div className="button-row">
+        {current && inspect && <VerificationLink work={current} inspect={inspect} />}
+        {inspect && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              inspect({ action: "open_task", issue_id: task.issue_id, section: "summary" })
+            }
+          >
+            Inspect task
+          </Button>
+        )}
+      </div>
       <Evidence>
         <p>
           Task: <code>{task.issue_id}</code>
@@ -131,24 +144,32 @@ export function TaskCard({
     </Frame>
   );
 }
+
 export function OutcomeSummary({
   outcome,
 }: {
   outcome: NonNullable<(typeof TaskCardSchema.Type)["outcome"]>;
 }) {
+  const cells = [
+    { label: "Approval", value: words(outcome.approval.state) },
+    { label: "Delivery", value: words(outcome.delivery.state) },
+    { label: "Cleanup", value: words(outcome.cleanup.state) },
+    { label: "Issue closure", value: words(outcome.closure) },
+  ];
   return (
     <dl className="outcome-summary">
-      <dt>Approval</dt>
-      <dd>{words(outcome.approval.state)}</dd>
-      <dt>Delivery</dt>
-      <dd>{words(outcome.delivery.state)}</dd>
-      <dt>Cleanup</dt>
-      <dd>{words(outcome.cleanup.state)}</dd>
-      <dt>Issue closure</dt>
-      <dd>{words(outcome.closure)}</dd>
+      {cells.map((cell) => (
+        <div key={cell.label} className="outcome-cell">
+          <dt>{cell.label}</dt>
+          <dd>
+            <StatusBadge tone={statusTone(cell.value)}>{cell.value}</StatusBadge>
+          </dd>
+        </div>
+      ))}
     </dl>
   );
 }
+
 export function DecisionCard({
   decision,
   issue,
@@ -160,11 +181,18 @@ export function DecisionCard({
   inspect?: Inspect;
   children?: ReactNode;
 }) {
+  const tone: StatusTone =
+    decision.status === "open"
+      ? "attention"
+      : decision.status === "answered"
+        ? "success"
+        : "neutral";
   return (
     <Frame
       kind="decision"
       title={decision.question}
       status={words(decision.status)}
+      tone={tone}
       description={
         decision.status === "open"
           ? decision.owner === "user"
@@ -174,20 +202,22 @@ export function DecisionCard({
       }
     >
       {inspect && issue && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            inspect({
-              action: "open_decision",
-              issue_id: issue,
-              key: decision.key,
-              generation: decision.generation,
-            })
-          }
-        >
-          Inspect decision
-        </Button>
+        <div className="button-row">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              inspect({
+                action: "open_decision",
+                issue_id: issue,
+                key: decision.key,
+                generation: decision.generation,
+              })
+            }
+          >
+            Inspect decision
+          </Button>
+        </div>
       )}
       {children}
       <Evidence>
@@ -200,6 +230,7 @@ export function DecisionCard({
     </Frame>
   );
 }
+
 export function CommunicationCard({
   entry,
   issue,
@@ -229,36 +260,38 @@ export function CommunicationCard({
       description={entry.body ?? "Retained request"}
     >
       {inspect && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            inspect({
-              action: "open_task",
-              issue_id: issue,
-              section: "activity",
-              activity: "communication",
-            })
-          }
-        >
-          Inspect communication
-        </Button>
-      )}
-      {inspect && decision && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() =>
-            inspect({
-              action: "open_decision",
-              issue_id: issue,
-              key: decision.key,
-              generation: entry.generation,
-            })
-          }
-        >
-          Existing decision
-        </Button>
+        <div className="button-row">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              inspect({
+                action: "open_task",
+                issue_id: issue,
+                section: "activity",
+                activity: "communication",
+              })
+            }
+          >
+            Inspect communication
+          </Button>
+          {decision && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                inspect({
+                  action: "open_decision",
+                  issue_id: issue,
+                  key: decision.key,
+                  generation: entry.generation,
+                })
+              }
+            >
+              Existing decision
+            </Button>
+          )}
+        </div>
       )}
       {children}
       <Evidence>
@@ -274,6 +307,7 @@ export function CommunicationCard({
     </Frame>
   );
 }
+
 export function SessionCard({
   session,
   issue,
@@ -296,15 +330,17 @@ export function SessionCard({
       }
     >
       {inspect && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            inspect({ action: "open_session", issue_id: issue, session_id: session.id })
-          }
-        >
-          Inspect session
-        </Button>
+        <div className="button-row">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              inspect({ action: "open_session", issue_id: issue, session_id: session.id })
+            }
+          >
+            Inspect session
+          </Button>
+        </div>
       )}
       <Evidence>
         <p>{session.note}</p>
@@ -325,6 +361,7 @@ export function SessionCard({
     </Frame>
   );
 }
+
 export function FindingCard({
   finding,
   issue,
@@ -336,39 +373,49 @@ export function FindingCard({
   inspect?: Inspect;
   children?: ReactNode;
 }) {
+  const isBlocking = actionable(finding, finding.head);
+  const status = isBlocking
+    ? "Blocking"
+    : finding.disposition
+      ? words(finding.disposition.status)
+      : "Informational";
   return (
     <Frame
       kind="finding"
       title={`${words(finding.kind)} finding`}
-      status={
-        actionable(finding, finding.head)
-          ? "Blocking"
-          : finding.disposition
-            ? words(finding.disposition.status)
-            : "Informational"
-      }
+      status={status}
+      tone={isBlocking ? "danger" : statusTone(status)}
       description={finding.text}
     >
-      <p>{finding.disposition ? words(finding.disposition.status) : "Awaiting classification"}</p>
+      <p className="muted">
+        {finding.disposition ? words(finding.disposition.status) : "Awaiting classification"}
+      </p>
       {inspect && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            inspect(
-              finding.revision
-                ? {
-                    action: "open_finding",
-                    issue_id: issue,
-                    finding_id: finding.id,
-                    revision: finding.revision,
-                  }
-                : { action: "open_task", issue_id: issue, section: "activity", activity: "checks" },
-            )
-          }
-        >
-          {finding.revision ? "Inspect finding" : "Inspect reviews & checks"}
-        </Button>
+        <div className="button-row">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              inspect(
+                finding.revision
+                  ? {
+                      action: "open_finding",
+                      issue_id: issue,
+                      finding_id: finding.id,
+                      revision: finding.revision,
+                    }
+                  : {
+                      action: "open_task",
+                      issue_id: issue,
+                      section: "activity",
+                      activity: "checks",
+                    },
+              )
+            }
+          >
+            {finding.revision ? "Inspect finding" : "Inspect reviews & checks"}
+          </Button>
+        </div>
       )}
       {children}
       <Evidence>
@@ -381,6 +428,7 @@ export function FindingCard({
     </Frame>
   );
 }
+
 export function ArtifactCard({
   artifact,
   issue,
@@ -402,7 +450,7 @@ export function ArtifactCard({
           : "Retained HTML report"
       }
     >
-      <p>
+      <p className="muted">
         {artifact.captured_at ? (
           <>
             Captured{" "}
@@ -415,20 +463,22 @@ export function ArtifactCard({
         )}
       </p>
       {inspect && hash && artifact.status === "published" && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            inspect({
-              action: "open_artifact",
-              issue_id: issue,
-              request_id: artifact.request_id,
-              hash,
-            })
-          }
-        >
-          Open report
-        </Button>
+        <div className="button-row">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              inspect({
+                action: "open_artifact",
+                issue_id: issue,
+                request_id: artifact.request_id,
+                hash,
+              })
+            }
+          >
+            Open report
+          </Button>
+        </div>
       )}
       <Evidence>
         {artifact.error && <p>{artifact.error}</p>}

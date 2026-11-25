@@ -587,7 +587,7 @@ test("owned typography survives vendor reset in workspace and inspector", async 
       const style = getComputedStyle(element);
       return { size: style.fontSize, weight: style.fontWeight };
     }),
-    { size: "25px", weight: "550" },
+    { size: "14px", weight: "600" },
   );
 });
 
@@ -1077,7 +1077,10 @@ test("typed inspector URLs render Pierre, preserve navigation and theme across r
     () => document.querySelectorAll("[data-diff-renderer] diffs-container").length === 1,
   );
   assert.equal(await page.getByRole("button", { name: /second.ts/ }).count(), 0);
-  await page.getByLabel("Work details", { exact: true }).selectOption("Plan");
+  await page
+    .getByRole("tablist", { name: "Work details", exact: true })
+    .getByRole("tab", { name: "Plan", exact: true })
+    .click();
   await page.getByRole("button", { name: "proposal.md", exact: true }).click();
   await page.getByRole("heading", { name: "Retained proposal", exact: true }).waitFor();
   await page.goBack();
@@ -1420,7 +1423,10 @@ test("late inspector responses cannot replace a new selection and live updates i
     .filter({ hasText: "Couldn’t open this work item" });
   await failure.getByRole("button", { name: "Retry" }).click();
   await page.waitForURL((url) => url.searchParams.get("issue") === "abra-web");
-  await page.getByLabel("Work details", { exact: true }).selectOption("Overview");
+  await page
+    .getByRole("tablist", { name: "Work details", exact: true })
+    .getByRole("tab", { name: "Overview", exact: true })
+    .click();
   await page.getByText("Details for Another issue", { exact: true }).waitFor();
   await page.waitForTimeout(700);
   assert.equal(await page.getByText("Details for Slow issue", { exact: true }).count(), 0);
@@ -1730,9 +1736,12 @@ test("Activity consolidates legacy routes and preserves disabled lead request/pr
   ]);
   const page = await f.browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.goto(`${f.origin}/?issue=abra-web&tab=Workers`);
-  await page.getByLabel("Work details", { exact: true }).waitFor();
+  await page.getByRole("tablist", { name: "Work details", exact: true }).waitFor();
   assert.deepEqual(
-    await page.getByLabel("Work details", { exact: true }).locator("option").allTextContents(),
+    await page
+      .getByRole("tablist", { name: "Work details", exact: true })
+      .getByRole("tab")
+      .allTextContents(),
     ["Overview", "Plan", "Diff", "Verification", "Activity", "Reports"],
   );
   const composer = page.locator('[aria-label="Message Abra"]');
@@ -2394,7 +2403,10 @@ test("policy-specific planning and independent outcomes remain usable when a doc
   await page.getByText("One retained document is unavailable", { exact: true }).waitFor();
   await page.getByRole("button", { name: "proposal.md", exact: true }).click();
   await page.getByRole("heading", { name: "Retained proposal", exact: true }).waitFor();
-  await page.getByLabel("Work details", { exact: true }).selectOption("Overview");
+  await page
+    .getByRole("tablist", { name: "Work details", exact: true })
+    .getByRole("tab", { name: "Overview", exact: true })
+    .click();
   await page.getByRole("region", { name: "Independent work outcomes" }).waitFor();
   assert.deepEqual(
     await page
@@ -2412,7 +2424,10 @@ test("policy-specific planning and independent outcomes remain usable when a doc
     assert.equal(await page.getByText(/implementation tasks complete/).count(), 0);
     assert.equal(await page.getByRole("button", { name: "proposal.md", exact: true }).count(), 0);
   }
-  await page.getByLabel("Work details", { exact: true }).selectOption("Reports");
+  await page
+    .getByRole("tablist", { name: "Work details", exact: true })
+    .getByRole("tab", { name: "Reports", exact: true })
+    .click();
   await page.getByRole("heading", { name: "Retained report", exact: true }).waitFor();
   assert.equal(f.source.submissions, 0);
 });
@@ -3498,10 +3513,10 @@ test("Work opens each real reader alongside one live chat and sending preserves 
   const task = page.getByRole("navigation", { name: "Work results" }).getByRole("button").first();
   await task.click();
   const input = page.getByLabel("Message Abra", { exact: true });
-  const sections = page.getByLabel("Work details", { exact: true });
+  const sections = page.getByRole("tablist", { name: "Work details", exact: true });
   await input.fill("Explain the selected diff");
   for (const tab of ["Plan", "Verification", "Diff"]) {
-    await sections.selectOption(tab);
+    await sections.getByRole("tab", { name: tab, exact: true }).click();
     await page.waitForURL((url) => url.pathname === "/work" && url.searchParams.get("tab") === tab);
     assert.equal(await input.inputValue(), "Explain the selected diff");
   }

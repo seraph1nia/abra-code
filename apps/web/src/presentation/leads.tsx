@@ -15,7 +15,7 @@ import {
   CardContent,
   CardDescription,
 } from "@abracode/presentation/ui/card";
-import { Badge } from "@abracode/presentation/ui/badge";
+import { StatusBadge, statusTone } from "@abracode/presentation/cockpit";
 import { Evidence, type Inspect } from "@abracode/presentation/cards";
 const words = (value: string) => value.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
 function Body({ text }: { text: string }) {
@@ -46,7 +46,8 @@ export function LeadsPanel({
                 <Card key={lead.id} size="sm" data-lead-id={lead.id}>
                   <CardHeader>
                     <CardTitle>
-                      {lead.id} <Badge variant="secondary">{words(lead.state)}</Badge>
+                      {lead.id}{" "}
+                      <StatusBadge tone={statusTone(lead.state)}>{words(lead.state)}</StatusBadge>
                     </CardTitle>
                     <CardDescription>
                       {lead.model.providerID} / {lead.model.id}
@@ -159,7 +160,8 @@ function LeadHistory({
         <Card size="sm" key={request.request_id}>
           <CardHeader>
             <CardTitle>
-              Abra → Project lead <Badge variant="secondary">{words(request.status)}</Badge>
+              Abra → Project lead{" "}
+              <StatusBadge tone={statusTone(request.status)}>{words(request.status)}</StatusBadge>
             </CardTitle>
             <CardDescription>
               {request.reply

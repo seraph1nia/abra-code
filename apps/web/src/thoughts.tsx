@@ -4,6 +4,8 @@ import { RunCommand, composerCommands } from "./workspace-commands.ts";
 import { useContext, useState, type ReactNode } from "react";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { AsyncResult, type Atom } from "effect/reactivity";
+import { ArrowLeft, ArrowUpRight, Plus } from "@abracode/presentation/icons";
+import { EvidenceDisclosure, SectionCard, StatusBadge } from "@abracode/presentation/cockpit";
 import { Button } from "@abracode/presentation/ui/button";
 import { Input } from "@abracode/presentation/ui/input";
 import type { ThoughtQuery, ThoughtReference } from "@abracode/contracts/visibility/thoughts";
@@ -22,16 +24,18 @@ function Read<A, E>({
   const registry = useContext(RegistryContext);
   if (AsyncResult.isFailure(result))
     return (
-      <div role="alert">
-        {requestError(result.cause)}{" "}
-        <Button variant="outline" onClick={() => registry.refresh(atom)}>
+      <div role="alert" className="error-banner">
+        <span>{requestError(result.cause)}</span>
+        <Button variant="outline" size="sm" onClick={() => registry.refresh(atom)}>
           Retry
         </Button>
       </div>
     );
-  if (!AsyncResult.isSuccess(result) || result.waiting) return <output>Loading thoughts…</output>;
+  if (!AsyncResult.isSuccess(result) || result.waiting)
+    return <output className="muted">Loading thoughts…</output>;
   return children(result.value);
 }
+
 export function Thoughts({ discuss }: { discuss: (ref: ThoughtReference) => void }) {
   const { collection } = useSearch({ from: "__root__" });
   const runCommand = useContext(RunCommand);
@@ -53,19 +57,23 @@ export function Thoughts({ discuss }: { discuss: (ref: ThoughtReference) => void
     query,
     timeToLive: "0 seconds",
   });
+
   return (
-    <section aria-label="Personal thoughts" className="space-y-3 overflow-y-auto p-2">
-      <div className="sidebar-heading">
+    <section aria-label="Personal thoughts" className="collection-work">
+      <div className="hub-header">
         <h2>Thoughts</h2>
-        <Button variant="outline" onClick={() => runCommand(composerCommands[1])}>
+        <Button variant="outline" size="sm" onClick={() => runCommand(composerCommands[1])}>
+          <Plus aria-hidden="true" />
           Save a thought
         </Button>
       </div>
       {selected ? (
-        <>
-          <Button variant="outline" onClick={() => setSelected(undefined)}>
-            Back to results
-          </Button>
+        <div className="inspector-stack">
+          <div className="plan-toolbar">
+            <Button variant="outline" size="sm" onClick={() => setSelected(undefined)}>
+              <ArrowLeft aria-hidden="true" /> Back to results
+            </Button>
+          </div>
           <Read
             atom={WorkspaceApi.query("work", "thoughtDetail", {
               query: selected,
@@ -73,14 +81,36 @@ export function Thoughts({ discuss }: { discuss: (ref: ThoughtReference) => void
             })}
           >
             {(item) => (
-              <article className="space-y-3">
-                <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time>
-                <p className="whitespace-pre-wrap break-words">{item.content}</p>
-                <a href={item.url} target="_blank" rel="noreferrer">
-                  Open in Memos
-                </a>
-                <details key={item.reference.name} onToggle={(e) => setUsed(e.currentTarget.open)}>
-                  <summary>Used in work</summary>
+              <SectionCard
+                title={
+                  <time dateTime={item.created_at}>
+                    {new Date(item.created_at).toLocaleString()}
+                  </time>
+                }
+                actions={
+                  <a
+                    className="report-download-link"
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open in Memos <ArrowUpRight aria-hidden="true" />
+                  </a>
+                }
+              >
+                <p className="prose whitespace-pre-wrap break-words">{item.content}</p>
+                <div className="button-row">
+                  <Button size="sm" onClick={() => discuss(item.reference)}>
+                    Ask Abra about this
+                  </Button>
+                  <RememberThought key={JSON.stringify(item.reference)} item={item} />
+                </div>
+                <EvidenceDisclosure
+                  key={item.reference.name}
+                  summary="Used in work"
+                  open={used}
+                  onToggle={setUsed}
+                >
                   {used && (
                     <Read
                       atom={WorkspaceApi.query("work", "thoughtWork", {
@@ -90,10 +120,14 @@ export function Thoughts({ discuss }: { discuss: (ref: ThoughtReference) => void
                     >
                       {(page) => (
                         <>
-                          {!page.entries.length && <p>No accepted work references on this page.</p>}
+                          {!page.entries.length && (
+                            <p className="muted">No accepted work references on this page.</p>
+                          )}
                           {page.entries.map((row) => (
-                            <p key={row.id}>
+                            <div key={row.id} className="thought-work-row">
                               <Button
+                                variant="link"
+                                size="sm"
                                 onClick={() =>
                                   void navigate({
                                     to: "/thoughts",
@@ -102,104 +136,132 @@ export function Thoughts({ discuss }: { discuss: (ref: ThoughtReference) => void
                                 }
                               >
                                 {row.title}
-                              </Button>{" "}
-                              ·{" "}
-                              {row.wording_hash === item.reference.wording_hash
-                                ? "Current wording"
-                                : "Earlier wording"}{" "}
-                              · {row.wording_hash.slice(0, 12)}
-                            </p>
+                              </Button>
+                              <StatusBadge
+                                tone={
+                                  row.wording_hash === item.reference.wording_hash
+                                    ? "success"
+                                    : "attention"
+                                }
+                              >
+                                {row.wording_hash === item.reference.wording_hash
+                                  ? "Current wording"
+                                  : "Earlier wording"}
+                              </StatusBadge>
+                              <code>{row.wording_hash.slice(0, 12)}</code>
+                            </div>
                           ))}
-                          {offset > 0 && (
-                            <Button onClick={() => setOffset(Math.max(0, offset - 20))}>
-                              Previous work
-                            </Button>
-                          )}
-                          {page.next_offset !== undefined && (
-                            <Button onClick={() => setOffset(page.next_offset!)}>More work</Button>
+                          {(offset > 0 || page.next_offset !== undefined) && (
+                            <div className="button-row">
+                              {offset > 0 && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setOffset(Math.max(0, offset - 20))}
+                                >
+                                  Previous work
+                                </Button>
+                              )}
+                              {page.next_offset !== undefined && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setOffset(page.next_offset!)}
+                                >
+                                  More work
+                                </Button>
+                              )}
+                            </div>
                           )}
                         </>
                       )}
                     </Read>
                   )}
-                </details>
-                <RememberThought
-                  key={`${item.reference.instance}:${item.reference.account}:${item.reference.name}:${item.reference.wording_hash}`}
-                  item={item}
-                />
-                <Button onClick={() => discuss(item.reference)}>Ask Abra about this</Button>
-              </article>
+                </EvidenceDisclosure>
+              </SectionCard>
             )}
           </Read>
-        </>
+        </div>
       ) : (
         <>
-          <form
-            className="space-y-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setQuery({ ...filters, cursor: undefined });
-            }}
-          >
-            <Input
-              aria-label="Thought text"
-              placeholder="Search your thoughts…"
-              maxLength={512}
-              value={filters.text ?? ""}
-              onChange={(e) => setFilters({ ...filters, text: e.target.value })}
-            />
-            <Input
-              aria-label="Thought tag"
-              placeholder="Tag"
-              maxLength={256}
-              value={filters.tag ?? ""}
-              onChange={(e) => setFilters({ ...filters, tag: e.target.value })}
-            />
-            <label htmlFor="thoughts-from">
-              From (UTC)
+          <SectionCard>
+            <form
+              className="filter-grid"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setQuery({ ...filters, cursor: undefined });
+              }}
+            >
               <Input
-                id="thoughts-from"
-                type="date"
-                value={filters.from ?? ""}
-                onChange={(e) => setFilters({ ...filters, from: e.target.value || undefined })}
+                aria-label="Thought text"
+                placeholder="Search your thoughts…"
+                maxLength={512}
+                value={filters.text ?? ""}
+                onChange={(e) => setFilters({ ...filters, text: e.target.value })}
               />
-            </label>
-            <label htmlFor="thoughts-until">
-              Before (UTC)
               <Input
-                id="thoughts-until"
-                type="date"
-                value={filters.until ?? ""}
-                onChange={(e) => setFilters({ ...filters, until: e.target.value || undefined })}
+                aria-label="Thought tag"
+                placeholder="Tag"
+                maxLength={256}
+                value={filters.tag ?? ""}
+                onChange={(e) => setFilters({ ...filters, tag: e.target.value })}
               />
-            </label>
-            <Button type="submit">Search thoughts</Button>
-          </form>
+              <label htmlFor="thoughts-from" className="date-field">
+                <span className="muted">From (UTC)</span>
+                <Input
+                  id="thoughts-from"
+                  type="date"
+                  value={filters.from ?? ""}
+                  onChange={(e) => setFilters({ ...filters, from: e.target.value || undefined })}
+                />
+              </label>
+              <label htmlFor="thoughts-until" className="date-field">
+                <span className="muted">Before (UTC)</span>
+                <Input
+                  id="thoughts-until"
+                  type="date"
+                  value={filters.until ?? ""}
+                  onChange={(e) => setFilters({ ...filters, until: e.target.value || undefined })}
+                />
+              </label>
+              <div className="filter-submit">
+                <Button type="submit" variant="outline" size="sm">
+                  Search thoughts
+                </Button>
+              </div>
+            </form>
+          </SectionCard>
           <Read atom={list}>
             {(page) => (
               <>
-                {page.entries.length === 0 && <p>No matching thoughts.</p>}
-                <ul className="work-list">
-                  {page.entries.map((row) => (
-                    <li key={row.reference.name}>
-                      <Button
-                        variant="ghost"
-                        className="h-auto w-full flex-col items-start whitespace-normal text-left"
-                        onClick={() => setSelected(row.reference)}
-                      >
-                        <span>{row.snippet}</span>
-                        <small>
-                          {new Date(row.created_at).toLocaleString()}{" "}
-                          {row.tags.map((t) => "#" + t).join(" ")}
-                        </small>
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
+                {page.entries.length === 0 && <p className="empty-note">No matching thoughts.</p>}
+                {page.entries.length > 0 && (
+                  <ul className="work-list list-group thought-list">
+                    {page.entries.map((row) => (
+                      <li key={row.reference.name}>
+                        <Button
+                          variant="ghost"
+                          className="list-row h-auto w-full whitespace-normal text-left"
+                          onClick={() => setSelected(row.reference)}
+                        >
+                          <div className="list-row-main">
+                            <span className="list-row-title">{row.snippet}</span>
+                            <small className="list-row-sub">
+                              {new Date(row.created_at).toLocaleString()}
+                              {row.tags.length > 0 &&
+                                ` · ${row.tags.map((t) => "#" + t).join(" ")}`}
+                            </small>
+                          </div>
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {(query.cursor || page.next_cursor) && (
-                  <nav aria-label="Thought pages">
+                  <nav aria-label="Thought pages" className="finder-pagination">
                     <Button
                       variant="outline"
+                      size="sm"
                       disabled={!query.cursor}
                       onClick={() =>
                         setQuery(
@@ -212,6 +274,7 @@ export function Thoughts({ discuss }: { discuss: (ref: ThoughtReference) => void
                     </Button>
                     <Button
                       variant="outline"
+                      size="sm"
                       disabled={!page.next_cursor}
                       onClick={() =>
                         page.next_cursor &&

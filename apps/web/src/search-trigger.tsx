@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import { Search } from "@abracode/presentation/icons";
 import { Button } from "@abracode/presentation/ui/button";
 
 export const OpenSearch = createContext<(origin: HTMLElement, source?: "memory") => void>(() => {});
@@ -11,12 +12,13 @@ export function SearchTrigger({ compact = false }: { compact?: boolean }) {
       size="sm"
       aria-label="Search"
       aria-haspopup="dialog"
-      className="search-trigger"
+      className={compact ? "search-trigger is-compact" : "search-trigger"}
       onClick={(event) => open(event.currentTarget)}
     >
-      Search{" "}
+      <Search aria-hidden="true" />
+      <span className="search-trigger-label">Search</span>
       {!compact && (
-        <kbd aria-hidden="true" className="text-xs text-muted-foreground">
+        <kbd aria-hidden="true" className="search-kbd">
           {/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘K" : "Ctrl+K"}
         </kbd>
       )}

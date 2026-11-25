@@ -8,6 +8,7 @@ import { RequestState } from "../request-state.tsx";
 import { Button } from "@abracode/presentation/ui/button";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
 import { SessionCard, type Inspect } from "@abracode/presentation/cards";
+import { SectionCard } from "@abracode/presentation/cockpit";
 import { ToolObservation } from "./tools.tsx";
 
 export function SessionsPanel({ work, inspect }: { work: WebWorkItem; inspect: Inspect }) {
@@ -19,13 +20,14 @@ export function SessionsPanel({ work, inspect }: { work: WebWorkItem; inspect: I
     target ??
     work.sessions.find((session) => session.role === work.active_role)?.id ??
     work.sessions.at(-1)?.id;
-  if (!work.sessions.length && !target) return <p>No worker sessions retained.</p>;
+  if (!work.sessions.length && !target)
+    return <p className="muted">No worker sessions retained.</p>;
   return (
-    <div className="space-y-4">
+    <div className="inspector-stack">
       <p className="muted">
         Worker inspection is read-only. Give instructions to Abra in the main conversation.
       </p>
-      <div className="space-y-3" aria-label="Retained worker sessions">
+      <div className="inspector-stack" aria-label="Retained worker sessions">
         {work.sessions.slice(page * 8, (page + 1) * 8).map((session) => (
           <RequestState key={session.id} query={queries.worker(work.issue_id, session.id)}>
             {(observation) => (
@@ -36,11 +38,12 @@ export function SessionsPanel({ work, inspect }: { work: WebWorkItem; inspect: I
       </div>
       {work.sessions.length > 8 && (
         <nav aria-label="Worker summary pages" className="button-row">
-          <Button variant="outline" disabled={!page} onClick={() => setPage(page - 1)}>
+          <Button variant="outline" size="sm" disabled={!page} onClick={() => setPage(page - 1)}>
             Previous sessions
           </Button>
           <Button
             variant="outline"
+            size="sm"
             disabled={(page + 1) * 8 >= work.sessions.length}
             onClick={() => setPage(page + 1)}
           >
@@ -48,33 +51,47 @@ export function SessionsPanel({ work, inspect }: { work: WebWorkItem; inspect: I
           </Button>
         </nav>
       )}
-      <div className="space-y-2">
-        <label htmlFor={selectId}>Read-only worker session</label>
-        <NativeSelect
-          id={selectId}
-          value={selected ?? ""}
-          onChange={(event) => {
-            const session = work.sessions.find((session) => session.id === event.target.value);
-            if (session)
-              inspect({ action: "open_session", issue_id: work.issue_id, session_id: session.id });
-          }}
-        >
-          {target && !work.sessions.some((session) => session.id === target) && (
-            <option value={target}>Retained session · {target}</option>
-          )}
-          {work.sessions.map((session) => (
-            <option key={session.id} value={session.id}>
-              {session.role} · {session.id}
-            </option>
-          ))}
-        </NativeSelect>
-      </div>
       {selected && (
-        <WorkerTranscript key={selected} work={work} session={selected} inspect={inspect} />
+        <SectionCard
+          title="Worker transcript"
+          actions={
+            <div className="session-select-inline">
+              <label htmlFor={selectId} className="sr-only">
+                Read-only worker session
+              </label>
+              <NativeSelect
+                id={selectId}
+                size="sm"
+                value={selected}
+                onChange={(event) => {
+                  const session = work.sessions.find((s) => s.id === event.target.value);
+                  if (session)
+                    inspect({
+                      action: "open_session",
+                      issue_id: work.issue_id,
+                      session_id: session.id,
+                    });
+                }}
+              >
+                {target && !work.sessions.some((s) => s.id === target) && (
+                  <option value={target}>Retained session · {target}</option>
+                )}
+                {work.sessions.map((session) => (
+                  <option key={session.id} value={session.id}>
+                    {session.role} · {session.id}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+          }
+        >
+          <WorkerTranscript key={selected} work={work} session={selected} inspect={inspect} />
+        </SectionCard>
       )}
     </div>
   );
 }
+
 function WorkerTranscript({
   work,
   session,
@@ -86,8 +103,7 @@ function WorkerTranscript({
 }) {
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   return (
-    <section aria-label="Read-only worker transcript">
-      <h3>Worker transcript</h3>
+    <section aria-label="Read-only worker transcript" className="inspector-stack">
       <RequestState query={queries.workerHistory(work.issue_id, session, cursors.at(-1))}>
         {(page) => (
           <>
@@ -95,7 +111,7 @@ function WorkerTranscript({
               Observed {new Date(page.observed_at).toLocaleString()} · Bounded native message page
             </p>
             {!page.messages.length && (
-              <p>
+              <p className="muted">
                 No visible messages in this native page. Earlier messages may still be available.
               </p>
             )}
@@ -140,7 +156,7 @@ function WorkerTranscript({
                   ),
                 )}
                 {message.limited && (
-                  <output>
+                  <output className="muted">
                     This message contains bounded excerpts. Omitted content is not reconstructed.
                   </output>
                 )}
@@ -149,6 +165,7 @@ function WorkerTranscript({
             <nav aria-label="Worker transcript pages" className="button-row">
               <Button
                 variant="outline"
+                size="sm"
                 disabled={!page.older}
                 onClick={() => {
                   if (page.older) setCursors([...cursors, page.older]);
@@ -157,12 +174,13 @@ function WorkerTranscript({
                 Earlier worker messages
               </Button>
               {cursors.length > 1 && (
-                <Button variant="outline" onClick={() => setCursors([undefined])}>
+                <Button variant="outline" size="sm" onClick={() => setCursors([undefined])}>
                   Latest worker messages
                 </Button>
               )}
               <Button
                 variant="outline"
+                size="sm"
                 disabled={cursors.length <= 1}
                 onClick={() => setCursors(cursors.slice(0, -1))}
               >
