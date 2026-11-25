@@ -22,15 +22,25 @@ export class WorkIntake {
     private config?: Config,
   ) {}
 
-  private prepare = Effect.fn("WorkIntake.prepare")(
-    function* (this: WorkIntake, input: WorkInput, supervisor: SessionId) {
-      const repository = input.repository_id;
-      const project = yield* this.records.project(repository);
+  validateProject = Effect.fn("WorkIntake.validateProject")(
+    function* (this: WorkIntake, request: WorkInput) {
+      const project = yield* this.records.project(request.repository_id);
       if (!project)
         return yield* new CrewError(
           "PROJECT_MISSING",
           "Register the repository before creating work",
         );
+      validateDispatch(this.config ?? {}, request.dispatch);
+      codingPolicy(
+        project,
+        request.workflow_policy ?? this.defaultWorkflow,
+        request.quality_profile,
+      );
+    }.bind(this),
+    domainEffect,
+  );
+  private prepare = Effect.fn("WorkIntake.prepare")(
+    function* (this: WorkIntake, input: WorkInput, supervisor: SessionId) {
       const request = normalizeIssue({
         ...input,
         workflow_policy: input.workflow_policy ?? this.defaultWorkflow,
@@ -46,23 +56,13 @@ export class WorkIntake {
             .digest("hex"),
         );
       }
-      validateDispatch(this.config ?? {}, request.dispatch);
-      codingPolicy(
-        project,
-        request.workflow_policy ?? this.defaultWorkflow,
-        request.quality_profile,
-      );
+      yield* this.validateProject(request);
       return request;
     }.bind(this),
     domainEffect,
   );
-  create = Effect.fn("WorkIntake.create")(
-    function* (
-      this: WorkIntake,
-      input: WorkInput,
-      supervisor: SessionId,
-      source?: import("./inbox-index.ts").SourceLink,
-    ) {
+  prepareIntake = Effect.fn("WorkIntake.prepareIntake")(
+    function* (this: WorkIntake, input: WorkInput, supervisor: SessionId) {
       const request = yield* this.prepare(input, supervisor);
       if (request.thought_source && !(yield* this.work.hasRequest(request.request_id))) {
         const { reference, excerpt } = request.thought_source;
@@ -76,7 +76,7 @@ export class WorkIntake {
             "Reselect the exact wording to accept for this issue.",
           );
       }
-      return yield* this.work.create(request, source);
+      return request;
     }.bind(this),
     domainEffect,
   );

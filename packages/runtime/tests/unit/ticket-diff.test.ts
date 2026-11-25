@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import { selectedDiffExcerpt } from "../../src/visibility/ticket-diff.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import { parseDiffPatch } from "@abracode/web/diff-patch";
@@ -81,7 +82,7 @@ test("ticket diff covers commits, staged, unstaged and untracked files without m
   assert.ok(rendered.some((file) => file.name === "source.txt"));
   assert.ok(Buffer.byteLength(collection.patch!) <= 64 * 1024);
   assert.deepEqual(await readFile(index), before);
-  assert.ok("value" in (await visibility.methods.diff.output["~standard"].validate(added)));
+  assert.ok(Schema.is(visibility.methods.diff.output)(added));
   assert.equal(
     (await run(f.records.execution(e.issue_id)))?.current_phase,
     "awaiting_plan_approval",

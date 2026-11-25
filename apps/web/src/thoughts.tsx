@@ -1,13 +1,13 @@
 import { RememberThought } from "./remember-thought.tsx";
 import { RunCommand, composerCommands } from "./workspace-commands.ts";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Typed workspace HTTP atoms own mounted query lifetimes. */
 import { useContext, useState, type ReactNode } from "react";
-import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import { ArrowLeft, ArrowUpRight, Plus } from "@abracode/presentation/icons";
 import { EvidenceDisclosure, SectionCard, StatusBadge } from "@abracode/presentation/cockpit";
 import { Button } from "@abracode/presentation/ui/button";
 import { Input } from "@abracode/presentation/ui/input";
+import type { CollectionState } from "./navigation.ts";
 import type { ThoughtQuery, ThoughtReference } from "@abracode/contracts/visibility/thoughts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { WorkspaceApi } from "./data.ts";
@@ -21,12 +21,12 @@ function Read<A, E>({
   children: (data: A) => ReactNode;
 }) {
   const result = useAtomValue(atom);
-  const registry = useContext(RegistryContext);
+  const refresh = useAtomRefresh(atom);
   if (AsyncResult.isFailure(result))
     return (
       <div role="alert" className="error-banner">
         <span>{requestError(result.cause)}</span>
-        <Button variant="outline" size="sm" onClick={() => registry.refresh(atom)}>
+        <Button variant="outline" size="sm" onClick={refresh}>
           Retry
         </Button>
       </div>
@@ -38,6 +38,21 @@ function Read<A, E>({
 
 export function Thoughts({ discuss }: { discuss: (ref: ThoughtReference) => void }) {
   const { collection } = useSearch({ from: "__root__" });
+  return (
+    <ThoughtView
+      key={JSON.stringify([collection?.notebook, collection?.memo])}
+      discuss={discuss}
+      collection={collection}
+    />
+  );
+}
+function ThoughtView({
+  discuss,
+  collection,
+}: {
+  discuss: (ref: ThoughtReference) => void;
+  collection?: CollectionState;
+}) {
   const runCommand = useContext(RunCommand);
   const navigate = useNavigate();
   const [used, setUsed] = useState(false);

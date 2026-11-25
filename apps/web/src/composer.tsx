@@ -1,3 +1,4 @@
+import { deferred } from "@abracode/presentation/deferred";
 import { OpenSearch } from "./search-trigger.tsx";
 import { AsyncResult } from "effect/reactivity";
 import { ThoughtSource } from "./thought-source.tsx";
@@ -9,8 +10,6 @@ import {
 } from "./workspace-commands.ts";
 import { selectionLabel } from "@abracode/contracts/web/resources";
 import {
-  lazy,
-  Suspense,
   useContext,
   useCallback,
   useEffect,
@@ -20,9 +19,7 @@ import {
   type RefObject,
 } from "react";
 import type { Submission } from "@abracode/contracts/web/workspace-wire";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Composer owns draft/admission subscriptions independently of transcript presentation. */
 import { useAtomValue } from "@effect/atom-react";
-import { useCopilotKit } from "@copilotkit/react-core/v2/context";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { ArrowUp, Square } from "@abracode/presentation/icons";
 import { Button } from "@abracode/presentation/ui/button";
@@ -31,10 +28,17 @@ import { Textarea } from "@abracode/presentation/ui/textarea";
 import { memoryEnabledQuery } from "./data.ts";
 import { useWorkspaceDraft } from "./workspace-state/draft.ts";
 import { useWorkspaceAdmission } from "./workspace-state/admission.ts";
-const ComposerSuggestions = lazy(() =>
-  import("@abracode/presentation/ui/search-dialog").then((module) => ({
-    default: module.ComposerSuggestions,
-  })),
+const ComposerSuggestions = deferred<
+  React.ComponentProps<typeof import("@abracode/presentation/ui/search-dialog").ComposerSuggestions>
+>(
+  () =>
+    import("@abracode/presentation/ui/search-dialog").then((module) => ({
+      default: module.ComposerSuggestions,
+    })),
+  "Composer suggestions",
+  undefined,
+  undefined,
+  () => null,
 );
 export function Composer({
   workspace,
@@ -83,7 +87,7 @@ export function Composer({
   useLayoutEffect(() => {
     updateDraftLock(!isReady || Boolean(pending) || admitting);
   }, [updateDraftLock, pending, admitting, isReady]);
-  const { copilotkit } = useCopilotKit();
+  const [stopping, setStopping] = useState(false);
 
   const localTextarea = useRef<HTMLTextAreaElement>(null);
   const textarea = textareaRef ?? localTextarea;
@@ -113,6 +117,12 @@ export function Composer({
       } else if (action.id === "attach-thought") {
         pickThought(range ? { text: draft, ...range } : undefined);
       } else {
+        if (!range) {
+          edit({ append: action.text });
+          textarea.current?.focus();
+          setToken(undefined);
+          return;
+        }
         const next =
           range && range.end < draft.length
             ? draft.slice(0, range.start) + action.text + draft.slice(range.end)
@@ -220,16 +230,14 @@ export function Composer({
           </div>
         )}
         {choices.length > 0 && (
-          <Suspense fallback={null}>
-            <ComposerSuggestions
-              items={choices}
-              highlight={highlight}
-              choose={(id) => {
-                const action = choices.find((item) => item.id === id);
-                if (action) choose(action, token);
-              }}
-            />
-          </Suspense>
+          <ComposerSuggestions
+            items={choices}
+            highlight={highlight}
+            choose={(id) => {
+              const action = choices.find((item) => item.id === id);
+              if (action) choose(action, token);
+            }}
+          />
         )}
         <Textarea
           ref={textarea}
@@ -241,13 +249,13 @@ export function Composer({
           onCompositionStart={() => setToken(undefined)}
           aria-label="Message Abra"
           value={draft}
-          onChange={(event) => {
+          onInput={(event) => {
             const inputEvent = event.nativeEvent as InputEvent;
-            setDraft(event.target.value);
+            setDraft(event.currentTarget.value);
             setHighlight(0);
             setToken(
               inputEvent.inputType === "insertText" && !inputEvent.isComposing
-                ? slashToken(event.target.value, event.target.selectionStart)
+                ? slashToken(event.currentTarget.value, event.currentTarget.selectionStart)
                 : undefined,
             );
           }}
@@ -316,14 +324,36 @@ export function Composer({
                 variant="outline"
                 type="button"
                 aria-label="Stop current Abra turn"
-                disabled={!isReady}
-                onClick={() => {
-                  const agent = copilotkit.getAgent("abra-workspace");
-                  if (!agent) {
-                    setError("Stop is unavailable while reconnecting to Abra.");
-                    return;
+                disabled={!isReady || stopping}
+                onClick={async () => {
+                  setStopping(true);
+                  try {
+                    const response = await fetch(
+                      `/api/copilotkit/agent/abra/stop/${encodeURIComponent(workspace.session_id)}`,
+                      {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: "{}",
+                      },
+                    );
+                    if (!response.ok)
+                      throw new Error("Stop could not be confirmed. Refresh the current turn.");
+                    const result: unknown = await response.json();
+                    if (
+                      !result ||
+                      typeof result !== "object" ||
+                      !("stopped" in result) ||
+                      result.stopped !== true
+                    )
+                      throw new Error("Abra did not confirm an active turn to stop.");
+                    refresh();
+                  } catch (error) {
+                    setError(
+                      error instanceof Error ? error.message : "Stop could not be confirmed.",
+                    );
+                  } finally {
+                    setStopping(false);
                   }
-                  copilotkit.stopAgent({ agent });
                 }}
               >
                 <Square aria-hidden="true" /> Stop

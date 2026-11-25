@@ -1,5 +1,12 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Scoped browser observation and typed HTTP atoms. */
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useAgent, UseAgentUpdate } from "@copilotkit/react-core/v2/headless";
 import { RegistryContext, useAtomSet } from "@effect/atom-react";
 import { Effect, Exit, Schema } from "effect";
@@ -10,19 +17,19 @@ import { bootstrapQuery, invalidateWork } from "../data.ts";
 import { requestError } from "../request-error.ts";
 import { WorkspaceObservation, type ObservationState } from "./observation-client.ts";
 import { HttpAgent } from "@ag-ui/client";
-import { ownObservationRequests } from "./observation-transport.ts";
-import { retainConversation } from "./conversation.ts";
-const updates = [UseAgentUpdate.OnStateChanged];
+import { bindObservationThread, ownObservationRequests } from "./observation-transport.ts";
+import { transcriptFromAgent } from "@abracode/contracts/web/transcript";
+import { ConversationRetention, retainConversation } from "./conversation.ts";
+const updates = [UseAgentUpdate.OnMessagesChanged];
 export function useWorkspaceObservation(
   initial: WorkspaceSnapshot,
   setError: (message: string) => void,
 ) {
   const registry = useContext(RegistryContext);
   const { agent, isReady } = useAgent({
-    agentId: "abra-workspace",
-    runtimeAgentId: "abra",
-    threadId: initial.session_id,
+    agentId: "abra",
     updates,
+    throttleMs: 50,
   });
   const [state, setState] = useState<ObservationState>({
     workspace: initial,
@@ -32,10 +39,11 @@ export function useWorkspaceObservation(
   });
   const owner = useRef<WorkspaceObservation | undefined>(undefined);
   const initialRef = useRef(initial);
-  const retained = useRef(state.conversation);
+  const [retained] = useState(() => new ConversationRetention(state.conversation));
   const invalidate = useAtomSet(invalidateWork, { mode: "promiseExit" });
   useEffect(() => {
     if (!isReady) return;
+    bindObservationThread(agent, initialRef.current.session_id);
     const releaseRequests = agent instanceof HttpAgent ? ownObservationRequests(agent) : () => {};
     let publishedState: unknown;
     const observation = new WorkspaceObservation(
@@ -81,7 +89,7 @@ export function useWorkspaceObservation(
         },
         error: setError,
       },
-      retained.current,
+      retained.read(),
     );
     owner.current = observation;
     const unsubscribe = observation.subscribe(setState);
@@ -89,14 +97,43 @@ export function useWorkspaceObservation(
     return () => {
       unsubscribe();
       initialRef.current = observation.current().workspace;
-      retained.current = observation.current().conversation;
       observation.dispose();
       releaseRequests();
       owner.current = undefined;
     };
-  }, [agent, isReady, registry, invalidate, setError]);
+  }, [agent, isReady, registry, invalidate, setError, retained]);
+  const messages = agent.messages;
+  const conversation = useMemo(
+    () =>
+      retainConversation(
+        retained.read(),
+        state.workspace,
+        isReady ? transcriptFromAgent(messages) : [],
+      ),
+    [retained, messages, state.workspace, isReady],
+  );
+  useLayoutEffect(() => {
+    retained.commit(conversation);
+  }, [retained, conversation]);
   const refresh = useCallback(() => {
     void owner.current?.refresh();
   }, []);
-  return { ...state, isReady, refresh };
+  const activities = useMemo(
+    () => ({
+      recent: new Set(
+        messages
+          .filter((m) => m.role !== "activity")
+          .map((m) =>
+            typeof m.metadata?.abracode_native_message_id === "string"
+              ? m.metadata.abracode_native_message_id
+              : m.id,
+          ),
+      ),
+      references: new Map(
+        messages.flatMap((m) => (m.role === "activity" ? [[m.id, m] as const] : [])),
+      ),
+    }),
+    [messages],
+  );
+  return { ...state, conversation, isReady, refresh, activities };
 }

@@ -4,9 +4,8 @@ import { Checkbox } from "@abracode/presentation/ui/checkbox";
 import { ReportDocumentView } from "@abracode/presentation/report-document";
 import { readReportDocument } from "@abracode/contracts/presentation/report-document";
 import { FeedbackForm } from "./feedback.tsx";
-import { preparedDiagrams } from "@report/prepared-diagrams";
-import { Schema } from "effect";
-import { ContentHash } from "@abracode/contracts/identities";
+import { readPreparedDiagrams, verifiedReportBlock } from "@report/prepared-diagrams";
+import type { ContentHash } from "@abracode/contracts/identities";
 import "./style.css";
 
 const reportEvidenceSectionLabels: Record<string, string> = {
@@ -39,24 +38,17 @@ function feedbackSections(json: string): readonly string[] {
   }
 }
 
-function PortableReport() {
+function PortableReport({
+  json,
+  hash,
+  preparedDiagrams,
+}: {
+  json: string;
+  hash: ContentHash;
+  preparedDiagrams: NonNullable<ReturnType<typeof readPreparedDiagrams>>;
+}) {
   const [dark, setDark] = useState(false);
-  const data = document.getElementById("abracode-report-document");
-  const json = data?.textContent;
-  const [sections] = useState(() => (json ? feedbackSections(json) : []));
-  if (!json)
-    return (
-      <main className="portable-report">
-        <p>A saved JSON document is required for this export.</p>
-      </main>
-    );
-  const digest = Schema.decodeUnknownResult(ContentHash)(data?.getAttribute("data-hash"));
-  if (digest._tag === "Failure")
-    return (
-      <main className="portable-report">
-        <p>The saved document digest is unavailable.</p>
-      </main>
-    );
+  const [sections] = useState(() => feedbackSections(json));
   const notices =
     document.getElementById("abracode-license-notices")?.textContent ?? "Notices unavailable";
   return (
@@ -77,7 +69,7 @@ function PortableReport() {
       <ReportDocumentView
         artifact={{
           json,
-          hash: digest.success,
+          hash,
           bytes: new TextEncoder().encode(json).length,
         }}
         preparedDiagrams={preparedDiagrams}
@@ -94,8 +86,24 @@ function PortableReport() {
     </main>
   );
 }
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <PortableReport />
-  </StrictMode>,
-);
+const root = createRoot(document.getElementById("root")!);
+async function openReport() {
+  const [report, diagrams] = await Promise.all([
+    verifiedReportBlock("document"),
+    verifiedReportBlock("diagrams"),
+  ]);
+  const preparedDiagrams = readPreparedDiagrams(diagrams.json);
+  if (!preparedDiagrams) throw new Error("Invalid diagram data");
+  root.render(
+    <StrictMode>
+      <PortableReport {...report} preparedDiagrams={preparedDiagrams} />
+    </StrictMode>,
+  );
+}
+void openReport().catch(() => {
+  root.render(
+    <main className="portable-report">
+      <p>Report integrity verification failed. Reopen a verified export.</p>
+    </main>,
+  );
+});

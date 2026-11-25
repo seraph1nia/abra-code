@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { CopilotChatConfigurationProvider } from "@copilotkit/react-core/v2/headless";
+import { registerActivities } from "./presentation/activity-reference.tsx";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   CopilotKitContext,
   CopilotKitAgentIdContext,
@@ -12,15 +14,15 @@ import {
  * of the initial bundle budget (`docs/verification/frontend-budget.json`).
  */
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [copilotkit] = useState(
-    () =>
-      new CopilotKitCoreReact({
-        runtimeUrl: "/api/copilotkit",
-        runtimeTransport: "rest",
-        deferInitialConnection: true,
-      }),
-  );
-  const connected = useRef(false);
+  const [copilotkit] = useState(() => {
+    const core = new CopilotKitCoreReact({
+      runtimeUrl: "/api/copilotkit",
+      runtimeTransport: "rest",
+      deferInitialConnection: true,
+    });
+    registerActivities(core);
+    return core;
+  });
   const [executingToolCallIds, setExecuting] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
     const subscription = copilotkit.subscribe({
@@ -39,10 +41,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           return next;
         }),
     });
-    if (!connected.current) {
-      connected.current = true;
-      copilotkit.connect();
-    }
+    copilotkit.connect();
     return () => subscription.unsubscribe();
   }, [copilotkit]);
   const value = useMemo(
@@ -51,7 +50,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
   return (
     <CopilotKitContext.Provider value={value}>
-      <CopilotKitAgentIdContext.Provider value="abra">{children}</CopilotKitAgentIdContext.Provider>
+      <CopilotKitAgentIdContext.Provider value="abra">
+        <CopilotChatConfigurationProvider agentId="abra">
+          {children}
+        </CopilotChatConfigurationProvider>
+      </CopilotKitAgentIdContext.Provider>
     </CopilotKitContext.Provider>
   );
 }

@@ -29,3 +29,21 @@ test("observation cleanup aborts owned HTTP reads, preserves SDK cancellation an
     "cleanup never sends Stop or admission",
   );
 });
+
+test("releasing an observer never cancels a concurrent native Stop", async () => {
+  const signals: (AbortSignal | null | undefined)[] = [];
+  const agent = {
+    fetch: async (_url: string, request: RequestInit) => {
+      signals.push(request.signal);
+      return new Response();
+    },
+  };
+  const release = ownObservationRequests(agent);
+  const native = new AbortController();
+  await agent.fetch("/api/copilotkit/agent/abra/run", {});
+  await agent.fetch("/api/copilotkit/agent/abra/stop/ses_abra", { signal: native.signal });
+  release();
+  assert.equal(signals[0]?.aborted, true);
+  assert.equal(signals[1], native.signal);
+  assert.equal(native.signal.aborted, false);
+});

@@ -59,6 +59,11 @@ export class PRFeedback {
         Effect.gen({ self: this }, function* () {
           const e = yield* this.c.queries.get(input.issue_id);
           const p = yield* this.project(e);
+          if (
+            e.pull_request_reference &&
+            (yield* this.c.delivery.inspect(p, e))?.state === "MERGED"
+          )
+            return yield* new CrewError("CORRECTION_MERGED", "The pull request has already merged");
           const prior = e.rounds?.at(-1);
           if (
             !e.delivered_commit &&

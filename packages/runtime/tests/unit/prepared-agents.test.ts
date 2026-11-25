@@ -1,5 +1,4 @@
 import { goal as workGoal } from "../helpers/work-goal.ts";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Test pinned injected filesystem/path and service lifetime. */
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Effect, Exit, Layer, Schema, Deferred, Fiber } from "effect";
@@ -396,16 +395,12 @@ test("interrupted preparation keeps its receipt unadmitted, releases capacity an
 });
 
 test("superseded cleanup cannot release a replacement or uncertain admission", async () => {
-  const { execution, records, locks } = await retainedExecution({
+  const { execution, records } = await retainedExecution({
     capacity_reservation: { role: "explore", generation: 0, status: "preparing" },
   });
-  const capacity = new Capacity(
-    await run(fixtureConfig("/fixture")),
-    records,
-    records.coordinate(locks),
-  );
+  const capacity = new Capacity(await run(fixtureConfig("/fixture")), records);
   const stale = structuredClone(execution);
-  await run(records.saveControl(execution));
+  await run(records.commitControl(execution));
   await assert.rejects(run(capacity.releasePreparation(stale, "explore")), /superseded/);
   execution.capacity_reservation = {
     role: "explore",
@@ -541,12 +536,12 @@ test("concurrent preparation claims one durable receipt and never invokes its pr
   assert.equal(f.runtime.prompts, 1, "preparation itself never admits a new prompt");
 });
 
-test("fresh configured execution requires a catalog before it claims an assignment", async (t) => {
+test("configured admission resolves its catalog at assembly even without an ambient override", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const { id } = await run(f.work.create(workGoal("missing-catalog")));
-  const error = await Effect.runPromise(Effect.flip(f.controller.start(id)));
-  assert.equal(error.code, "AGENTS_UNAVAILABLE");
-  assert.equal(await run(f.records.execution(id)), undefined);
-  assert.equal(f.runtime.creates, 0);
+  const { id } = await run(f.work.create(workGoal("assembled-catalog")));
+  // Preparation needs an ambient catalog for its provider; selection was captured at admission.
+  await Effect.runPromiseExit(f.controller.start(id));
+  const e = await run(f.records.execution(id));
+  assert.ok(e?.configuration_snapshot?.definitions?.explore);
 });

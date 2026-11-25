@@ -60,8 +60,17 @@ for (const mode of ["standing", "human", "review"] as const) {
         at: Id.Timestamp.make("2026-10-16T10:00:00.000Z"),
       });
     const controller = () =>
-      createWorkflow(f.config, f.records, f.work, f.spec, f.git, f.runtime, delivery, f.locks)
-        .controller;
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        delivery,
+        f.locks,
+      ).controller;
     const clock = await run(TestClock.make());
     const observe = () =>
       run(controller().reconcile(e.issue_id).pipe(Effect.provideService(Clock.Clock, clock)));
@@ -129,6 +138,7 @@ test("delivery waits preserve pauses, retry transient observations and refuse ch
     Id.Executable.make("fake-forge"),
   );
   const c = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,

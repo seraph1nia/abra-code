@@ -1,3 +1,4 @@
+import { assertSupervisor } from "../opencode/session-authority.ts";
 import { searchPublications } from "../presentation/associations.ts";
 import { selectedFollowups, selectionReceiptKey } from "../workflow/selected-requests.ts";
 import { captureSelection } from "./capture-selection.ts";
@@ -12,22 +13,20 @@ import { readReportDocument } from "@abracode/contracts/presentation/report-docu
 import { canonicalJSON, presentationHash } from "../presentation/identity.ts";
 import { committedScope } from "../visibility/invalidations.ts";
 import { artifactSummary, artifactPage } from "./artifacts.ts";
-import { join } from "node:path";
 import { Effect, Schema } from "effect";
 import type { Context } from "@opencode/plugin/effect/plugin";
 import { SessionMessage } from "@opencode/schema/session-message";
 import {
-  AbsolutePath,
   LockKey,
   SessionId,
   StoragePrefix,
   WebSubmissionId,
   timestamp,
 } from "@abracode/contracts/identities";
-import { CrewError, type Config } from "../domain.ts";
+import { CrewError } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
-import { NativeStore, type Store } from "../storage/store.ts";
-import { FileLocks, type Locks } from "../storage/lock.ts";
+import type { NativeStore, Store } from "../storage/store.ts";
+import { type Locks } from "../storage/lock.ts";
 import { NativeRuntime } from "../opencode/runtime.ts";
 import { type Controller } from "../workflow/controller.ts";
 import { decode } from "../decode.ts";
@@ -193,19 +192,22 @@ export class WebAdmissions {
 /** Register only at the installation's central location. */
 export function registerWebGateway(
   ctx: Context,
-  config: Config,
+  services: {
+    store: NativeStore;
+    locks: Locks;
+    runtime: Pick<NativeRuntime, "prompt" | "promptAdmission">;
+  },
   controller: Controller,
   reviews: Reviews,
   agents: Effect.Effect<AgentCatalog, AgentDefinitionError>,
   provide: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E>,
 ) {
-  const store = new NativeStore(ctx.storage);
-  const locks = new FileLocks(AbsolutePath.make(join(config.home, ".abracode/locks")));
+  const { store, locks, runtime } = services;
   const surfacePublications = new SurfacePublications(store, locks);
   let surfaceDiagnostics: { surface_id: string; unavailable: string }[] = [];
   const admissions = new WebAdmissions(
     store,
-    new NativeRuntime(ctx, config),
+    runtime,
     locks,
     (selection) => captureSelection(controller.queries, selection),
     (ref) => controller.thoughts.get(ref, "http").pipe(Effect.asVoid),
@@ -233,23 +235,19 @@ export function registerWebGateway(
     controller.queries
       .projects()
       .pipe(Effect.map((rows) => rows.map((p) => ({ id: p.id, name: p.id, path: p.path }))));
-  const assertSupervisor = (id: SessionId) =>
-    Effect.gen(function* () {
-      const session = yield* controller.queries.session(id);
-      if (
-        session.agent !== "abra" ||
-        session.directory !== config.home ||
-        (yield* controller.queries.assignment(id)) ||
-        session.metadata?.abracode_supervisor_home !== config.home
-      )
-        return yield* new CrewError("ABRA_REQUIRED", "Use the single central Abra session");
+  const requireSupervisor = (id: SessionId) =>
+    assertSupervisor(controller, id, {
+      verifyNative: true,
+      requireSupervisorMetadata: true,
+      code: "ABRA_REQUIRED",
+      message: "Use the single central Abra session",
     });
   const authorizedSupervisor = <A, E>(
     id: SessionId,
     error: (kind: "refused", message: string, data: { code: string }) => E,
     operation: () => Effect.Effect<A, CrewError | AgentDefinitionError>,
   ) =>
-    assertSupervisor(id).pipe(
+    requireSupervisor(id).pipe(
       Effect.andThen(operation),
       Effect.mapError((e) => error("refused", e.message, { code: e.code })),
       provide,
@@ -257,7 +255,7 @@ export function registerWebGateway(
   return Effect.gen(function* () {
     const retained = yield* controller.queries.supervisor();
     if (retained) {
-      const authorized = yield* assertSupervisor(retained).pipe(Effect.result);
+      const authorized = yield* requireSupervisor(retained).pipe(Effect.result);
       const recovered =
         authorized._tag === "Failure"
           ? authorized
@@ -395,10 +393,6 @@ export function registerWebGateway(
             return { ...receipt, followups: selectedFollowups(receipt, execution, session_id) };
           }),
         ),
-      receipts: ({ session_id }, { error }) =>
-        authorizedSupervisor(session_id, error, () => receipts(session_id)),
-      surfaces: ({ session_id }, { error }) =>
-        authorizedSupervisor(session_id, error, () => surfaces(session_id)),
       projects: ({ session_id }, { error }) =>
         authorizedSupervisor(session_id, error, () => projects()),
       history: ({ session_id, issue_id, artifact_offset }, { error }) =>
@@ -410,10 +404,6 @@ export function registerWebGateway(
               ...artifactPage(e?.visual_reports ?? [], artifact_offset),
             })),
           ),
-        ),
-      artifact: ({ session_id, issue_id, request_id }, { error }) =>
-        authorizedSupervisor(session_id, error, () =>
-          controller.visualArtifact(issue_id, request_id),
         ),
       artifactDocument: ({ session_id, issue_id, request_id, hash }, { error }) =>
         authorizedSupervisor(session_id, error, () =>

@@ -42,13 +42,13 @@ export function Overview({
     <div className="inspector-stack">
       <SectionCard
         title={
-          <div className="detail-status">
+          <span className="detail-status">
             <StatusBadge tone={statusTone(statusText)} dot>
               {statusText}
             </StatusBadge>
             <StatusBadge tone="neutral">P{work.priority}</StatusBadge>
             <StatusBadge tone="neutral">{policyLabel}</StatusBadge>
-          </div>
+          </span>
         }
         actions={
           <div className="button-row" style={{ margin: 0 }}>

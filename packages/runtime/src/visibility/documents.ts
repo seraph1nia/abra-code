@@ -1,3 +1,4 @@
+import { readFilePrefix } from "../storage/bounded-read.ts";
 import { AbsolutePath, RelativePath } from "@abracode/contracts/identities";
 
 import { constants } from "node:fs";
@@ -23,21 +24,16 @@ export function readBounded(tree: AbsolutePath, path: AbsolutePath) {
           open(canonical, constants.O_RDONLY | constants.O_NOFOLLOW),
           (file) =>
             Effect.tryPromise({ try: () => file.close(), catch: CrewError.from }).pipe(
-              Effect.orDie,
+              Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error)),
             ),
         );
         const stat = yield* Effect.tryPromise({ try: () => file.stat(), catch: CrewError.from });
         if (!stat.isFile())
           return yield* new CrewError("DOCUMENT_PATH", "Document is not a regular file");
-        const buffer = Buffer.alloc(documentLimit + 1);
-        const { bytesRead } = yield* Effect.tryPromise({
-          try: () => file.read(buffer, 0, buffer.length, 0),
+        return yield* Effect.tryPromise({
+          try: () => readFilePrefix(file, documentLimit),
           catch: CrewError.from,
         });
-        return {
-          buffer: buffer.subarray(0, Math.min(bytesRead, documentLimit)),
-          limited: bytesRead > documentLimit,
-        };
       }),
     ),
   );

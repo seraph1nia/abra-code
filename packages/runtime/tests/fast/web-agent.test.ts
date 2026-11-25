@@ -1,3 +1,4 @@
+import { EventSchema } from "@ag-ui/core/schemas";
 import { NativeSessionProjection } from "../../src/opencode/agui/native-state.ts";
 import type { ChangeScope, Observation } from "@abracode/contracts/web/changes";
 import { projectNativeMessage } from "../../src/opencode/agui/messages.ts";
@@ -6,7 +7,16 @@ import { SessionMessage } from "@opencode/schema/session-message";
 import { AbstractAgent } from "@ag-ui/client";
 import { EventType } from "@ag-ui/core";
 import { from, lastValueFrom, toArray } from "rxjs";
-import { Fingerprint, FormId, IssueId, timestampAt } from "@abracode/contracts/identities";
+import {
+  Fingerprint,
+  FormId,
+  IssueId,
+  MessageId,
+  ContentHash,
+  Identifier,
+  RequestId,
+  timestampAt,
+} from "@abracode/contracts/identities";
 import { WorkspaceStateJson } from "@abracode/contracts/web/workspace-wire";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -341,7 +351,7 @@ test("AG-UI consumer applies contiguous deltas and recovers gaps/restarts from f
   const runner = new AbraRunner(source, {
     notify: () => Effect.void,
     updates: Stream.fromIterable(
-      values.map((snapshot) => ({ type: "snapshot" as const, snapshot })),
+      values.map((snapshot) => ({ type: "snapshot" as const, snapshot, native: snapshot })),
     ),
   });
   const events = await lastValueFrom(
@@ -363,6 +373,7 @@ test("AG-UI consumer applies contiguous deltas and recovers gaps/restarts from f
   assert.equal(observer.messages.length, 1);
   assert.equal(observer.messages[0].id, "msg_native");
   assert.equal(observer.messages[0].content, "Restart baseline");
+  assert.equal(Object.hasOwn(observer.state.workspace, "messages"), false);
   const state = Schema.decodeUnknownSync(WorkspaceStateJson)(observer.state);
   assert.equal(state.workspace.observation?.epoch, "two");
   assert.equal(state.workspace.at, "2027-01-01T00:00:00Z");
@@ -427,7 +438,11 @@ test("native adapter runs without workspace, finder or report data and cloned ho
   const backend = new WorkspaceFixture();
   const runner = new AbraRunner(backend, {
     notify: () => Effect.void,
-    updates: Stream.succeed({ type: "snapshot", snapshot: backend.value }),
+    updates: Stream.succeed({
+      type: "snapshot",
+      snapshot: backend.value,
+      native: backend.nativeSnapshot(),
+    }),
   });
   const agent = new AbraAgent(runner, backend.sessionID);
   agent.description = "Retained configuration";
@@ -548,7 +563,7 @@ test("transport completion follows each admitted input across queue, steer, fail
   assert.equal(receipts.get("queued")!.message_id, "msg_queued");
 });
 
-test("uncertain admission and unsupported state/actions produce bounded run errors without replay", async () => {
+test("uncertain admission and unsupported actions produce bounded run errors without replay", async () => {
   let nativePrompts = 0;
   const native = new NativeAgentAdapter({
     sessionID: "ses_uncertain",
@@ -573,7 +588,7 @@ test("uncertain admission and unsupported state/actions produce bounded run erro
     runId: "uncertain",
     tools: [],
     context: [],
-    state: {},
+    state: { workspace: { busy: false } },
     messages: [{ id: "input", role: "user" as const, content: "input" }],
     forwardedProps: { request_id: "same-input" },
   };
@@ -584,7 +599,7 @@ test("uncertain admission and unsupported state/actions produce bounded run erro
   );
   assert.equal(nativePrompts, 1);
   for (const changed of [
-    { ...input, state: { mutate: true } },
+    { ...input, tools: [{ name: "mutate", description: "Unsupported tool", parameters: {} }] },
     { ...input, forwardedProps: { request_id: "same-input", a2uiAction: { action: "approve" } } },
   ]) {
     const result = await lastValueFrom(native.run(input.threadId, "abra", changed).pipe(toArray()));
@@ -713,4 +728,141 @@ test("native streaming shares one subscription/fallback across observers and rel
   );
   assert.equal(source.stops, 0);
   assert.equal(source.submissions, 0);
+});
+
+test("generated views, reviews and artifacts publish lightweight activities tied to their producing call", async () => {
+  const source = new WorkspaceFixture();
+  const at = source.value.at;
+  const common = {
+    session_id: source.sessionID,
+    message_id: MessageId.make("msg_origin"),
+    source: "tool" as const,
+    tool_call_id: "call_origin",
+  };
+  const revision = ContentHash.make("a".repeat(64));
+  const entries = [
+    {
+      ...common,
+      target: { kind: "surface" as const, surface_id: Identifier.make("view"), revision: 2 },
+    },
+    {
+      ...common,
+      target: { kind: "review" as const, review_id: Identifier.make("review"), revision: 1 },
+    },
+    {
+      ...common,
+      target: {
+        kind: "artifact" as const,
+        issue_id: IssueId.make("issue"),
+        request_id: RequestId.make("report"),
+        hash: revision,
+      },
+    },
+  ];
+  const snapshot = { ...source.value, presentations: { entries, truncated: false } };
+  const runner = new AbraRunner(source, {
+    notify: () => Effect.void,
+    updates: Stream.succeed({
+      type: "snapshot",
+      snapshot,
+      native: {
+        messages: [{ id: "msg_origin", role: "assistant", at, text: "Unique native transcript" }],
+        busy: false,
+        inbox: [],
+      },
+    }),
+  });
+  const events = await lastValueFrom(
+    runner.connect({ threadId: source.sessionID, agentId: "abra" }).pipe(toArray()),
+  );
+  const activities = events
+    .map((e) => EventSchema.parse(e))
+    .filter((e) => e.type === EventType.ACTIVITY_SNAPSHOT);
+  assert.deepEqual(
+    activities.map((e) => e.activityType),
+    ["abracode.surface", "abracode.review", "abracode.artifact"],
+  );
+  assert.deepEqual(
+    activities.map((e) => e.content),
+    [
+      { surface_id: "view", revision: 2, tool_call_id: "call_origin" },
+      { surface_id: "review", revision: 1, tool_call_id: "call_origin" },
+      { surface_id: "report", revision, tool_call_id: "call_origin" },
+    ],
+  );
+  assert.equal(new Set(activities.map((e) => e.messageId)).size, 3);
+  assert.equal(JSON.stringify(events).split("Unique native transcript").length - 1, 1);
+});
+
+test("state survives a native token burst and the last disconnect suspends fallback reads", async () => {
+  const source = new WorkspaceFixture();
+  let reads = 0;
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const signals = yield* PubSub.unbounded<{ native: { type: string } }>();
+        const stalled = yield* Deferred.make<void>();
+        let tokens = 0;
+        const backend = Object.assign(source, {
+          observe: () =>
+            source.snapshot.pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  reads++;
+                }),
+              ),
+            ),
+          changes: Stream.fromPubSub(signals),
+          nativeEvent: () => ({
+            view: {
+              ...source.nativeSnapshot(),
+              messages: [
+                {
+                  id: "msg_burst",
+                  role: "assistant" as const,
+                  text: String(++tokens),
+                  at: source.value.at,
+                },
+              ],
+            },
+          }),
+        });
+        const feed = yield* WorkspaceFeed.make(backend);
+        yield* TestClock.adjust("15 seconds");
+        assert.equal(reads, 0);
+        const observed: Stream.Success<typeof feed.updates>[] = [];
+        const observer = yield* feed.updates.pipe(
+          Stream.runForEach((event) =>
+            Effect.gen(function* () {
+              observed.push(event);
+              if (observed.length === 1) yield* Deferred.await(stalled);
+            }),
+          ),
+          Effect.forkScoped,
+        );
+        yield* TestClock.adjust("0 millis");
+        source.value = { ...source.value, model: "changed-model" };
+        yield* feed.notify({ transcript: true });
+        yield* TestClock.adjust("200 millis");
+        for (let i = 0; i < 256; i++) yield* PubSub.publish(signals, { native: { type: "token" } });
+        yield* TestClock.adjust("0 millis");
+        yield* Deferred.succeed(stalled, undefined);
+        yield* TestClock.adjust("0 millis");
+        assert.ok(
+          observed.some((e) => e.type === "snapshot" && e.snapshot.model === "changed-model"),
+        );
+        assert.ok(observed.some((e) => e.type === "native" && e.native.messages[0].text === "256"));
+        yield* Fiber.interrupt(observer);
+        const before = reads;
+        yield* TestClock.adjust("15 seconds");
+        assert.equal(reads, before);
+        const baseline = yield* Stream.runHead(feed.updates);
+        assert.ok(
+          baseline._tag === "Some" &&
+            baseline.value.type === "snapshot" &&
+            baseline.value.native.messages[0].text === "256",
+        );
+      }),
+    ).pipe(Effect.provide(TestClock.layer())),
+  );
 });

@@ -1,3 +1,4 @@
+import { NativeStore } from "../../src/storage/store.ts";
 import assert from "node:assert/strict";
 import { Effect } from "effect";
 import { test, vi } from "vite-plus/test";
@@ -49,7 +50,7 @@ async function registeredGateway(f: Effect.Success<typeof fixture>, workspace: W
     }),
   );
   const assignments = vi.spyOn(f.controller.queries, "assignment");
-  const scans = vi.spyOn(f.records, "executionScan");
+  const scans = vi.spyOn(f.records, "executionScan", "get");
   const reviews = new Reviews(f.records.store, f.locks, () =>
     Effect.fail(new CrewError("TEST", "Unexpected source read")),
   );
@@ -57,7 +58,7 @@ async function registeredGateway(f: Effect.Success<typeof fixture>, workspace: W
     // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- The native registration API exposes an unknown error channel.
     registerWebGateway(
       ctx,
-      f.config,
+      { store: new NativeStore(ctx.storage), locks: f.locks, runtime: f.runtime },
       f.controller,
       reviews,
       Effect.succeed({ agents: [] }),
@@ -214,4 +215,57 @@ test("registered review handlers authorize before calling the owner and preserve
     });
     assert.equal(owner.mock.calls.length, 1);
   }
+});
+
+test("parallel native reads rediscover one connection after restart, while an uncertain write is attempted once", async (t) => {
+  const clients = await import("../../src/opencode/client.ts");
+  const home = AbsolutePath.make("/fixture/api");
+  let generation = 1,
+    discoveries = 0,
+    writes = 0;
+  const make = vi.spyOn(clients, "makeClient").mockImplementation(() => {
+    const installed = generation;
+    const client = {
+      session: {
+        get: () =>
+          Effect.succeed({
+            agent: "abra",
+            location: { directory: home },
+            metadata: { abracode_supervisor_home: home },
+          }),
+      },
+      rpc: () => ({
+        projects: () =>
+          installed === generation
+            ? Effect.succeed([])
+            : Effect.fail(new CrewError("WEB_SERVICE", "Connection closed")),
+        submit: () => {
+          writes++;
+          return Effect.fail(new CrewError("WEB_SERVICE", "Response lost"));
+        },
+      }),
+    };
+    return Effect.succeed(
+      client as unknown as Effect.Success<ReturnType<typeof clients.makeClient>>,
+    );
+  });
+  t.onTestFinished(() => make.mockRestore());
+  const web = new NativeWebBackend(
+    home,
+    "ses_fixture",
+    Effect.sync(() => {
+      discoveries++;
+      return { url: "http://127.0.0.1:31337" };
+    }),
+  );
+  await run(Effect.all([web.repositories, web.repositories], { concurrency: 2 }));
+  assert.equal(discoveries, 1);
+  generation++;
+  await run(Effect.all([web.repositories, web.repositories], { concurrency: 2 }));
+  assert.equal(discoveries, 2);
+  await assert.rejects(
+    run(web.submit({ request_id: "lost", text: "test", delivery: "queue" })),
+    /Response lost/,
+  );
+  assert.equal(writes, 1);
 });

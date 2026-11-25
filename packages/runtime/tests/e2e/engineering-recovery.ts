@@ -10,6 +10,7 @@ import * as Id from "@abracode/contracts/identities";
 import { loadConfig } from "../../src/config/load.ts";
 import { makeClient } from "../../src/opencode/client.ts";
 import { capabilityRequirements, policyIdentity } from "../../src/opencode/role-policy.ts";
+import { NativeStore } from "../../src/storage/store.ts";
 import { NativeRuntime } from "../../src/opencode/runtime.ts";
 import { digestText } from "../../src/opencode/worker-environment.ts";
 import { WorkerContextSchema } from "../../src/workflow/worker-context-contracts.ts";
@@ -90,10 +91,20 @@ export async function assertPreSuiteAfterRestart(
         ),
     },
   } as unknown as Context;
-  const runtime = new NativeRuntime(ctx, await run(loadConfig(home)));
+  const runtime = new NativeRuntime(ctx, await run(loadConfig(home)), {
+    projects: Effect.succeed([]),
+    store: new NativeStore(ctx.storage),
+  });
   const client = await run(
     makeClient({ url, auth: { type: "basic", username: "opencode", password } }),
   );
+  Object.assign(ctx, {
+    session: client.session,
+    agent: client.agent,
+    skill: client.skill,
+    model: client.model,
+    plugin: client.plugin,
+  });
   runtime.client = () => Effect.succeed(client);
   const retained = { ...e, prompt_id: captured.prompt_id, worker_context_id: captured.prompt_id };
   const resolved = await run(runtime.preflight(retained, "explore", captured.prompt_id));

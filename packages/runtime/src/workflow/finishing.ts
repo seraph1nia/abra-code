@@ -21,7 +21,7 @@ import {
   activeSynchronization,
   synchronizationAuthority,
 } from "./synchronization.ts";
-import { applyDispositions, residueTarget } from "./finishing-disposition.ts";
+import { applyDispositions, residueTarget } from "./finishing-residue.ts";
 import { type CleanupSample } from "../git/cleanup.ts";
 import { type FinishingTarget } from "./finishing-contracts.ts";
 import { timestamp } from "@abracode/contracts/identities";

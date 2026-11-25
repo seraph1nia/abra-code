@@ -84,6 +84,11 @@ test(
     const html = await run(bundle.render(input));
     assert.ok(Buffer.byteLength(html) < 8 * 1024 * 1024);
 
+    const altered = html.replace(
+      /(id="abracode-report-diagrams" data-hash=")[a-f0-9]{64}/,
+      "$1" + "0".repeat(64),
+    );
+    assert.notEqual(altered, html);
     const moved = join(f.root, "relocated");
     await mkdir(moved);
     await writeFile(join(moved, "export.html"), html);
@@ -109,6 +114,11 @@ test(
       if (/^https?:/.test(request.url())) network.push(request.url());
     });
     page.on("pageerror", (error) => errors.push(error.message));
+    const tampered = join(moved, "tampered.html");
+    await writeFile(tampered, altered);
+    await page.goto(pathToFileURL(tampered).href);
+    await page.getByText(/Report integrity verification failed/).waitFor();
+    assert.equal(await page.locator(".frozen-report").count(), 0);
     await page.goto(pathToFileURL(join(moved, "frame.html")).href);
     const report = page.frameLocator("iframe");
     await report.getByRole("heading", { name: "Saved evidence", exact: true }).waitFor();
@@ -294,7 +304,7 @@ test(
     // Preview is a foreground command with its own listener, started only here.
     const preview = spawn(
       resolve("node_modules/.bin/tsx"),
-      [resolve("scripts/report.ts"), "preview", join(moved, "export.html"), "0"],
+      [resolve("scripts/cli.ts"), "report", "preview", join(moved, "export.html"), "0"],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
     t.onTestFinished(() => {

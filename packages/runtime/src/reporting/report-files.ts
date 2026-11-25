@@ -101,7 +101,7 @@ export class ReportFile {
             }),
           (file) =>
             Effect.tryPromise({ try: () => file.close(), catch: CrewError.from }).pipe(
-              Effect.orDie,
+              Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error)),
             ),
         );
       }),
@@ -149,7 +149,7 @@ export class ReportFile {
             Effect.tryPromise({
               try: () => file.close(),
               catch: CrewError.from,
-            }).pipe(Effect.orDie),
+            }).pipe(Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error))),
         );
         return { staging: path, path: destination };
       }),

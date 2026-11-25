@@ -1,13 +1,15 @@
+import { useCallback, useContext } from "react";
+import { RegistryContext } from "@effect/atom-react";
+import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import type { BindingSelection } from "@abracode/contracts/web/bindings";
 import { workInvalidationKeys, type ChangeScope } from "@abracode/contracts/web/changes";
 import type {
   SaveSurfaceSchema,
   ExportDocumentSchema,
 } from "@abracode/contracts/web/report-actions";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4 HTTP atoms are the browser query boundary. */
 import { Effect, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
-import { Atom, AtomHttpApi, Reactivity } from "effect/reactivity";
+import { Atom, AtomRegistry, AtomHttpApi, Reactivity } from "effect/reactivity";
 import { Form } from "@opencode/schema/form";
 import { Permission } from "@opencode/schema/permission";
 import { workspaceApi } from "@abracode/contracts/web/http-api";
@@ -31,9 +33,22 @@ export const memoryEnabledQuery = WorkspaceApi.query("workspace", "memoryEnabled
 });
 export const repositoriesQuery = WorkspaceApi.query("workspace", "repositories", {});
 /** An uncached exact read; missing admission evidence must be checked afresh. */
-export const readReceipt = WorkspaceApi.runtime.fn((request_id: string) =>
-  Effect.flatMap(WorkspaceApi, (client) => client.workspace.receipt({ query: { request_id } })),
-);
+export const readReceipt = (request_id: string) =>
+  Effect.flatMap(WorkspaceApi, (client) => client.workspace.receipt({ query: { request_id } }));
+
+/** Each invocation owns its result even while other callers use the same HTTP client. */
+export function useWorkspaceCall<I, A, E>(call: (input: I) => Effect.Effect<A, E, WorkspaceApi>) {
+  const registry = useContext(RegistryContext);
+  return useCallback(
+    (input: I) =>
+      Effect.runPromiseExit(
+        AtomRegistry.getResult(registry, WorkspaceApi.runtime).pipe(
+          Effect.flatMap((context) => call(input).pipe(Effect.provide(context))),
+        ),
+      ),
+    [registry, call],
+  );
+}
 export const selectedReceiptQuery = (request_id: string, issue: string) =>
   WorkspaceApi.query("workspace", "receipt", { query: { request_id }, ...queryOptions(issue) });
 export const historyQuery = (cursor: string) =>
@@ -98,7 +113,8 @@ export const permissionReply = Atom.family((_binding: string) =>
   ),
 );
 export const submitMutation = WorkspaceApi.mutation("workspace", "submit");
-export const resolveResource = WorkspaceApi.mutation("work", "resolve");
+export const resolveResource = ({ payload }: { payload: ResourceSelection }) =>
+  Effect.flatMap(WorkspaceApi, (client) => client.work.resolve({ payload }));
 export const saveSurface = Atom.family((_request: string) =>
   WorkspaceApi.runtime.fn<typeof SaveSurfaceSchema.Type>()((payload) =>
     Effect.flatMap(WorkspaceApi, (client) => client.work.saveSurface({ payload })),

@@ -1,3 +1,5 @@
+import { Context } from "effect";
+import { Agents } from "@abracode/agents";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
@@ -32,13 +34,14 @@ import { json } from "../process.ts";
 import { type Locks } from "../storage/lock.ts";
 import { type ExecutionOwnedField, type Records } from "../storage/store.ts";
 import { collectForm } from "../workflow/authorization.ts";
-import { consumesRetained, scanCapacity, unknownCapacity } from "../workflow/capacity.ts";
-import { createExecution } from "../workflow/execution.ts";
+import { consumesRetained, unknownCapacity } from "../workflow/capacity.ts";
+import { createConfiguredExecution } from "../workflow/execution.ts";
 import { observePreflight } from "../workflow/finishing-readiness.ts";
 import { inputFingerprint } from "../workflow/operations.ts";
 import { OpenSpecConfigSchema, parseYaml } from "./contracts.ts";
 
 interface SetupDependencies {
+  readonly catalog: typeof Agents.Service;
   records: Records;
   git: Git;
   delivery: Delivery;
@@ -137,7 +140,7 @@ export class ProjectSetup {
 
   reconcileQueued = Effect.fn("ProjectSetup.reconcileQueued")(
     function* (this: ProjectSetup) {
-      const queued = (yield* this.c.records.setupScan()).values
+      const queued = (yield* this.c.records.setupScan).values
         .filter((e) => e.current_phase === "queued")
         .sort(
           (a, b) =>
@@ -193,10 +196,10 @@ export class ProjectSetup {
           "Prepare setup with initialize_openspec:true only when initialization is authorized",
         );
       }
-      return yield* this.c.records.coordinateCommit(() =>
+      return yield* this.c.records.withActiveIndex(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
-            const scan = yield* scanCapacity(this.c.records);
+            const scan = yield* this.c.records.capacityRecords();
             if (scan.diagnostics.length) return yield* unknownCapacity();
             const retained = [...scan.executions, ...scan.setups].filter(consumesRetained);
             const reason =
@@ -212,7 +215,7 @@ export class ProjectSetup {
               return yield* this.save(waiting, ["current_phase", "error_or_recovery_reason"]);
             }
             const executionID = ExecutionId.make(`abra-setup-${randomUUID()}`);
-            const setup = yield* createExecution(
+            const setup = yield* createConfiguredExecution(
               registered,
               {
                 issue_id: IssueId.make(`setup-${id}`),
@@ -226,6 +229,10 @@ export class ProjectSetup {
                 supervisor_session_id: supervisor,
               },
               this.c.config,
+            ).pipe(
+              Effect.updateContext((caller: Context.Context<never>) =>
+                Context.merge(Context.make(Agents, this.c.catalog), caller),
+              ),
             );
             setup.error_or_recovery_reason = reason;
             yield* this.c.records.create(setup);

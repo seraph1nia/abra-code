@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Injects the pinned platform filesystem at the existing lifecycle test seam. */
 import assert from "node:assert/strict";
 import { mkdir, readlink, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -11,7 +10,7 @@ import { RepositorySources } from "../../src/git/source.ts";
 import { Workspaces } from "../../src/git/workspaces.ts";
 import * as Id from "@abracode/contracts/identities";
 import { OpenSpec } from "../../src/openspec/adapter.ts";
-import { createExecution } from "../../src/workflow/execution.ts";
+import { createConfiguredExecution } from "../../src/workflow/execution.ts";
 import { retainedExecution } from "../helpers/retained-execution.ts";
 import { run } from "../effects.ts";
 import { fixture } from "../fixtures.ts";
@@ -34,15 +33,19 @@ test("OpenSpec preserves unreadable preflight and post-archive evidence", async 
   const project = (await run(f.records.project(repository)))!;
   const e = {
     ...(await run(
-      createExecution(project, {
-        issue_id: Id.IssueId.make("archive-test"),
-        repository_id: repository,
-        execution_id: Id.ExecutionId.make("archive-execution"),
-        current_phase: "archiving",
-        workflow_policy: "full-openspec",
-        branch: Id.BranchName.make("main"),
-        openspec_change: Id.ChangeName.make("test-change"),
-      }),
+      createConfiguredExecution(
+        project,
+        {
+          issue_id: Id.IssueId.make("archive-test"),
+          repository_id: repository,
+          execution_id: Id.ExecutionId.make("archive-execution"),
+          current_phase: "archiving",
+          workflow_policy: "full-openspec",
+          branch: Id.BranchName.make("main"),
+          openspec_change: Id.ChangeName.make("test-change"),
+        },
+        f.config,
+      ),
     )),
     openspec_schema_binding: undefined,
     worktree_directory: project.path,
@@ -99,15 +102,19 @@ test("worktree orphan listings distinguish missing and unreadable roots before p
   const registered = (await run(f.records.project(repo)))!;
   const project = { ...registered, project_id: Id.NativeProjectId.make(registered.path) };
   const e = await run(
-    createExecution(project, {
-      issue_id: Id.IssueId.make("workspace-test"),
-      repository_id: repo,
-      execution_id: Id.ExecutionId.make("workspace-execution"),
-      current_phase: "provisioning",
-      workflow_policy: "research-only",
-      branch: Id.BranchName.make("test-worktree"),
-      openspec_change: Id.ChangeName.make("unused"),
-    }),
+    createConfiguredExecution(
+      project,
+      {
+        issue_id: Id.IssueId.make("workspace-test"),
+        repository_id: repo,
+        execution_id: Id.ExecutionId.make("workspace-execution"),
+        current_phase: "provisioning",
+        workflow_policy: "research-only",
+        branch: Id.BranchName.make("test-worktree"),
+        openspec_change: Id.ChangeName.make("unused"),
+      },
+      f.config,
+    ),
   );
   const sources = new RepositorySources(f.git, f.config.repository_root);
   const workspaces = new Workspaces(f.git, sources, f.runtime, f.config.worktree_root);

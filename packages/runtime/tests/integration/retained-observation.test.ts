@@ -74,10 +74,10 @@ test("independent shared captures coexist while commits remain exclusive and rea
 test("retained capture retries a graph commit between issue and record observations", async (t) => {
   const { f, graph, queries } = await observation(t);
   const first = await run(graph.create(goal("before-capture")));
-  const scan = f.records.projectScan.bind(f.records);
+  const scan = f.records.projectScan;
   let attempts = 0;
-  f.records.projectScan = () =>
-    scan().pipe(
+  const spy = vi.spyOn(f.records, "projectScan", "get").mockReturnValue(
+    scan.pipe(
       Effect.tap(() => {
         attempts++;
         return attempts === 1
@@ -89,7 +89,8 @@ test("retained capture retries a graph commit between issue and record observati
             })
           : Effect.void;
       }),
-    );
+    ),
+  );
   f.runtime.session = () =>
     Effect.fail(new CrewError("UNEXPECTED_NATIVE", "Capture must not inspect sessions"));
   const captured = await run(queries.observe({ state: "all", limit: 1 }));
@@ -103,7 +104,7 @@ test("retained capture retries a graph commit between issue and record observati
   assert.ok(captured.completions.some((completion) => completion.issue_id === first.id));
   assert.equal(captured.source.work_revision, await run(graph.revision));
   assert.equal(captured.source.projects.length, 3);
-  f.records.projectScan = scan;
+  spy.mockRestore();
   const listing = await run(queries.workList(true));
   assert.deepEqual(listing.issues, captured.issues);
   assert.equal(listing.retained_source.work_revision, captured.source.work_revision);
@@ -124,17 +125,18 @@ test("retained capture retries a graph commit between issue and record observati
 
 test("continuous graph contention yields bounded unavailable evidence and releases coordination", async (t) => {
   const { f, graph, queries } = await observation(t);
-  const scan = f.records.projectScan.bind(f.records);
+  const scan = f.records.projectScan;
   let attempts = 0;
-  f.records.projectScan = () =>
-    scan().pipe(Effect.tap(() => graph.create(goal(`contention-${++attempts}`))));
+  const spy = vi
+    .spyOn(f.records, "projectScan", "get")
+    .mockReturnValue(scan.pipe(Effect.tap(() => graph.create(goal(`contention-${++attempts}`)))));
   await assert.rejects(
     run(queries.observe()),
     (error: unknown) => error instanceof CrewError && error.code === "OBSERVATION_UNAVAILABLE",
   );
   assert.equal(attempts, 3);
   assert.equal(f.locks.held, false);
-  f.records.projectScan = scan;
+  spy.mockRestore();
   assert.equal((await run(queries.observe())).issues.length, 3);
 });
 
@@ -151,7 +153,7 @@ test("finder projects selected rows and uses only matching retained capacity", a
   const native = vi.spyOn(f.runtime, "session");
   t.onTestFinished(() => native.mockRestore());
   for (const method of ["projectScan", "executionScan", "setupScan"] as const)
-    vi.spyOn(f.records, method).mockImplementation(() => {
+    vi.spyOn(f.records, method, "get").mockImplementation(() => {
       throw new Error("Finder must not scan whole record populations");
     });
   const initial = await run(view.find({ search: "selected-only" }));
@@ -247,9 +249,9 @@ test("a slow retained scan times out without starving pause or retaining its loc
   const { f, queries } = await observation(t);
   const execution = await run(applying(f));
   const entered = Deferred.makeUnsafe<void>();
-  const scan = f.records.projectScan.bind(f.records);
-  f.records.projectScan = () =>
-    Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never));
+  const spy = vi
+    .spyOn(f.records, "projectScan", "get")
+    .mockReturnValue(Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)));
   await run(
     Effect.scoped(
       Effect.gen(function* () {
@@ -267,7 +269,7 @@ test("a slow retained scan times out without starving pause or retaining its loc
     ),
   );
   assert.equal(f.locks.held, false);
-  f.records.projectScan = scan;
+  spy.mockRestore();
   await run(queries.observe());
 });
 

@@ -13,17 +13,21 @@ test("offline CLI redacts command secrets and doctor reports missing core withou
   const root = await mkdtemp(join(tmpdir(), "abracode-cli-"));
   t.onTestFinished(() => removeFixture(root));
   const env = { ...process.env, ABRACODE_HOME: root, ABRACODE_CONFIG: "selected.yaml" };
-  const cli = (script: string, args: string[] = []) =>
-    command(resolve("node_modules/.bin/tsx"), [resolve("scripts", script), ...args], { env });
+  const cli = (subcommand: string, args: string[] = []) =>
+    command(
+      resolve("node_modules/.bin/tsx"),
+      [resolve("scripts/cli.ts"), ...subcommand.split(" "), ...args],
+      { env },
+    );
   await writeFile(
     join(root, "selected.yaml"),
     base +
       "repositories:\n  - id: safe\n    path: /uninspected\n    delivery: branch\n    verification: [[command, secret-marker]]\n",
   );
-  const shown = await cli("config.ts", ["--show", "--json"]);
+  const shown = await cli("config", ["--show", "--json"]);
   assert.equal(shown.stdout.includes("secret-marker"), false);
   assert.equal(JSON.parse(shown.stdout).models.review.source, "models.default");
-  await assert.rejects(cli("doctor.ts"), (error) => {
+  await assert.rejects(cli("doctor"), (error) => {
     const output =
       String((error as { stdout: string }).stdout) + String((error as { stderr: string }).stderr);
     assert.match(output, /unverified/);
@@ -33,6 +37,6 @@ test("offline CLI redacts command secrets and doctor reports missing core withou
   });
   assert.deepEqual(await readdir(root), ["selected.yaml"]);
   await writeFile(join(root, "selected.yaml"), base + "surprise: value\n");
-  await assert.rejects(cli("config.ts", ["--json"]));
+  await assert.rejects(cli("config", ["--json"]));
   assert.deepEqual(await readdir(root), ["selected.yaml"]);
 });

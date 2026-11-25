@@ -1,6 +1,4 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Cancelling the picker releases its typed HTTP atom subscriptions. */
-import { useContext } from "react";
-import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { AsyncResult, Atom } from "effect/reactivity";
 import type { SearchCommand } from "@abracode/presentation/ui/search-dialog";
 const idle = Atom.make(AsyncResult.initial<never, never>());
@@ -33,12 +31,12 @@ export function useSource<A, E>(
 ) {
   const atom = enabled ? read() : idle;
   const result = useAtomValue(atom);
-  const registry = useContext(RegistryContext);
+  const refresh = useAtomRefresh(atom);
   return {
     data: enabled && AsyncResult.isSuccess(result) ? result.value : undefined,
     failed: enabled && AsyncResult.isFailure(result),
     loading: enabled && (result.waiting || AsyncResult.isInitial(result)),
-    retry: () => registry.refresh(atom),
+    retry: refresh,
   };
 }
 
@@ -55,4 +53,50 @@ export function sourceFeedback() {
     } else if (part.loading) status.push("Searching " + label + "…");
   };
   return { more, status, report };
+}
+
+export function rankPaletteHits(
+  hits: Hit[],
+  filter: Source | undefined,
+  confirmedPublications: Set<string>,
+  input: string,
+  lower: string,
+  expanded: Partial<Record<Source, number>>,
+  session?: string,
+) {
+  const rank = (h: Hit) =>
+    h.identity.toLowerCase() === lower ? 0 : h.label.toLowerCase() === lower ? 1 : 2;
+
+  const counts = new Map<Source, number>();
+  const seen = new Set<string>();
+  const unique = hits.filter((hit) => {
+    if (seen.has(hit.id)) return false;
+    seen.add(hit.id);
+    return true;
+  });
+  const rows = unique
+    .filter((h) => {
+      if (filter && h.source !== filter) return false;
+      if (confirmedPublications.has(h.id)) return true;
+      if (!input) return h.source === "page" || h.source === "command";
+      if (
+        ["work", "thought", "github", "evidence", "memory"].includes(h.source) ||
+        (h.source === "session" && h.identity !== session)
+      )
+        return true;
+      return [h.identity, h.label, h.detail, ...(h.aliases ?? [])].some((s) =>
+        s?.toLowerCase().includes(lower),
+      );
+    })
+    .sort((a, b) => rank(a) - rank(b))
+    .filter((h) => {
+      const count = counts.get(h.source) ?? 0;
+      counts.set(h.source, count + 1);
+      return count < (expanded[h.source] ?? (h.source === "evidence" ? 12 : 8));
+    })
+    .map((h) => ({
+      ...h,
+      detail: [h.source, h.detail, h.identity, h.effect].filter(Boolean).join(" · "),
+    }));
+  return { rows, counts };
 }

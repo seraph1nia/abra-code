@@ -1,4 +1,3 @@
-import { normalizeAction } from "../../src/workflow/action-state.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Effect } from "effect";
@@ -136,28 +135,29 @@ test("a rerun refuses an older attempt or changed workflow before sending", asyn
     status: "running" as const,
     created_at: 1,
     updated_at: 2,
-    authority: "execution-policy",
-    finding: Id.FindingId.make("failure"),
-    revision: "attempt-2",
-    run_id: 7,
-    run_attempt: 2,
-    workflow: ".github/workflows/ci.yml",
+    authority: "execution-policy" as const,
+    repository_id: e.repository_id,
+    pr: e.pull_request_reference!,
+    submission: { stage: "admitted" as const, at: 2 },
+    findings: [{ id: Id.FindingId.make("failure"), revision: "attempt-2" }],
+    target: {
+      run_id: 7,
+      run_attempt: 2,
+      workflow: ".github/workflows/ci.yml",
+    },
   };
   const actions = new GitHubPRActions(forge, () => Effect.succeed(f.delivery.pr));
-  await assert.rejects(
-    run(actions.prepare(p, e, normalizeAction(action, e))),
-    /completed failed attempt/,
-  );
+  await assert.rejects(run(actions.prepare(p, e, action)), /completed failed attempt/);
   attempt = 2;
   path = ".github/workflows/foreign.yml";
-  await assert.rejects(run(actions.prepare(p, e, normalizeAction(action, e))), /head\/workflow/);
+  await assert.rejects(run(actions.prepare(p, e, action)), /head\/workflow/);
   assert.equal(posts, 0);
 });
 
-test("legacy inline reply marker reconciles its original parent without a new post", async (t) => {
+test("Retained inline reply marker reconciles its original parent without a new post", async (t) => {
   const { deliveredPR } = await import("../helpers/delivered-pr.ts");
   const { f, e, p } = await deliveredPR(t);
-  const legacy = {
+  const action = {
     schema_version: 1 as const,
     id: "original-inline-reply",
     generation: 0,
@@ -166,12 +166,16 @@ test("legacy inline reply marker reconciles its original parent without a new po
     status: "uncertain" as const,
     created_at: 1,
     updated_at: 2,
-    authority: "execution-policy",
-    finding: Id.FindingId.make("old-source"),
-    revision: "r1",
-    thread_id: "thread-7",
-    comment_id: 7,
-    body: "Exact verified correction",
+    authority: "execution-policy" as const,
+    repository_id: e.repository_id,
+    pr: e.pull_request_reference!,
+    submission: { stage: "admitted" as const, at: 2 },
+    target: {
+      finding: Id.FindingId.make("old-source"),
+      revision: "r1",
+      destination: { kind: "thread" as const, thread_id: "thread-7", comment_id: 7 },
+      body: "Exact verified correction",
+    },
   };
   const calls: string[][] = [];
   const adapter = new GitHubPRActions(
@@ -195,7 +199,7 @@ test("legacy inline reply marker reconciles its original parent without a new po
               JSON.stringify([
                 [
                   {
-                    body: `${legacy.body}\n\n<!-- abracode-action:${legacy.id} -->`,
+                    body: `${action.target.body}\n\n<!-- abracode-action:${action.id} -->`,
                     user: { login: "abra-bot" },
                     html_url: `${e.pull_request_reference}#discussion_r8`,
                     in_reply_to_id: 7,
@@ -210,10 +214,8 @@ test("legacy inline reply marker reconciles its original parent without a new po
     ),
     () => Effect.succeed(f.delivery.pr),
   );
-  const normalized = normalizeAction(legacy, e);
-  const outcome = await run(adapter.reconcile(p, e, normalized));
+  const outcome = await run(adapter.reconcile(p, e, action));
   assert.equal(outcome.kind, "confirmed");
-  assert.equal(normalized.id, legacy.id);
   assert.equal(
     calls.some((args) => args.includes("POST")),
     false,

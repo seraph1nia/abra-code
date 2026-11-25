@@ -1,8 +1,7 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Native form replies use independent typed Effect mutation atoms. */
 import { useRef, useState } from "react";
 import { ArrowUpRight } from "@abracode/presentation/icons";
 import { useAtom } from "@effect/atom-react";
-import { toast } from "sonner";
+import { toast } from "./notifications.tsx";
 import { Exit } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import type { Form } from "@opencode/schema/form";
@@ -178,7 +177,10 @@ function NativeField({
   const control = {
     id,
     "aria-invalid": Boolean(error),
-    "aria-describedby": `${id}-description${error ? ` ${id}-error` : ""}`,
+    "aria-describedby":
+      [field.description && `${id}-description`, error && `${id}-error`]
+        .filter(Boolean)
+        .join(" ") || undefined,
   };
   let content: React.ReactNode;
   switch (field.type) {

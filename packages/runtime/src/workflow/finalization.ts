@@ -27,7 +27,7 @@ import { publicationDestination } from "./publication-destination.ts";
 import { activeSynchronization } from "./synchronization.ts";
 import { timestamp } from "@abracode/contracts/identities";
 import { SessionMessage } from "@opencode/schema/session-message";
-import { applyDispositions } from "./finishing-disposition.ts";
+import { applyDispositions } from "./finishing-residue.ts";
 import { MAX_OUTBOX_ATTEMPTS, nextAttemptCount, nextCheckAt } from "./durable-outbox.ts";
 interface Dependencies {
   finishing: Finishing;
@@ -635,16 +635,10 @@ export class Finalization {
         this.c.records.saveOwned(e, fields),
       );
       if (blocker) return yield* this.blockCleanup(e, blocker);
-      delete e.cleanup_blocker;
-      e.attention = e.attention?.map((a) =>
-        a.code === "cleanup_blocked" && a.status !== "superseded"
-          ? { ...a, status: "superseded" as const }
-          : a,
-      );
       yield* this.c.coordination.with(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
-            yield* this.c.records.saveOwned(e, ["cleanup_blocker", "attention"]);
+            yield* this.c.records.commitOwned(e, () => undefined);
             const issue = yield* this.c.work.show(e.issue_id);
             if (issue.status !== "closed") {
               if (!(issue.assignee === e.execution_id))
@@ -656,7 +650,15 @@ export class Finalization {
             }
             if (!((yield* this.c.work.show(e.issue_id)).status === "closed"))
               return yield* new CrewError("CLOSE_UNKNOWN", "Issue closure did not persist");
-            yield* this.c.transitions.move(e, "completed");
+            yield* this.c.transitions.move(e, "completed", (current) => ({
+              cleanup_blocker: removeOwnedField,
+              attention:
+                current.attention?.map((a) =>
+                  a.code === "cleanup_blocked" && a.status !== "superseded"
+                    ? { ...a, status: "superseded" as const }
+                    : a,
+                ) ?? removeOwnedField,
+            }));
           }),
         ),
       );

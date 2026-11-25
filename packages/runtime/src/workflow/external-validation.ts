@@ -53,7 +53,11 @@ export class ExternalValidation {
         }),
       ),
     );
-  advance = Effect.fn("ExternalValidation.advance")(
+  advance = (e: Execution, p: Project) =>
+    this.prepare(e, p).pipe(
+      Effect.ensuring(this.admission.capacity.releaseIfPreparing(e, "apply")),
+    );
+  private prepare = Effect.fn("ExternalValidation.advance")(
     function* (this: ExternalValidation, e: Execution, p: Project) {
       if (!externalOwns(e) && !(yield* this.admission.capacity.reserve(e, "apply", p))) return e;
       const issue = yield* this.admission.work.show(e.issue_id);
@@ -65,15 +69,7 @@ export class ExternalValidation {
           scope: e.scope?.contract,
           plan: e.plan_fingerprint,
         }),
-      ).pipe(
-        Effect.tapError(() =>
-          externalOwns(e)
-            ? Effect.void
-            : this.records.commitOwned(e, { capacity_reservation: removeOwnedField }),
-        ),
       );
-      if (externalOwns(e))
-        yield* this.records.commitOwned(e, { capacity_reservation: removeOwnedField });
       return e;
     }.bind(this),
     domainEffect,

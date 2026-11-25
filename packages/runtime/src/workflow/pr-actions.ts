@@ -9,7 +9,7 @@ import { type ActionInput } from "@abracode/contracts/workflow/feedback-contract
 import { actionFindings, type CurrentAction } from "@abracode/contracts/workflow/action-contracts";
 import { type ActionOutcome } from "../git/action-contracts.ts";
 import { prepareAction } from "./action-policy.ts";
-import { normalizeAction, confirmedAction, preparedInput, targetKey } from "./action-state.ts";
+import { confirmedAction, preparedInput, targetKey } from "./action-state.ts";
 import { actionPlan } from "./action-plan.ts";
 import { domainEffect } from "../effect.ts";
 import { collectApprovalForm } from "./decision-ledger.ts";
@@ -105,9 +105,7 @@ export class PRActions {
           "ACTION_STALE",
           "Retained action does not match current head or kind",
         );
-      let action = retained
-        ? normalizeAction(retained, e)
-        : this.prepare(e, input, automatic, yield* Clock.currentTimeMillis);
+      let action = retained ?? this.prepare(e, input, automatic, yield* Clock.currentTimeMillis);
       if (input.action_id) {
         ensure(
           (!input.finding_id || actionFindings(action).some((f) => f.id === input.finding_id)) &&
@@ -137,14 +135,12 @@ export class PRActions {
           });
         return e;
       }
-      const prior = e
-        .feedback!.actions.map((a) => normalizeAction(a, e))
-        .find(
-          (a) =>
-            a.id !== action.id &&
-            a.submission.stage !== "unsubmitted" &&
-            targetKey(a) === targetKey(action),
-        );
+      const prior = e.feedback!.actions.find(
+        (a) =>
+          a.id !== action.id &&
+          a.submission.stage !== "unsubmitted" &&
+          targetKey(a) === targetKey(action),
+      );
       if (prior) {
         yield* this.save(e, {
           ...action,

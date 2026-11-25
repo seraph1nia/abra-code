@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Disposable native workspace journey. */
 import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -152,7 +151,9 @@ export async function cockpitJourney(input: {
     await page.getByText(/Abra answered · The captured deadline was 50ms/).waitFor();
     const scoped = await Effect.runPromise(backend.receipt(admitted.request_id));
     assert.equal(scoped?.message_id, admitted.message_id);
-    const history = (await Effect.runPromise(backend.snapshot)).messages;
+    const history = await Effect.runPromise(
+      backend.snapshot.pipe(Effect.map(() => backend.nativeSnapshot()!.messages)),
+    );
     assert.equal(history.filter((m) => m.id === admitted.message_id).length, 1);
     assert.ok(input.held());
     await page.route("**/api/work/verification?*", (route) =>

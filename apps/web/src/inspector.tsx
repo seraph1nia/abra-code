@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4 HTTP atoms provide scoped inspector reads. */
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -176,7 +175,7 @@ export function Inspector(
         </div>
       </aside>
     ) : !props.issue ? null : props.work ? (
-      <InspectorContent {...props} work={props.work} />
+      <InspectorContent key={props.work.issue_id} {...props} work={props.work} />
     ) : (
       <UnloadedInspector {...props} issue={props.issue} />
     );
@@ -230,7 +229,10 @@ function UnloadedInspector(props: Props) {
   useCanvasRead(query);
   const result = useAtomValue(query);
   const detail = AsyncResult.value(result);
-  if (Option.isSome(detail)) return <InspectorContent {...props} work={detail.value.work} />;
+  if (Option.isSome(detail))
+    return (
+      <InspectorContent key={detail.value.work.issue_id} {...props} work={detail.value.work} />
+    );
   return (
     <aside className="inspector" aria-label="Work inspector">
       <header className="inspector-header">

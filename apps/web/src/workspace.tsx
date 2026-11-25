@@ -1,4 +1,4 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Workspace presentation consumes the typed Effect atom layer. */
+import { LiveActivities } from "./presentation/activity-reference.tsx";
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAtomSet, useAtomRefresh, useAtomValue } from "@effect/atom-react";
@@ -7,7 +7,7 @@ import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { Button } from "@abracode/presentation/ui/button";
 import { Bell, Expand, Minimize2, PanelRight } from "@abracode/presentation/icons";
 import { BriefingForms } from "./presentation/tool-context.ts";
-import { useNativeToolRendering } from "./presentation/tools.tsx";
+import { ToolRenderingProvider } from "./presentation/tools.tsx";
 import { RunCommand, composerCommands, type ComposerCommand } from "./workspace-commands.ts";
 import { ReaderSplit } from "./reader-split.tsx";
 import { useMediaQuery } from "./use-media-query.ts";
@@ -24,7 +24,12 @@ import { Palette } from "./palette-loader.tsx";
 import type { PaletteActions } from "./workspace-palette.tsx";
 import { SearchTrigger } from "./search-trigger.tsx";
 import { RecentlyInspected, useRecordInspection } from "./recently-inspected.tsx";
-import { MessageContent, emptyAttachments, emptyDiagnostics } from "./message-content.tsx";
+import {
+  TranscriptWork,
+  MessageContent,
+  emptyAttachments,
+  emptyDiagnostics,
+} from "./message-content.tsx";
 import { Composer } from "./composer.tsx";
 import {
   workspaceDraft,
@@ -45,7 +50,7 @@ import { WorkspaceProvider } from "./workspace-provider.tsx";
 import { bootstrapQuery } from "./data.ts";
 import { useWorkspace } from "./use-workspace.ts";
 import { requestError } from "./request-error.ts";
-import { deferred } from "./deferred.tsx";
+import { deferred } from "@abracode/presentation/deferred";
 
 const RetainedSurfaces = deferred<
   React.ComponentProps<typeof import("./presentation/attachments.tsx").RetainedSurfaces>
@@ -116,7 +121,9 @@ export function Application(props: LayoutProps) {
     );
   return (
     <WorkspaceProvider>
-      <Workspace key={snapshot.session_id} initial={snapshot} {...props} />
+      <ToolRenderingProvider>
+        <Workspace key={snapshot.session_id} initial={snapshot} {...props} />
+      </ToolRenderingProvider>
     </WorkspaceProvider>
   );
 }
@@ -133,7 +140,6 @@ function Workspace({
   focusChat,
   didFocus,
 }: { initial: WorkspaceSnapshot } & LayoutProps) {
-  useNativeToolRendering();
   const {
     workspace,
     isReady,
@@ -144,6 +150,7 @@ function Workspace({
     refresh,
     messages,
     presentations,
+    activities,
     hasHistory,
     loadingHistory,
     loadHistory,
@@ -240,25 +247,31 @@ function Workspace({
   const updateDraftLock = useCallback((locked: boolean) => {
     draftLocked.current = locked;
   }, []);
-  function canPrepare() {
+  const canPrepare = useCallback(() => {
     if (!draftLocked.current) return true;
     setError("Wait for the pending submission before editing this draft.");
     if (desktopExpanded) setExpanded(false);
     focusComposer();
     return false;
-  }
-  function attach(attachment: DraftAttachment) {
-    if (!canPrepare()) return;
-    setDraft({ attachment });
-    if (desktopExpanded) setExpanded(false);
-    focusComposer();
-  }
-  function ask(text: string) {
-    if (!canPrepare()) return;
-    setDraft({ append: text });
-    if (desktopExpanded) setExpanded(false);
-    focusComposer();
-  }
+  }, [desktopExpanded, focusComposer, setError]);
+  const attach = useCallback(
+    (attachment: DraftAttachment) => {
+      if (!canPrepare()) return;
+      setDraft({ attachment });
+      if (desktopExpanded) setExpanded(false);
+      focusComposer();
+    },
+    [canPrepare, setDraft, desktopExpanded, focusComposer],
+  );
+  const ask = useCallback(
+    (text: string) => {
+      if (!canPrepare()) return;
+      setDraft({ append: text });
+      if (desktopExpanded) setExpanded(false);
+      focusComposer();
+    },
+    [canPrepare, setDraft, desktopExpanded, focusComposer],
+  );
 
   const picker = palette && (
     <Palette
@@ -562,19 +575,20 @@ function Workspace({
                       )}
                     </section>
                   )}
-                  <BriefingForms.Provider value={workspace.forms}>
-                    {messages.map((message) => (
-                      <MessageContent
-                        key={message.id}
-                        thoughtReceipt={thoughtReceipts.get(message.id)}
-                        message={message}
-                        work={workspace.work.work}
-                        inspect={inspect}
-                        attachments={attachmentIndex.get(message.id) ?? emptyAttachments}
-                        diagnostics={diagnosticIndex.get(message.id) ?? emptyDiagnostics}
-                      />
-                    ))}
-                  </BriefingForms.Provider>
+                  <TranscriptWork.Provider value={workspace.work.work}>
+                    <BriefingForms.Provider value={workspace.forms}>
+                      {messages.map((message) => (
+                        <MessageContent
+                          key={message.id}
+                          thoughtReceipt={thoughtReceipts.get(message.id)}
+                          message={message}
+                          inspect={inspect}
+                          attachments={attachmentIndex.get(message.id) ?? emptyAttachments}
+                          diagnostics={diagnosticIndex.get(message.id) ?? emptyDiagnostics}
+                        />
+                      ))}
+                    </BriefingForms.Provider>
+                  </TranscriptWork.Provider>
                   {presentations.truncated && (
                     <output className="muted">
                       Presentation references exceed this conversation page's coverage. Retained
@@ -589,9 +603,7 @@ function Workspace({
                     >
                       <summary>Other retained views ({otherViews.length})</summary>
                       <p className="muted">
-                        These layouts are outside the loaded message associations. Legacy layouts
-                        retain only the latest known revision and may lack producing-message
-                        provenance.
+                        These layouts have no matching message in the loaded conversation.
                       </p>
                       {retainedViews && (
                         <RetainedSurfaces
@@ -671,5 +683,9 @@ function Workspace({
       </div>
     </OpenSurface.Provider>
   );
-  return <PrepareSurfaceMessage.Provider value={ask}>{panels}</PrepareSurfaceMessage.Provider>;
+  return (
+    <LiveActivities.Provider value={activities}>
+      <PrepareSurfaceMessage.Provider value={ask}>{panels}</PrepareSurfaceMessage.Provider>
+    </LiveActivities.Provider>
+  );
 }

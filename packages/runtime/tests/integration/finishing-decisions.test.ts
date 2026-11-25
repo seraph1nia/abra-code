@@ -180,6 +180,18 @@ test("preservation is verified by absence and resumes post-merge closure without
 test("ignored inclusion stages only selected files and enters validation without another adoption form", async (t) => {
   const { f, e, root } = await retained(["selected-note", "unselected-note"]);
   t.onTestFinished(() => run(f.close()));
+  await run(f.records.commitControl(e));
+  const save = f.records.saveFinishing.bind(f.records);
+  f.records.saveFinishing = (execution, fields) => {
+    const included = execution.finishing?.inclusions;
+    if (included?.length === 1 && included[0]!.stage === "admitted") {
+      execution.finishing = {
+        ...execution.finishing!,
+        inclusions: [{ ...included[0]!, generation: 0 }, ...included],
+      };
+    }
+    return save(execution, fields);
+  };
   await writeFile(join(root, "selected-note"), "deliver this");
   await writeFile(join(root, "unselected-note"), "preserve this");
   await run(f.controller.approve(e.issue_id, "merge", e.supervisor_session_id!));
@@ -193,6 +205,13 @@ test("ignored inclusion stages only selected files and enters validation without
   const current = (await run(f.controller.reconcile(e.issue_id)))[0];
   assert.equal(current.current_phase, "planning");
   assert.equal(current.finishing!.synchronization!.length, 1);
+  assert.deepEqual(
+    current.finishing!.inclusions!.map((i) => [i.generation, i.stage]),
+    [
+      [0, "admitted"],
+      [e.control_generation, "staged"],
+    ],
+  );
   assert.equal(f.delivery.calls, 1, "Publication still requires checks and independent Review");
   assert.equal(
     current.decisions!.some((d) => d.status === "open" && d.finishing_target?.kind === "adopt"),
@@ -249,7 +268,18 @@ test("fresh residue absence survives a concurrent observation update and closes 
         }),
       ),
     );
+  const close = f.work.close.bind(f.work);
+  let closing = false;
+  f.work.close = (...args) =>
+    Effect.gen(function* () {
+      const retained = yield* f.controller.get(e.issue_id);
+      assert.equal(retained.current_phase, "cleaning");
+      assert.equal(retained.retirement?.native, "confirmed");
+      closing = true;
+      return yield* close(...args);
+    });
   const done = await run(f.controller.finish(e.issue_id));
+  assert.ok(closing);
   assert.ok(updated);
   assert.equal(done.current_phase, "completed");
   assert.equal(done.attention_turns, observed);

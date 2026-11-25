@@ -18,7 +18,6 @@ import {
   type Role,
 } from "../domain.ts";
 import { removeOwnedField, type ExecutionPatch, type Records } from "../storage/store.ts";
-import { type Coordination } from "./coordination.ts";
 
 export const consumesWorker = (e: ManagedExecution) =>
   e.current_phase !== "completed" &&
@@ -134,20 +133,6 @@ export function capacityBlockers(
     own,
   );
 }
-export const scanCapacity = (records: Records) =>
-  Effect.all(
-    {
-      executions: records.executionScan(),
-      setups: records.setupScan(),
-    },
-    { concurrency: 2 },
-  ).pipe(
-    Effect.map(({ executions, setups }) => ({
-      executions: executions.values,
-      setups: setups.values,
-      diagnostics: [...executions.diagnostics, ...setups.diagnostics],
-    })),
-  );
 const unavailable = "Cannot verify capacity while issue or setup execution records are unreadable";
 export const unknownCapacity = () => new CrewError("CAPACITY_UNKNOWN", unavailable);
 
@@ -156,8 +141,16 @@ export class Capacity {
   constructor(
     private config: Config,
     private records: Records,
-    private coordination: Coordination,
   ) {}
+  releaseIfPreparing(e: Execution, role: Role) {
+    return this.releasePreparation(e, role).pipe(
+      Effect.catch((error) =>
+        error.code === "STALE_OPERATION"
+          ? Effect.void
+          : Effect.logWarning("Could not release worker preparation", error),
+      ),
+    );
+  }
   releasePreparation(e: Execution, role: Role) {
     return this.records.coordinateCommit(() =>
       Effect.gen({ self: this }, function* () {
@@ -183,10 +176,10 @@ export class Capacity {
     newExecution = false,
     request?: RequestId,
   ) {
-    return this.coordination.with(() =>
+    return this.records.withActiveIndex(() =>
       domainEffect(
         Effect.gen({ self: this }, function* () {
-          const scan = yield* scanCapacity(this.records);
+          const scan = yield* this.records.capacityRecords();
           if (newExecution && scan.diagnostics.length) return yield* unknownCapacity();
           const blockers: ReadinessBlocker[] = scan.diagnostics.length
             ? [{ code: "execution", message: unavailable }]

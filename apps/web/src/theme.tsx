@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useEffect, useState, type ReactNode } from "react";
 type Theme = "system" | "light" | "dark";
 const ThemeContext = createContext<
   { theme: Theme; resolved: "light" | "dark"; setTheme: (theme: Theme) => void } | undefined
@@ -39,9 +39,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       /* Theme still works without persistence. */
     }
   }, [theme, resolved]);
-  return (
-    <ThemeContext.Provider value={{ theme, resolved, setTheme }}>{children}</ThemeContext.Provider>
-  );
+  const value = useMemo(() => ({ theme, resolved, setTheme }), [theme, resolved]);
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 export function useTheme() {
   const context = useContext(ThemeContext);

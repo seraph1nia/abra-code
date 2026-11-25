@@ -1,7 +1,19 @@
-import { lazy, Suspense, useCallback, useState, type ReactNode } from "react";
+import { deferred } from "@abracode/presentation/deferred";
+import { useCallback, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-const DesktopSplit = lazy(() => import("./desktop-split.tsx"));
+const DesktopSplit = deferred(
+  () => import("./desktop-split.tsx"),
+  "Split view",
+  undefined,
+  undefined,
+  ({ chat, reader }) => (
+    <div className="split-fallback">
+      {chat}
+      {reader}
+    </div>
+  ),
+);
 
 /** Stable hosts keep the transcript, composer and Canvas hubs mounted while panels move. */
 export function ReaderSplit({
@@ -49,20 +61,7 @@ export function ReaderSplit({
         className={focusMode ? "conversation-panes is-focus" : "conversation-panes"}
         hidden={!showChat}
       >
-        {split ? (
-          <Suspense
-            fallback={
-              <div className="split-fallback">
-                {chatPlacement}
-                {readerPlacement}
-              </div>
-            }
-          >
-            <DesktopSplit chat={chatPlacement} reader={readerPlacement} />
-          </Suspense>
-        ) : (
-          chatPlacement
-        )}
+        {split ? <DesktopSplit chat={chatPlacement} reader={readerPlacement} /> : chatPlacement}
       </div>
       {!split && readerPlacement}
     </>

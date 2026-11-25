@@ -21,7 +21,7 @@ export class ConfigApplication {
   status = () =>
     Effect.gen({ self: this }, function* () {
       const fresh = yield* loadConfig(this.config.home);
-      const registered = yield* this.records.projects();
+      const registered = yield* this.records.projects;
       const outcomes: DeclarationOutcome[] = [];
       for (const declaration of fresh.repositories) {
         const saved = yield* declarationOutcome(this.records, declaration.id);

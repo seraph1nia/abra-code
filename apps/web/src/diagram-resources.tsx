@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- The application registry owns typed diagram reads and their cancellation. */
 import { useContext, useMemo, type ReactNode } from "react";
 import { RegistryContext } from "@effect/atom-react";
 import { AsyncResult, type AtomRegistry, type Atom } from "effect/reactivity";

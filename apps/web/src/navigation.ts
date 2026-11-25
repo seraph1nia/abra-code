@@ -147,7 +147,7 @@ export function workspaceSearch(value: Record<string, unknown>): WorkspaceSearch
         ...(resource.action === "open_artifact" && value.canvas === true ? { canvas: true } : {}),
       }
     : !result.issue && (value.view === "finder" || value.view === "canvas")
-      ? { view: value.view }
+      ? { ...context, view: value.view }
       : result;
 }
 export function resourceFromSearch(search: WorkspaceSearch): ResourceSelection | undefined {

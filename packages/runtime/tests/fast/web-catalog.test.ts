@@ -1,15 +1,16 @@
 import { analysisCharts } from "../helpers/chart-fixtures.ts";
-import { test } from "vite-plus/test";
+import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Schema } from "effect";
-import { basicCatalog, Catalog, PayloadValidator, STRICT_VALIDATION } from "@a2ui/web_core/v1_0";
+import {
+  type DataContext,
+  basicCatalog,
+  Catalog,
+  PayloadValidator,
+  STRICT_VALIDATION,
+} from "@a2ui/web_core/v1_0";
 import {
   catalogId,
-  catalogV1Id,
-  catalogV2Id,
-  catalogV3Id,
-  catalogV4Id,
-  legacyCatalogId,
   componentNames,
   workCatalogDocument,
   workComponents,
@@ -17,7 +18,6 @@ import {
 } from "@abracode/contracts/web/catalog";
 import {
   SurfaceSchema,
-  normalizeSurface,
   validateSurface,
   surfaceResources,
   referencedWorkIds,
@@ -40,10 +40,28 @@ const surface = () => ({
   },
 });
 
+const retiredCatalogIds = [2, 3, 4, 5].map(
+  (version) => `https://abracode.local/catalog/work/v${version}/catalog.json`,
+);
+
+test("openUrl refuses relative and credential-bearing destinations on a user gesture", (t) => {
+  const open = vi.fn();
+  vi.stubGlobal("window", { navigator: {}, open });
+  t.onTestFinished(() => {
+    vi.unstubAllGlobals();
+  });
+  const action = validationCatalog.functions.get("openUrl")!;
+  const context = { isUserActivated: true } as DataContext;
+  for (const url of ["/api/workspace", "https://user:password@example.invalid/link"])
+    assert.throws(() => action.execute({ url }, context), /HTTP or HTTPS/);
+  assert.equal(open.mock.calls.length, 0);
+});
+
 test("generated Effect catalog round-trips through the official loader with the full basic catalog", () => {
   const loaded = Catalog.fromJson(workCatalogDocument);
   assert.deepEqual(loaded.toJson(), workCatalogDocument);
   assert.deepEqual([...loaded.components.keys()], componentNames);
+  assert.equal(validationCatalog.themeSchema, basicCatalog.themeSchema);
   assert.equal(loaded.protocolVersion, "1.0");
   assert.deepEqual(
     Object.keys(workCatalogDocument.functions),
@@ -88,7 +106,7 @@ test("chart publication enforces bounded literal data and catalog compatibility"
     });
   for (const component of ["PieChart", "BarChart", "LineChart"]) {
     publish({ component });
-    for (const id of [catalogV1Id, catalogV2Id]) assert.throws(() => publish({ component }, id));
+    for (const id of retiredCatalogIds) assert.throws(() => publish({ component }, id));
   }
   publish({
     component: "BarChart",
@@ -120,13 +138,10 @@ test("analytical charts validate coordinates, stacked categories and UTC interva
     });
   for (const chart of Object.values(analysisCharts)) {
     publish(chart);
-    assert.throws(() => publish(chart, catalogV3Id));
+    assert.throws(() => publish(chart, retiredCatalogIds[0]));
   }
   const { BarChart, Histogram, ScatterPlot, Heatmap, GanttChart } = analysisCharts;
-  publish(
-    { component: "BarChart", title: "Balance", data: [{ label: "A", value: -1 }] },
-    catalogV3Id,
-  );
+  publish({ component: "BarChart", title: "Balance", data: [{ label: "A", value: -1 }] });
   publish({ ...Histogram, data: [0, 0] });
   publish({
     ...ScatterPlot,
@@ -195,7 +210,7 @@ test("compiled dashboard component IDs have actionable validation and matching J
   assert.match(json, /\^\[a-zA-Z\]\[a-zA-Z0-9_\]/);
 });
 
-test("saved legacy surfaces retain their revision and captured work without storage writes", () => {
+test("saved surfaces retain their revision and isolate retired catalog records", () => {
   const fixture = new WorkspaceFixture();
   const legacy = surface();
   const raw = {
@@ -204,7 +219,7 @@ test("saved legacy surfaces retain their revision and captured work without stor
     revision: 7,
     at: fixture.value.at,
     snapshot: fixture.value.work.work,
-    surface: { ...legacy, createSurface: { ...legacy.createSurface, catalogId: legacyCatalogId } },
+    surface: { ...legacy, createSurface: { ...legacy.createSurface, catalogId } },
   };
   const before = structuredClone(raw);
   const loaded = loadSurfaceRecord(raw, "web/surface/session/board");
@@ -220,23 +235,22 @@ test("saved legacy surfaces retain their revision and captured work without stor
     workspace: { ...fixture.value, surfaces: [reference] },
   });
   assert.deepEqual(state.workspace.surfaces, [reference]);
+  assert.ok(
+    "unavailable" in
+      loadSurfaceRecord(
+        {
+          ...raw,
+          surface: {
+            ...legacy,
+            createSurface: { ...legacy.createSurface, catalogId: retiredCatalogIds[0] },
+          },
+        },
+        "retired",
+      ),
+  );
   const broken = loadSurfaceRecord({ ...raw, surface: {} }, "web/surface/session/broken");
   assert.ok("unavailable" in broken);
   assert.equal(broken.surface_id, "broken");
-});
-
-test("legacy normalization preserves blank text and ignores previously unused properties", () => {
-  const normalized = normalizeSurface({
-    version: "1.0",
-    createSurface: {
-      surfaceId: "old",
-      catalogId: legacyCatalogId,
-      components: [{ id: "root", component: "Text", issueIds: ["ignored"] }],
-    },
-  });
-  assert.deepEqual(normalized.createSurface.components, [
-    { id: "root", component: "Text", text: "" },
-  ]);
 });
 
 test("workspace state validates nested surfaces across AG-UI JSON serialization", () => {
@@ -278,8 +292,7 @@ test("native RPC outputs validate receipts, projects and checkpoints before clie
     [webGateway.methods.projects.output, [{ id: "p", name: 42 }]],
     [webGateway.methods.checkpoint.output, { active: "yes" }],
   ] as const) {
-    const result = await schema["~standard"].validate(invalid);
-    assert.ok(result.issues);
+    assert.equal(Schema.is(schema)(invalid), false);
   }
 });
 
@@ -323,7 +336,7 @@ test("trusted generated links share the closed resource capabilities and reject 
   assert.throws(() => validateSurface(link(targets[0]), new Set(["abra-other"])));
 });
 
-test("v5 content components and expanded templates preserve the bounded layout contract", () => {
+test("current catalog content components and expanded templates preserve the bounded layout contract", () => {
   const publish = (components: object[], id: string = catalogId, dataModel?: object) =>
     validateSurface({
       version: "1.0",
@@ -348,7 +361,7 @@ test("v5 content components and expanded templates preserve the bounded layout c
     /one cell per column/,
   );
   assert.throws(() => publish([disclosure]));
-  for (const id of [catalogV1Id, catalogV2Id, catalogV3Id, catalogV4Id]) {
+  for (const id of retiredCatalogIds) {
     assert.throws(() => publish([disclosure, table], id));
     assert.throws(() => publish([{ id: "root", component: "Card", child: "body" }, table], id));
     assert.throws(() =>
@@ -369,7 +382,7 @@ test("v5 content components and expanded templates preserve the bounded layout c
       id: "root",
       component: "TextField",
       label: "Name",
-      "@checks": [
+      checks: [
         {
           condition: { "@call": "required", args: { value: { "@path": "/name" } } },
           message: "Enter a name",

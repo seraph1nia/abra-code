@@ -1,9 +1,11 @@
+import { Effect } from "effect";
+import { Coordination } from "../../src/workflow/coordination.ts";
 import { retainedExecution } from "../helpers/retained-execution.ts";
 import * as Id from "@abracode/contracts/identities";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { run } from "../effects.ts";
-import { applying, delivered, fixture, planned, MemoryStore, TestLocks } from "../fixtures.ts";
+import { applying, fixture, planned, MemoryStore, TestLocks } from "../fixtures.ts";
 import { Records, removeOwnedField } from "../../src/storage/store.ts";
 import { Visibility } from "../../src/visibility/read-model.ts";
 
@@ -28,8 +30,7 @@ test("setup owned commits preserve newer capacity and independent evidence witho
   };
   await run(f.records.create(setup));
   const stale = structuredClone(setup);
-  const peer = new Records(f.records.store);
-  peer.coordinate(f.locks);
+  const peer = new Records(f.records.store, f.records.coordination);
   const latest = (await run(peer.setup(setup.repository_id)))!;
   latest.retry_instructions = "Preserve setup recovery instructions";
   latest.capacity_observed_idle = true;
@@ -107,7 +108,7 @@ test("stale full replacement cannot erase newer retry instructions", async () =>
   );
   assert.deepEqual(await run(f.records.store.get(key)), before);
   assert.deepEqual(stale, callerBefore, "Rejected replacement must not mutate its caller");
-  await assert.rejects(run(f.records.saveControl(stale)), /revision changed/);
+  await assert.rejects(run(f.records.commitControl(stale)), /revision changed/);
   assert.deepEqual(stale, callerBefore, "Rejected control must not advance its caller generation");
   assert.deepEqual(await run(f.records.store.get(key)), before);
   await run(f.records.saveOwned(stale, ["error_or_recovery_reason"]));
@@ -131,7 +132,7 @@ test("owned updates reject replaced operations and control generations", async (
   await run(f.records.save(e));
   await assert.rejects(run(f.records.saveOwned(stale, ["error_or_recovery_reason"])), /superseded/);
   const priorGeneration = (await run(f.records.execution(e.issue_id)))!;
-  await run(f.records.saveControl(e));
+  await run(f.records.commitControl(e));
   await assert.rejects(
     run(f.records.saveOwned(priorGeneration, ["retry_instructions"])),
     /superseded/,
@@ -170,7 +171,7 @@ test("owned patches preserve extensions and refuse stale or invalid writes witho
   const original = structuredClone(e);
   await run(records.store.set(key, { ...e, retry_instructions: "clear me", future_field: 42 }));
   const saved = await run(
-    records.patchOwned(e, {
+    records.commitOwned(structuredClone(e), {
       retry_instructions: removeOwnedField,
       error_or_recovery_reason: "owned",
     }),
@@ -178,10 +179,10 @@ test("owned patches preserve extensions and refuse stale or invalid writes witho
   assert.equal(saved.retry_instructions, undefined);
   assert.equal(saved.error_or_recovery_reason, "owned");
   assert.equal(Reflect.get((await run(records.store.get(key))) as object, "future_field"), 42);
-  await run(records.saveControl(saved));
+  await run(records.commitControl(saved));
   const before = await run(records.store.get(key));
-  await assert.rejects(run(records.patchOwned(e, { retry_instructions: "stale" })), /superseded/);
-  await assert.rejects(run(records.patchOwned(saved, { rounds: [{} as never] })));
+  await assert.rejects(run(records.commitOwned(e, { retry_instructions: "stale" })), /superseded/);
+  await assert.rejects(run(records.commitOwned(saved, { rounds: [{} as never] })));
   assert.deepEqual(await run(records.store.get(key)), before);
   assert.deepEqual(e, original);
 });
@@ -189,8 +190,7 @@ test("owned patches preserve extensions and refuse stale or invalid writes witho
 test("independent repository instances commit disjoint owned fields from current state", async () => {
   const f = await retainedExecution();
   const initial = f.execution;
-  const peer = new Records(f.records.store);
-  peer.coordinate(f.locks);
+  const peer = new Records(f.records.store, f.records.coordination);
   const first = (await run(f.records.execution(initial.issue_id)))!;
   const second = (await run(peer.execution(initial.issue_id)))!;
   first.retry_instructions = "Independent instructions";
@@ -263,7 +263,7 @@ test("malformed finishing additions retain original evidence and cannot manufact
   ]) {
     const raw = { ...((await run(f.records.store.get(key))) as object), finishing };
     await run(f.records.store.set(key, raw));
-    const scan = await run(f.records.executionScan());
+    const scan = await run(f.records.executionScan);
     assert.equal(scan.values.length, 0);
     assert.ok(scan.diagnostics.length);
     assert.deepEqual(await run(f.records.store.get(key)), raw);
@@ -294,66 +294,19 @@ test("versioned phase records reject missing preservation and planning evidence"
   assert.equal((await run(f.records.execution(e.issue_id)))!.plan_fingerprint, e.plan_fingerprint);
 });
 
-for (const stage of ["active", "form", "interrupted", "completed"] as const) {
-  test(`legacy ${stage} migration retains originals and exact ownership/authorization`, async (t) => {
-    const f = await run(fixture);
-    t.onTestFinished(() => run(f.close()));
-    let e =
-      stage === "active" || stage === "interrupted"
-        ? await run(applying(f))
-        : stage === "form"
-          ? await run(planned(f))
-          : await run(delivered(f));
-    if (stage === "form")
-      await run(f.controller.approve(e.issue_id, "plan", Id.SessionId.make("ses_supervisor")));
-    if (stage === "interrupted") await run(f.controller.control(e.issue_id, "pause"));
-    if (stage === "completed") {
-      f.delivery.merged = true;
-      f.delivery.pr!.state = "MERGED";
-      await run(f.controller.finish(e.issue_id));
-    }
-    e = await run(f.controller.get(e.issue_id));
-    const legacy: Partial<typeof e> = { ...e };
-    delete legacy.schema_version;
-    delete legacy.revision;
-    delete legacy.control_generation;
-    delete legacy.effective_policy;
-    const key = `execution/${e.issue_id}`;
-    await run(
-      f.records.store.set(Id.StorageKey.make(key), {
-        ...legacy,
-        extension_evidence: { retained: true },
-      }),
-    );
-    const original = await run(f.records.store.get(Id.StorageKey.make(key)));
-    const restarted = new Records(f.records.store);
-    const read = (await run(restarted.execution(e.issue_id)))!;
-    assert.deepEqual(read.approval_receipts, legacy.approval_receipts);
-    assert.equal(read.execution_id, legacy.execution_id);
-    assert.equal(read.worktree_directory, legacy.worktree_directory);
-    assert.equal(read.apply_session_id, legacy.apply_session_id);
-    assert.deepEqual(
-      await run(f.records.store.get(Id.StorageKey.make(key))),
-      original,
-      "reads must not migrate",
-    );
-    await run(restarted.save(read));
-    assert.deepEqual(
-      await run(f.records.store.get(Id.StorageKey.make(`legacy-original/${key}`))),
-      original,
-    );
-    assert.deepEqual(
-      ((await run(f.records.store.get(Id.StorageKey.make(key)))) as { extension_evidence: unknown })
-        .extension_evidence,
-      { retained: true },
-    );
-    await run(restarted.save(read));
-    assert.deepEqual(
-      await run(f.records.store.get(Id.StorageKey.make(`legacy-original/${key}`))),
-      original,
-    );
-  });
-}
+test("unversioned execution cannot be read or overwritten", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(applying(f));
+  const key = Id.StorageKey.make(`execution/${e.issue_id}`);
+  const raw = { ...e, schema_version: undefined, evidence: "retained" };
+  await run(f.records.store.set(key, raw));
+  const records = new Records(f.records.store, f.records.coordination);
+  await assert.rejects(run(records.execution(e.issue_id)), /Unsupported record version/);
+  await assert.rejects(run(records.save(e)), /Unsupported record version/);
+  assert.deepEqual(await run(records.store.get(key)), raw);
+  assert.equal((await run(records.executionScan)).diagnostics[0].code, "unsupported_version");
+});
 
 test("unknown future and incomplete records remain visible without hiding valid tickets", async (t) => {
   const f = await run(fixture);
@@ -373,7 +326,7 @@ test("unknown future and incomplete records remain visible without hiding valid 
       schema_version: 1,
     }),
   );
-  const scan = await run(f.records.executionScan());
+  const scan = await run(f.records.executionScan);
   assert.equal(scan.values.length, 1);
   assert.equal(scan.diagnostics.length, 3);
   assert.equal(
@@ -397,56 +350,21 @@ test("unknown future and incomplete records remain visible without hiding valid 
   assert.equal(snapshot.work.find((w) => w.issue_id === "future")!.phase, "recovery_required");
   assert.equal(snapshot.record_diagnostics!.length, 3);
   assert.deepEqual(await run(f.records.store.get(Id.StorageKey.make("execution/future"))), future);
-  assert.ok((await run(f.records.export())).entries.find((x) => x.key === "execution/future"));
+  assert.ok((await run(f.records.export)).entries.find((x) => x.key === "execution/future"));
 });
 
-test("project/setup migration is read-only until coordinated save and keeps setup identity", async () => {
-  const records = new Records(new MemoryStore());
-  records.coordinate(new TestLocks());
-  const legacy = {
-    id: "api",
-    path: "/fixture/api",
-    remote: "origin",
-    target_branch: "main",
-    git_common_dir: "/fixture/api/.git",
-    openspec: true,
-    verification: [],
-    max_workers: 1,
-    plan_approval: true,
-    merge_approval: true,
-    delivery: "github-pr",
-  };
-  await run(records.store.set(Id.StorageKey.make("project/api"), legacy));
-  const project = (await run(records.project(Id.RepositoryId.make("api"))))!;
-  assert.equal(project.schema_version, 1);
-  assert.deepEqual(await run(records.store.get(Id.StorageKey.make("project/api"))), legacy);
-  await run(records.saveProject(project));
-  assert.deepEqual(
-    await run(records.store.get(Id.StorageKey.make("legacy-original/project/api"))),
-    legacy,
-  );
-  const setup = {
-    issue_id: "setup-api",
-    repository_id: "api",
-    execution_id: "setup-test",
-    workflow_policy: "full-openspec" as const,
-    current_phase: "provisioning" as const,
-    setup: true,
-    branch: "setup/test",
-    openspec_change: "",
-    approval_receipts: [],
-    delivery_policy: project.delivery,
-    merge_approval_required: true,
-    updated_at: new Date().toISOString(),
-  };
-  await run(records.store.set(Id.StorageKey.make("setup/api"), setup));
-  const normalized = (await run(records.setup(Id.RepositoryId.make("api"))))!;
-  await run(records.saveSetup(normalized));
-  assert.equal(normalized.execution_id, setup.execution_id);
-  assert.deepEqual(
-    await run(records.store.get(Id.StorageKey.make("legacy-original/setup/api"))),
-    setup,
-  );
+test("unversioned project and setup remain isolated and unchanged", async () => {
+  const records = new Records(new MemoryStore(), new Coordination(new TestLocks()));
+  const id = Id.RepositoryId.make("api");
+  for (const [key, raw, read] of [
+    [Id.StorageKey.make("project/api"), { id }, records.project(id).pipe(Effect.asVoid)],
+    [Id.StorageKey.make("setup/api"), { repository_id: id }, records.setup(id).pipe(Effect.asVoid)],
+  ] as const) {
+    await run(records.store.set(key, raw));
+    await assert.rejects(run(read), /Unsupported record version/);
+    assert.deepEqual(await run(records.store.get(key)), raw);
+  }
+  assert.equal((await run(records.diagnostics)).length, 2);
 });
 
 test("execution snapshots retain verification commands and remove cleared owned fields", async (t) => {

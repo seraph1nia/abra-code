@@ -42,9 +42,9 @@
 
     --ink-primary: #11181c;
     --ink-secondary: #4a5764;
-    --ink-muted: #667584;
+    --ink-muted: #566473;
 
-    --accent-primary: #0d8a55;
+    --accent-primary: #087144;
     --accent-hover: #0a7346;
     --accent-ink: #ffffff;
     --accent-soft: #e5f6ee;
@@ -113,7 +113,7 @@
 
     --ink-primary: #eef3f7;
     --ink-secondary: #9aa8b6;
-    --ink-muted: #768696;
+    --ink-muted: #92a2b2;
 
     --accent-primary: #34d399;
     --accent-hover: #10b981;
@@ -243,6 +243,7 @@
 
 /* Upstream renderer tokens inherit the same theme, including portalled widgets. */
 .generated-views,
+[data-a2ui-review="true"],
 .generated-surface {
   --a2ui-color-background: var(--surface-1);
   --a2ui-color-on-background: var(--ink);

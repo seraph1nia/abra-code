@@ -46,6 +46,7 @@ async function loadPreparedEngineScript(): Promise<string | undefined> {
     const hashes = new Map(manifest.success.inputs.map((entry) => [entry.file, entry.hash]));
     for (const file of [
       "apps/report/scripts/mermaid-engine.ts",
+      "packages/presentation/src/diagram-svg.ts",
       "packages/contracts/src/presentation/diagrams.ts",
     ]) {
       const expected = hashes.get(file);

@@ -1,13 +1,13 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Cancelling the picker releases its typed HTTP atom subscriptions. */
-import { useContext, useEffect, useState } from "react";
+import { useWorkspaceCall } from "./data.ts";
+import { memo, useContext, useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { SearchDialog } from "@abracode/presentation/ui/search-dialog";
-import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
+import type { WorkspaceSnapshot, TranscriptMessage } from "@abracode/contracts/web/contracts";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import { Exit } from "effect";
-import { toast } from "sonner";
+import { toast } from "./notifications.tsx";
 import { requestError } from "./request-error.ts";
 import { reviewListQuery } from "./review-data.ts";
 import { MessageId } from "@abracode/contracts/identities";
@@ -31,7 +31,14 @@ import {
 } from "./navigation.ts";
 import { RunCommand, composerCommands, snippetDraft, workControl } from "./workspace-commands.ts";
 
-import { useSource, sources, sourceFeedback, type Source, type Hit } from "./palette-source.ts";
+import {
+  rankPaletteHits,
+  useSource,
+  sources,
+  sourceFeedback,
+  type Source,
+  type Hit,
+} from "./palette-source.ts";
 import { useEvidenceSource } from "./palette-evidence.ts";
 import { useMemorySource } from "./palette-memory.tsx";
 
@@ -51,7 +58,7 @@ type Props = PaletteActions & {
   inspect?: (target: ResourceSelection) => void;
   prepare?: (text: string) => void;
   history?: {
-    messages: WorkspaceSnapshot["messages"];
+    messages: readonly TranscriptMessage[];
     more: boolean;
     loading: boolean;
     load: () => void;
@@ -59,7 +66,7 @@ type Props = PaletteActions & {
 };
 const emptyDraft = Atom.make(undefined);
 const idleResult = Atom.make(AsyncResult.initial<never, never>());
-export default function WorkspacePalette({
+function WorkspacePalette({
   origin,
   initialSource,
   close,
@@ -187,7 +194,7 @@ export default function WorkspacePalette({
       aliases,
     });
   };
-  const resolve = useAtomSet(resolveResource, { mode: "promiseExit" });
+  const resolve = useWorkspaceCall(resolveResource);
   const go = (target: ResourceSelection) => {
     if (inspect) inspect(target);
     else {
@@ -489,7 +496,7 @@ export default function WorkspacePalette({
       () =>
         void navigate({ to: "/attention", hash: "permission-" + p.request.id + "-" + p.binding }),
     );
-  for (const m of history?.messages ?? current?.messages ?? [])
+  for (const m of history?.messages ?? [])
     if (m.text)
       add(
         "message",
@@ -591,40 +598,16 @@ export default function WorkspacePalette({
               search: { collection: { github: { search: query, state } } },
             }),
         });
-  const rank = (h: Hit) =>
-    h.identity.toLowerCase() === lower ? 0 : h.label.toLowerCase() === lower ? 1 : 2;
   const [expanded, setExpanded] = useState<Partial<Record<Source, number>>>({});
-  const counts = new Map<Source, number>();
-  const seen = new Set<string>();
-  const unique = hits.filter((hit) => {
-    if (seen.has(hit.id)) return false;
-    seen.add(hit.id);
-    return true;
-  });
-  const rows = unique
-    .filter((h) => {
-      if (filter && h.source !== filter) return false;
-      if (confirmedPublications.has(h.id)) return true;
-      if (!input) return h.source === "page" || h.source === "command";
-      if (
-        ["work", "thought", "github", "evidence", "memory"].includes(h.source) ||
-        (h.source === "session" && h.identity !== current?.session_id)
-      )
-        return true;
-      return [h.identity, h.label, h.detail, ...(h.aliases ?? [])].some((s) =>
-        s?.toLowerCase().includes(lower),
-      );
-    })
-    .sort((a, b) => rank(a) - rank(b))
-    .filter((h) => {
-      const count = counts.get(h.source) ?? 0;
-      counts.set(h.source, count + 1);
-      return count < (expanded[h.source] ?? (h.source === "evidence" ? 12 : 8));
-    })
-    .map((h) => ({
-      ...h,
-      detail: [h.source, h.detail, h.identity, h.effect].filter(Boolean).join(" · "),
-    }));
+  const { rows, counts } = rankPaletteHits(
+    hits,
+    filter,
+    confirmedPublications,
+    input,
+    lower,
+    expanded,
+    current?.session_id,
+  );
   for (const [source, count] of counts) {
     const limit = expanded[source] ?? (source === "evidence" ? 12 : 8);
     if (count > limit)
@@ -659,3 +642,5 @@ export default function WorkspacePalette({
     />
   );
 }
+
+export default memo(WorkspacePalette);

@@ -121,7 +121,7 @@ export async function prFeedbackLifecycle({
     return status.execution!.current_phase === "awaiting_merge" &&
       status.execution!.operation?.status === "completed" &&
       status.execution!.feedback?.actions.some(
-        (a) => a.kind === "reviewers" && a.schema_version === 2 && a.preflight?.retryable,
+        (a) => a.kind === "reviewers" && a.preflight?.retryable,
       )
       ? status.execution!
       : undefined;
@@ -136,10 +136,7 @@ export async function prFeedbackLifecycle({
     (a) => a.kind === "reviewers",
   )!;
   assert.equal(preparedReviewers.status, "prepared");
-  assert.equal(
-    preparedReviewers.schema_version === 2 && preparedReviewers.submission.stage,
-    "unsubmitted",
-  );
+  assert.equal(preparedReviewers.submission.stage, "unsubmitted");
   const feedbackHead = feedbackExecution.delivered_commit!,
     feedbackArchive = feedbackExecution.archive_path!;
   const oldMerge = await invoke("abra_work_approve", {
@@ -196,7 +193,7 @@ export async function prFeedbackLifecycle({
   const rerun = rerunning.feedback!.actions.find((a) => a.kind === "rerun");
   assert.ok(rerun);
   assert.equal(rerunning.rounds?.length ?? 0, 0);
-  assert.equal(rerun.schema_version === 2 && rerun.kind === "rerun" && rerun.findings.length, 2);
+  assert.equal(rerun.kind === "rerun" && rerun.findings.length, 2);
   const duplicate = await invoke("abra_work_pr_action", {
     issue_id: feedbackIssue.id,
     generation: feedbackExecution.control_generation,

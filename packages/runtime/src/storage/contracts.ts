@@ -80,7 +80,11 @@ import {
   CleanupBlockerSchema,
 } from "@abracode/contracts/git/retirement-contracts";
 import { Schema } from "effect";
-import { PlanningSchema, validPlanningGenerations } from "../workflow/planning-contracts.ts";
+import {
+  PlanningSchema,
+  currentPlanning,
+  validPlanningGenerations,
+} from "../workflow/planning-contracts.ts";
 import { FinishingSchema, validFinishingGenerations } from "../workflow/finishing-contracts.ts";
 
 import { ForgeObservationSchema } from "../git/readiness-contracts.ts";
@@ -223,6 +227,7 @@ const fields = {
   current_phase: PhaseSchema,
   branch: BranchName,
   openspec_change: ChangeName,
+  openspec_base_change: Schema.optional(ChangeName),
   approval_receipts: Schema.mutable(Schema.Array(ApprovalSchema)),
   updated_at: Timestamp,
   worktree_directory: Schema.optional(AbsolutePath),
@@ -413,6 +418,16 @@ export const ExecutionRecordSchema = Schema.Union([
       e.delivery_policy !== e.effective_policy.delivery
     )
       return "Execution authority differs from its retained policy snapshot";
+    const synchronization = e.finishing?.synchronization?.at(-1);
+    if (
+      e.workflow_policy === "full-openspec" &&
+      ["exploring", "planning"].includes(e.current_phase) &&
+      !e.planning_base_commit &&
+      !currentPlanning(e) &&
+      (!synchronization || ["published", "failed"].includes(synchronization.stage)) &&
+      e.approval_receipts.some((r) => r.kind === "plan" && r.authorized_at !== undefined)
+    )
+      return "Controlled replan requires an attributable planning baseline";
     if (
       ["researching", "applying", "verifying"].includes(e.current_phase) &&
       e.workflow_policy !== "full-openspec" &&

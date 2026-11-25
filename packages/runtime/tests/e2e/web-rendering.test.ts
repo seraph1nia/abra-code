@@ -1,7 +1,6 @@
 import { chooseAppearance } from "../helpers/workspace-browser.ts";
 import { analysisCharts } from "../helpers/chart-fixtures.ts";
 import { workspaceBrowserFixture } from "../helpers/workspace-browser.ts";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Shipped browser assets and disposable Effect HTTP fixture. */
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
@@ -311,8 +310,15 @@ test("upstream A2UI renders every work widget, replaces revisions and retains va
   await page.getByRole("button", { name: "Close inspector", exact: true }).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.getByRole("button", { name: "Close inspector", exact: true }).click();
+  const originalRoot = await page
+    .locator(".generated-surface a2ui-basic-column")
+    .first()
+    .elementHandle();
+  assert.ok(originalRoot);
   backend.value = { ...backend.value, surfaces: [record(2)] };
   await page.getByText("Upstream revision 2", { exact: true }).waitFor();
+  assert.equal(await originalRoot.evaluate((node) => node.isConnected), true);
+  await originalRoot.dispose();
   assert.equal(await page.locator(".generated-surface").count(), 1);
   let bootstrapReads = 0;
   let releaseRecovery!: () => void;
@@ -408,6 +414,7 @@ test("live generated widgets resolve off-page tasks, share queries and label sta
   const publication = page.locator(".surface-publication");
   await page.getByText("Couldn’t load current work.").waitFor();
   assert.equal(await publication.locator(".metrics dd").count(), 0);
+  await publication.locator("table").first().waitFor();
   assert.equal(await publication.locator("table").count(), 1, "Only the saved table is visible");
   f.failedReads.delete("binding");
   await page
@@ -585,7 +592,12 @@ test("work catalog renders the basic components, binds local inputs and prepares
       id: "link",
       component: "Button",
       child: "linkLabel",
-      action: { functionCall: { "@call": "openUrl", args: { url: "/catalog/work-v5.json" } } },
+      action: {
+        functionCall: {
+          "@call": "openUrl",
+          args: { url: f.origin + "/catalog/work/v1/catalog.json" },
+        },
+      },
     },
     {
       id: "button",
@@ -691,7 +703,7 @@ test("work catalog renders the basic components, binds local inputs and prepares
   await view.getByRole("button", { name: "Inspect catalog" }).click();
   assert.equal(
     await page.locator("html").getAttribute("data-catalog-navigation"),
-    JSON.stringify([f.origin + "/catalog/work-v5.json", "_blank", "noopener,noreferrer"]),
+    JSON.stringify([f.origin + "/catalog/work/v1/catalog.json", "_blank", "noopener,noreferrer"]),
   );
   await view.getByRole("button", { name: "Prepare reply" }).click();
   assert.equal(

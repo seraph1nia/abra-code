@@ -19,7 +19,7 @@ import { WorkerModelSchema } from "@abracode/contracts/primitives";
 import { CrewError, type WorkerError, type WorkerModel } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { decode } from "../decode.ts";
-import { NativeStore } from "../storage/store.ts";
+import type { Store } from "../storage/store.ts";
 import { originatingUserMessage } from "./tool-caller.ts";
 import { nativeSession } from "./native-call.ts";
 import {
@@ -76,6 +76,7 @@ const AvailableToolsSchema = Schema.UndefinedOr(
 
 export const observeSession = (
   ctx: Context,
+  store: Store,
   client: OpenCodeClient,
   id: SessionId,
   assignment?: MessageId,
@@ -97,7 +98,7 @@ export const observeSession = (
               }),
             ),
           ),
-          new NativeStore(ctx.storage)
+          store
             .get(StorageKey.make(`worker-tools/${id}`))
             .pipe(
               Effect.flatMap((value) => decode(AvailableToolsSchema, value, `worker-tools/${id}`)),
@@ -214,6 +215,7 @@ export const observeSession = (
   );
 
 export const observePromptAdmissions = (
+  ctx: Context,
   client: OpenCodeClient,
   sessionID: SessionId,
   requests: readonly PromptIdentity[],
@@ -223,7 +225,7 @@ export const observePromptAdmissions = (
       const observations = new Map<MessageId, PromptAdmission>();
       if (!requests.length) return observations;
       const [inbox, context] = yield* Effect.all(
-        [client.session.inbox.list({ sessionID }), client.session.context({ sessionID })],
+        [client.session.inbox.list({ sessionID }), nativeSession(ctx).context({ sessionID })],
         { concurrency: "unbounded" },
       );
       const queuedByID = new Map(inbox.map((item) => [item.id, item]));

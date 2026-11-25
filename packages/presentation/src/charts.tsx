@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { barX, barY, binX, cell, defineChart, dot, lineY, rect, stack } from "@tanstack/charts";
 import { pie, polar, radialArc } from "@tanstack/charts/polar";
 import { Chart } from "@tanstack/charts/react";
@@ -64,7 +64,7 @@ function ChartTable({
   );
 }
 
-function PieChart({ data, title, orientation }: WorkProps<"PieChart">) {
+const PieChart = memo(function PieChart({ data, title, orientation }: WorkProps<"PieChart">) {
   const slices = pie(data, { value: "value" });
   const definition = defineChart({
     marks: [
@@ -104,9 +104,14 @@ function PieChart({ data, title, orientation }: WorkProps<"PieChart">) {
       </dl>
     </div>
   );
-}
+});
 
-function BarChart({ title, data, orientation, stacked }: WorkProps<"BarChart">) {
+const BarChart = memo(function BarChart({
+  title,
+  data,
+  orientation,
+  stacked,
+}: WorkProps<"BarChart">) {
   const series = [
     ...new Set(data.flatMap((row) => (row.series === undefined ? [] : [row.series]))),
   ];
@@ -157,9 +162,9 @@ function BarChart({ title, data, orientation, stacked }: WorkProps<"BarChart">) 
       />
     </>
   );
-}
+});
 
-function LineChart({ title, data }: WorkProps<"LineChart">) {
+const LineChart = memo(function LineChart({ title, data }: WorkProps<"LineChart">) {
   const xy = { x: "label", y: "value" } as const;
   const definition = defineChart({
     marks: [lineY(data, { ...xy, stroke: accent }), dot(data, { ...xy, fill: accent, r: 3 })],
@@ -174,9 +179,9 @@ function LineChart({ title, data }: WorkProps<"LineChart">) {
       />
     </>
   );
-}
+});
 
-function Histogram({ title, data, xLabel }: WorkProps<"Histogram">) {
+const Histogram = memo(function Histogram({ title, data, xLabel }: WorkProps<"Histogram">) {
   const min = Math.min(...data),
     max = Math.max(...data);
   if (min === max) {
@@ -218,9 +223,14 @@ function Histogram({ title, data, xLabel }: WorkProps<"Histogram">) {
       />
     </>
   );
-}
+});
 
-function ScatterPlot({ title, data, xLabel, yLabel }: WorkProps<"ScatterPlot">) {
+const ScatterPlot = memo(function ScatterPlot({
+  title,
+  data,
+  xLabel,
+  yLabel,
+}: WorkProps<"ScatterPlot">) {
   const definition = defineChart({
     marks: [
       dot(data, {
@@ -246,9 +256,9 @@ function ScatterPlot({ title, data, xLabel, yLabel }: WorkProps<"ScatterPlot">) 
       />
     </>
   );
-}
+});
 
-function Heatmap({ title, data }: WorkProps<"Heatmap">) {
+const Heatmap = memo(function Heatmap({ title, data }: WorkProps<"Heatmap">) {
   const values = [...new Set(data.map((row) => row.value))].sort((a, b) => a - b);
   const min = values[0]!,
     max = values[values.length - 1]!;
@@ -291,9 +301,9 @@ function Heatmap({ title, data }: WorkProps<"Heatmap">) {
       />
     </>
   );
-}
+});
 
-function GanttChart({ title, data }: WorkProps<"GanttChart">) {
+const GanttChart = memo(function GanttChart({ title, data }: WorkProps<"GanttChart">) {
   const tasks = data.map((row) => ({ ...row, start: new Date(row.start), end: new Date(row.end) }));
   const definition = defineChart({
     marks: [
@@ -313,7 +323,7 @@ function GanttChart({ title, data }: WorkProps<"GanttChart">) {
       />
     </>
   );
-}
+});
 
 function plotChart(input: ChartInput): ReactNode {
   switch (input.name) {

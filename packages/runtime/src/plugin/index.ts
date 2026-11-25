@@ -67,7 +67,7 @@ export const createPlugin = (
           effect.pipe(Effect.provide(services));
         const c = application.controller;
         const { config, central, locks } = application;
-        const reviews = central ? nativeReviews(ctx, c) : undefined;
+        const reviews = nativeReviews(c, application.store, locks);
         if (central) yield* locks.acquire(LockKey.make("scheduler-leader"));
         yield* installGuards(ctx, c, provide);
         yield* registerTools(
@@ -76,9 +76,9 @@ export const createPlugin = (
           application.onboarding,
           central,
           application.setup,
+          reviews,
           provide,
           application.configuration,
-          reviews,
         );
         if (central)
           yield* nativeRpcRegister(ctx, configuration, {
@@ -110,11 +110,11 @@ export const createPlugin = (
                 provide,
               ),
           });
-        if (reviews)
+        if (central)
           yield* nativeInvoke(
             registerWebGateway,
             ctx,
-            config,
+            application,
             c,
             reviews.reviews,
             provide(readAgentCatalog),

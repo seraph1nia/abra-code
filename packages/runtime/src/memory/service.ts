@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
-import { Effect, Schedule } from "effect";
+import { Context, Layer, Effect, Schedule } from "effect";
 import type {
   MemoryPublication,
   MemoryRead,
@@ -75,13 +75,13 @@ function receipt(db: DatabaseSync, input: MemoryPublication, projectName?: strin
 }
 
 export class AgentMemory {
-  private provider?: MemoryProvider;
   private receiptDb?: { root: string; db: DatabaseSync };
   private locks?: { root: string; locks: FileLocks };
   constructor(
     private config: Config,
     private records: Pick<Records, "projects">,
     private thoughts: Pick<PersonalThoughts, "get">,
+    private provider?: MemoryProvider,
   ) {}
   get enabled() {
     return this.config.memory?.enabled === true;
@@ -106,9 +106,9 @@ export class AgentMemory {
     this.locks = { root, locks };
     return locks;
   }
-  close = () =>
-    Effect.gen({ self: this }, function* () {
-      if (this.provider) yield* this.provider.closeEffect();
+  get close() {
+    return Effect.gen({ self: this }, function* () {
+      if (this.provider) yield* this.provider.closeEffect;
       if (this.receiptDb) {
         const db = this.receiptDb.db;
         this.receiptDb = undefined;
@@ -121,12 +121,13 @@ export class AgentMemory {
         });
       }
     });
+  }
   private location = (repo?: RepositoryId) =>
     Effect.gen({ self: this }, function* () {
       const settings = this.config.memory;
       if (!settings?.enabled)
         return yield* new CrewError("MEMORY_DISABLED", "Enable memory in personal settings.");
-      const projects = yield* this.records.projects();
+      const projects = yield* this.records.projects;
       if (repo && !projects.some((p) => p.id === repo))
         return yield* new CrewError("MEMORY_SCOPE", "Select a registered repository.");
       const root = yield* withMemoryTimeout(
@@ -140,7 +141,6 @@ export class AgentMemory {
         root,
         this.provider,
         settings.retrieval ?? "text",
-        undefined,
         this.getLocks(root),
       );
       return { root, notes };
@@ -215,4 +215,23 @@ export class AgentMemory {
         Effect.mapError((error) => (error instanceof CrewError ? error : unresolved())),
       );
     });
+}
+
+export class AgentMemoryService extends Context.Service<AgentMemoryService, AgentMemory>()(
+  "abracode/AgentMemory",
+) {
+  static layer(
+    config: Config,
+    records: Records,
+    thoughts: PersonalThoughts,
+    provider?: MemoryProvider,
+  ) {
+    return Layer.effect(
+      AgentMemoryService,
+      Effect.acquireRelease(
+        Effect.sync(() => new AgentMemory(config, records, thoughts, provider)),
+        (memory) => memory.close,
+      ),
+    );
+  }
 }

@@ -41,7 +41,7 @@ Task summaries extend the shared visibility schema, and communication/review/che
 
 Typed resource selections name task sections, owned sessions, generation-bound decisions, changes or a report request with its exact hash. `/api/work/resolve` is a read-only ownership check through the native gateway; unknown actions, extra command fields, unsafe paths and foreign resources are refused before their evidence is opened. It grants no controller authority. Existing issue/tab/file/scope bookmarks remain valid, while typed resource bookmarks preserve exact identities.
 
-Observers are scoped Effect streams, coalesced through bounded PubSubs with a five-second snapshot fallback. Unsubscribing AG-UI interrupts the observer fiber. HTTP request scopes abort the Fetch/response stream on disconnect. Native admission masks interruption only inside the short locked persist/admit/persist operation; observing a turn never owns that turn's lifetime.
+Observers share a conflated workspace-state channel and an independent native message stream. The five-second fallback runs while at least one client is connected. Unsubscribing AG-UI interrupts the observer fiber. HTTP request scopes abort the Fetch/response stream on disconnect. Native admission masks interruption only inside the short locked persist/admit/persist operation; observing a turn never owns that turn's lifetime.
 
 Native event subscriptions reconnect one second after either clean EOF or a
 failure. Repeated empty streams cannot spin without that delay. The server-owned
@@ -87,7 +87,7 @@ Desktop Search sits at the top of the destination rail. On a phone use the heade
 
 A source failure has its own retry. Results from other sources remain accessible while that request runs. Result previews and private snippets live in the open picker. The notebook link opens Memos under the operator's own account.
 
-Search checks the committed publication head for each matching association. A page can return a continuation even when all its revisions are pending. Damaged heads and legacy pending review heads with unverified predecessors report incomplete coverage.
+Search checks the committed publication head for each matching association. A page can return a continuation even when all its revisions are pending. Damaged and unversioned heads report incomplete coverage.
 
 With Basic Memory enabled, choose `/memory` in Chat or **Search agent memory** in Ctrl+K to open memory search. The command preserves the surrounding draft. General palette searches include shared notes.
 
@@ -101,7 +101,7 @@ The Attention destination renders native string, choice, numeric, integer, boole
 
 ## A2UI v1 catalog
 
-The supervisor-only `abra_render_ui` tool publishes **A2UI 1.0** complete `createSurface` revisions with inline components and `id: "root"`, using catalog ID `https://abracode.local/catalog/work/v5/catalog.json`. Effect schemas own custom component props. The shared catalog builder generates JSON Schema, adds the A2UI catalog structure and includes all 18 upstream basic components, the 14 declared functions and the SDK’s `@index` system function. The server and browser load the same document through the official SDK; the frontend build exports `catalog/work-v5.json` and retains the v1–v4 discovery documents. The workspace serves these JSON documents at `/catalog/work-v1.json` through `/catalog/work-v5.json`. The renderer resolves catalog IDs locally.
+The supervisor-only `abra_render_ui` tool publishes **A2UI 1.0** complete `createSurface` revisions with inline components and `id: "root"`, using catalog ID `https://abracode.local/catalog/work/v1/catalog.json`. The workspace serves the shared catalog at `/catalog/work/v1/catalog.json`. It derives the theme, basic components and functions from the SDK basic catalog. Effect schemas define the work-specific components. The renderer resolves catalog IDs locally.
 
 The Supervisor loads the on-demand `abra-express` skill for component signatures and examples. Call `abra_render_ui` with a stable `surface_id` and an untagged Express `source`. For example, the following arguments publish a live work board.
 
@@ -132,17 +132,17 @@ A complete publication can initialize a surface-local data model. Inputs, valida
 
 Layout references use the A2UI 1.0 flat component adjacency list. Work references bind existing issue IDs. Views use live read-model data or a clearly labelled retained snapshot. Selection and report links open the inspector. New validated revisions retain immutable captured layouts and exact message/call associations before updating the latest-view index. Historical cards load their own revision through `/api/surface`; they do not silently resolve to a newer layout. Catalog IDs, size, depth, component identities, cycles and work references are bounded; HTML, executable callbacks and approval components are rejected. The model receives catalog-derived Express signatures; no browser component is injected into its native tool loop.
 
-Surfaces travel in the existing AG-UI workspace snapshots, including reconnect/bootstrap. There is no separate A2UI server or streaming endpoint. CopilotKit's automatic A2UI tool middleware stays disabled because OpenCode owns the tool loop. Application state and native RPC results use shared Effect contracts; AG-UI events use upstream types and runtime validators. The frontend retains its last valid state when a streamed payload is malformed.
+The agent emits lightweight `abracode.surface`, `abracode.review` and `abracode.artifact` activity references for retained presentations. The renderer matches their producing message, native call and revision to the retained attachment before loading the document. There is no separate A2UI server or streaming endpoint. CopilotKit's automatic A2UI tool middleware stays disabled because OpenCode owns the tool loop. Application state and native RPC results use shared Effect contracts; AG-UI events use upstream types and runtime validators. The frontend retains its last valid state when a streamed payload is malformed.
 
-Saved surfaces with the previous `https://abracode.local/catalog/v1` ID are normalized on read without rewriting native storage, revisions, call identities or captured work. Invalid saved records become individual unavailable placeholders. The renderer prepares valid replacement models before swapping revisions and releases SDK subscriptions on replacement/unmount.
+A retained surface must declare the Work v1 catalog. An incompatible record produces its own unavailable placeholder. The renderer applies new revisions to the existing SDK surface and releases its subscriptions on unmount.
 
-New publication reserves one pending record per surface head before writing immutable bytes/receipts and associations. Native startup and identical retries reconcile those records without recapture or model replay. Conversation pages retain up to 200 presentation references for 100 native messages, with local diagnostics and explicit truncation. Report notices attach their exact request/hash through the existing report owner and notification identity. A legacy record without proven earlier layouts or message provenance remains explicitly latest-only; other retained views stay reachable through a conversation disclosure. See [retained presentation identity](frontend.md#retained-presentation-identity).
+New publication reserves one pending record per surface head before writing immutable bytes/receipts and associations. Native startup and identical retries reconcile those records without recapture or model replay. Conversation pages retain up to 200 presentation references for 100 native messages, with local diagnostics and explicit truncation. Report notices attach their exact request/hash through the existing report owner and notification identity. Other retained views stay reachable through the conversation disclosure. See [retained presentation identity](frontend.md#retained-presentation-identity).
 
 AbraCode sets `COPILOTKIT_TELEMETRY_DISABLED=true` before initializing the web runtime, passes it to development child processes and defines it in frontend builds. The runtime discovery response reports telemetry disabled. This setting also applies when the Effect server is embedded in tests or another launcher.
 
 Reports reuse existing retained Markdown and visual-artifact receipts. Visual reads validate the existing owned path, regular-file/containment rules, digest and byte count. HTML previews use an opaque iframe and a CSP that disallows network access, form submission, embedding and app-origin access. Downloads are explicit attachments. There is no general file-serving or artifact-editing API.
 
-Markdown report reads return `{content}` when published, or `{unavailable:"not_started"|"not_published"}` for an existing task without an execution or published report. These are ordinary empty states. Unknown tasks and failed integrity/ownership checks remain errors. The web adapter preserves domain codes from native RPC failures; safe resource errors explain the unavailable evidence without exposing raw native diagnostics.
+Markdown report reads return `{content}` when published, or `{unavailable:"not_started"|"not_published"}` for an existing task without an execution or published report. These are ordinary empty states. Unknown tasks and failed integrity/ownership checks remain errors. The web adapter preserves domain codes and redacts diagnostic text. Invalid input returns HTTP 400, missing resources return 404, conflicting or stale actions return 409, and unavailable services return 503. After a transport failure, concurrent reads share connection discovery and retry once. Mutation requests retain their original outcome until reconciled.
 
 If the web adapter requests a feature missing from the running native plugin, `WEB_NATIVE_UPDATE_REQUIRED` explains that the service needs a restart to load the updated plugin. Refreshing the browser cannot reload native plugin code.
 
@@ -168,7 +168,7 @@ Activity contains owned worker transcripts, communication, Reviews & checks and 
 
 Reports can open an exact immutable JSON document using the shared A2UI/React catalog. Its captured values stay frozen through live work updates and reload, including pending checks. Local finding filters and evidence disclosures do not contact Abra. Download JSON retains the canonical bytes; unsupported or malformed documents show their own diagnostic while other reports remain usable. Existing HTML reports continue through their isolated legacy preview and download.
 
-An opened JSON report offers explicit offline HTML export, verified attachment download and a sandboxed preview. Export uses the exact saved values and an exporter fingerprint; it does not call the provider. [Saved reports](reports.md) describes local commands, runtime size bounds and legacy compatibility.
+An opened JSON report offers explicit offline HTML export, verified attachment download and a sandboxed preview. Export uses the exact saved values and an exporter fingerprint; it does not call the provider. [Saved reports](reports.md) describes local commands, runtime size bounds and exporter identity.
 
 Acceptance on 2026-11-16 supersedes the earlier frontend checkpoint: 560 unit/integration tests, 27 end-to-end tests, formatting/types/Effect diagnostics, build, schema, license evidence and strict validation passed. The [parity map](verification/frontend-parity.md#integrated-acceptance-on-2026-11-16) identifies retained command logs, screenshots, portable artifacts and native cleanup outcomes.
 
@@ -192,8 +192,7 @@ evidence in a scoped background worker. A page can return while that refresh
 is pending. It carries the last fleet observation time and source revision
 when available, with explicit stale or unavailable status and separate native
 activity coverage. Finder ordering is indexed using the host's locale comparison.
-Supported older databases backfill that derived index without changing issue
-identities or events.
+New work databases create that index at initialization.
 
 Committed controller notifications now include an optional typed resource scope.
 The native authenticated location envelope is preserved; a matching controller
@@ -212,7 +211,7 @@ full baseline. The browser refuses gaps, duplicates, reordered/retired epochs
 and foreign sessions while preserving its last valid state, then requests a
 baseline without resubmitting input. Wall time reports freshness only.
 
-One server-owned five-second fallback remains. Unchanged observations emit a
+The server pauses its five-second fallback when the last observer disconnects. Unchanged observations emit a
 small freshness event, preserving mounted data and receipts without full-message
 emissions or work invalidation. Semantic comparison omits only observation-owned
 timestamps; retained receipt/native/evidence times remain significant. Scoped
@@ -302,7 +301,7 @@ Only validated visible native projections leave this seam; raw provider/reasonin
 payloads never enter AG-UI state. New text/tool parts stream immediately under
 native message/call identities. Complete text/input boundaries reconcile fragments;
 argument rewrites and native status/error fields use explicit full projections.
-The one server fallback remains bounded and shared across browser consumers.
+The browser consumes the AG-UI message stream through CopilotKit’s 50 ms message update throttle. Workspace metadata omits transcript arrays.
 
 Native execution terminal markers group delivered inputs since the preceding idle
 marker, including steer. Each transport run waits for its own admitted message in
@@ -323,14 +322,14 @@ streams they actually opened before resetting. Detaching observers never invokes
 native Stop, and closing the server scope releases subscription/fallback work.
 Current-turn Stop remains an explicit operation; historical-run Stop stays refused.
 
-### Mermaid catalog v2
+### Mermaid diagrams
 
-The v2 work catalog adds `Mermaid` with literal `title`, `source` and optional `description`. Compose it alongside work widgets; use `abra_mermaid_verify` before publication. V1 and legacy readers retain their original component contracts and 64 KiB limit. V2 permits 384 KiB surfaces, 100 components and depth 10. Diagram limits apply across inline placements and captured evidence: 32 instances, 32 KiB UTF-8 per source and 256 KiB aggregate. Unknown SVG, configuration and callback props are refused.
+The work catalog includes `Mermaid` with literal `title`, `source` and optional `description`. Compose it alongside work widgets; use `abra_mermaid_verify` before publication. The catalog permits 384 KiB surfaces, 100 components and depth 10. Diagram limits apply across inline placements and captured evidence: 32 instances, 32 KiB UTF-8 per source and 256 KiB aggregate. Unknown SVG, configuration and callback props are refused.
 
 A generated layout becomes current when its revision and originating message
 attachment are durable and its head commits. During replacement the previous
 committed layout can still be opened or saved. Restart or retry finishes the
-original capture. A legacy latest-only record exposes its recorded revision.
+original capture. Unversioned layout and review records remain unavailable.
 
 The fallback reads recent receipts, generated surfaces, message attachments and
 projects under one request-local supervisor check. Scoped refreshes request
@@ -386,3 +385,5 @@ Choose **Thoughts** in the workspace navigation. Recent private personal memos a
 A verified save receipt, an attached draft and the admitted conversation message can each open the original in Memos. In Work → Overview, the accepted excerpt records the wording at intake. The live notebook preview can change or become unavailable. In Thoughts, **Used in work** lists accepted tasks for this memo and identifies which wording each task used.
 
 Programmatic callers can use the same workspace reads. `GET /api/thoughts?text=planning&tag=road&from=2026-11-01&until=2026-12-01` returns `entries` and, when another page exists, `next_cursor`. Send that value as `cursor` with the same filters. For detail, pass the returned reference fields (`instance`, `account`, `name`, `wording_hash`) as URL-encoded query parameters to `GET /api/thoughts/detail`. The workspace’s ordinary origin and session checks apply. The browser never needs a Memos access token.
+
+Review controls bind choices and comments to the review data model. A submission verifies its selected revision and source under the publication lock. The review list loads separately. Diagram preparation shares matching in-flight compilations and removes canceled requests from the launch queue.

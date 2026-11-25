@@ -1,4 +1,6 @@
-import { createExecution } from "../../src/workflow/execution.ts";
+import { run } from "../effects.ts";
+import { Coordination } from "../../src/workflow/coordination.ts";
+import { createConfiguredExecution } from "../../src/workflow/execution.ts";
 import * as Id from "@abracode/contracts/identities";
 import { Effect, Schedule } from "effect";
 import { join } from "node:path";
@@ -10,38 +12,35 @@ import { Capacity } from "../../src/workflow/capacity.ts";
 import { exists, writeFile } from "../../src/filesystem.ts";
 import { FileStore } from "./file-store.ts";
 
-await Effect.runPromise(
+await run(
   Effect.gen(function* () {
     const [root, id, repository] = process.argv.slice(2);
     identifier(id);
     identifier(repository);
     const config = yield* loadConfig(root);
-    const records = new Records(new FileStore(join(root, "records")));
-    const coordination = records.coordinate(
-      new FileLocks(Id.AbsolutePath.make(join(root, "locks"))),
-    );
+    const coordination = new Coordination(new FileLocks(Id.AbsolutePath.make(join(root, "locks"))));
+    const records = new Records(new FileStore(join(root, "records")), coordination);
     const project = yield* records.project(Id.RepositoryId.make(repository));
     ensure(project, "FIXTURE", "Missing fixture project");
-    const e = yield* createExecution(project, {
-      issue_id: Id.IssueId.make(id),
-      repository_id: Id.RepositoryId.make(repository),
-      execution_id: Id.ExecutionId.make(`execution-${id}`),
-      workflow_policy: "full-openspec",
-      current_phase: "claiming",
-      branch: Id.BranchName.make(`work/${id}`),
-      openspec_change: Id.ChangeName.make(id),
-    });
+    const e = yield* createConfiguredExecution(
+      project,
+      {
+        issue_id: Id.IssueId.make(id),
+        repository_id: Id.RepositoryId.make(repository),
+        execution_id: Id.ExecutionId.make(`execution-${id}`),
+        workflow_policy: "full-openspec",
+        current_phase: "claiming",
+        branch: Id.BranchName.make(`work/${id}`),
+        openspec_change: Id.ChangeName.make(id),
+      },
+      config,
+    );
     yield* writeFile(join(root, `${id}.ready`), "ready");
     yield* exists(join(root, "release")).pipe(
       Effect.repeat({ schedule: Schedule.spaced(10), until: Boolean }),
       Effect.timeout("10 seconds"),
     );
-    const admitted = yield* new Capacity(config, records, coordination).reserve(
-      e,
-      "explore",
-      project,
-      true,
-    );
+    const admitted = yield* new Capacity(config, records).reserve(e, "explore", project, true);
     yield* Effect.sync(() =>
       process.stdout.write(JSON.stringify({ id, admitted, wait: e.capacity_wait })),
     );

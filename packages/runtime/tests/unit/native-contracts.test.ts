@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect platform APIs are required by the native adapters and covered by integration tests. */
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Clock, Effect, Schema, FileSystem } from "effect";

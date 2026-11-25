@@ -1,3 +1,5 @@
+import { Context } from "effect";
+import { Agents } from "@abracode/agents";
 import { indexEffect } from "../work/inbox-index.ts";
 import { removeOwnedField } from "../storage/store.ts";
 import type { Records } from "../storage/store.ts";
@@ -28,9 +30,10 @@ import {
 import { WorkIntake, type WorkInput } from "../work/intake.ts";
 import { BatchInputSchema, type BatchInput } from "../work/batch.ts";
 import { decode } from "../decode.ts";
-import { createExecution } from "./execution.ts";
+import { createConfiguredExecution } from "./execution.ts";
 import { initialRole } from "./roles.ts";
 interface Dependencies {
+  readonly catalog: typeof Agents.Service;
   readonly config: Config;
   readonly records: Records;
   readonly work: WorkGraph;
@@ -58,9 +61,9 @@ export class WorkAdmission {
   private launch = (...args: Parameters<Dependencies["sessions"]["launch"]>) =>
     this.c.sessions.launch(...args);
   private locked<A>(action: () => Effect.Effect<A, CrewError>) {
-    return this.c.coordination.with(action);
+    return this.c.records.withActiveIndex(action);
   }
-  private prepareIntake = Effect.fn("WorkAdmission.prepareIntake")(
+  private prepareReportReference = Effect.fn("WorkAdmission.prepareReportReference")(
     function* (this: WorkAdmission, input: WorkInput) {
       if (input.report_reference) {
         const reference = input.report_reference;
@@ -99,12 +102,16 @@ export class WorkAdmission {
       supervisor: SessionId,
       source?: import("../work/inbox-index.ts").SourceLink,
     ) {
-      input = yield* this.prepareIntake(input);
+      const request = yield* this.intake.prepareIntake(
+        yield* this.prepareReportReference(input),
+        supervisor,
+      );
       const external = yield* this.c.queries.readinessContext();
       return yield* this.locked(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
-            const issue = yield* this.intake.create(input, supervisor, source);
+            yield* this.intake.validateProject(request);
+            const issue = yield* this.c.work.create(request, source);
             const readiness = (yield* this.c.queries.readinessFor([issue.id], external)).get(
               issue.id,
             );
@@ -121,7 +128,7 @@ export class WorkAdmission {
       const tasks: Array<BatchInput["tasks"][number]> = [];
       for (const task of input.tasks) {
         const { client_key, dependencies, ...fields } = task;
-        const prepared = yield* this.prepareIntake({
+        const prepared = yield* this.prepareReportReference({
           ...fields,
           dependencies: (dependencies ?? []).flatMap((d) =>
             d.type === "existing" ? [d.issue_id] : [],
@@ -164,7 +171,7 @@ export class WorkAdmission {
       const existing = yield* this.c.records.execution(id);
       if (existing) return { action: "reconcile", execution: existing } as const;
       const external = yield* this.c.queries.readinessContext();
-      const e = yield* this.c.coordination.with(() =>
+      const e = yield* this.c.records.withActiveIndex(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
             const candidate = (yield* this.c.queries.readinessFor([id], external)).get(id);
@@ -176,7 +183,7 @@ export class WorkAdmission {
             const project = yield* this.c.records.project(candidate.repository_id!);
             if (!project)
               return yield* new CrewError("PROJECT_MISSING", "Repository is no longer registered");
-            const e = yield* createExecution(
+            const e = yield* createConfiguredExecution(
               project,
               {
                 issue_id: id,
@@ -206,6 +213,10 @@ export class WorkAdmission {
                 supervisor_session_id: supervisor,
               },
               this.c.config,
+            ).pipe(
+              Effect.updateContext((caller: Context.Context<never>) =>
+                Context.merge(Context.make(Agents, this.c.catalog), caller),
+              ),
             );
             if (!(yield* this.c.capacity.reserve(e, initialRole(e.workflow_policy), project, true)))
               return yield* new CrewError(
@@ -232,8 +243,25 @@ export class WorkAdmission {
       const p = yield* this.project(e);
       yield* this.c.git.validate(p);
       if (!p.project_id) {
-        p.project_id = yield* this.c.runtime.project(p.path);
-        yield* this.c.records.saveProject(p);
+        const discovered = yield* this.c.runtime.project(p.path);
+        p.project_id = yield* this.c.records.coordinateCommit(() =>
+          Effect.gen({ self: this }, function* () {
+            const current = yield* this.c.records.project(p.id);
+            if (!current || current.path !== p.path)
+              return yield* new CrewError(
+                "PROJECT_CHANGED",
+                "Repository registration changed during provisioning",
+              );
+            if (current.project_id && current.project_id !== discovered)
+              return yield* new CrewError(
+                "PROJECT_CHANGED",
+                "Native project identity changed during provisioning",
+              );
+            if (!current.project_id)
+              yield* this.c.records.saveProject({ ...current, project_id: discovered });
+            return discovered;
+          }),
+        );
       }
       yield* this.c.workspaces.provision(p, e, (fields) => this.c.records.saveOwned(e, fields));
       if (e.workflow_policy !== "full-openspec") {

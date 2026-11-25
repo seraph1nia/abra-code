@@ -1,3 +1,4 @@
+import { nativeReviews } from "../../src/web/review-tool.ts";
 import assert from "node:assert/strict";
 import { Effect, Layer } from "effect";
 import { Tool } from "@opencode/schema/tool";
@@ -104,7 +105,16 @@ test("registered memory tools bind all worker roles, captured policy, actual use
         : Effect.void,
     recordSupervisor: () => Effect.void,
   } as unknown as Controller;
-  await run(registerTools(ctx, controller, f.onboarding, true, f.setup));
+  await run(
+    registerTools(
+      ctx,
+      controller,
+      f.onboarding,
+      true,
+      f.setup,
+      nativeReviews(controller, f.records.store, f.locks),
+    ),
+  );
   const call = (name: string, input: unknown) =>
     run(
       tools.get(name)!.execute(input, {

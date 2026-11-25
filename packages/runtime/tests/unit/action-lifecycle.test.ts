@@ -6,7 +6,7 @@ import { run } from "../effects.ts";
 import * as Id from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
 import { ActionSchema, CurrentActionSchema } from "@abracode/contracts/workflow/action-contracts";
-import { normalizeAction, targetKey } from "../../src/workflow/action-state.ts";
+import { targetKey } from "../../src/workflow/action-state.ts";
 import { PRActions } from "../../src/workflow/pr-actions.ts";
 import { GitHubPRActions } from "../../src/git/pr-actions.ts";
 import { Forge } from "../../src/git/forge.ts";
@@ -90,13 +90,13 @@ test("two job findings reserve and submit one workflow attempt across restart an
   await run(actions.run(e, p, input, undefined, true));
   assert.equal(posts, 1);
   assert.equal(e.feedback!.actions.length, 1);
-  const original = normalizeAction(e.feedback!.actions[0], e);
+  const original = e.feedback!.actions[0];
   assert.equal(original.kind, "rerun");
   if (original.kind === "rerun") assert.equal(original.findings.length, 2);
   await run(actions.run(e, p, { ...input, finding_id: findings[1].id }, undefined, true));
   assert.equal(posts, 1, "A second job must not issue another run-level POST");
   const restored = (await run(f.records.execution(e.issue_id)))!;
-  await run(f.records.saveControl(restored));
+  await run(f.records.commitControl(restored));
   await run(
     new PRActions(f.records, delivery, f.runtime).run(
       restored,
@@ -189,7 +189,7 @@ test("approved permission preflight failure retries once without fabricating sen
   f.runtime.forms.set(form, "approved");
   await run(actions.run(e, p, input, actor));
   assert.equal(posts, 0);
-  const prepared = normalizeAction(e.feedback!.actions[0], e);
+  const prepared = e.feedback!.actions[0];
   assert.equal(prepared.submission.stage, "unsubmitted");
   assert.equal(prepared.preflight?.retryable, true);
   assert.equal(prepared.status, "prepared");
@@ -203,9 +203,9 @@ test("approved permission preflight failure retries once without fabricating sen
   assert.equal(restored.feedback!.actions.length, 1);
 });
 
-test("legacy permission errors stay uncertain and old identity and evidence survive normalization", async (t) => {
+test("uncertain permission errors reconcile using the retained identity and form", async (t) => {
   const { f, e, p } = await deliveredPR(t);
-  const legacy = {
+  const retained = {
     schema_version: 1 as const,
     id: "old-request",
     generation: 0,
@@ -214,15 +214,17 @@ test("legacy permission errors stay uncertain and old identity and evidence surv
     status: "uncertain" as const,
     created_at: 1,
     updated_at: 2,
-    authority: "manual",
-    users: ["alice"],
-    teams: [],
+    authority: "manual" as const,
+    repository_id: e.repository_id,
+    pr: e.pull_request_reference!,
+    target: { users: ["alice"], teams: [] },
+    submission: { stage: "admitted" as const, at: 2 },
     result: "Permission read unavailable",
     form_id: Id.FormId.make("frm_old"),
     session_id: Id.SessionId.make("ses_supervisor"),
     authorized_at: 1,
   };
-  e.feedback = { ...e.feedback!, actions: [legacy, { ...legacy, id: "old-duplicate" }] };
+  e.feedback = { ...e.feedback!, actions: [retained, { ...retained, id: "old-duplicate" }] };
   await run(f.records.save(e));
   let observations = 0;
   const delivery: Delivery = {
@@ -245,38 +247,21 @@ test("legacy permission errors stay uncertain and old identity and evidence surv
       generation: 0,
       expected_head: e.delivered_commit!,
       kind: "reviewers",
-      action_id: legacy.id,
+      action_id: retained.id,
     }),
   );
-  const action = normalizeAction(
-    e.feedback!.actions[0].id === legacy.id ? e.feedback!.actions[0] : e.feedback!.actions[1],
-    e,
-  );
+  const action = e.feedback!.actions.find((a) => a.id === retained.id)!;
   assert.equal(observations, 1);
   assert.equal(action.submission.stage, "admitted");
   assert.equal(action.status, "uncertain");
-  assert.deepEqual(action.legacy, legacy);
-  assert.equal(action.form_id, legacy.form_id);
+  assert.equal(action.form_id, retained.form_id);
   assert.equal(
     e.feedback!.actions.length,
     2,
     "Historical reservations are never silently collapsed",
   );
-  assert.throws(() => Schema.decodeUnknownSync(ActionSchema)({ ...legacy, schema_version: 99 }));
-  assert.throws(
-    () =>
-      normalizeAction(
-        {
-          ...legacy,
-          kind: "reply",
-          finding: Id.FindingId.make("old-source"),
-          revision: "r1",
-          body: undefined,
-        },
-        e,
-      ),
-    /incomplete/,
-  );
+  assert.throws(() => Schema.decodeUnknownSync(ActionSchema)({ ...retained, schema_version: 99 }));
+  assert.throws(() => Schema.decodeUnknownSync(ActionSchema)({ ...retained, kind: "reply" }));
 });
 
 test("pause between preparation and admission prevents any write", async (t) => {
@@ -300,7 +285,7 @@ test("pause between preparation and admission prevents any write", async (t) => 
           paused.stop_status = "confirmed";
           paused.resume_phase = "awaiting_merge";
           paused.current_phase = "interrupted";
-          yield* f.records.saveControl(paused);
+          yield* f.records.commitControl(paused);
           return {
             kind: "write" as const,
             write: {
@@ -336,10 +321,7 @@ test("pause between preparation and admission prevents any write", async (t) => 
     /superseded/,
   );
   const paused = (await run(f.records.execution(e.issue_id)))!;
-  assert.equal(
-    normalizeAction(paused.feedback!.actions[0], paused).submission.stage,
-    "unsubmitted",
-  );
+  assert.equal(paused.feedback!.actions[0].submission.stage, "unsubmitted");
 });
 
 test("permanent preparation denial remains unsubmitted and automatic polling does not spin", async (t) => {
@@ -370,7 +352,7 @@ test("permanent preparation denial remains unsubmitted and automatic polling doe
   await run(service.automatic(e, p));
   await run(service.automatic(e, p));
   assert.equal(reads, 1);
-  const action = normalizeAction(e.feedback!.actions[0], e);
+  const action = e.feedback!.actions[0];
   assert.equal(action.submission.stage, "unsubmitted");
   assert.equal(action.preflight?.retryable, false);
 });

@@ -14,26 +14,14 @@ import {
 } from "../identities.ts";
 import { Count, Commit } from "../primitives.ts";
 import { WorkSummarySchema } from "../visibility/work-summary.ts";
-import { ReportSnapshotSchema, LegacyReportSnapshotSchema } from "./report-evidence.ts";
+import { ReportSnapshotSchema } from "./report-evidence.ts";
 import { SurfaceSchema, validateSurfaceWorkIds } from "../web/surfaces.ts";
-import {
-  catalogId,
-  catalogV1Id,
-  catalogV2Id,
-  catalogV3Id,
-  catalogV4Id,
-  catalogIds,
-  ComponentId,
-} from "../web/catalog.ts";
+import { catalogId, ComponentId } from "../web/catalog.ts";
 
 export const maximumDocumentBytes = 1024 * 1024;
-export const reportRendererVersion = "abracode-react/v5";
+export const reportRendererVersion = "abracode-react/v1";
 export const reportCatalogs = {
-  [catalogV1Id]: { catalog_version: 1, renderer_compatibility: "abracode-react/v1" },
-  [catalogV2Id]: { catalog_version: 2, renderer_compatibility: "abracode-react/v2" },
-  [catalogV3Id]: { catalog_version: 3, renderer_compatibility: "abracode-react/v3" },
-  [catalogV4Id]: { catalog_version: 4, renderer_compatibility: "abracode-react/v4" },
-  [catalogId]: { catalog_version: 5, renderer_compatibility: reportRendererVersion },
+  [catalogId]: { catalog_version: 1, renderer_compatibility: reportRendererVersion },
 } as const;
 export type ReportProducer = typeof ReportProducerSchema.Type;
 const text = Schema.String.check(Schema.isMaxLength(16384));
@@ -61,15 +49,9 @@ export const ReportDocumentSchema = Schema.Struct({
   revision: positive,
   title: text.check(Schema.isNonEmpty()),
   captured_at: Timestamp,
-  catalog_id: Schema.Literals(catalogIds),
-  catalog_version: Schema.Literals([1, 2, 3, 4, 5]),
-  renderer_compatibility: Schema.Literals([
-    "abracode-react/v1",
-    "abracode-react/v2",
-    "abracode-react/v3",
-    "abracode-react/v4",
-    reportRendererVersion,
-  ]),
+  catalog_id: Schema.Literal(catalogId),
+  catalog_version: Schema.Literal(1),
+  renderer_compatibility: Schema.Literal(reportRendererVersion),
   provenance: Schema.Struct({
     issue_id: IssueId,
     execution_id: ExecutionId,
@@ -98,12 +80,6 @@ export const ReportDocumentSchema = Schema.Struct({
       document.surface.createSurface.catalogId !== document.catalog_id
     )
       return "Inconsistent report catalog/renderer identity";
-    if (
-      document.catalog_id === catalogV1Id &&
-      document.data.evidence &&
-      !Schema.is(LegacyReportSnapshotSchema)(document.data.evidence)
-    )
-      return "Historical report evidence exceeds its original contract";
     const budget = diagramBudget(
       collectDiagrams(document.surface.createSurface.components, document.data.evidence),
     );
@@ -157,12 +133,9 @@ export function readReportDocument(
       reason: "This report format version is not supported by this viewer.",
     };
   if (
-    !catalogIds.some(
-      (id) =>
-        id === raw.catalog_id &&
-        raw.catalog_version === reportCatalogs[id].catalog_version &&
-        raw.renderer_compatibility === reportCatalogs[id].renderer_compatibility,
-    )
+    raw.catalog_id !== catalogId ||
+    raw.catalog_version !== 1 ||
+    raw.renderer_compatibility !== reportRendererVersion
   )
     return {
       supported: false,

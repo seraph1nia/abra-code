@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 FileSystem and service discovery APIs. */
 import { isDeepStrictEqual } from "node:util";
 import { Service } from "@opencode/client/effect/service";
 import { Console, Effect, FileSystem, Schema } from "effect";
@@ -9,7 +8,7 @@ import { presentConfig } from "../config/presentation.ts";
 import { configuration } from "../config/protocol.ts";
 import { CrewError } from "../domain.ts";
 import { AbsolutePath } from "@abracode/contracts/identities";
-import { makeClient } from "../opencode/client.ts";
+import { makeClient, OPENCODE_VERSION } from "../opencode/client.ts";
 import { findSupervisor } from "../opencode/supervisor.ts";
 
 const runConfigInspect = (show: boolean, json: boolean) =>
@@ -54,7 +53,7 @@ export const runConfigApply = (options: ConfigApplyOptions) =>
     const config = yield* loadConfig(yield* resolveInstallationHome);
     const endpoint = yield* Service.discover({
       file: runtimePaths(config.home).service,
-      version: "2.3.0",
+      version: OPENCODE_VERSION,
     });
     if (!endpoint)
       return yield* new CrewError(

@@ -1,7 +1,6 @@
 import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
 import { VerificationViewSchema } from "@abracode/contracts/web/verification";
 import { selectBindingRows } from "@abracode/contracts/web/bindings";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Disposable browser/HTTP/stream fixtures exercise the shipped frontend. */
 
 import { Effect, Exit, PubSub, Scope, Stream, Schema } from "effect";
 
@@ -50,7 +49,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
   const leadPages = new Map<string, unknown>();
   const documentArtifacts = new Map<
     string,
-    { json: string; hash: string; bytes: number; title: string; legacy?: boolean }
+    { json: string; hash: string; bytes: number; title: string }
   >();
   let communications: typeof MessagesPageSchema.Type.entries = [];
   let obligations: typeof DecisionsSchema.Type = { decisions: [], waits: [] };
@@ -169,7 +168,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
             title: artifact.title,
             hash: artifact.hash,
             bytes: artifact.bytes,
-            format: artifact.legacy ? "legacy-html" : "a2ui-snapshot",
+            format: "a2ui-snapshot",
             status: "published",
             generation: 2,
           }));
@@ -189,7 +188,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
                 title: artifact.title,
                 hash: artifact.hash,
                 bytes: artifact.bytes,
-                format: artifact.legacy ? "legacy-html" : "a2ui-snapshot",
+                format: "a2ui-snapshot",
                 status: "published",
                 generation: 2,
               }
@@ -288,8 +287,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
     submit: source.submit,
     receipt: source.receipt,
     stop: source.stop,
-    completionEvidence: source.completionEvidence,
-    artifact: source.artifact,
+    nativeSnapshot: source.nativeSnapshot,
     replyPermission: source.replyPermission,
     exportDocument: (input) => source.exportDocument(input),
     readExport: (input) => source.readExport(input),

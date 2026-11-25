@@ -8,11 +8,7 @@ import { run } from "../effects.ts";
 import { SqliteWorkGraph, openWorkGraph, type NewIssue } from "../../src/work/graph.ts";
 import { ProcessRunner } from "../../src/process.ts";
 
-import {
-  workGraphAt,
-  restoreV8FinderFixture,
-  workDatabase as database,
-} from "../helpers/work-database.ts";
+import { workGraphAt, workDatabase as database } from "../helpers/work-database.ts";
 
 const goal = (request_id: string, dependencies: string[] = []): NewIssue => ({
   repository_id: Id.RepositoryId.make("api"),
@@ -224,133 +220,42 @@ test("invalid creation, missing dependencies and normalized retries do not chang
   assert.deepEqual(first.dependencies, [a.id, b.id].sort());
 });
 
-test("v8 finder indexes migrate legacy IDs and stay ordered after new writes and reopen", async (t) => {
-  const { graph: initial, path, scope } = await database(t);
-  await run(initial.createBatch(batchGoal()));
-  const oldBatch = await run(initial.createBatch(batchGoal()));
-  const events = await run(initial.history(oldBatch.tasks[0]!.issue.id));
-  await run(Scope.close(scope, Exit.void));
-  const legacy = ["aZ", "AZ", "a-Z", "a.Z", "a_Z", "ABRA-x", "abra.x", "abra_x"];
-  const db = new DatabaseSync(path);
-  try {
-    restoreV8FinderFixture(db);
-    const insert = db.prepare(`
-      INSERT INTO issues (id, repository_id, workflow_policy, request_id, request_input,
-        title, description, priority, status)
-      VALUES (?, 'api', 'full-openspec', ?, '{}', ?, 'legacy work', 2, 'open')
-    `);
-    for (const id of legacy) insert.run(id, id, `ÉTUDE ${id}`);
-  } finally {
-    db.close();
-  }
-  const fixture = new DatabaseSync(path);
-  const receipts = () =>
-    fixture.prepare("SELECT request_id, request_input FROM work_batches ORDER BY request_id").all();
-  const savedReceipts = receipts();
-  t.onTestFinished(() => fixture.close());
-  fixture.exec("CREATE VIEW injected_failure AS SELECT finder_rank FROM issues");
-  await assert.rejects(run(SqliteWorkGraph.open(path)), /injected_failure/);
-  assert.equal(fixture.prepare("PRAGMA user_version").get()!.user_version, 8);
-  assert.ok(
-    fixture.prepare("SELECT name FROM sqlite_schema WHERE name='issues_finder_rank'").get(),
-  );
-  fixture.exec("DROP VIEW injected_failure");
-  const created = await run(
-    Effect.gen(function* () {
-      const graph = yield* SqliteWorkGraph.open(path);
-      const ids = yield* graph.find({ search: " étude ", limit: 50 });
-      assert.deepEqual(
-        ids.entries.map((entry) => entry.id),
-        legacy.toSorted(),
-      );
-      assert.deepEqual(receipts(), savedReceipts);
-      assert.deepEqual((yield* graph.createBatch(batchGoal())).tasks, oldBatch.tasks);
-      assert.deepEqual(yield* graph.history(oldBatch.tasks[0]!.issue.id), events);
-      const fresh = yield* graph.createBatch(batchGoal("after-migration"));
-      return [oldBatch, fresh]
-        .flatMap((batch) =>
-          batch.tasks.filter((t) => t.issue.repository_id === "api").map((t) => t.issue.id),
-        )
-        .concat((yield* graph.create(goal("alongside-legacy"))).id);
-    }),
-  );
-  await run(
-    Effect.gen(function* () {
-      const graph = yield* SqliteWorkGraph.open(path);
-      const ids = [];
-      for (let offset = 0; offset < legacy.length + created.length; offset += 2) {
-        const page = yield* graph.find({
-          repository_id: Id.RepositoryId.make("api"),
-          limit: 2,
-          offset,
-        });
-        assert.equal(page.total, legacy.length + created.length);
-        assert.equal(page.next_offset, offset + 2 < page.total ? offset + 2 : undefined);
-        ids.push(...page.entries.map((entry) => entry.id));
-      }
-      assert.deepEqual(ids, [...legacy, ...created].sort());
-      assert.deepEqual((yield* graph.find({ state: "closed" })).entries, []);
-    }),
-  );
-});
-
-test("early SQLite schema upgrades preserve work, ownership and history", async (t) => {
+test("fresh work databases have the complete version-one schema and reject other formats intact", async (t) => {
   const { graph, path, scope } = await database(t);
-  const existing = await run(graph.create(goal("existing")));
-  await run(graph.claim(existing.id, Id.ExecutionId.make("existing-owner")));
+  const issue = await run(graph.create(goal("preserved")));
   await run(Scope.close(scope, Exit.void));
   const db = new DatabaseSync(path);
-  try {
-    db.exec(
-      "DROP TABLE batch_items; DROP TABLE work_batches; ALTER TABLE issues DROP COLUMN scope_json; ALTER TABLE issues DROP COLUMN report_reference_json; ALTER TABLE issues DROP COLUMN quality_profile; ALTER TABLE issues DROP COLUMN dispatch_json; PRAGMA user_version = 1",
+  t.onTestFinished(() => db.close());
+  assert.equal(db.prepare("PRAGMA user_version").get()?.user_version, 1);
+  for (const table of [
+    "issues",
+    "work_events",
+    "dependencies",
+    "work_batches",
+    "batch_items",
+    "github_items",
+    "github_scans",
+    "github_links",
+    "github_cooldowns",
+    "thought_saves",
+  ])
+    assert.ok(
+      db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(table),
+      table,
     );
-  } finally {
-    db.close();
-  }
-  await run(
-    Effect.gen(function* () {
-      const upgraded = yield* openWorkGraph({ work_database: path });
-      assert.equal((yield* upgraded.show(existing.id)).assignee, "existing-owner");
-      assert.equal((yield* upgraded.history(existing.id)).length, 2);
-      const created = yield* upgraded.create(goal("after-upgrade"));
-      assert.equal(created.status, "open");
-      assert.equal((yield* upgraded.list).length, 2);
-    }),
+  const opened = await run(
+    Effect.flatMap(openWorkGraph({ work_database: path }), (work) => work.show(issue.id)),
   );
-  const verify = new DatabaseSync(path);
-  try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 11);
-    verify.exec("PRAGMA user_version = 12");
-  } finally {
-    verify.close();
-  }
-  await assert.rejects(run(SqliteWorkGraph.open(path)), /Unsupported work database version 12/);
-});
-
-test("schema 10 work replays after upgrading the optional thought source and save ledger", async (t) => {
-  const { graph, path, scope } = await database(t);
-  const old = await run(graph.create(goal("before-notebook")));
-  await run(Scope.close(scope, Exit.void));
-  const db = new DatabaseSync(path);
-  try {
-    db.exec(
-      "DROP INDEX IF EXISTS issues_thought_source; ALTER TABLE issues DROP COLUMN thought_source_json; DROP TABLE thought_saves; PRAGMA user_version = 10",
+  assert.equal(opened.title, issue.title);
+  for (const version of [0, 1, 2, 8, 10, 11, 12]) {
+    db.exec(`PRAGMA application_id=0; PRAGMA user_version=${version}`);
+    await assert.rejects(run(SqliteWorkGraph.open(path)), { code: "WORK_DATABASE_VERSION" });
+    assert.equal(db.prepare("PRAGMA user_version").get()?.user_version, version);
+    assert.equal(
+      db.prepare("SELECT title FROM issues WHERE id=?").get(issue.id)?.title,
+      issue.title,
     );
-  } finally {
-    db.close();
   }
-  await run(
-    Effect.gen(function* () {
-      const migrated = yield* SqliteWorkGraph.open(path);
-      const replay = yield* migrated.create(goal("before-notebook"));
-      assert.equal(replay.id, old.id);
-      assert.equal(replay.thought_source, undefined);
-      const original = yield* migrated.reserveThought("request", "digest");
-      const retry = yield* migrated.reserveThought("request", "digest");
-      assert.equal(original.id, retry.id);
-      assert.equal(retry.fresh, false);
-    }),
-  );
 });
 
 test("workflow/scope/report identities are persisted and cannot rebind a request; legacy full-spec input retries compatibly", async (t) => {
@@ -507,83 +412,6 @@ test("separate processes commit one batch and return identical local-key mapping
     assert.equal((await run(graph.history(issue.id))).length, 1);
 });
 
-for (const version of [3, 4, 5])
-  test(`schema ${version} batch migration preserves original request identity`, async (t) => {
-    const { graph, path, scope } = await database(t);
-    const issue = await run(graph.create(goal("historical")));
-    await run(Scope.close(scope, Exit.void));
-    const db = new DatabaseSync(path);
-    let original: unknown;
-    try {
-      original = db
-        .prepare("SELECT request_input FROM issues WHERE id = ?")
-        .get(issue.id)!.request_input;
-      db.exec(
-        "DROP TABLE batch_items; DROP TABLE work_batches; ALTER TABLE issues DROP COLUMN dispatch_json;",
-      );
-      if (version === 3) db.exec("ALTER TABLE issues DROP COLUMN quality_profile");
-      db.exec(`PRAGMA user_version = ${version}`);
-    } finally {
-      db.close();
-    }
-    await run(
-      Effect.gen(function* () {
-        const upgraded = yield* SqliteWorkGraph.open(path);
-        assert.equal((yield* upgraded.create(goal("historical"))).id, issue.id);
-        assert.equal((yield* upgraded.createBatch(batchGoal())).tasks.length, 2);
-      }),
-    );
-    const verify = new DatabaseSync(path);
-    try {
-      assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 11);
-      assert.equal(
-        verify.prepare("SELECT request_input FROM issues WHERE id = ?").get(issue.id)!
-          .request_input,
-        original,
-      );
-    } finally {
-      verify.close();
-    }
-  });
-
-test("failed batch receipt migration rolls back preceding column additions and schema version", async (t) => {
-  const { graph, path, scope } = await database(t);
-  await run(graph.create(goal("preserved")));
-  await run(Scope.close(scope, Exit.void));
-  const db = new DatabaseSync(path);
-  try {
-    db.exec(
-      "DROP TABLE batch_items; DROP TABLE work_batches; ALTER TABLE issues DROP COLUMN quality_profile; ALTER TABLE issues DROP COLUMN dispatch_json; CREATE INDEX work_batches ON issues(title); PRAGMA user_version = 3",
-    );
-    await assert.rejects(run(SqliteWorkGraph.open(path)), /work_batches|index/);
-    assert.equal(db.prepare("PRAGMA user_version").get()!.user_version, 3);
-    assert.equal(
-      db
-        .prepare("PRAGMA table_info(issues)")
-        .all()
-        .some((row) => row.name === "quality_profile"),
-      false,
-    );
-    assert.equal(
-      db
-        .prepare("PRAGMA table_info(issues)")
-        .all()
-        .some((row) => row.name === "dispatch_json"),
-      false,
-    );
-    assert.equal(db.prepare("SELECT count(*) AS n FROM issues").get()!.n, 1);
-    db.exec("DROP INDEX work_batches");
-  } finally {
-    db.close();
-  }
-  await run(
-    Effect.gen(function* () {
-      const upgraded = yield* SqliteWorkGraph.open(path);
-      assert.equal((yield* upgraded.createBatch(batchGoal())).tasks.length, 2);
-    }),
-  );
-});
-
 test("intake request identities cannot change between a batch and an ordinary issue", async (t) => {
   const { graph } = await database(t);
   await run(graph.create(goal("already-single")));
@@ -595,13 +423,12 @@ test("intake request identities cannot change between a batch and an ordinary is
   assert.equal((await run(graph.list)).length, 3);
 });
 
-test("schema-5 batch receipts keep original mapping while new task dispatch is durable and immutable", async (t) => {
+test("batch receipts keep original mapping while new task dispatch is durable and immutable", async (t) => {
   const { graph, path, scope } = await database(t);
   const old = await run(graph.createBatch(batchGoal()));
   await run(Scope.close(scope, Exit.void));
   const db = new DatabaseSync(path);
   const receipt = db.prepare("SELECT request_input FROM work_batches").get()!.request_input;
-  db.exec("ALTER TABLE issues DROP COLUMN dispatch_json; PRAGMA user_version = 5");
   db.close();
   await run(
     Effect.gen(function* () {
@@ -637,7 +464,7 @@ test("schema-5 batch receipts keep original mapping while new task dispatch is d
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 11);
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 1);
     assert.equal(
       verify.prepare("SELECT request_input FROM work_batches").get()!.request_input,
       receipt,
@@ -647,7 +474,7 @@ test("schema-5 batch receipts keep original mapping while new task dispatch is d
   }
 });
 
-test("version-6 migration preserves old request bytes while new schema/approval choices survive lost responses", async (t) => {
+test("saved request bytes remain stable while new schema/approval choices survive lost responses", async (t) => {
   const { graph, path, scope } = await database(t);
   const old = await run(graph.create(goal("old-schema-request")));
   const oldBatch = await run(graph.createBatch(batchGoal()));
@@ -657,9 +484,6 @@ test("version-6 migration preserves old request bytes while new schema/approval 
     .prepare("SELECT request_input FROM issues WHERE id = ?")
     .get(old.id)!.request_input;
   const originalBatch = db.prepare("SELECT request_input FROM work_batches").get()!.request_input;
-  db.exec(
-    "ALTER TABLE issues DROP COLUMN openspec_schema; ALTER TABLE issues DROP COLUMN require_plan_approval; PRAGMA user_version = 6",
-  );
   db.close();
   const single = {
     ...goal("selected-schema"),
@@ -730,7 +554,7 @@ test("version-6 migration preserves old request bytes while new schema/approval 
   );
   const verify = new DatabaseSync(path);
   try {
-    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 11);
+    assert.equal(verify.prepare("PRAGMA user_version").get()!.user_version, 1);
     assert.equal(
       verify.prepare("SELECT request_input FROM issues WHERE id = ?").get(old.id)!.request_input,
       original,
@@ -758,8 +582,8 @@ test("batch integrity is checked on reopen and after peer commits, and reused on
   const attempt = batchGoal("revalidate");
   const { graph: reopened } = await workGraphAt(t, path);
   let cold = 0;
-  const validate = reopened["validateHistoricalEdges"].bind(reopened);
-  reopened["validateHistoricalEdges"] = () => {
+  const validate = reopened["batchesRepo"].validateHistoricalEdges.bind(reopened["batchesRepo"]);
+  reopened["batchesRepo"].validateHistoricalEdges = () => {
     cold++;
     return validate();
   };
@@ -773,8 +597,8 @@ test("batch integrity is checked on reopen and after peer commits, and reused on
   const receipt = await run(reopened.createBatch(attempt));
   assert.equal(cold, 3);
   let issueRows = 0;
-  const hydrate = reopened["hydrate"].bind(reopened);
-  reopened["hydrate"] = (rows, links) => {
+  const hydrate = reopened["issuesRepo"].hydrate.bind(reopened["issuesRepo"]);
+  reopened["issuesRepo"].hydrate = (rows, links) => {
     issueRows += rows.length;
     return hydrate(rows, links);
   };

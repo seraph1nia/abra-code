@@ -48,9 +48,9 @@ test("ticket lead reads hydrate only the selected issue as other repositories gr
   const queries = f.controller.queries;
   const fleet = vi.spyOn(queries, "observe");
   const summaries = vi.spyOn(f.work, "repositoryIssueSummaries");
-  const hydrate = f.work["hydrate"].bind(f.work);
+  const hydrate = f.work["issuesRepo"].hydrate.bind(f.work["issuesRepo"]);
   const hydrated: string[] = [];
-  f.work["hydrate"] = (rows, links) => {
+  f.work["issuesRepo"].hydrate = (rows, links) => {
     hydrated.push(...rows.map((row) => String(row.id)));
     return hydrate(rows, links);
   };
@@ -215,7 +215,7 @@ test("scoped lead observation retains paged requests, proposals and accepted wor
   assert.equal(next.detail?.request_next, undefined);
   assert.equal(next.detail?.proposal_next, undefined);
   assert.ok(Schema.is(LeadEvidencePageSchema)(page));
-  assert.ok("value" in (await visibility.methods.leads.output["~standard"].validate(page)));
+  assert.ok(Schema.is(visibility.methods.leads.output)(page));
   assert.deepEqual((await run(readLeads(f.records)))[0], retained);
   assert.deepEqual(
     {

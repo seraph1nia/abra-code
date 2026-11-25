@@ -1,3 +1,4 @@
+import { exactParseOptions } from "@abracode/contracts/primitives";
 import {
   ScopedMemorySearch,
   ScopedMemoryRead,
@@ -33,11 +34,7 @@ import {
   ContentHash,
 } from "@abracode/contracts/identities";
 import { ComponentId } from "@abracode/contracts/web/catalog";
-import {
-  ArtifactSchema,
-  DocumentArtifactSchema,
-  ArtifactSummarySchema,
-} from "@abracode/contracts/web/wire";
+import { DocumentArtifactSchema, ArtifactSummarySchema } from "@abracode/contracts/web/wire";
 import {
   SaveSurfaceSchema,
   ExportDocumentSchema,
@@ -57,12 +54,10 @@ import {
   PresentationPageSchema,
 } from "@abracode/contracts/web/workspace-wire";
 
-const errors = { refused: Schema.toStandardSchemaV1(Schema.Struct({ code: Schema.String })) };
+const errors = { refused: Schema.Struct({ code: Schema.String }) };
 const method = <I, O>(input: Schema.Codec<I, unknown>, output: Schema.Codec<O, unknown>) => ({
-  input: Schema.toStandardSchemaV1(input, {
-    parseOptions: { onExcessProperty: "error", reportInput: false },
-  }),
-  output: Schema.toStandardSchemaV1(output),
+  input: input.annotate(exactParseOptions),
+  output: output,
   errors,
 });
 /** Authenticated native RPC, never mounted as a generic browser proxy. */
@@ -161,10 +156,6 @@ export const webGateway = Rpc.define({
       }),
       NativeHistorySchema,
     ),
-    artifact: method(
-      Schema.Struct({ session_id: SessionId, issue_id: IssueId, request_id: RequestId }),
-      ArtifactSchema,
-    ),
     artifactDocument: method(
       Schema.Struct({
         session_id: SessionId,
@@ -201,11 +192,6 @@ export const webGateway = Rpc.define({
     receipt: method(
       Schema.Struct({ session_id: SessionId, ...ReceiptQuerySchema.fields }),
       ReceiptLookupSchema,
-    ),
-    receipts: method(Schema.Struct({ session_id: SessionId }), Schema.Array(ReceiptSchema)),
-    surfaces: method(
-      Schema.Struct({ session_id: SessionId }),
-      Schema.Array(SurfaceIndexEntrySchema),
     ),
     projects: method(Schema.Struct({ session_id: SessionId }), ProjectsSchema),
     checkpoint: method(

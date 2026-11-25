@@ -1,28 +1,104 @@
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import {
+  phaseMetadata,
+  phaseLabel,
+  type Section,
+} from "@abracode/contracts/presentation/work-state";
+import { useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { cn } from "#utils";
 
 export type StatusTone = "neutral" | "running" | "success" | "attention" | "danger";
 
+const sectionTone = {
+  attention: "attention",
+  working: "running",
+  blocked: "danger",
+  queued: "running",
+  done: "success",
+  other: "neutral",
+} satisfies Record<Section, StatusTone>;
+const tones = new Map<string, StatusTone>();
+for (const phase of Object.keys(phaseMetadata) as (keyof typeof phaseMetadata)[]) {
+  const tone = sectionTone[phaseMetadata[phase].section];
+  tones.set(phase, tone);
+  tones.set(phaseLabel(phase).toLowerCase(), tone);
+}
+const statuses = {
+  neutral: [
+    "open",
+    "idle",
+    "disabled",
+    "retained",
+    "retained work",
+    "draft",
+    "superseded",
+    "inactive",
+  ],
+  running: [
+    "running",
+    "in progress",
+    "in_progress",
+    "working",
+    "streaming",
+    "active",
+    "admitted",
+    "queued",
+    "loading",
+    "submitting",
+  ],
+  success: [
+    "closed",
+    "approved",
+    "ready",
+    "succeeded",
+    "success",
+    "passed",
+    "completed",
+    "done",
+    "published",
+    "merged",
+    "accepted",
+    "delivered",
+    "answered",
+    "confirmed",
+    "available",
+    "cleared",
+    "handled",
+  ],
+  attention: [
+    "waiting",
+    "pending",
+    "needs approval",
+    "awaiting approval",
+    "review",
+    "unanswered",
+    "attention",
+    "action required",
+    "uncertain",
+    "stopping",
+    "user_needed",
+  ],
+  danger: [
+    "blocked",
+    "failed",
+    "error",
+    "refused",
+    "rejected",
+    "denied",
+    "stale",
+    "conflict",
+    "cancelled",
+    "unavailable",
+    "expired",
+    "overdue",
+    "cleanup blocked",
+    "observation unavailable",
+  ],
+} satisfies Record<StatusTone, readonly string[]>;
+for (const tone of Object.keys(statuses) as StatusTone[])
+  for (const status of statuses[tone]) tones.set(status, tone);
+
 export function statusTone(value?: string | null): StatusTone {
-  if (!value) return "neutral";
-  const normalized = value.toLowerCase();
-  if (
-    /block|fail|error|refus|reject|danger|denied|stale|conflict|cancel|unavail|expired|overdue/.test(
-      normalized,
-    )
-  )
-    return "danger";
-  if (
-    /wait|pending|approval|attention|open decision|unanswered|warn|action|review/.test(normalized)
-  )
-    return "attention";
-  if (
-    /running|progress|working|stream|active|implement|explor|research|admit|queue/.test(normalized)
-  )
-    return "running";
-  if (/pass|approv|deliver|complete|done|publish|ready|merged|accept|clean|open/.test(normalized))
-    return "success";
-  return "neutral";
+  return tones.get(value?.trim().toLowerCase() ?? "") ?? "neutral";
 }
 
 export function StatusBadge({
@@ -70,10 +146,12 @@ export function SectionCard({
     >
       {(title || actions) && (
         <header className="section-card-head">
-          <div className="section-card-title">
-            {icon}
-            {typeof title === "string" ? <h3>{title}</h3> : title}
-          </div>
+          {title && (
+            <h3 className="section-card-title">
+              {icon}
+              {title}
+            </h3>
+          )}
           {actions && <div className="section-card-actions">{actions}</div>}
         </header>
       )}
@@ -96,12 +174,17 @@ export function EvidenceDisclosure({
   open?: boolean;
   onToggle?: (open: boolean) => void;
 }) {
+  const [expanded, setExpanded] = useState(() => defaultOpen ?? false);
   return (
     <details
       {...rest}
       className={cn("evidence-disclosure", className)}
-      open={open ?? defaultOpen}
-      onToggle={onToggle ? (event) => onToggle(event.currentTarget.open) : undefined}
+      open={open ?? expanded}
+      onToggle={(event) => {
+        const value = event.currentTarget.open;
+        if (open === undefined) setExpanded(value);
+        onToggle?.(value);
+      }}
     >
       <summary>{summary}</summary>
       <div className="evidence-disclosure-body">{children}</div>

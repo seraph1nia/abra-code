@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { deferred } from "../deferred.tsx";
+import { deferred } from "@abracode/presentation/deferred";
 
 const Review = deferred<
   ComponentProps<typeof import("./interactive-reviews.tsx").InteractiveReview>

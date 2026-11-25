@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 Node platform services. */
 import { NodeServices } from "@effect/platform-node";
 import { Effect, FileSystem, Layer, Option, Path } from "effect";
 import { ChildProcessSpawner } from "effect/process";

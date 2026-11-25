@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./bundled": "./src/bundled.ts",
     "./policy": "./src/policy.ts",
+    "./tool-boundary": "./src/tool-boundary.ts",
     "./skills": "./src/skills.ts",
     "./native": "./src/native.ts",
     "./contracts": "./src/contracts.ts",

@@ -17,7 +17,7 @@ import type { Runtime } from "../opencode/runtime.ts";
 import type { OpenSpec } from "../openspec/adapter.ts";
 import type { SessionInspection } from "./session-inspection.ts";
 import type { Obligations } from "./obligations.ts";
-import { assertApprovalActor } from "./authorization.ts";
+import { type ApprovalActorCheck } from "./authorization.ts";
 import { readWorkerContext, compatibleContext } from "./worker-context.ts";
 import { activeSynchronization } from "./synchronization.ts";
 import { externalOwns } from "@abracode/contracts/validation/contracts";
@@ -33,17 +33,9 @@ import {
 const digest = (value: unknown) =>
   Fingerprint.make(createHash("sha256").update(JSON.stringify(value)).digest("hex"));
 const refs = (a: PlanningAttempt) => `refs/abracode/planning/${a.execution_id}/${a.id}`;
-const hasLegacyReplanGap = (e: Execution) =>
-  !e.planning_base_commit &&
-  !activeSynchronization(e) &&
-  e.approval_receipts.some((r) => r.kind === "plan" && r.authorized_at);
-const legacyReplanError = () =>
-  new CrewError(
-    "PLANNING_BASELINE_REQUIRED",
-    "Legacy controlled replan has no attributable baseline; use explicit recovery",
-  );
 type Request = { id: RequestId; sender: SessionId };
 interface Dependencies {
+  assertActor: ApprovalActorCheck;
   records: Records;
   git: Git;
   work: WorkGraph;
@@ -347,7 +339,7 @@ export class PlanningBaselines {
       request: Request,
       text?: string,
     ) {
-      yield* assertApprovalActor(e, request.sender);
+      yield* this.c.assertActor(request.sender);
       yield* this.fence(e, p);
       const input = digest([action, request.sender, text ?? ""]);
       let a = e.planning?.attempts.find((old) => old.request_id === request.id);
@@ -506,7 +498,7 @@ export class PlanningBaselines {
           !isDeepStrictEqual(decision.finishing_target, target)
         )
           return { ready: false, admitted: false };
-        yield* assertApprovalActor(e, decision.form_session);
+        yield* this.c.assertActor(decision.form_session);
         // The offer never changes. Collection alone cannot resume this execution.
         ensure(
           isDeepStrictEqual(yield* this.observe(e), a.source),
@@ -536,8 +528,6 @@ export class PlanningBaselines {
       if (a?.stage === "applying") return;
       const observed = yield* this.observe(e);
       if (!a) {
-        if (["exploring", "planning"].includes(e.current_phase) && hasLegacyReplanGap(e))
-          return yield* legacyReplanError();
         yield* this.trusted(e, observed);
         return;
       }
@@ -591,13 +581,6 @@ export class PlanningBaselines {
   beforeAdmission = Effect.fn("Planning.beforeAdmission")(
     function* (this: PlanningBaselines, e: Execution, role: Role) {
       const a = currentPlanning(e);
-      if (
-        !a &&
-        role === "explore" &&
-        e.workflow_policy === "full-openspec" &&
-        hasLegacyReplanGap(e)
-      )
-        return yield* legacyReplanError();
       if (!a || (role !== "explore" && role !== "apply")) return;
       if (role === "explore")
         ensure(

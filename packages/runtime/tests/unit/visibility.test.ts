@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import { workBriefing } from "../../src/visibility/briefing.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import * as Id from "@abracode/contracts/identities";
@@ -32,8 +33,8 @@ test("observer joins WorkGraph, blockers and role sessions without advancing a w
   assert.deepEqual(await run(f.records.execution(e.issue_id)), before);
   assert.equal(f.runtime.creates, 1);
   assert.equal(f.runtime.forms.size, 0);
-  assert.ok("value" in (await visibility.methods.snapshot.output["~standard"].validate(snapshot)));
-  assert.ok("value" in (await visibility.methods.detail.output["~standard"].validate(detail)));
+  assert.ok(Schema.is(visibility.methods.snapshot.output)(snapshot));
+  assert.ok(Schema.is(visibility.methods.detail.output)(detail));
 });
 test("overview observes one ticket without reading planning evidence, even with a missing worktree", async (t) => {
   const f = await run(fixture);
@@ -66,7 +67,7 @@ test("overview observes one ticket without reading planning evidence, even with 
   });
   const overview = await run(view.overview(e.issue_id));
   assert.deepEqual(Object.keys(overview).sort(), ["description", "errors", "work"]);
-  assert.ok("value" in (await visibility.methods.overview.output["~standard"].validate(overview)));
+  assert.ok(Schema.is(visibility.methods.overview.output)(overview));
   assert.equal(task.mock.calls.length, 1);
   assert.deepEqual(
     planning.map((spy) => spy.mock.calls.length),
@@ -310,7 +311,7 @@ test("older closed issue detail preserves communication counts outside the loade
     firstPage.work.some((item) => item.issue_id === e.issue_id),
     false,
   );
-  const before = await run(f.records.export());
+  const before = await run(f.records.export);
   const effects = {
     prompts: f.runtime.prompts,
     creates: f.runtime.creates,
@@ -338,12 +339,12 @@ test("older closed issue detail preserves communication counts outside the loade
     total: 0,
     outstanding: 0,
   });
-  assert.deepEqual(await run(f.records.export()), before);
+  assert.deepEqual(await run(f.records.export), before);
   assert.deepEqual(
     { prompts: f.runtime.prompts, creates: f.runtime.creates, forms: f.runtime.forms.size },
     effects,
   );
-  assert.ok("value" in (await visibility.methods.detail.output["~standard"].validate(detail)));
+  assert.ok(Schema.is(visibility.methods.detail.output)(detail));
 });
 
 test("bounded supervision projection preserves record history and exposes read-only report access", async (t) => {
@@ -409,21 +410,17 @@ test("task detail avoids collection scans and fleet observations scan once with 
   t.onTestFinished(() => run(f.close()));
   const e = await run(planned(f));
   const counts = { project: 0, execution: 0, setup: 0 };
-  const project = f.records.projectScan.bind(f.records),
-    execution = f.records.executionScan.bind(f.records),
-    setup = f.records.setupScan.bind(f.records);
-  f.records.projectScan = () => {
-    counts.project++;
-    return project();
-  };
-  f.records.executionScan = () => {
-    counts.execution++;
-    return execution();
-  };
-  f.records.setupScan = () => {
-    counts.setup++;
-    return setup();
-  };
+  for (const [key, method] of [
+    ["project", "projectScan"],
+    ["execution", "executionScan"],
+    ["setup", "setupScan"],
+  ] as const) {
+    const read = f.records[method];
+    vi.spyOn(f.records, method, "get").mockImplementation(() => {
+      counts[key]++;
+      return read;
+    });
+  }
   const view = new Visibility(f.controller);
   await run(view.detail(e.issue_id));
   assert.deepEqual(counts, { project: 0, execution: 0, setup: 0 });
@@ -620,7 +617,7 @@ test("schema, approval provenance and repair observations preserve exact pending
   assert.deepEqual(contract.plan_approval, { required: true, source: "task_requirement" });
   assert.deepEqual(contract.repair, { configured: 2, allowance: 2, consumed: 0, remaining: 2 });
   assert.equal("files" in contract.schema, false);
-  assert.ok("value" in (await visibility.methods.detail.output["~standard"].validate(detail)));
+  assert.ok(Schema.is(visibility.methods.detail.output)(detail));
   assert.deepEqual(await run(f.records.execution(e.issue_id)), before);
   assert.equal(f.runtime.forms.size, 1);
   assert.equal(f.runtime.prompts, 1);
@@ -688,7 +685,7 @@ test("selected task among unrelated active workers performs no scans, fleet read
   assert.equal(detail.work.eligibility_observed, false);
   assert.equal(detail.work.eligible, false);
   assert.deepEqual(sessions, [base.apply_session_id]);
-  assert.ok("value" in (await visibility.methods.detail.output["~standard"].validate(detail)));
+  assert.ok(Schema.is(visibility.methods.detail.output)(detail));
 });
 
 test("selected detail keeps unavailable native activity and malformed retained evidence local", async (t) => {
@@ -867,7 +864,7 @@ test("briefing finds off-page obligations and gated work even when the inbox is 
   const dependent = Id.IssueId.make("a-dependent");
   f.seed.named(dependent, undefined, [e.issue_id]);
   for (let i = 0; i < 55; i++) f.seed.named(Id.IssueId.make("filler-" + i));
-  const captured = await run(f.records.executions());
+  const captured = await run(f.records.executions);
   const issues = await run(f.work.list);
   const inbox = vi
     .spyOn(f.controller.inbox, "list")
@@ -887,7 +884,7 @@ test("briefing finds off-page obligations and gated work even when the inbox is 
   assert.equal(first.queue.total, 56);
   assert.match(first.queue.entries.find((r) => r.issue_id === dependent)!.fact, /zz-plan/);
   assert.match(first.limitations.join(" "), /GitHub inbox unavailable/);
-  assert.deepEqual(await run(f.records.executions()), captured);
+  assert.deepEqual(await run(f.records.executions), captured);
   assert.deepEqual(await run(f.work.list), issues);
 });
 test("a controller CI wait and a PR URL alone carry no human action", async (t) => {

@@ -115,7 +115,7 @@ test("overlapping scheduler ticks observe fresh capacity and never duplicate cla
   assert.equal(f.seed.countEvents("claimed"), 2);
   const queued = (await run(f.controller.ready())).find((row) => row.issue.id === "three")!;
   assert.ok(queued.blocker_details.some((b) => b.capacity_kind === "active"));
-  const first = (await run(f.records.executions()))[0];
+  const first = (await run(f.records.executions))[0];
   await run(f.controller.control(first.issue_id, "pause"));
   await run(f.scheduler.tick());
   assert.equal(f.runtime.creates, 3);

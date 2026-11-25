@@ -1,4 +1,4 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Scoped browser observation and typed HTTP atoms. */
+import { useWorkspaceCall } from "../data.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomSet } from "@effect/atom-react";
 import { Cause, Equal, Exit, Option } from "effect";
@@ -41,7 +41,7 @@ export function useWorkspaceAdmission({
   const admittingRef = useRef(false);
   const mounted = useRef(false);
   const reconciledIds = useRef(new Set<string>());
-  const lookupReceipt = useAtomSet(readReceipt, { mode: "promiseExit" });
+  const lookupReceipt = useWorkspaceCall(readReceipt);
   const submit = useAtomSet(submitMutation, { mode: "promiseExit" });
 
   useEffect(() => {

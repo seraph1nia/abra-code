@@ -4,7 +4,7 @@ import { type PR } from "../git/forge.ts";
 import { type ActionInput } from "@abracode/contracts/workflow/feedback-contracts";
 import { type CurrentAction } from "@abracode/contracts/workflow/action-contracts";
 import { prepareAction, addressed } from "./action-policy.ts";
-import { normalizeAction, targetKey } from "./action-state.ts";
+import { targetKey } from "./action-state.ts";
 
 export interface ActionRequirement {
   input: typeof ActionInput.Type;
@@ -67,7 +67,7 @@ export function actionPlan(e: Execution, pr: PR, now: number) {
   }
   const keys = new Set(required.flatMap((r) => (r.action ? [targetKey(r.action)] : [])));
   const stale = (e.feedback?.actions ?? [])
-    .map((a) => normalizeAction(a, e))
+
     .filter(
       (a) =>
         a.submission.stage === "unsubmitted" &&

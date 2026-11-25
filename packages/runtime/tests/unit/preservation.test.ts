@@ -66,6 +66,7 @@ for (const method of ["merge", "squash", "rebase"] as const) {
     await run(f.records.save(e));
     await run(f.git.run(p.path, ["push", "--force", "origin", `${e.base_commit}:refs/heads/main`]));
     const controller = createWorkflow(
+      f.catalog,
       f.config,
       f.records,
       f.work,
@@ -126,8 +127,17 @@ test("a lost merge response reconciles the exact merged PR without repeating sub
     Id.Executable.make("fake-forge"),
   );
   const controller = () =>
-    createWorkflow(f.config, f.records, f.work, f.spec, f.git, f.runtime, delivery, f.locks)
-      .controller;
+    createWorkflow(
+      f.catalog,
+      f.config,
+      f.records,
+      f.work,
+      f.spec,
+      f.git,
+      f.runtime,
+      delivery,
+      f.locks,
+    ).controller;
   await assert.rejects(run(controller().finish(e.issue_id)), /response lost/);
   assert.equal((await run(controller().reconcile(e.issue_id)))[0].current_phase, "completed");
   assert.equal(submissions, 1);

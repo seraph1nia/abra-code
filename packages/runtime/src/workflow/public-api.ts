@@ -83,7 +83,6 @@ export interface VerificationCommands extends Pick<
 export interface ValidationCommands extends Pick<ExternalValidation, "command"> {}
 export interface ReportCommands extends Pick<
   Reports,
-  | "readArtifact"
   | "exportDocument"
   | "readExport"
   | "readDocument"
@@ -107,6 +106,12 @@ export interface LeadCommands extends Pick<
   "principal" | "control" | "action" | "scan" | "prompt"
 > {}
 export interface ControllerServices {
+  readonly answerSelection: (
+    session: import("@abracode/contracts/identities").SessionId,
+    request: import("@abracode/contracts/identities").WebSubmissionId,
+    issue: import("@abracode/contracts/identities").IssueId,
+    answer: string,
+  ) => ReturnType<typeof import("./selected-requests.ts").answerSelection>;
   readonly memory: import("../memory/service.ts").AgentMemory;
   readonly thoughts: import("../work/thoughts.ts").PersonalThoughts;
   readonly inbox: import("../work/github-inbox.ts").GithubInbox;

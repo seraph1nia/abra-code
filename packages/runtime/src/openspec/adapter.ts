@@ -129,10 +129,14 @@ export class OpenSpec {
   private legacyRevisionSchema = Effect.fn("OpenSpec.legacyRevisionSchema")(
     function* (this: OpenSpec, e: Execution) {
       const correction = e.rounds?.find(
-        (round) => e.openspec_change === `${round.openspec_change}-r${round.ordinal}`,
+        (round) =>
+          e.openspec_change ===
+          `${e.openspec_base_change ?? round.openspec_change}-r${round.ordinal}`,
       );
       const synchronization = e.finishing?.synchronization?.find(
-        (attempt) => e.openspec_change === `${attempt.prior_change}-sync${attempt.ordinal}`,
+        (attempt) =>
+          e.openspec_change ===
+          `${e.openspec_base_change ?? attempt.prior_change}-sync${attempt.ordinal}`,
       );
       const archive = correction?.archive_path ?? synchronization?.prior_archive;
       const commit = correction?.starting_head ?? synchronization?.head;

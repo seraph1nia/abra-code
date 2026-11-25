@@ -163,7 +163,7 @@ test("decision generation and finishing targets remain exact native bindings aft
     "finishing_target" in observed && observed.finishing_target,
     createHash("sha256").update(JSON.stringify(current.finishing_target)).digest("hex"),
   );
-  await run(records.saveControl(execution));
+  await run(records.commitControl(execution));
   assert.equal((await run(queries.checkpoint(supervisor, current.form_id!))).active, false);
 });
 

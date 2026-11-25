@@ -7,7 +7,6 @@ import {
 } from "@abracode/contracts/web/bindings";
 import { presentationHash as hash } from "../presentation/identity.ts";
 import type { PresentationAssociations } from "../presentation/associations.ts";
-import { createHash } from "node:crypto";
 import { Effect, Schema } from "effect";
 import { CrewError } from "../domain.ts";
 import { decode } from "../decode.ts";
@@ -27,11 +26,7 @@ import {
   SurfaceRecordSchema,
   PresentationAttachmentSchema,
 } from "@abracode/contracts/web/workspace-wire";
-import {
-  normalizeSurface,
-  validateSurface,
-  type WorkSurface,
-} from "@abracode/contracts/web/surfaces";
+import { validateSurface, type WorkSurface } from "@abracode/contracts/web/surfaces";
 import { ComponentId } from "@abracode/contracts/web/catalog";
 import { WorkItemSchema } from "@abracode/contracts/web/wire";
 import { compactSurface, loadSurfaceRecord, observedSurface } from "./surface-records.ts";
@@ -74,14 +69,14 @@ const HeadSchema = Schema.Struct({
   session_id: SessionId,
   surface_id: ComponentId,
   next_revision: positive,
-  committed_revision: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  committed_revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   pending: Schema.optional(PublicationSchema),
 });
 function decodeHead(raw: unknown, session: string, surface: string) {
   return Effect.gen(function* () {
     const head = yield* decode(HeadSchema, raw, headKey(session, surface));
     const reserved = head.next_revision - 1;
-    const committed = head.committed_revision ?? (head.pending ? reserved - 1 : reserved);
+    const committed = head.committed_revision;
     if (
       head.session_id !== session ||
       head.surface_id !== surface ||
@@ -97,15 +92,9 @@ function decodeHead(raw: unknown, session: string, surface: string) {
   });
 }
 const RevisionSchema = Schema.Struct({ publication: ContentHash });
-const LegacyReceiptSchema = Schema.Struct({
-  surface_id: ComponentId,
-  revision: positive,
-  input_hash: ContentHash,
-});
 type Publication = typeof PublicationSchema.Type;
 
-const callHash = (message: string, call: string) =>
-  ContentHash.make(createHash("sha256").update(`${message}/${call}`).digest("hex"));
+const callHash = (message: string, call: string) => hash([message, call]);
 const publicationKey = (session: string, id: ContentHash) =>
   StorageKey.make(`web/surface-publication/${session}/${id}`);
 const headKey = (session: string, surface: string) =>
@@ -134,6 +123,7 @@ export class SurfacePublications {
       lockKey: LockKey.make("web-surfaces"),
       conflict,
       headPrefix: (session) => StoragePrefix.make(`web/surface-head/${session}/`),
+      maxHeads: 16,
       headKey,
     });
   }
@@ -272,15 +262,7 @@ export class SurfacePublications {
         const reserved = yield* this.store.get(key);
         if (reserved !== undefined)
           return (yield* decodeHead(reserved, session, surface)).committed_revision;
-        const record = loadSurfaceRecord(latest, key);
-        if (
-          "unavailable" in record ||
-          record.session_id !== session ||
-          record.surface.createSurface.surfaceId !== surface ||
-          record.history !== "latest-only"
-        )
-          return yield* conflict("Missing or invalid committed surface head");
-        return record.revision;
+        return yield* conflict("Missing committed surface head");
       }
       return (yield* decodeHead(raw, session, surface)).committed_revision;
     });
@@ -323,22 +305,9 @@ export class SurfacePublications {
           return yield* conflict("Surface revision belongs to another selection");
         return observedSurface(record, publication.input_hash);
       }
-      const raw =
-        (yield* this.store.get(
-          StorageKey.make(`web/surface-legacy/${session}/${surface}/${revision}`),
-        )) ?? (yield* this.store.get(latestKey(session, surface)));
-      const latest = loadSurfaceRecord(raw, latestKey(session, surface));
-      if (
-        !("unavailable" in latest) &&
-        latest.history === "latest-only" &&
-        latest.session_id === session &&
-        latest.surface.createSurface.surfaceId === surface &&
-        latest.revision === revision
-      )
-        return observedSurface(latest);
       return yield* new CrewError(
         "SURFACE_REVISION_UNAVAILABLE",
-        "This exact layout revision was not retained. Legacy surfaces preserve only their latest known layout.",
+        "This exact layout revision was not retained.",
       );
     });
   }
@@ -369,7 +338,7 @@ export class SurfacePublications {
         Effect.gen({ self: this }, function* () {
           yield* this.recoverPending(input.session_id);
           const surface = yield* Effect.try({
-            try: () => normalizeSurface(input.surface),
+            try: () => validateSurface(input.surface),
             catch: () => new CrewError("UI_SURFACE", "Invalid surface layout"),
           });
           const identity = callHash(input.message_id, input.call_id),
@@ -387,21 +356,8 @@ export class SurfacePublications {
               version: "1.0" as const,
             };
           }
-          const legacy = yield* this.store.get(receiptKey(input.session_id, identity));
-          if (legacy !== undefined) {
-            const receipt = yield* decode(LegacyReceiptSchema, legacy, "Legacy surface receipt");
-            // Old receipts hashed JSON directly, before canonical key ordering.
-            const oldHash = createHash("sha256").update(JSON.stringify(surface)).digest("hex");
-            if (receipt.input_hash !== inputHash && receipt.input_hash !== oldHash)
-              return yield* conflict(
-                "Legacy native tool call identity is bound to different input",
-              );
-            return {
-              surface_id: receipt.surface_id,
-              revision: receipt.revision,
-              version: "1.0" as const,
-            };
-          }
+          if ((yield* this.store.get(receiptKey(input.session_id, identity))) !== undefined)
+            return yield* conflict("Missing publication for retained call receipt");
           const id = surface.createSurface.surfaceId,
             latest = yield* this.store.get(latestKey(input.session_id, id));
           const rawHead = yield* this.store.get(headKey(input.session_id, id));
@@ -413,9 +369,11 @@ export class SurfacePublications {
               : loadSurfaceRecord(latest, latestKey(input.session_id, id));
           if (previous && "unavailable" in previous)
             return yield* conflict("Previous surface is unavailable; preserve its evidence");
-          if (latest === undefined && rawHead === undefined) {
+          if ((latest === undefined) !== (head === undefined))
+            return yield* conflict("Latest layout and committed surface head disagree");
+          if (!head) {
             const retained = yield* this.store.entries(
-              StoragePrefix.make(`web/surface/${input.session_id}/`),
+              this.publications.headPrefix(input.session_id),
             );
             if (retained.length >= 16)
               return yield* new CrewError(
@@ -436,7 +394,7 @@ export class SurfacePublications {
           );
           if (head && previous && previous.revision !== head.committed_revision)
             return yield* conflict("Latest layout and committed surface head disagree");
-          const committed = head?.committed_revision ?? previous?.revision ?? 0;
+          const committed = head?.committed_revision ?? 0;
           const revision = committed + 1;
           const record: SurfaceRecord = {
             session_id: input.session_id,
@@ -460,11 +418,6 @@ export class SurfacePublications {
             call_id: input.call_id,
             record,
           };
-          if (previous?.history === "latest-only")
-            yield* this.immutable(
-              StorageKey.make(`web/surface-legacy/${input.session_id}/${id}/${previous.revision}`),
-              previous,
-            );
           yield* this.publications.reserveAndCommit(
             input.session_id,
             id,

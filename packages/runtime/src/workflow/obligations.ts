@@ -1,3 +1,4 @@
+import type { ApprovalActorCheck } from "./authorization.ts";
 import type { Git } from "../git/repository.ts";
 import { captureEvidence, captureReference } from "./worker-evidence.ts";
 import {
@@ -41,7 +42,7 @@ import {
   openFinishingDecision,
   reconsiderFinishingDecision,
   supersedeResidueDecisions,
-} from "./finishing-dispositions.ts";
+} from "./finishing-decisions.ts";
 
 export class Obligations {
   constructor(
@@ -51,6 +52,7 @@ export class Obligations {
     private coordination: Coordination,
     private home: AbsolutePath,
     private git: Git,
+    private assertActor: ApprovalActorCheck,
   ) {}
   /** Fresh absence resolves only the residue questions inspected by the owning operation. */
   supersedeResidue = (e: Execution, keys: readonly ObligationKey[]) =>
@@ -297,8 +299,13 @@ export class Obligations {
     ) {
       let e = yield* this.records.execution(id);
       if (!e) return yield* new CrewError("EXECUTION_MISSING", "Execution missing");
-      if (yield* this.records.workerAssignment(session))
-        return yield* new CrewError("WORKER_FORBIDDEN", "Workers cannot resolve decisions");
+      yield* this.assertActor(session).pipe(
+        Effect.mapError((error) =>
+          error.code === "SELF_APPROVAL"
+            ? new CrewError("WORKER_FORBIDDEN", "Workers cannot resolve decisions")
+            : error,
+        ),
+      );
       let d = e.decisions?.find((d) => d.key === key && d.generation === generation);
       if (!(d && e.control_generation === generation))
         return yield* new CrewError("DECISION_STALE", "Decision generation is stale");
@@ -485,7 +492,8 @@ export class Obligations {
           ? { ...d, status: "superseded" as const, resolved_at: now }
           : d,
       );
-      if (e.decisions) e.decisions = decisions;
+      let changed = decisions.some((d, i) => d !== e.decisions?.[i]);
+      if (changed) e.decisions = decisions;
       const waits = [];
       for (const wait of e.waits ?? []) {
         if (wait.status !== "waiting") {
@@ -517,6 +525,11 @@ export class Obligations {
           }
           if (status === "waiting" && now >= wait.expires_at) status = "expired";
         }
+        if (status === wait.status && now < wait.next_check_at) {
+          waits.push(wait);
+          continue;
+        }
+        changed = true;
         waits.push({
           ...wait,
           status,
@@ -526,8 +539,8 @@ export class Obligations {
       }
       if (waits.some((w, i) => w.status === "cleared" && e.waits?.[i]?.status === "waiting"))
         e.resume_after_decision = true;
-      e.waits = waits;
-      if (waits.length || decisions.length)
+      if (changed && e.waits) e.waits = waits;
+      if (changed)
         yield* this.records.saveOwned(e, ["decisions", "waits", "resume_after_decision"]);
       return (
         waits.some((w) => ["waiting", "expired", "invalid"].includes(w.status)) ||

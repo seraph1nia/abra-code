@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned native Service and Node filesystem APIs. */
 import { Service } from "@opencode/client/effect/service";
 import { Effect } from "effect";
 import { join } from "node:path";
@@ -9,7 +8,7 @@ import { CrewError, type Config } from "../domain.ts";
 import { readFile, realpath } from "../filesystem.ts";
 import { Executable } from "@abracode/contracts/identities";
 import { ProcessRunner } from "../process.ts";
-import { makeClient } from "./client.ts";
+import { makeClient, OPENCODE_VERSION } from "./client.ts";
 import { awaitPluginState } from "./plugin-activation.ts";
 import { findSupervisor } from "./supervisor.ts";
 
@@ -23,7 +22,7 @@ const ownershipError = () =>
 export const stopService = (config: Config) =>
   Effect.gen(function* () {
     const file = runtimePaths(config.home).service;
-    const endpoint = yield* Service.discover({ file, version: "2.3.0" });
+    const endpoint = yield* Service.discover({ file, version: OPENCODE_VERSION });
     if (!endpoint) return;
     const client = yield* makeClient(endpoint);
     const state = yield* awaitPluginState(client, config.home);

@@ -1,3 +1,4 @@
+import { sanitizeDiagramSVG } from "./diagram-svg.ts";
 import { useId, useMemo, useRef, useState } from "react";
 import { Button } from "./ui/button.tsx";
 import { Expand, ZoomOut, ZoomIn, RotateCcw, X } from "./icons.ts";
@@ -8,7 +9,9 @@ export type { DiagramRequest, PreparedReportDiagram } from "./diagram-resource.t
 /** Namespacing changes SVG references only; captured source and visible label text stay exact. */
 function namespaceSVG(svg: string, prefix: string) {
   const template = document.createElement("template");
-  template.innerHTML = svg;
+  const graphic = sanitizeDiagramSVG(svg);
+  if (!graphic) return;
+  template.content.append(graphic);
   const ids = new Map<string, string>();
   const placements = new Map<Element, string>();
   for (const [index, element] of Array.from(template.content.querySelectorAll("[id]")).entries()) {
@@ -44,15 +47,6 @@ function namespaceSVG(svg: string, prefix: string) {
             .join(" "),
         );
       else element.setAttribute(attribute.name, references(attribute.value));
-    }
-    if (element.localName === "style") {
-      let css = references(element.textContent ?? "");
-      for (const [id, next] of [...ids].sort(([a], [b]) => b.length - a.length))
-        css = css.replace(
-          new RegExp(`#${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-zA-Z0-9_-])`, "g"),
-          `#${next}`,
-        );
-      element.textContent = css;
     }
   }
   return template.innerHTML;

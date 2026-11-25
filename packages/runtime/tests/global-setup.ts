@@ -1,12 +1,12 @@
 import { removeFixture } from "./helpers/resources.ts";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** Immutable seed only. Every test receives private Git metadata and a private remote. */
 export default async function setup() {
-  const parent = process.env.ABRACODE_TEST_INSTALL_ROOT ?? join(homedir(), ".cache/abracode-tests");
+  const parent = process.env.ABRACODE_TEST_INSTALL_ROOT ?? tmpdir();
   await mkdir(parent, { recursive: true });
   const root = await mkdtemp(join(parent, "abra-git-seed-"));
   const repository = join(root, "repository");

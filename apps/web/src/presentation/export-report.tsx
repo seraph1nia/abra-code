@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect atoms isolate explicit export requests. */
 import { useState } from "react";
 import { ArrowUpRight } from "@abracode/presentation/icons";
 import { useAtom } from "@effect/atom-react";

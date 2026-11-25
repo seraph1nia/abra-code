@@ -1,6 +1,7 @@
 import { EventType, type Event, type Message, type ToolCall, type ToolMessage } from "@ag-ui/core";
 import type { TranscriptMessage } from "./contracts.ts";
-import type { TranscriptTool } from "./presentation-contracts.ts";
+import { Schema } from "effect";
+import { ToolPresentationSchema, type TranscriptTool } from "./presentation-contracts.ts";
 
 export const orderedParts = (message: TranscriptMessage): NonNullable<TranscriptMessage["parts"]> =>
   message.parts ?? [
@@ -28,7 +29,9 @@ export function nativeToolCall(tool: TranscriptTool): ToolCall {
     metadata: {
       abracode_native_status: tool.status,
       ...(tool.limited ? { abracode_limited: true } : {}),
-      ...(unavailable ? { abracode_arguments_unavailable: true } : {}),
+      ...(unavailable
+        ? { abracode_arguments_unavailable: true, abracode_limited_input: tool.input }
+        : {}),
     },
   };
 }
@@ -43,7 +46,11 @@ export function nativeToolMessage(
     toolCallId: tool.id,
     content: tool.presentation ? JSON.stringify(tool.presentation) : (tool.result ?? ""),
     ...(tool.status === "error" ? { error: tool.result ?? "Native tool failed" } : {}),
-    metadata: { abracode_native_message_id: messageID, abracode_native_status: tool.status },
+    metadata: {
+      abracode_native_message_id: messageID,
+      abracode_native_status: tool.status,
+      ...(tool.presentation && { abracode_presentation: true }),
+    },
   };
 }
 
@@ -52,8 +59,13 @@ export function nativeToolMessage(
  * and explicit native-message provenance on every derived segment/result. */
 export function nativeAguiMessages(messages: readonly TranscriptMessage[]): Message[] {
   return messages.flatMap((message): Message[] => {
+    const metadata = {
+      abracode_native_message_id: message.id,
+      abracode_at: message.at,
+      ...(message.files && { abracode_files: message.files }),
+    };
     if (message.role !== "assistant")
-      return [{ id: message.id, role: message.role, content: message.text }];
+      return [{ id: message.id, role: message.role, content: message.text, metadata }];
     const result: Message[] = [];
     const tools = new Map(message.tools?.map((tool) => [tool.id, tool]));
     let content = "";
@@ -64,7 +76,7 @@ export function nativeAguiMessages(messages: readonly TranscriptMessage[]): Mess
         role: "assistant",
         content,
         ...(tool ? { toolCalls: [nativeToolCall(tool)] } : {}),
-        metadata: { abracode_native_message_id: message.id, abracode_part: ordinal },
+        metadata: { ...metadata, abracode_part: ordinal },
       });
       if (tool) {
         const observation = nativeToolMessage(message.id, tool);
@@ -83,6 +95,84 @@ export function nativeAguiMessages(messages: readonly TranscriptMessage[]): Mess
     if (content || !result.length) append();
     return result;
   });
+}
+
+/** Reassemble the native message's ordered display parts from the AG-UI client reducer. */
+export function transcriptFromAgent(messages: readonly Message[]): TranscriptMessage[] {
+  const results = new Map<string, ToolMessage>();
+  for (const message of messages) {
+    if (message.role === "tool") results.set(message.id, message);
+  }
+  const rows = new Map<string, TranscriptMessage>();
+  for (const message of messages) {
+    if (message.role !== "assistant" && message.role !== "system" && message.role !== "user")
+      continue;
+    const metadata = message.metadata;
+    const id =
+      typeof metadata?.abracode_native_message_id === "string"
+        ? metadata.abracode_native_message_id
+        : message.id;
+    const at = typeof metadata?.abracode_at === "string" ? metadata.abracode_at : "";
+    const text = typeof message.content === "string" ? message.content : "";
+    if (message.role !== "assistant") {
+      const files = metadata?.abracode_files;
+      rows.set(id, {
+        id,
+        at,
+        role: message.role,
+        text,
+        ...(Array.isArray(files) && files.every((f) => typeof f === "string") && { files }),
+      });
+      continue;
+    }
+    const prior = rows.get(id);
+    const parts = [...(prior?.parts ?? [])];
+    const tools = [...(prior?.tools ?? [])];
+    if (text) parts.push({ type: "text", text });
+    for (const call of message.toolCalls ?? []) {
+      const result = results.get(`${id}:tool:${call.id}:result`);
+      const nativeStatus: unknown = call.metadata?.abracode_native_status;
+      const status = result
+        ? result.error || result.metadata?.abracode_native_status === "error"
+          ? "error"
+          : "completed"
+        : nativeStatus === "running" || nativeStatus === "completed" || nativeStatus === "error"
+          ? nativeStatus
+          : "streaming";
+      let presentation;
+      if (result?.metadata?.abracode_presentation) {
+        const decoded = Schema.decodeUnknownResult(Schema.fromJsonString(ToolPresentationSchema))(
+          result.content,
+        );
+        if (decoded._tag === "Success") presentation = decoded.success;
+      }
+      tools.push({
+        id: call.id,
+        name: call.function.name,
+        status,
+        input:
+          typeof call.metadata?.abracode_limited_input === "string"
+            ? call.metadata.abracode_limited_input
+            : call.function.arguments,
+        limited: call.metadata?.abracode_limited === true,
+        ...(presentation
+          ? { presentation }
+          : result
+            ? { result: result.error ?? (typeof result.content === "string" ? result.content : "") }
+            : {}),
+      });
+      parts.push({ type: "tool", tool_id: call.id });
+    }
+    rows.set(id, {
+      id,
+      at,
+      role: "assistant",
+      text: [prior?.text, text].filter(Boolean).join("\n"),
+      tools,
+      parts,
+    });
+  }
+  return [...rows.values()];
 }
 
 type OpenTextStream = { id: string; hasContent: boolean };

@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { Schema } from "effect";
 import { IssueId } from "@abracode/contracts/identities";
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
@@ -50,13 +50,13 @@ export function RecentlyInspected({
   work: readonly WebWorkItem[];
   open: (id: string) => void;
 }) {
-  const [visits] = useState(() => {
+  const visits = useMemo(() => {
     try {
       return readVisits("abra-recap-v1-" + session).reverse();
     } catch {
       return undefined;
     }
-  });
+  }, [session]);
   return (
     <section className="recently-inspected" aria-label="Recently inspected tasks">
       {!visits || !writable ? (

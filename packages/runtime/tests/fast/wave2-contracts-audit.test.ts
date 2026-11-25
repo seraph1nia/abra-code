@@ -1,3 +1,5 @@
+import { run } from "../effects.ts";
+import { Coordination } from "../../src/workflow/coordination.ts";
 import assert from "node:assert/strict";
 import { Context, Effect, Exit, Schema } from "effect";
 import { test } from "vite-plus/test";
@@ -17,9 +19,9 @@ import {
   WebSubmissionId,
 } from "@abracode/contracts/identities";
 import { remoteIdentity } from "../../src/git/source.ts";
-import { createExecution } from "../../src/workflow/execution.ts";
+import { createConfiguredExecution } from "../../src/workflow/execution.ts";
 import { Records } from "../../src/storage/store.ts";
-import { MemoryStore, TestLocks } from "../fixtures.ts";
+import { fixtureConfig, MemoryStore, TestLocks } from "../fixtures.ts";
 import { CrewError, type Project } from "../../src/domain.ts";
 
 test("WebSubmissionId accepts leading underscore identifiers", () => {
@@ -78,7 +80,7 @@ test("remoteIdentity translates malformed file-URL percent escapes to REMOTE fai
   }
 });
 
-test("createExecution returns failing Effect on policy rejection without throwing synchronously", async () => {
+test("createConfiguredExecution returns failing Effect on policy rejection without throwing synchronously", async () => {
   const project: Project = {
     schema_version: 1,
     revision: 1,
@@ -105,20 +107,24 @@ test("createExecution returns failing Effect on policy rejection without throwin
   };
 
   // Must NOT throw synchronously when constructing the Effect.
-  const effect = createExecution(project, {
-    issue_id: IssueId.make("iss-1"),
-    repository_id: project.id,
-    execution_id: ExecutionId.make("exe-1"),
-    workflow_policy: "lightweight-fix",
-    quality_profile: "strict",
-    current_phase: "exploring",
-    branch: BranchName.make("work/iss-1"),
-    openspec_change: ChangeName.make("iss-1"),
-    supervisor_session_id: SessionId.make("ses_1"),
-    intent: { title: "Fix issue", description: "Strict quality vs lightweight fix" },
-  });
+  const effect = createConfiguredExecution(
+    project,
+    {
+      issue_id: IssueId.make("iss-1"),
+      repository_id: project.id,
+      execution_id: ExecutionId.make("exe-1"),
+      workflow_policy: "lightweight-fix",
+      quality_profile: "strict",
+      current_phase: "exploring",
+      branch: BranchName.make("work/iss-1"),
+      openspec_change: ChangeName.make("iss-1"),
+      supervisor_session_id: SessionId.make("ses_1"),
+      intent: { title: "Fix issue", description: "Strict quality vs lightweight fix" },
+    },
+    await run(fixtureConfig(project.path)),
+  );
 
-  const exit = await Effect.runPromiseExit(effect);
+  const exit = await run(Effect.exit(effect));
   assert.equal(Exit.isFailure(exit), true);
   if (Exit.isFailure(exit)) {
     const fail = exit.cause.reasons.find((r) => r._tag === "Fail");
@@ -134,8 +140,7 @@ test("Records.coordinateCommit preserves callback error and environment types", 
   class CustomError {
     readonly _tag = "CustomError";
   }
-  const records = new Records(new MemoryStore());
-  records.coordinate(new TestLocks());
+  const records = new Records(new MemoryStore(), new Coordination(new TestLocks()));
   const eff: Effect.Effect<string, CrewError | CustomError, CustomService> =
     records.coordinateCommit(() =>
       Effect.gen(function* () {

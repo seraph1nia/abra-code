@@ -1,7 +1,7 @@
 import { type Context } from "@opencode/plugin/effect/plugin";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { TokenUsage } from "@opencode/schema/token-usage";
-import { Cause, Effect, Queue, Schedule, Stream } from "effect";
+import { Cause, Duration, Effect, Queue, Schedule, Stream } from "effect";
 import { identity } from "../config/identity.ts";
 import { domainEffect } from "../effect.ts";
 import { type Controller } from "../workflow/controller.ts";
@@ -114,17 +114,15 @@ export function monitor(ctx: Context, c: Controller, scheduler: Scheduler) {
                   yield* c.recordWorkerFailure(event.data.sessionID, event.data.error);
                 yield* Queue.offer(requests, undefined);
               }
-            } else if (
-              event.type === "form.replied" &&
-              (yield* c.queries.executions()).some(
-                (e) =>
-                  e.approval_receipts.some((a) => a.form_id === event.data.id) ||
-                  e.decisions?.some((d) => d.form_id === event.data.id),
-              )
-            ) {
+            } else if (event.type === "form.replied") {
               yield* Queue.offer(requests, undefined);
             }
-          }),
+          }).pipe(
+            Effect.catchCauseIf(
+              (cause) => !Cause.hasInterruptsOnly(cause),
+              (cause) => Effect.logError("AbraCode event", event.type, cause),
+            ),
+          ),
         ),
       ),
     ).pipe(
@@ -135,6 +133,16 @@ export function monitor(ctx: Context, c: Controller, scheduler: Scheduler) {
     );
     // Native event streams have no replay or automatic reconnect. Periodic
     // reconciliation remains authoritative while reconnecting after EOF/failure.
-    yield* events.pipe(Effect.repeat(Schedule.spaced("1 second")), Effect.forkScoped);
+    yield* events.pipe(
+      Effect.repeat(
+        Schedule.exponential("1 second").pipe(
+          Schedule.modifyDelay(({ duration }) =>
+            Effect.succeed(Duration.min(duration, Duration.seconds(30))),
+          ),
+          Schedule.jittered,
+        ),
+      ),
+      Effect.forkScoped,
+    );
   });
 }

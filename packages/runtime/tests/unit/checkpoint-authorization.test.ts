@@ -6,11 +6,36 @@ import { test } from "vite-plus/test";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { interruptApprovalWrite } from "../helpers/retained-execution.ts";
 import { CrewError } from "../../src/domain.ts";
-import { SessionId, FormId, Timestamp } from "@abracode/contracts/identities";
+import { IssueId, SessionId, FormId, Timestamp } from "@abracode/contracts/identities";
+import { Agent } from "@opencode/schema/agent";
 import { fixture, planned } from "../fixtures.ts";
 import { run } from "../effects.ts";
 
 const supervisor = SessionId.make("ses_supervisor");
+
+test("approval checks the central principal before writing checkpoint state", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const first = await run(planned(f));
+  const other = await run(planned(f, IssueId.make("other")));
+  const lead = SessionId.make("ses_project-lead");
+  f.runtime.sessions.set(lead, {
+    id: lead,
+    directory: f.config.home,
+    agent: Agent.ID.make("project-lead"),
+    busy: false,
+  });
+  const before = await run(f.records.execution(first.issue_id));
+  for (const kind of ["plan", "merge"] as const) {
+    await assert.rejects(
+      run(f.controller.approve(first.issue_id, kind, other.explore_session_id!)),
+      /Workers cannot authorize/,
+    );
+    await assert.rejects(run(f.controller.approve(first.issue_id, kind, lead)), /central Abra/);
+  }
+  assert.deepEqual(await run(f.records.execution(first.issue_id)), before);
+  assert.equal(f.runtime.forms.size, 0);
+});
 
 test("a form answered during its first request commits authorization before Apply admission", async (t) => {
   const f = await run(fixture);
@@ -72,6 +97,7 @@ test("checkpoint observation, lost form response, restart and admission share ex
 
   await run(f.controller.close());
   const restarted = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -149,6 +175,7 @@ test("an interrupted approval receipt commit recollects the same answered form a
   await run(f.controller.close());
 
   const restarted = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,

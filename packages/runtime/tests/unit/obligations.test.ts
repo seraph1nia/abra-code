@@ -30,6 +30,7 @@ test("keyed questions survive unrelated progress and restart; stale and wrong-ro
   );
   await run(f.controller.workerProgress(sid, 0, "Inspected serializers"));
   const c = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -91,6 +92,7 @@ test("user decisions retain native form identity, recreate after restart, collec
   assert.ok(pending.form_id);
   f.runtime.questions.clear();
   const c = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -233,6 +235,7 @@ test("worker capture owns its scratch files and retains one exact image across r
   assert.deepEqual((await capture(0)).capture, receipt);
   await assert.rejects(capture(0, { description: "Changed" }), /different inputs/);
   const c = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,

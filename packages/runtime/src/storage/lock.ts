@@ -1,9 +1,10 @@
 import { LockKey, AbsolutePath } from "@abracode/contracts/identities";
-import { spawn } from "node:child_process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import { provideProcess } from "../platform.ts";
 import { mkdir, open } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Clock, Effect } from "effect";
+import { Context, Layer, Clock, Effect, Fiber, Stream } from "effect";
 import { CrewError, ensure, identifier } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 export interface Locks {
@@ -93,9 +94,10 @@ export class FileLocks implements Locks {
   }
   private acquireInNode(node: string, key: LockKey, waitSeconds: number, shared: boolean) {
     return Effect.gen({ self: this }, function* () {
-      const child = yield* Effect.acquireRelease(
-        Effect.sync(() =>
-          spawn(
+      const spawner = yield* provideProcess(ChildProcessSpawner.ChildProcessSpawner);
+      const child = yield* spawner
+        .spawn(
+          ChildProcess.make(
             node,
             [
               fileURLToPath(new URL("./lock-holder.cjs", import.meta.url)),
@@ -103,70 +105,66 @@ export class FileLocks implements Locks {
               shared ? "shared" : "exclusive",
               String(waitSeconds),
             ],
-            { stdio: ["pipe", "pipe", "pipe"] },
+            { stdin: "pipe", stdout: "pipe", stderr: "pipe", forceKillAfter: "1 second" },
           ),
-        ),
-        (child) =>
-          Effect.callback<void>((resume) => {
-            if (child.exitCode !== null || child.signalCode !== null || !child.pid)
-              return resume(Effect.void);
-            let done = false;
-            const finish = () => {
-              if (done) return;
-              done = true;
-              clearTimeout(forceKill);
-              child.off("close", finish);
-              child.off("exit", finish);
-              child.off("error", finish);
-              resume(Effect.void);
-            };
-            const forceKill = setTimeout(() => {
-              if (child.exitCode === null && child.signalCode === null) {
-                try {
-                  child.kill("SIGKILL");
-                } catch {
-                  // Process already exited between check and SIGKILL.
-                }
-              }
-            }, 1000);
-            forceKill.unref?.();
-            child.once("close", finish);
-            child.once("exit", finish);
-            child.once("error", finish);
-            child.stdin.end();
-            try {
-              child.kill("SIGTERM");
-            } catch {
-              finish();
-            }
+        )
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new CrewError(
+                cause.reason._tag === "NotFound" ? "ENOENT" : "LOCK_ERROR",
+                `Cannot start lock holder for ${key}`,
+                cause,
+              ),
+          ),
+        );
+      let diagnostic = "";
+      const stderr = yield* child.stderr.pipe(
+        Stream.runForEach((chunk) =>
+          Effect.sync(() => {
+            diagnostic = (diagnostic + Buffer.from(chunk.subarray(-8192)).toString()).slice(-8192);
           }),
+        ),
+        Effect.forkScoped,
       );
-      yield* Effect.callback<void, CrewError>((resume) => {
-        let stderr = "";
-        const diagnostic = (data: Buffer) => {
-          stderr = (stderr + data.toString()).slice(-8192);
-        };
-        const ready = () => resume(Effect.void);
-        const failed = (code: number | null) =>
-          resume(
-            Effect.fail(
-              code === 75
-                ? new CrewError("LOCKED", `${key} is busy; observe current progress`)
-                : new CrewError("LOCK_ERROR", `Node lock holder failed for ${key}`, stderr),
-            ),
-          );
-        const error = (cause: Error) => resume(Effect.fail(CrewError.from(cause)));
-        child.stderr.on("data", diagnostic);
-        child.stdout.once("data", ready);
-        child.once("error", error);
-        child.once("exit", failed);
-        return Effect.sync(() => {
-          child.stderr.off("data", diagnostic);
-          child.stdout.off("data", ready);
-          child.off("error", error);
-          child.off("exit", failed);
-        });
-      });
+      let frame = "";
+      yield* child.stdout.pipe(
+        Stream.runForEach((chunk) =>
+          Effect.gen(function* () {
+            if (frame.length + chunk.length > 7)
+              return yield* new CrewError("LOCK_ERROR", `Invalid lock acknowledgement for ${key}`);
+            frame += Buffer.from(chunk).toString("latin1");
+            if (!"locked\n".startsWith(frame))
+              return yield* new CrewError("LOCK_ERROR", `Invalid lock acknowledgement for ${key}`);
+          }),
+        ),
+        Effect.timeoutOrElse({
+          duration: (waitSeconds + 5) * 1000,
+          orElse: () =>
+            Effect.fail(new CrewError("LOCK_ERROR", `Lock holder startup timed out for ${key}`)),
+        }),
+      );
+      if (frame === "locked\n" && (yield* child.isRunning)) return;
+      const code = yield* child.exitCode.pipe(
+        Effect.timeoutOrElse({
+          duration: "1 second",
+          orElse: () =>
+            Effect.fail(new CrewError("LOCK_ERROR", `Incomplete lock acknowledgement for ${key}`)),
+        }),
+      );
+      yield* Fiber.join(stderr);
+      return yield* code === 75
+        ? new CrewError("LOCKED", `${key} is busy; observe current progress`)
+        : new CrewError("LOCK_ERROR", `Node lock holder failed for ${key}`, diagnostic);
     });
+  }
+}
+
+export class LocksService extends Context.Service<LocksService, FileLocks>()("abracode/Locks") {
+  static layer(root: AbsolutePath) {
+    return Layer.effect(
+      LocksService,
+      Effect.sync(() => new FileLocks(root)),
+    );
   }
 }

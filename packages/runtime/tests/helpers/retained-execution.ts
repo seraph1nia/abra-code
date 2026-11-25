@@ -1,3 +1,4 @@
+import { Coordination } from "../../src/workflow/coordination.ts";
 import { Effect, Schema } from "effect";
 import { ApprovalSchema } from "@abracode/contracts/primitives";
 import { CrewError, type Execution } from "../../src/domain.ts";
@@ -7,9 +8,8 @@ import { MemoryStore, TestLocks } from "../fixtures.ts";
 import { run } from "../effects.ts";
 
 export async function retainedExecution(fields: Partial<Execution> = {}) {
-  const records = new Records(new MemoryStore());
   const locks = new TestLocks();
-  records.coordinate(locks);
+  const records = new Records(new MemoryStore(), new Coordination(locks));
   const execution: Execution = {
     schema_version: 1,
     revision: 1,

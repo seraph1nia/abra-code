@@ -18,7 +18,7 @@ export default defineConfig({
     extends: [recommended],
     plugins: ["unicorn", "typescript", "oxc", "react", "jsx-a11y"],
     jsPlugins: ["./scripts/lint/workspace-boundaries.mjs"],
-    rules: { "abracode/boundaries": "error" },
+    rules: { "effecttsgo/unstable-api-usage": "off", "abracode/boundaries": "error" },
     ignorePatterns: [".abracode/**", ".lavish/**", "**/dist/**"],
     overrides: [
       {
@@ -80,7 +80,7 @@ export default defineConfig({
         test: {
           name: "fast",
           pool: "threads",
-          include: ["packages/runtime/tests/fast/**/*.test.ts"],
+          include: ["packages/runtime/tests/fast/**/*.test.ts", "apps/web/tests/**/*.test.ts"],
         },
       },
       {

@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Review capability HTTP atoms share the unified WorkspaceApi client. */
 import { Effect } from "effect";
 import { Atom } from "effect/reactivity";
 import { IssueId, type ContentHash } from "@abracode/contracts/identities";
@@ -32,7 +31,5 @@ export const submitReview = Atom.family((_id: string) =>
   ),
 );
 
-export const readReviewReceipt = WorkspaceApi.runtime.fn(
-  (query: typeof ReviewResponseQuerySchema.Type) =>
-    Effect.flatMap(WorkspaceApi, (client) => client.reviews.reviewReceipt({ query })),
-);
+export const readReviewReceipt = (query: typeof ReviewResponseQuerySchema.Type) =>
+  Effect.flatMap(WorkspaceApi, (client) => client.reviews.reviewReceipt({ query }));

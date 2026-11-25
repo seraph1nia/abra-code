@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Issue-scoped Effect HTTP queries. */
 import { WorkspaceApi, queryOptions } from "./data.ts";
 import { AsyncResult, Atom, Reactivity } from "effect/reactivity";
 import {
@@ -23,7 +22,9 @@ const ticketQuery = <A, E>(
     return Atom.transform(
       query,
       (get) => {
-        const reactivity = AsyncResult.getOrThrow(get(workReactivity));
+        const ready = get(workReactivity);
+        if (!AsyncResult.isSuccess(ready)) return get(query);
+        const reactivity = ready.value;
         let dirty = false;
         get.addFinalizer(
           reactivity.registerUnsafe(queryOptions(issue).reactivityKeys, () => {

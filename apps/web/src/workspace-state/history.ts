@@ -1,8 +1,7 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Scoped browser observation and typed HTTP atoms. */
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { RegistryContext } from "@effect/atom-react";
 import { Effect, Exit } from "effect";
-import { toast } from "sonner";
+import { toast } from "../notifications.tsx";
 import { AsyncResult, AtomRegistry } from "effect/reactivity";
 import type { WorkspaceSnapshot, TranscriptMessage } from "@abracode/contracts/web/contracts";
 import type {

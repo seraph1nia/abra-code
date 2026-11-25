@@ -161,7 +161,7 @@ export class ExecutionTransitions {
   );
   pause = Effect.fn("ExecutionTransitions.pause")(
     function* (this: ExecutionTransitions, id: IssueId) {
-      yield* this.coordination.with(() =>
+      const paused = yield* this.coordination.with(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
             const e = yield* this.queries.get(id);
@@ -178,7 +178,7 @@ export class ExecutionTransitions {
               e.resume_phase = e.current_phase;
             e.current_phase = "interrupted";
             e.stop_status = "requested";
-            return yield* this.records.saveControl(e);
+            return yield* this.records.commitControl(e);
           }),
         ),
       );
@@ -189,6 +189,11 @@ export class ExecutionTransitions {
           domainEffect(
             Effect.gen({ self: this }, function* () {
               const current = yield* this.queries.get(id);
+              if (
+                current.stop_status !== "requested" ||
+                current.control_generation !== paused.control_generation
+              )
+                return current;
               return yield* this.confirmStop(current);
             }),
           ),

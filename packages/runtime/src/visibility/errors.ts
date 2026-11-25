@@ -76,7 +76,7 @@ export function observerResult<A, R>(
           ].includes(failure.code)
         )
           return Effect.fail(error("resource_unavailable", message, data));
-        return Effect.die(failure);
+        return Effect.fail(error("resource_unavailable", message, data));
       },
     ),
   );

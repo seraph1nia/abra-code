@@ -149,6 +149,7 @@ test("external launch proof, skipped stages and custody return precede fresh nat
           }),
   };
   f.controller = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -367,6 +368,7 @@ test("lost launch/response, pause and explicit abort retain one engine run and e
           }),
   };
   f.controller = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -390,6 +392,7 @@ test("lost launch/response, pause and explicit abort retain one engine run and e
   const savedNonce = e.external_validation!.nonce;
   await run(f.controller.close());
   f.controller = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -414,7 +417,7 @@ test("lost launch/response, pause and explicit abort retain one engine run and e
   await call(f.controller.reconcile(e.issue_id));
   assert.equal(calls.length, count);
   e = await call(f.controller.control(e.issue_id, "resume"));
-  const state = await run(f.records.feedback(e.issue_id));
+  const state = await run(f.controller.queries.feedback(e.issue_id));
   const input = {
     issue_id: e.issue_id,
     generation: e.control_generation,
@@ -431,6 +434,7 @@ test("lost launch/response, pause and explicit abort retain one engine run and e
   assert.equal(e.external_validation!.responses[0].status, "uncertain");
   await run(f.controller.close());
   f.controller = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -517,6 +521,7 @@ test("engine selection never initializes implicitly; explicit setup retains its 
           }),
   };
   f.controller = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -581,6 +586,7 @@ test("external preflight failure releases its worker reservation before any engi
     },
   };
   f.controller = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,

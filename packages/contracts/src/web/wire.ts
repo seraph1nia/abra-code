@@ -11,7 +11,10 @@ export { FeedbackPageSchema } from "../workflow/feedback-contracts.ts";
 export { WorkerInspectionSchema } from "../visibility/worker.ts";
 import { Schema } from "effect";
 import { RelativePath, Timestamp, ContentHash } from "../identities.ts";
-import { VisualBuildSummarySchema, VisualReceiptSchema } from "../workflow/report-metadata.ts";
+import {
+  VisualBuildSummarySchema,
+  ReportDocumentReceiptSchema,
+} from "../workflow/report-metadata.ts";
 
 /** Browser projections deliberately contain data only, without controller/adaptor imports. */
 const strings = Schema.Array(Schema.String);
@@ -84,14 +87,14 @@ export const WorkReportSchema = Schema.Union([
   Schema.Struct({ unavailable: Schema.Literals(["not_started", "not_published"]) }),
 ]);
 export const ArtifactSummarySchema = Schema.Struct({
-  format: Schema.optional(Schema.Literals(["legacy-html", "a2ui-snapshot"])),
+  format: Schema.Literal("a2ui-snapshot"),
   request_id: VisualBuildSummarySchema.fields.request.fields.request_id,
   title: VisualBuildSummarySchema.fields.request.fields.title,
   status: VisualBuildSummarySchema.fields.status,
   generation: VisualBuildSummarySchema.fields.generation,
-  hash: Schema.optional(VisualReceiptSchema.fields.hash),
-  bytes: Schema.optional(VisualReceiptSchema.fields.bytes),
-  captured_at: Schema.optional(VisualReceiptSchema.fields.observed_at),
+  hash: Schema.optional(ReportDocumentReceiptSchema.fields.hash),
+  bytes: Schema.optional(ReportDocumentReceiptSchema.fields.bytes),
+  captured_at: Schema.optional(ReportDocumentReceiptSchema.fields.observed_at),
   error: Schema.optional(Schema.String),
 });
 export const artifactPageSize = 8;
@@ -102,13 +105,8 @@ export const ArtifactsSchema = Schema.Struct({
   limit: Schema.optional(Count),
   next_offset: Schema.optional(Count),
 });
-export const ArtifactSchema = Schema.Struct({
-  html: Schema.String.check(Schema.isMaxLength(8 * 1024 * 1024)),
-  hash: Schema.String,
-  bytes: Count,
-});
 export const DocumentArtifactSchema = Schema.Struct({
   json: Schema.String.check(Schema.isMaxLength(1024 * 1024)),
-  hash: VisualReceiptSchema.fields.hash,
+  hash: ReportDocumentReceiptSchema.fields.hash,
   bytes: Count.check(Schema.isLessThanOrEqualTo(1024 * 1024)),
 });

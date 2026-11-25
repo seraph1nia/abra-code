@@ -1,10 +1,9 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- One session draft per application registry. */
 import { useAtom } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { Equal, Schema } from "effect";
 import { ThoughtReference } from "@abracode/contracts/visibility/thoughts";
 import { appendDraft } from "../workspace-commands.ts";
-import { toast } from "sonner";
+import { toast } from "../notifications.tsx";
 import { createContext } from "react";
 import {
   CapturedSelectionSchema as AttachmentSchema,
@@ -42,7 +41,10 @@ export const workspaceDraft = Atom.family((sessionID: string) => {
       return { text: "" };
     }
   }
-  const state = Atom.make<Draft>(initial()).pipe(Atom.keepAlive);
+  const state = Atom.writable<Draft, Draft>(
+    () => initial(),
+    (ctx, next) => ctx.setSelf(next),
+  );
   return Atom.writable<Draft, Edit>(
     (get) => get(state),
     (ctx, edit) => {
@@ -82,7 +84,7 @@ export const workspaceDraft = Atom.family((sessionID: string) => {
         }
       }
     },
-  ).pipe(Atom.keepAlive);
+  );
 });
 export function useWorkspaceDraft(sessionID: string) {
   return useAtom(workspaceDraft(sessionID));

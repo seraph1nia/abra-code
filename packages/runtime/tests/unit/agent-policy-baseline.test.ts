@@ -36,14 +36,18 @@ const baseline = {
 
 test("historical policy bytes, permission order/resources and engineering prerequisites remain exact", () => {
   for (const role of Object.keys(baseline) as (keyof typeof baseline)[]) {
+    if (role === "supervisor") {
+      assert.equal(compatiblePolicy(role, baseline[role][0]), false);
+      assert.ok(compatiblePolicy(role, policyIdentity(role)));
+      continue;
+    }
     assert.ok(compatiblePolicy(role, baseline[role][0]));
     if (role !== "review") assert.equal(policyIdentity(role), baseline[role][0]);
     const payload = {
       permissions: nativePermissions(role, "assigned", ["/read-root"]).filter(
         (p) => p.action !== "abra_review_changes",
       ),
-      requirements:
-        role !== "supervisor" ? capabilityRequirements(role, "full-openspec", {}, false) : null,
+      requirements: capabilityRequirements(role, "full-openspec", {}, false),
     };
     assert.equal(
       createHash("sha256").update(JSON.stringify(payload)).digest("hex"),

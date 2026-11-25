@@ -1,6 +1,6 @@
+export { MessageAttachment } from "./activity-reference.tsx";
 import { PrepareSurfaceMessage } from "../workspace-state/draft.ts";
 import { ReviewAttachment, ReviewsForSource } from "./interactive-review-loader.tsx";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect HTTP atoms own shared generated-binding queries. */
 import { RegistryContext } from "@effect/atom-react";
 import { AsyncResult, type Atom, type AtomRegistry } from "effect/reactivity";
 import { Option } from "effect";
@@ -18,7 +18,7 @@ import { useCanvasRead } from "../canvas-refresh.tsx";
 import { OpenSurface, type WorkspaceSearch } from "../navigation.ts";
 import { Button } from "@abracode/presentation/ui/button";
 import { LayoutGrid, ChevronRight } from "@abracode/presentation/icons";
-import { deferred } from "../deferred.tsx";
+import { deferred } from "@abracode/presentation/deferred";
 
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
@@ -62,7 +62,7 @@ export function RetainedSurfaces({
         ) : (
           <SurfaceAttachment
             expanded
-            key={`${entry.surface_id}/${entry.revision}`}
+            key={entry.surface_id}
             target={{ kind: "surface", surface_id: entry.surface_id, revision: entry.revision }}
             work={work}
             inspect={inspect}
@@ -88,17 +88,15 @@ export function SurfaceAttachment({
       className="inline-surface"
       data-surface-reference={`${target.surface_id}/${target.revision}`}
     >
-      <RequestState query={surfaceQuery(target.surface_id, target.revision)}>
+      <RequestState
+        keepPrevious={expanded}
+        query={surfaceQuery(target.surface_id, target.revision)}
+      >
         {(entry) =>
           "unavailable" in entry ? (
             <output className="error">{entry.unavailable}</output>
           ) : (
             <>
-              {entry.history === "latest-only" && (
-                <p className="muted">
-                  Legacy layout: only the latest retained revision is available.
-                </p>
-              )}
               {expanded ? (
                 <BoundSurface record={entry} inspect={inspect} />
               ) : (
@@ -224,23 +222,18 @@ function BoundSurface({ record, inspect }: { record: SurfaceRecord; inspect: Ins
   );
 }
 function BoundSurfaceContent({ record, inspect }: { record: SurfaceRecord; inspect: Inspect }) {
-  const prepareMessage = useContext(PrepareSurfaceMessage);
-  const selection = bindingRequirements(record.surface, "live");
-  return selection.unfiltered || selection.ids.length ? (
-    <LiveSurface record={record} inspect={inspect} selection={selection} />
-  ) : (
-    <WorkViews
-      records={[record]}
-      prepareMessage={prepareMessage}
-      work={[]}
+  return (
+    <LiveSurface
+      record={record}
       inspect={inspect}
-      actions={(record) => <SaveSurfaceButton record={record} inspect={inspect} />}
+      selection={bindingRequirements(record.surface, "live")}
     />
   );
 }
 function liveBindingStore(
   registry: AtomRegistry.AtomRegistry,
   query: ReturnType<typeof bindingQuery>,
+  enabled: boolean,
 ) {
   // A lazy layout can render several times before it commits. Start its live
   // binding only when React subscribes so discarded renders never issue reads.
@@ -248,6 +241,7 @@ function liveBindingStore(
   const pending: Atom.Type<typeof query> = AsyncResult.initial();
   return {
     subscribe: (notify: () => void) => {
+      if (!enabled) return () => {};
       mounted = true;
       const release = registry.subscribe(query, notify);
       return () => {
@@ -268,10 +262,14 @@ function LiveSurface({
   selection: BindingSelection;
 }) {
   const query = bindingQuery(selection);
-  const { refresh } = useCanvasRead(query);
+  const enabled = selection.unfiltered || selection.ids.length > 0;
+  const { refresh } = useCanvasRead(query, enabled);
   const prepareMessage = useContext(PrepareSurfaceMessage);
   const registry = useContext(RegistryContext);
-  const reader = useMemo(() => liveBindingStore(registry, query), [registry, query]);
+  const reader = useMemo(
+    () => liveBindingStore(registry, query, enabled),
+    [registry, query, enabled],
+  );
   const result = useSyncExternalStore(reader.subscribe, reader.read);
   const value = AsyncResult.value(result);
   const previous = Option.isSome(value) ? value.value : undefined;
@@ -293,27 +291,29 @@ function LiveSurface({
   };
   return (
     <>
-      <div className="work-read-status" role={AsyncResult.isFailure(result) ? "alert" : "status"}>
-        <span>
-          {AsyncResult.isFailure(result)
-            ? previous
-              ? "Refresh failed. Showing work as of "
-              : "Couldn’t load current work."
-            : previous
-              ? "Work updated "
-              : "Loading current work…"}
-          {previous && (
-            <time dateTime={previous.observed_at}>
-              {new Date(previous.observed_at).toLocaleString()}
-            </time>
+      {enabled && (
+        <div className="work-read-status" role={AsyncResult.isFailure(result) ? "alert" : "status"}>
+          <span>
+            {AsyncResult.isFailure(result)
+              ? previous
+                ? "Refresh failed. Showing work as of "
+                : "Couldn’t load current work."
+              : previous
+                ? "Work updated "
+                : "Loading current work…"}
+            {previous && (
+              <time dateTime={previous.observed_at}>
+                {new Date(previous.observed_at).toLocaleString()}
+              </time>
+            )}
+          </span>
+          {AsyncResult.isFailure(result) && (
+            <Button variant="outline" onClick={refresh} disabled={result.waiting}>
+              Retry
+            </Button>
           )}
-        </span>
-        {AsyncResult.isFailure(result) && (
-          <Button variant="outline" onClick={refresh} disabled={result.waiting}>
-            Retry
-          </Button>
-        )}
-      </div>
+        </div>
+      )}
       {previous?.capacity && (
         <dl className="work-capacity" aria-label="Workspace capacity">
           <div>
@@ -381,15 +381,15 @@ function LiveSurface({
         records={[record]}
         prepareMessage={prepareMessage}
         work={previous?.work ?? []}
-        liveCoverage={coverage}
-        hideLiveWidgets={!previous}
+        liveCoverage={enabled ? coverage : undefined}
+        hideLiveWidgets={enabled && !previous}
         inspect={inspect}
         actions={(record) => <SaveSurfaceButton record={record} inspect={inspect} />}
       />
     </>
   );
 }
-export function MessageAttachment({
+export function AttachmentBody({
   attachment,
   work,
   inspect,
@@ -399,10 +399,13 @@ export function MessageAttachment({
   inspect: Inspect;
 }) {
   const target = attachment.target;
-  if (target.kind === "review") return <ReviewAttachment target={target} />;
-  if (target.kind === "surface")
-    return <SurfaceAttachment target={target} work={work} inspect={inspect} />;
-  return <ArtifactAttachment target={target} inspect={inspect} />;
+  return target.kind === "review" ? (
+    <ReviewAttachment target={target} />
+  ) : target.kind === "surface" ? (
+    <SurfaceAttachment target={target} work={work} inspect={inspect} />
+  ) : (
+    <ArtifactAttachment target={target} inspect={inspect} />
+  );
 }
 const ArtifactAttachment = deferred<
   ComponentProps<typeof import("./artifact-attachment.tsx").ArtifactAttachment>

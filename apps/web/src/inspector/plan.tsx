@@ -1,4 +1,5 @@
-import { useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
+import { useWorkspaceNavigate } from "../use-workspace-navigate.ts";
+import { useSearch } from "@tanstack/react-router";
 import { RelativePath } from "@abracode/contracts/identities";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import type { WebWorkItem as WorkItem } from "@abracode/contracts/web/wire";
@@ -7,7 +8,6 @@ import { SectionCard, StatusBadge } from "@abracode/presentation/cockpit";
 import { Alert, AlertDescription } from "@abracode/presentation/ui/alert";
 import { Button } from "@abracode/presentation/ui/button";
 import { Markdown } from "../markdown.tsx";
-import { destinationFor } from "../navigation.ts";
 import { ReviewsForSource } from "../presentation/interactive-review-loader.tsx";
 import { PlanPassage } from "../presentation/plan-passage.tsx";
 import { RequestState } from "../request-state.tsx";
@@ -46,8 +46,7 @@ export function PlanPassagePanel({
 
 export function PlanPanel({ work }: { work: WorkItem }) {
   const search = useSearch({ from: "__root__" });
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const navigate = useNavigate({ from: destinationFor(pathname) ?? "/" });
+  const navigate = useWorkspaceNavigate();
   const file = search.file ?? "";
   const selectFile = (next: string) => {
     void navigate({ search: (previous) => ({ ...previous, file: next || undefined }) });
@@ -65,12 +64,7 @@ export function PlanPanel({ work }: { work: WorkItem }) {
           {(document) => (
             <div className="inspector-stack">
               <SectionCard title={document.path} icon={<FileText aria-hidden="true" />}>
-                <Markdown
-                  key={document.content}
-                  className="prose"
-                  content={document.content}
-                  mode="static"
-                />
+                <Markdown className="prose" content={document.content} mode="static" />
               </SectionCard>
               <PlanPassage issue={work.issue_id} document={document} />
               <ReviewsForSource
@@ -149,7 +143,7 @@ export function PlanPanel({ work }: { work: WorkItem }) {
                   ))}
                 </div>
               )}
-              <Markdown key={content} className="prose" content={content} mode="static" />
+              <Markdown className="prose" content={content} mode="static" />
             </SectionCard>
             <ReviewsForSource issue={work.issue_id} source={{ kind: "plan" }} />
           </div>

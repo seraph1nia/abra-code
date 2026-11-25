@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 FileSystem API; verified by integration tests. */
 import { ByteSize, Effect, FileSystem, Option, Schema } from "effect";
 import type { PlatformError } from "effect/PlatformError";
 import { basename, join, sep } from "node:path";
@@ -54,10 +53,6 @@ export const searchPageSchema = Schema.Struct({
 });
 
 export type Collection = { scope: MemoryScope; name: string; directory: string; id: string };
-type MemoryProviderLike =
-  | Pick<MemoryProvider, "call" | "callEffect">
-  | Pick<MemoryProvider, "call">;
-
 function mapFsError(error: PlatformError): CrewError {
   if (error.reason._tag === "NotFound") return missing();
   return memoryError(error);
@@ -67,9 +62,8 @@ export class MemoryCollections {
   private readonly locks: Locks;
   constructor(
     readonly root: string,
-    private provider: MemoryProviderLike,
+    private provider: Pick<MemoryProvider, "callEffect">,
     private mode: "text" | "hybrid",
-    readonly signal?: AbortSignal,
     locks?: Locks,
   ) {
     this.locks = locks ?? new FileLocks(AbsolutePath.make(join(this.root, "receipts", "locks")));
@@ -79,13 +73,7 @@ export class MemoryCollections {
     name: string,
     args: Record<string, unknown>,
   ): Effect.Effect<unknown, CrewError> {
-    if ("callEffect" in this.provider && typeof this.provider.callEffect === "function")
-      return this.provider.callEffect(this.root, name, args);
-    const provider = this.provider;
-    return Effect.tryPromise({
-      try: (signal) => provider.call(this.root, name, args, signal),
-      catch: memoryError,
-    });
+    return this.provider.callEffect(this.root, name, args);
   }
 
   projectEffect(scope: MemoryScope): Effect.Effect<Collection, CrewError> {
@@ -129,10 +117,6 @@ export class MemoryCollections {
         return yield* pathError();
       return { scope, name, directory, id: p.external_id };
     }).pipe(provideFileSystem);
-  }
-
-  project(scope: MemoryScope): Promise<Collection> {
-    return Effect.runPromise(this.projectEffect(scope), { signal: this.signal });
   }
 
   exactEffect(
@@ -190,10 +174,6 @@ export class MemoryCollections {
     ).pipe(provideFileSystem);
   }
 
-  exact(project: Collection, path: string) {
-    return Effect.runPromise(this.exactEffect(project, path), { signal: this.signal });
-  }
-
   private checkedEffect(project: Collection, path: string) {
     return Effect.gen({ self: this }, function* () {
       const file = yield* this.exactEffect(project, path);
@@ -232,10 +212,6 @@ export class MemoryCollections {
         ...(complete ? {} : { next_offset: end }),
       };
     });
-  }
-
-  read(repo: RepositoryId | undefined, input: typeof MemoryRead.Type) {
-    return Effect.runPromise(this.readEffect(repo, input), { signal: this.signal });
   }
 
   searchEffect(repo: RepositoryId | undefined, input: typeof MemorySearch.Type) {
@@ -308,11 +284,7 @@ export class MemoryCollections {
     });
   }
 
-  search(repo: RepositoryId | undefined, input: typeof MemorySearch.Type) {
-    return Effect.runPromise(this.searchEffect(repo, input), { signal: this.signal });
-  }
-
-  private createNative(
+  createEffect(
     project: Collection,
     path: string,
     content: string,
@@ -326,33 +298,4 @@ export class MemoryCollections {
       overwrite: false,
     }).pipe(Effect.asVoid);
   }
-
-  createEffect(
-    project: Collection,
-    path: string,
-    content: string,
-    title: string,
-  ): Effect.Effect<void, CrewError> {
-    if (
-      Object.hasOwn(this, "create") ||
-      Object.getOwnPropertyDescriptor(MemoryCollections.prototype, "create")?.value !==
-        defaultCreateImpl
-    )
-      return Effect.tryPromise({
-        try: () => this.create(project, path, content, title),
-        catch: memoryError,
-      });
-    return this.createNative(project, path, content, title);
-  }
-
-  create(project: Collection, path: string, content: string, title: string): Promise<void> {
-    return Effect.runPromise(this.createNative(project, path, content, title), {
-      signal: this.signal,
-    });
-  }
 }
-
-const defaultCreateImpl: unknown = Object.getOwnPropertyDescriptor(
-  MemoryCollections.prototype,
-  "create",
-)?.value;

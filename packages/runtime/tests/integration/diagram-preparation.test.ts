@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { test } from "vite-plus/test";
+import { test, vi } from "vite-plus/test";
+import { launchReportBrowser } from "@abracode/report-export/browser";
+import { readFile } from "node:fs/promises";
+import { stripTypeScriptTypes } from "node:module";
 import { DiagramPreparer } from "@abracode/report-export/preparation";
 
 test(
@@ -175,4 +178,113 @@ test("prepared output budget includes diagnostic metadata as well as SVG assets"
   assert.equal(result.verified, false);
   assert.equal(result.results[0]?.status, "limit");
   assert.deepEqual(result.assets, []);
+});
+
+test("diagram sanitizer retains geometry and confines allowed styles to the graphic", async (t) => {
+  const browser = await launchReportBrowser();
+  t.onTestFinished(() => browser.close());
+  const page = await browser.newPage();
+  const source = await readFile("packages/presentation/src/diagram-svg.ts", "utf8");
+  await page.addScriptTag({
+    type: "module",
+    content: stripTypeScriptTypes(source) + "\nglobalThis.sanitize = sanitizeDiagramSVG;",
+  });
+  await page.waitForFunction(() => "sanitize" in globalThis);
+  const markup =
+    '<svg><style>body, rect { fill: red; background: blue }</style><script type="application/json">{}</script><foreignObject><p>extra</p></foreignObject><rect width="5" onclick="" data-extra="test" /></svg>';
+  const result = await page.evaluate((input) => {
+    const sanitize = (globalThis as unknown as { sanitize: (text: string) => SVGSVGElement })
+      .sanitize;
+    return sanitize(input).outerHTML;
+  }, markup);
+  assert.match(result, /<rect[^>]*width="5"/);
+  assert.match(result, /fill: red/);
+  assert.doesNotMatch(result, /<(?:script|style|foreignObject)|onclick|background|data-extra/);
+});
+
+test("canceling a queued diagram frees its place before launch and omits an invalid syntax line", async () => {
+  function gate() {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+  const gates = [gate(), gate()];
+  const busy = gate();
+  let launches = 0;
+  const service = new DiagramPreparer({
+    compiler: "queue",
+    factory: async () => {
+      const index = launches++;
+      if (launches === 2) busy.resolve();
+      return {
+        render: async () => {
+          if (gates[index]) await gates[index].promise;
+          throw new Error("SYNTAX: line 0");
+        },
+        close: async () => {},
+      };
+    },
+  });
+  const request = (index: number, signal?: AbortSignal) =>
+    service.prepare([{ id: "d" + index, source: "flowchart LR\nA --> B" + index }], signal);
+  const running = [request(0), request(1)];
+  await busy.promise;
+  const cancel = new AbortController();
+  const canceled = request(2, cancel.signal);
+  const queued = Array.from({ length: 7 }, (_, i) => request(i + 3));
+  await Promise.resolve();
+  cancel.abort();
+  assert.equal((await canceled).results[0]?.status, "unavailable");
+  const replacement = request(10);
+  gates.forEach((gate) => gate.resolve());
+  for (const result of await Promise.all([...running, ...queued, replacement])) {
+    assert.equal(result.results[0]?.status, "syntax");
+    assert.equal(result.results[0]?.line, undefined);
+  }
+  assert.equal(launches, 10);
+});
+
+test("a later caller can finish shared compilation after its owner times out", async () => {
+  vi.useFakeTimers();
+  let finish!: () => void;
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const wait = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let closed = 0;
+  const service = new DiagramPreparer({
+    compiler: "shared",
+    deadlineMs: 100,
+    factory: async () => ({
+      render: async () => {
+        started();
+        await wait;
+        return "<svg/>";
+      },
+      close: async () => {
+        closed++;
+      },
+    }),
+  });
+  try {
+    const input = [{ id: "single", source: "flowchart LR\nA --> B" }];
+    const first = service.prepare(input);
+    await ready;
+    await vi.advanceTimersByTimeAsync(50);
+    const second = service.prepare(input);
+    await vi.advanceTimersByTimeAsync(50);
+    assert.equal((await first).results[0]?.status, "timeout");
+    assert.equal(closed, 0);
+    finish();
+    assert.equal((await second).verified, true);
+    assert.equal(service.metrics.compilations, 1);
+  } finally {
+    finish();
+    vi.useRealTimers();
+  }
 });

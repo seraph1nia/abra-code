@@ -14,6 +14,18 @@ import { RequiredToolSchema } from "@abracode/agents/capabilities";
 
 test("managed roles preserve distinct authority and scoped native edits", () => {
   assert.ok(policyAllows("supervisor", "abra_work_start"));
+  for (const tool of [
+    "abra_spec",
+    "abra_worker_question",
+    "abra_worker_progress",
+    "abra_worker_reply",
+    "abra_worker_wait",
+    "abra_research_report",
+    "abra_review_report",
+    "abra_review_changes",
+    "abra_lead_action",
+  ])
+    assert.ok(!policyAllows("supervisor", tool), tool);
   assert.ok(!policyAllows("supervisor", "shell"));
   assert.ok(!policyAllows("supervisor", "write"));
   for (const role of ["explore", "apply", "review", "research"] as const) {

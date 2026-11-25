@@ -1,8 +1,8 @@
 import { ThoughtSource } from "./thought-source.tsx";
 import type { SubmissionReceipt } from "@abracode/contracts/web/workspace-wire";
-import { deferred } from "./deferred.tsx";
+import { deferred } from "@abracode/presentation/deferred";
 import { selectionMarker, thoughtSubmission } from "@abracode/contracts/web/workspace-wire";
-import { memo, useMemo } from "react";
+import { createContext, useContext, memo, useMemo } from "react";
 import type { TranscriptMessage } from "@abracode/contracts/web/contracts";
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
 import type {
@@ -33,11 +33,17 @@ const SelectedMessage = deferred<{ message: TranscriptMessage }>(
   () => import("./presentation/selected-message.tsx"),
   "Captured selection",
 );
+export const TranscriptWork = createContext<readonly WebWorkItem[]>([]);
+function TranscriptTool(props: Omit<React.ComponentProps<typeof ToolObservation>, "work">) {
+  return <ToolObservation {...props} work={useContext(TranscriptWork)} />;
+}
+function TranscriptAttachment(props: Omit<React.ComponentProps<typeof MessageAttachment>, "work">) {
+  return <MessageAttachment {...props} work={useContext(TranscriptWork)} />;
+}
 export const emptyAttachments: readonly (typeof PresentationAttachmentSchema.Type)[] = [];
 export const emptyDiagnostics: readonly (typeof PresentationDiagnosticSchema.Type)[] = [];
 export const MessageContent = memo(function MessageContent({
   message,
-  work,
   inspect,
   thoughtReceipt,
   attachments,
@@ -45,7 +51,6 @@ export const MessageContent = memo(function MessageContent({
 }: {
   message: TranscriptMessage;
   thoughtReceipt?: SubmissionReceipt;
-  work: readonly WebWorkItem[];
   inspect: Inspect;
   attachments: readonly (typeof PresentationAttachmentSchema.Type)[];
   diagnostics: readonly (typeof PresentationDiagnosticSchema.Type)[];
@@ -101,12 +106,11 @@ export const MessageContent = memo(function MessageContent({
                 );
               const tool = message.tools?.find((tool) => tool.id === part.tool_id);
               return tool ? (
-                <ToolObservation
+                <TranscriptTool
                   key={tool.id}
                   messageID={message.id}
                   tool={tool}
                   inspect={inspect}
-                  work={work}
                   attachments={byTool.get(tool.id) ?? emptyAttachments}
                 />
               ) : null;
@@ -134,10 +138,9 @@ export const MessageContent = memo(function MessageContent({
               !message.tools?.some((tool) => tool.id === attachment.tool_call_id),
           )
           .map((attachment) => (
-            <MessageAttachment
+            <TranscriptAttachment
               key={attachmentKey(attachment)}
               attachment={attachment}
-              work={work}
               inspect={inspect}
             />
           ))}

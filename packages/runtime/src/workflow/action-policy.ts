@@ -3,7 +3,7 @@ import { ensure, type Execution } from "../domain.ts";
 import { automation } from "../config/policy.ts";
 import { type ActionInput, type Finding } from "@abracode/contracts/workflow/feedback-contracts";
 import { actionFindings, type CurrentAction } from "@abracode/contracts/workflow/action-contracts";
-import { normalizeAction, targetKey } from "./action-state.ts";
+import { targetKey } from "./action-state.ts";
 
 export const evidenceReply = (head: string) =>
   `Addressed in ${head}. Repository verification and independent Review passed for this correction.`;
@@ -37,7 +37,7 @@ export function prepareAction(
     e.verification_receipt.fingerprint === e.review_receipt.fingerprint &&
     (e.workflow_policy !== "full-openspec" || !!e.archive_path);
   const base = {
-    schema_version: 2 as const,
+    schema_version: 1 as const,
     id: "pending",
     generation: e.control_generation,
     repository_id: e.repository_id,
@@ -202,7 +202,7 @@ export function prepareAction(
   };
   const key = targetKey(action);
   const matching = e.feedback.actions
-    .map((a) => normalizeAction(a, e))
+
     .filter((a) => targetKey(a) === key);
   // A historical possible effect always dominates a duplicate unsent reservation.
   const existing =

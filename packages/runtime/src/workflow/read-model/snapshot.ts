@@ -23,7 +23,7 @@ import { type Records } from "../../storage/store.ts";
 import { localDay } from "../../visibility/fleet.ts";
 import { type WorkGraph } from "../../work/graph.ts";
 import { explainIssues } from "../../work/model.ts";
-import { scanCapacity, summarizeCapacity, type CapacitySummary } from "../capacity.ts";
+import { summarizeCapacity, type CapacitySummary } from "../capacity.ts";
 import { executionBlocker, retainedReadiness } from "../readiness.ts";
 
 export { executionBlocker, retainedReadiness };
@@ -169,11 +169,11 @@ export class SnapshotQueries {
               page: query ? this.deps.work.find(query) : Effect.undefined,
               closures: this.deps.work.closureTimes,
               completions: this.deps.work.completions(day.day_start, day.day_end),
-              projects: this.deps.records.projectScan(),
-              executions: this.deps.records.executionScan(),
-              setups: this.deps.records.setupScan(),
+              projects: this.deps.records.projectScan,
+              executions: this.deps.records.executionScan,
+              setups: this.deps.records.setupScan,
               recordsRevision: this.deps.records.observationRevision,
-              exported: includeRecords ? this.deps.records.export() : Effect.undefined,
+              exported: includeRecords ? this.deps.records.export : Effect.undefined,
             },
             { concurrency: "unbounded" },
           );
@@ -305,9 +305,9 @@ export class SnapshotQueries {
             Effect.all(
               {
                 revision: this.deps.records.observationRevision,
-                projects: this.deps.records.projectScan(),
-                executions: this.deps.records.executionScan(),
-                setups: this.deps.records.setupScan(),
+                projects: this.deps.records.projectScan,
+                executions: this.deps.records.executionScan,
+                setups: this.deps.records.setupScan,
               },
               { concurrency: 4 },
             ).pipe(
@@ -460,8 +460,8 @@ export class SnapshotQueries {
       Effect.all(
         {
           explanation: this.deps.work.explainSelected(ids),
-          projects: this.deps.records.projectScan(),
-          scan: scanCapacity(this.deps.records),
+          projects: this.deps.records.projectScan,
+          scan: this.deps.records.capacityRecords(ids),
         },
         { concurrency: "unbounded" },
       ).pipe(

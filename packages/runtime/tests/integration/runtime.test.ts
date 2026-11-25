@@ -59,7 +59,7 @@ test("command overrides are preserved and unavailable workflow CLIs fail before 
     run(
       new ProcessRunner().run(
         Id.Executable.make(process.execPath),
-        ["--import", "tsx", resolve("scripts/start.ts")],
+        ["--import", "tsx", resolve("scripts/cli.ts"), "serve"],
         Id.AbsolutePath.make(process.cwd()),
         { ABRACODE_HOME: home, ABRACODE_CONFIG: configFile },
       ),

@@ -187,7 +187,10 @@ export const admitSynchronization = Effect.fn("Synchronization.admit")(function*
     },
     retry_instructions: `Synchronize existing content revision ${ordinal}. Assess only the retained work already present; do not implement new fixes or widen accepted scope. Preserve all historical archives. ${revision ? "Prepare a new revision plan describing existing implemented work, with accurate completed tasks. This authorizes planning artifacts only; after approval the controller runs checks and independent Review without Apply." : "Independent Review must confirm existing edits fit the approved scope."}`,
     ...(revision && {
-      openspec_change: ChangeName.make(`${e.openspec_change}-sync${ordinal}`),
+      openspec_base_change: e.openspec_base_change ?? e.openspec_change,
+      openspec_change: ChangeName.make(
+        `${e.openspec_base_change ?? e.openspec_change}-sync${ordinal}`,
+      ),
       planning_base_commit: observation.head,
     }),
     current_phase: nextStage,

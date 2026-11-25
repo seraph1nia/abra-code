@@ -1,5 +1,5 @@
 import { validateSurface } from "@abracode/contracts/web/surfaces";
-import { catalogId, catalogIds, workCatalogs } from "@abracode/contracts/web/catalog";
+import { catalogId, workCatalogDocument } from "@abracode/contracts/web/catalog";
 import { presentationHash } from "../../src/presentation/identity.ts";
 import { NativeSessionProjection } from "../../src/opencode/agui/native-state.ts";
 import { SessionMessage } from "@opencode/schema/session-message";
@@ -10,7 +10,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { SessionId, Timestamp, RepositoryId } from "@abracode/contracts/identities";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Exercises the pinned Effect 4 HTTP API transport. */
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { request } from "node:http";
@@ -112,6 +111,7 @@ test("report HTTP reads return ordinary absence without hiding native integrity 
   assert.deepEqual(await read(), { unavailable: "not_started" });
   taskExists = false;
   await assert.rejects(read(), /This task is no longer available/);
+  assert.equal((await fetch(`${web.origin}/api/work/report?issue_id=abra-web`)).status, 404);
   taskExists = true;
   code = "REPORT_TAMPERED";
   const damaged = await fetch(`${web.origin}/api/work/report?issue_id=abra-web`);
@@ -126,7 +126,7 @@ test("report HTTP reads return ordinary absence without hiding native integrity 
   web.backend.work.report = () =>
     Effect.fail(nativeRpcError({ type: "rpc.method_not_found", message: "Unknown RPC method" }));
   const outdated = await fetch(`${web.origin}/api/work/report?issue_id=abra-web`);
-  assert.equal(outdated.status, 409);
+  assert.equal(outdated.status, 503);
   const failure = await outdated.json();
   assert.equal(failure.code, "WEB_NATIVE_UPDATE_REQUIRED");
   assert.match(failure.message, /Restart the service to load the updated plugin/);
@@ -364,7 +364,7 @@ test("CopilotKit v2 Fetch handler transports AG-UI and binds one native session"
     messages: [{ id: "ui-1", role: "user", content: "Build a work view" }],
     tools: [],
     context: [],
-    state: {},
+    state: { workspace: { busy: false, session_id: "ignored" } },
     forwardedProps: { request_id: "stable-fixture" },
   };
   const wrong = await fetch(`${web.origin}/api/copilotkit/agent/abra/run`, {
@@ -394,31 +394,19 @@ test("CopilotKit v2 Fetch handler transports AG-UI and binds one native session"
   assert.equal(web.backend.submissions, 1);
 });
 
-test("retained report HTML stays behind typed reads, an opaque sandbox and attachment downloads", async (t) => {
+test("retired HTML artifact routes are unavailable", async (t) => {
   const web = await fixture();
   t.onTestFinished(web.close);
   const query = {
     issue_id: web.backend.value.work.work[0].issue_id,
     request_id: RequestId.make("published-report"),
   };
-  const html = await Effect.runPromise(web.client.work.preview({ query }));
-  assert.match(html, /Isolated report/);
-  const url = new URLSearchParams(query);
-  const preview = await fetch(`${web.origin}/api/report/preview?${url}`);
-  const csp = preview.headers.get("content-security-policy")!;
-  assert.match(csp, /sandbox allow-scripts/);
-  assert.doesNotMatch(csp, /allow-same-origin/);
-  assert.match(csp, /connect-src 'none'/);
-  assert.match(csp, /form-action 'none'/);
-  const download = await fetch(`${web.origin}/api/report/download?${url}`);
-  assert.match(
-    download.headers.get("content-disposition")!,
-    /^attachment; filename="abra-report-published-report.html"$/,
-  );
-  assert.equal(
-    (await fetch(`${web.origin}/api/report/preview?${url}&path=/etc/passwd`)).status,
-    400,
-  );
+  for (const path of ["preview", "download"]) {
+    assert.equal(
+      (await fetch(web.origin + "/api/report/" + path + "?" + new URLSearchParams(query))).status,
+      404,
+    );
+  }
 });
 
 test("worker history HTTP queries are fixed, typed and reject excess capabilities before a read", async (t) => {
@@ -538,11 +526,10 @@ test("explicit report exports use fixed identities and opaque preview without pr
 test("workspace serves the exact versioned discovery documents", async (t) => {
   const web = await fixture();
   t.onTestFinished(web.close);
-  for (const [index, id] of catalogIds.entries()) {
-    const response = await fetch(web.origin + `/catalog/work-v${index + 1}.json`);
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), workCatalogs[id]);
-  }
+  const response = await fetch(web.origin + "/catalog/work/v1/catalog.json");
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), workCatalogDocument);
+  assert.equal((await fetch(web.origin + "/catalog/work-v5.json")).status, 404);
 });
 
 test("hashed public assets cache immutably and use package compression while private responses stay fresh", async (t) => {

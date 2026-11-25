@@ -67,7 +67,7 @@ const check = Schema.Struct({
 );
 
 /** Read-only presentation data. Identifiers and status labels never authorize controller actions. */
-export const LegacyReportSnapshotSchema = Schema.Struct({
+export const ReportSnapshotSchema = Schema.Struct({
   schema_version: Schema.Literal(1),
   issue_id: boundedText(256).check(Schema.isNonEmpty()),
   execution_id: boundedText(256).check(Schema.isNonEmpty()),
@@ -76,23 +76,7 @@ export const LegacyReportSnapshotSchema = Schema.Struct({
   observed_at: time,
   provenance: required,
   status: required,
-  diagrams: Schema.optional(
-    Schema.Array(
-      Schema.Struct({
-        title: required,
-        source: boundedText(32768).check(
-          Schema.isNonEmpty(),
-          Schema.makeFilter(
-            (source) =>
-              !/%%\{|<|\\|\/\/|^---(?:\r?\n)|@\s*\{|\bclick\b|\bhref\b|(?:javascript|data|https?):|\burl\s*\(/i.test(
-                source,
-              ) ||
-              "Generated diagrams cannot contain directives, HTML, links or external resources",
-          ),
-        ),
-      }),
-    ).check(Schema.isMaxLength(8)),
-  ),
+  diagrams: Schema.optional(StoredDiagramCollectionSchema),
   findings: Schema.Array(finding).check(Schema.isMaxLength(64)),
   checks: Schema.Array(check).check(Schema.isMaxLength(64)),
   events: Schema.Array(
@@ -113,16 +97,6 @@ export const LegacyReportSnapshotSchema = Schema.Struct({
     }),
   ).check(Schema.isMaxLength(16)),
   limitations: Schema.Array(required).check(Schema.isMaxLength(64)),
-}).check(
-  Schema.makeFilter(
-    (value) =>
-      new TextEncoder().encode(JSON.stringify(value)).length <= 524288 ||
-      "Report snapshot exceeds 512 KiB",
-  ),
-);
-export const ReportSnapshotSchema = Schema.Struct({
-  ...LegacyReportSnapshotSchema.fields,
-  diagrams: Schema.optional(StoredDiagramCollectionSchema),
 }).check(
   Schema.makeFilter(
     (value) =>

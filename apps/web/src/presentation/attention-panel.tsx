@@ -5,7 +5,7 @@ import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import { EvidenceDisclosure, SectionCard, StatusBadge } from "@abracode/presentation/cockpit";
 import { AlertTriangle } from "@abracode/presentation/icons";
 import { Button } from "@abracode/presentation/ui/button";
-import { deferred } from "../deferred.tsx";
+import { deferred } from "@abracode/presentation/deferred";
 import { NativeForm, NativePermission } from "../native-attention.tsx";
 
 const LeadsPanel = deferred<React.ComponentProps<typeof import("./leads.tsx").LeadsPanel>>(
@@ -105,7 +105,7 @@ export function AttentionPanel({
       {workspace.work_unavailable && (
         <output className="error-banner">{workspace.work_unavailable}</output>
       )}
-      {attention > 0 && (
+      {(workspace.forms.length > 0 || workspace.permissions.length > 0) && (
         <div className="inspector-stack">
           <h3 className="eyebrow">Your forms and permissions</h3>
           {workspace.forms.map((item) => (

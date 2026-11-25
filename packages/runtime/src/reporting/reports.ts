@@ -19,7 +19,6 @@ import { type Runtime } from "../opencode/runtime.ts";
 import { type Locks } from "../storage/lock.ts";
 import { synchronizeExecution, type Records } from "../storage/store.ts";
 import { type WorkGraph } from "../work/graph.ts";
-import { type ReportPort } from "../workflow/report-port.ts";
 import { isActiveWorker } from "../workflow/worker-assignment.ts";
 import { verifyDiagrams } from "./diagrams.ts";
 import { reportDirectory, reportHash } from "./report-build.ts";
@@ -35,7 +34,7 @@ import { VisualReports } from "./visual-reports.ts";
 
 const digest = reportHash;
 
-export class Reports implements ReportPort {
+export class Reports {
   private visual: VisualReports;
   private exports: ReportExports;
   constructor(
@@ -207,7 +206,7 @@ export class Reports implements ReportPort {
             }).pipe(Effect.uninterruptible),
           (file) =>
             Effect.tryPromise({ try: () => file.close(), catch: CrewError.from }).pipe(
-              Effect.orDie,
+              Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error)),
             ),
         );
         yield* rename(temporary, receipt.path).pipe(
@@ -254,8 +253,6 @@ export class Reports implements ReportPort {
       .pipe(Effect.andThen(this.exports.read(hash, exporter)));
   readonly reconcile = Effect.suspend(() => this.visual.recover());
   recover = () => this.visual.recover();
-  readArtifact = (...args: Parameters<VisualReports["readArtifact"]>) =>
-    this.visual.readArtifact(...args);
   readDocument = (...args: Parameters<VisualReports["readDocument"]>) =>
     this.visual.readDocument(...args);
   private readReceipt = Effect.fn("Reports.readReceipt")(

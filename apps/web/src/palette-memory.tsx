@@ -1,6 +1,5 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Cancelling the picker releases its typed HTTP atom subscriptions. */
-import { useState, useContext } from "react";
-import { useAtomValue, RegistryContext } from "@effect/atom-react";
+import { useState } from "react";
+import { useAtomValue, useAtomRefresh } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { RepositoryId } from "@abracode/contracts/identities";
 import { WorkspaceApi, memoryEnabledQuery, repositoriesQuery } from "./data.ts";
@@ -104,7 +103,7 @@ function MemoryNote({
     timeToLive: "0 seconds",
   });
   const result = useAtomValue(atom);
-  const registry = useContext(RegistryContext);
+  const refresh = useAtomRefresh(atom);
   return (
     <section aria-label="Memory note" className="min-h-0 overflow-y-auto p-3 text-sm">
       <Button variant="ghost" onClick={back}>
@@ -131,7 +130,7 @@ function MemoryNote({
       ) : AsyncResult.isFailure(result) ? (
         <>
           <p role="alert">{requestError(result.cause)}</p>
-          <Button onClick={() => registry.refresh(atom)}>Retry read</Button>
+          <Button onClick={refresh}>Retry read</Button>
         </>
       ) : (
         <output>Reading note…</output>

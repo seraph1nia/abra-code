@@ -1003,19 +1003,19 @@ output:not([class~="inline-status"]) {
 }
 
 /* Give visual children their spacing once, even inside nested basic layouts. */
-.generated-surface[data-work-catalog="v5"] {
+.generated-surface[data-work-catalog="v1"] {
   --a2ui-row-gap: 0;
   --a2ui-column-gap: 0;
   --a2ui-list-gap: 0;
   --a2ui-text-color-text: currentColor;
 }
-.generated-surface[data-work-catalog="v5"] a2ui-basic-text {
+.generated-surface[data-work-catalog="v1"] a2ui-basic-text {
   margin: 0.5rem;
 }
-.generated-surface[data-work-catalog="v5"] a2ui-basic-button a2ui-basic-text {
+.generated-surface[data-work-catalog="v1"] a2ui-basic-button a2ui-basic-text {
   margin: 0;
 }
-.generated-surface[data-work-catalog="v5"] :is(.catalog-image, .catalog-player) {
+.generated-surface[data-work-catalog="v1"] :is(.catalog-image, .catalog-player) {
   margin: 0.5rem;
   max-width: calc(100% - 1rem);
 }

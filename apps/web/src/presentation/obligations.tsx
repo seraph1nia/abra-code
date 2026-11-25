@@ -29,7 +29,7 @@ import {
 } from "@abracode/presentation/cards";
 const words = (value: string) => value.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
 function Body({ children }: { children: string }) {
-  return <Markdown key={children} content={children} mode="static" className="prose" />;
+  return <Markdown content={children} mode="static" className="prose" />;
 }
 function Disclosure({ title, children }: { title: string; children: ReactNode }) {
   return (

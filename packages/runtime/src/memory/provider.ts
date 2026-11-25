@@ -1,8 +1,19 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 FileSystem and ChildProcess APIs; verified by integration tests. */
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { Config, Effect, Exit, FileSystem, Ref, Scope, Semaphore, Stream } from "effect";
+import {
+  Context,
+  Layer,
+  Config,
+  Effect,
+  Schema,
+  Exit,
+  FileSystem,
+  Ref,
+  Scope,
+  Semaphore,
+  Stream,
+} from "effect";
 import { ChildProcess } from "effect/process";
 import type { PlatformError } from "effect/PlatformError";
 import { CrewError, type Config as AppConfig } from "../domain.ts";
@@ -79,9 +90,7 @@ export function memoryDirectoryEffect(
   }).pipe(provideFileSystem);
 }
 
-export const memoryDirectory = (config: AppConfig, projects: readonly string[]): Promise<string> =>
-  Effect.runPromise(memoryDirectoryEffect(config, projects));
-
+const providerError = Schema.fromJsonString(Schema.Struct({ error: Schema.String }));
 const pathConfig = Config.String("PATH").pipe(Config.withDefault("/usr/bin:/bin"));
 
 function environment(root: string): Effect.Effect<Record<string, string>> {
@@ -181,12 +190,6 @@ export function checkMemoryVersionEffect(
   );
 }
 
-export const checkMemoryVersion = (
-  executable: string,
-  root: string,
-  signal?: AbortSignal,
-): Promise<void> => Effect.runPromise(checkMemoryVersionEffect(executable, root), { signal });
-
 type ProviderState =
   | { readonly _tag: "Idle" }
   | { readonly _tag: "Connected"; readonly client: Client; readonly scope: Scope.Closeable }
@@ -260,12 +263,12 @@ export class MemoryProvider {
           return yield* unavailable();
         }
         const services = yield* Effect.context<never>();
-        const runSync = Effect.runSyncWith(services);
+        const runFork = Effect.runForkWith(services);
         client.onclose = () => {
-          runSync(
+          runFork(
             Ref.update(this.state, (s): ProviderState =>
               s._tag === "Connected" && s.client === client ? { _tag: "Idle" } : s,
-            ),
+            ).pipe(Effect.andThen(Scope.close(connScope, Exit.void))),
           );
         };
         yield* Ref.set(this.state, { _tag: "Connected", client, scope: connScope });
@@ -291,7 +294,8 @@ export class MemoryProvider {
       });
       if (result.isError) {
         const block = Array.isArray(result.content) ? result.content[0] : undefined;
-        const code = yield* Effect.try(() => JSON.parse(block?.text).error as unknown).pipe(
+        const code = yield* Schema.decodeUnknownEffect(providerError)(block?.text).pipe(
+          Effect.map((value) => value.error),
           Effect.orElseSucceed(() => undefined),
         );
         if (code === "ALREADY_EXISTS" || code === "REVISION_CONFLICT")
@@ -309,23 +313,24 @@ export class MemoryProvider {
     });
   }
 
-  call(
-    root: string,
-    name: string,
-    args: Record<string, unknown>,
-    signal?: AbortSignal,
-  ): Promise<unknown> {
-    return Effect.runPromise(this.callEffect(root, name, args), { signal });
-  }
-
-  closeEffect(): Effect.Effect<void> {
+  get closeEffect(): Effect.Effect<void> {
     return Effect.gen({ self: this }, function* () {
       yield* Ref.set(this.state, { _tag: "Closed" });
       yield* Scope.close(this.scope, Exit.void);
     });
   }
+}
 
-  close(): Promise<void> {
-    return Effect.runPromise(this.closeEffect());
+export class MemoryProviderService extends Context.Service<MemoryProviderService, MemoryProvider>()(
+  "abracode/MemoryProvider",
+) {
+  static layer(executable: string) {
+    return Layer.effect(
+      MemoryProviderService,
+      Effect.acquireRelease(
+        Effect.sync(() => new MemoryProvider(executable)),
+        (provider) => provider.closeEffect,
+      ),
+    );
   }
 }

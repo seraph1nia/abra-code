@@ -47,11 +47,7 @@ import { type WorkGraph } from "../work/graph.ts";
 import { OpenSpec } from "../openspec/adapter.ts";
 import { Git } from "../git/repository.ts";
 import { type Delivery } from "../git/delivery.ts";
-import {
-  type Authorizations,
-  type CheckpointEvidence,
-  assertApprovalActor,
-} from "./authorization.ts";
+import { type Authorizations, type CheckpointEvidence } from "./authorization.ts";
 import { Queries } from "./queries.ts";
 import { CodingChecks } from "./checks.ts";
 import { specVerificationPassed } from "./review-contracts.ts";
@@ -88,7 +84,7 @@ export interface AdvancementDependencies {
 export class Advancement {
   constructor(private c: AdvancementDependencies) {}
   get close() {
-    return this.c.operations.close();
+    return this.c.operations.close;
   }
   recordSupervisor = (sessionID: SessionId) =>
     this.c.records.store.set(StorageKey.make("supervisor/session"), sessionID);
@@ -163,7 +159,7 @@ export class Advancement {
         const issue = yield* this.c.work.show(id);
         if (issue.status === "blocked") yield* this.c.work.resume(id, e.execution_id);
         const revised = yield* this.c.scopes.revise(e, input, (record) =>
-          this.c.records.saveControl(record),
+          this.c.records.commitControl(record),
         );
         yield* this.c.operations.notifyControl(id);
         return revised;
@@ -215,7 +211,8 @@ export class Advancement {
             Effect.gen({ self: this }, function* () {
               // Refusing an explicit checkpoint while its worker is busy
               // must not revoke that worker's valid active assignment.
-              if (error.code === "WRITER_BUSY") return yield* error;
+              if (["STOP_REQUESTED", "STALE_OPERATION", "WRITER_BUSY"].includes(error.code))
+                return yield* error;
               const corrected = yield* this.correctFailure(e, error);
               if (corrected) return corrected;
               if (!["APPROVAL_REQUIRED", "MERGE_APPROVAL", "WRITER_BUSY"].includes(error.code))
@@ -408,9 +405,9 @@ export class Advancement {
     this.c.checks.reviewReport(...args);
   approve = Effect.fn("Advancement.approve")(
     function* (this: Advancement, id: IssueId, kind: "plan" | "merge", supervisor: SessionId) {
+      yield* this.c.authorizations.assertActor(supervisor);
       return yield* this.withOwnedExecution(id, "approve", (e, p) =>
         Effect.gen({ self: this }, function* () {
-          yield* assertApprovalActor(e, supervisor);
           if (
             kind === "merge" &&
             ["cleaning", "completed"].includes(e.current_phase) &&
@@ -566,7 +563,10 @@ export class Advancement {
             );
           if (e.stop_status === "confirmed")
             yield* this.c.planning.continue(e, yield* this.project(e));
-          const changes: ExecutionPatch = { stop_status: removeOwnedField };
+          const changes: ExecutionPatch = {
+            stop_status: removeOwnedField,
+            ...(action === "retry" && text && { retry_instructions: text }),
+          };
           let phase = e.resume_phase;
           if (
             action === "retry" &&
@@ -640,7 +640,7 @@ export class Advancement {
     function* (this: Advancement, id?: IssueId) {
       const records = id
         ? [yield* this.get(id)]
-        : (yield* this.c.records.executions()).filter(
+        : (yield* this.c.records.executions).filter(
             (e) => !terminal(e) || e.finishing?.completion_notice?.status === "pending",
           );
       return yield* Effect.forEach(
@@ -651,6 +651,8 @@ export class Advancement {
               Effect.catch((error) =>
                 domainEffect(
                   Effect.gen({ self: this }, function* () {
+                    if (["STOP_REQUESTED", "STALE_OPERATION"].includes(error.code))
+                      return yield* error;
                     if (e.stop_status === "requested")
                       return yield* this.c.records.saveOwned(
                         { ...e, error_or_recovery_reason: error.message },

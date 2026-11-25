@@ -19,15 +19,19 @@ import { StatusBadge, statusTone } from "@abracode/presentation/cockpit";
 import { Evidence, type Inspect } from "@abracode/presentation/cards";
 const words = (value: string) => value.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
 function Body({ text }: { text: string }) {
-  return <Markdown key={text} content={text} mode="static" className="prose" />;
+  return <Markdown content={text} mode="static" className="prose" />;
 }
 type Scope = { issue: IssueId; repository?: never } | { repository: RepositoryId; issue?: never };
-export function LeadsPanel({
-  issue,
-  repository,
-  initialLead,
-  inspect,
-}: Scope & { initialLead?: LeadId; inspect: Inspect }) {
+type LeadPanelProps = Scope & { initialLead?: LeadId; inspect: Inspect };
+export function LeadsPanel(props: LeadPanelProps) {
+  return (
+    <LeadSelection
+      key={JSON.stringify([props.issue, props.repository, props.initialLead])}
+      {...props}
+    />
+  );
+}
+function LeadSelection({ issue, repository, initialLead, inspect }: LeadPanelProps) {
   const scope = issue ? { issue_id: issue } : { repository_id: repository };
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<LeadId | undefined>(initialLead);

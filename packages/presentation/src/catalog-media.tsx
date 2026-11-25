@@ -1,4 +1,5 @@
 /* oxlint-disable jsx-a11y/media-has-caption -- A2UI v1 exposes the container’s native caption tracks and has no separate track URL property. */
+import { catalogHttpUrl } from "@abracode/contracts/web/catalog";
 import { sanitizeMediaUrl } from "@a2ui/web_core/v1_0";
 
 export type MediaKind = "Image" | "Video" | "AudioPlayer";
@@ -33,11 +34,7 @@ export function mediaUrl(value: unknown, frozen: boolean, kind: MediaKind = "Ima
   if (/^data:/i.test(normalized)) {
     return allowedDataUrl[kind].test(normalized) ? normalized : undefined;
   }
-  if (frozen) return;
-  if (/^[\\/]{2}/.test(normalized)) return;
-  const absolute = /^[a-z][a-z\d+.-]*:/i.test(normalized);
-  if (absolute && !/^https?:\/\/[^/\\?#\s]/i.test(sanitized)) return;
-  return normalized;
+  if (!frozen && catalogHttpUrl(sanitized)) return sanitized;
 }
 
 export function CatalogMedia({

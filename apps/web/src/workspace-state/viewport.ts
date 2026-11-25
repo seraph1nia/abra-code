@@ -9,29 +9,33 @@ export function useTranscriptViewport(
   const transcript = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
   const historyAnchor = useRef<{ height: number; top: number } | undefined>(undefined);
-  const viewAnchor = useRef<{ element: HTMLElement; offset: number } | undefined>(undefined);
+  const viewAnchor = useRef<{ id: string; offset: number } | undefined>(undefined);
   const rememberPosition = useCallback(() => {
     const container = scroller.current;
     if (!container?.clientHeight) return;
     // Read actual geometry: a programmatic/browser scroll can precede onScroll delivery.
     nearBottom.current = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
     if (nearBottom.current) return;
-    if (viewAnchor.current?.element.isConnected) return;
+    if (viewAnchor.current) return;
     const top = container.getBoundingClientRect().top;
     const element = [...container.querySelectorAll<HTMLElement>("[data-native-message-id]")].find(
       (element) => element.getBoundingClientRect().bottom > top,
     );
     if (element)
-      viewAnchor.current = { element, offset: element.getBoundingClientRect().top - top };
+      viewAnchor.current = {
+        id: element.dataset.nativeMessageId!,
+        offset: element.getBoundingClientRect().top - top,
+      };
   }, []);
   function restorePosition() {
     const container = scroller.current,
       anchor = viewAnchor.current;
-    if (container?.clientHeight && anchor?.element.isConnected && !historyAnchor.current)
+    const element =
+      anchor &&
+      container?.querySelector<HTMLElement>(`[data-native-message-id="${CSS.escape(anchor.id)}"]`);
+    if (container?.clientHeight && element && anchor && !historyAnchor.current)
       container.scrollTop +=
-        anchor.element.getBoundingClientRect().top -
-        container.getBoundingClientRect().top -
-        anchor.offset;
+        element.getBoundingClientRect().top - container.getBoundingClientRect().top - anchor.offset;
   }
   const bottom = useRef<HTMLDivElement>(null);
   const lastID = messages.at(-1)?.id;
@@ -53,6 +57,8 @@ export function useTranscriptViewport(
   }, []);
   useLayoutEffect(() => {
     restorePosition();
+    const frame = requestAnimationFrame(restorePosition);
+    return () => cancelAnimationFrame(frame);
   }, [layoutKey]);
   useLayoutEffect(() => {
     const container = scroller.current,

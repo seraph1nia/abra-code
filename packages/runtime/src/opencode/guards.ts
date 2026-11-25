@@ -1,3 +1,4 @@
+import { toToolError } from "@abracode/agents/tool-boundary";
 import {
   policyAllows,
   memoryReadTools,
@@ -14,11 +15,10 @@ import { AbsolutePath, ToolName, SessionId } from "@abracode/contracts/identitie
 import { domainEffect } from "../effect.ts";
 import { Effect, Result, Schema } from "effect";
 import { type Context } from "@opencode/plugin/effect/plugin";
-import { Tool } from "@opencode/schema/tool";
 import { Patch } from "@opencode/util/patch";
 
-import { readFile, realpath } from "../filesystem.ts";
-import { resolve, dirname, isAbsolute, sep } from "node:path";
+import { pathExists, readFile, realpath } from "../filesystem.ts";
+import { basename, resolve, dirname, isAbsolute, relative, sep } from "node:path";
 import { CrewError, type Execution, type Role } from "../domain.ts";
 import { type Controller } from "../workflow/controller.ts";
 import { isActiveWorker, historicalWorkers } from "../workflow/worker-assignment.ts";
@@ -113,7 +113,11 @@ const editInput = Schema.Struct({
   filePath: Schema.optional(Schema.String),
   path: Schema.optional(Schema.String),
 });
-function contained(file: AbsolutePath, root: AbsolutePath) {
+function insideWriteRoot(file: string, root: string) {
+  const child = relative(root, file);
+  return !!child && child !== ".." && !child.startsWith(".." + sep) && !isAbsolute(child);
+}
+function contained(file: AbsolutePath, worktree: AbsolutePath, root: AbsolutePath) {
   return domainEffect(
     Effect.gen(function* () {
       let cursor = file;
@@ -127,17 +131,21 @@ function contained(file: AbsolutePath, root: AbsolutePath) {
         }
         if (resolved.failure.code !== "ENOENT") return yield* resolved.failure;
         const parent = dirname(cursor);
-        if (!(parent !== cursor))
+        if (yield* pathExists(cursor))
+          return yield* new CrewError("WORKER_PATH", "Cannot write through an unresolved symlink");
+        if (parent === cursor)
           return yield* new CrewError("WORKER_PATH", "Cannot resolve write root");
-        tail.push(cursor.slice(parent.length + 1));
+        tail.push(basename(cursor));
         cursor = AbsolutePath.make(parent);
       }
-      const base = yield* realpath(root);
-      if (!actual.startsWith(base + "/"))
+      const base = yield* realpath(worktree);
+      const scope = resolve(base, relative(worktree, root));
+      if (!insideWriteRoot(actual, scope) || !insideWriteRoot(file, root))
         return yield* new CrewError(
           "WORKER_PATH",
           "Edits must stay inside the assigned write root and cannot follow escaping symlinks",
         );
+      return { actual, base };
     }),
   );
 }
@@ -279,10 +287,8 @@ export function installGuards(
                   .sort()
                   .map((name) => ToolName.make(name)),
               );
-              event.system.push({
-                type: "text",
-                text: guidance ?? (yield* readRoleFallback(role)),
-              });
+              const text = guidance ?? (yield* readRoleFallback(role));
+              if (text.trim()) event.system.push({ type: "text", text });
             } else if (event.agent === "abra") {
               for (const key of Object.keys(event.tools))
                 if (!policyAllows("supervisor", key)) delete event.tools[key];
@@ -299,7 +305,12 @@ export function installGuards(
             const cwd = yield* realpath(event.cwd);
             for (const e of yield* controller.queries.executions())
               if (externalOwns(e) && e.worktree_directory) {
-                const root = yield* realpath(e.worktree_directory);
+                const result = yield* Effect.result(realpath(e.worktree_directory));
+                if (Result.isFailure(result)) {
+                  if (result.failure.code === "ENOENT") continue;
+                  return yield* result.failure;
+                }
+                const root = result.success;
                 if (cwd === root || cwd.startsWith(root + sep))
                   return yield* new CrewError(
                     "EXTERNAL_CUSTODY",
@@ -372,8 +383,11 @@ export function installGuards(
                 const absolute = isAbsolute(file)
                   ? AbsolutePath.make(file)
                   : AbsolutePath.make(resolve(e.worktree_directory!, file));
-                yield* contained(absolute, root);
-                if (protectedControlPath(absolute, e.worktree_directory!, role))
+                const { actual, base } = yield* contained(absolute, e.worktree_directory!, root);
+                if (
+                  protectedControlPath(absolute, e.worktree_directory!, role) ||
+                  protectedControlPath(actual, base, role)
+                )
                   return yield* new CrewError(
                     "CONTROL_FILE",
                     "Worker cannot modify orchestration/permission files",
@@ -382,7 +396,7 @@ export function installGuards(
             }
           }),
         ).pipe(
-          Effect.mapError((error) => new Tool.Error({ message: error.message })),
+          Effect.mapError((error) => toToolError(error.code, error.message)),
           provide,
         ),
       );

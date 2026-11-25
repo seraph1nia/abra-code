@@ -1,3 +1,4 @@
+import { exactParseOptions } from "@abracode/contracts/primitives";
 import {
   EvidenceSearch,
   EvidenceSearchPage,
@@ -225,152 +226,144 @@ export type WorkSnapshot = typeof snapshot.Type;
 export type WorkDetail = typeof detail.Type;
 export const WorkReportSchema = Schema.Struct({ content: Schema.String });
 export const observerErrors = {
-  not_found: Schema.toStandardSchemaV1(Schema.Struct({ code: Schema.String })),
-  resource_unavailable: Schema.toStandardSchemaV1(Schema.Struct({ code: Schema.String })),
-  invalid_selection: Schema.toStandardSchemaV1(Schema.Struct({ code: Schema.String })),
+  not_found: Schema.Struct({ code: Schema.String }),
+  resource_unavailable: Schema.Struct({ code: Schema.String }),
+  invalid_selection: Schema.Struct({ code: Schema.String }),
 };
-// Portable schemas keep the observer contract typed in both the native server and TUI.
+// Native RPC methods decode their Effect codecs at the host boundary.
 export const visibility = Rpc.define({
   id: "abracode-visibility",
   methods: {
     binding: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(BindingReadQuery, {
-        parseOptions: { onExcessProperty: "error", reportInput: false },
-      }),
-      output: Schema.toStandardSchemaV1(BindingReadSchema),
+      input: BindingReadQuery.annotate(exactParseOptions),
+      output: BindingReadSchema,
     },
     evidenceSearch: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(EvidenceSearch),
-      output: Schema.toStandardSchemaV1(EvidenceSearchPage),
+      input: EvidenceSearch.annotate(exactParseOptions),
+      output: EvidenceSearchPage,
     },
     sessions: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(SessionQuery),
-      output: Schema.toStandardSchemaV1(SessionPage),
+      input: SessionQuery.annotate(exactParseOptions),
+      output: SessionPage,
     },
     thoughtWork: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(ThoughtWorkQuery),
-      output: Schema.toStandardSchemaV1(ThoughtWorkPage),
+      input: ThoughtWorkQuery.annotate(exactParseOptions),
+      output: ThoughtWorkPage,
     },
     thoughtList: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(ThoughtQuery),
-      output: Schema.toStandardSchemaV1(ThoughtPage),
+      input: ThoughtQuery.annotate(exactParseOptions),
+      output: ThoughtPage,
     },
     thoughtDetail: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(ThoughtReference),
-      output: Schema.toStandardSchemaV1(ThoughtDetail),
+      input: ThoughtReference.annotate(exactParseOptions),
+      output: ThoughtDetail,
     },
     githubInbox: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(InboxQuery),
-      output: Schema.toStandardSchemaV1(InboxPage),
+      input: InboxQuery.annotate(exactParseOptions),
+      output: InboxPage,
     },
     githubItem: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(InboxTarget),
-      output: Schema.toStandardSchemaV1(InboxDetail),
+      input: InboxTarget.annotate(exactParseOptions),
+      output: InboxDetail,
     },
     find: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(WorkDiscoveryQuery, {
-        parseOptions: { onExcessProperty: "error", reportInput: false },
-      }),
-      output: Schema.toStandardSchemaV1(WorkPageSchema),
+      input: WorkDiscoveryQuery.annotate(exactParseOptions),
+      output: WorkPageSchema,
     },
     leads: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(LeadEvidenceQuery, {
-        parseOptions: { onExcessProperty: "error", reportInput: false },
-      }),
-      output: Schema.toStandardSchemaV1(LeadEvidencePageSchema),
+      input: LeadEvidenceQuery.annotate(exactParseOptions),
+      output: LeadEvidencePageSchema,
     },
     messages: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(
-        Schema.Struct({ issue_id: IssueId, offset: Schema.optional(Count) }),
+      input: Schema.Struct({ issue_id: IssueId, offset: Schema.optional(Count) }).annotate(
+        exactParseOptions,
       ),
-      output: Schema.toStandardSchemaV1(MessagesPageSchema),
+      output: MessagesPageSchema,
     },
     worker: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(Schema.Struct({ issue_id: IssueId, session_id: SessionId })),
-      output: Schema.toStandardSchemaV1(WorkerInspectionSchema),
+      input: Schema.Struct({ issue_id: IssueId, session_id: SessionId }).annotate(
+        exactParseOptions,
+      ),
+      output: WorkerInspectionSchema,
     },
     feedback: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(
-        Schema.Struct({
-          issue_id: IssueId,
-          page: Schema.optional(Count),
-          finding_id: Schema.optionalKey(FindingId),
-          revision: Schema.optionalKey(FindingRevisionId),
-        }).check(
+      input: Schema.Struct({
+        issue_id: IssueId,
+        page: Schema.optional(Count),
+        finding_id: Schema.optionalKey(FindingId),
+        revision: Schema.optionalKey(FindingRevisionId),
+      })
+        .check(
           Schema.makeFilter(
             (input) =>
               (input.finding_id === undefined) === (input.revision === undefined) ||
               "Finding selection requires both finding_id and revision",
           ),
-        ),
-      ),
-      output: Schema.toStandardSchemaV1(FeedbackPageSchema),
+        )
+        .annotate(exactParseOptions),
+      output: FeedbackPageSchema,
     },
     report: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(Schema.Struct({ issue_id: IssueId })),
-      output: Schema.toStandardSchemaV1(WorkReportSchema),
+      input: Schema.Struct({ issue_id: IssueId }).annotate(exactParseOptions),
+      output: WorkReportSchema,
     },
     snapshot: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(Schema.Struct({ closed_page: Schema.optional(Count) })),
-      output: Schema.toStandardSchemaV1(snapshot),
+      input: Schema.Struct({ closed_page: Schema.optional(Count) }).annotate(exactParseOptions),
+      output: snapshot,
     },
     diff: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(
-        Schema.Struct({
-          issue_id: IssueId,
-          scope: DiffScopeSchema,
-          file: Schema.optional(RelativePath),
-        }),
-      ),
-      output: Schema.toStandardSchemaV1(diff),
+      input: Schema.Struct({
+        issue_id: IssueId,
+        scope: DiffScopeSchema,
+        file: Schema.optional(RelativePath),
+      }).annotate(exactParseOptions),
+      output: diff,
     },
     document: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(Schema.Struct({ issue_id: IssueId, path: RelativePath })),
-      output: Schema.toStandardSchemaV1(document),
+      input: Schema.Struct({ issue_id: IssueId, path: RelativePath }).annotate(exactParseOptions),
+      output: document,
     },
     evidence: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(EvidenceQuerySchema),
-      output: Schema.toStandardSchemaV1(EvidenceDataSchema),
+      input: EvidenceQuerySchema.annotate(exactParseOptions),
+      output: EvidenceDataSchema,
     },
     verification: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(Schema.Struct({ issue_id: IssueId })),
-      output: Schema.toStandardSchemaV1(VerificationViewSchema),
+      input: Schema.Struct({ issue_id: IssueId }).annotate(exactParseOptions),
+      output: VerificationViewSchema,
     },
     overview: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(Schema.Struct({ issue_id: IssueId })),
-      output: Schema.toStandardSchemaV1(overview),
+      input: Schema.Struct({ issue_id: IssueId }).annotate(exactParseOptions),
+      output: overview,
     },
     detail: {
       errors: observerErrors,
-      input: Schema.toStandardSchemaV1(Schema.Struct({ issue_id: IssueId })),
-      output: Schema.toStandardSchemaV1(detail),
+      input: Schema.Struct({ issue_id: IssueId }).annotate(exactParseOptions),
+      output: detail,
     },
   },
   events: {
     changed: {
-      schema: Schema.toStandardSchemaV1(
-        Schema.Struct({ home: AbsolutePath, scope: Schema.optional(ChangeScopeSchema) }),
-      ),
+      schema: Schema.Struct({ home: AbsolutePath, scope: Schema.optional(ChangeScopeSchema) }),
     },
   },
 });

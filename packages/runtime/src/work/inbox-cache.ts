@@ -1,4 +1,4 @@
-import { Cache, Duration, Effect, Equal, Exit, Hash } from "effect";
+import { Context, Layer, Clock, Effect, Exit } from "effect";
 import type { InboxDetail } from "@abracode/contracts/visibility/github-inbox";
 import type { CrewError } from "../domain.ts";
 import { freshMs } from "./inbox-index.ts";
@@ -8,38 +8,61 @@ export type DetailObservation = {
   readonly data: Omit<InboxDetail, "links" | "observed_at">;
 };
 
-class DetailCacheKey implements Equal.Equal {
-  constructor(
-    readonly id: string,
-    readonly read: Effect.Effect<DetailObservation, CrewError>,
-  ) {}
-  [Equal.symbol](that: Equal.Equal): boolean {
-    return that instanceof DetailCacheKey && this.id === that.id;
+type Entry = { read: Effect.Effect<DetailObservation, CrewError>; expires?: number };
+
+/** Readers share the selected observation. Each forced refresh selects a new entry immediately. */
+export class InboxDetailCache {
+  private readonly entries = new Map<string, Entry>();
+
+  observe(id: string, force: boolean, read: Effect.Effect<DetailObservation, CrewError>) {
+    return Effect.gen({ self: this }, function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const prior = this.entries.get(id);
+      this.entries.delete(id);
+      if (!force && prior && (prior.expires === undefined || prior.expires > now)) {
+        this.entries.set(id, prior);
+        return yield* prior.read;
+      }
+      const entry: Entry = {
+        read: yield* Effect.cached(
+          read.pipe(
+            Effect.onExit((exit) =>
+              Clock.currentTimeMillis.pipe(
+                Effect.map((completed) => {
+                  if (this.entries.get(id) !== entry) return;
+                  if (Exit.isSuccess(exit)) entry.expires = completed + freshMs;
+                  else this.entries.delete(id);
+                }),
+              ),
+            ),
+          ),
+        ),
+      };
+      this.entries.set(id, entry);
+      if (this.entries.size > 32) {
+        const oldest = this.entries.keys().next();
+        if (!oldest.done) this.entries.delete(oldest.value);
+      }
+      return yield* entry.read;
+    });
   }
-  [Hash.symbol](): number {
-    return Hash.string(this.id);
+
+  get clear() {
+    return Effect.sync(() => this.entries.clear());
   }
 }
 
-/** Bounded TTL cache for GitHub detail observations with single-flight sharing and forced refresh. */
-export class InboxDetailCache {
-  private readonly cache = Effect.runSync(
-    Cache.makeWith<DetailCacheKey, DetailObservation, CrewError>((entry) => entry.read, {
-      capacity: 32,
-      timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.millis(freshMs) : Duration.zero),
-    }),
-  );
-
-  observe(
-    id: string,
-    force: boolean,
-    read: Effect.Effect<DetailObservation, CrewError>,
-  ): Effect.Effect<DetailObservation, CrewError> {
-    const key = new DetailCacheKey(id, read);
-    return force ? Cache.refresh(this.cache, key) : Cache.get(this.cache, key);
-  }
-
-  clear(): Effect.Effect<void> {
-    return Cache.invalidateAll(this.cache);
+export class InboxDetailCacheService extends Context.Service<
+  InboxDetailCacheService,
+  InboxDetailCache
+>()("abracode/InboxDetailCache") {
+  static layer() {
+    return Layer.effect(
+      InboxDetailCacheService,
+      Effect.acquireRelease(
+        Effect.sync(() => new InboxDetailCache()),
+        (cache) => cache.clear,
+      ),
+    );
   }
 }

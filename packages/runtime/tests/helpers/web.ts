@@ -4,13 +4,22 @@ import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
 import { readReportDocument } from "@abracode/contracts/presentation/report-document";
 import { presentationHash } from "../../src/presentation/identity.ts";
 import { selectBindingRows } from "@abracode/contracts/web/bindings";
-import { Effect, Stream } from "effect";
+import { Effect, Stream, Schema } from "effect";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { CrewError } from "../../src/domain.ts";
 import { AbsolutePath, IssueId, SessionId, Timestamp } from "@abracode/contracts/identities";
 import type { WebBackend, WorkspaceSnapshot, SurfaceEntry } from "../../src/web/contracts.ts";
 import type { SubmissionReceipt } from "@abracode/contracts/web/http-api";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
+
+import {
+  WorkspaceSnapshotSchema,
+  TranscriptMessageSchema,
+} from "@abracode/contracts/web/workspace-wire";
+export const FixtureViewSchema = Schema.Struct({
+  ...WorkspaceSnapshotSchema.fields,
+  messages: Schema.Array(TranscriptMessageSchema),
+});
 
 /** Deterministic transport fixture; native authority is covered separately by E2E. */
 export class WorkspaceFixture implements WebBackend {
@@ -31,7 +40,9 @@ export class WorkspaceFixture implements WebBackend {
   stops = 0;
   reads = 0;
   replies = 0;
-  value: WorkspaceSnapshot = {
+  value: WorkspaceSnapshot & {
+    messages: readonly import("@abracode/contracts/web/contracts").TranscriptMessage[];
+  } = {
     session_id: this.sessionID,
     agent_id: "abra",
     at: "2026-11-15T10:00:00Z",
@@ -59,7 +70,16 @@ export class WorkspaceFixture implements WebBackend {
       ],
     },
   };
-  snapshot = Effect.sync(() => this.value);
+  snapshot = Effect.sync(() => {
+    const { messages: _messages, ...state } = this.value;
+    return state;
+  });
+  nativeSnapshot = () => ({
+    messages: this.value.messages,
+    busy: this.value.busy,
+    inbox: this.value.inbox,
+    completions: this.completionEvidence(),
+  });
   observe = (_scope: import("@abracode/contracts/web/changes").ChangeScope) =>
     Effect.suspend(() => this.snapshot);
   resolve = (target: ResourceSelection) => Effect.succeed(target);
@@ -203,8 +223,6 @@ export class WorkspaceFixture implements WebBackend {
     artifactDocument: this.unavailableRead,
     artifactSummary: this.unavailableRead,
   };
-  artifact = () =>
-    Effect.succeed({ html: "<!doctype html><p>Isolated report</p>", hash: "fixture", bytes: 42 });
   exportDocument: WebBackend["exportDocument"] = () =>
     Effect.fail(new CrewError("FIXTURE_EXPORT", "No export configured in this fixture"));
   readExport: WebBackend["readExport"] = () =>

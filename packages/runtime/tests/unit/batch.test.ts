@@ -161,6 +161,7 @@ test("a lost batch response returns the original mapping after controller restar
   await assert.rejects(run(f.controller.createWorkBatch(batch, sender)), { code: "RESPONSE_LOST" });
   const recorded = await run(f.work.list);
   const restarted = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,

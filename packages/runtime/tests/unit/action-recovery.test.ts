@@ -8,7 +8,6 @@ import { CrewError } from "../../src/domain.ts";
 import { type Delivery } from "../../src/git/delivery.ts";
 import { type PreparedWrite } from "../../src/git/action-contracts.ts";
 import { type CurrentAction, ActionSchema } from "@abracode/contracts/workflow/action-contracts";
-import { normalizeAction } from "../../src/workflow/action-state.ts";
 import { PRActions } from "../../src/workflow/pr-actions.ts";
 
 function command(action: CurrentAction): PreparedWrite["command"] {
@@ -109,11 +108,11 @@ for (const kind of ["ready", "reviewers", "reply", "rerun"] as const)
         );
       else await run(service.run(e, p, input, actor));
       const restored = (await run(f.records.execution(e.issue_id)))!;
-      const action = normalizeAction(restored.feedback!.actions[0], restored);
+      const action = restored.feedback!.actions[0];
       assert.equal(action.submission.stage, "admitted");
       assert.equal(action.status, failure === "interruption" ? "running" : "uncertain");
       assert.equal(sends, 1);
-      await run(f.records.saveControl(restored));
+      await run(f.records.commitControl(restored));
       const restoredDelivery: Delivery = {
         ...delivery,
         actions: {
@@ -138,59 +137,26 @@ for (const kind of ["ready", "reviewers", "reply", "rerun"] as const)
       assert.equal(restored.feedback!.actions[0].form_id, action.form_id);
     });
 
-test("legacy stages round-trip through records with old payloads, forms, receipts and duplicate reservations", async (t) => {
+test("stored flat action shapes are refused even at version one", async (t) => {
   const { f, e } = await deliveredPR(t);
-  const base = {
-    schema_version: 1 as const,
-    id: "legacy",
+  const key = Id.StorageKey.make(`execution/${e.issue_id}`);
+  const action = {
+    schema_version: 1,
+    id: "old",
     generation: 0,
-    head: e.delivered_commit!,
-    kind: "reply" as const,
-    status: "prepared" as const,
+    head: e.delivered_commit,
+    kind: "ready",
+    status: "prepared",
     created_at: 1,
-    updated_at: 2,
+    updated_at: 1,
     authority: "manual",
-    finding: Id.FindingId.make("old-finding"),
-    revision: "old-revision",
-    thread_id: "thread",
-    comment_id: 7,
-    body: "Exact original body",
-    result: "Source receipt",
-    form_id: Id.FormId.make("frm_old"),
-    session_id: Id.SessionId.make("ses_supervisor"),
-    authorized_at: 1,
   };
-  const originals = (["prepared", "running", "uncertain", "confirmed", "superseded"] as const).map(
-    (status) => ({ ...base, id: `old-${status}`, status }),
-  );
-  e.feedback = {
-    ...e.feedback!,
-    actions: [...originals, { ...originals[2], id: "historical-duplicate" }],
-  };
-  await run(f.records.save(e));
-  const restored = (await run(f.records.execution(e.issue_id)))!;
-  assert.deepEqual(restored.feedback!.actions, e.feedback.actions);
-  const normalized = restored.feedback!.actions.map((a) => normalizeAction(a, restored));
-  assert.deepEqual(
-    normalized.map((a) => a.submission.stage),
-    ["unsubmitted", "admitted", "admitted", "confirmed", "unsubmitted", "admitted"],
-  );
-  for (const [index, action] of normalized.entries()) {
-    assert.deepEqual(action.legacy, restored.feedback!.actions[index]);
-    assert.equal(action.form_id, base.form_id);
-    assert.equal(action.kind === "reply" && action.target.body, base.body);
-    assert.equal(action.id, restored.feedback!.actions[index].id);
-  }
-  restored.feedback = { ...restored.feedback!, actions: normalized };
-  await run(f.records.save(restored));
-  assert.deepEqual((await run(f.records.execution(e.issue_id)))!.feedback!.actions, normalized);
-  assert.throws(() => Schema.decodeUnknownSync(ActionSchema)({ ...base, schema_version: 3 }));
-  assert.throws(() => normalizeAction({ ...base, comment_id: undefined }, restored), /comment ID/);
-  assert.throws(() => normalizeAction({ ...base, kind: "rerun" }, restored), /incomplete attempt/);
-  assert.throws(
-    () => normalizeAction({ ...base, kind: "reviewers" }, restored),
-    /explicit targets/,
-  );
+  assert.equal(Schema.is(ActionSchema)(action), false);
+  const raw = { ...e, feedback: { ...e.feedback, actions: [action] } };
+  await run(f.records.store.set(key, raw));
+  await assert.rejects(run(f.records.execution(e.issue_id)));
+  assert.equal((await run(f.records.executionScan)).diagnostics[0].key, key);
+  assert.deepEqual(await run(f.records.store.get(key)), raw);
 });
 
 test("crash after durable admission but before process entry never resends", async (t) => {
@@ -230,19 +196,16 @@ test("crash after durable admission but before process entry never resends", asy
       action_id: prepared.id,
     }),
   );
-  assert.equal(
-    normalizeAction(restored.feedback!.actions[0], restored).submission.stage,
-    "admitted",
-  );
+  assert.equal(restored.feedback!.actions[0].submission.stage, "admitted");
   assert.equal(restored.feedback!.actions[0].status, "running");
 });
 
 test("unsupported stored action remains intact and unavailable with a record diagnostic", async (t) => {
   const { MemoryStore } = await import("../fixtures.ts");
   const { Records } = await import("../../src/storage/store.ts");
-  const { e } = await deliveredPR(t);
+  const { e, f } = await deliveredPR(t);
   const store = new MemoryStore();
-  const records = new Records(store);
+  const records = new Records(store, f.records.coordination);
   const key = Id.StorageKey.make(`execution/${e.issue_id}`);
   const raw = {
     ...e,
@@ -253,7 +216,7 @@ test("unsupported stored action remains intact and unavailable with a record dia
   };
   await run(store.set(key, raw));
   await assert.rejects(run(records.execution(e.issue_id)), /schema_version/);
-  const scan = await run(records.executionScan());
+  const scan = await run(records.executionScan);
   assert.equal(scan.values.length, 0);
   assert.equal(scan.diagnostics[0].key, key);
   assert.deepEqual(await run(store.get(key)), raw);
@@ -269,7 +232,7 @@ for (const possibleEffect of [true, false])
         rerequest_after_correction: false,
       },
     });
-    const legacy = {
+    const first = {
       schema_version: 1 as const,
       id: "first-reservation",
       generation: 0,
@@ -278,15 +241,22 @@ for (const possibleEffect of [true, false])
       status: "prepared" as const,
       created_at: 1,
       updated_at: 2,
-      authority: "execution-policy",
-      users: ["alice"],
-      teams: [],
+      authority: "execution-policy" as const,
+      repository_id: e.repository_id,
+      pr: e.pull_request_reference!,
+      target: { users: ["alice"], teams: [] },
+      submission: { stage: "unsubmitted" as const },
     };
     e.feedback = {
       ...e.feedback!,
       actions: [
-        legacy,
-        { ...legacy, id: "second-reservation", status: possibleEffect ? "uncertain" : "prepared" },
+        first,
+        {
+          ...first,
+          id: "second-reservation",
+          status: possibleEffect ? "uncertain" : "prepared",
+          submission: possibleEffect ? { stage: "admitted", at: 2 } : { stage: "unsubmitted" },
+        },
       ],
     };
     await run(f.records.save(e));

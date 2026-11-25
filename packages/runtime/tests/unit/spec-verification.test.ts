@@ -41,7 +41,7 @@ test("superseded verification cannot commit its receipt or launch Review", async
   f.records.commitOwned = (owner, fields) =>
     Effect.gen(function* () {
       const current = (yield* f.records.execution(owner.issue_id))!;
-      yield* f.records.saveControl(current);
+      yield* f.records.commitControl(current);
       return yield* commit(owner, fields);
     });
   const creates = f.runtime.creates;
@@ -128,6 +128,7 @@ test("intentional schema omissions and suggestions permit verified delivery and 
   );
   assert.equal(await run(f.git.fingerprint(e.worktree_directory!)), before);
   const c = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,

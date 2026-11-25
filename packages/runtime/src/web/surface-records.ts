@@ -5,7 +5,6 @@ import {
   SurfaceRecordSchema,
   type UnavailableSurfaceSchema,
 } from "@abracode/contracts/web/workspace-wire";
-import { normalizeSurface } from "@abracode/contracts/web/surfaces";
 import type { SurfaceRecord } from "./contracts.ts";
 
 /** A corrupt saved view is isolated; the original native record is never modified. */
@@ -14,13 +13,7 @@ export function loadSurfaceRecord(
   key: string,
 ): SurfaceRecord | typeof UnavailableSurfaceSchema.Type {
   try {
-    const record = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(value);
-    const surface = normalizeSurface(record.surface);
-    return Schema.decodeUnknownSync(SurfaceRecordSchema)({
-      ...record,
-      history: record.history ?? "latest-only",
-      surface,
-    });
+    return Schema.decodeUnknownSync(SurfaceRecordSchema)(value);
   } catch {
     return {
       surface_id: key.split("/").at(-1) ?? "unavailable",

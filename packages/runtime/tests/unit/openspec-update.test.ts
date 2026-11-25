@@ -48,6 +48,7 @@ test("controller refreshes instructions before Explore and retains its baseline 
   const p = (await run(f.records.project(e.repository_id)))!;
   assert.equal(await run(f.git.head(p.path)), e.base_commit);
   const restarted = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,

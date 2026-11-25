@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { deferred } from "./deferred.tsx";
+import { deferred } from "@abracode/presentation/deferred";
 
 export const AttentionPanel = deferred<
   ComponentProps<typeof import("./presentation/attention-panel.tsx").AttentionPanel>

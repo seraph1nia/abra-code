@@ -1,8 +1,8 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Review draft state is owned by Effect atoms backed by browser storage. */
-import { useCallback, useContext, useEffect, useMemo } from "react";
+import { useCallback, useContext, useEffect } from "react";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
-import { Atom, type AtomRegistry } from "effect/reactivity";
+import { Atom } from "effect/reactivity";
 import { Schema } from "effect";
+import { KeyValueStore } from "effect/persistence";
 import {
   ReviewAnswersSchema,
   ReviewSubmitSchema,
@@ -17,163 +17,111 @@ const DraftSchema = Schema.Struct({
   pending: Schema.optionalKey(ReviewSubmitSchema),
   receipt: Schema.optionalKey(ReviewReceiptSchema),
 });
-type Draft = typeof DraftSchema.Type & {
+type Retained = typeof DraftSchema.Type;
+type Draft = Retained & {
+  unsaved?: boolean;
   working?: boolean;
   error?: string;
   errors?: Record<string, string>;
 };
-type ReviewIdentity = {
-  review_id: string;
-  revision: number;
-  hash: string;
-};
-type DraftEntry = {
-  key: string;
-  identity: ReviewIdentity;
-  value: Draft;
-  persisted: string | undefined;
-  unsaved: boolean;
-  atom: Atom.Writable<Draft, Draft>;
-};
-
-const MAX_DRAFTS = 64;
-const registryCaches = new WeakMap<AtomRegistry.AtomRegistry, Map<string, DraftEntry>>();
-const activeCounts = new WeakMap<DraftEntry, number>();
-
-function restoreDraft(
-  key: string,
-  { review_id, revision, hash }: ReviewIdentity,
-): Draft | undefined {
-  const draft = readRetained(key, DraftSchema);
-  const matches = (value: NonNullable<Draft["receipt"] | Draft["pending"]>) =>
-    value.review_id === review_id && value.revision === revision && value.hash === hash;
-  if (
-    !draft ||
-    (draft.pending && !matches(draft.pending)) ||
-    (draft.receipt && !matches(draft.receipt))
-  )
-    return undefined;
-  return draft;
-}
-
-function getOrCreateEntry(
-  registry: AtomRegistry.AtomRegistry,
-  key: string,
-  identity: ReviewIdentity,
-): DraftEntry {
-  let cache = registryCaches.get(registry);
-  if (!cache) {
-    cache = new Map();
-    registryCaches.set(registry, cache);
-  }
-  const existing = cache.get(key);
-  if (existing) {
-    cache.delete(key);
-    cache.set(key, existing);
-    return existing;
-  }
-  const initial = restoreDraft(key, identity);
-  const entry: DraftEntry = {
+const storage = Atom.runtime(KeyValueStore.layerStorage(() => localStorage));
+const savedDraft = Atom.family((key: string) =>
+  Atom.kvs({
+    runtime: storage,
     key,
-    identity,
-    value: initial ?? { answers: {} },
-    persisted: JSON.stringify(initial),
-    unsaved: false,
-    atom: undefined as unknown as Atom.Writable<Draft, Draft>,
-  };
-  entry.atom = Atom.writable<Draft, Draft>(
-    () => entry.value,
-    (ctx, next) => {
-      entry.value = next;
-      ctx.setSelf(next);
-    },
-  );
-  cache.set(key, entry);
-  if (cache.size > MAX_DRAFTS) {
-    for (const [candidateKey, candidate] of cache) {
-      if ((activeCounts.get(candidate) ?? 0) === 0 && candidateKey !== key) {
-        cache.delete(candidateKey);
-        if (cache.size <= MAX_DRAFTS) break;
-      }
-    }
-  }
-  return entry;
-}
+    schema: DraftSchema,
+    defaultValue: () => ({ answers: {} }),
+    mode: "sync",
+  }),
+);
+const localDraft = Atom.family((_key: string) =>
+  Atom.make<Partial<Draft>>({}).pipe(Atom.setIdleTTL("30 seconds")),
+);
 
-function subscribeStorage(registry: AtomRegistry.AtomRegistry, entry: DraftEntry) {
-  activeCounts.set(entry, (activeCounts.get(entry) ?? 0) + 1);
-  refreshEntry(registry, entry);
-  const changed = (event: StorageEvent) => {
-    if (event.key === entry.key) refreshEntry(registry, entry);
-  };
-  window.addEventListener("storage", changed);
-  return () => {
-    activeCounts.set(entry, Math.max(0, (activeCounts.get(entry) ?? 1) - 1));
-    window.removeEventListener("storage", changed);
-  };
-}
-
-function refreshEntry(registry: AtomRegistry.AtomRegistry, entry: DraftEntry) {
-  if (entry.value.working) return;
-  const stored = restoreDraft(entry.key, entry.identity);
-  if (!stored) return;
-  const serialized = JSON.stringify(stored);
-  if (serialized === entry.persisted) return;
-  entry.persisted = serialized;
-  registry.set(entry.atom, entry.unsaved ? { ...stored, answers: entry.value.answers } : stored);
-}
-
-function updateEntry(
-  registry: AtomRegistry.AtomRegistry,
-  entry: DraftEntry,
-  next: Partial<Draft>,
-  required = false,
-): boolean {
-  const updated: Draft = { ...entry.value, ...next };
-  const retained = {
-    answers: updated.answers,
-    pending: updated.pending,
-    receipt: updated.receipt,
-  };
-  const saved = writeRetained(entry.key, retained);
-  if (saved) entry.persisted = JSON.stringify(retained);
-  entry.unsaved = !saved;
-  if (!saved && required)
-    updated.error =
-      "Cannot retain submission identity in browser storage. Your draft is preserved; enable storage before sending.";
-  registry.set(entry.atom, updated);
-  return saved;
-}
-
-export function useReviewDraft(record: ReviewRecord) {
+export function useReviewDraft({
+  session_id,
+  revision,
+  hash,
+  review: { review_id },
+}: ReviewRecord) {
   const registry = useContext(RegistryContext);
-  const {
-    session_id,
-    revision,
-    hash,
-    review: { review_id },
-  } = record;
   const key = `abra-review-${session_id}-${review_id}-${revision}-${hash}`;
-  const entry = useMemo(
-    () => getOrCreateEntry(registry, key, { review_id, revision, hash }),
-    [registry, key, review_id, revision, hash],
+  const saved = savedDraft(key);
+  const local = localDraft(key);
+  const valid = useCallback(
+    (value: Retained) => {
+      for (const identity of [value.pending, value.receipt])
+        if (
+          identity &&
+          (identity.review_id !== review_id ||
+            identity.revision !== revision ||
+            identity.hash !== hash)
+        )
+          return false;
+      return true;
+    },
+    [review_id, revision, hash],
   );
-  const state = useAtomValue(entry.atom);
-  useEffect(() => subscribeStorage(registry, entry), [registry, entry]);
+  const retained = useAtomValue(saved);
+  const state: Draft = {
+    ...(valid(retained) ? retained : { answers: {} }),
+    ...useAtomValue(local),
+  };
+  const current = useCallback(
+    (): Draft => ({
+      ...(valid(registry.get(saved)) ? registry.get(saved) : { answers: {} }),
+      ...registry.get(local),
+    }),
+    [registry, valid, saved, local],
+  );
+  useEffect(() => {
+    const restore = () => {
+      const previous = registry.get(local);
+      if (previous.working) return;
+      const value = readRetained(key, DraftSchema);
+      if (!value || !valid(value)) return;
+      // A storage event already changed the backing store. Writing it back
+      // would echo the event to other tabs and start duplicate receipt reads.
+      registry.set(
+        local,
+        previous.unsaved ? { ...value, answers: previous.answers, unsaved: true } : value,
+      );
+    };
+    const receive = (event: StorageEvent) => {
+      if (event.key === key) restore();
+    };
+    restore();
+    window.addEventListener("storage", receive);
+    return () => window.removeEventListener("storage", receive);
+  }, [registry, key, local, saved, valid]);
   const update = useCallback(
-    (next: Partial<Draft>, required = false) => updateEntry(registry, entry, next, required),
-    [registry, entry],
+    (next: Partial<Draft>, required = false) => {
+      const { answers, pending, receipt, ...ephemeral } = { ...current(), ...next };
+      const retained: Retained = {
+        answers,
+        ...(pending && { pending }),
+        ...(receipt && { receipt }),
+      };
+      // Admission needs confirmation of durable identity before issuing the request.
+      const persisted = writeRetained(key, retained);
+      if (persisted) registry.set(saved, retained);
+      if (!persisted && required)
+        ephemeral.error =
+          "Cannot retain submission identity in browser storage. Your draft is preserved; enable storage before sending.";
+      registry.set(local, { ...retained, ...ephemeral, unsaved: !persisted });
+      return persisted;
+    },
+    [registry, current, key, saved, local],
   );
   const change = useCallback(
     (id: string, answer: string | readonly string[]) => {
-      updateEntry(registry, entry, {
-        answers: { ...entry.value.answers, [id]: answer } as ReviewAnswers,
+      update({
+        answers: { ...current().answers, [id]: answer } as ReviewAnswers,
         errors: {},
         error: undefined,
       });
     },
-    [registry, entry],
+    [current, update],
   );
-  const current = useCallback(() => entry.value, [entry]);
   return { state, update, change, current };
 }

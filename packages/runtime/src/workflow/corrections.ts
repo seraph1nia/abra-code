@@ -100,7 +100,10 @@ export class Corrections {
         rounds: [...(e.rounds ?? []), round],
         retry_instructions: `Correction round ${ordinal}/${budget}: ${instructions}. Preserve accepted scope and all previous archived artifacts.`,
         ...(revision && {
-          openspec_change: ChangeName.make(`${e.openspec_change}-r${ordinal}`),
+          openspec_base_change: e.openspec_base_change ?? e.openspec_change,
+          openspec_change: ChangeName.make(
+            `${e.openspec_base_change ?? e.openspec_change}-r${ordinal}`,
+          ),
           planning_base_commit: head,
         }),
         current_phase: nextPhase,

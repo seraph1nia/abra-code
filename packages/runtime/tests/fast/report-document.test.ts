@@ -6,7 +6,6 @@ import {
   readReportDocument,
   validateReportDocument,
 } from "@abracode/contracts/presentation/report-document";
-import { catalogV2Id, catalogV3Id, catalogV4Id } from "@abracode/contracts/web/catalog";
 import { ReportArtifactReceiptSchema } from "../../src/reporting/report-contracts.ts";
 
 test("canonical JSON retains exact layout, captured values, source revision and pending evidence", () => {
@@ -20,13 +19,10 @@ test("canonical JSON retains exact layout, captured values, source revision and 
   assert.equal(document.data.snapshot_work?.[0].title, "Older snapshot task title");
 });
 
-test("v2 through v4 reports retain their original catalog and renderer identity", () => {
+test("retired catalog and renderer identities are unsupported", () => {
   const current = reportDocument();
-  for (const [id, version] of [
-    [catalogV2Id, 2],
-    [catalogV3Id, 3],
-    [catalogV4Id, 4],
-  ] as const) {
+  for (const version of [2, 3, 4, 5]) {
+    const id = `https://abracode.local/catalog/work/v${version}/catalog.json`;
     const document = {
       ...current,
       catalog_id: id,
@@ -37,7 +33,7 @@ test("v2 through v4 reports retain their original catalog and renderer identity"
         createSurface: { ...current.surface.createSurface, catalogId: id },
       },
     };
-    assert.deepEqual(readReportDocument(JSON.stringify(document)), { supported: true, document });
+    assert.equal(readReportDocument(JSON.stringify(document)).supported, false);
   }
 });
 
@@ -108,7 +104,7 @@ test("unknown format/catalog/renderer versions remain unmodified and individuall
   assert.throws(() => readReportDocument("{malformed"));
 });
 
-test("receipt union distinguishes immutable JSON from retained untagged HTML without changing old bytes", () => {
+test("report receipts require immutable JSON identity", () => {
   const document = reportDocument();
   const receipt = {
     schema_version: 1,
@@ -123,7 +119,7 @@ test("receipt union distinguishes immutable JSON from retained untagged HTML wit
     path: "/fixture/index.html",
     observed_at: document.captured_at,
   };
-  assert.deepEqual(Schema.decodeUnknownSync(ReportArtifactReceiptSchema)(receipt), receipt);
+  assert.throws(() => Schema.decodeUnknownSync(ReportArtifactReceiptSchema)(receipt));
   const json = {
     ...receipt,
     schema_version: 2,

@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Exercise pinned Effect services in unit tests. */
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { NodeFileSystem, NodePath } from "@effect/platform-node";

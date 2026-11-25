@@ -29,6 +29,9 @@ test("requested goals create associated WorkGraph work that can immediately star
   assert.equal(f.runtime.creates, 0);
   const e = await run(f.controller.start(created.issue.id, Id.SessionId.make("ses_supervisor")));
   assert.equal(e.current_phase, "exploring");
+  const persisted = await run(f.records.execution(created.issue.id));
+  assert.equal(persisted?.schema_version, 1);
+  assert.deepEqual(persisted?.effective_policy, e.effective_policy);
   assert.ok(e.worktree_directory && e.explore_session_id);
   assert.equal(
     (await run(f.controller.createWork(goal, Id.SessionId.make("ses_supervisor")))).issue.id,
@@ -122,6 +125,7 @@ test("a lost creation response recovers the authoritative issue across controlle
     /response lost/,
   );
   const restarted = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,

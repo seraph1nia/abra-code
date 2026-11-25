@@ -1,7 +1,6 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Typed HTTP query atoms for the mounted inbox. */
-import { useContext, useEffect, useState } from "react";
-import { RegistryContext, useAtomSet, useAtomValue } from "@effect/atom-react";
-import { AsyncResult } from "effect/reactivity";
+import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { Effect, Option } from "effect";
 import type {
   InboxQuery,
@@ -170,14 +169,7 @@ export function GithubInbox({
     });
   const setTarget = (item?: InboxTarget) =>
     navigate({ to: "/github", search: { collection: { github: query, item } } });
-  const [visible, setVisible] = useState(!document.hidden);
-  useEffect(() => {
-    const handle = () => setVisible(!document.hidden);
-    document.addEventListener("visibilitychange", handle);
-    return () => document.removeEventListener("visibilitychange", handle);
-  }, []);
-
-  if (visible && target) {
+  if (target) {
     return (
       <section className="collection-work" aria-label="GitHub inbox">
         <Item target={target} close={() => setTarget(undefined)} ask={ask} open={open} />
@@ -287,11 +279,35 @@ export function GithubInbox({
           </Button>
         </div>
       </details>
-      {visible && <Rows query={query} select={setTarget} page={(offset) => update({ offset })} />}
+      <Rows query={query} select={setTarget} page={(offset) => update({ offset })} />
     </section>
   );
 }
 
+const isVisible = () => !document.hidden;
+function subscribeVisibility(listener: () => void) {
+  document.addEventListener("visibilitychange", listener);
+  return () => document.removeEventListener("visibilitychange", listener);
+}
+const inboxQuery = (query: InboxQuery) =>
+  WorkspaceApi.query("work", "githubInbox", { query, timeToLive: "0 seconds" });
+const pollClock = Atom.family((frequent: boolean) =>
+  Atom.make(() => performance.now()).pipe(
+    Atom.withRefresh(frequent ? "1 second" : "5 minutes"),
+    Atom.setIdleTTL(0),
+    Atom.refreshOnWindowFocus,
+    Atom.setIdleTTL(0),
+  ),
+);
+function InboxRefresh({ frequent, refresh }: { frequent: boolean; refresh: () => void }) {
+  const tick = useAtomValue(pollClock(frequent));
+  const previous = useRef(tick);
+  useEffect(() => {
+    if (previous.current !== tick) refresh();
+    previous.current = tick;
+  }, [tick, refresh]);
+  return null;
+}
 function Rows({
   query,
   select,
@@ -301,27 +317,20 @@ function Rows({
   select: (target: InboxTarget) => void;
   page: (offset: number) => void;
 }) {
-  const atom = WorkspaceApi.query("work", "githubInbox", { query, timeToLive: "0 seconds" });
-  const registry = useContext(RegistryContext),
-    result = useAtomValue(atom);
-  const force = useAtomSet(forceRefresh, { mode: "promiseExit" });
-  const data = Option.getOrUndefined(AsyncResult.value(result));
+  const atom = inboxQuery(query);
+  const refresh = useAtomRefresh(atom);
+  const visible = useSyncExternalStore(subscribeVisibility, isVisible);
+  const current = useAtomValue(atom);
+  const data = Option.getOrUndefined(AsyncResult.value(current));
   const pending = data?.coverage.some(
     (c) => c.status === "loading" || (c.status === "stale" && !c.message),
   );
-  useEffect(() => {
-    if (result.waiting) return;
-    const timer = setTimeout(
-      () => {
-        if (!document.hidden) registry.refresh(atom);
-      },
-      pending ? 1000 : 300000,
-    );
-    return () => clearTimeout(timer);
-  }, [registry, atom, pending, result]);
+  const result = current;
+  const force = useAtomSet(forceRefresh, { mode: "promiseExit" });
   const offset = query.offset ?? 0;
   return (
     <>
+      {visible && <InboxRefresh frequent={pending === true} refresh={refresh} />}
       <div className="hub-meta-row">
         {data && data.coverage.length > 0 ? (
           <small className="muted">
@@ -337,7 +346,7 @@ function Rows({
           size="sm"
           onClick={async () => {
             await force(query);
-            registry.refresh(atom);
+            refresh();
           }}
         >
           <RefreshCw aria-hidden="true" />

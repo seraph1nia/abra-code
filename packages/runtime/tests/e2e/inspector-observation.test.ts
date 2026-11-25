@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Read-only typed query preservation. */
 import { Effect } from "effect";
 import { CrewError } from "../../src/domain.ts";
 import { Form } from "@opencode/schema/form";

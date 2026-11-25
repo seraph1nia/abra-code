@@ -60,3 +60,40 @@ export const PublicationPage = Schema.Struct({
   next: Schema.optional(Schema.String),
   incomplete: Schema.Boolean,
 });
+
+/** References use the native message and call as their attachment identity. Artifact
+ * revisions are content hashes; other publications use their retained revision. */
+export const ActivityReferenceSchema = Schema.Struct({
+  surface_id: Schema.String,
+  revision: Schema.Union([Schema.Int.check(Schema.isGreaterThan(0)), ContentHash]),
+  tool_call_id: Schema.optional(Schema.String),
+});
+export function presentationActivity(entry: typeof PresentationAttachmentSchema.Type) {
+  const target = entry.target;
+  const surface_id =
+    target.kind === "surface"
+      ? target.surface_id
+      : target.kind === "review"
+        ? target.review_id
+        : target.request_id;
+  const revision = target.kind === "artifact" ? target.hash : target.revision;
+  const content = {
+    surface_id,
+    revision,
+    ...(entry.tool_call_id && { tool_call_id: entry.tool_call_id }),
+  };
+  return {
+    id: JSON.stringify([
+      entry.session_id,
+      entry.message_id,
+      entry.tool_call_id,
+      target.kind,
+      target.kind === "artifact" ? target.issue_id : null,
+      surface_id,
+      revision,
+    ]),
+    role: "activity" as const,
+    activityType: `abracode.${target.kind}`,
+    content,
+  };
+}

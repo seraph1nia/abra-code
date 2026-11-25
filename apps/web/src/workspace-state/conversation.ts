@@ -21,6 +21,7 @@ function merge<A>(before: readonly A[], next: readonly A[], key: (row: A) => str
 export function retainConversation(
   previous: Conversation | undefined,
   snapshot: WorkspaceSnapshot,
+  recent: readonly TranscriptMessage[] = [],
 ): Conversation {
   const before: Conversation =
     previous?.session_id === snapshot.session_id
@@ -31,8 +32,8 @@ export function retainConversation(
           presentations: { entries: [], diagnostics: [], truncated: false },
         };
   const prior = new Map(before.messages.map((message) => [message.id, message]));
-  const currentIDs = new Set(snapshot.messages.map((message) => message.id));
-  const current = snapshot.messages.map((message) => {
+  const currentIDs = new Set(recent.map((message) => message.id));
+  const current = recent.map((message) => {
     const old = prior.get(message.id);
     return old && JSON.stringify(old) === JSON.stringify(message) ? old : message;
   });
@@ -58,4 +59,14 @@ export function retainConversation(
   return messages === before.messages && presentations === before.presentations
     ? before
     : { session_id: snapshot.session_id, messages, presentations };
+}
+
+export class ConversationRetention {
+  constructor(private committed: Conversation) {}
+  read() {
+    return this.committed;
+  }
+  commit(conversation: Conversation) {
+    this.committed = conversation;
+  }
 }

@@ -1,4 +1,5 @@
-import { test } from "vite-plus/test";
+import { test, vi } from "vite-plus/test";
+import { Effect } from "effect";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -86,4 +87,33 @@ test("independent processes preserve disjoint patched and owned writes and refus
         assert.equal(after[field], outcomes[index].status === "committed" ? field : before[field]);
     }
   }
+});
+
+test("admission retries an intervening commit and reuses its active index under the exclusive lock", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(planned(f));
+  const store = f.records.store;
+  const entries = store.entries.bind(store);
+  let scans = 0;
+  const spy = vi.spyOn(store, "entries").mockImplementation((prefix) =>
+    entries(prefix).pipe(
+      Effect.tap(() => {
+        assert.equal(f.locks.held, false);
+        if (prefix !== "execution/") return Effect.void;
+        return ++scans === 1
+          ? f.records.commitOwned(e, { retry_instructions: "peer update" })
+          : Effect.void;
+      }),
+    ),
+  );
+  t.onTestFinished(() => spy.mockRestore());
+  const current = await run(
+    f.records.withActiveIndex(() => f.records.withActiveIndex(() => f.records.capacityRecords())),
+  );
+  assert.equal(scans, 2);
+  assert.equal(
+    current.executions.find((entry) => entry.issue_id === e.issue_id)?.retry_instructions,
+    "peer update",
+  );
 });

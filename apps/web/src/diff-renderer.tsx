@@ -1,7 +1,7 @@
-import { destinationFor } from "./navigation.ts";
+import { useWorkspaceNavigate } from "./use-workspace-navigate.ts";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
+import { useSearch } from "@tanstack/react-router";
 import type { SelectedLineRange, FileDiffMetadata } from "@pierre/diffs";
 import { IssueId } from "@abracode/contracts/identities";
 import { AskAbra } from "./presentation/ask-abra.tsx";
@@ -26,8 +26,7 @@ export default function DiffRenderer({
   theme: "light" | "dark";
 }) {
   const search = useSearch({ from: "__root__" });
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const navigate = useNavigate({ from: destinationFor(pathname) ?? "/" });
+  const navigate = useWorkspaceNavigate();
   const routeKey = JSON.stringify([issue, search.file, search.scope]);
   const [edit, setEdit] = useState({ routeKey, text: search.file ?? "" });
   const filter = edit.routeKey === routeKey ? edit.text : (search.file ?? "");
@@ -205,6 +204,10 @@ function SelectableFile({
   options: NonNullable<React.ComponentProps<typeof FileDiff>["options"]>;
 }) {
   const [range, setRange] = useState<SelectedLineRange | null>(null);
+  const selectable = useMemo(
+    () => ({ ...options, enableLineSelection: true, onLineSelected: setRange }),
+    [options],
+  );
   const side = range?.side ?? (entry.additions ? "additions" : "deletions");
   const initial =
     (side === "additions" ? file.hunks[0]?.additionStart : file.hunks[0]?.deletionStart) ?? 1;
@@ -231,10 +234,7 @@ function SelectableFile({
     (!range?.endSide || range.endSide === side) && excerpt !== undefined && excerpt.length <= 8192;
   return (
     <section aria-label={file.name}>
-      <FileDiff
-        fileDiff={file}
-        options={{ ...options, enableLineSelection: true, onLineSelected: setRange }}
-      />
+      <FileDiff fileDiff={file} options={selectable} />
       <details open={range ? true : undefined}>
         <summary>Select lines in {file.name}</summary>
         <label>

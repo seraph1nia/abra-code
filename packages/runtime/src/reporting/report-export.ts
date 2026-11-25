@@ -27,18 +27,44 @@ export interface DocumentRenderer {
 
 export function validateDocumentHTML(html: string, document: ReportDocument) {
   validatePortableHTML(html);
-  const payload = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)].find((match) =>
-    /\bid=["']?abracode-report-document(?:["'\s]|$)/i.test(match[1]!),
-  );
+  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)];
+  const block = (name: string) => {
+    const matches = scripts.filter((match) =>
+      match[1]!.split(/\s+/).includes(`id="abracode-report-${name}"`),
+    );
+    ensure(matches.length === 1, "REPORT_HTML", `Missing or duplicate report ${name} block`);
+    const [attributes, raw] = matches[0]!.slice(1);
+    const json = canonicalJSON(embeddedReportJSON(raw!));
+    return { attributes: attributes!.split(/\s+/), json };
+  };
+  const payload = block("document");
   ensure(
-    payload && canonicalJSON(embeddedReportJSON(payload[2]!)) === canonicalJSON(document),
+    payload.json === canonicalJSON(document),
     "REPORT_HTML",
     "Export does not retain the exact canonical document",
   );
-  ensure(
-    payload[1]!.includes(reportHash(canonicalJSON(document))),
-    "REPORT_HTML",
-    "Export document digest is missing",
+  const diagrams = block("diagrams");
+  for (const item of [payload, diagrams]) {
+    ensure(
+      item.attributes.includes(`data-hash="${reportHash(item.json)}"`),
+      "REPORT_HTML",
+      "Export digest mismatch",
+    );
+  }
+}
+
+export function embedReportPayload(shell: string, document: string, diagrams: string) {
+  const block = (name: string, json: string) => {
+    const inert = json
+      .replaceAll("<", "\\u003c")
+      .replaceAll("\u2028", "\\u2028")
+      .replaceAll("\u2029", "\\u2029");
+    return `<script type="application/json" id="abracode-report-${name}" data-hash="${reportHash(json)}">${inert}</script>`;
+  };
+  const end = /<\/body\s*>\s*<\/html\s*>\s*$/i.exec(shell);
+  ensure(end, "REPORT_HTML", "Renderer shell is missing its closing body");
+  return (
+    shell.slice(0, end.index) + block("document", document) + block("diagrams", diagrams) + end[0]
   );
 }
 
@@ -119,13 +145,7 @@ export class ReactDocumentRenderer implements DocumentRenderer {
             .join("\n") ?? "Diagram preparation failed",
         );
         const prepared = batch?.assets ?? [];
-        const escaped = (value: string) =>
-          value
-            .replaceAll("<", "\\u003c")
-            .replaceAll("\u2028", "\\u2028")
-            .replaceAll("\u2029", "\\u2029");
-        const payload = `<script type="application/json" id="abracode-report-document" data-hash="${reportHash(json)}">${escaped(json)}</script><script type="application/json" id="abracode-report-diagrams">${escaped(JSON.stringify(prepared))}</script>`;
-        const output = shell.html.replace(/<\/body\s*>/i, () => payload + "</body>");
+        const output = embedReportPayload(shell.html, json, canonicalJSON(prepared));
         validateDocumentHTML(output, document);
         return output;
       }),

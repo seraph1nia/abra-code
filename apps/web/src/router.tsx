@@ -5,6 +5,7 @@ import {
   lazyRouteComponent,
   Link,
 } from "@tanstack/react-router";
+import { WorkspaceError } from "./workspace-error.tsx";
 import { WorkspaceShell } from "./workspace-shell.tsx";
 import { workspaceSearch } from "./navigation.ts";
 
@@ -61,6 +62,7 @@ export const router = createRouter({
     ]),
   ]),
   scrollRestoration: true,
+  defaultErrorComponent: WorkspaceError,
   defaultNotFoundComponent: () => (
     <main className="loading">
       <h1>Page not found</h1>

@@ -10,6 +10,3 @@ export type OperationResult<A = void> =
       owner: string;
     }
   | { category: "verification" | "recovery"; code: ErrorCode; reason: string };
-
-export type DeliveryWait =
-  typeof import("@abracode/contracts/workflow/operation-contracts").DeliveryWaitSchema.Type;

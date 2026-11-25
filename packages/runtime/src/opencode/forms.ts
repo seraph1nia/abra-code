@@ -68,7 +68,6 @@ export const requestDisposition = (
         title: question.slice(0, 512),
         metadata: {
           source: "abracode",
-          kind: "mcp-elicitation",
           decision_identity: identity,
           finishing_target: fingerprint,
         },
@@ -203,7 +202,7 @@ export const requestQuestion = (
         sessionID: session,
         id,
         title: question.slice(0, 512),
-        metadata: { source: "abracode", kind: "mcp-elicitation", decision_identity: identity },
+        metadata: { source: "abracode", decision_identity: identity },
         fields: [
           {
             key: "answer",
@@ -263,7 +262,7 @@ export const requestApproval = (
         sessionID,
         id,
         title,
-        metadata: { source: "abracode", kind: "mcp-elicitation", fingerprint },
+        metadata: { source: "abracode", fingerprint },
         fields: [
           {
             key: "authorize",

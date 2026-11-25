@@ -1,5 +1,4 @@
-import { catalogIds, workCatalogs } from "@abracode/contracts/web/catalog";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 HTTP server/router/API contracts. */
+import { workCatalogDocument } from "@abracode/contracts/web/catalog";
 import "./telemetry.ts";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -12,14 +11,13 @@ import {
   HttpServerRequest,
   HttpServerResponse,
 } from "effect/http";
-import { HttpApiBuilder, HttpApiSchema } from "effect/http-api";
 import { NodeHttpServer } from "@effect/platform-node";
 import { CopilotRuntime, createCopilotRuntimeHandler } from "@copilotkit/runtime/v2";
 import { CrewError } from "../domain.ts";
 import { AbraAgent, AbraRunner, WorkspaceFeed } from "./agent.ts";
-import { workspaceApi, WorkspaceError } from "@abracode/contracts/web/http-api";
+import { WorkspaceUnavailable } from "@abracode/contracts/web/http-api";
 import type { WebBackend } from "./contracts.ts";
-
+import { workspaceHandlers } from "./workspace-handlers.ts";
 const maximumBodyBytes = 262144;
 const securityHeaders = {
   "x-content-type-options": "nosniff",
@@ -28,273 +26,7 @@ const securityHeaders = {
   "content-security-policy":
     "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: http: data:; media-src 'self' https: http: data:; font-src 'self'; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
 };
-const resourceErrors = new Map([
-  [
-    "WEB_NATIVE_UPDATE_REQUIRED",
-    "The running AbraCode service does not support this workspace feature yet. Restart the service to load the updated plugin.",
-  ],
-  ["ISSUE_MISSING", "This task is no longer available. Select another task."],
-  ["EXECUTION_MISSING", "This task has not started, so execution evidence is unavailable."],
-  ["REPORT_UNAVAILABLE", "The retained report is currently unavailable."],
-  ["REPORT_MISSING", "The retained report could not be found."],
-  ["REPORT_IDENTITY", "The retained report does not match this task and cannot be displayed."],
-  ["REPORT_PATH", "The retained report cannot be read from its owned storage."],
-  ["REPORT_TAMPERED", "The retained report failed its integrity check and cannot be displayed."],
-]);
-const refused = (error: CrewError) =>
-  new WorkspaceError({
-    code: error.code,
-    message:
-      error.code === "REVIEW_STALE" ||
-      error.code === "REVIEW_REFUSED" ||
-      error.code.startsWith("SELECTION_") ||
-      error.code.startsWith("MEMORY_") ||
-      error.code.startsWith("MEMOS_")
-        ? error.message
-        : (resourceErrors.get(error.code) ??
-          "Request could not be confirmed. Refresh before retrying."),
-  });
 const json = (value: unknown, status: number) => HttpServerResponse.jsonUnsafe(value, { status });
-
-function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
-  const handle = <A>(operation: Effect.Effect<A, CrewError>) =>
-    operation.pipe(Effect.mapError(refused));
-  const workRead =
-    <I, A>(read: (query: I) => Effect.Effect<A, CrewError>) =>
-    ({ query }: { query: I }) =>
-      handle(read(query));
-  const operations = HttpApiBuilder.group(workspaceApi, "workspace", (handlers) =>
-    handlers
-      .handle("memorySearch", ({ query }) => handle(backend.memorySearch(query)))
-      .handle("memoryRead", ({ payload }) => handle(backend.memoryRead(payload)))
-      .handle("memoryEnabled", () => handle(backend.memoryEnabled))
-      .handle("memoryPublish", ({ payload }) => handle(backend.memoryPublish(payload)))
-      .handle("agents", () => handle(backend.agents))
-      .handle("repositories", () => handle(backend.repositories))
-      .handle("prepareDiagrams", ({ payload }) => handle(backend.prepareDiagrams(payload)))
-      .handle("publications", ({ query }) => handle(backend.publications(query)))
-      .handle("surface", ({ query }) =>
-        query.session_id !== undefined && query.session_id !== backend.sessionID
-          ? Effect.succeed({
-              surface_id: query.surface_id,
-              unavailable: "This view belongs to another Abra conversation.",
-            })
-          : handle(backend.surface(query.surface_id, query.revision)),
-      )
-      .handle("bootstrap", () => handle(feed.baseline))
-      .handle("history", ({ query }) => handle(backend.history(query.cursor)))
-      .handle("receipt", ({ query }) => handle(backend.receipt(query.request_id)))
-      .handle("submit", ({ payload }) =>
-        backend.submit(payload).pipe(
-          Effect.tap(() => feed.notify({ admissions: true, transcript: true })),
-          Effect.mapError(refused),
-        ),
-      )
-      .handle("replyForm", ({ payload }) =>
-        backend
-          .replyForm(payload)
-          .pipe(
-            Effect.andThen(feed.notify({ attention: true })),
-            Effect.as({ status: "answered" as const }),
-            Effect.mapError(refused),
-          ),
-      )
-      .handle("replyPermission", ({ payload }) =>
-        backend
-          .replyPermission(payload)
-          .pipe(
-            Effect.andThen(feed.notify({ attention: true })),
-            Effect.as({ status: "answered" as const }),
-            Effect.mapError(refused),
-          ),
-      ),
-  );
-  const work = HttpApiBuilder.group(workspaceApi, "work", (handlers) =>
-    handlers
-      .handle(
-        "evidenceSearch",
-        workRead((q) => backend.work.evidenceSearch(q)),
-      )
-      .handle(
-        "sessions",
-        workRead((q) => backend.work.sessions(q)),
-      )
-      .handle(
-        "thoughtWork",
-        workRead((q) => backend.work.thoughtWork(q)),
-      )
-      .handle(
-        "thoughtList",
-        workRead((q) => backend.work.thoughtList(q)),
-      )
-      .handle(
-        "thoughtDetail",
-        workRead((q) => backend.work.thoughtDetail(q)),
-      )
-      .handle(
-        "githubInbox",
-        workRead((q) => backend.work.githubInbox(q)),
-      )
-      .handle(
-        "githubItem",
-        workRead((q) => backend.work.githubItem(q)),
-      )
-      .handle(
-        "binding",
-        workRead((q) => backend.work.binding(q)),
-      )
-      .handle(
-        "find",
-        workRead((q) => backend.work.find(q)),
-      )
-      .handle("resolve", ({ payload }) => handle(backend.resolve(payload)))
-      .handle(
-        "evidence",
-        workRead((q) => backend.work.evidence(q)),
-      )
-      .handle(
-        "verification",
-        workRead((q) => backend.work.verification(q)),
-      )
-      .handle(
-        "overview",
-        workRead((q) => backend.work.overview(q)),
-      )
-      .handle(
-        "detail",
-        workRead((q) => backend.work.detail(q)),
-      )
-      .handle(
-        "document",
-        workRead((q) => backend.work.document(q)),
-      )
-      .handle(
-        "diff",
-        workRead((q) => backend.work.diff(q)),
-      )
-      .handle(
-        "worker",
-        workRead((q) => backend.work.worker(q)),
-      )
-      .handle(
-        "worker-history",
-        workRead((q) => backend.work["worker-history"](q)),
-      )
-      .handle(
-        "leads",
-        workRead((q) => backend.work.leads(q)),
-      )
-      .handle(
-        "messages",
-        workRead((q) => backend.work.messages(q)),
-      )
-      .handle(
-        "feedback",
-        workRead((q) => backend.work.feedback(q)),
-      )
-      .handle(
-        "report",
-        workRead((q) => backend.work.report(q)),
-      )
-      .handle(
-        "artifacts",
-        workRead((q) => backend.work.artifacts(q)),
-      )
-      .handle(
-        "artifactSummary",
-        workRead((q) => backend.work.artifactSummary(q)),
-      )
-      .handle(
-        "artifactDocument",
-        workRead((q) => backend.work.artifactDocument(q)),
-      )
-      .handle("exportDocument", ({ payload }) => handle(backend.exportDocument(payload)))
-      .handle("exportPreview", ({ query }) =>
-        backend.readExport(query).pipe(
-          Effect.map((a) => a.html),
-          Effect.mapError(refused),
-        ),
-      )
-      .handle("exportDownload", ({ query }) =>
-        backend.readExport(query).pipe(
-          Effect.map((a) =>
-            HttpApiSchema.withHeaders({
-              body: a.html,
-              headers: {
-                "content-disposition": `attachment; filename="abra-report-${query.request_id}.html"`,
-              },
-            }),
-          ),
-          Effect.mapError(refused),
-        ),
-      )
-      .handle("saveSurface", ({ payload }) =>
-        backend.saveSurface(payload).pipe(
-          Effect.tap(() => feed.notify({ presentations: true })),
-          Effect.mapError(refused),
-        ),
-      )
-      .handle("downloadDocument", ({ query }) =>
-        backend.work.artifactDocument(query).pipe(
-          Effect.map((artifact) =>
-            HttpApiSchema.withHeaders({
-              body: artifact.json,
-              headers: {
-                "content-disposition": `attachment; filename="abra-report-${query.request_id}.json"`,
-              },
-            }),
-          ),
-          Effect.mapError(refused),
-        ),
-      )
-      .handle("preview", ({ query }) =>
-        backend.artifact(query.issue_id, query.request_id).pipe(
-          Effect.map((a) => a.html),
-          Effect.mapError(refused),
-        ),
-      )
-      .handle("download", ({ query }) =>
-        backend.artifact(query.issue_id, query.request_id).pipe(
-          Effect.map((a) =>
-            HttpApiSchema.withHeaders({
-              body: a.html,
-              headers: {
-                "content-disposition": `attachment; filename="abra-report-${query.request_id}.html"`,
-              },
-            }),
-          ),
-          Effect.mapError(refused),
-        ),
-      )
-      .handle(
-        "decisions",
-        workRead((q) => backend.work.decisions(q)),
-      ),
-  );
-  const reviewUnavailable = () =>
-    Effect.fail(new CrewError("REVIEW_UNAVAILABLE", "Reviews are unavailable"));
-  const reviews = HttpApiBuilder.group(workspaceApi, "reviews", (handlers) =>
-    handlers
-      .handle("reviewReceipt", ({ query }) =>
-        handle(backend.reviews?.receipt(query) ?? reviewUnavailable()),
-      )
-      .handle("reviewList", ({ query }) =>
-        handle(backend.reviews?.list(query.issue_id) ?? reviewUnavailable()),
-      )
-      .handle("review", ({ query }) => handle(backend.reviews?.read(query) ?? reviewUnavailable()))
-      .handle("reviewAsset", ({ query }) =>
-        handle(backend.reviews?.asset(query) ?? reviewUnavailable()),
-      )
-      .handle("reviewSubmit", ({ payload }) =>
-        handle(backend.reviews?.submit(payload) ?? reviewUnavailable()).pipe(
-          Effect.tap(() => feed.notify({ presentations: true, admissions: true })),
-        ),
-      ),
-  );
-  return HttpApiBuilder.layer(workspaceApi).pipe(
-    Layer.provide(Layer.mergeAll(operations, work, reviews)),
-  );
-}
 
 export interface WorkspaceServerOptions {
   port: number;
@@ -372,7 +104,7 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
       const webRequest = yield* HttpServerRequest.toWeb(request, { signal: abort.signal }).pipe(
         Effect.mapError(
           () =>
-            new WorkspaceError({
+            new WorkspaceUnavailable({
               code: "COPILOT_TRANSPORT",
               message: "Abra observation unavailable; reconnect without resubmitting",
             }),
@@ -381,7 +113,7 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
       const response = yield* Effect.tryPromise({
         try: () => copilot(webRequest),
         catch: () =>
-          new WorkspaceError({
+          new WorkspaceUnavailable({
             code: "COPILOT_TRANSPORT",
             message: "Abra observation unavailable; reconnect without resubmitting",
           }),
@@ -411,12 +143,10 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
     });
     const routes = Layer.mergeAll(
       workspaceHandlers(options.backend, feed),
-      ...catalogIds.map((id, index) =>
-        HttpRouter.add(
-          "GET",
-          `/catalog/work-v${index + 1}.json`,
-          Effect.sync(() => json(workCatalogs[id], 200)),
-        ),
+      HttpRouter.add(
+        "GET",
+        "/catalog/work/v1/catalog.json",
+        Effect.sync(() => json(workCatalogDocument, 200)),
       ),
       HttpRouter.add(
         "GET",
@@ -426,7 +156,6 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
         }),
       ),
       HttpRouter.add("GET", "/api/copilotkit/info", copilotRoute),
-      HttpRouter.add("POST", "/api/copilotkit/info", copilotRoute),
       HttpRouter.add("POST", "/api/copilotkit/agent/abra/run", copilotRoute),
       HttpRouter.add("POST", "/api/copilotkit/agent/abra/connect", copilotRoute),
       HttpRouter.add("POST", "/api/copilotkit/agent/abra/stop/:threadId", copilotRoute),
@@ -476,13 +205,11 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
         return json({ error: "Invalid request path" }, 400);
       return yield* app;
     }).pipe(
-      Effect.catchTag("WorkspaceError", (error) => Effect.succeed(json(error, 409))),
+      Effect.catchTag("WorkspaceUnavailable", (error) => Effect.succeed(json(error, 503))),
       Effect.flatMap((response) =>
         Effect.gen(function* () {
           const request = yield* HttpServerRequest.HttpServerRequest;
-          const preview = ["/api/report/preview", "/api/report/export/preview"].includes(
-            request.url.split("?")[0]!,
-          );
+          const preview = request.url.split("?")[0] === "/api/report/export/preview";
           return HttpServerResponse.setHeaders(response, {
             ...securityHeaders,
             ...(response.status === 200 &&

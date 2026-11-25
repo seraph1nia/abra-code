@@ -1,8 +1,8 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Scoped browser observation and typed HTTP atoms. */
+import { useWorkspaceNavigate } from "../use-workspace-navigate.ts";
+import { useWorkspaceCall } from "../data.ts";
 import { useCallback, useLayoutEffect, useRef } from "react";
-import { useAtomSet } from "@effect/atom-react";
-import { useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
-import { toast } from "sonner";
+import { useRouter } from "@tanstack/react-router";
+import { toast } from "../notifications.tsx";
 import { Exit } from "effect";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import { resolveResource } from "../data.ts";
@@ -16,9 +16,8 @@ import {
 } from "../navigation.ts";
 export function useWorkspaceNavigation(route: WorkspaceSearch, beforeNavigate: () => void) {
   const router = useRouter();
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const navigate = useNavigate({ from: destinationFor(pathname) ?? "/" });
-  const resolve = useAtomSet(resolveResource, { mode: "promiseExit" });
+  const navigate = useWorkspaceNavigate();
+  const resolve = useWorkspaceCall(resolveResource);
   const selectionRequest = useRef(0);
   const inspectorOrigin = useRef<HTMLElement | null>(null);
   const returnInspectorFocus = () => {
@@ -63,13 +62,16 @@ export function useWorkspaceNavigation(route: WorkspaceSearch, beforeNavigate: (
         beforeNavigate();
         void navigate({
           to: destinationFor(router.state.location.pathname) ?? "/",
-          search: { collection: route.collection, ...searchForResource(result.value) },
+          search: (previous: WorkspaceSearch) => ({
+            collection: previous.collection,
+            ...searchForResource(result.value),
+          }),
           resetScroll: false,
         });
       }
       void openTarget();
     },
-    [resolve, navigate, router, beforeNavigate, route.collection],
+    [resolve, navigate, router, beforeNavigate],
   );
   const openSurface = useCallback(
     (surface: NonNullable<WorkspaceSearch["surface"]>) => {

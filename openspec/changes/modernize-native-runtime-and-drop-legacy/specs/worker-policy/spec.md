@@ -56,6 +56,11 @@ Explore SHALL edit only its assigned planning change and SHALL have no delegatio
 - **WHEN** a worker assigned to a different issue or a project lead invokes plan/merge approval or obligation resolution
 - **THEN** the controller rejects the caller before mutating approval or decision state
 
+#### Scenario: An enabled project lead answers a routine question in its scope
+
+- **WHEN** the current project lead uses its answer action for an open, supervisor-owned routine question in a registered repository
+- **THEN** the controller verifies the lead registration, repository scope and control generation, records the answer, and preserves the central Supervisor’s authority over finishing and approval decisions
+
 #### Scenario: External-custody worktree was removed on disk
 
 - **WHEN** a shell command runs in an unrelated directory while an execution with external custody references a missing worktree path

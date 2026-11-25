@@ -6,7 +6,6 @@ import {
 export {
   EvidenceReferenceSchema,
   VisualRenderRequestSchema,
-  VisualReceiptSchema,
   ReportDocumentReceiptSchema,
   ReportArtifactReceiptSchema,
   VisualBuildSummarySchema,

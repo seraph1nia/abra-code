@@ -1,9 +1,8 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Shared typed HTTP atom result presentation. */
 import type { ReactNode } from "react";
 import { RefreshCw } from "@abracode/presentation/icons";
 import { PresentationRefreshContext } from "@abracode/presentation/diagram-resource";
-import { useMemo } from "react";
-import { createRefreshGroup, useCanvasRead } from "./canvas-refresh.tsx";
+import { useState, useMemo } from "react";
+import { useCanvasRead } from "./canvas-refresh.tsx";
 import { useAtomValue } from "@effect/atom-react";
 import { requestError } from "./request-error.ts";
 import { Option } from "effect";
@@ -24,30 +23,42 @@ export function RequestState<A, E>({
   showRefresh = true,
   live = true,
   unavailable,
+  keepPrevious = false,
 }: {
   query: Atom.Atom<AsyncResult.AsyncResult<A, E>>;
   children: (value: A) => ReactNode;
   showRefresh?: boolean;
   live?: boolean;
   unavailable?: ReactNode;
+  keepPrevious?: boolean;
 }) {
   const result = useAtomValue(query);
-  const { group, refresh } = useCanvasRead(query, live);
-  const value = AsyncResult.value(result);
+  const { group, refresh, subscribe } = useCanvasRead(query, live);
+  const observed = AsyncResult.value(result);
+  const [prior, setPrior] = useState<Option.Option<A>>(Option.none);
+  if (
+    keepPrevious &&
+    Option.isSome(observed) &&
+    (Option.isNone(prior) || prior.value !== observed.value)
+  )
+    setPrior(observed);
+  const value = keepPrevious && Option.isNone(observed) ? prior : observed;
   const derived = useMemo(() => {
-    const local = createRefreshGroup();
+    const readers = new Set<() => void>();
     return {
       subscribe: (retry: () => void) => {
-        const removeLocal = local.register(retry, retry);
-        const removeCanvas = live ? group?.register(retry, retry) : undefined;
+        readers.add(retry);
+        const remove = subscribe(retry);
         return () => {
-          removeLocal();
-          removeCanvas?.();
+          readers.delete(retry);
+          remove();
         };
       },
-      refresh: local.refresh,
+      refresh: () => {
+        for (const retry of readers) retry();
+      },
     };
-  }, [group, live]);
+  }, [subscribe]);
   const refreshEvidence = () => {
     refresh();
     derived.refresh();

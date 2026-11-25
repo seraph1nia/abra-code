@@ -18,11 +18,6 @@ function chart<
   return { name, props, description, decode: (input: unknown) => ({ name, props: decode(input) }) };
 }
 
-export const v3BarChart = chart(
-  "BarChart",
-  { ...chartFields, orientation },
-  "Compare uniquely labeled values with vertical (default) or horizontal bars.",
-);
 export const chartComponents = {
   LineChart: chart(
     "LineChart",

@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 HTTP client service; verified by integration tests. */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { NodeHttpClient } from "@effect/platform-node";
@@ -79,7 +78,16 @@ export class MemosTransport {
             const onAbort = () => controller.abort();
             signal.addEventListener("abort", onAbort, { once: true });
             try {
-              await client.connect(transport);
+              try {
+                await client.connect(transport);
+              } catch (error) {
+                if (op === "create")
+                  throw new CrewError(
+                    "MEMOS_CREATE_UNSUBMITTED",
+                    "Could not connect to submit the memo.",
+                  );
+                throw error;
+              }
               const result = await client.callTool(
                 { name: tools[op], arguments: args },
                 undefined,
@@ -89,6 +97,8 @@ export class MemosTransport {
                 const first = Array.isArray(result.content) ? result.content[0] : undefined;
                 const status =
                   first?.type === "text" ? Number(/^([0-9]{3})\b/u.exec(first.text)?.[1]) : 0;
+                if (op === "create" && [400, 401, 403, 404, 422, 429].includes(status))
+                  throw new CrewError("MEMOS_CREATE_REFUSED", "Memos refused the create request.");
                 throw responseError(status);
               }
               return result.structuredContent;
@@ -110,7 +120,7 @@ function responseError(status: number) {
   if (status === 401)
     return new CrewError("MEMOS_AUTH", "Memos authentication failed. Check the notebook token.");
   if (status === 403 || status === 404)
-    return new CrewError("MEMOS_MISSING", "The selected thought is unavailable.");
+    return new CrewError("MEMOS_MISSING", "The selected thought is unavailable.", status);
   if (status === 409)
     return new CrewError("MEMOS_CONFLICT", "The memo identity is already in use.");
   return new CrewError(

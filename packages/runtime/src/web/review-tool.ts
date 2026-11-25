@@ -1,6 +1,4 @@
 import { Effect, Schema } from "effect";
-import { join } from "node:path";
-import type { Context } from "@opencode/plugin/effect/plugin";
 import {
   ReviewSurfaceSourceSchema,
   ReviewPlanSourceSchema,
@@ -12,22 +10,18 @@ import {
   ReviewViewSchema,
   type ReviewSource,
 } from "@abracode/contracts/web/reviews";
-import { AbsolutePath, ContentHash, type SessionId } from "@abracode/contracts/identities";
+import { ContentHash, type SessionId } from "@abracode/contracts/identities";
 import { CrewError } from "../domain.ts";
 import { defineTool } from "../opencode/tool-definition.ts";
 import type { Controller } from "../workflow/controller.ts";
-import { NativeStore } from "../storage/store.ts";
-import { FileLocks } from "../storage/lock.ts";
+import type { Store } from "../storage/store.ts";
+import type { Locks } from "../storage/lock.ts";
 import { PresentationAssociations } from "../presentation/associations.ts";
 import { SurfacePublications } from "./surface-publications.ts";
 import { presentationHash } from "../presentation/identity.ts";
 import { Reviews, type ReviewSourceReader } from "./reviews.ts";
 
-export function nativeReviews(ctx: Context, controller: Controller) {
-  const store = new NativeStore(ctx.storage);
-  const locks = new FileLocks(
-    AbsolutePath.make(join(controller.queries.settings.home, ".abracode/locks")),
-  );
+export function nativeReviews(controller: Controller, store: Store, locks: Locks) {
   const associations = new PresentationAssociations(store, locks);
   const surfaces = new SurfacePublications(store, locks, associations);
   const source: ReviewSourceReader = (session, selection) =>
@@ -99,7 +93,7 @@ export function nativeReviews(ctx: Context, controller: Controller) {
         hash: ContentHash.make(presentationHash(text)),
       };
     });
-  return { reviews, resolveSource };
+  return { reviews, surfaces, resolveSource };
 }
 
 const sourceQuery = Schema.Union([

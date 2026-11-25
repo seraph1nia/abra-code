@@ -63,7 +63,7 @@ export function observeCheckpoint(
   form: string,
 ) {
   return Effect.gen(function* () {
-    const executions = yield* deps.records.executions();
+    const executions = yield* deps.records.executions;
     const matches = yield* Effect.forEach(
       executions,
       (e) =>

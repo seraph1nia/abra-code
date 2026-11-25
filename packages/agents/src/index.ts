@@ -1,4 +1,4 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Injected pinned Effect 4.1.4 filesystem/path services. */
+import { strictInput, toToolError } from "./tool-boundary.ts";
 import { Context, Effect, FileSystem, Layer, Path, Schema, Scope } from "effect";
 import { Agent as NativeAgent } from "@opencode/schema/agent";
 import { Tool } from "@opencode/schema/tool";
@@ -87,7 +87,7 @@ export const customTool = <I, O, E>(options: {
       editor.add({
         name: options.id,
         description: options.description,
-        input: options.input,
+        input: strictInput(options.input),
         output: options.output,
         options: { permission: "read", codemode: false },
         execute: (input, context) =>
@@ -106,15 +106,16 @@ export const customTool = <I, O, E>(options: {
                     : typeof error === "string"
                       ? error
                       : undefined;
-              return new Tool.Error({
-                message: detail
+              return toToolError(
+                "AGENT_TOOL",
+                detail
                   ? `Custom tool ${options.id} failed: ${detail}`
                   : `Custom tool ${options.id} failed`,
-                metadata: {
-                  ...(error instanceof Tool.Error ? error.metadata : undefined),
-                  code: "AGENT_TOOL",
-                },
-              });
+                undefined,
+                error instanceof Tool.Error && typeof error.metadata?.reason === "string"
+                  ? error.metadata.reason
+                  : undefined,
+              );
             }),
           ),
       }),
@@ -399,12 +400,12 @@ export const makeAgent = <R>(definition: AgentDefinition<R>) =>
       const fragments = definition.context
         ? yield* Effect.scoped(
             Effect.gen(function* () {
-              const scope = yield* Scope.Scope;
+              const caller = yield* Effect.context<Scope.Scope>();
               return yield* Effect.suspend(() =>
                 definition.context!(frozenInput({ ...input, ...facts })),
               ).pipe(
                 Effect.mapError(() => fail("PROVIDER", "Context provider failed")),
-                Effect.provide(Context.add(environment, Scope.Scope, scope)),
+                Effect.provide(Context.merge(environment, caller)),
               );
             }),
           )

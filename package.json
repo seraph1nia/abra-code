@@ -38,6 +38,7 @@
     "service:start": "tsx scripts/cli.ts serve",
     "config:validate": "tsx scripts/cli.ts config validate",
     "config:show": "tsx scripts/cli.ts config show",
+    "express:signatures": "tsx packages/runtime/scripts/express-signatures.ts",
     "config:schema": "tsx scripts/cli.ts config schema",
     "licenses:refresh": "node scripts/licensing/refresh.mjs",
     "licenses:check": "node --test scripts/licensing/check.test.mjs && node scripts/licensing/check.mjs",
@@ -62,8 +63,7 @@
     "test:extended": "vp test run --project extended"
   },
   "dependencies": {
-    "@abracode/runtime": "workspace:*",
-    "zod": "3.25.76"
+    "@abracode/runtime": "workspace:*"
   },
   "devDependencies": {
     "@alibaba-group/open-code-review": "1.13.13",

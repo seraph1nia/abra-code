@@ -1,3 +1,4 @@
+import { nativeReviews } from "../../src/web/review-tool.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import assert from "node:assert/strict";
 import { test, type TestContext } from "vite-plus/test";
@@ -94,6 +95,25 @@ test("lead inspection shows pending shutdown before disabled without changing au
   assert.deepEqual(
     { prompts: f.runtime.prompts, creates: f.runtime.creates, forms: f.runtime.forms.size },
     effects,
+  );
+});
+
+test("a lead request returns a project error when its registered repository disappears", async (t) => {
+  const { f, lead } = await prepare();
+  t.onTestFinished(() => run(f.close()));
+  f.records.project = () => Effect.undefined;
+  await assert.rejects(
+    run(
+      f.controller.lead().control(parent, {
+        action: "message",
+        id: leadID,
+        revision: lead.revision,
+        issue_id: issue,
+        request_id: Id.RequestId.make("missing-project"),
+        body: "Check the repository",
+      }),
+    ),
+    { code: "PROJECT_MISSING" },
   );
 });
 
@@ -223,6 +243,7 @@ for (const admitted of [false, true]) {
     const prompts = f.runtime.prompts;
     f.runtime.prompt = prompt;
     const restarted = createWorkflow(
+      f.catalog,
       f.config,
       f.records,
       f.work,
@@ -319,6 +340,7 @@ test("lead registration persists session intent before creation and retries the 
   const intent = (await run(readLeads(f.records)))[0]!;
   assert.equal(intent.provisioned, false);
   const restarted = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -332,7 +354,10 @@ test("lead registration persists session intent before creation and retries the 
   const retained = (await run(readLeads(f.records)))[0]!;
   assert.equal(retained.session_id, intent.session_id);
   assert.equal(retained.provisioned, true);
-  assert.equal(f.runtime.sessions.size, 2);
+  assert.equal(
+    [...f.runtime.sessions.values()].filter((s) => s.agent === "project-lead").length,
+    1,
+  );
   assert.equal(retained.revision, 1);
   assert.throws(() =>
     Schema.decodeSync(LeadRecordSchema)({
@@ -614,7 +639,16 @@ test("lead tools deny native writes, raw delegation, forged Abra tools and human
     },
     shell: { hook: () => Effect.void },
   } as unknown as Context;
-  await run(registerTools(ctx, f.controller, f.onboarding, true, f.setup));
+  await run(
+    registerTools(
+      ctx,
+      f.controller,
+      f.onboarding,
+      true,
+      f.setup,
+      nativeReviews(f.controller, f.records.store, f.locks),
+    ),
+  );
   await run(installGuards(ctx, f.controller));
   for (const name of [
     "work_start",
@@ -690,6 +724,31 @@ test("lead tools deny native writes, raw delegation, forged Abra tools and human
       }),
     ),
     /supervisor-owned/,
+  );
+  const foreign = Id.IssueId.make("another-worker");
+  f.seed.named(foreign, Id.RepositoryId.make("api"));
+  const other = await run(f.controller.start(foreign, parent));
+  for (const [caller, code] of [
+    [lead.session_id, "ABRA_REQUIRED"],
+    [other.explore_session_id!, "WORKER_FORBIDDEN"],
+  ] as const) {
+    await assert.rejects(
+      run(
+        f.controller.decision(
+          issue,
+          Id.ObligationKey.make("supervisor"),
+          e.control_generation,
+          caller,
+          "answer",
+          "Bypass",
+        ),
+      ),
+      { code },
+    );
+  }
+  assert.equal(
+    (await run(f.controller.get(issue))).decisions!.filter((d) => d.status === "answered").length,
+    0,
   );
   await run(
     f.controller.lead().action(lead.session_id, {
@@ -846,4 +905,22 @@ test("lead recall checks the live registration and native location before memory
   );
   await assert.rejects(run(f.controller.lead().action(lead.session_id, query)), /current/);
   assert.deepEqual(calls, [repo]);
+});
+
+test("a newly registered lead skips completed work predating its routing scope", async (t) => {
+  const { f, lead } = await prepare();
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(f.controller.start(issue, parent));
+  await run(
+    f.records.store.set(Id.StorageKey.make(`execution/${issue}`), {
+      ...e,
+      active_role: undefined,
+      current_phase: "completed",
+      updated_at: "2020-01-01T00:00:00.000Z",
+    }),
+  );
+  const prompts = f.runtime.prompts;
+  await run(f.controller.lead().scan());
+  assert.equal(f.runtime.prompts, prompts);
+  assert.equal((await run(readLeads(f.records))).find((r) => r.id === lead.id)?.requests.length, 0);
 });

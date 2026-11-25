@@ -9,48 +9,7 @@ import {
   ErrorCode,
 } from "../identities.ts";
 const text = NonEmpty.check(Schema.isMaxLength(8192));
-export const LegacyActionSchema = Schema.Struct({
-  form_id: Schema.optional(FormId),
-  session_id: Schema.optional(SessionId),
-  authorized_at: Schema.optional(Count),
-  schema_version: Schema.Literal(1),
-  id: NonEmpty,
-  generation: Count,
-  head: Commit,
-  kind: Schema.Literals(["ready", "reviewers", "reply", "resolve", "rerun"]),
-  status: Schema.Literals(["prepared", "running", "uncertain", "confirmed", "superseded"]),
-  created_at: Count,
-  updated_at: Count,
-  authority: NonEmpty,
-  finding: Schema.optional(FindingId),
-  revision: Schema.optional(NonEmpty),
-  thread_id: Schema.optional(NonEmpty),
-  comment_id: Schema.optional(Positive),
-  body: Schema.optional(text),
-  users: Schema.optional(Schema.Array(NonEmpty)),
-  teams: Schema.optional(Schema.Array(NonEmpty)),
-  run_id: Schema.optional(Positive),
-  run_attempt: Schema.optional(Positive),
-  workflow: Schema.optional(NonEmpty),
-  result: Schema.optional(Schema.String.check(Schema.isMaxLength(8192))),
-}).check(
-  Schema.makeFilter((a) => {
-    if (a.status === "confirmed" && !a.result)
-      return "Confirmed action needs source receipt evidence";
-    if (a.updated_at < a.created_at) return "Action update precedes admission";
-    if (a.kind === "rerun" && !(a.run_id && a.run_attempt && a.finding && a.revision && a.workflow))
-      return "Rerun needs its source attempt";
-    if (["reply", "resolve"].includes(a.kind) && !(a.finding && a.revision))
-      return "Discussion action needs a source revision";
-    if (a.kind === "reply" && !a.body) return "Reply needs prepared content";
-    if (a.kind === "resolve" && !a.thread_id) return "Resolution needs a thread";
-    if (!!a.form_id !== !!a.session_id) return "Approval form needs its session";
-    return true;
-  }),
-);
-export type LegacyAction = typeof LegacyActionSchema.Type;
-
-export const ActionKind = LegacyActionSchema.fields.kind;
+export const ActionKind = Schema.Literals(["ready", "reviewers", "reply", "resolve", "rerun"]);
 export const FindingRevision = Schema.Struct({ id: FindingId, revision: NonEmpty });
 export type FindingRevision = typeof FindingRevision.Type;
 const revisions = Schema.Array(FindingRevision).check(
@@ -62,7 +21,7 @@ const destination = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("thread"), thread_id: NonEmpty, comment_id: Positive }),
 ]);
 const fields = {
-  schema_version: Schema.Literal(2),
+  schema_version: Schema.Literal(1),
   id: NonEmpty,
   generation: Count,
   repository_id: RepositoryId,
@@ -97,7 +56,6 @@ const fields = {
       next_check_at: Count,
     }),
   ),
-  legacy: Schema.optional(LegacyActionSchema),
 };
 export const CurrentActionSchema = Schema.Union([
   Schema.Struct({ ...fields, kind: Schema.Literal("ready"), target: Schema.Struct({}) }),
@@ -149,22 +107,18 @@ export const CurrentActionSchema = Schema.Union([
       (a.submission.at < a.created_at || a.submission.at > a.updated_at)
     )
       return "Submission time contradicts retained lifecycle";
-    if (a.legacy && (a.legacy.id !== a.id || a.legacy.head !== a.head || a.legacy.kind !== a.kind))
-      return "Legacy action identity changed";
     return true;
   }),
 );
-export const ActionSchema = Schema.Union([LegacyActionSchema, CurrentActionSchema]);
+export const ActionSchema = CurrentActionSchema;
 export type PRAction = typeof ActionSchema.Type;
 export type CurrentAction = typeof CurrentActionSchema.Type;
 export type ActionTarget = Pick<CurrentAction, "kind" | "target" | "repository_id" | "pr" | "head">;
 
 export function replyBody(a: PRAction) {
-  return a.kind === "reply" ? (a.schema_version === 1 ? a.body : a.target.body) : undefined;
+  return a.kind === "reply" ? a.target.body : undefined;
 }
 export function actionFindings(a: PRAction): readonly { id: FindingId; revision: string }[] {
-  if (a.schema_version === 1)
-    return a.finding && a.revision ? [{ id: a.finding, revision: a.revision }] : [];
   return a.kind === "rerun"
     ? a.findings
     : a.kind === "reply"

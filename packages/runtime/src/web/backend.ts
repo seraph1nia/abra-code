@@ -13,10 +13,9 @@ import type {
 } from "@abracode/contracts/web/reviews";
 import type { PrepareDiagramSelection } from "@abracode/contracts/web/diagram-actions";
 import { NativeSessionReader } from "../opencode/agui/source.ts";
-import { trustedSessionEvent, type NativeEventEnvelope } from "../opencode/agui/native-state.ts";
+import { type NativeEventEnvelope } from "../opencode/agui/native-state.ts";
 import { projectNativeMessage } from "../opencode/agui/messages.ts";
 import type { ChangeScope } from "@abracode/contracts/web/changes";
-import { nativeChangeScope } from "./change-scopes.ts";
 import { checkpointMatchesForm } from "./form-binding.ts";
 import type {
   SaveSurfaceSchema,
@@ -24,9 +23,8 @@ import type {
   ReadExportSchema,
 } from "@abracode/contracts/web/report-actions";
 import { workerHistoryMessage } from "@abracode/contracts/web/worker-history";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect native HTTP and event APIs, verified against OpenCode 2.3.0. */
 import { createHash } from "node:crypto";
-import { Effect, Result, Schema, Stream } from "effect";
+import { Effect, Schema, Stream } from "effect";
 import type { OpenCodeClient } from "@opencode/client/effect";
 import { Form } from "@opencode/schema/form";
 import { Permission } from "@opencode/schema/permission";
@@ -37,12 +35,12 @@ import { domainEffect } from "../effect.ts";
 import {
   AbsolutePath,
   IssueId,
+  MessageId,
   SessionId,
-  RequestId,
   timestamp,
 } from "@abracode/contracts/identities";
-import { makeClient } from "../opencode/client.ts";
-import { ArtifactSchema, WorkSnapshotSchema } from "@abracode/contracts/web/wire";
+import { makeClient, memoSuccessful } from "../opencode/client.ts";
+import { WorkSnapshotSchema } from "@abracode/contracts/web/wire";
 import { WorkspaceSnapshotSchema } from "@abracode/contracts/web/workspace-wire";
 import { decode } from "../decode.ts";
 import { visibility } from "../visibility/protocol.ts";
@@ -52,95 +50,11 @@ import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import { toolPresentation } from "./tool-presentation.ts";
 import { nativeRpcError, readWorkReport } from "./native-errors.ts";
 import { canonicalJSON } from "../presentation/identity.ts";
-
+import { isTransportFailure, nativeChanges } from "./native-changes.ts";
 export const fingerprint = (value: unknown) =>
   createHash("sha256").update(canonicalJSON(value)).digest("hex");
 export const projectMessage = (message: SessionMessage.Info) =>
   projectNativeMessage(message, toolPresentation);
-
-const subscribedSessionEventTypes = [
-  "session.agent.selected",
-  "session.archived",
-  "session.compaction.started",
-  "session.compaction.ended",
-  "session.compaction.failed",
-  "session.created",
-  "session.deleted",
-  "session.execution.started",
-  "session.execution.succeeded",
-  "session.execution.failed",
-  "session.execution.interrupted",
-  "session.forked",
-  "session.inbox.enqueued",
-  "session.inbox.delivered",
-  "session.inbox.cancelled",
-  "session.inbox.delivery.changed",
-  "session.instructions.updated",
-  "session.metadata.updated",
-  "session.model.selected",
-  "session.moved",
-  "session.permissions",
-  "session.reasoning.started",
-  "session.reasoning.ended",
-  "session.renamed",
-  "session.retry.scheduled",
-  "session.revert.cleared",
-  "session.revert.committed",
-  "session.revert.staged",
-  "session.shell.started",
-  "session.shell.ended",
-  "session.skill.activated",
-  "session.step.started",
-  "session.step.first-token",
-  "session.step.streamed",
-  "session.step.ended",
-  "session.step.failed",
-  "session.synthetic",
-  "session.text.started",
-  "session.text.delta",
-  "session.text.ended",
-  "session.tool.input.started",
-  "session.tool.input.delta",
-  "session.tool.input.ended",
-  "session.tool.called",
-  "session.tool.progress",
-  "session.tool.success",
-  "session.tool.failed",
-  "session.unarchived",
-  "session.viewed",
-] as const;
-
-const subscribedEventTypes = [
-  "rpc.abracode-visibility.changed",
-  "location.shutdown",
-  "form.created",
-  "form.replied",
-  "form.cancelled",
-  "permission.asked",
-  "permission.replied",
-  ...subscribedSessionEventTypes,
-] as const;
-
-const domainRpcFailureTypes = new Set([
-  "not_found",
-  "resource_unavailable",
-  "invalid_selection",
-  "refused",
-  "rpc.method_not_found",
-]);
-
-function isTransportFailure(cause: unknown): boolean {
-  if (cause instanceof CrewError) return cause.code === "WEB_SERVICE";
-  if (
-    cause &&
-    typeof cause === "object" &&
-    "type" in cause &&
-    typeof cause.type === "string" &&
-    domainRpcFailureTypes.has(cause.type)
-  )
-    return false;
-  return true;
-}
 
 export class NativeWebBackend implements WebBackend {
   private lastObservation?: WorkspaceSnapshot;
@@ -175,7 +89,7 @@ export class NativeWebBackend implements WebBackend {
         );
       return session;
     });
-  private discoverConnection = () =>
+  private createConnection = () =>
     Effect.gen({ self: this }, function* () {
       const endpoint = yield* this.discover;
       if (!endpoint) return yield* new CrewError("WEB_SERVICE", "AbraCode service unavailable");
@@ -193,6 +107,15 @@ export class NativeWebBackend implements WebBackend {
       this.cachedClient = client;
       return { client, session };
     });
+  private cachedDiscovery = () =>
+    Effect.runSync(memoSuccessful(Effect.suspend(() => this.createConnection())));
+  private discovery = this.cachedDiscovery();
+  private discoverConnection = () => Effect.suspend(() => this.discovery);
+  private forget(client: OpenCodeClient) {
+    if (this.cachedClient !== client) return;
+    this.cachedClient = undefined;
+    this.discovery = this.cachedDiscovery();
+  }
   private connection = () =>
     Effect.suspend(() => {
       const cached = this.cachedClient;
@@ -201,7 +124,7 @@ export class NativeWebBackend implements WebBackend {
         Effect.map((session) => ({ client: cached, session })),
         Effect.catch((cause) => {
           if (!isTransportFailure(cause)) return Effect.fail(cause);
-          if (this.cachedClient === cached) this.cachedClient = undefined;
+          this.forget(cached);
           return this.discoverConnection();
         }),
       );
@@ -212,37 +135,40 @@ export class NativeWebBackend implements WebBackend {
         ? Effect.succeed(this.cachedClient)
         : this.discoverConnection().pipe(Effect.map(({ client }) => client)),
     );
-  private use<A, E>(fn: (client: OpenCodeClient) => Effect.Effect<A, E>) {
-    return domainEffect(
+  private use<A, E>(fn: (client: OpenCodeClient) => Effect.Effect<A, E>, retryRead = false) {
+    const invoke = (
+      retry: boolean,
+    ): Effect.Effect<A, E | Effect.Error<ReturnType<typeof this.client>>> =>
       this.client().pipe(
         Effect.flatMap((client) =>
           fn(client).pipe(
-            Effect.tapError((cause) =>
-              Effect.sync(() => {
-                if (isTransportFailure(cause) && this.cachedClient === client)
-                  this.cachedClient = undefined;
-              }),
-            ),
+            Effect.catch((cause) => {
+              if (!isTransportFailure(cause)) return Effect.fail(cause);
+              this.forget(client);
+              return retry ? invoke(false) : Effect.fail(cause);
+            }),
           ),
         ),
-        Effect.mapError(nativeRpcError),
-      ),
-    );
+      );
+    return domainEffect(invoke(retryRead).pipe(Effect.mapError(nativeRpcError)));
+  }
+  private read<A, E>(fn: (client: OpenCodeClient) => Effect.Effect<A, E>) {
+    return this.use(fn, true);
   }
   private gateway(client: OpenCodeClient) {
     return client.rpc(webGateway);
   }
   readonly memoryEnabled = Effect.suspend(() =>
-    this.use((client) =>
+    this.read((client) =>
       this.gateway(client).memoryEnabled({ session_id: this.sessionID }, this.location()),
     ),
   );
   memorySearch = (input: typeof ScopedMemorySearch.Type) =>
-    this.use((client) =>
+    this.read((client) =>
       this.gateway(client).memorySearch({ session_id: this.sessionID, ...input }, this.location()),
     );
   memoryRead = (input: typeof ScopedMemoryRead.Type) =>
-    this.use((client) =>
+    this.read((client) =>
       this.gateway(client).memoryRead({ session_id: this.sessionID, ...input }, this.location()),
     );
   memoryPublish = (input: MemoryPublication) =>
@@ -250,12 +176,12 @@ export class NativeWebBackend implements WebBackend {
       this.gateway(client).memoryPublish({ session_id: this.sessionID, ...input }, this.location()),
     );
   readonly agents = Effect.suspend(() =>
-    this.use((client) =>
+    this.read((client) =>
       this.gateway(client).agents({ session_id: this.sessionID }, this.location()),
     ),
   );
   readonly repositories = Effect.suspend(() =>
-    this.use((client) =>
+    this.read((client) =>
       this.gateway(client).projects({ session_id: this.sessionID }, this.location()),
     ),
   );
@@ -264,25 +190,25 @@ export class NativeWebBackend implements WebBackend {
   }
   readonly reviews = {
     receipt: (selection: typeof ReviewResponseQuerySchema.Type) =>
-      this.use((client) =>
+      this.read((client) =>
         this.gateway(client).reviewReceipt(
           { session_id: this.sessionID, ...selection },
           this.location(),
         ),
       ),
     list: (issue?: string) =>
-      this.use((client) =>
+      this.read((client) =>
         this.gateway(client).reviewList(
           { session_id: this.sessionID, ...(issue ? { issue_id: IssueId.make(issue) } : {}) },
           this.location(),
         ),
       ),
     read: (selection: ReviewSelection) =>
-      this.use((client) =>
+      this.read((client) =>
         this.gateway(client).review({ session_id: this.sessionID, ...selection }, this.location()),
       ),
     asset: (selection: typeof ReviewAssetQuerySchema.Type) =>
-      this.use((client) =>
+      this.read((client) =>
         this.gateway(client).reviewAsset(
           { session_id: this.sessionID, ...selection },
           this.location(),
@@ -326,6 +252,18 @@ export class NativeWebBackend implements WebBackend {
             inbox: !this.lastObservation || scope.all || scope.admissions || scope.transcript,
           })
           .pipe(
+            Effect.filterOrElse(
+              (native) => !native.repair,
+              () => this.reader.read({ transcript: true, inbox: true }),
+            ),
+            Effect.filterOrFail(
+              (native) => !native.repair,
+              () =>
+                new CrewError(
+                  "WEB_OBSERVATION",
+                  "Native transcript changed while recovering. Reconnect for a fresh observation.",
+                ),
+            ),
             Effect.flatMap((native) =>
               Effect.gen({ self: this }, function* () {
                 const { client, session, page, inbox } = native;
@@ -335,30 +273,8 @@ export class NativeWebBackend implements WebBackend {
                 const attention = all || scope.attention;
                 const workChanged = all || scope.work_all || scope.finder || scope.issues?.length;
 
-                const forms = attention
-                  ? yield* client.session.form.list({ sessionID: this.sessionID })
-                  : undefined;
-                const permissions = attention
-                  ? yield* client.permission.list({ sessionID: this.sessionID })
-                  : undefined;
                 const rpc = this.gateway(client),
                   opts = this.location();
-                const observedWork = workChanged
-                  ? yield* client
-                      .rpc(visibility)
-                      .snapshot({}, opts)
-                      .pipe(
-                        Effect.flatMap((work) =>
-                          decode(WorkSnapshotSchema, work, "Retained work observation"),
-                        ),
-                        Effect.result,
-                      )
-                  : undefined;
-                if (observedWork?._tag === "Success") this.lastValidWork = observedWork.success;
-                const work =
-                  observedWork?._tag === "Success"
-                    ? observedWork.success
-                    : (this.lastValidWork ?? { home: this.home, at: yield* timestamp, work: [] });
                 const selection = {
                   receipts: !!(all || scope.admissions),
                   surfaces: !!(all || scope.presentations),
@@ -367,17 +283,54 @@ export class NativeWebBackend implements WebBackend {
                     ? {
                         message_ids:
                           page?.data.map((message) => message.id) ??
-                          prior!.messages.map((message) => message.id),
+                          this.reader
+                            .current()
+                            ?.messages.map((message) => MessageId.make(message.id)) ??
+                          [],
                       }
                     : {}),
                 };
-                const sections =
-                  selection.receipts ||
-                  selection.surfaces ||
-                  selection.projects ||
-                  selection.message_ids
-                    ? yield* rpc.observeSections({ session_id: this.sessionID, ...selection }, opts)
-                    : undefined;
+                const { forms, permissions, observedWork, sections } = yield* Effect.all(
+                  {
+                    forms: attention
+                      ? client.session.form.list({ sessionID: this.sessionID }).pipe(
+                          Effect.flatMap((forms) =>
+                            Effect.forEach(forms, (form) => this.attentionForm(client, form), {
+                              concurrency: 4,
+                            }),
+                          ),
+                        )
+                      : Effect.undefined,
+                    permissions: attention
+                      ? client.permission.list({ sessionID: this.sessionID })
+                      : Effect.undefined,
+                    observedWork: workChanged
+                      ? client
+                          .rpc(visibility)
+                          .snapshot({}, opts)
+                          .pipe(
+                            Effect.flatMap((work) =>
+                              decode(WorkSnapshotSchema, work, "Retained work observation"),
+                            ),
+                            Effect.result,
+                          )
+                      : Effect.undefined,
+                    sections:
+                      selection.receipts ||
+                      selection.surfaces ||
+                      selection.projects ||
+                      selection.message_ids
+                        ? rpc.observeSections({ session_id: this.sessionID, ...selection }, opts)
+                        : Effect.undefined,
+                  },
+                  { concurrency: 4 },
+                );
+                if (observedWork?._tag === "Success") this.lastValidWork = observedWork.success;
+                const work = this.lastValidWork ?? {
+                  home: this.home,
+                  at: yield* timestamp,
+                  work: [],
+                };
                 const value = yield* decode(
                   WorkspaceSnapshotSchema,
                   {
@@ -387,11 +340,8 @@ export class NativeWebBackend implements WebBackend {
                     busy: native.busy,
                     outcome: session.outcome,
                     model: native.model,
-                    messages: native.messages ?? prior!.messages,
                     older: page ? page.cursor.next : prior?.older,
-                    forms: forms
-                      ? yield* Effect.forEach(forms, (form) => this.attentionForm(client, form))
-                      : prior!.forms,
+                    forms: forms ?? prior!.forms,
                     permissions: permissions
                       ? permissions.map((request) => ({ request, binding: fingerprint(request) }))
                       : prior!.permissions,
@@ -438,15 +388,15 @@ export class NativeWebBackend implements WebBackend {
       }),
     );
   resolve = (target: ResourceSelection) =>
-    this.use((client) =>
+    this.read((client) =>
       this.gateway(client).resolve({ session_id: this.sessionID, target }, this.location()),
     );
   publications = (query: typeof PublicationQuery.Type) =>
-    this.use((client) =>
+    this.read((client) =>
       this.gateway(client).publications({ session_id: this.sessionID, ...query }, this.location()),
     );
   surface = (id: string, revision: number) =>
-    this.use((client) =>
+    this.read((client) =>
       this.gateway(client).surface(
         { session_id: this.sessionID, surface_id: id, revision },
         this.location(),
@@ -457,7 +407,7 @@ export class NativeWebBackend implements WebBackend {
       this.gateway(client).submit({ session_id: this.sessionID, ...input }, this.location()),
     );
   receipt = (requestID: string) =>
-    this.use((client) =>
+    this.read((client) =>
       this.gateway(client).receipt(
         { session_id: this.sessionID, request_id: requestID },
         this.location(),
@@ -477,7 +427,7 @@ export class NativeWebBackend implements WebBackend {
     ) => (input: I, options: ReturnType<NativeWebBackend["location"]>) => Effect.Effect<A, E>,
   ) {
     return (input: I) =>
-      this.use((client) => select(this.visibility(client))(input, this.location()));
+      this.read((client) => select(this.visibility(client))(input, this.location()));
   }
   readonly work: WorkQueries = {
     evidenceSearch: this.workMethod((rpc) => rpc.evidenceSearch),
@@ -516,7 +466,7 @@ export class NativeWebBackend implements WebBackend {
     report: (input) =>
       readWorkReport(this.workMethod((rpc) => rpc.report)(input), this.work.detail(input)),
     artifacts: (input) =>
-      this.use((client) =>
+      this.read((client) =>
         this.gateway(client).history(
           {
             session_id: this.sessionID,
@@ -527,25 +477,25 @@ export class NativeWebBackend implements WebBackend {
         ),
       ),
     decisions: (input) =>
-      this.use((client) =>
+      this.read((client) =>
         this.gateway(client).history({ session_id: this.sessionID, ...input }, this.location()),
       ),
     artifactDocument: (input) =>
-      this.use((client) =>
+      this.read((client) =>
         this.gateway(client).artifactDocument(
           { session_id: this.sessionID, ...input },
           this.location(),
         ),
       ),
     artifactSummary: (input) =>
-      this.use((client) =>
+      this.read((client) =>
         this.gateway(client).artifactSummary(
           { session_id: this.sessionID, ...input },
           this.location(),
         ),
       ),
     "worker-history": (input) =>
-      this.use((client) =>
+      this.read((client) =>
         Effect.gen({ self: this }, function* () {
           const { issue_id, session_id } = input;
           yield* this.gateway(client).resolve(
@@ -627,19 +577,6 @@ export class NativeWebBackend implements WebBackend {
         });
       }),
     );
-  artifact = (issue: string, request: string) =>
-    this.use((client) =>
-      this.gateway(client)
-        .artifact(
-          {
-            session_id: this.sessionID,
-            issue_id: IssueId.make(issue),
-            request_id: RequestId.make(request),
-          },
-          this.location(),
-        )
-        .pipe(Effect.flatMap((value) => decode(ArtifactSchema, value, "Visual artifact"))),
-    );
   exportDocument = (input: typeof ExportDocumentSchema.Type) =>
     this.use((client) =>
       this.gateway(client).exportDocument(
@@ -648,11 +585,11 @@ export class NativeWebBackend implements WebBackend {
       ),
     );
   readExport = (input: typeof ReadExportSchema.Type) =>
-    this.use((client) =>
+    this.read((client) =>
       this.gateway(client).readExport({ session_id: this.sessionID, ...input }, this.location()),
     );
   prepareDiagrams = (selection: PrepareDiagramSelection) =>
-    this.use((client) =>
+    this.read((client) =>
       this.gateway(client).prepareDiagrams(
         { session_id: this.sessionID, selection },
         this.location(),
@@ -667,49 +604,15 @@ export class NativeWebBackend implements WebBackend {
   readonly changes = Stream.unwrap(
     this.client().pipe(
       Effect.map((client) =>
-        client.event.subscribe({ types: subscribedEventTypes }).pipe(
-          Stream.filterMap((event) => {
-            const scope = nativeChangeScope(
-              event,
-              this.home,
-              this.sessionID,
-              (session) =>
-                this.lastValidWork?.work.find((work) =>
-                  work.sessions.some((worker) => worker.id === session),
-                )?.issue_id,
-            );
-            const isServerConnected = event.type === "server.connected";
-            const isSupervisorSession =
-              event.type.startsWith("session.") &&
-              "data" in event &&
-              event.data !== null &&
-              typeof event.data === "object" &&
-              "sessionID" in event.data &&
-              event.data.sessionID === this.sessionID &&
-              (!("location" in event) ||
-                !event.location?.directory ||
-                event.location.directory === this.home);
-            const nativeEnvelope: NativeEventEnvelope | undefined = isServerConnected
-              ? event
-              : isSupervisorSession
-                ? trustedSessionEvent(
-                    event as Extract<
-                      typeof event,
-                      { type: (typeof subscribedSessionEventTypes)[number] }
-                    >,
-                  )
-                : undefined;
-            return scope || nativeEnvelope
-              ? Result.succeed({ ...scope, ...(nativeEnvelope ? { native: nativeEnvelope } : {}) })
-              : Result.fail(undefined);
-          }),
-          Stream.tapError((cause) =>
-            Effect.sync(() => {
-              if (isTransportFailure(cause) && this.cachedClient === client)
-                this.cachedClient = undefined;
-            }),
-          ),
-          Stream.mapError(CrewError.from),
+        nativeChanges(
+          client,
+          this.home,
+          this.sessionID,
+          (session) =>
+            this.lastValidWork?.work.find((work) =>
+              work.sessions.some((worker) => worker.id === session),
+            )?.issue_id,
+          (failed) => this.forget(failed),
         ),
       ),
     ),

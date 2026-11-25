@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { Effect, Schedule, Schema } from "effect";
-import { Session, SessionMessage } from "@opencode/client/effect";
+import { Clock, Effect, Schedule, Schema } from "effect";
+import { SessionMessage } from "@opencode/client/effect";
 import {
   type IssueId,
   LockKey,
@@ -19,23 +19,10 @@ import { domainEffect } from "../effect.ts";
 import { type Runtime } from "../opencode/runtime.ts";
 import { type Locks } from "../storage/lock.ts";
 import { type Records } from "../storage/store.ts";
-import {
-  BatchResultSchema,
-  normalizeBatch,
-  type BatchInput,
-  type BatchResult,
-} from "../work/batch.ts";
+import { normalizeBatch, type BatchInput, type BatchResult } from "../work/batch.ts";
 import { type WorkGraph } from "../work/graph.ts";
 import { readDiagnosticCapacity } from "./diagnostic-budget.ts";
-import {
-  LeadActionSchema,
-  LeadControlSchema,
-  readLeads,
-  type LeadAction,
-  type LeadControl,
-  type LeadRecord,
-} from "./lead-contracts.ts";
-import { type Obligations } from "./obligations.ts";
+import { LeadActionSchema, type LeadAction, type LeadRecord } from "./lead-contracts.ts";
 import { type RecoveryStatus } from "./response-recovery.ts";
 
 export const leadRequestKey = (parts: readonly unknown[]) =>
@@ -71,7 +58,6 @@ export type LeadControlDeps = {
   work: WorkGraph;
   runtime: Runtime;
   locks: Locks;
-  obligations: Obligations;
   createBatch: (input: BatchInput, parent: SessionId) => Effect.Effect<BatchResult, CrewError>;
   message: (
     input: typeof MessageSendSchema.Type,
@@ -86,145 +72,6 @@ export type LeadControlDeps = {
   root: (parent: SessionId) => Effect.Effect<readonly LeadRecord[], CrewError>;
   reconcileOne: (lead: LeadRecord) => Effect.Effect<LeadRecord, CrewError>;
 };
-
-export function registerLead(
-  deps: LeadControlDeps,
-  parent: SessionId,
-  input: Extract<LeadControl, { action: "register" }>,
-  allLeads: readonly LeadRecord[],
-  existing: LeadRecord | undefined,
-) {
-  return Effect.gen(function* () {
-    let l = existing;
-    const repositories = [...input.repositories].sort();
-    const sameSpec = (record: LeadRecord) =>
-      record.parent_session_id === parent &&
-      record.enabled === input.enabled &&
-      JSON.stringify(record.repositories) === JSON.stringify(repositories) &&
-      JSON.stringify(record.model) === JSON.stringify(input.model);
-    if (l && l.revision === input.expected_revision && sameSpec(l))
-      return yield* leadJson(yield* deps.reconcileOne(l));
-    if (l && l.revision !== input.expected_revision) {
-      ensure(
-        l.revision === input.expected_revision + 1 && sameSpec(l),
-        "LEAD_REVISION",
-        "Registration changed; inspect current revision",
-      );
-    } else {
-      ensure(
-        l ? l.parent_session_id === parent : input.expected_revision === 0,
-        "LEAD_REVISION",
-        "Current expected registration revision required",
-      );
-      yield* Effect.forEach(
-        repositories,
-        (repo) =>
-          deps.records
-            .project(repo)
-            .pipe(
-              Effect.tap((p) =>
-                Effect.sync(() => ensure(p, "LEAD_SCOPE", "Registered repositories required")),
-              ),
-            ),
-        { concurrency: 4 },
-      );
-      const changed =
-        l &&
-        (JSON.stringify(l.repositories) !== JSON.stringify(repositories) ||
-          JSON.stringify(l.model) !== JSON.stringify(input.model));
-      ensure(
-        !changed || (!l!.enabled && !l!.active && !l!.stop_pending),
-        "LEAD_ACTIVE",
-        "Disable and confirm stop before changing scope or model",
-      );
-      ensure(
-        !l || l.retired_sessions.length < 32 || !changed,
-        "LEAD_LIMIT",
-        "Lead session revision limit reached",
-      );
-      ensure(l || allLeads.length < 32, "LEAD_LIMIT", "Registration limit reached");
-      const old = l;
-      l = {
-        schema_version: 1,
-        id: input.id,
-        revision: (old?.revision ?? 0) + 1,
-        repositories,
-        parent_session_id: parent,
-        session_id: changed || !old ? Session.ID.create() : old.session_id,
-        retired_sessions: changed
-          ? [...old!.retired_sessions, old!.session_id]
-          : (old?.retired_sessions ?? []),
-        model: input.model,
-        enabled: input.enabled,
-        provisioned: changed ? false : (old?.provisioned ?? false),
-        active: old?.active ?? false,
-        stop_pending: !changed && !!old?.provisioned && !input.enabled,
-        requests:
-          old?.requests.map((r) => ({
-            ...r,
-            request: ["answered", "cancelled", "superseded"].includes(r.request.status)
-              ? r.request
-              : { ...r.request, status: "superseded" as const },
-          })) ?? [],
-        proposals: old?.proposals ?? [],
-      };
-      yield* deps.commit(() => deps.save(l!));
-    }
-    return yield* leadJson(yield* deps.reconcileOne(l!));
-  });
-}
-
-export function controlLead(deps: LeadControlDeps, parent: SessionId, raw: LeadControl) {
-  return domainEffect(
-    Effect.gen(function* () {
-      const input = yield* decode(LeadControlSchema, raw, "Lead control");
-      const initialLeads = yield* deps.root(parent);
-      if (input.action === "status")
-        return yield* leadJson(initialLeads.filter((l) => !input.id || l.id === input.id));
-      return yield* deps.locks.with(LockKey.make(`lead-${input.id}`), () =>
-        domainEffect(
-          Effect.gen(function* () {
-            const allLeads = yield* readLeads(deps.records);
-            let l = allLeads.find((r) => r.id === input.id);
-            if (input.action === "register")
-              return yield* registerLead(deps, parent, input, allLeads, l);
-            ensure(
-              l &&
-                l.parent_session_id === parent &&
-                l.enabled &&
-                l.revision === input.revision &&
-                !l.stop_pending,
-              "LEAD_REVISION",
-              "Current enabled lead required",
-            );
-            if (input.action === "message")
-              return yield* leadJson(
-                yield* createLeadRequest(deps, l, input.issue_id, input.request_id, input.body),
-              );
-            const p = l.proposals.find((item) => item.request_id === input.request_id);
-            ensure(
-              p && p.revision === l.revision,
-              "LEAD_PROPOSAL",
-              "Current retained proposal required",
-            );
-            if (!p.accepted) {
-              const accepted = yield* deps
-                .createBatch(p.batch, parent)
-                .pipe(
-                  Effect.flatMap((r) => decode(BatchResultSchema, r, "Accepted lead proposal")),
-                );
-              l = { ...l, proposals: l.proposals.map((r) => (r === p ? { ...r, accepted } : r)) };
-              yield* deps.commit(() => deps.save(l!));
-            }
-            return yield* leadJson(
-              l.proposals.find((item) => item.request_id === input.request_id),
-            );
-          }),
-        ),
-      );
-    }),
-  );
-}
 
 function leadStatusAction(
   deps: LeadControlDeps,
@@ -409,34 +256,32 @@ function leadProposeAction(
   });
 }
 
-function leadAnswerAction(
-  deps: LeadControlDeps,
-  lead: LeadRecord,
-  a: Extract<LeadAction, { action: "answer" }>,
-) {
+function leadAnswerAction(deps: LeadControlDeps, a: Extract<LeadAction, { action: "answer" }>) {
   return Effect.gen(function* () {
     const e = yield* deps.records.execution(a.issue_id);
     ensure(
-      e?.decisions?.some(
-        (d) =>
-          d.key === a.key &&
-          d.generation === a.generation &&
-          d.owner === "supervisor" &&
-          !d.finishing_target,
-      ),
+      e && e.control_generation === a.generation,
+      "DECISION_STALE",
+      "Decision generation is stale",
+    );
+    const current = e.decisions?.find((d) => d.key === a.key && d.generation === a.generation);
+    ensure(
+      current?.owner === "supervisor" && !current.finishing_target,
       "DECISION_OWNER",
       "Only supervisor-owned routine decisions may be answered",
     );
-    return yield* leadJson(
-      yield* deps.obligations.resolve(
-        a.issue_id,
-        a.key,
-        a.generation,
-        lead.parent_session_id,
-        "answer",
-        a.body,
-      ),
-    );
+    if (current.status !== "open") return yield* leadJson(current);
+    ensure(a.body.length <= 8192, "DECISION_ANSWER", "Bounded nonempty answer required");
+    const next = {
+      ...current,
+      status: "answered" as const,
+      answer: a.body,
+      resolved_at: yield* Clock.currentTimeMillis,
+    };
+    e.decisions = e.decisions!.map((d) => (d === current ? next : d));
+    e.resume_after_decision = true;
+    yield* deps.records.saveOwned(e, ["decisions", "resume_after_decision"]);
+    return yield* leadJson(next);
   });
 }
 
@@ -478,6 +323,14 @@ export function executeLeadAction(deps: LeadControlDeps, session: SessionId, raw
         return yield* deps.locks.with(lockKey, () => leadMemoryAction(deps, session, a));
       if (a.action === "status")
         return yield* deps.locks.with(lockKey, () => leadStatusAction(deps, session, a));
+      if (a.action === "answer") {
+        const native = yield* deps.runtime.session(session);
+        ensure(
+          native.agent === "project-lead" && native.directory === deps.config.home,
+          "LEAD_SESSION",
+          "Lead session moved or changed agent.",
+        );
+      }
       return yield* deps.locks.with(lockKey, () =>
         deps
           .commit(() =>
@@ -486,7 +339,7 @@ export function executeLeadAction(deps: LeadControlDeps, session: SessionId, raw
               if (a.action === "reply") return yield* leadReplyAction(deps, session, l, a);
               if (a.action === "propose") return yield* leadProposeAction(deps, l, a);
               yield* deps.scoped(l, a.issue_id);
-              if (a.action === "answer") return yield* leadAnswerAction(deps, l, a);
+              if (a.action === "answer") return yield* leadAnswerAction(deps, a);
               yield* deps.scoped(l, a.source_issue_id);
               ensure(
                 (yield* deps.records.execution(a.issue_id))?.active_role,
@@ -525,16 +378,21 @@ export function createLeadRequest(
           "Lead request identity cannot be rebound",
         );
       } else {
-        yield* deps.commit(() =>
+        yield* deps.records.withActiveIndex(() =>
           Effect.gen(function* () {
             l = yield* deps.current(l.session_id, l.revision);
             const e = yield* deps.records.execution(issue);
             const task = yield* deps.scoped(l, issue);
             const project = yield* deps.records.project(task.repository_id);
+            if (!project)
+              return yield* new CrewError(
+                "PROJECT_MISSING",
+                "Lead repository is no longer registered",
+              );
             const budget =
               deps.config.supervision_mode === "manual"
                 ? 0
-                : (e?.effective_policy.diagnostic_turns ?? project!.diagnostic_turns);
+                : (e?.effective_policy.diagnostic_turns ?? project.diagnostic_turns);
             const capacity = yield* readDiagnosticCapacity(deps.records, issue, {
               attentionTurns: e?.attention_turns,
               budget,

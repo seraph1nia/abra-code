@@ -1,3 +1,4 @@
+import { runTransaction } from "./transaction.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { Effect, Schema } from "effect";
 import {
@@ -60,27 +61,15 @@ function indexFailure(cause: unknown): CrewError {
     (String(cause.code).startsWith("ERR_SQLITE") || cause.code === "ERR_INVALID_STATE")
   )
     return new CrewError("INBOX_STORAGE", "The local GitHub inbox database operation failed");
+  if (cause instanceof TypeError && "code" in cause && cause.code === "ERR_INVALID_URL")
+    return new CrewError("INBOX_DATA", "GitHub item has an invalid URL");
   throw cause;
 }
 export const indexEffect = <A>(action: () => A) => Effect.try({ try: action, catch: indexFailure });
 export class InboxIndex {
   constructor(private db: DatabaseSync) {}
-  private transaction(action: () => void) {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      action();
-      this.db.exec("COMMIT");
-    } catch (e) {
-      try {
-        if (this.db.isTransaction) this.db.exec("ROLLBACK");
-      } catch {
-        // Preserve original error if rollback fails or already rolled back.
-      }
-      throw e;
-    }
-  }
   failedScan(stream: string, scan: Scan, limitedCredential?: string) {
-    this.transaction(() => {
+    runTransaction(this.db, () => {
       if (limitedCredential) this.backoff(limitedCredential, scan.retry, scan.error!);
       this.save(stream, scan);
     });
@@ -109,11 +98,17 @@ export class InboxIndex {
     now: number,
     sweep?: { kind: string; start: number },
   ) {
-    this.transaction(() => {
+    runTransaction(this.db, () => {
       const upsert = this.db.prepare(`INSERT INTO github_items VALUES(?,?,?,?,?,?,?,?,?)
       ON CONFLICT(partition,node) DO UPDATE SET state=excluded.state,updated=excluded.updated,seen=excluded.seen,summary=excluded.summary
       WHERE excluded.updated>=github_items.updated`);
-      for (const item of items)
+      for (const item of items) {
+        const updated = Date.parse(item.updated_at);
+        ensure(
+          Number.isFinite(updated),
+          "INBOX_DATA",
+          "GitHub item has an invalid update timestamp",
+        );
         upsert.run(
           partition,
           item.item_node,
@@ -121,10 +116,11 @@ export class InboxIndex {
           item.repository_id,
           item.kind,
           item.state,
-          Date.parse(item.updated_at),
+          updated,
           now,
           JSON.stringify(item),
         );
+      }
       if (sweep)
         this.db
           .prepare(
@@ -151,7 +147,7 @@ export class InboxIndex {
       .run(scope, retry, error);
   }
   revoke(partition: string, retry: number, message: string) {
-    this.transaction(() => {
+    runTransaction(this.db, () => {
       this.db.prepare("DELETE FROM github_items WHERE partition=?").run(partition);
       this.db
         .prepare("DELETE FROM github_scans WHERE json_extract(stream,'$[0]')=?")
@@ -260,32 +256,42 @@ export class InboxIndex {
       }
     }
     const where = " FROM github_items WHERE " + filters.join(" AND ");
-    const total = Number(this.db.prepare("SELECT count(*) AS n" + where).get(...args)!.n);
-    const byUrl = new Map<string, DeliveryLink[]>();
-    for (const d of deliveries) {
-      const key = JSON.stringify([d.repository_id, d.url]);
-      const matches = byUrl.get(key);
-      if (matches) matches.push(d);
-      else byUrl.set(key, [d]);
-    }
-    const entries = this.db
-      .prepare(
-        "SELECT page.summary,l.role,l.issue_id,i.status,l.revision FROM (SELECT summary,source_id,updated,partition,node" +
-          where +
-          " ORDER BY updated DESC,partition,node LIMIT 50 OFFSET ?) page LEFT JOIN github_links l ON l.source=page.source_id LEFT JOIN issues i ON i.id=l.issue_id ORDER BY page.updated DESC,page.partition,page.node",
-      )
-      .all(...args, query.offset ?? 0)
-      .map((row) => {
-        const item = decodeSync(Schema.fromJsonString(InboxSummary), row.summary, "GitHub summary");
-        return {
-          ...item,
-          links: this.projectLinks(
-            row,
-            byUrl.get(JSON.stringify([item.repository_id, item.url])) ?? [],
-          ),
-        };
-      });
-    return { entries, total };
+    return runTransaction(
+      this.db,
+      () => {
+        const total = Number(this.db.prepare("SELECT count(*) AS n" + where).get(...args)!.n);
+        const byUrl = new Map<string, DeliveryLink[]>();
+        for (const d of deliveries) {
+          const key = JSON.stringify([d.repository_id, d.url]);
+          const matches = byUrl.get(key);
+          if (matches) matches.push(d);
+          else byUrl.set(key, [d]);
+        }
+        const entries = this.db
+          .prepare(
+            "SELECT page.summary,l.role,l.issue_id,i.status,l.revision FROM (SELECT summary,source_id,updated,partition,node" +
+              where +
+              " ORDER BY updated DESC,partition,node LIMIT 50 OFFSET ?) page LEFT JOIN github_links l ON l.source=page.source_id LEFT JOIN issues i ON i.id=l.issue_id ORDER BY page.updated DESC,page.partition,page.node",
+          )
+          .all(...args, query.offset ?? 0)
+          .map((row) => {
+            const item = decodeSync(
+              Schema.fromJsonString(InboxSummary),
+              row.summary,
+              "GitHub summary",
+            );
+            return {
+              ...item,
+              links: this.projectLinks(
+                row,
+                byUrl.get(JSON.stringify([item.repository_id, item.url])) ?? [],
+              ),
+            };
+          });
+        return { entries, total };
+      },
+      false,
+    );
   }
 }
 export type DeliveryLink = {

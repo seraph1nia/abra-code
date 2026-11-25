@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { deferred } from "./deferred.tsx";
+import { deferred } from "@abracode/presentation/deferred";
 
 // Keep lazy identities outside the frequently refreshed workspace shell so its
 // HMR does not replace mounted binding-owned editors.

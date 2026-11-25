@@ -6,7 +6,7 @@ import {
   WorkspaceStateJson,
   WorkspaceSnapshotSchema,
 } from "@abracode/contracts/web/workspace-wire";
-import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
+import type { WorkspaceSnapshot, TranscriptMessage } from "@abracode/contracts/web/contracts";
 
 export type ObservationState = {
   workspace: WorkspaceSnapshot;
@@ -138,6 +138,10 @@ export class WorkspaceObservation {
     this.value = { ...this.value, ...change };
     for (const listener of this.listeners) listener(this.value);
   }
+  receiveMessages(recent: readonly TranscriptMessage[]) {
+    const conversation = retainConversation(this.value.conversation, this.value.workspace, recent);
+    if (conversation !== this.value.conversation) this.update({ conversation });
+  }
   private accept(next: WorkspaceSnapshot) {
     if (
       next.session_id !== this.value.workspace.session_id ||
@@ -164,6 +168,9 @@ export class WorkspaceObservation {
       changes.work_all ||
       changes.finder ||
       changes.projects ||
+      changes.fleet ||
+      changes.presentations ||
+      changes.admissions ||
       changes.issues?.length
     ) {
       this.pending = mergeChanges(this.pending, changes);

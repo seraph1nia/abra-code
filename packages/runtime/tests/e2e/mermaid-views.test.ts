@@ -1,3 +1,4 @@
+import { FixtureViewSchema } from "../helpers/web.ts";
 import { createHash } from "node:crypto";
 import { coveredReportDocument } from "../helpers/report-document.ts";
 import assert from "node:assert/strict";
@@ -6,7 +7,6 @@ import { workspaceBrowserFixture } from "../helpers/workspace-browser.ts";
 import { catalogId } from "@abracode/contracts/web/catalog";
 import { validateSurface } from "@abracode/contracts/web/surfaces";
 import { Schema } from "effect";
-import { WorkspaceSnapshotSchema } from "@abracode/contracts/web/workspace-wire";
 
 function diagramRecord(
   source: Awaited<ReturnType<typeof workspaceBrowserFixture>>["source"],
@@ -155,7 +155,7 @@ test("duplicate diagram placements share exact preparation and detach independen
     request_id: report.document_id,
     hash,
   };
-  f.source.value = Schema.decodeSync(WorkspaceSnapshotSchema)({
+  f.source.value = Schema.decodeSync(FixtureViewSchema)({
     ...f.source.value,
     messages: [
       {

@@ -5,7 +5,7 @@ import type { PresentationAttachmentSchema } from "@abracode/contracts/presentat
 import { api } from "../api.ts";
 import { queries } from "../work-data.ts";
 import { RequestState } from "../request-state.tsx";
-import { deferred } from "../deferred.tsx";
+import { deferred } from "@abracode/presentation/deferred";
 import { ReviewsForSource } from "./interactive-review-loader.tsx";
 type Target = typeof PresentationAttachmentSchema.Type.target;
 const ReportDocumentView = deferred<
@@ -31,16 +31,8 @@ export function ArtifactAttachment({
         return artifact.hash === target.hash ? (
           <div className="artifact-attachment">
             <ArtifactCard artifact={artifact} issue={target.issue_id} inspect={inspect} />
-            <a
-              href={
-                artifact.format === "a2ui-snapshot"
-                  ? api.documentURL(target.issue_id, target.request_id, target.hash)
-                  : api.reportURL(target.issue_id, target.request_id, true)
-              }
-              download
-            >
-              {artifact.format === "a2ui-snapshot" ? "Download JSON" : "Download HTML"}{" "}
-              <ArrowUpRight aria-hidden="true" />
+            <a href={api.documentURL(target.issue_id, target.request_id, target.hash)} download>
+              Download JSON <ArrowUpRight aria-hidden="true" />
             </a>
             <details
               className="artifact-inline-preview"
@@ -48,31 +40,19 @@ export function ArtifactAttachment({
               onToggle={(event) => setPreview(event.currentTarget.open)}
             >
               <summary>Preview saved report</summary>
-              {preview &&
-                (artifact.format === "a2ui-snapshot" ? (
-                  <RequestState
-                    query={queries.artifactDocument(
-                      target.issue_id,
-                      target.request_id,
-                      target.hash,
-                    )}
-                  >
-                    {(body) =>
-                      body.hash === target.hash ? (
-                        <ReportDocumentView artifact={body} inspect={inspect} />
-                      ) : (
-                        <output>The document does not match this attachment.</output>
-                      )
-                    }
-                  </RequestState>
-                ) : (
-                  <iframe
-                    title="Isolated retained report preview"
-                    className="report-preview"
-                    sandbox="allow-scripts"
-                    src={api.reportURL(target.issue_id, target.request_id)}
-                  />
-                ))}
+              {preview && (
+                <RequestState
+                  query={queries.artifactDocument(target.issue_id, target.request_id, target.hash)}
+                >
+                  {(body) =>
+                    body.hash === target.hash ? (
+                      <ReportDocumentView artifact={body} inspect={inspect} />
+                    ) : (
+                      <output>The document does not match this attachment.</output>
+                    )
+                  }
+                </RequestState>
+              )}
             </details>
             <ReviewsForSource
               issue={target.issue_id}

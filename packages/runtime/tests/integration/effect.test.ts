@@ -432,6 +432,7 @@ test("native event bursts coalesce while a dropped stream retains periodic recon
     twice = Deferred.makeUnsafe<void>();
   let calls = 0,
     subscriptions = 0;
+  const resubscribed = Deferred.makeUnsafe<void>();
   const prompts = f.runtime.prompts;
   f.controller.reconcile = () =>
     Effect.gen(function* () {
@@ -446,7 +447,7 @@ test("native event bursts coalesce while a dropped stream retains periodic recon
     event: {
       subscribe: () =>
         Stream.suspend(() => {
-          subscriptions++;
+          if (++subscriptions === 2) Effect.runSync(Deferred.succeed(resubscribed, undefined));
           return Stream.fromIterable(
             Array.from({ length: 100 }, () => ({
               type: "session.tool.success",
@@ -472,7 +473,7 @@ test("native event bursts coalesce while a dropped stream retains periodic recon
   await run(Deferred.await(twice).pipe(Effect.timeout("5 seconds")));
   assert.equal(calls, 2);
   // EOF does not remove fallback ticks or prevent subscription recovery.
-  await run(Effect.sleep(1100));
+  await run(Deferred.await(resubscribed).pipe(Effect.timeout("5 seconds")));
   assert.ok(calls >= 3);
   assert.ok(subscriptions >= 2);
   assert.equal(f.runtime.prompts, prompts);
@@ -508,6 +509,7 @@ test("duplicate and reordered worker events preserve prompt-bound failure and re
   await run(f.controller.reconcile(issue));
   const failure = (await run(f.controller.get(issue))).worker_failure;
   assert.equal(failure?.prompt_id, request.prompt_id);
+  await run(f.controller.supervise());
   const prompts = f.runtime.prompts;
   const drained = Deferred.makeUnsafe<void>(),
     reconciled = Deferred.makeUnsafe<void>();

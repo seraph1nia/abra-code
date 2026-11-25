@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Exercise the pinned native service in an isolated fixture. */
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { mkdtemp, mkdir, symlink, writeFile, access, readFile } from "node:fs/promises";
@@ -66,13 +65,17 @@ test("a failed native plugin can be stopped before Abra exists, with process/con
     }),
   );
   const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
-  const cli = (script: string, configPath: string = config.config_path) =>
-    command(resolve("node_modules/.bin/tsx"), [resolve("scripts", script)], {
-      cwd: home,
-      env: { ...env, ABRACODE_CONFIG: configPath },
-      timeout: 12000,
-    });
-  await assert.rejects(cli("start.ts"), (error) => {
+  const cli = (subcommand: string, configPath: string = config.config_path) =>
+    command(
+      resolve("node_modules/.bin/tsx"),
+      [resolve("scripts/cli.ts"), ...subcommand.split(" ")],
+      {
+        cwd: home,
+        env: { ...env, ABRACODE_CONFIG: configPath },
+        timeout: 12000,
+      },
+    );
+  await assert.rejects(cli("serve"), (error) => {
     assert.ok(error instanceof Error);
     const output = String(Reflect.get(error, "stdout")) + String(Reflect.get(error, "stderr"));
     assert.match(
@@ -84,7 +87,7 @@ test("a failed native plugin can be stopped before Abra exists, with process/con
   });
   assert.equal((await client.session.list({ directory: home })).data.length, 0);
   const before = await readFile(file, "utf8");
-  await assert.rejects(cli("stop.ts", join(home, "other.yaml")), /No service was stopped/);
+  await assert.rejects(cli("stop", join(home, "other.yaml")), /No service was stopped/);
   assert.equal(await readFile(file, "utf8"), before);
   assert.equal((await client.server.info()).version, "2.3.0");
 
@@ -95,7 +98,7 @@ test("a failed native plugin can be stopped before Abra exists, with process/con
   await writeFile(join(foreign, "abracode.yaml"), source);
   await writeFile(runtimePaths(foreign).service, before);
   await assert.rejects(
-    command(resolve("node_modules/.bin/tsx"), [resolve("scripts/stop.ts")], {
+    command(resolve("node_modules/.bin/tsx"), [resolve("scripts/cli.ts"), "stop"], {
       cwd: foreign,
       env: { ...env, ABRACODE_HOME: foreign, ABRACODE_CONFIG: join(foreign, "abracode.yaml") },
       // A foreign location can omit AbraCode for the entire 15-second activation window.
@@ -105,7 +108,7 @@ test("a failed native plugin can be stopped before Abra exists, with process/con
   );
   assert.equal((await client.server.info()).version, "2.3.0");
 
-  assert.match((await cli("stop.ts")).stdout, /native service stopped/);
+  assert.match((await cli("stop")).stdout, /native service stopped/);
   await assert.rejects(access(file), /ENOENT/);
   await assert.rejects(client.server.info());
 });
@@ -156,7 +159,7 @@ test("a matching HTTP health response and environment cannot authorize stopping 
     const registration = JSON.stringify({ url, pid: child.pid, version: "2.3.0" });
     await writeFile(file, registration);
     await assert.rejects(
-      command(resolve("node_modules/.bin/tsx"), [resolve("scripts/stop.ts")], {
+      command(resolve("node_modules/.bin/tsx"), [resolve("scripts/cli.ts"), "stop"], {
         cwd: home,
         env,
         timeout: 12000,

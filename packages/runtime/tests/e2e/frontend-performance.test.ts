@@ -220,12 +220,16 @@ test("complete initial script graph and long-conversation render locality", asyn
     await mkdir(directory, { recursive: true });
     const sourceHash = createHash("sha256");
     if (!process.env.ABRACODE_FRONTEND_SOURCE) {
+      const removed = new Set(
+        execFileSync("git", ["ls-files", "-z", "--deleted"], { encoding: "utf8" }).split("\0"),
+      );
       const paths = execFileSync(
         "git",
         ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         { encoding: "utf8" },
       )
         .split("\0")
+        .filter((path) => !removed.has(path))
         .filter((path) =>
           /^(?:apps\/(?:web|report)\/|packages\/(?:contracts|presentation)\/|(?:package\.json|pnpm-lock\.yaml|vite\.config\.ts)$)/.test(
             path,

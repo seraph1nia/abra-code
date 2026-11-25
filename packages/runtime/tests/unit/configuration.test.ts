@@ -207,7 +207,7 @@ test("documented attended opt-in resolves without changing shipped defaults or r
   t.onTestFinished(() => run(f.close()));
   const e = await run(planned(f, IssueId.make("before-opt-in")));
   const retained = await run(f.records.execution(e.issue_id));
-  const projects = await run(f.records.projects());
+  const projects = await run(f.records.projects);
   const config = await run(
     resolveConfig(
       f.root,
@@ -245,7 +245,7 @@ test("documented attended opt-in resolves without changing shipped defaults or r
   assert.equal(foreign?.plan_approval, true);
   assert.equal(foreign?.merge_approval, true);
   assert.equal(foreign?.repair_rounds, 0);
-  assert.deepEqual(await run(f.records.projects()), projects);
+  assert.deepEqual(await run(f.records.projects), projects);
   assert.deepEqual(await run(f.records.execution(e.issue_id)), retained);
 });
 

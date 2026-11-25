@@ -16,5 +16,5 @@
     },
     "types": ["vite-plus/client"]
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "tests", "vite.config.ts"]
 }

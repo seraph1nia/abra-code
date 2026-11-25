@@ -321,7 +321,11 @@ export class WorkerSessions {
       `[AbraCode ${issue} completed] Delivery confirmed, worktree retired, issue closed. Dependent work recalculated.`,
       message,
     );
-  private admit = Effect.fn("WorkerSessions.admit")(
+  private admit = (e: Execution, role: Role) =>
+    this.prepareAdmission(e, role).pipe(
+      Effect.onError(() => this.capacity.releaseIfPreparing(e, role)),
+    );
+  private prepareAdmission = Effect.fn("WorkerSessions.admit")(
     function* (this: WorkerSessions, e: Execution, role: Role) {
       if (externalOwns(e))
         return yield* new CrewError(
@@ -356,16 +360,13 @@ export class WorkerSessions {
             "Retained preparation identity conflicts with the assigned role",
           );
         yield* this.records.commitOwned(e, { session_intent: intent });
-        yield* this.contexts.prepareAgent(e, role, yield* loadIssue(), intent.prompt).pipe(
-          Effect.onInterrupt(() => this.capacity.releasePreparation(e, role)),
-          Effect.tapError((error) => this.contexts.failure(e, role, error)),
-          Effect.tapError(() => this.capacity.releasePreparation(e, role)),
-        );
+        yield* this.contexts
+          .prepareAgent(e, role, yield* loadIssue(), intent.prompt)
+          .pipe(Effect.tapError((error) => this.contexts.failure(e, role, error)));
       }
-      const environment = yield* this.runtime.preflight(e, role).pipe(
-        Effect.tapError((error) => this.contexts.failure(e, role, error)),
-        Effect.tapError(() => this.capacity.releasePreparation(e, role)),
-      );
+      const environment = yield* this.runtime
+        .preflight(e, role)
+        .pipe(Effect.tapError((error) => this.contexts.failure(e, role, error)));
       if (!environment)
         return yield* new CrewError(
           "CONTEXT_SELECTION",
@@ -429,13 +430,22 @@ export class WorkerSessions {
         capacity_reservation: {
           role,
           generation: e.control_generation,
-          status: "uncertain",
+          status: "preparing",
           session_id: id,
           prompt_id: prompt,
         },
         worker_context_id: context.prompt_id,
       });
       yield* this.planning.preparedAdmission(e, role);
+      yield* this.records.commitOwned(e, {
+        capacity_reservation: {
+          role,
+          generation: e.control_generation,
+          status: "uncertain",
+          session_id: id,
+          prompt_id: prompt,
+        },
+      });
       yield* this.runtime.prompt(id, context.prompt, prompt);
       const saved = yield* this.records.update(e.issue_id, (current) => {
         ensure(

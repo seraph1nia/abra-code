@@ -1,4 +1,10 @@
-import { SessionId, Fingerprint, Commit, timestamp } from "@abracode/contracts/identities";
+import {
+  type AbsolutePath,
+  SessionId,
+  Fingerprint,
+  Commit,
+  timestamp,
+} from "@abracode/contracts/identities";
 
 import { Effect } from "effect";
 import { Form } from "@opencode/schema/form";
@@ -11,7 +17,7 @@ import {
 } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { type Runtime } from "../opencode/runtime.ts";
-import { hasWorkerSession } from "./worker-assignment.ts";
+import { readLeads } from "./lead-contracts.ts";
 import { createHash } from "node:crypto";
 import type { Git } from "../git/repository.ts";
 import type { Records } from "../storage/store.ts";
@@ -117,11 +123,24 @@ export class CheckpointEvidence {
   );
 }
 
-export const assertApprovalActor = (e: Execution, supervisor: SessionId) =>
-  Effect.gen(function* () {
-    if (hasWorkerSession(e, supervisor))
-      return yield* new CrewError("SELF_APPROVAL", "Workers cannot authorize decisions");
-  });
+export type ApprovalActorCheck = (session: SessionId) => Effect.Effect<void, CrewError>;
+
+export const assertApprovalActor =
+  (records: Records, runtime: Runtime, home: AbsolutePath): ApprovalActorCheck =>
+  (session) =>
+    Effect.gen(function* () {
+      if (yield* records.workerAssignment(session))
+        return yield* new CrewError("SELF_APPROVAL", "Workers cannot authorize decisions");
+      const native = yield* runtime.session(session);
+      if (
+        native.agent !== "abra" ||
+        native.directory !== home ||
+        (yield* readLeads(records)).some(
+          (lead) => lead.session_id === session || lead.retired_sessions.includes(session),
+        )
+      )
+        return yield* new CrewError("ABRA_REQUIRED", "Use the central Abra session");
+    });
 
 /** Owns durable form ordering and retry collection; callers own locks and transitions. */
 export class Authorizations {
@@ -129,12 +148,13 @@ export class Authorizations {
     private records: Records,
     private runtime: Runtime,
     private evidence: CheckpointEvidence,
+    readonly assertActor: ApprovalActorCheck,
     private validatePlanning?: (e: Execution) => Effect.Effect<void, CrewError>,
   ) {}
 
   collect = Effect.fn("Authorizations.collect")(
     function* (this: Authorizations, e: Execution, kind: Kind, supervisor: SessionId) {
-      yield* assertApprovalActor(e, supervisor);
+      yield* this.assertActor(supervisor);
       if (kind === "plan") {
         if (e.workflow_policy === "full-openspec") yield* this.validatePlanning?.(e) ?? Effect.void;
         const fingerprint = yield* this.evidence.plan(e);
@@ -168,6 +188,7 @@ export class Authorizations {
             : undefined;
       if (!kind) return;
       for (const receipt of currentReceipts(e, kind).filter((a) => !a.authorized_at)) {
+        yield* this.assertActor(receipt.session_id);
         const target: ApprovalTarget =
           receipt.kind === "plan"
             ? { kind: "plan", fingerprint: receipt.fingerprint }
@@ -181,7 +202,6 @@ export class Authorizations {
 
   private collectIdentity = Effect.fn("Authorizations.collectIdentity")(
     function* (this: Authorizations, e: Execution, supervisor: SessionId, target: ApprovalTarget) {
-      yield* assertApprovalActor(e, supervisor);
       const checkpoint: ApprovalCheckpoint =
         target.kind === "plan"
           ? { kind: "plan", fingerprint: target.fingerprint, session_id: supervisor }

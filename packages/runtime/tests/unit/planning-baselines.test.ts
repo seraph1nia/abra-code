@@ -18,8 +18,17 @@ type Fixture = Effect.Success<typeof fixture>;
 const supervisor = Id.SessionId.make("ses_supervisor");
 const request = (id: string) => ({ id: Id.RequestId.make(id), sender: supervisor });
 const restart = (f: Fixture) =>
-  createWorkflow(f.config, f.records, f.work, f.spec, f.git, f.runtime, f.delivery, f.locks)
-    .controller;
+  createWorkflow(
+    f.catalog,
+    f.config,
+    f.records,
+    f.work,
+    f.spec,
+    f.git,
+    f.runtime,
+    f.delivery,
+    f.locks,
+  ).controller;
 async function attributed(f: Fixture, id = Id.IssueId.make("abra-1")) {
   let e = await run(applying(f, id));
   const root = e.worktree_directory!;
@@ -392,7 +401,7 @@ test("quiescent record export, source refs and SQLite online backup restore base
       preserve: true,
     }),
   );
-  const exported = JSON.parse(JSON.stringify(await run(f.records.export())));
+  const exported = JSON.parse(JSON.stringify(await run(f.records.export)));
   const file = join(db.root, "backup.sqlite");
   const reader = new DatabaseSync(db.path, { readOnly: true });
   try {
@@ -405,7 +414,7 @@ test("quiescent record export, source refs and SQLite online backup restore base
   await cp(common, objects, { recursive: true });
   const restoredStore = new MemoryStore();
   for (const entry of exported.entries) await run(restoredStore.set(entry.key, entry.value));
-  const restored = new Records(restoredStore);
+  const restored = new Records(restoredStore, f.records.coordination);
   const baseline = await run(restored.execution(first.id));
   assert.deepEqual(
     JSON.parse(JSON.stringify(baseline!.planning)),

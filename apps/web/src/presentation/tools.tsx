@@ -1,13 +1,13 @@
-import { useMemo } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useRenderTool, useRenderToolCall } from "@copilotkit/react-core/v2/headless";
 import type { TranscriptTool } from "@abracode/contracts/web/presentation-contracts";
 import type { PresentationAttachmentSchema } from "@abracode/contracts/presentation/contracts";
 import type { WebWorkItem } from "@abracode/contracts/web/wire";
 import type { Inspect } from "@abracode/presentation/cards";
 import { ObservationContext } from "./tool-context.ts";
-import { deferred } from "../deferred.tsx";
+import { deferred } from "@abracode/presentation/deferred";
 
-type RenderToolCallInput = Parameters<ReturnType<typeof useRenderToolCall>>[0];
+import { nativeToolCall, nativeToolMessage } from "@abracode/contracts/web/transcript";
 const ObservedTool = deferred<{ toolCallId: string }>(
   () => import("./tool-body.tsx").then((module) => ({ default: module.ObservedTool })),
   "Native tool presentation",
@@ -23,6 +23,12 @@ export function useNativeToolRendering() {
     [],
   );
 }
+const ToolRenderer = createContext<ReturnType<typeof useRenderToolCall> | null>(null);
+export function ToolRenderingProvider({ children }: { children: ReactNode }) {
+  const render = useRenderToolCall();
+  useNativeToolRendering();
+  return <ToolRenderer.Provider value={render}>{children}</ToolRenderer.Provider>;
+}
 export function ToolObservation({
   messageID,
   tool,
@@ -36,34 +42,16 @@ export function ToolObservation({
   work: readonly WebWorkItem[];
   attachments: readonly (typeof PresentationAttachmentSchema.Type)[];
 }) {
-  const render = useRenderToolCall();
+  const render = useContext(ToolRenderer);
   const observation = useMemo(
     () => ({ tool, inspect, work, attachments }),
     [tool, inspect, work, attachments],
   );
-  const toolCall = useMemo<RenderToolCallInput["toolCall"]>(
-    () => ({
-      id: tool.id,
-      type: "function",
-      function: { name: tool.name, arguments: "{}" },
-    }),
-    [tool.id, tool.name],
-  );
-  const toolMessage = useMemo<RenderToolCallInput["toolMessage"]>(
-    () =>
-      tool.status === "completed" || tool.status === "error"
-        ? {
-            id: `${messageID}:tool:${tool.id}:result`,
-            role: "tool",
-            toolCallId: tool.id,
-            content: "",
-          }
-        : undefined,
-    [messageID, tool.id, tool.status],
-  );
+  const toolCall = useMemo(() => nativeToolCall(tool), [tool]);
+  const toolMessage = useMemo(() => nativeToolMessage(messageID, tool), [messageID, tool]);
   return (
     <ObservationContext.Provider value={observation}>
-      <div data-native-renderer="copilotkit">{render({ toolCall, toolMessage })}</div>
+      <div data-native-renderer="copilotkit">{render?.({ toolCall, toolMessage })}</div>
     </ObservationContext.Provider>
   );
 }

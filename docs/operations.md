@@ -614,7 +614,7 @@ are same-user application boundaries, not OS isolation.
 
 ### Portable visual reports
 
-Save exact generated views as immutable JSON, then explicitly export HTML from an opened report. New authorized generation requests also default to JSON. No preview service starts automatically. Use `pnpm report:export /absolute/saved.json /absolute/new.html` and `pnpm report:preview /absolute/new.html 4174` for a foreground loopback preview; Ctrl+C stops only that preview. See [saved report operations](reports.md) for browser prerequisites, local feedback, legacy HTML/staging compatibility, storage integrity and downgrade limits.
+Save exact generated views as immutable JSON, then explicitly export HTML from an opened report. New authorized generation requests also default to JSON. No preview service starts automatically. Use `pnpm report:export /absolute/saved.json /absolute/new.html` and `pnpm report:preview /absolute/new.html 4174` for a foreground loopback preview; Ctrl+C stops only that preview. See [saved report operations](reports.md) for browser prerequisites, local feedback, supported document formats, storage integrity and downgrade limits.
 
 Saved-report backups must retain canonical generated JSON, published HTML exports
 and their native receipts together. The reusable `reports/renderers/v2` directory

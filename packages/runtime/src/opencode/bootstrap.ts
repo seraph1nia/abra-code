@@ -1,9 +1,8 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect platform APIs are required by the native adapters and covered by integration tests. */
 import * as Id from "@abracode/contracts/identities";
 import { resolve, join } from "node:path";
 import { AbsolutePath, Agent } from "@opencode/client/effect";
 import { Service } from "@opencode/client/effect/service";
-import { Effect } from "effect";
+import { Config, Effect } from "effect";
 import { realpath } from "../filesystem.ts";
 import { makeClient, OPENCODE_VERSION } from "../opencode/client.ts";
 import { findSupervisor } from "../opencode/supervisor.ts";
@@ -12,7 +11,7 @@ import { loadConfig } from "../config/load.ts";
 import { ProcessRunner } from "../process.ts";
 import { openWorkGraph } from "../work/graph.ts";
 import { generateHostConfiguration, assertFreshPaths } from "../config/host.ts";
-import { identity } from "../config/identity.ts";
+import { identity, runtimePaths, resolveInstallationHome } from "../config/identity.ts";
 import { CrewError } from "../domain.ts";
 import { configuration } from "../config/protocol.ts";
 import { awaitPluginActivation } from "./plugin-activation.ts";
@@ -22,7 +21,7 @@ export const bootstrapService = Effect.gen(function* () {
       "PLATFORM",
       "AbraCode requires Linux or macOS, Git and the fs-ext native binding.",
     );
-  const home = yield* realpath(process.env.ABRACODE_HOME ?? process.cwd());
+  const home = yield* realpath(yield* resolveInstallationHome);
   const config = yield* loadConfig(home);
   yield* assertFreshPaths(config);
   const runner = new ProcessRunner();
@@ -42,17 +41,17 @@ export const bootstrapService = Effect.gen(function* () {
   }
   const state = join(home, ".abracode/state");
   const existingEndpoint = yield* Service.discover({
-    file: join(state, "opencode/service.json"),
+    file: runtimePaths(home).service,
     version: OPENCODE_VERSION,
   });
   const hostConfig = existingEndpoint
-    ? join(home, ".abracode/config/opencode/opencode.json")
+    ? runtimePaths(home).hostConfig
     : yield* generateHostConfiguration(config);
   if (!existingEndpoint) yield* Effect.scoped(openWorkGraph(config));
   const endpoint =
     existingEndpoint ??
     (yield* Service.ensure({
-      file: join(state, "opencode/service.json"),
+      file: runtimePaths(home).service,
       version: OPENCODE_VERSION,
       command: [resolve(home, "node_modules/.bin/opencode"), "serve", "--service", "--port", "0"],
       env: {
@@ -61,7 +60,7 @@ export const bootstrapService = Effect.gen(function* () {
         ABRACODE_HOME: home,
         OPENCODE_CONFIG: hostConfig,
         ABRACODE_CONFIG: config.config_path,
-        PATH: `${join(home, "node_modules/.bin")}:${process.env.PATH ?? ""}`,
+        PATH: `${join(home, "node_modules/.bin")}:${yield* Config.String("PATH").pipe(Config.withDefault(""))}`,
       },
     }));
   const client = yield* makeClient(endpoint);

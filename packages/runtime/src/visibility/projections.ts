@@ -64,10 +64,7 @@ export function supervision(mode: Config["supervision_mode"], e?: Execution) {
             ["running", "uncertain"].includes(a.status),
           ).length,
           unsubmitted_count: e.feedback.actions.filter(
-            (a) =>
-              a.schema_version === 2 &&
-              a.submission.stage === "unsubmitted" &&
-              a.status === "prepared",
+            (a) => a.submission.stage === "unsubmitted" && a.status === "prepared",
           ).length,
           reruns: e.feedback.actions.filter((a) => a.kind === "rerun").length,
           error: e.feedback.error,

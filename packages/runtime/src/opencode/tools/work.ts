@@ -1,9 +1,6 @@
 import { createHash } from "node:crypto";
-import { join } from "node:path";
 import { Clock, Effect, Schema } from "effect";
-import type { Context } from "@opencode/plugin/effect/plugin";
 import {
-  AbsolutePath,
   IncidentId,
   IssueId,
   ObligationKey,
@@ -17,8 +14,6 @@ import { BriefingQuery, WorkBriefing } from "@abracode/contracts/visibility/brie
 import { MessageInputSchema } from "@abracode/contracts/workflow/message-contracts";
 import { CrewError } from "../../domain.ts";
 import { domainEffect } from "../../effect.ts";
-import { FileLocks } from "../../storage/lock.ts";
-import { NativeStore } from "../../storage/store.ts";
 import { workBriefing } from "../../visibility/briefing.ts";
 import { BatchInputSchema } from "../../work/batch.ts";
 import { WorkInputSchema } from "../../work/model.ts";
@@ -26,14 +21,13 @@ import { ScopeSchema } from "../../work/scope.ts";
 import type { Controller } from "../../workflow/controller.ts";
 import { deliveryAction, deliveryOutcome } from "../../workflow/delivery-outcome.ts";
 import { WorkReportInputSchema } from "../../reporting/report-contracts.ts";
-import { answerSelection } from "../../workflow/selected-requests.ts";
 import { diagnosticText } from "../diagnostics.ts";
 import { toolOutputs } from "../tool-contracts.ts";
 import { defineTool as define, type DefinedTool } from "../tool-definition.ts";
 
 const issueInput = Schema.Struct({ issue_id: IssueId });
 
-export function workTools(ctx: Context, c: Controller): DefinedTool[] {
+export function workTools(c: Controller): DefinedTool[] {
   return [
     define({
       name: "work_briefing",
@@ -54,15 +48,7 @@ export function workTools(ctx: Context, c: Controller): DefinedTool[] {
         answer: Schema.NonEmptyString.check(Schema.isMaxLength(8192)),
       }),
       output: Schema.String,
-      run: (a, s) =>
-        answerSelection(
-          new NativeStore(ctx.storage),
-          new FileLocks(AbsolutePath.make(join(c.queries.settings.home, ".abracode/locks"))),
-          s,
-          a.request_id,
-          a.issue_id,
-          a.answer,
-        ),
+      run: (a, s) => c.answerSelection(s, a.request_id, a.issue_id, a.answer),
     }),
     define({
       name: "work_message",

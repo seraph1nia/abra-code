@@ -15,7 +15,7 @@ import { createHash } from "node:crypto";
 import { type Locks } from "../storage/lock.ts";
 import { domainEffect } from "../effect.ts";
 import { Effect } from "effect";
-import { retainedEntry, access, readFile, readdirIfPresent } from "../filesystem.ts";
+import { retainedEntry, readFile, readdirIfPresent } from "../filesystem.ts";
 import { join } from "node:path";
 import { CrewError, identifier, type Project, type OnboardInput } from "../domain.ts";
 import { type Records } from "../storage/store.ts";
@@ -24,7 +24,7 @@ import { type Runner } from "../process.ts";
 import { decode, decodeJSON } from "../decode.ts";
 import { PackageSchema, ProjectInputSchema, VerificationSchema } from "./contracts.ts";
 import { RepositorySources, remoteIdentity } from "../git/source.ts";
-const exists = (p: string) => domainEffect(access(p).pipe(Effect.isSuccess));
+const exists = (p: string) => retainedEntry(p, "file");
 export class Onboarding {
   constructor(
     private records: Records,
@@ -72,7 +72,7 @@ export class Onboarding {
       }
       const managed = input.managed ?? previous?.managed ?? !input.path;
       if (managed && previous && !(yield* retainedEntry(previous.path, "directory"))) {
-        const active = (yield* this.records.executions()).some(
+        const active = (yield* this.records.executions).some(
           (e) => e.repository_id === input.id && e.current_phase !== "completed",
         );
         const setup = yield* this.records.setup(input.id);
@@ -302,7 +302,7 @@ export class Onboarding {
     );
   private registerOwned = Effect.fn("Onboarding.register")(
     function* (this: Onboarding, input: OnboardInput, initialize: boolean) {
-      if (!((yield* this.records.diagnostics()).length === 0))
+      if (!((yield* this.records.diagnostics).length === 0))
         return yield* new CrewError(
           "RECORD_UNAVAILABLE",
           "Unavailable durable records require inspection before registry mutation",
@@ -319,12 +319,12 @@ export class Onboarding {
       return yield* this.records.coordinateCommit(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
-            if (!((yield* this.records.diagnostics()).length === 0))
+            if (!((yield* this.records.diagnostics).length === 0))
               return yield* new CrewError(
                 "RECORD_UNAVAILABLE",
                 "Unavailable records require inspection before registry mutation",
               );
-            const existing = yield* this.records.projects();
+            const existing = yield* this.records.projects;
             if (
               existing.some(
                 (p) =>

@@ -8,6 +8,7 @@ import {
   type JsonPatch,
   type RunAgentInput,
   type BaseEvent,
+  type ActivityMessage,
 } from "@ag-ui/core";
 import { EventSchema, RunAgentInputSchema } from "@ag-ui/core/schemas";
 import type { SubmissionReceipt } from "@abracode/contracts/web/workspace-wire";
@@ -31,6 +32,7 @@ export type NativeObservation =
       type: "snapshot";
       native: NativeSessionView;
       order?: { epoch: string; sequence: number; baseline: boolean };
+      activities?: readonly ActivityMessage[];
       state?: (baseline: boolean) => Record<string, unknown>;
     }
   | { type: "custom"; event: Event };
@@ -78,28 +80,47 @@ export function jsonPatch(
 function projection() {
   let previous: Extract<NativeObservation, { type: "snapshot" }> | undefined;
   const cursor = new NativeMessageCursor();
+  let activities: readonly ActivityMessage[] = [];
+  let previousStateOrder: Extract<NativeObservation, { type: "snapshot" }>["order"];
   let previousState: Record<string, unknown> | undefined;
   const push = (event: NativeObservation): readonly Event[] => {
     if (event.type === "custom") return [event.event];
     const before = previous,
       order = event.order;
-    if (
+    const stale = !!(
       before?.order &&
       order &&
       before.order.epoch === order.epoch &&
       order.sequence <= before.order.sequence
-    )
-      return [];
+    );
+    const staleState =
+      previousStateOrder &&
+      order &&
+      previousStateOrder.epoch === order.epoch &&
+      order.sequence <= previousStateOrder.sequence;
+    if (stale && (!event.state || staleState)) return [];
     const baseline =
       order?.baseline ||
       !before ||
       !order ||
       before.order?.epoch !== order.epoch ||
       order.sequence !== before.order.sequence + 1;
-    previous = event;
-    const messages = cursor.update(event.native.messages, baseline);
-    const state = event.state?.(baseline);
+    if (!stale) previous = event;
+    const messages = stale ? [] : cursor.update(event.native.messages, baseline);
+    const reset = messages.some((m) => m.type === EventType.MESSAGES_SNAPSHOT);
+    const priorActivities = new Set(reset ? [] : activities.map((m) => m.id));
+    if (event.activities && !staleState) activities = event.activities;
+    for (const activity of activities)
+      if (!priorActivities.has(activity.id))
+        messages.push({
+          type: EventType.ACTIVITY_SNAPSHOT,
+          messageId: activity.id,
+          activityType: activity.activityType,
+          content: activity.content,
+        });
+    const state = staleState ? undefined : event.state?.(baseline);
     if (!state) return messages;
+    previousStateOrder = order;
     const priorState = previousState;
     previousState = state;
     if (baseline || !priorState)
@@ -154,12 +175,7 @@ export class NativeAgentAdapter {
         try: () => {
           this.assert(thread, agent);
           const input = RunAgentInputSchema.parse(raw);
-          if (
-            input.threadId !== thread ||
-            input.tools.length ||
-            input.context.length ||
-            Object.keys(input.state).length
-          )
+          if (input.threadId !== thread || input.tools.length || input.context.length)
             throw new CrewError(
               "WEB_INPUT",
               "Client tools and context cannot change Abra's native configuration; client state is read-only",
@@ -303,6 +319,16 @@ export class NativeAgentAdapter {
         "WEB_INPUT",
         "The native service cannot stop a particular historical run. Use Stop current Abra turn.",
       );
-    return Effect.runPromise(this.source.stop);
+    return Effect.runPromise(
+      this.source.stop.pipe(
+        Effect.mapError(
+          () =>
+            new CrewError(
+              "WEB_SERVICE",
+              "Abra could not confirm the interruption. Refresh the current turn.",
+            ),
+        ),
+      ),
+    );
   }
 }

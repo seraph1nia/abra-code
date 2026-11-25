@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Exercise injected pinned Effect filesystem/path services. */
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Cause, Context, Effect, Exit, FileSystem, Layer, Path, Schema, Scope } from "effect";

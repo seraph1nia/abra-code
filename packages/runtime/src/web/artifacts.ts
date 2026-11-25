@@ -7,10 +7,7 @@ export function artifactSummary(
   return {
     request_id: build.request.request_id,
     ...(build.request.title !== undefined ? { title: build.request.title } : {}),
-    format:
-      build.format === "a2ui-snapshot" || build.artifact?.schema_version === 2
-        ? "a2ui-snapshot"
-        : "legacy-html",
+    format: build.format,
     status: build.status,
     generation: build.generation,
     ...(build.artifact

@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 CLI and Node platform runtime APIs. */
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Cause, Effect } from "effect";
 import { Argument, Command, Flag } from "effect/cli";

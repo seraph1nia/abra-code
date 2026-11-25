@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned native service boundary. */
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { mkdtemp, mkdir, symlink, writeFile, readFile } from "node:fs/promises";

@@ -53,17 +53,17 @@ test("assignment hints recover preexisting records, stale candidates and peer co
   const a = SessionId.make("ses_first"),
     b = SessionId.make("ses_peer");
   const { execution, records } = await retainedExecution({ apply_session_id: a });
-  const restarted = new Records(records.store);
-  for (const e of await run(restarted.executions())) restarted.rememberWorkers(e);
-  const scans = vi.spyOn(restarted, "executions");
+  const restarted = new Records(records.store, records.coordination);
+  for (const e of await run(restarted.executions)) restarted.rememberWorkers(e);
+  const scans = vi.spyOn(restarted, "executions", "get");
   assert.equal((await run(restarted.workerAssignment(a)))?.issue_id, execution.issue_id);
   assert.equal(scans.mock.calls.length, 0);
   assert.equal(await run(restarted.workerAssignment(b)), undefined);
-  await run(records.patchOwned(execution, { apply_session_id: b }));
+  await run(records.commitOwned(execution, { apply_session_id: b }));
   assert.equal((await run(restarted.workerAssignment(b)))?.issue_id, execution.issue_id);
   assert.equal(scans.mock.calls.length, 2);
   await assert.rejects(
-    run(records.patchOwned(execution, { apply_session_id: a, rounds: [{} as never] })),
+    run(records.commitOwned(execution, { apply_session_id: a, rounds: [{} as never] })),
   );
   assert.equal(await run(restarted.workerAssignment(a)), undefined);
   assert.equal(scans.mock.calls.length, 3);

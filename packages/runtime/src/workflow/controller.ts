@@ -20,6 +20,8 @@ export class Controller {
   constructor(private services: ControllerServices) {
     this.queries = services.queries;
   }
+  answerSelection = (...args: Parameters<ControllerServices["answerSelection"]>) =>
+    this.services.answerSelection(...args);
   validation = (...args: Parameters<ValidationCommands["command"]>) =>
     this.services.validation.command(...args);
   get memory() {
@@ -32,9 +34,10 @@ export class Controller {
     return this.services.inbox;
   }
   close = () =>
-    this.memory
-      .close()
-      .pipe(Effect.andThen(this.inbox.close()), Effect.andThen(this.services.execution.close));
+    this.memory.close.pipe(
+      Effect.andThen(this.inbox.close),
+      Effect.andThen(this.services.execution.close),
+    );
   prAction = (...args: Parameters<VerificationCommands["prAction"]>) =>
     this.services.verification.prAction(...args);
   feedbackDisposition = (...args: Parameters<VerificationCommands["feedbackDisposition"]>) =>
@@ -45,8 +48,6 @@ export class Controller {
     this.services.verification.reviewerSuggestions(...args);
   findings = (...args: Parameters<VerificationCommands["findings"]>) =>
     this.services.verification.findings(...args);
-  visualArtifact = (...args: Parameters<ReportCommands["readArtifact"]>) =>
-    this.services.reports.readArtifact(...args);
   exportVisualDocument = (...args: Parameters<ReportCommands["exportDocument"]>) =>
     this.services.reports.exportDocument(...args);
   readVisualExport = (...args: Parameters<ReportCommands["readExport"]>) =>

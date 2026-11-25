@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 child process and service discovery APIs. */
 import { join } from "node:path";
 import { Service } from "@opencode/client/effect/service";
 import { Effect, Option } from "effect";
@@ -14,7 +13,7 @@ import { configuration } from "../config/protocol.ts";
 import { CrewError } from "../domain.ts";
 import { realpath } from "../filesystem.ts";
 import { AbsolutePath } from "@abracode/contracts/identities";
-import { makeClient } from "../opencode/client.ts";
+import { makeClient, OPENCODE_VERSION } from "../opencode/client.ts";
 import { findSupervisor } from "../opencode/supervisor.ts";
 
 export interface ClientOptions {
@@ -31,8 +30,8 @@ export const runClient = (options: ClientOptions) =>
     const configPath = yield* resolveConfigurationPath(home);
     const state = join(home, ".abracode/state");
     const endpoint = yield* Service.discover({
-      file: join(state, "opencode/service.json"),
-      version: "2.3.0",
+      file: runtimePaths(home).service,
+      version: OPENCODE_VERSION,
     });
     if (!endpoint)
       return yield* new CrewError(

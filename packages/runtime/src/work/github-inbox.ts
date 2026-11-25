@@ -1,4 +1,16 @@
-import { Clock, Effect, Exit, Fiber, Ref, Result, Scope, Semaphore } from "effect";
+import {
+  Context,
+  Layer,
+  Clock,
+  Effect,
+  Exit,
+  Fiber,
+  Ref,
+  Result,
+  Scope,
+  SynchronizedRef,
+  Semaphore,
+} from "effect";
 import type {
   InboxPage,
   InboxQuery,
@@ -66,11 +78,10 @@ export function computeHighWatermark(
 export class GithubInbox {
   private readonly scope = Scope.makeUnsafe();
   private readonly permits = Semaphore.makeUnsafe(2);
-  private readonly runningRef = Ref.makeUnsafe<ReadonlyMap<string, Fiber.Fiber<void, CrewError>>>(
-    new Map(),
-  );
+  private readonly runningRef = SynchronizedRef.makeUnsafe<
+    ReadonlyMap<string, Fiber.Fiber<void, CrewError>>
+  >(new Map());
   private readonly refreshFailures = Ref.makeUnsafe<ReadonlyMap<string, CrewError>>(new Map());
-  private readonly details = new InboxDetailCache();
   private published?: { revision: string; rows: DeliveryLink[] };
   constructor(
     private remote: InboxForge,
@@ -78,16 +89,16 @@ export class GithubInbox {
     private records: Records,
     private admission: WorkAdmission,
     private config: Config,
+    private readonly details = new InboxDetailCache(),
   ) {}
-  private get running() {
-    return Effect.runSync(Ref.get(this.runningRef));
+  get close() {
+    return this.details.clear.pipe(Effect.andThen(Scope.close(this.scope, Exit.void)));
   }
-  close = () => this.details.clear().pipe(Effect.andThen(Scope.close(this.scope, Exit.void)));
-  private deliveries = () =>
-    Effect.gen({ self: this }, function* () {
+  private get deliveries() {
+    return Effect.gen({ self: this }, function* () {
       const revision = yield* this.records.observationRevision;
       if (revision && this.published?.revision === revision) return this.published.rows;
-      const rows = (yield* this.records.executions()).flatMap((e) =>
+      const rows = (yield* this.records.executions).flatMap((e) =>
         e.pull_request_reference
           ? [
               {
@@ -103,13 +114,14 @@ export class GithubInbox {
         this.published = { revision, rows };
       return rows;
     });
+  }
   private recordFailure(job: Job, prior: Scan, now: number, error: CrewError) {
     return Effect.gen({ self: this }, function* () {
       const denied = error.code === "INBOX_ACCESS" || error.code === "INBOX_AUTH";
       const retry = now + (error.code === "INBOX_LIMIT" ? 3600000 : 60000);
       if (denied) {
         yield* indexEffect(() => this.index.revoke(job.partition, retry, error.message));
-        yield* this.details.clear();
+        yield* this.details.clear;
         return;
       }
       if (yield* indexEffect(() => this.index.cooldown(job.partition, now))) return;
@@ -201,44 +213,41 @@ export class GithubInbox {
     );
   }
   private start(job: Job, background: boolean) {
-    return Effect.gen({ self: this }, function* () {
-      const existing = (yield* Ref.get(this.runningRef)).get(job.stream);
-      if (existing) return existing;
-      let launched: Fiber.Fiber<void, CrewError> | undefined;
-      const task = Effect.gen({ self: this }, function* () {
-        const now = yield* Clock.currentTimeMillis;
-        const prior = yield* this.state(job, now);
-        if (prior.retry <= now) yield* this.page(job, prior, now);
-      }).pipe(
-        this.permits.withPermits(1),
-        Effect.tapError((error) =>
-          background
-            ? // A warm reader already returned its cached page. Surface the failed refresh on its next read.
-              Ref.update(this.refreshFailures, (map) => {
-                const next = new Map(map);
-                next.set(job.partition, error);
-                return next;
-              })
-            : Effect.void,
-        ),
-        Effect.ensuring(
-          Ref.update(this.runningRef, (map) => {
-            if (launched && map.get(job.stream) !== launched) return map;
-            const next = new Map(map);
-            next.delete(job.stream);
-            return next;
-          }),
-        ),
-      );
-      const fiber = yield* task.pipe(Effect.forkIn(this.scope, { startImmediately: false }));
-      launched = fiber;
-      yield* Ref.update(this.runningRef, (map) => {
-        const next = new Map(map);
-        next.set(job.stream, fiber);
-        return next;
-      });
-      return fiber;
-    });
+    return SynchronizedRef.modifyEffect(this.runningRef, (running) =>
+      Effect.gen({ self: this }, function* () {
+        const existing = running.get(job.stream);
+        if (existing) return [existing, running] as const;
+        let launched: Fiber.Fiber<void, CrewError> | undefined;
+        const task = Effect.gen({ self: this }, function* () {
+          const now = yield* Clock.currentTimeMillis;
+          const prior = yield* this.state(job, now);
+          if (prior.retry <= now) yield* this.page(job, prior, now);
+        }).pipe(
+          this.permits.withPermits(1),
+          Effect.tapError((error) =>
+            background
+              ? // A warm reader already returned its cached page. Surface the failed refresh on its next read.
+                Ref.update(this.refreshFailures, (map) => {
+                  const next = new Map(map);
+                  next.set(job.partition, error);
+                  return next;
+                })
+              : Effect.void,
+          ),
+          Effect.ensuring(
+            SynchronizedRef.update(this.runningRef, (map) => {
+              if (launched && map.get(job.stream) !== launched) return map;
+              const next = new Map(map);
+              next.delete(job.stream);
+              return next;
+            }),
+          ),
+        );
+        const fiber = yield* task.pipe(Effect.forkIn(this.scope, { startImmediately: false }));
+        launched = fiber;
+        return [fiber, new Map(running).set(job.stream, fiber)] as const;
+      }),
+    );
   }
   private state(job: Job, now: number) {
     return indexEffect(() => {
@@ -257,7 +266,7 @@ export class GithubInbox {
         const keys = new Map<string, string | undefined>();
         let selected = false;
         const hosts = yield* githubHosts;
-        for (const p of yield* this.records.projects()) {
+        for (const p of yield* this.records.projects) {
           if (q.repository_id && q.repository_id !== p.id) continue;
           const o = inboxOrigin(p, hosts);
           if (!o) continue;
@@ -335,7 +344,7 @@ export class GithubInbox {
         const cold = states.every(({ prior }) => !prior.last && !prior.cursor);
         const fibers = yield* Effect.forEach(due.slice(0, 2), ({ job }) => this.start(job, !cold));
         if (cold) yield* Effect.forEach(fibers, (f) => Fiber.join(f));
-        const active = yield* Ref.get(this.runningRef);
+        const active = yield* SynchronizedRef.get(this.runningRef);
         const coverage: Coverage[] = [...errors];
         const scopes = new Set<string>();
         for (const { job } of states) {
@@ -357,7 +366,7 @@ export class GithubInbox {
             message: state.error,
           });
         }
-        const deliveries = yield* this.deliveries();
+        const deliveries = yield* this.deliveries;
         const found = yield* indexEffect(() => this.index.find([...scopes], q, deliveries));
         return { ...found, coverage };
       }),
@@ -401,7 +410,7 @@ export class GithubInbox {
                       this.index.backoff(credential, observedAt + 3600000, error.message),
                     );
                   if (error.code === "INBOX_ACCESS") {
-                    yield* this.details.clear();
+                    yield* this.details.clear;
                     yield* indexEffect(() =>
                       this.index.revoke(partition, observedAt + 60000, error.message),
                     );
@@ -423,7 +432,7 @@ export class GithubInbox {
           }),
         );
         const hit = yield* this.details.observe(key, force, read);
-        const deliveries = yield* this.deliveries();
+        const deliveries = yield* this.deliveries;
         return {
           ...hit.data,
           observed_at: hit.at,
@@ -445,4 +454,15 @@ export class GithubInbox {
       session,
       instructions,
     );
+}
+
+export class GithubInboxService extends Context.Service<GithubInboxService, GithubInbox>()(
+  "abracode/GithubInbox",
+) {
+  static layer(inbox: GithubInbox) {
+    return Layer.effect(
+      GithubInboxService,
+      Effect.acquireRelease(Effect.succeed(inbox), (service) => service.close),
+    );
+  }
 }

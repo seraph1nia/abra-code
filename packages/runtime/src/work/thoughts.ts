@@ -1,7 +1,7 @@
 import type { WorkGraph } from "./graph.ts";
 import type { ThoughtSave } from "@abracode/contracts/visibility/thoughts";
 import { createHash, createHmac } from "node:crypto";
-import { Effect, Redacted, Schema } from "effect";
+import { Effect, Redacted, Result, Schema } from "effect";
 import {
   MemoAccount,
   MemoName,
@@ -93,7 +93,7 @@ function summary(instance: string, owner: string, m: Memo) {
 export class PersonalThoughts {
   constructor(
     private config: Pick<Config, "memos">,
-    private receipts: Pick<WorkGraph, "reserveThought">,
+    private receipts: Pick<WorkGraph, "reserveThought" | "setThoughtSubmission">,
   ) {}
   private connect() {
     return Effect.gen({ self: this }, function* () {
@@ -146,26 +146,36 @@ export class PersonalThoughts {
       const digest = hash(input.content);
       const key = hash(JSON.stringify([instance, owner, input.request_id]));
       const receipt = yield* this.receipts.reserveThought(key, digest);
-      // Only the original reservation may create. All subsequent attempts verify the same resource.
-      if (receipt.fresh)
-        yield* api
-          .mcp("create", {
-            memoId: receipt.id,
-            body: { content: input.content, visibility: "PRIVATE" },
-          })
-          .pipe(Effect.result);
-      const raw = yield* api
-        .mcp("get", { memo: receipt.id })
-        .pipe(
-          Effect.mapError(
-            () =>
-              new CrewError(
-                "MEMOS_UNRESOLVED",
-                "Could not verify this save. Retry with the same request ID.",
-              ),
-          ),
+      const read = api.mcp("get", { memo: receipt.id });
+      let result = receipt.fresh ? undefined : yield* Effect.result(read);
+      if (
+        !result ||
+        (Result.isFailure(result) &&
+          result.failure.code === "MEMOS_MISSING" &&
+          result.failure.details === 404)
+      ) {
+        if (yield* this.receipts.setThoughtSubmission(key, true)) {
+          const create = yield* Effect.result(
+            api.mcp("create", {
+              memoId: receipt.id,
+              body: { content: input.content, visibility: "PRIVATE" },
+            }),
+          );
+          if (
+            Result.isFailure(create) &&
+            ["MEMOS_CREATE_REFUSED", "MEMOS_CREATE_UNSUBMITTED"].includes(create.failure.code)
+          )
+            yield* this.receipts.setThoughtSubmission(key, false);
+          result = yield* Effect.result(read);
+        }
+      }
+      if (!result) result = yield* Effect.result(read);
+      if (Result.isFailure(result))
+        return yield* new CrewError(
+          "MEMOS_UNRESOLVED",
+          "Could not verify this save. Retry with the same request ID.",
         );
-      const m = yield* decodeMemos(memo, raw);
+      const m = yield* decodeMemos(memo, result.success);
       const row = yield* Effect.try({ try: () => summary(instance, owner, m), catch: missing });
       if (m.name !== "memos/" + receipt.id || row.reference.wording_hash !== digest)
         return yield* new CrewError(

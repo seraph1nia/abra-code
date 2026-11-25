@@ -307,10 +307,10 @@ test("incomplete observations preserve unresolved revisions and immutable paged 
   });
   await run(f.records.save(e));
   const before = await run(f.records.execution(e.issue_id));
-  const page = await run(f.records.feedback(e.issue_id));
+  const page = await run(f.controller.queries.feedback(e.issue_id));
   assert.equal(page.history[0].text, finding.text);
   assert.equal(page.history_total, 1);
-  assert.equal((await run(f.records.feedback(e.issue_id, 1))).history.length, 0);
+  assert.equal((await run(f.controller.queries.feedback(e.issue_id, 1))).history.length, 0);
   assert.deepEqual(await run(f.records.execution(e.issue_id)), before);
   e.feedback = { ...e.feedback, history: [] };
   await assert.rejects(run(f.records.save(e)), /history/);
@@ -367,6 +367,7 @@ test("due feedback is retained before human merge approval and recovers a known 
     },
   };
   const c = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -588,9 +589,15 @@ test("own reply recognition requires the authenticated author, exact content and
         kind: "reply",
         status: "uncertain",
         authority: "execution-policy",
-        finding: Id.FindingId.make("source-1"),
-        revision: "rev-1",
-        body: "Verified correction",
+        repository_id: e.repository_id,
+        pr: pr.url,
+        submission: { stage: "admitted", at: 1 },
+        target: {
+          destination: { kind: "issue" },
+          finding: Id.FindingId.make("source-1"),
+          revision: "rev-1",
+          body: "Verified correction",
+        },
         created_at: 0,
         updated_at: 1,
       },

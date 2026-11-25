@@ -2,7 +2,6 @@ import { presentationHash } from "../../src/presentation/identity.ts";
 import { diagramRequestKey } from "@abracode/contracts/web/diagram-actions";
 import { searchPublications } from "../../src/presentation/associations.ts";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { test } from "vite-plus/test";
 import { Effect } from "effect";
 import { CrewError } from "../../src/domain.ts";
@@ -302,24 +301,8 @@ test("legacy latest-only layouts and original request retries do not invent earl
       snapshot: f.workspace.value.work.work,
     }),
   );
-  const receipt = createHash("sha256").update(`${old.message_id}/${old.call_id}`).digest("hex");
-  await run(
-    f.store.set(StorageKey.make(`web/surface-call/${session}/${receipt}`), {
-      surface_id: "board",
-      revision: 1,
-      input_hash: createHash("sha256").update(JSON.stringify(old.surface)).digest("hex"),
-    }),
-  );
-  assert.equal((await run(f.owner.read(session, "board", 2))).history, "latest-only");
-  await assert.rejects(
-    run(f.owner.read(session, "board", 1)),
-    /exact layout revision was not retained/,
-  );
-  assert.deepEqual(await run(f.owner.publish(old, f.observe)), {
-    surface_id: "board",
-    revision: 1,
-    version: "1.0",
-  });
+  await assert.rejects(run(f.owner.read(session, "board", 2)), /committed surface head/);
+  await assert.rejects(run(f.owner.publish(old, f.observe)), /committed surface head/);
   assert.deepEqual((await run(f.owner.associations(session, [old.message_id]))).entries, []);
   assert.equal(f.reads(), 0);
   assert.equal(
@@ -328,7 +311,7 @@ test("legacy latest-only layouts and original request retries do not invent earl
   );
 });
 
-test("older heads expose their proved predecessor and a lost final response leaves the revision committed", async () => {
+test("a lost final response leaves the revision committed", async () => {
   const f = fixture(),
     key = StorageKey.make(`web/surface-head/${session}/board`);
   await run(f.owner.publish(source("msg_original", "One"), f.observe));
@@ -336,7 +319,6 @@ test("older heads expose their proved predecessor and a lost final response leav
   f.store.set = (path, value) => {
     if (path !== key) return set(path, value);
     const head = { ...(value as Record<string, unknown>) };
-    delete head.committed_revision;
     return set(path, head).pipe(
       Effect.andThen(Effect.fail(new CrewError("CRASH", "Head written"))),
     );
@@ -418,7 +400,7 @@ test("unfiltered snapshot siblings retain all observed work and explicit referen
   assert.deepEqual(await run(f.owner.read(session, "mixed", 1)), captured);
 });
 
-test("current and legacy diagrams expose exact compact selections without altering stored layouts", async () => {
+test("diagram publications expose exact compact selections without altering stored layouts", async () => {
   const f = fixture();
   const request = source("msg_diagram", "Original");
   for (const length of [3, 1500]) {
@@ -437,33 +419,24 @@ test("current and legacy diagrams expose exact compact selections without alteri
         ],
       },
     });
-    await run(
-      f.store.set(StorageKey.make(`web/surface/${session}/board`), {
-        session_id: session,
-        tool_call_id: "legacy",
-        revision: 1,
-        at: f.workspace.value.at,
-        snapshot: [],
-        surface: layout,
-      }),
+    const published = await run(
+      f.owner.publish(
+        { ...request, message_id: MessageId.make("msg_diagram_" + length), surface: layout },
+        f.observe,
+      ),
     );
     const before = structuredClone([...f.store.values]);
-    const old = await run(f.owner.read(session, "board", 1));
+    const old = await run(f.owner.read(session, "board", published.revision));
     assert.equal(old.surface_hash, presentationHash(layout));
     assert.ok(
       diagramRequestKey({
         kind: "surface",
         surface_id: "board",
-        revision: 1,
+        revision: published.revision,
         hash: old.surface_hash!,
       }).length < 150,
     );
     assert.deepEqual([...f.store.values], before);
-    if (length === 1500) {
-      await run(f.owner.publish({ ...request, surface: layout }, f.observe));
-      const current = await run(f.owner.read(session, "board", 2));
-      assert.equal(current.surface_hash, old.surface_hash);
-      await assert.rejects(run(f.owner.read(session, "board", 3)));
-    }
+    await assert.rejects(run(f.owner.read(session, "board", published.revision + 1)));
   }
 });

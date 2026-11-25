@@ -1,3 +1,4 @@
+import { Coordination } from "../../src/workflow/coordination.ts";
 import { readFile, writeFile, rename } from "node:fs/promises";
 import { Effect } from "effect";
 import { CrewError } from "../../src/domain.ts";
@@ -50,8 +51,7 @@ const store: Store = {
   entries: (prefix) =>
     read(file).pipe(Effect.map((value) => (key.startsWith(prefix) ? [{ key, value }] : []))),
 };
-const records = new Records(store);
-records.coordinate(new FileLocks(AbsolutePath.make(locks)));
+const records = new Records(store, new Coordination(new FileLocks(AbsolutePath.make(locks))));
 const result = await Effect.runPromise(
   Effect.gen(function* () {
     const e = yield* records.execution(IssueId.make(issue));
@@ -73,7 +73,7 @@ const result = await Effect.runPromise(
       mode === "replace"
         ? records.save(e)
         : field === "retry_instructions"
-          ? records.patchOwned(e, { retry_instructions: field })
+          ? records.commitOwned(e, { retry_instructions: field })
           : records.saveOwned(e, ["error_or_recovery_reason"])
     ).pipe(Effect.result);
     return saved._tag === "Success"

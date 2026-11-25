@@ -35,8 +35,8 @@ workspace refactor. Its baseline passes are not final implementation evidence.
 
 Batch intake reuses `WorkIntake` policy checks and `SqliteWorkGraph` transactions.
 `work/batch.ts` owns the bounded keyed definitions and deterministic local-reference
-normalization. SQLite schema 5 adds only batch retry receipts and their issue-key
-mapping beside existing issue/request/dependency/event tables. The receipt binds
+normalization. The fresh v1 schema stores batch retry receipts and their issue-key
+mapping beside the issue, request, dependency and event tables. The receipt binds
 original input; the ordinary graph remains authoritative for current task state.
 A complete DAG and all repositories/scopes are checked before writes. Commit
 publishes all items together; restart reads the same receipt rather than creating
@@ -116,7 +116,7 @@ generation and operation checks and all existing immutable-history validation.
 An old aggregate is not a partial patch. Verification owns its command wait and
 receipts; worker completion owns its capacity observations. Their commits cannot
 overwrite concurrent progress, questions, failure incidents or report evidence.
-Remaining writer migrations are tracked by the refactor's task 4.1.
+The admission index captures active records before exclusive coordination. The commit rechecks the revision and retries the capture if a peer wrote in the meantime.
 
 Worker reservations and initial provisioning consume execution slots. Idle claims, worktrees and pending approvals can outlive their slots. Each new worker turn checks global, repository and role limits under the controller lock. A worker asking for input releases its reservation once the controller confirms that the assignment has stopped. An external writer or uncertain native admission continues to hold its slots. Omitted execution limits inherit the worker limit at the same scope.
 
@@ -219,7 +219,7 @@ Schemas own record and protocol shapes. Domain types derive from them, with muta
 
 ## Versioned plugin records and backup
 
-Project, setup and execution records use schema version 1. Durable execution variants require phase-specific ownership and preservation evidence. Reads decode records individually and normalize supported legacy data in memory. A coordinated save retains `legacy-original/<original-key>` before the first migration write, preserves additive evidence, and increments the record revision. Unknown versions, mismatched keys and incomplete legacy evidence remain unchanged and visible through `abra_work_list`, readiness, the native work surface and `pnpm doctor` when the service is available. One unavailable record does not hide valid history; new admission and registry changes remain blocked until its ownership is resolved.
+Project, setup and execution records use schema version 1. Durable execution variants require phase-specific ownership and preservation evidence. Reads require the current schema version, matching record identity and complete evidence for the recorded phase. A coordinated save preserves additive evidence and increments the record revision. Diagnostics identify unsupported or corrupt records individually in work lists, readiness, the native work surface and doctor. One unavailable record does not hide valid history; new admission and registry changes remain blocked until its ownership is resolved.
 
 Legacy records without a retained verification receipt normalize with an empty verification snapshot: no new commands are guessed from a later project configuration. Preserve their sessions, claims, approvals and worktrees and inspect the missing evidence before an explicit policy revision. A phase name never creates a receipt or authorization. New executions snapshot verification and delivery policy at admission.
 
@@ -328,8 +328,8 @@ erase independently published report evidence.
 model per existing worker role. The native runtime still owns model inventory,
 selection and execution. Repository declarations and task input share the same
 selector shape; tasks cannot select permission-bearing profiles. Task selectors
-are retained in the existing SQLite work graph (`dispatch_json`, schema 6), with
-original request/batch identities preserved across migration. The existing
+are retained in the existing SQLite work graph (`dispatch_json`, schema 1), alongside their
+original request and batch identities. The existing
 execution configuration snapshot captures every resolved model and its source
 before provisioning. Record writes reject rewriting that snapshot, and existing
 native preflight refuses unavailable models/variants without a fallback. No

@@ -4,6 +4,12 @@ AbraCode pins Effect 4.1.4. Shared contracts already distinguish issue, reposito
 
 **First fixes.** Carry the web submission ID into the answer tool, decode Git object IDs in visibility reads, and distinguish a missing setup file from a failed filesystem probe. Each changes what a caller can successfully do or recover from. [Prioritized adoption order](#final-review-and-adoption-order)
 
+## Native runtime implementation
+
+The application scope now owns locks, coordination, records, work-graph access, operations, GitHub refresh fibers, detail caching and agent memory. Fresh execution creation requires the configured catalog. Recovery uses the retained configuration. Capacity admission audits records before taking the exclusive lock and rechecks the revision before committing. Forced detail reads fence older completions and expire on the calling fiber’s clock.
+
+The findings below record the earlier audit. The current implementation and its verification checklist are tracked in the [native runtime change](../openspec/changes/modernize-native-runtime-and-drop-legacy/tasks.md).
+
 ## What the current tree already addresses
 
 The working tree already contains these fixes from the earlier audit and their regression tests. [Follow-up tasks and verification](../openspec/changes/preserve-effect-failures-and-observer-lifetimes/tasks.md)

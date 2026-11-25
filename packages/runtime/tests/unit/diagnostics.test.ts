@@ -118,7 +118,7 @@ test("native Supervisor model selection uses its actual assistant model rather t
         ),
     },
   } as unknown as Context;
-  const runtime = new NativeRuntime(ctx, f.config);
+  const runtime = new NativeRuntime(ctx, f.config, f.records);
   assert.deepEqual(await run(runtime.supervisorModel(Id.SessionId.make("ses-supervisor"))), ref);
 });
 test("native failure events retain their cause when the transcript has no error", async (t) => {

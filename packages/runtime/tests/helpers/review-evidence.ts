@@ -106,7 +106,7 @@ export function feedbackFixture(external: boolean): FeedbackPage {
     history: [],
     actions: [
       {
-        schema_version: 2,
+        schema_version: 1,
         id: "preflight-native",
         generation: 0,
         repository_id: Id.RepositoryId.make("api"),
@@ -129,14 +129,20 @@ export function feedbackFixture(external: boolean): FeedbackPage {
       {
         schema_version: 1,
         id: "reply-native",
+        repository_id: Id.RepositoryId.make("api"),
+        pr: Id.PullRequestUrl.make("https://example.invalid/fixture/api/pull/1"),
+        submission: { stage: "admitted", at: 1 },
         generation: 0,
         head: Id.Commit.make("b".repeat(40)),
         kind: "reply",
         status: "uncertain",
         authority: "execution-policy",
-        finding: Id.FindingId.make("comment-native"),
-        revision: "revision-1",
-        body: "Addressed with verified evidence",
+        target: {
+          destination: { kind: "issue" },
+          finding: Id.FindingId.make("comment-native"),
+          revision: "revision-1",
+          body: "Addressed with verified evidence",
+        },
         created_at: 0,
         updated_at: 1,
         result: "Response lost; reconcile before retry",
@@ -144,12 +150,15 @@ export function feedbackFixture(external: boolean): FeedbackPage {
       {
         schema_version: 1,
         id: "reviewers-native",
+        repository_id: Id.RepositoryId.make("api"),
+        pr: Id.PullRequestUrl.make("https://example.invalid/fixture/api/pull/1"),
+        submission: { stage: "confirmed", at: 1, receipt: "Reviewer request pending: reviewer" },
         generation: 0,
         head: Id.Commit.make("b".repeat(40)),
         kind: "reviewers",
         status: "confirmed",
         authority: "execution-policy",
-        users: ["reviewer"],
+        target: { users: ["reviewer"], teams: [] },
         created_at: 0,
         updated_at: 1,
         result: "Reviewer request pending: reviewer",
@@ -168,7 +177,7 @@ export function feedbackFixture(external: boolean): FeedbackPage {
         findings: [],
         actions: [
           {
-            schema_version: 2,
+            schema_version: 1,
             id: "preflight-native",
             generation: 0,
             repository_id: Id.RepositoryId.make("api"),

@@ -1,4 +1,4 @@
-import { createComponentImplementation } from "@a2ui/react";
+import { catalogComponent } from "./catalog-component.tsx";
 import { lazy, Suspense, useMemo, type ComponentType } from "react";
 import type { HighlightedCodeProps } from "./highlighted-code.tsx";
 import { Schema } from "effect";
@@ -23,7 +23,7 @@ export function contentImplementation(name: ContentName) {
   const api = catalog.components.get(name)!;
   switch (name) {
     case "Table":
-      return createComponentImplementation(api, ({ props }) => {
+      return catalogComponent(api, ({ props }) => {
         const { caption, columns, rows } = useMemo(() => decodeTable(props), [props]);
         return (
           <section className="catalog-table-scroll" aria-label={caption} tabIndex={0}>
@@ -52,7 +52,7 @@ export function contentImplementation(name: ContentName) {
         );
       });
     case "Disclosure":
-      return createComponentImplementation(api, ({ props, buildChild }) => {
+      return catalogComponent(api, ({ props, buildChild }) => {
         const { label, child } = useMemo(() => decodeDisclosure(props), [props]);
         return (
           <details className="catalog-disclosure">
@@ -62,7 +62,7 @@ export function contentImplementation(name: ContentName) {
         );
       });
     case "KeyValueList":
-      return createComponentImplementation(api, ({ props }) => {
+      return catalogComponent(api, ({ props }) => {
         const { entries } = useMemo(() => decodeKeyValueList(props), [props]);
         return (
           <dl className="catalog-facts">
@@ -76,7 +76,7 @@ export function contentImplementation(name: ContentName) {
         );
       });
     case "CodeBlock":
-      return createComponentImplementation(api, ({ props }) => {
+      return catalogComponent(api, ({ props }) => {
         const { code, language } = useMemo(() => decodeCodeBlock(props), [props]);
         const lang = language?.trim().toLowerCase();
         return (

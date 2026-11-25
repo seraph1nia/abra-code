@@ -89,13 +89,13 @@ test("captured context is immutable, survives source edits and diagnostics are r
       owner: "user",
     }),
   );
-  const before = await run(f.records.export());
+  const before = await run(f.records.export);
   const diag = await run(f.controller.diagnostics(issue, "explore"));
   assert.equal(diag.contexts[0].provenance, "captured");
   assert.equal(diag.contexts[0].skills[0].loading, "unobserved");
   assert.ok(!JSON.stringify(diag.contexts).includes(original.prompt));
-  assert.deepEqual(await run(f.records.export()), before);
-  const exported = await run(f.records.export());
+  assert.deepEqual(await run(f.records.export), before);
+  const exported = await run(f.records.export);
   assert.ok(exported.entries.some((entry) => entry.key === `worker-context/${original.prompt_id}`));
   assert.throws(() =>
     Schema.decodeUnknownSync(WorkerContextSchema)({ ...original, schema_version: 999 }),
@@ -175,7 +175,7 @@ test("request validation blocks missing tools, accepts patch and fences replaced
   const statusBefore = await run(
     f.records.store.get(Id.StorageKey.make(`worker-context-status/${e.execution_id}/explore`)),
   );
-  await run(f.records.saveControl({ ...e }));
+  await run(f.records.commitControl({ ...e }));
   await assert.rejects(
     run(contexts.request(e, "explore", e.explore_session_id!, ctx.environment.model, names)),
     /superseded/,

@@ -1,3 +1,9 @@
+import {
+  FetchHttpClient,
+  HttpClient,
+  HttpClientRequest,
+  type HttpClientResponse,
+} from "effect/http";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { Console, Effect, Redacted, Schema } from "effect";
@@ -19,29 +25,39 @@ const credential = Schema.Struct({
   personalAccessToken: Schema.Struct({ name: Schema.String }),
 });
 
-function request(instance: string, path: string, options: RequestInit = {}) {
-  return Effect.tryPromise({
-    try: (signal) =>
-      fetch(instance + "/api/" + path, {
-        ...options,
-        redirect: "error",
-        signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]),
-      }),
-    catch: () => new CrewError("DEV_MEMOS", "Could not reach the local Memos container."),
+type RequestOptions = {
+  method?: "POST" | "DELETE";
+  headers?: Record<string, string>;
+  body?: string;
+};
+function request(instance: string, path: string, options: RequestOptions = {}) {
+  const req = HttpClientRequest.make(options.method ?? "GET")(instance + "/api/" + path, {
+    headers: options.headers,
   });
+  return HttpClient.execute(
+    options.body === undefined
+      ? req
+      : HttpClientRequest.bodyText(req, options.body, "application/json"),
+  ).pipe(
+    Effect.timeout("10 seconds"),
+    Effect.mapError(() => new CrewError("DEV_MEMOS", "Could not reach the local Memos container.")),
+  );
 }
-function response<S extends Schema.Constraint>(res: Response, schema: S) {
+function response<S extends Schema.Constraint>(
+  res: HttpClientResponse.HttpClientResponse,
+  schema: S,
+) {
   return Effect.gen(function* () {
-    if (!res.ok)
+    if (res.status < 200 || res.status >= 300)
       return yield* new CrewError("DEV_MEMOS", `Local Memos setup failed (HTTP ${res.status}).`);
-    const json: unknown = yield* Effect.tryPromise({
-      try: () => res.json(),
-      catch: () => new CrewError("DEV_MEMOS", "Invalid Memos response."),
-    });
+    const json = yield* res.json.pipe(
+      Effect.timeout("10 seconds"),
+      Effect.mapError(() => new CrewError("DEV_MEMOS", "Invalid Memos response.")),
+    );
     return yield* decode(schema, json, "Local Memos setup");
   });
 }
-const post = (body: unknown, bearer?: string): RequestInit => ({
+const post = (body: unknown, bearer?: string): RequestOptions => ({
   method: "POST",
   headers: {
     "content-type": "application/json",
@@ -74,7 +90,11 @@ export const connectDevNotebook = (sourceRoot: string) =>
           flag: "wx",
         }).pipe(
           Effect.andThen(rename(tmp, file)),
-          Effect.ensuring(rm(tmp, { force: true }).pipe(Effect.orDie)),
+          Effect.ensuring(
+            rm(tmp, { force: true }).pipe(
+              Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error)),
+            ),
+          ),
         );
       });
     const locks = new FileLocks(AbsolutePath.make(join(config.home, ".abracode/locks")));
@@ -131,4 +151,7 @@ export const connectDevNotebook = (sourceRoot: string) =>
         );
       }),
     );
-  });
+  }).pipe(
+    Effect.provide(FetchHttpClient.layer),
+    Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
+  );

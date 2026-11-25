@@ -116,7 +116,13 @@ export const saveDeclaration = (
                 "Configuration changed while preparing a repository update; reread and retry. User edits were preserved.",
               );
             yield* files.rename(temporary, config.config_path);
-          }).pipe(Effect.ensuring(files.rm(temporary, { force: true }).pipe(Effect.orDie)));
+          }).pipe(
+            Effect.ensuring(
+              files
+                .rm(temporary, { force: true })
+                .pipe(Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error))),
+            ),
+          );
         }
         config.repositories = resolved.repositories;
         config.config_digest = resolved.config_digest;

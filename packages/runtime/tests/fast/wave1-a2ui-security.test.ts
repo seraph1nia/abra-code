@@ -65,6 +65,8 @@ test("catalog-media URL sanitizer enforces strict data MIME allowlists and block
     "//evil.invalid/image.png",
     "/\\evil.invalid/image.png",
     "https:///missing-host.png",
+    "/api/workspace",
+    "https://user:secret@example.invalid/image.png",
   ]) {
     assert.equal(mediaUrl(dangerous, false, "Image"), undefined, dangerous);
     assert.equal(mediaUrl(dangerous, true, "Image"), undefined, dangerous);
@@ -102,13 +104,13 @@ test("catalog-media URL sanitizer enforces strict data MIME allowlists and block
     assert.equal(mediaUrl(validVideo, true, "Video"), validVideo);
   }
 
-  // HTTPS / relative URLs allowed live, blocked when frozen offline
+  // HTTPS URLs allowed live, blocked when frozen offline
   assert.equal(
     mediaUrl("https://example.com/photo.png", false, "Image"),
     "https://example.com/photo.png",
   );
   assert.equal(mediaUrl("https://example.com/photo.png", true, "Image"), undefined);
-  assert.equal(mediaUrl("/assets/photo.png", false, "Image"), "/assets/photo.png");
+  assert.equal(mediaUrl("/assets/photo.png", false, "Image"), undefined);
   assert.equal(mediaUrl("/assets/photo.png", true, "Image"), undefined);
 });
 
@@ -129,6 +131,12 @@ test("A2uiMarkdown renders safe Markdown elements without raw HTML or javascript
         el.props.rel === "noopener noreferrer",
     ),
   );
+
+  const identifier = A2uiMarkdown({ markdown: "one_snake_case_name" });
+  const identifiers: typeof safeElements = [];
+  collectElements(identifier, identifiers);
+  assert.ok(!identifiers.some((el) => el.type === "em"));
+  assert.match(JSON.stringify(identifier), /one_snake_case_name/);
 
   const unsafeTree = A2uiMarkdown({
     markdown: "<script>alert(1)</script> [click](javascript:alert(1)) <img src=x onerror=alert(1)>",

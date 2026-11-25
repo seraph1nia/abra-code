@@ -1,5 +1,6 @@
-import { Deferred, Effect, Exit } from "effect";
-import { Agent, type OpenCodeClient } from "@opencode/client/effect";
+import { nativeError } from "./native-call.ts";
+import { Config as Env, Effect, Option } from "effect";
+import { Agent } from "@opencode/client/effect";
 import { Service } from "@opencode/client/effect/service";
 import type { Context } from "@opencode/plugin/effect/plugin";
 import type {
@@ -24,11 +25,11 @@ import { domainEffect } from "../effect.ts";
 import { provideFileSystem } from "../platform.ts";
 import { runtimePaths } from "../config/identity.ts";
 import { workerProfile } from "../config/snapshot.ts";
-import { NativeStore, Records } from "../storage/store.ts";
+import type { Records } from "../storage/store.ts";
 import { provisionedEvidence } from "../workflow/evidence.ts";
 import type { FinishingTarget } from "../workflow/finishing-contracts.ts";
 import { workerBrowser } from "./browser.ts";
-import { makeClient, OPENCODE_VERSION } from "./client.ts";
+import { makeClient, memoSuccessful, OPENCODE_VERSION } from "./client.ts";
 import {
   readApproval,
   readDisposition,
@@ -39,7 +40,7 @@ import {
   type DispositionAnswer,
   type QuestionAnswer,
 } from "./forms.ts";
-import { nativeSession, nativeWorktree } from "./native-call.ts";
+import { nativeDomain, nativeSession, nativeWorktree } from "./native-call.ts";
 import { checkWorkerInventory, preflightWorker, validateModelSelection } from "./preflight.ts";
 import { leadPermissions, workerPermissions } from "./role-policy.ts";
 import {
@@ -148,51 +149,32 @@ export interface Runtime {
 }
 
 export class NativeRuntime implements Runtime {
-  // Lazy, single-flight client acquisition; failures never poison later discovery.
-  private cachedClient: OpenCodeClient | undefined;
-  private acquiring: Deferred.Deferred<OpenCodeClient, CrewError> | undefined;
-
   constructor(
     private ctx: Context,
     private config: Config,
+    private records: Pick<Records, "projects" | "store">,
   ) {}
 
-  client = Effect.fn("NativeRuntime.client")(
-    function* (this: NativeRuntime) {
-      if (this.cachedClient) return this.cachedClient;
-      if (this.acquiring) return yield* Deferred.await(this.acquiring);
-      return yield* Effect.uninterruptibleMask((restore) =>
-        Effect.gen(
-          function* (this: NativeRuntime) {
-            if (this.cachedClient) return this.cachedClient;
-            if (this.acquiring) return yield* restore(Deferred.await(this.acquiring));
-            const deferred = Deferred.makeUnsafe<OpenCodeClient, CrewError>();
-            this.acquiring = deferred;
-            const exit = yield* Effect.exit(restore(this.discoverClient()));
-            this.acquiring = undefined;
-            if (Exit.isSuccess(exit)) {
-              this.cachedClient = exit.value;
-              yield* Deferred.succeed(deferred, exit.value);
-              return exit.value;
-            }
-            yield* Deferred.failCause(deferred, exit.cause);
-            return yield* Effect.failCause(exit.cause);
-          }.bind(this),
-        ),
-      );
-    }.bind(this),
+  private cachedClient = Effect.runSync(
+    memoSuccessful(Effect.suspend(() => this.discoverClient())),
   );
+  client = () => this.cachedClient;
 
   private discoverClient = Effect.fn("NativeRuntime.discoverClient")(
     function* (this: NativeRuntime) {
+      const password = this.config.server_url
+        ? Option.getOrUndefined(yield* Env.option(Env.String("ABRACODE_SERVER_PASSWORD")))
+        : undefined;
       const endpoint = this.config.server_url
         ? {
             url: this.config.server_url,
-            auth: process.env.ABRACODE_SERVER_PASSWORD
+            auth: password
               ? {
                   type: "basic" as const,
-                  username: process.env.ABRACODE_SERVER_USER ?? "opencode",
-                  password: process.env.ABRACODE_SERVER_PASSWORD,
+                  username: yield* Env.String("ABRACODE_SERVER_USER").pipe(
+                    Env.withDefault("opencode"),
+                  ),
+                  password,
                 }
               : undefined,
           }
@@ -296,7 +278,7 @@ export class NativeRuntime implements Runtime {
 
   private permissions = Effect.fn("NativeRuntime.permissions")(
     function* (this: NativeRuntime, e: ManagedExecution, role: Role, id: SessionId) {
-      const projects = yield* new Records(new NativeStore(this.ctx.storage)).projects();
+      const projects = yield* this.records.projects;
       return workerPermissions(
         role,
         e.configuration_snapshot?.definitions?.[role],
@@ -323,10 +305,12 @@ export class NativeRuntime implements Runtime {
       model: WorkerModel,
       lead: string,
     ) {
-      const client = yield* this.client();
       const location = { directory: this.config.home };
       const [agents, models] = yield* Effect.all(
-        [client.agent.list({ location }), client.model.list({ location })],
+        [
+          nativeDomain(this.ctx.agent).list({ location }),
+          nativeDomain(this.ctx.model).list({ location }),
+        ],
         { concurrency: "unbounded" },
       );
       if (!agents.data.some((a) => a.id === "project-lead"))
@@ -337,12 +321,18 @@ export class NativeRuntime implements Runtime {
         capabilityCode: "MODEL_UNAVAILABLE",
         capabilityMessage: "Project-lead model is unavailable or lacks tools",
       });
-      const existing = yield* client.session
+      const existing = yield* nativeSession(this.ctx)
         .get({ sessionID: id })
-        .pipe(Effect.catchTag("SessionNotFoundError", () => Effect.void));
+        .pipe(
+          Effect.mapError(nativeError),
+          Effect.catchIf(
+            (error) => error.code === "SESSION_NOT_FOUND",
+            () => Effect.void,
+          ),
+        );
       const session =
         existing ??
-        (yield* client.session.create({
+        (yield* nativeSession(this.ctx).create({
           id,
           parentID: parent,
           title: `Project lead · ${lead}`,
@@ -416,7 +406,13 @@ export class NativeRuntime implements Runtime {
 
   session = Effect.fn("NativeRuntime.session")(
     function* (this: NativeRuntime, id: SessionId, assignment?: MessageId) {
-      return yield* observeSession(this.ctx, yield* this.client(), id, assignment);
+      return yield* observeSession(
+        this.ctx,
+        this.records.store,
+        yield* this.client(),
+        id,
+        assignment,
+      );
     }.bind(this),
     domainEffect,
   );
@@ -429,7 +425,7 @@ export class NativeRuntime implements Runtime {
           const assistant = context.findLast((m) => m.type === "assistant");
           if (assistant?.type === "assistant") return assistant.model;
         }
-        const model = (yield* (yield* this.client()).model.default({
+        const model = (yield* nativeDomain(this.ctx.model).default({
           location: { directory: this.config.home },
         })).data;
         if (!model || !model.enabled)
@@ -460,7 +456,15 @@ export class NativeRuntime implements Runtime {
 
   preflight = Effect.fn("NativeRuntime.preflight")(
     function* (this: NativeRuntime, e: ManagedExecution, role: Role, promptID?: MessageId) {
-      return yield* preflightWorker(this.ctx, yield* this.client(), this.config, e, role, promptID);
+      return yield* preflightWorker(
+        this.ctx,
+        this.records.store,
+        this.client,
+        this.config,
+        e,
+        role,
+        promptID,
+      );
     }.bind(this),
     domainEffect,
   );
@@ -474,7 +478,7 @@ export class NativeRuntime implements Runtime {
 
   promptAdmissions = Effect.fn("NativeRuntime.promptAdmissions")(
     function* (this: NativeRuntime, sessionID: SessionId, requests: readonly PromptIdentity[]) {
-      return yield* observePromptAdmissions(yield* this.client(), sessionID, requests);
+      return yield* observePromptAdmissions(this.ctx, yield* this.client(), sessionID, requests);
     }.bind(this),
     domainEffect,
   );
@@ -533,7 +537,10 @@ export class NativeRuntime implements Runtime {
       if (id) {
         const client = yield* this.client();
         const [inbox, context] = yield* Effect.all(
-          [client.session.inbox.list({ sessionID }), client.session.context({ sessionID })],
+          [
+            client.session.inbox.list({ sessionID }),
+            nativeSession(this.ctx).context({ sessionID }),
+          ],
           { concurrency: "unbounded" },
         );
         const pending = inbox.find((item) => item.id === id);

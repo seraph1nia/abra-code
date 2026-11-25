@@ -32,6 +32,17 @@ export class ThoughtReceipts {
     });
   }
 
+  setThoughtSubmission(key: string, submitted: boolean) {
+    return sqlEffect(
+      () =>
+        this.db
+          .prepare(
+            "UPDATE thought_saves SET can_submit = ? WHERE request_key = ? AND can_submit = ?",
+          )
+          .run(Number(!submitted), key, Number(submitted)).changes === 1,
+    );
+  }
+
   reserveThought(
     key: string,
     digest: string,

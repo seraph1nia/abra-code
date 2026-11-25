@@ -102,8 +102,11 @@ test("verification setup blocks claims and incomplete legacy targets remain pres
   const nativeID = (await run(f.records.project(Id.RepositoryId.make("remote"))))!.project_id;
   const incomplete = { ...e, target_branch: undefined, schema_version: undefined };
   await run(f.records.store.set(Id.StorageKey.make("execution/checks-1"), incomplete));
-  await assert.rejects(run(f.records.execution(Id.IssueId.make("checks-1"))), /target_branch/);
-  assert.equal((await run(f.records.executionScan())).diagnostics.length, 1);
+  await assert.rejects(
+    run(f.records.execution(Id.IssueId.make("checks-1"))),
+    /Unsupported record version/,
+  );
+  assert.equal((await run(f.records.executionScan)).diagnostics.length, 1);
   assert.deepEqual(
     await run(f.records.store.get(Id.StorageKey.make("execution/checks-1"))),
     incomplete,
@@ -483,7 +486,7 @@ test("OpenSpec setup uses an owned worktree and a durable human merge gate befor
   assert.ok("current_phase" in done && done.current_phase === "completed");
   await assert.rejects(access(path));
   assert.equal(f.seed.countEvents("claimed"), 0);
-  assert.equal((await run(f.records.executions())).length, 0);
+  assert.equal((await run(f.records.executions)).length, 0);
 });
 test("setup refuses changed content before delivery and retains resources after cleanup failures", async (t) => {
   const f = await run(fixture);
@@ -641,6 +644,7 @@ test("setup recollects its original pending form after a lost save and rejects a
     /receipt interrupted/,
   );
   const restarted = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -675,6 +679,7 @@ test("branch-only setup finishes on confirmed Git evidence with no form", async 
   await run(f.records.saveProject(project));
   const delivery = new GitHubDelivery(f.git, f.git.runner, Id.Executable.make("unused-for-branch"));
   const workflow = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,

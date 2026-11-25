@@ -152,6 +152,7 @@ for (const admitted of [false, true]) {
     const prompts = f.runtime.prompts;
     f.runtime.prompt = prompt;
     const restarted = createWorkflow(
+      f.catalog,
       f.config,
       f.records,
       f.work,
@@ -566,6 +567,7 @@ test("only a consumed request followed by its successful native turn establishes
       storage: { get: () => Effect.void },
     } as unknown as Context,
     f.config,
+    f.records,
   );
   native.client = () =>
     Effect.succeed({

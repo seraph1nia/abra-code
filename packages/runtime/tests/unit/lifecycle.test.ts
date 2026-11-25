@@ -17,7 +17,7 @@ import { Scheduler } from "../../src/scheduler/scheduler.ts";
 test("onboards three independent repositories, preserving instructions and stable identity", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  assert.equal((await run(f.records.projects())).length, 3);
+  assert.equal((await run(f.records.projects)).length, 3);
   const p = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   await writeFile(join(p.path, "AGENTS.md"), "Existing instructions");
   const r = await run(f.onboarding.inspect(p));
@@ -186,6 +186,7 @@ test("server restart reconciles interrupted session, reuses session and worktree
   const e = await run(applying(f));
   await run(f.runtime.interrupt(e.apply_session_id!));
   const restarted = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -269,7 +270,7 @@ test("merge, safe cleanup and WorkGraph closure unblock cross-repository depende
     (await run(f.controller.ready())).find((x) => x.issue.id === "abra-2")!.eligible,
     true,
   );
-  assert.equal(f.runtime.sessions.size, 3);
+  assert.equal(f.runtime.creates, 3);
   // A native status read can race the scheduler's final retirement. A delayed
   // advance must observe completion without reopening or touching its old path.
   const retained = await run(f.records.execution(done.issue_id));
@@ -338,7 +339,7 @@ test("scheduler is opt-in and respects global/per-project capacity", async (t) =
     busy: false,
   });
   await run(scheduler.tick());
-  assert.equal((await run(f.records.executions())).length, 2);
+  assert.equal((await run(f.records.executions)).length, 2);
   assert.equal(f.runtime.trees.length, 2);
 });
 test("phase advancement refuses a simultaneous writer in the same worktree", async (t) => {
@@ -384,7 +385,10 @@ test("human rejection is durable, blocks WorkGraph, and retry reuses Explore to 
   const blocked = await run(f.controller.get(Id.IssueId.make("abra-1")));
   assert.ok(blocked.approval_receipts[0].rejected_at);
   assert.equal((await run(f.work.show(Id.IssueId.make("abra-1")))).status, "blocked");
-  const resumed = await run(f.controller.control(Id.IssueId.make("abra-1"), "retry"));
+  const resumed = await run(
+    f.controller.control(Id.IssueId.make("abra-1"), "retry", "Revise the acceptance example"),
+  );
+  assert.equal(resumed.retry_instructions, "Revise the acceptance example");
   assert.equal(resumed.explore_session_id, e.explore_session_id);
   assert.equal(resumed.current_phase, "planning");
 });

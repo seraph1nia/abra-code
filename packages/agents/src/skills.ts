@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Injected pinned Effect 4.1.4 filesystem/path services. */
 import { Effect, FileSystem, Path, Schema } from "effect";
 import { Skill } from "@opencode/schema/skill";
 import { parse } from "yaml";

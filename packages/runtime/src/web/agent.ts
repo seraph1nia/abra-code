@@ -1,3 +1,4 @@
+import { presentationActivity } from "@abracode/contracts/presentation/contracts";
 import {
   NativeAgentAdapter,
   type NativeObservation,
@@ -7,7 +8,16 @@ import { randomUUID } from "node:crypto";
 import { mergeChanges, type ChangeScope } from "@abracode/contracts/web/changes";
 import { semanticWorkspace } from "@abracode/contracts/web/observation";
 import { CrewError } from "../domain.ts";
-import { Effect, PubSub, Queue, Schedule, Schema, Stream, Semaphore } from "effect";
+import {
+  Effect,
+  PubSub,
+  Queue,
+  Schedule,
+  Schema,
+  Stream,
+  Semaphore,
+  SubscriptionRef,
+} from "effect";
 import { AbstractAgent } from "@ag-ui/client";
 import { EventType, type RunAgentInput } from "@ag-ui/core";
 import {
@@ -22,7 +32,12 @@ import { WorkspaceSnapshotSchema } from "@abracode/contracts/web/workspace-wire"
 
 type ProjectionOrder = { epoch: string; sequence: number; baseline: boolean };
 type FeedEvent =
-  | { type: "snapshot"; snapshot: WorkspaceSnapshot; projection_order?: ProjectionOrder }
+  | {
+      type: "snapshot";
+      snapshot: WorkspaceSnapshot;
+      native: NativeSessionView;
+      projection_order?: ProjectionOrder;
+    }
   | { type: "native"; native: NativeSessionView; projection_order?: ProjectionOrder }
   | { type: "freshness"; at: string; epoch: string; sequence: number }
   | { type: "reconnecting" };
@@ -49,7 +64,6 @@ function diffWorkspace(
 ): { changes: ChangeScope; changed: boolean } {
   if (!previous) return { changes: { all: true }, changed: true };
   const transcript = !allSame([
-    [previous.messages, next.messages],
     [previous.inbox, next.inbox],
     [previous.busy, next.busy],
     [previous.model, next.model],
@@ -112,12 +126,15 @@ export class WorkspaceFeed {
   static make(backend: WebBackend) {
     return Effect.gen(function* () {
       const signals = yield* Effect.acquireRelease(Queue.dropping<void>(1), Queue.shutdown);
-      const events = yield* PubSub.sliding<FeedEvent>(64);
+      const snapshots = yield* Effect.acquireRelease(PubSub.sliding<FeedEvent>(1), PubSub.shutdown);
+      const events = yield* Effect.acquireRelease(PubSub.sliding<FeedEvent>(64), PubSub.shutdown);
+      const clients = yield* SubscriptionRef.make(0);
       const mutex = yield* Semaphore.make(1);
       const epoch = randomUUID();
       let sequence = 0;
       let projectionSequence = 0;
       let latest: WorkspaceSnapshot | undefined;
+      let lastNative: NativeSessionView;
       let pending: ChangeScope = {};
       const notify = (scope: ChangeScope) =>
         Effect.sync(() => {
@@ -126,7 +143,7 @@ export class WorkspaceFeed {
       const refresh = notify({ all: true });
       const publish = (event: FeedEvent) =>
         PubSub.publish(
-          events,
+          event.type === "snapshot" ? snapshots : events,
           event.type === "snapshot" || event.type === "native"
             ? {
                 ...event,
@@ -139,27 +156,36 @@ export class WorkspaceFeed {
           Effect.gen(function* () {
             const value = yield* backend.observe(scope);
             const { changes, changed } = diffWorkspace(latest, value, scope);
+            const native = backend.nativeSnapshot() ?? {
+              busy: value.busy,
+              inbox: value.inbox,
+              messages: [],
+            };
+            const nativeChanged = !same(lastNative, native);
+            lastNative = native;
             if (changed) {
               latest = {
                 ...value,
                 observation: { epoch, sequence: ++sequence, baseline: false, changes },
               };
-              yield* publish({ type: "snapshot", snapshot: latest });
+              yield* publish({ type: "snapshot", snapshot: latest, native });
             } else {
               latest = { ...value, observation: latest!.observation };
+              if (nativeChanged) yield* publish({ type: "native", native });
               yield* publish({ type: "freshness", at: value.at, epoch, sequence });
             }
             return latest;
           }),
         );
-      const currentBaseline = Effect.suspend(() =>
-        latest ? Effect.succeed(latest) : read({ all: true }),
-      ).pipe(
-        Effect.map((value) => ({
-          ...value,
-          observation: { ...value.observation!, baseline: true },
-        })),
-      );
+      const currentBaseline = Effect.gen(function* () {
+        if (!latest) yield* read({ all: true });
+        return {
+          type: "snapshot" as const,
+          snapshot: { ...latest!, observation: { ...latest!.observation!, baseline: true } },
+          native: lastNative,
+          projection_order: { epoch, sequence: projectionSequence, baseline: true },
+        };
+      });
       yield* Stream.fromQueue(signals).pipe(
         Stream.runForEach(() =>
           Effect.gen(function* () {
@@ -177,7 +203,10 @@ export class WorkspaceFeed {
             let repair = false;
             if (scope?.native && backend.nativeEvent) {
               const update = backend.nativeEvent(scope.native);
-              if (update.view) yield* publish({ type: "native", native: update.view });
+              if (update.view) {
+                lastNative = update.view;
+                yield* publish({ type: "native", native: lastNative });
+              }
               if (update.repair) {
                 repair = true;
                 yield* publish({ type: "reconnecting" });
@@ -195,22 +224,27 @@ export class WorkspaceFeed {
         Effect.repeat(Schedule.spaced("1 second")),
         Effect.forkScoped,
       );
-      yield* Effect.sleep("5 seconds").pipe(
-        Effect.andThen(refresh),
-        Effect.forever,
+      yield* SubscriptionRef.changes(clients).pipe(
+        Stream.map((count) => count > 0),
+        Stream.changes,
+        Stream.switchMap((active) =>
+          active ? Stream.tick("5 seconds").pipe(Stream.drop(1)) : Stream.empty,
+        ),
+        Stream.runForEach(() => refresh),
         Effect.forkScoped,
       );
       const updates = Stream.unwrap(
         Effect.gen(function* () {
-          const subscription = yield* PubSub.subscribe(events);
-          const value = yield* currentBaseline;
+          const state = yield* PubSub.subscribe(snapshots);
+          const native = yield* PubSub.subscribe(events);
+          yield* Effect.acquireRelease(
+            SubscriptionRef.update(clients, (n) => n + 1),
+            () => SubscriptionRef.update(clients, (n) => n - 1),
+          );
+          const baseline = yield* currentBaseline;
           return Stream.concat(
-            Stream.succeed({
-              type: "snapshot" as const,
-              snapshot: value,
-              projection_order: { epoch, sequence: projectionSequence, baseline: true },
-            }),
-            Stream.fromSubscription(subscription),
+            Stream.succeed(baseline),
+            Stream.merge(Stream.fromSubscription(state), Stream.fromSubscription(native)),
           );
         }),
       );
@@ -240,6 +274,13 @@ export class AbraAgent extends AbstractAgent {
   run(input: RunAgentInput) {
     return this.runner.run({ threadId: input.threadId, agent: this, input });
   }
+  override async getCapabilities() {
+    return {
+      identity: { name: "Abra", type: "OpenCode" },
+      transport: { streaming: true },
+      state: { snapshots: true, deltas: true, persistentState: true },
+    };
+  }
   override clone(): AbraAgent {
     const clone: AbraAgent = super.clone();
     clone.runner = this.runner;
@@ -265,10 +306,8 @@ export class AbraRunner extends AgentRunner {
           event.type === "snapshot"
             ? {
                 type: "snapshot",
-                native: backend.nativeSnapshot?.() ?? {
-                  ...event.snapshot,
-                  completions: backend.completionEvidence?.() ?? [],
-                },
+                native: event.native,
+                activities: event.snapshot.presentations?.entries.map(presentationActivity) ?? [],
                 order: event.projection_order ?? event.snapshot.observation,
                 state: (baseline) => ({
                   workspace: Schema.encodeSync(WorkspaceSnapshotSchema)({

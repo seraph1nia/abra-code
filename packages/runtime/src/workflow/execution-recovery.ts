@@ -216,10 +216,6 @@ export class ExecutionRecovery {
         yield* this.launch(e, role);
         return e;
       }
-      if (yield* this.c.obligations.recheck(e)) {
-        yield* this.c.sessions.releaseWaitingTurn(e);
-        return e;
-      }
       if (e.current_phase === "planning" && e.workflow_policy !== "full-openspec")
         return { action: "checkpoint", execution: e } as const;
       if (e.active_role) {

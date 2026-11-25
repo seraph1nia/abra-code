@@ -68,7 +68,7 @@ test("native finishing forms reconcile response loss with exact metadata and rej
     },
   };
   const runtime = () => {
-    const native = new NativeRuntime({} as Context, f.config);
+    const native = new NativeRuntime({} as Context, f.config, f.records);
     native.client = () =>
       Effect.succeed(client as unknown as Effect.Success<ReturnType<NativeRuntime["client"]>>);
     return native;

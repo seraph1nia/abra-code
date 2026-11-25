@@ -11,21 +11,8 @@ import { createHash } from "node:crypto";
 import { type SessionMessage } from "@opencode/schema/session-message";
 import { type WorkerError, type WorkerModel } from "../domain.ts";
 
-export function diagnosticText(text: string, limit = 1500): string {
-  let result = text;
-  for (const [name, value] of Object.entries(process.env))
-    if (/key|token|password|secret/i.test(name) && value && value.length >= 4)
-      result = result.replaceAll(value, "[redacted]");
-  return result
-    .replace(/Bearer\s+[\w.~+/=-]+/gi, "Bearer [redacted]")
-    .replace(
-      /((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)\s*["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
-      "$1[redacted]",
-    )
-    .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, "$1[redacted]@")
-    .slice(0, limit);
-}
-
+import { diagnosticText } from "@abracode/agents/tool-boundary";
+export { diagnosticText };
 export const diagnosticError = (error: WorkerError): WorkerError => ({
   type: diagnosticText(error.type, 100),
   message: diagnosticText(error.message),

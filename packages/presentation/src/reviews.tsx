@@ -28,14 +28,11 @@ import {
   reviewCatalog,
   ReviewFormSchema,
   reviewSurface,
+  reviewControlValue,
   reviewValidation,
 } from "@abracode/contracts/web/review-catalog";
 import {
-  CommentFieldSchema,
-  DesignChoiceSchema,
-  MultiSelectSchema,
   ReviewDefinitionSchema,
-  SingleSelectSchema,
   type ReviewAnswers,
   type ReviewDefinition,
   type ReviewField,
@@ -56,6 +53,7 @@ type Props = {
 
 /** Host-only capabilities that cannot live in A2UI data (DOM ID prefix, change callback, asset loader). */
 type ReviewHost = {
+  fields: readonly ReviewField[];
   prefix: string;
   change: (id: string, value: string | readonly string[]) => void;
   image: (id: string, label: string) => ReactNode;
@@ -69,11 +67,6 @@ function useReviewHost() {
 }
 
 const decodeReviewForm = Schema.decodeUnknownSync(ReviewFormSchema);
-const decodeSingleSelect = Schema.decodeUnknownSync(SingleSelectSchema);
-const decodeMultiSelect = Schema.decodeUnknownSync(MultiSelectSchema);
-const decodeDesignChoice = Schema.decodeUnknownSync(DesignChoiceSchema);
-const decodeCommentField = Schema.decodeUnknownSync(CommentFieldSchema);
-
 function sameAnswer(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (Array.isArray(a) && Array.isArray(b))
@@ -95,20 +88,28 @@ function ReviewHeading({ title, description }: { title: string; description?: st
   );
 }
 
-function FieldControl({ field, dataModel }: { field: ReviewField; dataModel: DataModel }) {
+function FieldControl({
+  field,
+  dataModel,
+  value,
+  setValue,
+  validationErrors,
+}: {
+  field: ReviewField;
+  dataModel: DataModel;
+  value: unknown;
+  setValue: (value: string | readonly string[]) => void;
+  validationErrors?: readonly string[];
+}) {
   const { prefix, change, image } = useReviewHost();
-  const answerSignal = useMemo(
-    () => dataModel.getSignal<string | readonly string[]>(`/answers/${field.id}`),
-    [dataModel, field.id],
-  );
   const errorSignal = useMemo(
     () => dataModel.getSignal<string>(`/errors/${field.id}`),
     [dataModel, field.id],
   );
   const disabledSignal = useMemo(() => dataModel.getSignal<boolean>("/disabled"), [dataModel]);
 
-  const value = useSignalValue(answerSignal);
-  const error = useSignalValue(errorSignal);
+  const hostError = useSignalValue(errorSignal);
+  const error = hostError && (validationErrors?.[0] ?? hostError);
   const disabled = useSignalValue(disabledSignal) ?? false;
 
   const [enlarged, setEnlarged] = useState<{ id: string; label: string }>();
@@ -121,7 +122,7 @@ function FieldControl({ field, dataModel }: { field: ReviewField; dataModel: Dat
   }, [enlarged]);
 
   const updateValue = (next: string | readonly string[]) => {
-    dataModel.set(`/answers/${field.id}`, next);
+    setValue(reviewControlValue(field, next));
     change(field.id, next);
   };
 
@@ -130,7 +131,11 @@ function FieldControl({ field, dataModel }: { field: ReviewField; dataModel: Dat
     <fieldset
       className="review-field"
       disabled={disabled}
-      aria-describedby={`${id}-description ${id}-error`}
+      aria-describedby={
+        [field.description && `${id}-description`, error && `${id}-error`]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
     >
       <legend id={`${id}-label`}>
         {field.label}
@@ -254,50 +259,23 @@ const reactReviewCatalog = implementedReviewCatalog<ReactCatalogComponent>([
     const form = useMemo(() => decodeReviewForm({ ...props, component: "ReviewForm" }), [props]);
     return <ReviewHeading title={form.title} description={form.description} />;
   }),
-  createComponentImplementation(
-    reviewCatalog.components.get("SingleSelect")!,
-    ({ props, context }) => {
-      const fieldId = context.componentModel.id;
-      const field = useMemo(
-        () => decodeSingleSelect({ ...props, id: fieldId, component: "SingleSelect" }),
-        [props, fieldId],
+  ...["ChoicePicker", "TextField", "DesignChoiceGroup"].map((name) => {
+    const api = basicCatalog.components.get(name) ?? reviewCatalog.components.get(name)!;
+    return createComponentImplementation(api, function ReviewInput({ props, context }) {
+      const host = useReviewHost();
+      const field = host.fields.find((field) => field.id === context.componentModel.id);
+      if (!field) throw new Error("Review field is unavailable");
+      return (
+        <FieldControl
+          field={field}
+          dataModel={context.dataContext.dataModel}
+          value={props.value}
+          setValue={props.setValue}
+          validationErrors={props.validationErrors}
+        />
       );
-      return <FieldControl field={field} dataModel={context.dataContext.dataModel} />;
-    },
-  ),
-  createComponentImplementation(
-    reviewCatalog.components.get("MultiSelect")!,
-    ({ props, context }) => {
-      const fieldId = context.componentModel.id;
-      const field = useMemo(
-        () => decodeMultiSelect({ ...props, id: fieldId, component: "MultiSelect" }),
-        [props, fieldId],
-      );
-      return <FieldControl field={field} dataModel={context.dataContext.dataModel} />;
-    },
-  ),
-  createComponentImplementation(
-    reviewCatalog.components.get("DesignChoiceGroup")!,
-    ({ props, context }) => {
-      const fieldId = context.componentModel.id;
-      const field = useMemo(
-        () => decodeDesignChoice({ ...props, id: fieldId, component: "DesignChoiceGroup" }),
-        [props, fieldId],
-      );
-      return <FieldControl field={field} dataModel={context.dataContext.dataModel} />;
-    },
-  ),
-  createComponentImplementation(
-    reviewCatalog.components.get("CommentField")!,
-    ({ props, context }) => {
-      const fieldId = context.componentModel.id;
-      const field = useMemo(
-        () => decodeCommentField({ ...props, id: fieldId, component: "CommentField" }),
-        [props, fieldId],
-      );
-      return <FieldControl field={field} dataModel={context.dataContext.dataModel} />;
-    },
-  ),
+    });
+  }),
 ]);
 
 type RenderedReview = {
@@ -336,7 +314,7 @@ function syncReviewDataModel(
   if (dataModel.get("/disabled") !== disabled) dataModel.set("/disabled", disabled);
   for (const field of review.fields) {
     const answerPath = `/answers/${field.id}`;
-    const nextAnswer = answers[field.id];
+    const nextAnswer = reviewControlValue(field, answers[field.id]);
     if (!sameAnswer(dataModel.get(answerPath), nextAnswer)) {
       dataModel.set(answerPath, nextAnswer);
     }
@@ -372,7 +350,10 @@ export function ReviewControls({ review, answers, errors, disabled, change, imag
     syncReviewDataModel(rendered.surface, rendered.review, answers, errors, disabled);
   }, [rendered, answers, errors, disabled]);
 
-  const host = useMemo<ReviewHost>(() => ({ prefix, change, image }), [prefix, change, image]);
+  const host = useMemo<ReviewHost>(
+    () => ({ fields: review.fields, prefix, change, image }),
+    [review.fields, prefix, change, image],
+  );
 
   return (
     <ReviewHostContext.Provider value={host}>

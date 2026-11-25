@@ -48,7 +48,7 @@ for (const admitted of [false, true]) {
     const ctx = {
       storage: { get: (key: string) => f.records.store.get(Id.StorageKey.make(key)) },
     } as unknown as Context;
-    const native = new NativeRuntime(ctx, f.config);
+    const native = new NativeRuntime(ctx, f.config, f.records);
     const client = {
       session: {
         inbox: { list: () => Effect.succeed(admitted ? [{ id: legacy.prompt_id }] : []) },
@@ -69,6 +69,7 @@ for (const admitted of [false, true]) {
           }),
       },
     } as unknown as Effect.Success<ReturnType<typeof native.client>>;
+    Object.assign(ctx, client);
     native.client = () => Effect.succeed(client);
     const resolved = await run(native.preflight(e, "explore", legacy.prompt_id));
     assert.equal(inventories, admitted ? 0 : 1);

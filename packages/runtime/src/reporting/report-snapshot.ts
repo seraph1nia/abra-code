@@ -10,10 +10,15 @@ import {
 import { researchMarkdown } from "./report-contracts.ts";
 import { decode } from "../decode.ts";
 
+function utf8Prefix(text: string, bytes: number) {
+  return new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+    Buffer.from(text).subarray(0, bytes),
+    { stream: true },
+  );
+}
+
 const bounded = (text: string) =>
-  Buffer.byteLength(text) > 12000
-    ? Buffer.from(text).subarray(0, 11900).toString("utf8") + "… [truncated in snapshot]"
-    : text;
+  Buffer.byteLength(text) > 12000 ? utf8Prefix(text, 11900) + "… [truncated in snapshot]" : text;
 
 /** Labels explicitly describe retained receipts, never a fresh check/run. */
 export const captureReportSnapshot = (
@@ -153,7 +158,7 @@ export const captureReportSnapshot = (
           at: h.at,
           detail:
             Buffer.byteLength(h.reason) > 512
-              ? Buffer.from(h.reason).subarray(0, 480).toString("utf8") + "… [truncated]"
+              ? utf8Prefix(h.reason, 480) + "… [truncated]"
               : h.reason,
         })),
         excerpts: markdown

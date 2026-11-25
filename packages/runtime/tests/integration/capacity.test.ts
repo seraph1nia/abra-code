@@ -1,3 +1,5 @@
+import { Coordination } from "../../src/workflow/coordination.ts";
+import { FileLocks } from "../../src/storage/lock.ts";
 import * as Id from "@abracode/contracts/identities";
 import { Effect, Fiber, Schedule } from "effect";
 import { test } from "vite-plus/test";
@@ -21,7 +23,10 @@ for (const limit of ["active", "repository", "role"] as const) {
       join(root, "abracode.yaml"),
       `version: 1\nmodels: { default: { providerID: fixture, id: gpt-fixture } }\nmax_workers: ${limit === "active" ? 1 : 2}\nmax_executions: 4\nexplore_capacity: ${limit === "role" ? 1 : 2}\n`,
     );
-    const records = new Records(new FileStore(join(root, "records")));
+    const records = new Records(
+      new FileStore(join(root, "records")),
+      new Coordination(new FileLocks(Id.AbsolutePath.make(join(root, "locks")))),
+    );
     for (const id of ["api", "frontend"]) {
       const p = (await run(f.records.project(Id.RepositoryId.make(id))))!;
       p.max_workers = limit === "repository" ? 1 : 2;
@@ -63,10 +68,7 @@ for (const limit of ["active", "repository", "role"] as const) {
           const results = yield* Effect.forEach(children, Fiber.join);
           const admitted = results.map((result) => JSON.parse(result) as { admitted: boolean });
           assert.equal(admitted.filter((r) => r.admitted).length, 1);
-          assert.equal(
-            (yield* records.executions()).filter((e) => e.capacity_reservation).length,
-            1,
-          );
+          assert.equal((yield* records.executions).filter((e) => e.capacity_reservation).length, 1);
         }),
       ),
     );

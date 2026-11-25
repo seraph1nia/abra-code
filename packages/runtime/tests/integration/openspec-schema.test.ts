@@ -67,6 +67,7 @@ async function prepare(
   await run(f.git.run(project.path, ["push", "origin", "main"]));
   const spec = new OpenSpec(runner, bin);
   const controller = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -77,7 +78,7 @@ async function prepare(
     f.locks,
   ).controller;
   t.onTestFinished(() => run(controller.close()));
-  const parent = Id.SessionId.make("ses_schema-owner");
+  const parent = Id.SessionId.make("ses_supervisor");
   const issue = (
     await run(
       controller.createWork(

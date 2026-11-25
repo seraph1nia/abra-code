@@ -1,3 +1,4 @@
+import { feedbackPage } from "./read-model/feedback-page.ts";
 import { Effect } from "effect";
 import {
   type AbsolutePath,
@@ -98,15 +99,11 @@ export class Queries {
   verification = (id: IssueId) =>
     queryVerification({ issue: this.issue, execution: this.execution, git: this.git }, id);
 
-  feedback = (
-    id: IssueId,
-    page = 0,
-    finding_id?: FindingId,
-    revision?: FindingRevisionId | string,
-  ) => this.records.feedback(id, page, finding_id, revision);
-  projects = () => this.records.projects();
+  feedback = (id: IssueId, page = 0, finding_id?: FindingId, revision?: FindingRevisionId) =>
+    feedbackPage(this.records, id, page, finding_id, revision);
+  projects = () => this.records.projects;
   project = (id: RepositoryId) => this.records.project(id);
-  executions = () => this.records.executions();
+  executions = () => this.records.executions;
   execution = (id: IssueId) => this.records.execution(id);
   thoughtWork = (query: Parameters<WorkGraph["thoughtWork"]>[0]) => this.work.thoughtWork(query);
   searchOwners = (after: string, repository?: RepositoryId, issue?: IssueId) =>
@@ -118,9 +115,9 @@ export class Queries {
   history = (id: IssueId) => this.work.history(id);
   completions = (...args: Parameters<WorkGraph["completions"]>) => this.work.completions(...args);
   setup = (id: RepositoryId) => this.records.setup(id);
-  recordDiagnostics = () => this.records.diagnostics();
-  recordsExport = () => this.records.export();
-  supervisor = () => this.records.supervisor();
+  recordDiagnostics = () => this.records.diagnostics;
+  recordsExport = () => this.records.export;
+  supervisor = () => this.records.supervisor;
 
   /** Observation never collects a native answer or grants lifecycle authorization. */
   checkpoint = (session: SessionId, form: string) =>
@@ -147,7 +144,7 @@ export class Queries {
     function* (
       this: Queries,
     ): Effect.fn.Return<{ session_id?: SessionId; blocker?: ReadinessBlocker }, CrewError> {
-      const session = yield* this.records.supervisor();
+      const session = yield* this.records.supervisor;
       if (!session)
         return {
           blocker: {

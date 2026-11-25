@@ -1,5 +1,4 @@
 import { type AbsolutePath, type Executable } from "@abracode/contracts/identities";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.0.1 process API; cancellation contracts are integration tested. */
 import { Clock, Effect, Semaphore, Stream, type Schema } from "effect";
 import { ChildProcess } from "effect/process";
 import { provideProcess } from "./platform.ts";

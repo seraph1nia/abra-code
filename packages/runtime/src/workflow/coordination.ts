@@ -1,5 +1,5 @@
 import { LockKey } from "@abracode/contracts/identities";
-import { Context, Effect } from "effect";
+import { Layer, Context, Effect } from "effect";
 import { CrewError } from "../domain.ts";
 import { type Locks } from "../storage/lock.ts";
 
@@ -36,5 +36,16 @@ export class Coordination {
         options,
       );
     });
+  }
+}
+
+export class CoordinationService extends Context.Service<CoordinationService, Coordination>()(
+  "abracode/Coordination",
+) {
+  static layer(locks: Locks) {
+    return Layer.effect(
+      CoordinationService,
+      Effect.sync(() => new Coordination(locks)),
+    );
   }
 }

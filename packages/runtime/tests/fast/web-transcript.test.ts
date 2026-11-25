@@ -4,7 +4,7 @@ import { Schema } from "effect";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { MessageSchema } from "@ag-ui/core/schemas";
 import { projectMessage } from "../../src/web/backend.ts";
-import { nativeAguiMessages } from "@abracode/contracts/web/transcript";
+import { nativeAguiMessages, transcriptFromAgent } from "@abracode/contracts/web/transcript";
 import { TranscriptMessageSchema } from "@abracode/contracts/web/workspace-wire";
 
 const assistant = (state: unknown) =>
@@ -47,6 +47,10 @@ test("native text/tool order and identities survive AG-UI projection without hid
     messages.map((message) => message.role),
     ["assistant", "tool", "assistant"],
   );
+  const [display] = transcriptFromAgent(messages);
+  assert.deepEqual(display.parts, message.parts);
+  assert.equal(display.at, message.at);
+  assert.equal(display.tools?.[0].result, "Observed source");
   assert.equal(messages[0].id, native.id);
   assert.equal(messages[0].role === "assistant" && messages[0].toolCalls?.[0].id, "call_native");
   assert.equal(messages[1].role === "tool" && messages[1].toolCallId, "call_native");

@@ -12,21 +12,21 @@ test("selected controller reads hydrate only requested work at both population s
     for (let i = 0; i < size; i++) await run(f.work.create(goal(`unrelated-${i}`)));
     const hydrated: string[] = [];
     let related = 0;
-    const hydrate = f.work["hydrate"].bind(f.work);
-    f.work["hydrate"] = (rows, links) => {
+    const hydrate = f.work["issuesRepo"].hydrate.bind(f.work["issuesRepo"]);
+    f.work["issuesRepo"].hydrate = (rows, links) => {
       hydrated.push(...rows.map((row) => String(row.id)));
       return hydrate(rows, links);
     };
-    const evidence = f.work["taskRows"].bind(f.work);
-    f.work["taskRows"] = (issues) => {
+    const evidence = f.work["issuesRepo"].taskRows.bind(f.work["issuesRepo"]);
+    f.work["issuesRepo"].taskRows = (issues) => {
       const rows = evidence(issues);
       related += rows.reduce((sum, row) => sum + row.dependencies.length, 0);
       return rows;
     };
     const sql = vi.spyOn(f.seed.db, "prepare");
-    const projects = vi.spyOn(f.records, "projectScan");
-    const executions = vi.spyOn(f.records, "executionScan");
-    const setups = vi.spyOn(f.records, "setupScan");
+    const projects = vi.spyOn(f.records, "projectScan", "get");
+    const executions = vi.spyOn(f.records, "executionScan", "get");
+    const setups = vi.spyOn(f.records, "setupScan", "get");
     function verify(
       ids: string[],
       edgeCount: number,
@@ -99,7 +99,7 @@ test("selected controller reads hydrate only requested work at both population s
     f.config.max_workers = 1;
     const active = await run(f.controller.start(single.issue.id));
     // Configured admission also supplies this issue to its definition preparation without redundant re-reads.
-    verify([single.issue.id], 0, 3, [1, 3, 3]);
+    verify([single.issue.id], 0, 3, [1, 2, 2]);
     await assert.rejects(run(f.controller.start(one.tasks[0]!.issue.id)), { code: "NOT_READY" });
     verify([one.tasks[0]!.issue.id], 0, 1);
     f.config.max_workers = 2;

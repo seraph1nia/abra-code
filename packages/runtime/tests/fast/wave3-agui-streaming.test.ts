@@ -1,7 +1,6 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Exercises the pinned Effect 4 HTTP API transport. */
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
-import { Effect, Exit, Schema, Scope, Stream } from "effect";
+import { Effect, Deferred, Fiber, Exit, Schema, Scope, Stream } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { HttpApiClient } from "effect/http-api";
 import { AbstractAgent } from "@ag-ui/client";
@@ -9,7 +8,7 @@ import { EventType, type Event } from "@ag-ui/core";
 import { from, lastValueFrom, toArray } from "rxjs";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { SessionEvent } from "@opencode/schema/session-event";
-import { IssueId, WebSubmissionId } from "@abracode/contracts/identities";
+import { IssueId, SessionId, WebSubmissionId } from "@abracode/contracts/identities";
 import { workspaceApi } from "@abracode/contracts/web/http-api";
 import { NativeMessageCursor } from "@abracode/contracts/web/transcript";
 import { WorkspaceStateJson } from "@abracode/contracts/web/workspace-wire";
@@ -18,6 +17,7 @@ import {
   NativeSessionProjection,
   trustedSessionEvent,
 } from "../../src/opencode/agui/native-state.ts";
+import { NativeSessionReader, type AuthorizedConnection } from "../../src/opencode/agui/source.ts";
 import { nativeChangeScope } from "../../src/web/change-scopes.ts";
 import { AbraRunner } from "../../src/web/agent.ts";
 import { workspaceServer } from "../../src/web/server.ts";
@@ -134,8 +134,8 @@ test("STATE_DELTA emits fine-grained RFC 6902 sub-path patches instead of replac
   const runner = new AbraRunner(source, {
     notify: () => Effect.void,
     updates: Stream.fromIterable([
-      { type: "snapshot" as const, snapshot: first },
-      { type: "snapshot" as const, snapshot: second },
+      { type: "snapshot" as const, snapshot: first, native: first },
+      { type: "snapshot" as const, snapshot: second, native: second },
     ]),
   });
   const events = await lastValueFrom(
@@ -356,4 +356,34 @@ test("workspaceServer exposes /api/abra/submit, CopilotKit /stop/:threadId, unif
   assert.equal((await fetch(`${web.origin}/assets/nested/missing.js`)).status, 404);
   const spaResponse = await fetch(`${web.origin}/settings/appearance`);
   assert.notEqual(spaResponse.status, 404);
+});
+
+test("a repair discovered while replaying events buffered behind a page read reaches the caller", async () => {
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>(),
+        release = yield* Deferred.make<void>();
+      const connection = {
+        session: { time: {} },
+        client: {
+          message: {
+            list: () =>
+              Deferred.succeed(entered, undefined).pipe(
+                Effect.andThen(Deferred.await(release)),
+                Effect.as({ data: [], cursor: {} }),
+              ),
+          },
+        },
+      } as unknown as AuthorizedConnection;
+      const reader = new NativeSessionReader(SessionId.make("ses_repair"), () =>
+        Effect.succeed(connection),
+      );
+      const fiber = yield* reader.read({ transcript: true }).pipe(Effect.forkChild);
+      yield* Deferred.await(entered);
+      assert.deepEqual(reader.apply({ type: "server.connected" }), {});
+      yield* Deferred.succeed(release, undefined);
+      assert.equal((yield* Fiber.join(fiber)).repair, true);
+      assert.equal((yield* reader.read({ transcript: true })).repair, false);
+    }),
+  );
 });

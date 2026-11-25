@@ -2,7 +2,7 @@ import fsExt from "fs-ext";
 import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Deferred, Effect, Exit, Fiber, Scope } from "effect";
@@ -195,18 +195,41 @@ test("the Node helper bounds contention, cancels waiters and reports startup fai
   await assert.rejects(run(locks.with(key, () => Effect.void, { waitSeconds: 0.05 })), {
     code: "LOCKED",
   });
+  const marker = join(root, "waiter-contended");
+  const observedNode = join(root, "observed-node.cjs");
+  await writeFile(
+    observedNode,
+    `#!${process.execPath}
+const { createRequire } = require("node:module");
+const { writeFileSync } = require("node:fs");
+process.argv.splice(1, 1);
+const holder = process.argv[1];
+const binding = createRequire(holder)("fs-ext");
+const flock = binding.flockSync;
+binding.flockSync = (...args) => {
+  try { return flock(...args); }
+  catch (error) {
+    if (["EAGAIN", "EWOULDBLOCK"].includes(error.code)) writeFileSync(${JSON.stringify(marker)}, "");
+    throw error;
+  }
+};
+require(holder);
+`,
+    { mode: 0o700 },
+  );
+  const observedLocks = new FileLocks(root, observedNode);
   let entered = false;
   await run(
     Effect.scoped(
       Effect.gen(function* () {
-        const waiter = yield* locks
+        const waiter = yield* observedLocks
           .with(key, () =>
             Effect.sync(() => {
               entered = true;
             }),
           )
           .pipe(Effect.forkScoped);
-        yield* Effect.sleep(100);
+        yield* Effect.promise(() => vi.waitFor(() => access(marker), { timeout: 3000 }));
         yield* Fiber.interrupt(waiter).pipe(Effect.timeout("2 seconds"));
         yield* Scope.close(scope, Exit.void);
         yield* locks.with(key, () => Effect.void, { waitSeconds: 0 });
@@ -214,6 +237,8 @@ test("the Node helper bounds contention, cancels waiters and reports startup fai
     ),
   );
   assert.equal(entered, false);
+  await writeFile(observedNode, `#!${process.execPath}\nprocess.stdout.write("unlocked\\n");\n`);
+  await assert.rejects(run(observedLocks.with(key, () => Effect.void)), { code: "LOCK_ERROR" });
   await mkdir(join(root, "failed.lock"));
   await assert.rejects(
     run(locks.with(LockKey.make("failed"), () => Effect.void)),

@@ -1,5 +1,6 @@
+import { useWorkspaceNavigate } from "../use-workspace-navigate.ts";
 import { useState } from "react";
-import { useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
+import { useSearch } from "@tanstack/react-router";
 import { IssueId } from "@abracode/contracts/identities";
 import { artifactPageSize } from "@abracode/contracts/web/wire";
 import type { Inspect } from "@abracode/presentation/cards";
@@ -9,7 +10,6 @@ import { ReportDocumentView } from "@abracode/presentation/report-document";
 import { Button } from "@abracode/presentation/ui/button";
 import { api } from "../api.ts";
 import { Markdown } from "../markdown.tsx";
-import { destinationFor } from "../navigation.ts";
 import { ExportReport } from "../presentation/export-report.tsx";
 import { ReviewsForSource } from "../presentation/interactive-review-loader.tsx";
 import { RequestState } from "../request-state.tsx";
@@ -17,8 +17,7 @@ import { queries } from "../work-data.ts";
 
 export function Reports({ issue, inspect }: { issue: string; inspect: Inspect }) {
   const route = useSearch({ from: "__root__" });
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const navigate = useNavigate({ from: destinationFor(pathname) ?? "/" });
+  const navigate = useWorkspaceNavigate();
   const target = route.resource?.action === "open_artifact" ? route.resource : undefined;
   const targetKey = target ? `${target.issue_id}:${target.request_id}:${target.hash}` : "";
   const [otherReportsFor, setOtherReportsFor] = useState<string>();
@@ -61,9 +60,7 @@ export function Reports({ issue, inspect }: { issue: string; inspect: Inspect })
                             {artifact.status}
                           </StatusBadge>
                         </div>
-                        <p className="muted">
-                          {artifact.format === "a2ui-snapshot" ? "JSON snapshot" : "Retained HTML"}
-                        </p>
+                        <p className="muted">JSON snapshot</p>
                         {artifact.status === "published" && artifact.hash ? (
                           <div className="button-row">
                             <Button
@@ -83,17 +80,10 @@ export function Reports({ issue, inspect }: { issue: string; inspect: Inspect })
                             </Button>
                             <a
                               className="report-download-link"
-                              href={
-                                artifact.format === "a2ui-snapshot"
-                                  ? api.documentURL(issue, artifact.request_id, artifact.hash)
-                                  : api.reportURL(issue, artifact.request_id, true)
-                              }
+                              href={api.documentURL(issue, artifact.request_id, artifact.hash)}
                               download
                             >
-                              {artifact.format === "a2ui-snapshot"
-                                ? "Download JSON"
-                                : "Download HTML"}{" "}
-                              <ArrowUpRight aria-hidden="true" />
+                              Download JSON <ArrowUpRight aria-hidden="true" />
                             </a>
                           </div>
                         ) : (
@@ -146,12 +136,7 @@ export function Reports({ issue, inspect }: { issue: string; inspect: Inspect })
             <RequestState query={queries.report(issue)}>
               {(report) =>
                 "content" in report ? (
-                  <Markdown
-                    key={report.content}
-                    className="prose"
-                    content={report.content}
-                    mode="static"
-                  />
+                  <Markdown className="prose" content={report.content} mode="static" />
                 ) : (
                   <output className="muted block">
                     {report.unavailable === "not_started"
@@ -176,8 +161,7 @@ function SelectedReport({
   inspect: Inspect;
 }) {
   const route = useSearch({ from: "__root__" });
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const navigate = useNavigate({ from: destinationFor(pathname) ?? "/" });
+  const navigate = useWorkspaceNavigate();
   return (
     <RequestState query={queries.artifactSummary(target.issue_id, target.request_id, target.hash)}>
       {(selected) =>
@@ -201,54 +185,37 @@ function SelectedReport({
                   </Button>
                   <a
                     className="report-download-link"
-                    href={
-                      selected.format === "a2ui-snapshot"
-                        ? api.documentURL(target.issue_id, target.request_id, target.hash)
-                        : api.reportURL(target.issue_id, target.request_id, true)
-                    }
+                    href={api.documentURL(target.issue_id, target.request_id, target.hash)}
                     download
                   >
-                    {selected.format === "a2ui-snapshot"
-                      ? "Download selected JSON"
-                      : "Download selected HTML"}{" "}
-                    <ArrowUpRight aria-hidden="true" />
+                    Download selected JSON <ArrowUpRight aria-hidden="true" />
                   </a>
                 </div>
               }
             >
-              {selected.format === "a2ui-snapshot" && (
-                <ExportReport
-                  key={target.hash}
-                  issue={target.issue_id}
-                  request={target.request_id}
-                  hash={target.hash}
-                />
-              )}
+              <ExportReport
+                key={target.hash}
+                issue={target.issue_id}
+                request={target.request_id}
+                hash={target.hash}
+              />
               <ReviewsForSource
                 issue={target.issue_id}
                 source={{ kind: "report", request_id: target.request_id, hash: target.hash }}
               />
-              {selected.format === "a2ui-snapshot" ? (
-                <RequestState
-                  live={false}
-                  query={queries.artifactDocument(target.issue_id, target.request_id, target.hash)}
-                >
-                  {(artifact) =>
-                    artifact.hash === target.hash ? (
-                      <ReportDocumentView artifact={artifact} inspect={inspect} />
-                    ) : (
-                      <output>The document does not match the selected artifact hash.</output>
-                    )
-                  }
-                </RequestState>
-              ) : (
-                <iframe
-                  className="report-preview"
-                  title="Isolated retained visual report"
-                  sandbox="allow-scripts"
-                  src={api.reportURL(target.issue_id, target.request_id)}
-                />
-              )}
+
+              <RequestState
+                live={false}
+                query={queries.artifactDocument(target.issue_id, target.request_id, target.hash)}
+              >
+                {(artifact) =>
+                  artifact.hash === target.hash ? (
+                    <ReportDocumentView artifact={artifact} inspect={inspect} />
+                  ) : (
+                    <output>The document does not match the selected artifact hash.</output>
+                  )
+                }
+              </RequestState>
             </SectionCard>
           </div>
         )

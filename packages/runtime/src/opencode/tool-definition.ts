@@ -1,10 +1,10 @@
-import { Effect, Schema, SchemaIssue } from "effect";
+import { Effect, Schema } from "effect";
 import { Tool } from "@opencode/schema/tool";
 import { type ToolEditor } from "@opencode/plugin/effect/tool";
 import { type SessionId } from "@abracode/contracts/identities";
 import { CrewError } from "../domain.ts";
 import { ToolProgress } from "./progress.ts";
-import { diagnosticText } from "./diagnostics.ts";
+import { strictInput, toToolError } from "@abracode/agents/tool-boundary";
 
 export type ToolAccess = { worker: boolean; diagnostic: boolean; lead?: boolean };
 
@@ -26,44 +26,7 @@ export function stripUndefined<T>(value: T): T {
   return value;
 }
 
-/** Keep strict decoding at the host boundary, including the pinned host's schema bridge. */
-export function strictInput<S extends Schema.Codec<unknown, unknown>>(schema: S) {
-  const standard = Schema.toStandardSchemaV1(schema);
-  const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" });
-  const json = {
-    ...document.schema,
-    ...(Object.keys(document.definitions).length ? { $defs: document.definitions } : {}),
-  };
-  const format = SchemaIssue.makeFormatterStandardSchemaV1();
-  return {
-    "~standard": {
-      ...standard["~standard"],
-      // The built-in input-repair hook leaves composed objects intact. Otherwise it
-      // silently drops excess properties before our strict validator can reject them.
-      jsonSchema: {
-        input: () => ({
-          type: "object" as const,
-          allOf: [document.schema],
-          ...(Object.keys(document.definitions).length ? { $defs: document.definitions } : {}),
-        }),
-        output: () => json,
-      },
-      validate: (value: unknown) =>
-        Effect.runSync(
-          Schema.decodeUnknownEffect(schema)(value, {
-            onExcessProperty: "error",
-            errors: "all",
-          }).pipe(
-            Effect.match({
-              onFailure: (error) => format(error.issue),
-              onSuccess: (value) => ({ value }),
-            }),
-          ),
-        ),
-    },
-  };
-}
-
+export { strictInput };
 export function defineTool<I, O>(d: {
   name: string;
   description: string;
@@ -111,13 +74,21 @@ export function defineTool<I, O>(d: {
                 Effect.provideService(ToolProgress, context.progress),
               ),
             ),
-            Effect.flatMap((result) =>
-              Schema.decodeUnknownEffect(Schema.toType(output), { reportInput: false })(
-                stripUndefined({
-                  ok: true,
-                  ...(result === undefined ? {} : { result }),
-                }),
-              ).pipe(
+            Effect.flatMap((result) => {
+              const value = stripUndefined({
+                ok: true as const,
+                ...(result === undefined ? {} : { result }),
+              });
+              return Schema.encodeEffect(output, { reportInput: false })(value).pipe(
+                Effect.flatMap((wire) =>
+                  Schema.decodeUnknownEffect(output, { reportInput: false })(wire).pipe(
+                    Effect.map((structured) => ({
+                      output: structured,
+                      content: JSON.stringify(wire),
+                      metadata: { abracode: true },
+                    })),
+                  ),
+                ),
                 Effect.mapError(
                   (error) =>
                     new CrewError(
@@ -125,22 +96,14 @@ export function defineTool<I, O>(d: {
                       `abra_${d.name} output: ${error.message.slice(0, 2048)}`,
                     ),
                 ),
+              );
+            }),
+            Effect.mapError((error) =>
+              toToolError(
+                error.code,
+                `${error.code}: ${error.message}`,
+                d.recoveryHint ?? DEFAULT_RECOVERY_HINT,
               ),
-            ),
-            Effect.map((value) => ({
-              output: value,
-              content: JSON.stringify(value),
-              metadata: { abracode: true },
-            })),
-            Effect.mapError(
-              (error) =>
-                new Tool.Error({
-                  message: `${error.code}: ${diagnosticText(error.message)}`,
-                  metadata: {
-                    code: error.code,
-                    action: d.recoveryHint ?? DEFAULT_RECOVERY_HINT,
-                  },
-                }),
             ),
             provide,
           ),

@@ -1,4 +1,3 @@
-import { domainEffect } from "../effect.ts";
 import { Context, Effect } from "effect";
 /** Ephemeral tool feedback; durable command/worker progress remains controller evidence. */
 export type ProgressUpdate = {
@@ -24,4 +23,4 @@ export const progress = (update: ProgressUpdate) =>
 export const completedProgress =
   (stage: ProgressUpdate["stage"]) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    domainEffect(effect).pipe(Effect.tap(() => progress({ stage, status: "completed" })));
+    effect.pipe(Effect.tap(() => progress({ stage, status: "completed" })));

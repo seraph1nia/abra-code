@@ -8,7 +8,7 @@ import {
   diagramBudget,
   diagramSourcePolicy,
 } from "@abracode/contracts/presentation/diagrams";
-import { catalogId, catalogV1Id } from "@abracode/contracts/web/catalog";
+import { catalogId } from "@abracode/contracts/web/catalog";
 import { validateSurface } from "@abracode/contracts/web/surfaces";
 import {
   validateReportDocument,
@@ -46,7 +46,10 @@ test("diagram catalog accepts 32 literal placements and refuses unsafe or excess
   assert.throws(() =>
     validateSurface({
       ...board(1),
-      createSurface: { ...board(1).createSurface, catalogId: catalogV1Id },
+      createSurface: {
+        ...board(1).createSurface,
+        catalogId: "https://abracode.local/catalog/work/v2/catalog.json",
+      },
     }),
   );
   for (const extra of [
@@ -110,54 +113,10 @@ test("diagram policy allows ordinary punctuation and labels while rejecting acti
   ])
     assert.ok(diagramSourcePolicy(text));
 });
-test("historical documents retain their original compatibility and eight-diagram contract", () => {
+test("retired diagram document catalogs remain unsupported", () => {
   const current = reportDocument();
-  const legacy = {
-    ...current,
-    catalog_id: catalogV1Id,
-    catalog_version: 1,
-    renderer_compatibility: "abracode-react/v1",
-    surface: {
-      ...current.surface,
-      createSurface: { ...current.surface.createSurface, catalogId: catalogV1Id },
-    },
-  };
-  const json = JSON.stringify(legacy);
-  const result = readReportDocument(json);
-  assert.ok(result.supported);
-  assert.equal(JSON.stringify(result.document), json);
-  const oldConfiguredSource = {
-    ...legacy,
-    data: {
-      ...legacy.data,
-      evidence: {
-        ...legacy.data.evidence,
-        diagrams: [
-          {
-            title: "Historical source",
-            source: "\n---\ntitle: Historical\n---\nflowchart LR\nA --> B",
-          },
-        ],
-      },
-    },
-  };
-  const oldJSON = JSON.stringify(oldConfiguredSource);
-  const oldRead = readReportDocument(oldJSON);
-  assert.ok(oldRead.supported);
-  assert.equal(JSON.stringify(oldRead.document), oldJSON);
-  assert.throws(() =>
-    validateReportDocument({
-      ...legacy,
-      data: {
-        ...legacy.data,
-        evidence: {
-          ...legacy.data.evidence,
-          diagrams: Array.from({ length: 9 }, () => ({
-            title: "Old",
-            source: "flowchart LR\nA --> B",
-          })),
-        },
-      },
-    }),
+  assert.equal(
+    readReportDocument(JSON.stringify({ ...current, catalog_version: 2 })).supported,
+    false,
   );
 });

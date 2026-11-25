@@ -26,7 +26,7 @@ test("HTML exports are immutable, keyed by document and exporter and repaired wi
       Effect.sync(() => {
         builds++;
         if (fail) throw new CrewError("BUILD_FAILED", "Fixture export failure");
-        return `<!doctype html><div id="abracode-license-notices">Notices</div><script type="application/json" id="abracode-report-document" data-hash="${hash}">${json.replaceAll("<", "\\u003c")}</script>`;
+        return `<!doctype html><div id="abracode-license-notices">Notices</div><script type="application/json" id="abracode-report-document" data-hash="${hash}">${json.replaceAll("<", "\\u003c")}</script><script type="application/json" id="abracode-report-diagrams" data-hash="${reportHash("[]")}">[]</script>`;
       }),
   };
   const renderer = { acquire: Effect.succeed(bundle) };

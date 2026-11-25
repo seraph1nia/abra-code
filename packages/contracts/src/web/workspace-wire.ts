@@ -99,7 +99,7 @@ export const SurfaceRecordSchema = Schema.Struct({
   session_id: Schema.String,
   tool_call_id: Schema.String,
   message_id: Schema.optional(MessageId),
-  history: Schema.optional(Schema.Literals(["immutable", "latest-only"])),
+  history: Schema.optional(Schema.Literal("immutable")),
   revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
   at: Schema.String,
   surface: SurfaceSchema,
@@ -148,7 +148,6 @@ export const WorkspaceSnapshotSchema = Schema.Struct({
   busy: Schema.Boolean,
   outcome: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
-  messages: Schema.Array(TranscriptMessageSchema),
   older: Schema.optional(Schema.String),
   inbox: Schema.Array(
     Schema.Struct({ id: Schema.String, text: Schema.String, delivery: Schema.String }),

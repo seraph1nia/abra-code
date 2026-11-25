@@ -221,6 +221,13 @@ export class Messages {
         this.eligible(current, m);
         return {
           ...current,
+          ...(current.capacity_reservation?.status === "preparing" &&
+            status === "admission_uncertain" && {
+              capacity_reservation: {
+                ...current.capacity_reservation,
+                status: "uncertain" as const,
+              },
+            }),
           messages: current.messages?.map((entry) =>
             entry.type !== "finding" && entry.prompt_id === m.prompt_id
               ? {
@@ -288,28 +295,37 @@ export class Messages {
       let allowed = false;
       const saved = yield* this.records.update(e.issue_id, (current) => {
         this.eligible(current, m);
+        const messages = current.messages?.map((entry) => {
+          if (entry.type === "finding" || entry.request_id !== m.request_id) return entry;
+          const recovery = entry.response_recovery;
+          ensure(
+            recovery && recovery.prompt_id === m.response_recovery?.prompt_id,
+            "MESSAGE_REBIND",
+            "Recovery identity changed",
+          );
+          const suppressed =
+            recovery.status === "pending" &&
+            suppressReminder(entry, this.queries.settings.supervisionMode === "manual");
+          allowed = !suppressed && status !== "suppressed";
+          return {
+            ...entry,
+            response_recovery: {
+              ...recovery,
+              status: suppressed ? ("suppressed" as const) : status,
+            },
+          };
+        });
         return {
           ...current,
-          messages: current.messages?.map((entry) => {
-            if (entry.type === "finding" || entry.request_id !== m.request_id) return entry;
-            const recovery = entry.response_recovery;
-            ensure(
-              recovery && recovery.prompt_id === m.response_recovery?.prompt_id,
-              "MESSAGE_REBIND",
-              "Recovery identity changed",
-            );
-            const suppressed =
-              recovery.status === "pending" &&
-              suppressReminder(entry, this.queries.settings.supervisionMode === "manual");
-            allowed = !suppressed && status !== "suppressed";
-            return {
-              ...entry,
-              response_recovery: {
-                ...recovery,
-                status: suppressed ? ("suppressed" as const) : status,
+          messages,
+          ...(allowed &&
+            status === "admission_uncertain" &&
+            current.capacity_reservation?.status === "preparing" && {
+              capacity_reservation: {
+                ...current.capacity_reservation,
+                status: "uncertain" as const,
               },
-            };
-          }),
+            }),
         };
       });
       synchronizeExecution(e, saved);
@@ -363,6 +379,7 @@ export class Messages {
         pendingStoppedReason: "Worker stopped before reminder admission",
         queuedStoppedReason: "Worker stopped with the reminder still queued",
       });
+      if (!outcome.submitted) yield* this.capacity.releaseIfPreparing(e, m.role);
       return outcome.settled;
     }.bind(this),
     domainEffect,
@@ -391,7 +408,7 @@ export class Messages {
               ),
             escalate: (reason, state) => this.attention.responseIncident(e, m, reason, state),
             reserve: (completion) =>
-              this.records.coordinateCommit(() =>
+              this.records.withActiveIndex(() =>
                 domainEffect(
                   Effect.gen({ self: this }, function* () {
                     const current = yield* this.records.execution(e.issue_id);
@@ -462,6 +479,7 @@ export class Messages {
               ),
           });
         }).pipe(
+          Effect.onError(() => this.capacity.releaseIfPreparing(e, m.role)),
           Effect.catch((error) =>
             this.attention.responseIncident(
               e,
@@ -504,6 +522,7 @@ export class Messages {
         const session = this.eligible(e, m);
         if (
           !(yield* this.recoveryTransport(e, m).pipe(
+            Effect.onError(() => this.capacity.releaseIfPreparing(e, m.role)),
             Effect.catch((error) =>
               this.attention
                 .responseIncident(
@@ -605,19 +624,23 @@ export class Messages {
           "MESSAGE_RECIPIENT",
           "Use the existing recovery route for failed or interrupted native work",
         );
-        if (
-          !e.capacity_reservation &&
-          !(yield* this.capacity.reserve(
-            e,
-            m.role,
-            yield* this.queries.effectiveProject(e),
-            false,
-            m.request_id,
-          ))
-        )
-          return false;
-        yield* this.runtime.preflight(e, m.role);
-        yield* admitNativeRequest(this.runtime, m, (status) => this.status(e, m, status));
+        const admitted = yield* Effect.gen({ self: this }, function* () {
+          if (
+            !e.capacity_reservation &&
+            !(yield* this.capacity.reserve(
+              e,
+              m.role,
+              yield* this.queries.effectiveProject(e),
+              false,
+              m.request_id,
+            ))
+          )
+            return false;
+          yield* this.runtime.preflight(e, m.role);
+          yield* admitNativeRequest(this.runtime, m, (status) => this.status(e, m, status));
+          return true;
+        }).pipe(Effect.onError(() => this.capacity.releaseIfPreparing(e, m.role)));
+        if (!admitted) return false;
         invalidate();
       }
       return true;

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { verifiedSpec, failedSpec } from "../helpers/spec-review.ts";
 import * as Id from "@abracode/contracts/identities";
@@ -61,6 +62,7 @@ test("enabled check correction consumes one immutable round, reruns checks and i
     remaining: 0,
   });
   const c = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -104,7 +106,7 @@ test("uncertain review findings require a decision, while a scoped correction su
 test("full-spec postarchive correction creates a new planning cycle, preserves archive and PR, and rejects stale merge authorization", async (t) => {
   const f = await newFixture();
   t.onTestFinished(() => run(f.close()));
-  await budget(f, 2);
+  await budget(f, 3);
   const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   project.plan_approval = false;
   await run(f.records.saveProject(project));
@@ -136,6 +138,21 @@ test("full-spec postarchive correction creates a new planning cycle, preserves a
     ),
     /head/,
   );
+  f.delivery.pr!.state = "MERGED";
+  await assert.rejects(
+    run(
+      f.controller.correct({
+        issue_id: e.issue_id,
+        expected_head: oldHead,
+        finding_ids: [Id.FindingId.make("review-finding")],
+        scope: "in_scope",
+        instructions: "Fix scoped edge case",
+      }),
+    ),
+    { code: "CORRECTION_MERGED" },
+  );
+  assert.equal((await run(f.controller.get(e.issue_id))).rounds?.length ?? 0, 0);
+  f.delivery.pr!.state = "OPEN";
   e = await run(
     f.controller.correct({
       issue_id: e.issue_id,
@@ -149,7 +166,8 @@ test("full-spec postarchive correction creates a new planning cycle, preserves a
   assert.deepEqual(e.openspec_schema_binding, binding);
   assert.equal(e.plan_approval_required, true);
   assert.equal(e.rounds?.length, 1);
-  assert.notEqual(e.openspec_change, oldChange);
+  assert.equal(e.openspec_change, oldChange + "-r1");
+  assert.equal(e.openspec_base_change, oldChange);
   assert.equal(e.pull_request_reference, pending.execution.pull_request_reference);
   assert.equal(e.delivered_commit, undefined);
   assert.equal(
@@ -218,6 +236,26 @@ test("full-spec postarchive correction creates a new planning cycle, preserves a
     await readFile(join(e.worktree_directory!, oldArchive, "proposal.md"), "utf8"),
     archive,
   );
+  const laterFinding = Id.FindingId.make("next-revision");
+  f.delivery.findings = () =>
+    Effect.succeed([
+      {
+        id: laterFinding,
+        head: e.delivered_commit!,
+        kind: "review" as const,
+        text: "Another scoped correction",
+      },
+    ]);
+  const next = await run(
+    f.controller.correct({
+      issue_id: e.issue_id,
+      expected_head: e.delivered_commit!,
+      finding_ids: [laterFinding],
+      scope: "in_scope",
+      instructions: "Apply the next scoped correction",
+    }),
+  );
+  assert.equal(next.openspec_change, oldChange + "-r3");
 });
 
 test("prior archives cannot be modified by a corrective Apply", async (t) => {
@@ -376,6 +414,7 @@ for (const kind of ["repeated", "exhausted", "scope-change"] as const)
     assert.equal(e.delivered_commit, undefined);
     const prompts = f.runtime.prompts;
     const restarted = createWorkflow(
+      f.catalog,
       f.config,
       f.records,
       f.work,

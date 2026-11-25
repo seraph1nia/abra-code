@@ -35,6 +35,28 @@ async function assigned(t: TestContext) {
   return { f, e, request, send };
 }
 
+test("a failed message preflight releases the idle worker slot", async (t) => {
+  const { f, e, request } = await assigned(t);
+  await run(
+    f.records.update(e.issue_id, (current) => ({
+      ...current,
+      capacity_reservation: undefined,
+      capacity_observed_idle: true,
+    })),
+  );
+  f.runtime.preflight = () => Effect.fail(new CrewError("PREFLIGHT_FAILED", "Missing model"));
+  await assert.rejects(
+    run(
+      f.controller.workMessage(
+        { issue_id: e.issue_id, request_id: request.id, role: "explore", body: "Review the task" },
+        request.sender,
+      ),
+    ),
+    { code: "PREFLIGHT_FAILED" },
+  );
+  assert.equal((await run(f.controller.get(e.issue_id))).capacity_reservation, undefined);
+});
+
 test("resolved history skips admission reads but queued resolved input still wakes with its original identity", async (t) => {
   const { f, e, request } = await assigned(t);
   await run(
@@ -56,11 +78,11 @@ test("resolved history skips admission reads but queued resolved input still wak
       generation: e.control_generation,
     }),
   );
-  const coordination = f.records.coordinate(f.locks);
+  const coordination = f.records.coordination;
   const service = new Messages(
     f.records,
     f.runtime,
-    new Capacity(f.config, f.records, coordination),
+    new Capacity(f.config, f.records),
     f.controller.queries,
     new AttentionService(f.config, f.records, f.runtime, coordination, f.locks),
   );
@@ -161,6 +183,7 @@ for (const admitted of [true, false]) {
     const count = f.runtime.prompts;
     f.runtime.prompt = prompt;
     const restarted = createWorkflow(
+      f.catalog,
       f.config,
       f.records,
       f.work,

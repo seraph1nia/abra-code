@@ -66,6 +66,7 @@ try {
       storage: { get: () => counted("native_storage_get", () => undefined) },
     } as unknown as Context,
     f.config,
+    f.records,
   );
   native.client = () =>
     Effect.succeed({
@@ -91,11 +92,11 @@ try {
     counted("prompt", () => {
       context.push({ type: "user", id, text, time: { created: 3 } });
     }).pipe(Effect.andThen(prompt(session, text, id)));
-  const coordination = f.records.coordinate(f.locks);
+  const coordination = f.records.coordination;
   const service = new Messages(
     f.records,
     runtime,
-    new Capacity(f.config, f.records, coordination),
+    new Capacity(f.config, f.records),
     f.controller.queries,
     new AttentionService(f.config, f.records, f.runtime, coordination, f.locks),
   );

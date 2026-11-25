@@ -21,7 +21,7 @@ import {
   type ReportDocument,
 } from "@abracode/contracts/presentation/report-document";
 import type { ReportSnapshot } from "@abracode/contracts/presentation/report-evidence";
-import { workCatalogs } from "@abracode/contracts/web/catalog";
+import { workCatalogDocument } from "@abracode/contracts/web/catalog";
 import type { VisualBuild, VisualRenderRequestSchema } from "./report-contracts.ts";
 
 type Request = typeof VisualRenderRequestSchema.Type;
@@ -160,10 +160,9 @@ export class ReportDocuments {
                 );
                 if (build) {
                   ensure(
-                    build.format === "a2ui-snapshot" &&
-                      canonicalJSON(build.request) === canonicalJSON(request),
+                    canonicalJSON(build.request) === canonicalJSON(request),
                     "REPORT_REBIND",
-                    "Report request is bound to different input or a retained legacy artifact",
+                    "Report request is bound to different input",
                   );
                   if (build.status === "published") {
                     yield* this.content(build);
@@ -198,15 +197,14 @@ export class ReportDocuments {
                     notify_session:
                       request.surface || document.provenance.source_call
                         ? undefined
-                        : (e.supervisor_session_id ?? (yield* this.records.supervisor())),
+                        : (e.supervisor_session_id ?? (yield* this.records.supervisor)),
                     producing_call: document.provenance.source_call,
                     generation: e.control_generation,
                     snapshot: captured.snapshot,
                     input_hash: hash,
                     document_hash: hash,
                     template_hash: reportHash(
-                      canonicalJSON(workCatalogs[document.catalog_id]) +
-                        document.renderer_compatibility,
+                      canonicalJSON(workCatalogDocument) + document.renderer_compatibility,
                     ),
                     document_input: document,
                     status: "pending",

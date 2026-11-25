@@ -1,3 +1,4 @@
+import { nativeReviews } from "../../src/web/review-tool.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import * as Id from "@abracode/contracts/identities";
@@ -21,7 +22,6 @@ test("a confirmed planning checkpoint releases an admitted old stall without con
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const supervisor = Id.SessionId.make("ses_supervisor");
-  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
   const { id: checkpointStallId } = await run(f.work.create(workGoal("checkpoint-stall")));
   const e = await run(f.controller.start(checkpointStallId, supervisor));
   const clock = await run(TestClock.make());
@@ -50,7 +50,6 @@ test("worker questions wake the retained Supervisor without a stall or diagnosti
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const supervisor = Id.SessionId.make("ses_supervisor");
-  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
   const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
   const project = (await run(f.records.project(Id.RepositoryId.make("frontend"))))!;
   project.diagnostic_turns = 0;
@@ -112,6 +111,7 @@ test("worker questions wake the retained Supervisor without a stall or diagnosti
   assert.equal(f.runtime.prompts, count + 1);
   assert.equal((await run(f.controller.get(e.issue_id))).attention_turns ?? 0, 0);
   const c = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -149,7 +149,6 @@ test("resolved and paused questions do not wake Abra; a queued resolved question
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const supervisor = Id.SessionId.make("ses_supervisor");
-  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
   const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
   const e = await run(f.controller.start(issueId, supervisor));
   const question = {
@@ -214,11 +213,6 @@ test("busy polls don't reset progress; one stall prompt is retained across resta
     research: 1000,
     operation: 1000,
   };
-  f.runtime.sessions.set(Id.SessionId.make("ses_supervisor"), {
-    id: Id.SessionId.make("ses_supervisor"),
-    directory: f.config.home,
-    busy: false,
-  });
   const e = await call(f.controller.start(issueId, Id.SessionId.make("ses_supervisor")));
   const count = f.runtime.prompts;
   await call(clock.setTime(900));
@@ -230,6 +224,7 @@ test("busy polls don't reset progress; one stall prompt is retained across resta
   assert.equal(incident.status, "admitted");
   assert.equal(f.runtime.prompts, count + 1);
   const c = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -335,11 +330,6 @@ test("lost admission reuses retained prompt; unavailable provider doesn't loop a
   const call = <A, E>(effect: Effect.Effect<A, E>) =>
     run(effect.pipe(Effect.provideService(Clock.Clock, clock)));
   f.config.progress_timeout_ms = { explore: 1, apply: 1, review: 1, research: 1, operation: 1 };
-  f.runtime.sessions.set(Id.SessionId.make("ses_supervisor"), {
-    id: Id.SessionId.make("ses_supervisor"),
-    directory: f.config.home,
-    busy: false,
-  });
   const e = await call(f.controller.start(issueId, Id.SessionId.make("ses_supervisor")));
   const prompt = f.runtime.prompt.bind(f.runtime);
   const ids: string[] = [];
@@ -356,9 +346,16 @@ test("lost admission reuses retained prompt; unavailable provider doesn't loop a
   await call(f.controller.supervise());
   assert.equal(ids.length, 1);
   f.runtime.prompt = prompt;
+  const withLock = f.locks.with.bind(f.locks);
+  const attentionLocks: string[] = [];
+  f.locks.with = (key, action, options) => {
+    if (key.startsWith("attention-")) attentionLocks.push(key);
+    return withLock(key, action, options);
+  };
   await run(
     f.controller.attentionDisposition(e.issue_id, a.id, 0, "retry", "Provider connection restored"),
   );
+  assert.equal(attentionLocks.length, 1);
   assert.equal((await run(f.controller.get(e.issue_id))).attention![0].prompt_id, ids[0]);
   await run(f.controller.control(e.issue_id, "pause"));
   await call(clock.setTime(10000));
@@ -377,11 +374,6 @@ test("attention admission reserves a global slot until a retained disposition re
   const { id: abra2Id } = await run(
     f.work.create({ ...workGoal("abra-2"), repository_id: Id.RepositoryId.make("frontend") }),
   );
-  f.runtime.sessions.set(Id.SessionId.make("ses_supervisor"), {
-    id: Id.SessionId.make("ses_supervisor"),
-    directory: f.config.home,
-    busy: false,
-  });
   f.config.attention_capacity = 1;
   f.config.progress_timeout_ms = { explore: 1, apply: 1, review: 1, research: 1, operation: 1 };
   const clock = await run(TestClock.make());
@@ -391,7 +383,7 @@ test("attention admission reserves a global slot until a retained disposition re
   await call(f.controller.start(abra2Id, Id.SessionId.make("ses_supervisor")));
   await call(clock.setTime(10));
   await call(f.controller.supervise());
-  const records = await run(f.records.executions());
+  const records = await run(f.records.executions);
   const admitted = records.flatMap((e) => e.attention ?? []).filter((a) => a.status === "admitted");
   assert.equal(admitted.length, 1);
   assert.equal(
@@ -410,7 +402,7 @@ test("attention admission reserves a global slot until a retained disposition re
   );
   await call(f.controller.supervise());
   assert.equal(
-    (await run(f.records.executions()))
+    (await run(f.records.executions))
       .flatMap((e) => e.attention ?? [])
       .filter((a) => a.status === "admitted").length,
     1,
@@ -421,11 +413,6 @@ test("diagnostic message provenance cannot authorize lifecycle changes, and paus
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
-  f.runtime.sessions.set(Id.SessionId.make("ses_supervisor"), {
-    id: Id.SessionId.make("ses_supervisor"),
-    directory: f.config.home,
-    busy: false,
-  });
   f.config.progress_timeout_ms = { explore: 1, apply: 1, review: 1, research: 1, operation: 1 };
   const clock = await run(TestClock.make());
   const call = <A, E>(effect: Effect.Effect<A, E>) =>
@@ -462,6 +449,7 @@ test("diagnostic message provenance cannot authorize lifecycle changes, and paus
       f.onboarding,
       true,
       f.setup,
+      nativeReviews(f.controller, f.records.store, f.locks),
       undefined,
       new ConfigApplication(f.config, f.records, f.onboarding),
     ),
@@ -528,7 +516,16 @@ test("diagnostic message provenance cannot authorize lifecycle changes, and paus
   }
   const centralTools = new Map(tools);
   tools.clear();
-  await run(registerTools(ctx, f.controller, f.onboarding, false, f.setup));
+  await run(
+    registerTools(
+      ctx,
+      f.controller,
+      f.onboarding,
+      false,
+      f.setup,
+      nativeReviews(f.controller, f.records.store, f.locks),
+    ),
+  );
   for (const name of ["thought_get", "thought_save", "thought_search", "work_briefing"])
     assert.equal(tools.has(name), false);
   for (const [name, tool] of centralTools) tools.set(name, tool);
@@ -589,11 +586,6 @@ test("PR feedback batches deduplicate operation churn, restart and handled uncha
   const p = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   p.diagnostic_turns = 2;
   await run(f.records.saveProject(p));
-  f.runtime.sessions.set(Id.SessionId.make("ses_supervisor"), {
-    id: Id.SessionId.make("ses_supervisor"),
-    directory: f.config.home,
-    busy: false,
-  });
   let e = await run(delivered(f));
   e.feedback = {
     schema_version: 1,
@@ -640,6 +632,7 @@ test("PR feedback batches deduplicate operation churn, restart and handled uncha
   await run(f.controller.supervise());
   assert.equal(f.runtime.prompts, prompts + 1);
   const c = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -670,7 +663,6 @@ test("worker results coalesce into a durable bounded notice across admission fai
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const supervisor = Id.SessionId.make("ses_supervisor");
-  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
   const { id: communicationId } = await run(f.work.create(workGoal("communication")));
   const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   project.diagnostic_turns = 2;
@@ -707,6 +699,7 @@ test("worker results coalesce into a durable bounded notice across admission fai
   assert.equal(current.attention_turns, 1);
   loseResponse = false;
   const restarted = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -751,7 +744,6 @@ test("missing responses stay visible when diagnostic budget is exhausted and res
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const supervisor = Id.SessionId.make("ses_supervisor");
-  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
   const { id: unansweredId } = await run(f.work.create(workGoal("unanswered")));
   const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   project.diagnostic_turns = 0;
@@ -804,7 +796,6 @@ test("completed research can notify its retained Supervisor without reopening ex
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const supervisor = Id.SessionId.make("ses_supervisor");
-  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
   const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   project.openspec = false;
   project.plan_approval = false;
@@ -868,7 +859,6 @@ test("manual posture suppresses optional diagnostics; unattended retains human q
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const supervisor = Id.SessionId.make("ses_supervisor");
-  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
   const { id: postureWorkId } = await run(f.work.create(workGoal("posture-work")));
   const e = await run(f.controller.start(postureWorkId, supervisor));
   const count = f.runtime.prompts;
@@ -932,7 +922,6 @@ test("an exhausted diagnostic is recorded even while an unrelated incident holds
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const root = Id.SessionId.make("ses_supervisor");
-  f.runtime.sessions.set(root, { id: root, directory: f.config.home, busy: false });
   f.config.attention_capacity = 1;
   f.config.progress_timeout_ms = { explore: 1, apply: 1, review: 1, research: 1, operation: 1 };
   const project = (await run(f.records.project(Id.RepositoryId.make("frontend"))))!;
@@ -957,7 +946,7 @@ test("an exhausted diagnostic is recorded even while an unrelated incident holds
   assert.equal(denied.status, "exhausted");
   assert.equal(denied.prompt_id, undefined);
   assert.equal(
-    (await run(f.records.executions()))
+    (await run(f.records.executions))
       .flatMap((e) => e.attention ?? [])
       .filter((a) => a.status === "admitted").length,
     1,

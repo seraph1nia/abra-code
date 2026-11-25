@@ -133,12 +133,7 @@ function WorkerTranscript({
                 </header>
                 {orderedParts(message).map((part, index) =>
                   part.type === "text" ? (
-                    <Markdown
-                      key={`${index}:${part.text}`}
-                      content={part.text}
-                      mode="static"
-                      className="prose"
-                    />
+                    <Markdown key={index} content={part.text} mode="static" className="prose" />
                   ) : (
                     (() => {
                       const tool = message.tools?.find((tool) => tool.id === part.tool_id);

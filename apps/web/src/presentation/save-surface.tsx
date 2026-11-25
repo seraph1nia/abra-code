@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect atoms isolate each explicit artifact request. */
 import { readRetained, writeRetained } from "../retained-input.ts";
 import { useRef, useState } from "react";
 import { useAtom } from "@effect/atom-react";
@@ -26,7 +25,10 @@ export function SaveSurfaceButton({
   record: SurfaceRecord;
   inspect: Inspect;
 }) {
-  const [issue, setIssue] = useState<string>(record.snapshot[0]?.issue_id ?? "");
+  const [selected, setIssue] = useState<string>();
+  const issue =
+    record.snapshot.find((item) => item.issue_id === selected)?.issue_id ??
+    record.snapshot[0]?.issue_id;
   if (!issue) return <p className="muted">Saving requires a retained task with an execution.</p>;
   return (
     <div className="surface-save space-y-2">
@@ -42,7 +44,7 @@ export function SaveSurfaceButton({
         ))}
       </NativeSelect>
       <SaveAttempt
-        key={`${record.revision}/${issue}`}
+        key={`${record.session_id}/${record.surface.createSurface.surfaceId}/${record.revision}/${issue}`}
         record={record}
         issue={issue}
         inspect={inspect}

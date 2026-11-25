@@ -235,7 +235,7 @@ export const collectPendingDecisions = Effect.fn("FinishingDispositions.collectP
     );
     const session =
       d.form_session ??
-      (d.finishing_target ? (e.supervisor_session_id ?? (yield* records.supervisor())) : undefined);
+      (d.finishing_target ? (e.supervisor_session_id ?? (yield* records.supervisor)) : undefined);
     if (
       d.status === "open" &&
       d.generation === e.control_generation &&
@@ -255,6 +255,18 @@ export const collectPendingDecisions = Effect.fn("FinishingDispositions.collectP
             (item) => item.key === d.key && item.generation === d.generation,
           );
           if (!decision || decision.status !== "open") return;
+          const route = current.finishing?.routing?.find(
+            (r) => r.key === d.key && r.generation === d.generation,
+          );
+          if (
+            !route ||
+            (result?._tag === "Success" &&
+              route.status === "pending" &&
+              route.form_id === decision.form_id &&
+              route.session_id === decision.form_session &&
+              !route.reason)
+          )
+            return;
           return {
             ...current,
             finishing: {

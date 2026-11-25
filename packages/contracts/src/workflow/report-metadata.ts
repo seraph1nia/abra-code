@@ -54,9 +54,7 @@ export const VisualRenderRequestSchema = Schema.Struct({
     }),
   ),
 });
-/** HTML is an optional attachment; Markdown research acceptance stays authoritative. */
-export const VisualReceiptSchema = Schema.Struct({
-  schema_version: Schema.Literal(1),
+export const ReportDocumentReceiptSchema = Schema.Struct({
   request_id: RequestId,
   issue_id: IssueId,
   execution_id: ExecutionId,
@@ -64,14 +62,9 @@ export const VisualReceiptSchema = Schema.Struct({
   input_hash: ContentHash,
   template_hash: ContentHash,
   hash: ContentHash,
-  bytes: Positive.check(Schema.isLessThanOrEqualTo(8 * 1024 * 1024)),
   path: AbsolutePath,
   observed_at: Timestamp,
   source_report: Schema.optional(Schema.Struct({ report_id: ReportId, hash: ContentHash })),
-});
-/** Existing untagged v1 receipts are retained HTML, never reinterpreted as JSON. */
-export const ReportDocumentReceiptSchema = Schema.Struct({
-  ...VisualReceiptSchema.fields,
   schema_version: Schema.Literal(2),
   format: Schema.Literal("a2ui-snapshot"),
   document_id: RequestId,
@@ -81,12 +74,9 @@ export const ReportDocumentReceiptSchema = Schema.Struct({
   renderer_compatibility: Schema.String.check(Schema.isMaxLength(256)),
   bytes: Positive.check(Schema.isLessThanOrEqualTo(1024 * 1024)),
 });
-export const ReportArtifactReceiptSchema = Schema.Union([
-  ReportDocumentReceiptSchema,
-  VisualReceiptSchema,
-]);
+export const ReportArtifactReceiptSchema = ReportDocumentReceiptSchema;
 export const visualBuildFields = {
-  format: Schema.optional(Schema.Literal("a2ui-snapshot")),
+  format: Schema.Literal("a2ui-snapshot"),
   document_hash: Schema.optional(ContentHash),
   source_attachment: Schema.optional(Schema.Literals(["associated", "unavailable"])),
   producing_call: Schema.optional(ReportProducerSchema),
@@ -95,7 +85,7 @@ export const visualBuildFields = {
   requested_by: SessionId,
   notify_session: Schema.optional(SessionId),
   deadline_at: Schema.optional(Schema.Finite),
-  source_report: VisualReceiptSchema.fields.source_report,
+  source_report: ReportDocumentReceiptSchema.fields.source_report,
   input_hash: ContentHash,
   template_hash: ContentHash,
   status: Schema.Literals(["pending", "building", "validated", "published", "failed"]),

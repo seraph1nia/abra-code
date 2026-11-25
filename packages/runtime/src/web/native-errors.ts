@@ -17,7 +17,9 @@ export function nativeRpcError(cause: unknown): CrewError {
     return new CrewError("WEB_NATIVE_UPDATE_REQUIRED", "The running native plugin needs updating");
   const result = Schema.decodeUnknownResult(nativeFailure)(cause);
   return Result.isSuccess(result)
-    ? new CrewError(result.success.data.code, result.success.message)
+    ? new CrewError(result.success.data.code, result.success.message, {
+        rpcType: result.success.type,
+      })
     : CrewError.from(cause);
 }
 

@@ -22,7 +22,7 @@ const words = (value: string) =>
     .replace(/^./, (c) => c.toUpperCase());
 type Page = typeof FeedbackPageSchema.Type;
 function Markdown({ text }: { text: string }) {
-  return <DeferredMarkdown key={text} content={text} mode="static" className="prose" />;
+  return <DeferredMarkdown content={text} mode="static" className="prose" />;
 }
 function Deadline({ deadline }: { deadline: number }) {
   return useDeadline(deadline) ? " · Stale retained observation" : null;
@@ -99,10 +99,8 @@ export function ReviewsPanel({ issue }: { issue: IssueId }) {
                           ? "Explicit approval"
                           : words(action.authority)}
                       </p>
-                      {action.schema_version === 2 && (
-                        <p>Submission: {words(action.submission.stage)}</p>
-                      )}
-                      {action.schema_version === 2 && action.preflight && (
+                      <p>Submission: {words(action.submission.stage)}</p>
+                      {action.preflight && (
                         <output>
                           {action.preflight.retryable
                             ? "Preflight retry available"

@@ -56,10 +56,14 @@ function hasTopLevelSentinelTag(source: string): boolean {
   return false;
 }
 
+let cachedParser: ExpressParser | undefined;
 export function compileWorkView(surfaceId: string, source: string) {
   if (Buffer.byteLength(source, "utf8") > maxSurfaceBytes)
     throw new Error("Shorten the Express source to fit the 384 KiB limit");
-  const parser = new ExpressParser(catalog, surfaceId, "v1.0");
+  const parser =
+    cachedParser?.surfaceId === surfaceId
+      ? cachedParser
+      : (cachedParser = new ExpressParser(catalog, surfaceId, "v1.0"));
   // The tool expects a bare Express body without chat <a2ui> wrappers or surrounding prose.
   // Use ExpressParser's native unwrap/hasFormatContent check before compiling, while still
   // allowing literal "<a2ui>" text inside quoted Express strings.

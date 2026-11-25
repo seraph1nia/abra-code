@@ -1,5 +1,5 @@
 import { presentationHash } from "../../src/presentation/identity.ts";
-import { FindingId } from "@abracode/contracts/identities";
+import { FindingId, FindingRevisionId } from "@abracode/contracts/identities";
 import { feedbackFixture } from "../helpers/review-evidence.ts";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
@@ -185,7 +185,12 @@ test("scoped resources resolve findings beyond the first page and refuse changed
     };
     assert.deepEqual(await run(resolveOwnedResource(queries, target)), target);
     const exact = await run(
-      f.controller.queries.feedback(e.issue_id, 0, finding.id, finding.revision),
+      f.controller.queries.feedback(
+        e.issue_id,
+        0,
+        finding.id,
+        FindingRevisionId.make(finding.revision),
+      ),
     );
     assert.deepEqual([...exact.findings, ...exact.history], [finding]);
     await assert.rejects(

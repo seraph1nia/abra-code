@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 FileSystem service adapters. */
 import * as fs from "node:fs/promises";
 import { type MakeDirectoryOptions, type PathLike, type RmOptions } from "node:fs";
 import { basename, dirname } from "node:path";

@@ -266,7 +266,9 @@ export const applyDispositions = Effect.fn("Finishing.applyDispositions")(functi
         ...e.finishing,
         schema_version: 1,
         inclusions: e.finishing.inclusions!.map((i) =>
-          i.key === d.key ? { ...i, stage: "staged", content: staged } : i,
+          i.key === d.key && i.generation === d.generation
+            ? { ...i, stage: "staged", content: staged }
+            : i,
         ),
       };
       e.finishing = { ...e.finishing, preflight: undefined };

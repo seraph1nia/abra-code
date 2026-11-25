@@ -65,7 +65,10 @@ function fixture() {
 }
 
 test("review catalog uses the official complete-surface processor without widening evidence catalogs", () => {
-  assert.equal(Catalog.fromJson(reviewCatalogDocument).functions.size, 0);
+  assert.deepEqual([...Catalog.fromJson(reviewCatalogDocument).functions.keys()].sort(), [
+    "length",
+    "required",
+  ]);
   const processor = new MessageProcessor(
     [implementedReviewCatalog([...reviewCatalog.components.values()])],
     undefined,
@@ -259,7 +262,7 @@ for (const point of ["reservation", "record", "association", "head"] as const) {
   });
 }
 
-test("a legacy pending head preserves its proven predecessor and a malformed neighbor retains a diagnostic", async () => {
+test("legacy review heads remain isolated during reads and recovery", async () => {
   const f = fixture();
   const review = reviewDefinition();
   const first = await Effect.runPromise(f.reviews.publish(session, message, "first", { review }));
@@ -279,42 +282,13 @@ test("a legacy pending head preserves its proven predecessor and a malformed nei
     Effect.runPromise(f.reviews.publish(session, nextMessage, "second", { review })),
     /Legacy head/,
   );
-  assert.deepEqual((await Effect.runPromise(f.reviews.list(session))).reviews, [first]);
-  const search = () =>
-    Effect.runPromise(
-      searchPublications(f.store, session, { search: "first" }, (target) =>
-        target.kind === "review"
-          ? f.reviews.searchCommitted(session, target)
-          : Effect.succeed(false),
-      ),
-    );
-  const before = await search();
-  assert.deepEqual(before.entries, []);
-  assert.equal(before.incomplete, true);
-  const corruptKey = StorageKey.make(`web/review/${session}/head/bad-head`);
-  await Effect.runPromise(save(corruptKey, { schema_version: 17 }));
-  const predecessorKey = StorageKey.make(`web/review/${session}/record/${first.review_id}/1`);
-  const predecessor = await Effect.runPromise(f.store.get(predecessorKey));
-  await Effect.runPromise(save(predecessorKey, { broken: true }));
+  const original = await Effect.runPromise(f.store.get(headKey));
   await Effect.runPromise(f.reviews.recover(session));
-  assert.equal((await search()).incomplete, true);
-  assert.deepEqual((await search()).entries, []);
-  await Effect.runPromise(save(predecessorKey, predecessor));
-  const restarted = new Reviews(f.store, f.locks, f.source);
-  await Effect.runPromise(restarted.recover(session));
-  assert.equal((await search()).entries.length, 1);
-  const recovered = await Effect.runPromise(new Reviews(f.store, f.locks, f.source).list(session));
-  assert.deepEqual(
-    recovered.reviews.map((value) => value.revision),
-    [2],
-  );
-  assert.match(recovered.diagnostics.join(" "), /bad-head: Publication recovery is unavailable/);
-  assert.deepEqual(await Effect.runPromise(f.store.get(corruptKey)), { schema_version: 17 });
-  assert.equal(
-    (await Effect.runPromise(restarted.publish(session, message, "first", { review }))).revision,
-    1,
-  );
-  assert.equal((await Effect.runPromise(restarted.read(session, first))).current_revision, 2);
+  const result = await Effect.runPromise(f.reviews.list(session));
+  assert.deepEqual(result.reviews, []);
+  assert.ok(result.diagnostics.length);
+  await assert.rejects(Effect.runPromise(f.reviews.read(session, first)));
+  assert.deepEqual(await Effect.runPromise(f.store.get(headKey)), original);
 });
 
 test("feedback validates source and answers and reuses original admission after source change and restart", async () => {
@@ -335,7 +309,13 @@ test("feedback validates source and answers and reuses original admission after 
     ),
   );
   assert.equal(f.prompts(), 0);
+  const entries = f.store.entries.bind(f.store);
+  f.store.entries = (prefix) => {
+    assert.ok(!prefix.startsWith("web/review/"), "submission must only read the selected review");
+    return entries(prefix);
+  };
   const receipt = await Effect.runPromise(f.reviews.submit(session, input, f.admissions));
+  f.store.entries = entries;
   assert.equal(receipt.status, "admitted");
   assert.equal(f.prompts(), 1);
   assert.match(receipt.text, /not plan or merge approval/);

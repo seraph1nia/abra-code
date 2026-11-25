@@ -30,7 +30,6 @@ import { BindingReadQuery, BindingReadSchema } from "./bindings.ts";
 import { ReportExportSchema } from "../presentation/report-export-contract.ts";
 import { LeadEvidenceQuery, LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
 import { WorkerHistoryQuery, WorkerHistoryPageSchema } from "./worker-history.ts";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Shared contracts for the pinned Effect 4.1.4 HTTP API implementation. */
 import { Effect, Schema } from "effect";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
 import { Form } from "@opencode/schema/form";
@@ -55,17 +54,23 @@ import {
 import { IssueId, RelativePath, SessionId, RequestId, ContentHash } from "../identities.ts";
 import { exactParseOptions as exact } from "../primitives.ts";
 
+const errorFields = { code: Schema.String, message: Schema.String };
 export class WorkspaceError extends Schema.TaggedError<
   WorkspaceError,
   { readonly brand: unique symbol }
->()(
-  "WorkspaceError",
-  {
-    code: Schema.String,
-    message: Schema.String,
-  },
-  { httpApiStatus: 409 },
-) {}
+>()("WorkspaceError", errorFields, { httpApiStatus: 409 }) {}
+export class WorkspaceUnavailable extends Schema.TaggedError<
+  WorkspaceUnavailable,
+  { readonly brand: unique symbol }
+>()("WorkspaceUnavailable", errorFields, { httpApiStatus: 503 }) {}
+export class WorkspaceNotFound extends Schema.TaggedError<
+  WorkspaceNotFound,
+  { readonly brand: unique symbol }
+>()("WorkspaceNotFound", errorFields, { httpApiStatus: 404 }) {}
+export class WorkspaceBadRequest extends Schema.TaggedError<
+  WorkspaceBadRequest,
+  { readonly brand: unique symbol }
+>()("WorkspaceBadRequest", errorFields, { httpApiStatus: 400 }) {}
 export class WorkspaceForbidden extends Schema.TaggedError<
   WorkspaceForbidden,
   { readonly brand: unique symbol }
@@ -133,10 +138,13 @@ export const PermissionReplySchema = Schema.Struct({
   decision: Permission.Reply,
 }).annotate(exact);
 export const WorkQuery = Schema.Struct({ issue_id: IssueId }).annotate(exact);
-const error = [WorkspaceError, WorkspaceForbidden] as const;
-export const ArtifactQuery = Schema.Struct({ issue_id: IssueId, request_id: RequestId }).annotate(
-  exact,
-);
+const error = [
+  WorkspaceBadRequest,
+  WorkspaceNotFound,
+  WorkspaceUnavailable,
+  WorkspaceError,
+  WorkspaceForbidden,
+] as const;
 const html = Schema.String.pipe(HttpApiSchema.asText({ contentType: "text/html; charset=utf-8" }));
 const documentQuery = Schema.Struct({
   issue_id: IssueId,
@@ -425,16 +433,6 @@ export const workspaceApi = HttpApi.make("abra-workspace")
       HttpApiEndpoint.get("downloadDocument", "/api/report/document/download", {
         query: documentQuery,
         success: HttpApiSchema.WithHeaders(documentJSON, { "content-disposition": Schema.String }),
-        error,
-      }),
-      HttpApiEndpoint.get("preview", "/api/report/preview", {
-        query: ArtifactQuery,
-        success: html,
-        error,
-      }),
-      HttpApiEndpoint.get("download", "/api/report/download", {
-        query: ArtifactQuery,
-        success: HttpApiSchema.WithHeaders(html, { "content-disposition": Schema.String }),
         error,
       }),
       HttpApiEndpoint.get("decisions", "/api/work/decisions", {

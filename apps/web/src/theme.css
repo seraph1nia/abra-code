@@ -1,6 +1,5 @@
 @layer theme, copilotkit, base, components, utilities;
 @import "tailwindcss";
-@import "@copilotkit/react-core/v2/styles.css" layer(copilotkit);
 
 @import "@abracode/presentation/tokens.css";
 @source "../../../packages/presentation/src";

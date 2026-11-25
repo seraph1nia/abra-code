@@ -124,21 +124,17 @@ test("recent-window rollover retains loaded messages, exact attachments and unch
   };
   f.state({
     ...base,
-    messages: [message(0), message(1)],
     presentations: { entries: [attachment], truncated: false },
   });
+  f.owner.receiveMessages([message(0), message(1)]);
   const before = f.owner.current().conversation;
   f.state({
     ...snapshot("first", 3),
-    messages: [message(1), message(2)],
     presentations: { entries: [], truncated: false },
   });
+  f.owner.receiveMessages([message(1), message(2)]);
   const after = f.owner.current();
-  assert.deepEqual(
-    after.workspace.messages.map((row) => row.id),
-    ["msg_retained_1", "msg_retained_2"],
-    "native projection remains the exact recent window",
-  );
+  assert.equal(Object.hasOwn(after.workspace, "messages"), false);
   assert.deepEqual(
     after.conversation.messages.map((row) => row.id),
     ["msg_retained_0", "msg_retained_1", "msg_retained_2"],
@@ -155,7 +151,7 @@ test("recent-window rollover retains loaded messages, exact attachments and unch
   );
   assert.deepEqual(
     foreign.owner.current().conversation.messages.map((row) => row.id),
-    ["msg_retained_1", "msg_retained_2"],
+    [],
     "display history never crosses native session ownership",
   );
   foreign.owner.dispose();

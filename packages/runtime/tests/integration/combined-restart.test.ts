@@ -12,11 +12,11 @@ import { run } from "../effects.ts";
 import { type Delivery } from "../../src/git/delivery.ts";
 import { type Execution, type ManagedExecution } from "../../src/domain.ts";
 
-test("one restart retains migrated full-spec delivery authorization, decisions, research report and corrected lightweight evidence", async (t) => {
+test("one restart retains current full-spec delivery authorization, decisions, research report and corrected lightweight evidence", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   f.config.max_executions = 10;
-  for (const p of await run(f.records.projects())) {
+  for (const p of await run(f.records.projects)) {
     p.max_executions = 10;
     if (p.id !== "api") p.plan_approval = false;
     if (p.id === "worker") p.repair_rounds = 1;
@@ -56,16 +56,19 @@ test("one restart retains migrated full-spec delivery authorization, decisions, 
     evidence: (p, e) => adapter(e).evidence(p, e),
   };
   const restart = () =>
-    createWorkflow(f.config, f.records, f.work, f.spec, f.git, f.runtime, delivery, f.locks)
-      .controller;
+    createWorkflow(
+      f.catalog,
+      f.config,
+      f.records,
+      f.work,
+      f.spec,
+      f.git,
+      f.runtime,
+      delivery,
+      f.locks,
+    ).controller;
   f.controller = restart();
   let full = await run(delivered(f));
-  const raw: Partial<typeof full> = structuredClone(full);
-  delete raw.schema_version;
-  delete raw.revision;
-  delete raw.control_generation;
-  delete raw.effective_policy;
-  await run(f.records.store.set(Id.StorageKey.make(`execution/${full.issue_id}`), raw));
   const approval = await run(
     f.controller.approve(full.issue_id, "merge", Id.SessionId.make("ses_supervisor")),
   );
@@ -77,11 +80,6 @@ test("one restart retains migrated full-spec delivery authorization, decisions, 
   assert.equal(full.current_phase, "awaiting_merge");
   [full] = await run(f.controller.reconcile(full.issue_id));
   assert.ok(full.delivery_wait);
-  assert.ok(
-    await run(
-      f.records.store.get(Id.StorageKey.make(`legacy-original/execution/${full.issue_id}`)),
-    ),
-  );
   const research = (
     await run(
       f.controller.createWork(

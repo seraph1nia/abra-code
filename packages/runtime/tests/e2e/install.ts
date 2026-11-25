@@ -127,7 +127,7 @@ export async function interactiveLaunch(
       "--quiet",
       "--return",
       "--command",
-      `${quote(join(home, "node_modules/.bin/tsx"))} ${quote(join(home, "scripts/launch.ts"))}`,
+      `${quote(join(home, "node_modules/.bin/tsx"))} ${quote(join(home, "scripts/cli.ts"))} start`,
       "/dev/null",
     ],
     { cwd: home, env: { ...env, TERM: "xterm-256color" }, stdio: ["pipe", "pipe", "pipe"] },

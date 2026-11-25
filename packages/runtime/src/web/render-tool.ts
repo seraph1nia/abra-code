@@ -1,11 +1,7 @@
 import { bindingRequirements } from "@abracode/contracts/web/bindings";
 import { Effect, Schema } from "effect";
-import { join } from "node:path";
-import { FileLocks } from "../storage/lock.ts";
-import type { Context } from "@opencode/plugin/effect/plugin";
 import type { Controller } from "../workflow/controller.ts";
-import { NativeStore } from "../storage/store.ts";
-import { AbsolutePath, IssueId, Timestamp } from "@abracode/contracts/identities";
+import { IssueId, Timestamp } from "@abracode/contracts/identities";
 import { domainEffect } from "../effect.ts";
 import { defineTool } from "../opencode/tool-definition.ts";
 import { Visibility } from "../visibility/read-model.ts";
@@ -16,11 +12,7 @@ import { ComponentId } from "@abracode/contracts/web/catalog";
 import { SurfacePublicationSchema } from "@abracode/contracts/web/presentation-contracts";
 import { checkSurfaceDraft, SurfacePublications } from "./surface-publications.ts";
 
-export function workSurfaceTool(ctx: Context, controller: Controller) {
-  const publications = new SurfacePublications(
-    new NativeStore(ctx.storage),
-    new FileLocks(AbsolutePath.make(join(controller.queries.settings.home, ".abracode/locks"))),
-  );
+export function workSurfaceTool(controller: Controller, publications: SurfacePublications) {
   return defineTool({
     name: "render_ui",
     description:

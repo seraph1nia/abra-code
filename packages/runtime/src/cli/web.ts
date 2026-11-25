@@ -1,4 +1,4 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 FileSystem and ChildProcess APIs. */
+import { OPENCODE_VERSION } from "../opencode/client.ts";
 import { Service } from "@opencode/client/effect/service";
 import { Console, Effect, FileSystem } from "effect";
 import { ChildProcess } from "effect/process";
@@ -27,7 +27,7 @@ export const runWeb = (options: WebOptions) =>
         const backend = new NativeWebBackend(
           home,
           supervisor.id,
-          Service.discover({ file: runtimePaths(home).service, version: "2.3.0" }).pipe(
+          Service.discover({ file: runtimePaths(home).service, version: OPENCODE_VERSION }).pipe(
             Effect.provideService(FileSystem.FileSystem, fs),
           ),
         );

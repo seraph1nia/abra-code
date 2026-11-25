@@ -373,7 +373,7 @@ export class AttentionService {
       message: MessageId,
       diagnosticAllowed: boolean,
     ) {
-      const owned = (yield* this.records.executions())
+      const owned = (yield* this.records.executions)
         .flatMap((e) => e.attention ?? [])
         .filter((a) => a.session_id === session && a.prompt_id);
       if (!owned.length) return;
@@ -421,9 +421,7 @@ export class AttentionService {
   );
   scan = Effect.fn("Attention.scan")(
     function* (this: AttentionService, id?: IssueId) {
-      const executions = id
-        ? [yield* this.records.execution(id)]
-        : yield* this.records.executions();
+      const executions = id ? [yield* this.records.execution(id)] : yield* this.records.executions;
       yield* Effect.forEach(
         executions
           .filter((e) => e !== undefined)
@@ -533,12 +531,15 @@ export class AttentionService {
                       ),
                     );
                     if (incident && ["pending", "uncertain"].includes(incident.status))
-                      yield* this.dispatch(e.issue_id, incident.id);
+                      return incident.id;
                   }),
                 ),
               { waitSeconds: 0 },
             )
             .pipe(
+              Effect.flatMap((incident) =>
+                incident ? this.dispatch(record.issue_id, incident) : Effect.void,
+              ),
               Effect.catchIf(
                 (error) => error.code === "LOCKED",
                 () => Effect.void,
@@ -551,7 +552,17 @@ export class AttentionService {
   );
   private dispatch = Effect.fn("Attention.dispatch")(
     function* (this: AttentionService, id: IssueId, incidentID: IncidentId) {
-      const prepared = yield* this.coordination.with(() =>
+      const record = yield* this.records.execution(id);
+      if (!record) return;
+      return yield* this.locks.with(LockKey.make(`attention-${hash(record.execution_id)}`), () =>
+        this.deliver(id, incidentID),
+      );
+    }.bind(this),
+    domainEffect,
+  );
+  private deliver = Effect.fn("Attention.deliver")(
+    function* (this: AttentionService, id: IssueId, incidentID: IncidentId) {
+      const prepared = yield* this.records.withActiveIndex(() =>
         domainEffect(
           Effect.gen({ self: this }, function* () {
             const e = (yield* this.records.execution(id))!;
@@ -570,7 +581,7 @@ export class AttentionService {
               return;
             }
             const supervisor =
-              a.session_id ?? e.supervisor_session_id ?? (yield* this.records.supervisor());
+              a.session_id ?? e.supervisor_session_id ?? (yield* this.records.supervisor);
             const capacity = yield* readDiagnosticCapacity(this.records, e.issue_id, {
               attentionTurns: e.attention_turns,
               budget: e.effective_policy.diagnostic_turns,

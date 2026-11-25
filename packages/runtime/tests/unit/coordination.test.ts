@@ -1,10 +1,11 @@
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
+import { verificationCommand } from "../../src/config/contracts.ts";
 import { deliveryAction } from "../../src/workflow/delivery-outcome.ts";
 import { verifiedSpec } from "../helpers/spec-review.ts";
 import * as Id from "@abracode/contracts/identities";
 import { Deferred, Effect, Fiber } from "effect";
-import { test } from "vite-plus/test";
+import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { fixture, applying, planned } from "../fixtures.ts";
@@ -14,6 +15,27 @@ import { Operations, ExecutionBusy } from "../../src/workflow/operations.ts";
 import { CrewError } from "../../src/domain.ts";
 
 import { GitHubDelivery, type PR } from "../../src/git/delivery.ts";
+
+test("project discovery commits its native identity alongside current verification settings", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
+  const currentSettings = [["updated-check"]];
+  f.runtime.project = () =>
+    f.records
+      .saveProject({ ...project, verification: currentSettings })
+      .pipe(Effect.as(Id.NativeProjectId.make("discovered")));
+  const id = Id.IssueId.make("provision-settings");
+  f.seed.named(id);
+  const execution = await run(f.controller.start(id, Id.SessionId.make("ses_supervisor")));
+  const current = (await run(f.records.project(project.id)))!;
+  assert.equal(current.project_id, "discovered");
+  assert.deepEqual(current.verification, currentSettings);
+  assert.deepEqual(
+    execution.effective_policy.verification,
+    project.verification.map(verificationCommand),
+  );
+});
 
 test("a held check does not monopolize approval/pause/resume, and stale success cannot replace a pause", async (t) => {
   const f = await run(fixture);
@@ -87,9 +109,13 @@ test("independent operation owners use kernel exclusion and preserve intent befo
   t.onTestFinished(() => run(f.close()));
   const e = await run(planned(f));
   const root = join(f.root, "operation-locks");
-  const coordination = f.records.coordinate(f.locks);
-  const a = new Operations(f.records, new FileLocks(Id.AbsolutePath.make(root)), coordination);
-  const b = new Operations(f.records, new FileLocks(Id.AbsolutePath.make(root)), coordination);
+  const coordination = f.records.coordination;
+  const a = await run(
+    Operations.make(f.records, new FileLocks(Id.AbsolutePath.make(root)), coordination),
+  );
+  const b = await run(
+    Operations.make(f.records, new FileLocks(Id.AbsolutePath.make(root)), coordination),
+  );
   const entered = Deferred.makeUnsafe<void>();
   await run(
     Effect.scoped(
@@ -126,6 +152,7 @@ test("independent operation owners use kernel exclusion and preserve intent befo
           assert.equal((yield* f.controller.get(e.issue_id)).operation!.id, saved.operation!.id);
         }
         yield* Fiber.interrupt(owner);
+        assert.equal((yield* f.controller.get(e.issue_id)).operation?.status, "uncertain");
       }),
     ),
   );
@@ -156,10 +183,12 @@ test("independent operation owners use kernel exclusion and preserve intent befo
     ),
     /already owns/,
   );
-  const failed = new Operations(
-    f.records,
-    { with: () => Effect.fail(new CrewError("LOCK_ERROR", "Native lock failed")) },
-    coordination,
+  const failed = await run(
+    Operations.make(
+      f.records,
+      { with: () => Effect.fail(new CrewError("LOCK_ERROR", "Native lock failed")) },
+      coordination,
+    ),
   );
   await assert.rejects(
     run(
@@ -324,6 +353,7 @@ test("lost native session creation response reuses the retained intent without a
     ),
   );
   const saved = await run(f.controller.get(issueId));
+  assert.equal(saved.capacity_reservation, undefined);
   assert.ok(saved.session_intent);
   f.runtime.createSession = create;
   const recovered = (await run(f.controller.reconcile(issueId)))[0];
@@ -373,8 +403,17 @@ test("restart after push rediscovers the exact remote ref and creates one PR", a
     Id.Executable.make("fake-forge"),
   );
   const controller = () =>
-    createWorkflow(f.config, f.records, f.work, f.spec, f.git, f.runtime, delivery, f.locks)
-      .controller;
+    createWorkflow(
+      f.catalog,
+      f.config,
+      f.records,
+      f.work,
+      f.spec,
+      f.git,
+      f.runtime,
+      delivery,
+      f.locks,
+    ).controller;
   f.controller = controller();
   const e = await run(applying(f));
   f.spec.done = true;
@@ -417,4 +456,33 @@ test("replan cannot replace the explicit resume of a paused execution", async (t
   );
   assert.equal((await run(f.controller.get(issueId))).current_phase, "interrupted");
   assert.equal(f.runtime.prompts, prompts);
+});
+
+test("an older pause cannot stop the next control generation", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(applying(f));
+  // Keep the original implementation and explicitly rebind its receiver inside the spy.
+  // oxlint-disable-next-line typescript/unbound-method
+  const quiescent = Operations.prototype.quiescent;
+  const fence = vi.spyOn(Operations.prototype, "quiescent").mockImplementation(function (
+    this: Operations,
+    id,
+    inspect,
+  ) {
+    return quiescent.call(this, id, () =>
+      Effect.gen(function* () {
+        const current = yield* f.controller.get(id);
+        current.stop_status = undefined;
+        current.current_phase = "applying";
+        yield* f.records.commitControl(current);
+        return yield* inspect();
+      }),
+    );
+  });
+  t.onTestFinished(() => fence.mockRestore());
+  const paused = await run(f.controller.control(e.issue_id, "pause"));
+  assert.equal(paused.current_phase, "applying");
+  assert.equal(paused.stop_status, undefined);
+  assert.equal(paused.apply_session_id, e.apply_session_id);
 });

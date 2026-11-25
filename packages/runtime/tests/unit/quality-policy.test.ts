@@ -10,7 +10,7 @@ import {
   planPolicy,
 } from "../../src/config/policy.ts";
 import { ProjectInputSchema } from "../../src/config/contracts.ts";
-import { createExecution } from "../../src/workflow/execution.ts";
+import { createConfiguredExecution } from "../../src/workflow/execution.ts";
 import { SqliteWorkGraph } from "../../src/work/graph.ts";
 import { normalizeIssue } from "../../src/work/model.ts";
 import * as Id from "@abracode/contracts/identities";
@@ -107,15 +107,19 @@ test("execution snapshot retains selected profile and cloned automation after re
     rerequest_after_correction: false,
   };
   const e = await run(
-    createExecution(p, {
-      issue_id: Id.IssueId.make("snapshot"),
-      repository_id: p.id,
-      execution_id: Id.ExecutionId.make("abra-snapshot"),
-      workflow_policy: "full-openspec",
-      current_phase: "claiming",
-      branch: Id.BranchName.make("work/snapshot"),
-      openspec_change: Id.ChangeName.make("snapshot"),
-    }),
+    createConfiguredExecution(
+      p,
+      {
+        issue_id: Id.IssueId.make("snapshot"),
+        repository_id: p.id,
+        execution_id: Id.ExecutionId.make("abra-snapshot"),
+        workflow_policy: "full-openspec",
+        current_phase: "claiming",
+        branch: Id.BranchName.make("work/snapshot"),
+        openspec_change: Id.ChangeName.make("snapshot"),
+      },
+      f.config,
+    ),
   );
   const saved = e;
   p.reviewers = { ...p.reviewers, users: ["changed"] };
@@ -165,7 +169,7 @@ test("a captured task requirement survives registry changes, restart and replan 
   const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   Object.assign(project, registrationPolicy({ quality_profile: "standard", plan_approval: false }));
   await run(f.records.saveProject(project));
-  const parent = Id.SessionId.make("ses_stronger-plan"),
+  const parent = Id.SessionId.make("ses_supervisor"),
     input = {
       repository_id: project.id,
       request_id: Id.RequestId.make("stronger-plan"),
@@ -181,6 +185,7 @@ test("a captured task requirement survives registry changes, restart and replan 
   assert.equal(started.effective_policy.plan_approval_source, "task_requirement");
   assert.equal(started.openspec_schema, "spec-driven");
   const restarted = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,

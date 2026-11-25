@@ -1,4 +1,4 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Typed HTTP atoms own review reads and response reconciliation. */
+import { useWorkspaceCall } from "../data.ts";
 import { useEffect, useState, type ComponentProps } from "react";
 import { useAtomSet } from "@effect/atom-react";
 import { Cause, Exit, Option } from "effect";
@@ -22,7 +22,7 @@ import {
 import { RequestState } from "../request-state.tsx";
 import { requestError } from "../request-error.ts";
 import { useReviewDraft } from "../review-state.ts";
-import { deferred } from "../deferred.tsx";
+import { deferred } from "@abracode/presentation/deferred";
 
 const ReviewControls = deferred<
   ComponentProps<typeof import("@abracode/presentation/reviews").ReviewControls>
@@ -42,6 +42,9 @@ function matchesReceipt(
   );
 }
 export function ReviewAttachment({ target }: { target: ReviewSelection }) {
+  return <RevisionSelection key={`${target.review_id}/${target.revision}`} target={target} />;
+}
+function RevisionSelection({ target }: { target: ReviewSelection }) {
   const [selection, setSelection] = useState(target);
   return (
     <div data-review-reference={`${selection.review_id}/${selection.revision}`}>
@@ -88,10 +91,12 @@ function ReviewPanel({
   const { record } = view;
   const { state, update, change, current } = useReviewDraft(record);
   const send = useAtomSet(submitReview(record.hash), { mode: "promiseExit" });
-  const receiptLookup = useAtomSet(readReviewReceipt, { mode: "promiseExit" });
+  const receiptLookup = useWorkspaceCall(readReviewReceipt);
   const pending = state.pending;
+  const pendingId = pending?.request_id;
   useEffect(() => {
-    if (!pending) return;
+    const pending = current().pending;
+    if (!pendingId || pending?.request_id !== pendingId) return;
     let mounted = true;
     void receiptLookup({
       request_id: pending.request_id,
@@ -117,7 +122,7 @@ function ReviewPanel({
     return () => {
       mounted = false;
     };
-  }, [pending, view, receiptLookup, update]);
+  }, [pendingId, current, receiptLookup, update]);
   async function submit() {
     const saved = current();
     if (saved.working || saved.receipt?.status === "admitted") return;

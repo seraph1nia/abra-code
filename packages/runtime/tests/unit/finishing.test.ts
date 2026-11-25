@@ -24,7 +24,6 @@ import {
   finishingAction,
   observePublication,
   observePreflight,
-  preflightMatches,
   type PublicationObservation,
 } from "../../src/workflow/finishing-readiness.ts";
 
@@ -239,26 +238,14 @@ test("retained preflight binds current content, ownership and authorization revi
   t.onTestFinished(() => run(f.close()));
   assert.ok(e.operation);
   const preflight = await run(observePreflight(f.git, spaces, p, e));
-  e.finishing = { schema_version: 1, preflight };
-  const current = {
-    ...observation,
-    head: preflight.head,
-    published: preflight.published,
-    remote: preflight.published,
-    content: preflight.content,
-  };
-  assert.equal(preflightMatches(e, current, preflight), true);
-  assert.equal(preflightMatches(e, { ...current, content }, preflight), false);
+  assert.equal(preflight.generation, e.control_generation);
+  assert.deepEqual(preflight.worktree, e.worktree_identity);
+  assert.equal(preflight.head, await run(f.git.head(e.worktree_directory!)));
+  assert.equal(preflight.content, await run(f.git.fingerprint(e.worktree_directory!)));
   assert.equal(
-    preflightMatches(e, current, {
-      ...preflight,
-      status: "blocked",
-      fingerprint: Id.Fingerprint.make("new-residue"),
-    }),
-    false,
+    preflight.authorization_revision,
+    e.finishing?.authorizations?.at(-1)?.revision ?? 0,
   );
-  e.control_generation++;
-  assert.equal(preflightMatches(e, current, preflight), false);
 });
 
 test("publication observation distinguishes local edits, ahead commits, remote drift and merged PRs without writes", async (t) => {
@@ -306,7 +293,6 @@ test("mandatory generated-directory decision bypasses exhausted diagnostics and 
   t.onTestFinished(() => run(f.close()));
   let e = await run(delivered(f));
   const supervisor = e.supervisor_session_id!;
-  f.runtime.sessions.set(supervisor, { id: supervisor, directory: f.config.home, busy: false });
   const exclude = await run(
     f.git.run(e.worktree_directory!, ["rev-parse", "--git-path", "info/exclude"]),
   );
@@ -447,6 +433,7 @@ for (const fault of ["commit", "push"] as const)
     f.delivery.deliver = publish;
     f.git.commit = commitCall;
     const recovery = createWorkflow(
+      f.catalog,
       f.config,
       f.records,
       f.work,
@@ -486,6 +473,7 @@ for (const fault of ["commit", "push"] as const)
     assert.notEqual(fresh.form_id, old.form_id);
     f.runtime.forms.set(fresh.form_id, "approved");
     const restarted = createWorkflow(
+      f.catalog,
       f.config,
       f.records,
       f.work,

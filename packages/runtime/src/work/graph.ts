@@ -13,7 +13,7 @@ import {
   type ThoughtWorkPage,
   type ThoughtWorkQuery,
 } from "@abracode/contracts/visibility/thoughts";
-import { Effect } from "effect";
+import { Context, Layer, Effect } from "effect";
 import { type Config, type CrewError } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { type BatchInput, type BatchResultSchema } from "./batch.ts";
@@ -27,7 +27,7 @@ import {
   type WorkEvent,
 } from "./issue-repository.ts";
 import { type Issue, type NewIssue, type ReadyExplanation } from "./model.ts";
-import { openWorkDatabase, type Row } from "./sqlite.ts";
+import { openWorkDatabase } from "./sqlite.ts";
 import { ThoughtReceipts } from "./thought-receipts.ts";
 
 export type { NewIssue, ReadyExplanation } from "./model.ts";
@@ -51,6 +51,7 @@ export interface WorkGraph {
   thoughtWork(
     query: typeof ThoughtWorkQuery.Type,
   ): Effect.Effect<typeof ThoughtWorkPage.Type, CrewError>;
+  setThoughtSubmission(key: string, submitted: boolean): Effect.Effect<boolean, CrewError>;
   reserveThought(
     key: string,
     digest: string,
@@ -108,13 +109,8 @@ export class SqliteWorkGraph implements WorkGraph {
   ) {
     this.db = db;
     this.inbox = new InboxIndex(db);
-    this.issuesRepo = new IssueRepository(db, this.inbox, nextId, {
-      hydrate: (rows, links) => this.hydrate(rows, links),
-      taskRows: (entries) => this.taskRows(entries),
-    });
-    this.batchesRepo = new BatchRepository(db, this.issuesRepo, nextId, validatedVersion, () =>
-      this.validateHistoricalEdges(),
-    );
+    this.issuesRepo = new IssueRepository(db, this.inbox, nextId);
+    this.batchesRepo = new BatchRepository(db, this.issuesRepo, nextId, validatedVersion);
     this.thoughtsRepo = new ThoughtReceipts(db);
 
     this.list = this.issuesRepo.list();
@@ -122,18 +118,6 @@ export class SqliteWorkGraph implements WorkGraph {
     this.closureTimes = this.issuesRepo.closureTimes();
     this.explain = this.issuesRepo.explain();
     this.ready = this.explain.pipe(Effect.map((result) => result.ready));
-  }
-
-  private hydrate(rows: Row[], links: Row[]): Issue[] {
-    return this.issuesRepo.hydrate(rows, links);
-  }
-
-  private taskRows(entries: readonly Issue[]): TaskEvidence[] {
-    return this.issuesRepo.taskRows(entries);
-  }
-
-  private validateHistoricalEdges(): void {
-    this.batchesRepo.validateHistoricalEdges();
   }
 
   static open(
@@ -151,6 +135,10 @@ export class SqliteWorkGraph implements WorkGraph {
 
   thoughtWork(query: typeof ThoughtWorkQuery.Type) {
     return this.thoughtsRepo.thoughtWork(query);
+  }
+
+  setThoughtSubmission(key: string, submitted: boolean) {
+    return this.thoughtsRepo.setThoughtSubmission(key, submitted);
   }
 
   reserveThought(key: string, digest: string) {
@@ -221,5 +209,13 @@ export class SqliteWorkGraph implements WorkGraph {
 
   completions(start: Timestamp, end: Timestamp) {
     return this.issuesRepo.completions(start, end);
+  }
+}
+
+export class WorkGraphService extends Context.Service<WorkGraphService, WorkGraph>()(
+  "abracode/WorkGraph",
+) {
+  static layer(config: Pick<Config, "work_database">) {
+    return Layer.effect(WorkGraphService, openWorkGraph(config));
   }
 }

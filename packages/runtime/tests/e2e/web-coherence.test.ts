@@ -1,7 +1,7 @@
+import { FixtureViewSchema } from "../helpers/web.ts";
 import { chooseAppearance } from "../helpers/workspace-browser.ts";
 import { reviewDefinition } from "../helpers/interactive-reviews.ts";
 import { feedbackFixture } from "../helpers/review-evidence.ts";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Disposable browser/HTTP/stream fixtures exercise the shipped frontend. */
 import { test as baseTest, expect, beforeAll, afterAll } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -13,7 +13,6 @@ import { CrewError } from "../../src/domain.ts";
 import {
   TranscriptMessageSchema,
   SurfaceRecordSchema,
-  WorkspaceSnapshotSchema,
 } from "@abracode/contracts/web/workspace-wire";
 
 import { catalogId } from "@abracode/contracts/web/catalog";
@@ -349,74 +348,6 @@ test("theme resolves before application loading and follows system changes witho
     await unavailable.getByRole("textbox", { name: "Message Abra" }).inputValue(),
     "Mounted without storage",
   );
-});
-
-test("legacy report previews fit their host and retain opaque script sandboxing", async (t) => {
-  const f = await fixture();
-  t.onTestFinished(f.close);
-  const hash = "c".repeat(64);
-  const target = {
-    kind: "artifact" as const,
-    issue_id: IssueId.make("abra-web"),
-    request_id: "legacy-report",
-    hash,
-  };
-  f.documentArtifacts.set(target.request_id, {
-    json: "",
-    hash,
-    bytes: 42,
-    title: "Legacy evidence",
-    legacy: true,
-  });
-  f.source.value = Schema.decodeSync(WorkspaceSnapshotSchema)({
-    ...f.source.value,
-    messages: [
-      { id: "msg_legacy", role: "assistant", text: "Retained attachment", at: f.source.value.at },
-    ],
-    presentations: {
-      entries: [
-        { session_id: f.source.sessionID, source: "notice", message_id: "msg_legacy", target },
-      ],
-      diagnostics: [],
-      truncated: false,
-    },
-  });
-  const page = await f.browser.newPage({ viewport: { width: 1600, height: 1000 } });
-  await page.goto(f.origin);
-  await page.getByText("Preview saved report", { exact: true }).click();
-  const inline = page.locator(".artifact-attachment iframe");
-  await inline.waitFor();
-  const assertFrame = async (selector: string) => {
-    const frame = page.locator(selector);
-    await page.waitForFunction((selector) => {
-      const box = document.querySelector(selector)?.getBoundingClientRect();
-      return box && box.width > 200 && box.height >= 320 && box.right <= innerWidth + 1;
-    }, selector);
-    assert.equal(await frame.getAttribute("sandbox"), "allow-scripts");
-  };
-  await assertFrame(".artifact-attachment iframe");
-  await page.goto(
-    `${f.origin}/?${new URLSearchParams({ resource: JSON.stringify({ action: "open_artifact", ...target, kind: undefined }) })}`,
-  );
-  await page.locator(".inspector iframe").waitFor();
-  for (const width of [1600, 375, 390]) {
-    await page.setViewportSize({ width, height: 1000 });
-    await assertFrame(".inspector iframe");
-    assert.equal(
-      await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
-      false,
-    );
-  }
-  await page.getByRole("button", { name: "Expand report", exact: true }).click();
-  await page.getByRole("complementary", { name: "Work inspector" }).waitFor();
-  assert.equal(await page.getByRole("dialog").count(), 0);
-  await assertFrame(".inspector iframe");
-  await page.getByRole("button", { name: "Return to inspector", exact: true }).click();
-  assert.equal(await page.locator(".report-canvas").count(), 0);
-  await page.getByRole("button", { name: "Close inspector", exact: true }).click();
-  await page.getByRole("dialog").waitFor({ state: "hidden" });
-  assert.equal(f.source.submissions, 0);
-  assert.equal(f.source.stops, 0);
 });
 
 test("custom native choices retain raw lines across refresh and normalize only on submit", async (t) => {
@@ -873,7 +804,7 @@ test("chat previews and the full canvas render the same lazy immutable document"
     bytes: Buffer.byteLength(json),
     title: saved.title,
   });
-  f.source.value = Schema.decodeSync(WorkspaceSnapshotSchema)({
+  f.source.value = Schema.decodeSync(FixtureViewSchema)({
     ...f.source.value,
     messages: [
       {
@@ -1051,13 +982,11 @@ test("typed inspector URLs render Pierre, preserve navigation and theme across r
   });
   await page.goto(`${f.origin}/?issue=abra-web&tab=Diff&file=source.ts`);
   await page.locator('[data-diff-renderer="pierre"]').waitFor();
-  assert.equal(
-    (await page
-      .locator('[data-diff-renderer="pierre"]')
-      .getByText("newValue", { exact: false })
-      .count()) > 0,
-    true,
-  );
+  await page
+    .locator('[data-diff-renderer="pierre"]')
+    .getByText("newValue", { exact: false })
+    .first()
+    .waitFor();
   assert.equal(
     await page.locator('.message-text [data-streamdown="strong"]').textContent(),
     "coherent",
@@ -1527,6 +1456,7 @@ test("native tool cards use CopilotKit render-only hooks, preserve order and ins
         {
           request_id: "report-one",
           title: "Captured report",
+          format: "a2ui-snapshot",
           status: "published",
           generation: 0,
           hash: "a".repeat(40),
@@ -1817,7 +1747,7 @@ test("lead proposal attention is lazy and accessible without creating a task", a
       related_total: 0,
     },
   });
-  f.source.value = Schema.decodeSync(WorkspaceSnapshotSchema)({
+  f.source.value = Schema.decodeSync(FixtureViewSchema)({
     ...f.source.value,
     work: {
       ...f.source.value.work,
@@ -2081,7 +2011,7 @@ test("owned session bookmarks render paginated tools and refresh queued/unknown 
       { id: "ses_current", role: "apply" as const },
     ],
   };
-  f.source.value = Schema.decodeSync(WorkspaceSnapshotSchema)({
+  f.source.value = Schema.decodeSync(FixtureViewSchema)({
     ...f.source.value,
     work: { ...f.source.value.work, work: [work] },
   });
@@ -2495,6 +2425,10 @@ test("chat stays mounted while the finder searches retained pages, preserving dr
     })),
   };
   const page = await f.browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const infoRequests: string[] = [];
+  page.on("request", (req) => {
+    if (new URL(req.url()).pathname === "/api/copilotkit/info") infoRequests.push(page.url());
+  });
   await page.goto(f.origin);
   const composer = page.getByRole("textbox", { name: "Message Abra" });
   await composer.fill("Composition guard");
@@ -2603,6 +2537,14 @@ test("chat stays mounted while the finder searches retained pages, preserving dr
   await page.getByText("I can help you build that.", { exact: true }).waitFor();
   assert.equal(f.source.submissions, 1);
   assert.equal(f.source.value.receipts.at(-1)?.delivery, "queue");
+  assert.equal(infoRequests.length, 1, JSON.stringify(infoRequests));
+  await page.route("**/api/copilotkit/agent/abra/stop/*", (route) =>
+    route.fulfill({ status: 503, body: "unavailable" }),
+  );
+  await page.getByRole("button", { name: "Stop current Abra turn" }).click();
+  await page.getByRole("alert").filter({ hasText: "Stop could not be confirmed" }).waitFor();
+  assert.equal(f.source.stops, 0);
+  await page.unroute("**/api/copilotkit/agent/abra/stop/*");
   const stopped = page.waitForResponse((response) =>
     response.url().includes("/api/copilotkit/agent/abra/stop/"),
   );
@@ -2657,7 +2599,7 @@ test("historical generated cards reopen exact revisions and repair-response atta
     ],
     parts: [{ type: "tool", tool_id: "call-view-1" }],
   });
-  const value = Schema.decodeSync(WorkspaceSnapshotSchema)({
+  const value = Schema.decodeSync(FixtureViewSchema)({
     ...f.source.value,
     surfaces: [second],
     older: "older-view",
@@ -2953,6 +2895,42 @@ test("overview retains bounded schema, stronger approval and repair observations
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
 });
 
+test("workspace route recovery reloads the failed route and cockpit text meets AA on every surface", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage();
+  await page.route("**/assets/settings-*.js", (route) => route.abort("failed"));
+  await page.goto(f.origin + "/settings/appearance");
+  await page.getByRole("heading", { name: "AbraCode could not display this page" }).waitFor();
+  await page.unroute("**/assets/settings-*.js");
+  await page.getByRole("button", { name: "Reload page" }).click();
+  const theme = page.getByLabel("Color theme", { exact: true });
+  for (const mode of ["light", "dark"]) {
+    await theme.selectOption(mode);
+    const contrast = await page.evaluate(() => {
+      const css = getComputedStyle(document.documentElement);
+      function luminance(token: string) {
+        const value = css.getPropertyValue(token).trim();
+        const hex = value.length === 4 ? "#" + value.slice(1).replace(/[0-9a-f]/gi, "$&$&") : value;
+        const rgb = [1, 3, 5]
+          .map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+          .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+        return rgb[0]! * 0.2126 + rgb[1]! * 0.7152 + rgb[2]! * 0.0722;
+      }
+      return ["--ink-muted", "--accent-primary"].flatMap((ink) =>
+        ["--surface-0", "--surface-1", "--surface-2", "--surface-3", "--surface-hover"].map(
+          (bg) => {
+            const a = luminance(ink),
+              b = luminance(bg);
+            return { ink, bg, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
+          },
+        ),
+      );
+    });
+    for (const pair of contrast) assert.ok(pair.ratio >= 4.5, JSON.stringify({ mode, ...pair }));
+  }
+});
+
 test("an optional inspector chunk has local accessible loading/error states and reload recovers the saved draft", async (t) => {
   const f = await fixture();
   t.onTestFinished(f.close);
@@ -3093,7 +3071,7 @@ test("GitHub finder loads on demand, preserves drafts on inspection and exposes 
       document.dispatchEvent(new Event("visibilitychange"));
     }, hidden);
   await setHidden(true);
-  await row.waitFor({ state: "detached" });
+  assert.equal(await row.count(), 1);
   const hiddenReads = reads.length;
   await page.clock.install();
   await page.clock.fastForward(310000);
@@ -3205,7 +3183,14 @@ test("phone retains the current form and reading position when a reply arrives i
   assert.equal(await page.getByLabel("Storage choice").inputValue(), "SQLite");
   await page.getByRole("link", { name: "Chat", exact: true }).click();
   await page.getByRole("log").waitFor();
-  assert.ok(Math.abs((await anchor.evaluate((e) => e.getBoundingClientRect().top)) - offset) < 4);
+  await page.waitForFunction(
+    (expected) => {
+      const element = document.querySelector('[data-native-message-id="reading-12"]');
+      return element && Math.abs(element.getBoundingClientRect().top - expected) < 4;
+    },
+    offset,
+    { timeout: 3000 },
+  );
   assert.equal(await page.getByLabel("Message Abra").inputValue(), "Check before sending");
   assert.equal(f.replies.length, 0);
 });

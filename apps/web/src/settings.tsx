@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { RunCommand, composerCommands } from "./workspace-commands.ts";
 import { useTheme } from "./theme.tsx";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
@@ -158,7 +159,6 @@ function AgentDetails({ agent }: { agent: AgentDefinitionView }) {
                   )}
                   {source.content !== undefined ? (
                     <Markdown
-                      key={source.content}
                       content={source.content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim()}
                       mode="static"
                       className="prose agent-instruction-content"
@@ -271,6 +271,15 @@ export function AgentSettings() {
 
 export function RepositorySettings() {
   const hash = useRouterState({ select: (state) => state.location.hash });
+  const focusTarget = useCallback(
+    (element: HTMLLIElement | null) => {
+      if (element && element.id === hash) {
+        element.focus({ preventScroll: true });
+        element.scrollIntoView({ block: "nearest" });
+      }
+    },
+    [hash],
+  );
   const run = useContext(RunCommand);
   return (
     <div className="settings-stack">
@@ -299,12 +308,7 @@ export function RepositorySettings() {
                       key={repository.id}
                       id={"repo-" + repository.id}
                       tabIndex={-1}
-                      ref={(element) => {
-                        if (element && hash === element.id && document.activeElement !== element) {
-                          element.focus({ preventScroll: true });
-                          element.scrollIntoView({ block: "nearest" });
-                        }
-                      }}
+                      ref={focusTarget}
                     >
                       <strong>{repository.name}</strong>
                       {repository.name !== repository.id && <code>{repository.id}</code>}

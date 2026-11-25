@@ -1,7 +1,10 @@
+import { TestClock } from "effect/testing";
+import { InboxDetailCache } from "../../src/work/inbox-cache.ts";
+import { freshMs } from "../../src/work/inbox-index.ts";
 import { workBriefing } from "../../src/visibility/briefing.ts";
 import assert from "node:assert/strict";
 import { test, vi } from "vite-plus/test";
-import { Deferred, Effect } from "effect";
+import { Clock, Deferred, Effect, SynchronizedRef } from "effect";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
@@ -19,7 +22,8 @@ import { CrewError } from "../../src/domain.ts";
 import type { Runner } from "../../src/process.ts";
 import type { InboxQuery, InboxTarget } from "@abracode/contracts/visibility/github-inbox";
 import { workDatabase, workGraphAt } from "../helpers/work-database.ts";
-import { dayMs } from "../../src/work/inbox-index.ts";
+import { DatabaseSync } from "node:sqlite";
+import { dayMs, indexEffect } from "../../src/work/inbox-index.ts";
 import { Visibility } from "../../src/visibility/read-model.ts";
 
 async function setup(t: Parameters<typeof workDatabase>[0]) {
@@ -146,6 +150,7 @@ async function setup(t: Parameters<typeof workDatabase>[0]) {
   };
   const open = (work: typeof graph) =>
     createWorkflow(
+      f.catalog,
       f.config,
       f.records,
       work,
@@ -383,7 +388,7 @@ test("expiry prunes old closed observations and access loss clears all pages wit
   assert.equal((await run(graph.show(id))).status, "open");
 });
 
-test("v9 work and pre-existing publication records retain their identity alongside a private review", async (t) => {
+test("Work and pre-existing publication records retain their identity alongside a private review", async (t) => {
   const { graph, path, id, c, target, open } = await setup(t);
   const issue = await run(
     graph.create({
@@ -395,12 +400,9 @@ test("v9 work and pre-existing publication records retain their identity alongsi
       dependencies: [],
     }),
   );
-  graph["db"].exec(
-    "DROP TABLE github_links; DROP TABLE github_scans; DROP TABLE github_items; DROP TABLE github_cooldowns; PRAGMA user_version=9",
-  );
-  const migrated = await workGraphAt(t, path);
-  assert.equal((await run(migrated.graph.show(issue.id))).title, "Existing task");
-  const controller = open(migrated.graph);
+  const reopened = await workGraphAt(t, path);
+  assert.equal((await run(reopened.graph.show(issue.id))).title, "Existing task");
+  const controller = open(reopened.graph);
   t.onTestFinished(() => run(controller.close()));
   const summary = await run(controller.inbox.detail(target(true)));
   const published = {
@@ -409,7 +411,7 @@ test("v9 work and pre-existing publication records retain their identity alongsi
     url: summary.url,
     status: "completed",
   };
-  const index = migrated.graph.inbox;
+  const index = reopened.graph.inbox;
   assert.deepEqual(
     index.links(
       { ...summary, item_node: "other", number: 92, url: summary.url.replace("/91", "/92") },
@@ -440,7 +442,9 @@ for (const failure of ["HTTP 403 rate limit", "HTTP 404"])
       ["one", "two", "three"].map((label) => list({ kind: "issue", label })),
     );
     try {
-      await t.expect.poll(() => c.inbox["running"].size).toBe(3);
+      await t.expect
+        .poll(async () => (await run(SynchronizedRef.get(c.inbox["runningRef"]))).size)
+        .toBe(3);
     } finally {
       await run(Deferred.succeed(gate, undefined));
     }
@@ -486,6 +490,45 @@ test("overlapping PR views share a read while assignment verifies its own revisi
   );
   assert.equal((await run(c.inbox.detail(pr))).head, "c".repeat(40));
   assert.equal(count, 3);
+});
+
+test("inbox count and rows share a read transaction and malformed timestamps roll back", async (t) => {
+  const { graph, path, list } = await setup(t);
+  const warm = await list({ kind: "issue" });
+  const db = graph["db"];
+  const partition = String(db.prepare("SELECT partition FROM github_items").get()!.partition);
+  const stream = String(db.prepare("SELECT stream FROM github_scans").get()!.stream);
+  await assert.rejects(
+    run(
+      indexEffect(() =>
+        graph.inbox.page(
+          stream,
+          partition,
+          [
+            {
+              ...warm.entries[0]!,
+              updated_at: "invalid" as (typeof warm.entries)[number]["updated_at"],
+            },
+          ],
+          graph.inbox.scan(stream)!,
+          Date.now(),
+        ),
+      ),
+    ),
+    { code: "INBOX_DATA" },
+  );
+  const writer = new DatabaseSync(path);
+  t.onTestFinished(() => writer.close());
+  const prepare = db.prepare.bind(db);
+  const intercept = vi.spyOn(db, "prepare").mockImplementation((sql) => {
+    if (sql.startsWith("SELECT page.summary")) writer.exec("DELETE FROM github_items");
+    return prepare(sql);
+  });
+  t.onTestFinished(() => intercept.mockRestore());
+  const page = graph.inbox.find([partition], {}, []);
+  assert.equal(page.total, 1);
+  assert.equal(page.entries.length, 1);
+  assert.equal(graph.inbox.find([partition], {}, []).total, 0);
 });
 
 test("local index failures preserve remote state and roll back partial page and assignment writes", async (t) => {
@@ -551,4 +594,28 @@ test("invalid projects, changed item identity and malformed remote detail retain
   assert.equal((await run(Effect.flip(c.inbox.detail(target())))).code, "REMOTE");
   account.repositoryURL = "";
   assert.equal((await run(c.inbox.detail(target()))).item_node, target().item_node);
+});
+
+test("detail freshness expires on the caller clock", async (t) => {
+  const { c, target } = await setup(t);
+  const data = await run(c.inbox.detail(target(true)));
+  const cache = new InboxDetailCache();
+  const clock = await run(TestClock.make());
+  await run(clock.setTime(100));
+  let reads = 0;
+  const observe = () =>
+    run(
+      cache
+        .observe(
+          "pull",
+          false,
+          Effect.sync(() => ({ at: ++reads, data })),
+        )
+        .pipe(Effect.provideService(Clock.Clock, clock)),
+    );
+  assert.equal((await observe()).at, 1);
+  await run(clock.adjust(freshMs - 1));
+  assert.equal((await observe()).at, 1);
+  await run(clock.adjust(1));
+  assert.equal((await observe()).at, 2);
 });

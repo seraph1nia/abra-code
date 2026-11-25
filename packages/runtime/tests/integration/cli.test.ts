@@ -1,7 +1,8 @@
+import { Coordination } from "../../src/workflow/coordination.ts";
 import { Onboarding } from "../../src/config/onboard.ts";
 import { Records } from "../../src/storage/store.ts";
-import { MemoryStore, writePlan, repo } from "../fixtures.ts";
-import { createExecution } from "../../src/workflow/execution.ts";
+import { fixtureConfig, MemoryStore, TestLocks, writePlan, repo } from "../fixtures.ts";
+import { createConfiguredExecution } from "../../src/workflow/execution.ts";
 import * as Id from "@abracode/contracts/identities";
 import { Effect, Scope, Exit } from "effect";
 import { run } from "../effects.ts";
@@ -26,7 +27,7 @@ test("installed OpenSpec: schema planning, strict validation, unfinished tasks, 
   const project = (
     await run(
       new Onboarding(
-        new Records(new MemoryStore()),
+        new Records(new MemoryStore(), new Coordination(new TestLocks())),
         new Git(r),
         r,
         Id.Executable.make(bin("openspec")),
@@ -41,15 +42,19 @@ test("installed OpenSpec: schema planning, strict validation, unfinished tasks, 
   ).project;
   const e: Execution = {
     ...(await run(
-      createExecution(project, {
-        issue_id: Id.IssueId.make("abra-1"),
-        repository_id: project.id,
-        execution_id: Id.ExecutionId.make("abra-test"),
-        current_phase: "planning",
-        workflow_policy: "full-openspec",
-        branch: Id.BranchName.make("main"),
-        openspec_change: Id.ChangeName.make("sample"),
-      }),
+      createConfiguredExecution(
+        project,
+        {
+          issue_id: Id.IssueId.make("abra-1"),
+          repository_id: project.id,
+          execution_id: Id.ExecutionId.make("abra-test"),
+          current_phase: "planning",
+          workflow_policy: "full-openspec",
+          branch: Id.BranchName.make("main"),
+          openspec_change: Id.ChangeName.make("sample"),
+        },
+        await run(fixtureConfig(root)),
+      ),
     )),
     worktree_directory: Id.AbsolutePath.make(path),
   };
@@ -106,7 +111,7 @@ test("registration permits missing OpenSpec and explicit legacy init preserves e
   await writeFile(join(path, "AGENTS.md"), "Keep this project instruction.\n");
   await mkdir(join(path, ".agents/skills/existing"), { recursive: true });
   await writeFile(join(path, ".agents/skills/existing/SKILL.md"), "Existing skill.\n");
-  const records = new Records(new MemoryStore());
+  const records = new Records(new MemoryStore(), new Coordination(new TestLocks()));
   const onboarding = new Onboarding(records, new Git(r), r, Id.Executable.make(bin("openspec")));
   assert.equal(
     (
@@ -124,7 +129,7 @@ test("registration permits missing OpenSpec and explicit legacy init preserves e
   );
   assert.equal(pending.project.openspec, false);
   assert.match(pending.setup_blockers.join(), /OpenSpec/);
-  assert.equal((await run(records.projects())).length, 1);
+  assert.equal((await run(records.projects)).length, 1);
   assert.equal(
     await run(
       new Git(r).run(Id.AbsolutePath.make(path), [

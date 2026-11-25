@@ -1,3 +1,4 @@
+import { nextCheckAt } from "./durable-outbox.ts";
 import { Clock, Effect } from "effect";
 import { ensure, type Execution, type Project } from "../domain.ts";
 import { type Records } from "../storage/store.ts";
@@ -63,7 +64,7 @@ export class FeedbackService {
           complete: false,
           error: result.failure.message.slice(0, 8192),
           observed_at: now,
-          next_check_at: now + Math.min(300000, 30000 * 2 ** (attempts - 1)),
+          next_check_at: nextCheckAt(now, attempts),
           attempts,
         };
       } else {

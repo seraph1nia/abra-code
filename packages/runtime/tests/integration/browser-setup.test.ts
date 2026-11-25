@@ -28,7 +28,7 @@ console.log('agent-browser 0.43.0');
     { mode: 0o755 },
   );
   const doctor = () =>
-    promisify(execFile)(resolve("node_modules/.bin/tsx"), [resolve("scripts/doctor.ts")], {
+    promisify(execFile)(resolve("node_modules/.bin/tsx"), [resolve("scripts/cli.ts"), "doctor"], {
       cwd: home,
       env: {
         ...process.env,

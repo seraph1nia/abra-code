@@ -11,7 +11,7 @@ import {
 } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { workerProfile } from "../config/snapshot.ts";
-import { NativeStore } from "../storage/store.ts";
+import type { Store } from "../storage/store.ts";
 import { compatibleContext, readWorkerContext } from "../workflow/worker-context.ts";
 import { legacyReviewProfile } from "./role-policy.ts";
 import {
@@ -20,7 +20,7 @@ import {
   resolveSkills,
   type WorkerEnvironment,
 } from "./worker-environment.ts";
-import { nativeSession } from "./native-call.ts";
+import { nativeDomain, nativeSession } from "./native-call.ts";
 
 export type InventoryModel = Pick<
   Model.Info,
@@ -103,7 +103,8 @@ export const checkWorkerInventory = (
 
 export const preflightWorker = (
   ctx: Context,
-  client: OpenCodeClient,
+  store: Store,
+  client: () => Effect.Effect<OpenCodeClient, CrewError>,
   config: Config,
   e: ManagedExecution,
   role: Role,
@@ -116,7 +117,10 @@ export const preflightWorker = (
       const sessionID = e[`${role}_session_id`];
       if (promptID && sessionID) {
         const [inbox, context] = yield* Effect.all(
-          [client.session.inbox.list({ sessionID }), client.session.context({ sessionID })],
+          [
+            (yield* client()).session.inbox.list({ sessionID }),
+            nativeSession(ctx).context({ sessionID }),
+          ],
           { concurrency: "unbounded" },
         );
         if (
@@ -127,7 +131,7 @@ export const preflightWorker = (
       }
       const captured =
         promptID && e.worker_context_id
-          ? yield* readWorkerContext(new NativeStore(ctx.storage), e.worker_context_id)
+          ? yield* readWorkerContext(store, e.worker_context_id)
           : undefined;
       if (captured) {
         if (!sessionID || !promptID)
@@ -173,23 +177,29 @@ export const preflightWorker = (
         ],
       };
       const location = { directory: e.worktree_directory };
+      // The plugin domains are bound to their registration location. A controller in
+      // another worktree must observe the selected worker's actual registry.
+      const inventory =
+        ctx.location && ctx.location.directory !== location.directory ? yield* client() : ctx;
       yield* awaitWorkerPlugin(
-        client.plugin.list({ location }).pipe(
-          Effect.map((inventory) => inventory.data),
-          Effect.mapError(
-            () =>
-              new CrewError(
-                "INVENTORY_UNAVAILABLE",
-                "Worker-location plugin inventory unavailable; retry after native activation",
-              ),
+        nativeDomain(inventory.plugin)
+          .list({ location })
+          .pipe(
+            Effect.map((inventory) => inventory.data),
+            Effect.mapError(
+              () =>
+                new CrewError(
+                  "INVENTORY_UNAVAILABLE",
+                  "Worker-location plugin inventory unavailable; retry after native activation",
+                ),
+            ),
           ),
-        ),
       );
       const [agents, models, skills] = yield* Effect.all(
         [
-          client.agent.list({ location }),
-          client.model.list({ location }),
-          client.skill.list({ location }),
+          nativeDomain(inventory.agent).list({ location }),
+          nativeDomain(inventory.model).list({ location }),
+          nativeDomain(inventory.skill).list({ location }),
         ],
         { concurrency: "unbounded" },
       ).pipe(

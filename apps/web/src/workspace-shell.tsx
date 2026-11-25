@@ -6,7 +6,6 @@ import {
   Link,
   useRouter,
   useRouterState,
-  useSearch,
   useMatch,
   useNavigate,
 } from "@tanstack/react-router";
@@ -24,7 +23,7 @@ import {
 import { Application } from "./workspace.tsx";
 import {
   destinations,
-  workspaceSearch,
+  type WorkspaceSearch,
   destinationFor,
   type CollectionState,
 } from "./navigation.ts";
@@ -44,8 +43,7 @@ export function WorkspaceShell() {
   const path = useRouterState({ select: (state) => state.location.pathname });
   const destination = destinationFor(path);
   const workspace = Boolean(destination);
-  const raw = useSearch({ from: "__root__" });
-  const route = useMemo(() => workspaceSearch(raw), [raw]);
+  const route = useMatch({ from: "__root__", select: (match) => match._strictSearch });
   const router = useRouter();
   const [savedByDestination, setSavedByDestination] = useState<
     Partial<Record<string, CollectionState>>
@@ -58,11 +56,7 @@ export function WorkspaceShell() {
         for (const location of [fromLocation, toLocation]) {
           if (!location) continue;
           const target = destinationFor(location.pathname);
-          if (target)
-            updates.push([
-              target,
-              workspaceSearch(location.search as Record<string, unknown>).collection,
-            ]);
+          if (target) updates.push([target, (location.search as WorkspaceSearch).collection]);
         }
         if (toLocation && destinationFor(toLocation.pathname)) setVisited(true);
         if (!updates.length) return;
@@ -186,14 +180,16 @@ export function WorkspaceShell() {
     );
   });
 
+  const runCommand = useCallback(
+    (action: ComposerCommand) => {
+      setCommand({ action });
+      if (workspace && !tablet && !route.canvas) return;
+      void navigate({ to: "/", search: {} });
+    },
+    [navigate, workspace, tablet, route.canvas],
+  );
   return (
-    <RunCommand.Provider
-      value={(action) => {
-        setCommand({ action });
-        if (workspace && !tablet && !route.canvas) return;
-        void navigate({ to: "/", search: {} });
-      }}
-    >
+    <RunCommand.Provider value={runCommand}>
       <OpenSearch.Provider value={openSearch}>
         <div className="workspace-shell" ref={shell}>
           {(workspace || settings) &&

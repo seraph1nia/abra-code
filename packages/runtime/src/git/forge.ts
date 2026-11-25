@@ -186,7 +186,10 @@ export class Forge {
       Effect.gen({ self: this }, function* () {
         const directory = yield* Effect.acquireRelease(
           mkdtemp(join(tmpdir(), "abracode-forge-")),
-          (d) => rm(d, { recursive: true }).pipe(Effect.orDie),
+          (d) =>
+            rm(d, { recursive: true }).pipe(
+              Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error)),
+            ),
         );
         const path = join(directory, "request.json");
         yield* writeFile(path, JSON.stringify(payload), { mode: 0o600, flag: "wx" });

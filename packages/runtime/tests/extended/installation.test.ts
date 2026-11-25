@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Read only the disposable installation's pinned native service. */
 import { removeFixture } from "../helpers/resources.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -30,17 +29,21 @@ test(
       XDG_CACHE_HOME: join(root, "cache"),
       OPENCREW_HOME: join(root, "legacy"),
     };
-    const run = (script: string, args: string[] = []) =>
-      command(join(home, "node_modules/.bin/tsx"), [join(home, "scripts", script), ...args], {
-        cwd: home,
-        env,
-        timeout: 45_000,
-        maxBuffer: 1024 * 1024,
-      });
+    const run = (subcommand: string, args: string[] = []) =>
+      command(
+        join(home, "node_modules/.bin/tsx"),
+        [join(home, "scripts/cli.ts"), ...subcommand.split(" "), ...args],
+        {
+          cwd: home,
+          env,
+          timeout: 45_000,
+          maxBuffer: 1024 * 1024,
+        },
+      );
     t.onTestFinished(async () => {
       env.ABRACODE_CONFIG = "personal.yaml";
       try {
-        await run("stop.ts");
+        await run("stop");
       } finally {
         await removeFixture(root);
         if (process.env.ABRACODE_TEST_EVIDENCE_DIR) {
@@ -89,13 +92,13 @@ test(
     await mkdir(join(home, ".opencrew"));
     await writeFile(join(home, ".opencrew/service.json"), "legacy sentinel");
     await writeFile(join(home, "projects.yaml"), "legacy config sentinel");
-    const staticResult = JSON.parse((await run("config.ts", ["--show", "--json"])).stdout);
+    const staticResult = JSON.parse((await run("config", ["--show", "--json"])).stdout);
     assert.equal(staticResult.models.supervisor.name, "Abra");
     assert.equal(staticResult.config_path, join(home, "personal.yaml"));
     assert.equal((await readdir(home)).includes(".abracode"), false);
-    await assert.rejects(run("launch.ts"), /service:start/);
-    const first = await run("start.ts");
-    const second = await run("start.ts");
+    await assert.rejects(run("start"), /service:start/);
+    const first = await run("serve");
+    const second = await run("serve");
     assert.equal(first.stdout, second.stdout);
     assert.match(first.stdout, /Abra: ses_/);
     const endpoint = await Effect.runPromise(
@@ -143,10 +146,10 @@ test(
       "version: 1\nmodels: {default: {providerID: example, id: other}}\n",
     );
     env.ABRACODE_CONFIG = "other.yaml";
-    await assert.rejects(run("start.ts"), /another configuration|CONFIG_RESTART|Restart/);
-    await assert.rejects(run("config-apply.ts"), /another configuration|CONFIG_RESTART|Restart/);
+    await assert.rejects(run("serve"), /another configuration|CONFIG_RESTART|Restart/);
+    await assert.rejects(run("config apply"), /another configuration|CONFIG_RESTART|Restart/);
     await assert.rejects(
-      run("client.ts", ["--auth", "--help"]),
+      run("attach", ["--auth", "--help"]),
       /another configuration|CONFIG_RESTART|Restart/,
     );
     assert.equal(
@@ -159,24 +162,24 @@ test(
     );
     assert.equal(host.default_agent, "abra");
     assert.deepEqual(host.plugins, [join(home, ".opencode/plugins/abracode")]);
-    const auth = await run("client.ts", ["--auth", "--help"]);
+    const auth = await run("attach", ["--auth", "--help"]);
     assert.match(auth.stdout, /auth login|provider|server/i);
-    assert.deepEqual(JSON.parse((await run("config-apply.ts", ["--json"])).stdout).outcomes, []);
+    assert.deepEqual(JSON.parse((await run("config apply", ["--json"])).stdout).outcomes, []);
     const selection = /Abra\s*·\s*supervisor-configured\s*\(unavailable\)\s*example/;
     await interactiveLaunch(home, env, selection);
     await interactiveLaunch(home, env, selection);
     await webJourney(home, env, /Abra: (ses_\S+)/.exec(first.stdout)![1], async () => {
-      await run("stop.ts");
+      await run("stop");
       assert.equal(
-        (await run("start.ts")).stdout.match(/Abra: (ses_\S+)/)?.[1],
+        (await run("serve")).stdout.match(/Abra: (ses_\S+)/)?.[1],
         /Abra: (ses_\S+)/.exec(first.stdout)![1],
       );
     });
     assert.equal(
-      (await run("start.ts")).stdout.match(/Abra: (ses_\S+)/)?.[1],
+      (await run("serve")).stdout.match(/Abra: (ses_\S+)/)?.[1],
       /Abra: (ses_\S+)/.exec(first.stdout)![1],
     );
-    await run("stop.ts");
+    await run("stop");
     assert.equal(await readFile(join(home, ".opencrew/service.json"), "utf8"), "legacy sentinel");
     assert.equal(await readFile(join(home, "projects.yaml"), "utf8"), "legacy config sentinel");
   },

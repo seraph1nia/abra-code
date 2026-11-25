@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Discover only the disposable native installation to exercise public development/HMR lifetimes. */
 import { removeFixture } from "../helpers/resources.ts";
 import { expect, test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -51,12 +50,16 @@ test(
     let composeStarted = false;
     let logs = "",
       result: Record<string, unknown> = { result: "failed" };
-    const run = (script: string) =>
-      command(join(home, "node_modules/.bin/tsx"), [join(home, "scripts", script)], {
-        cwd: home,
-        env,
-        timeout: 30000,
-      });
+    const run = (subcommand: string) =>
+      command(
+        join(home, "node_modules/.bin/tsx"),
+        [join(home, "scripts/cli.ts"), ...subcommand.split(" ")],
+        {
+          cwd: home,
+          env,
+          timeout: 30000,
+        },
+      );
     const compose = (...args: string[]) =>
       command("docker", ["compose", "-f", "compose.yaml", ...args], { cwd: home, env });
     const nativeClient = async () => {
@@ -86,7 +89,7 @@ test(
         join(home, "personal.yaml"),
         "version: 1\nmodels: {default: {providerID: example, id: example}}\n",
       );
-      const started = await run("start.ts");
+      const started = await run("serve");
       const originalPid = (await (await nativeClient()).server.info()).pid;
       composeStarted = true;
       await compose("up", "-d", "--wait", "--wait-timeout", "60");
@@ -299,11 +302,11 @@ test(
         await fetch(`http://127.0.0.1:${backendPort}/api/bootstrap`).catch(() => undefined),
         undefined,
       );
-      assert.equal((await run("start.ts")).stdout.match(/Abra: (ses_\S+)/)?.[1], first.session_id);
+      assert.equal((await run("serve")).stdout.match(/Abra: (ses_\S+)/)?.[1], first.session_id);
     } finally {
       await stop();
       try {
-        await run("stop.ts");
+        await run("stop");
       } finally {
         try {
           if (composeStarted) await compose("down", "--volumes");

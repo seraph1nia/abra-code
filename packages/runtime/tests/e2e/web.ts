@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Real pinned native service discovery in a disposable source installation. */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
@@ -40,7 +39,7 @@ export async function webJourney(
   const origin = `http://127.0.0.1:${port}`;
   const child = spawn(
     join(home, "node_modules/.bin/tsx"),
-    [join(home, "scripts/web.ts"), "--port", String(port), "--no-open"],
+    [join(home, "scripts/cli.ts"), "web", "--port", String(port), "--no-open"],
     { cwd: home, env, stdio: ["ignore", "pipe", "pipe"] },
   );
   let logs = "";

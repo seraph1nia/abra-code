@@ -9,6 +9,7 @@ import {
   RepositoryId,
   RequestId,
   SessionId,
+  Timestamp,
   StorageKey,
   StoragePrefix,
 } from "@abracode/contracts/identities";
@@ -32,6 +33,7 @@ export const LeadRequestSchema = Schema.Struct({
 export const LeadRecordSchema = Schema.Struct({
   schema_version: Schema.Literal(1),
   id: LeadId,
+  routing_since: Schema.optional(Timestamp),
   revision: Count,
   repositories,
   parent_session_id: SessionId,

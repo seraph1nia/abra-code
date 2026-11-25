@@ -120,7 +120,9 @@ export class RepositorySources {
       if (target === undefined) {
         const output = yield* this.git.run(path, ["ls-remote", "--symref", "origin", "HEAD"]);
         const discovered = /^ref: refs\/heads\/([^\t\n]+)\tHEAD$/m.exec(output)?.[1];
-        target = discovered ? BranchName.make(discovered) : undefined;
+        target = discovered
+          ? yield* decode(BranchName, discovered, "Discovered Git branch")
+          : undefined;
         if (!target)
           return yield* new CrewError(
             "DEFAULT_BRANCH",

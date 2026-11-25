@@ -10,6 +10,28 @@ import type { RpcHandlers, RpcRegistration } from "@opencode/plugin/effect/rpc";
 import type { Rpc } from "@opencode/schema/rpc";
 import { CrewError } from "../domain.ts";
 
+export function nativeError(cause: unknown): CrewError {
+  if (cause instanceof CrewError || !cause || typeof cause !== "object")
+    return CrewError.from(cause);
+  const tag = "_tag" in cause ? cause._tag : undefined;
+  const type = "type" in cause ? cause.type : undefined;
+  const data = "data" in cause ? cause.data : undefined;
+  const fallback = CrewError.from(cause);
+  if (
+    typeof type === "string" &&
+    data &&
+    typeof data === "object" &&
+    "code" in data &&
+    typeof data.code === "string"
+  )
+    return new CrewError(data.code, fallback.message, cause);
+  if (tag === "SessionNotFoundError" || tag === "Session.NotFoundError")
+    return new CrewError("SESSION_NOT_FOUND", "Native session is unavailable", cause);
+  if (typeof tag === "string" || typeof type === "string")
+    return new CrewError("NATIVE_UNAVAILABLE", fallback.message, cause);
+  return fallback;
+}
+
 type EventType = NonNullable<EventSubscribeInput["types"]>[number];
 
 type NormalizedDomain<T> = {
@@ -22,32 +44,32 @@ type NormalizedDomain<T> = {
       : T[K];
 };
 
-const wrapDomain = <T extends object>(domain: T): NormalizedDomain<T> =>
+export const nativeDomain = <T extends object>(domain: T): NormalizedDomain<T> =>
   new Proxy(domain, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
       if (typeof value !== "function") return value;
       return (...args: unknown[]) => {
         const result = (value as (...a: unknown[]) => unknown).apply(target, args);
-        if (Effect.isEffect(result)) return result.pipe(Effect.mapError(CrewError.from));
-        if (Stream.isStream(result)) return result.pipe(Stream.mapError(CrewError.from));
+        if (Effect.isEffect(result)) return result.pipe(Effect.mapError(nativeError));
+        if (Stream.isStream(result)) return result.pipe(Stream.mapError(nativeError));
         return result;
       };
     },
   }) as NormalizedDomain<T>;
 
 /** Typed adapter for @opencode/plugin session methods with CrewError error channel. */
-export const nativeSession = (ctx: Context) => wrapDomain(ctx.session);
+export const nativeSession = (ctx: Context) => nativeDomain(ctx.session);
 
 /** Typed adapter for @opencode/plugin worktree methods with CrewError error channel. */
-export const nativeWorktree = (ctx: Context) => wrapDomain(ctx.worktree);
+export const nativeWorktree = (ctx: Context) => nativeDomain(ctx.worktree);
 
 /** Typed adapter for @opencode/plugin event.subscribe preserving event-type narrowing. */
 export const nativeEventSubscribe = <Type extends EventType = EventType>(
   ctx: Context,
   input?: { readonly types?: ReadonlyArray<Type> },
 ): Stream.Stream<SelectedEvent<EventSubscribeOutput, Type>, CrewError> =>
-  ctx.event.subscribe(input).pipe(Stream.mapError(CrewError.from));
+  ctx.event.subscribe(input).pipe(Stream.mapError(nativeError));
 
 /** Typed adapter for @opencode/plugin rpc.register with normalized registration & event emit. */
 export const nativeRpcRegister = <const D extends Rpc.Definition>(
@@ -68,14 +90,14 @@ export const nativeRpcRegister = <const D extends Rpc.Definition>(
       ...registration,
       events: {
         emit: (...args: Rpc.EventInput<D>) =>
-          registration.events.emit(...args).pipe(Effect.mapError(CrewError.from)),
+          registration.events.emit(...args).pipe(Effect.mapError(nativeError)),
       },
     })),
-    Effect.mapError(CrewError.from),
+    Effect.mapError(nativeError),
   );
 
 /** Invoke a function returning an Effect<A, unknown, R> and normalize its error channel. */
 export const nativeInvoke = <Args extends readonly unknown[], A, R>(
   fn: (...args: Args) => Effect.Effect<A, unknown, R>,
   ...args: Args
-): Effect.Effect<A, CrewError, R> => fn(...args).pipe(Effect.mapError(CrewError.from));
+): Effect.Effect<A, CrewError, R> => fn(...args).pipe(Effect.mapError(nativeError));

@@ -1,16 +1,23 @@
-import { AgentMemory } from "../memory/service.ts";
+import { MemoryProviderService } from "../memory/provider.ts";
+import { InboxDetailCacheService, type InboxDetailCache } from "../work/inbox-cache.ts";
+import { answerSelection } from "../workflow/selected-requests.ts";
+import { AgentMemoryService, AgentMemory } from "../memory/service.ts";
 import { PersonalThoughts } from "../work/thoughts.ts";
-import { GithubInbox } from "../work/github-inbox.ts";
+import { GithubInboxService, GithubInbox } from "../work/github-inbox.ts";
 import { Forge } from "../git/forge.ts";
 import { InboxForge } from "../git/inbox.ts";
 import { ExecutionRecovery } from "../workflow/execution-recovery.ts";
-import { Authorizations, CheckpointEvidence } from "../workflow/authorization.ts";
+import {
+  assertApprovalActor,
+  Authorizations,
+  CheckpointEvidence,
+} from "../workflow/authorization.ts";
 import { WorkAdmission } from "../workflow/admission.ts";
 import { Advancement } from "../workflow/advancement.ts";
 import { readWorkerContext } from "../workflow/worker-context.ts";
 import { Obligations } from "../workflow/obligations.ts";
 import { AttentionService } from "../workflow/attention.ts";
-import { Operations } from "../workflow/operations.ts";
+import { OperationsService, Operations } from "../workflow/operations.ts";
 import { Capacity } from "../workflow/capacity.ts";
 import { Scopes } from "../workflow/scopes.ts";
 import { Corrections } from "../workflow/corrections.ts";
@@ -36,9 +43,9 @@ import { type Context as PluginContext } from "@opencode/plugin/effect/plugin";
 import { join } from "node:path";
 import { loadConfig } from "../config/load.ts";
 import { ProcessRunner } from "../process.ts";
-import { NativeStore, Records } from "../storage/store.ts";
-import { FileLocks, type Locks } from "../storage/lock.ts";
-import { openWorkGraph, type WorkGraph } from "../work/graph.ts";
+import { RecordsService, NativeStore, Records } from "../storage/store.ts";
+import { LocksService, FileLocks, type Locks } from "../storage/lock.ts";
+import { WorkGraphService, type WorkGraph } from "../work/graph.ts";
 import { OpenSpec } from "../openspec/adapter.ts";
 import { Git } from "../git/repository.ts";
 import { GitHubDelivery, type Delivery } from "../git/delivery.ts";
@@ -48,25 +55,26 @@ import { ProjectSetup } from "../config/setup.ts";
 import { RepositorySources } from "../git/source.ts";
 import { Workspaces } from "../git/workspaces.ts";
 import { Controller } from "../workflow/controller.ts";
-import { type Coordination } from "../workflow/coordination.ts";
+import { CoordinationService } from "../workflow/coordination.ts";
 import { PlanningBaselines } from "../workflow/planning.ts";
 import { type Config } from "../domain.ts";
 import { platformLayer } from "../platform.ts";
 import { Agents } from "@abracode/agents";
 import { AgentsLive, sourcesLayer, bundledAssets, bundledSkills } from "@abracode/agents/bundled";
-import { OpenCodeAgentsLive } from "@abracode/agents/native";
+import { OpenCodeAgents, OpenCodeAgentsLive } from "@abracode/agents/native";
 import { StaticProfile } from "@abracode/agents/contracts";
 import { contributionAuthorization } from "./agent-contributions.ts";
 import { realpath } from "../filesystem.ts";
 
 interface WorkflowResources {
-  readonly coordination?: Coordination;
+  readonly details?: InboxDetailCache;
   readonly operations?: Operations;
   readonly thoughts?: PersonalThoughts;
   readonly memory?: AgentMemory;
 }
 
 function createInfrastructure(
+  catalog: typeof Agents.Service,
   config: Config,
   records: Records,
   work: WorkGraph,
@@ -77,11 +85,21 @@ function createInfrastructure(
 ) {
   const sources = new RepositorySources(git, config.repository_root);
   const workspaces = new Workspaces(git, sources, runtime, config.worktree_root);
-  const coordination = resources?.coordination ?? records.coordinate(locks);
-  const obligations = new Obligations(records, runtime, work, coordination, config.home, git);
+  const coordination = records.coordination;
+  const assertActor = assertApprovalActor(records, runtime, config.home);
+  const obligations = new Obligations(
+    records,
+    runtime,
+    work,
+    coordination,
+    config.home,
+    git,
+    assertActor,
+  );
   const attention = new AttentionService(config, records, runtime, coordination, locks);
-  const operations = resources?.operations ?? new Operations(records, locks, coordination);
-  const capacity = new Capacity(config, records, coordination);
+  const operations =
+    resources?.operations ?? Effect.runSync(Operations.make(records, locks, coordination));
+  const capacity = new Capacity(config, records);
   const scopes = new Scopes(records);
   const corrections = new Corrections(records, git, config);
   const checkpoints = new CheckpointEvidence(git);
@@ -89,7 +107,10 @@ function createInfrastructure(
   const thoughts = resources?.thoughts ?? new PersonalThoughts(config, work);
   const memory = resources?.memory ?? new AgentMemory(config, records, thoughts);
   return {
+    details: resources?.details,
+    catalog,
     sources,
+    assertActor,
     workspaces,
     coordination,
     obligations,
@@ -131,6 +152,7 @@ function createWorkflowCore(
   assets: string,
 ) {
   const planning = new PlanningBaselines({
+    assertActor: infra.assertActor,
     records,
     git,
     work,
@@ -143,6 +165,7 @@ function createWorkflowCore(
     records,
     runtime,
     infra.checkpoints,
+    infra.assertActor,
     planning.assertDelta,
   );
   const queries = new Queries(
@@ -273,6 +296,7 @@ function createWorkflowControl(
   messages: WorkflowCore["messages"],
 ) {
   const admission = new WorkAdmission({
+    catalog: infra.catalog,
     config,
     records,
     work,
@@ -341,7 +365,6 @@ function createWorkflowControl(
     work,
     runtime,
     locks,
-    infra.obligations,
     admission.createWorkBatch,
     advancement.workMessage,
     infra.memory,
@@ -352,8 +375,11 @@ function createWorkflowControl(
     records,
     admission,
     config,
+    infra.details,
   );
   return new Controller({
+    answerSelection: (session, request, issue, answer) =>
+      answerSelection(records.store, locks, session, request, issue, answer),
     thoughts: infra.thoughts,
     memory: infra.memory,
     inbox,
@@ -393,6 +419,7 @@ function createConfigurationServices(
     config,
   );
   const setup = new ProjectSetup({
+    catalog: infra.catalog,
     config,
     records,
     git,
@@ -417,16 +444,33 @@ const resolveAgentProfiles = (
   central: boolean,
 ) =>
   Effect.gen(function* () {
-    const executions = yield* records.executions();
+    const executions = yield* records.executions;
     for (const execution of executions) records.rememberWorkers(execution);
     const owned =
       central || executions.some((execution) => execution.worktree_directory === location);
     const profiles: StaticProfile[] = [];
     for (const definition of owned ? yield* catalog.list : []) {
-      const agent = yield* catalog.get(definition.id);
+      const resolved = yield* catalog.get(definition.id).pipe(Effect.result);
+      if (resolved._tag === "Failure") {
+        yield* Effect.logWarning(
+          "Cannot load agent definition",
+          definition.id,
+          resolved.failure.code,
+        );
+        continue;
+      }
+      const agent = resolved.success;
       for (const role of definition.roles) {
         if (!central && (role === "supervisor" || role === "project-lead")) continue;
-        profiles.push(yield* agent.resolve(role));
+        const profile = yield* agent.resolve(role).pipe(Effect.result);
+        if (profile._tag === "Success") profiles.push(profile.success);
+        else
+          yield* Effect.logWarning(
+            "Cannot register agent profile",
+            definition.id,
+            role,
+            profile.failure.code,
+          );
       }
     }
     // Exact retained static profiles must exist before a worker inventory can be exposed.
@@ -434,14 +478,24 @@ const resolveAgentProfiles = (
       if (execution.worktree_directory !== location) continue;
       profiles.push(...Object.values(execution.configuration_snapshot?.definitions ?? {}));
       if (execution.worker_context_id) {
-        const context = yield* readWorkerContext(records.store, execution.worker_context_id);
-        if (context.schema_version === 2) profiles.push(context.prepared.profile);
+        const context = yield* readWorkerContext(records.store, execution.worker_context_id).pipe(
+          Effect.result,
+        );
+        if (context._tag === "Failure")
+          yield* Effect.logWarning(
+            "Unavailable retained worker profile",
+            execution.issue_id,
+            context.failure.code,
+          );
+        else if (context.success.schema_version === 2)
+          profiles.push(context.success.prepared.profile);
       }
     }
     return profiles;
   });
 
 export function createWorkflow(
+  catalog: typeof Agents.Service,
   config: Config,
   records: Records,
   work: WorkGraph,
@@ -453,7 +507,16 @@ export function createWorkflow(
   assets: string = bundledAssets,
   resources?: WorkflowResources,
 ) {
-  const infra = createInfrastructure(config, records, work, git, runtime, locks, resources);
+  const infra = createInfrastructure(
+    catalog,
+    config,
+    records,
+    work,
+    git,
+    runtime,
+    locks,
+    resources,
+  );
   const reports = createReporting(config, records, git, locks, work, runtime);
   const core = createWorkflowCore(
     config,
@@ -505,7 +568,13 @@ export function createWorkflow(
 }
 export class Crew extends Context.Service<
   Crew,
-  ReturnType<typeof createWorkflow> & { readonly central: boolean; readonly locks: FileLocks }
+  ReturnType<typeof createWorkflow> & {
+    readonly store: NativeStore;
+    readonly runtime: NativeRuntime;
+    readonly central: boolean;
+    readonly locks: FileLocks;
+    readonly agents: typeof OpenCodeAgents.Service;
+  }
 >()("abracode/Crew") {}
 /** The application entrypoint owns the live adapters; tests supply the same interfaces. */
 export const applicationLayer = (ctx: PluginContext, home: string, catalogLayer = AgentsLive) =>
@@ -515,22 +584,43 @@ export const applicationLayer = (ctx: PluginContext, home: string, catalogLayer 
       const config = yield* loadConfig(home);
       const runner = new ProcessRunner();
       const git = new Git(runner);
-      const work = yield* openWorkGraph(config);
       const catalog = yield* Agents;
-      const records = new Records(new NativeStore(ctx.storage));
-      const nativeRuntime = new NativeRuntime(ctx, config);
-      const locks = new FileLocks(AbsolutePath.make(join(config.home, ".abracode/locks")));
-      const coordination = records.coordinate(locks);
-      const operations = yield* Effect.acquireRelease(
-        Effect.sync(() => new Operations(records, locks, coordination)),
-        (ops) => ops.close(),
+      const store = new NativeStore(ctx.storage);
+      const foundational = yield* Layer.build(
+        Layer.mergeAll(
+          LocksService.layer(AbsolutePath.make(join(config.home, ".abracode/locks"))),
+          WorkGraphService.layer(config),
+          InboxDetailCacheService.layer(),
+        ),
       );
+      const work = Context.get(foundational, WorkGraphService);
+      const locks = Context.get(foundational, LocksService);
+      const coordination = Context.get(
+        yield* Layer.build(CoordinationService.layer(locks)),
+        CoordinationService,
+      );
+      const records = Context.get(
+        yield* Layer.build(RecordsService.layer(store, coordination)),
+        RecordsService,
+      );
+      const nativeRuntime = new NativeRuntime(ctx, config, records);
       const thoughts = new PersonalThoughts(config, work);
-      const memory = yield* Effect.acquireRelease(
-        Effect.sync(() => new AgentMemory(config, records, thoughts)),
-        (mem) => mem.close(),
+      const provider = config.memory?.enabled
+        ? Context.get(
+            yield* Layer.build(MemoryProviderService.layer(config.memory.executable)),
+            MemoryProviderService,
+          )
+        : undefined;
+      const resources = yield* Layer.build(
+        Layer.mergeAll(
+          OperationsService.layer(records, locks, coordination),
+          AgentMemoryService.layer(config, records, thoughts, provider),
+        ),
       );
+      const operations = Context.get(resources, OperationsService);
+      const memory = Context.get(resources, AgentMemoryService);
       const application = createWorkflow(
+        catalog,
         config,
         records,
         work,
@@ -540,16 +630,18 @@ export const applicationLayer = (ctx: PluginContext, home: string, catalogLayer 
         new GitHubDelivery(git, runner, config.commands.forge),
         locks,
         bundledAssets,
-        { coordination, operations, thoughts, memory },
+        {
+          operations,
+          thoughts,
+          memory,
+          details: Context.get(foundational, InboxDetailCacheService),
+        },
       );
-      yield* Effect.acquireRelease(
-        Effect.sync(() => application.controller.inbox),
-        (inbox) => inbox.close(),
-      );
+      yield* Layer.build(GithubInboxService.layer(application.controller.inbox));
       const location = yield* realpath(ctx.location.directory);
       const central = location === config.home;
       const profiles = yield* resolveAgentProfiles(catalog, records, location, central);
-      yield* Layer.build(
+      const registered = yield* Layer.build(
         OpenCodeAgentsLive(ctx, {
           central,
           skills: bundledSkills,
@@ -562,7 +654,14 @@ export const applicationLayer = (ctx: PluginContext, home: string, catalogLayer 
           ),
         }).pipe(Layer.provide(Layer.succeed(Agents, catalog))),
       );
-      return { ...application, central, locks };
+      return {
+        ...application,
+        store,
+        runtime: nativeRuntime,
+        central,
+        locks,
+        agents: Context.get(registered, OpenCodeAgents),
+      };
     }),
   ).pipe(
     Layer.provideMerge(

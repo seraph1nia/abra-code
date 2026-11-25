@@ -95,6 +95,7 @@ test("research runs without OpenSpec/checks and retains a hashed report and sess
   assert.equal(done.delivery_receipt, undefined);
   await assert.rejects(access(e.worktree_directory!));
   const c = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,
@@ -290,6 +291,7 @@ test("uncertain report publication reconciles the existing bytes rather than rep
   await run(f.records.save(current));
   f.runtime.success(e.research_session_id!);
   const c = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,

@@ -7,12 +7,10 @@ import {
   WorkerReferenceSchema,
 } from "@abracode/contracts/web/worker-evidence";
 import { WorkerReplySchema } from "@abracode/contracts/workflow/message-contracts";
-import { CrewError } from "../../domain.ts";
 import { domainEffect } from "../../effect.ts";
 import type { Controller } from "../../workflow/controller.ts";
 import { QuestionInputSchema, WaitInputSchema } from "../../workflow/obligation-contracts.ts";
 import { ReportInputSchema } from "../../reporting/report-contracts.ts";
-import { workerFor } from "../guards.ts";
 import { assertActiveWorker } from "../session-authority.ts";
 import { toolOutputs } from "../tool-contracts.ts";
 import { defineTool as define, type DefinedTool } from "../tool-definition.ts";
@@ -109,9 +107,7 @@ export function workerTools(c: Controller): DefinedTool[] {
       run: (a, s) =>
         domainEffect(
           Effect.gen(function* () {
-            const e = yield* workerFor(c, s);
-            if (!e)
-              return yield* new CrewError("WORKER_REQUIRED", "Assigned worker session required");
+            const { execution: e } = yield* assertActiveWorker(c, s);
             return yield* a.action === "status"
               ? c.queries.specStatus(e)
               : a.action === "apply"

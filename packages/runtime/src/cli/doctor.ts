@@ -1,15 +1,14 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 service discovery APIs. */
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AbsolutePath } from "@opencode/client/effect";
 import { Service } from "@opencode/client/effect/service";
 import { Console, Effect } from "effect";
-import { modelRoles, resolveInstallationHome } from "../config/identity.ts";
+import { modelRoles, resolveInstallationHome, runtimePaths } from "../config/identity.ts";
 import { loadConfig } from "../config/load.ts";
 import { mkdtemp, rm } from "../filesystem.ts";
 import { Executable, LockKey } from "@abracode/contracts/identities";
-import { checkMemoryVersion, memoryError } from "../memory/provider.ts";
-import { makeClient } from "../opencode/client.ts";
+import { checkMemoryVersionEffect } from "../memory/provider.ts";
+import { makeClient, OPENCODE_VERSION } from "../opencode/client.ts";
 import { ProcessRunner } from "../process.ts";
 import { FileLocks } from "../storage/lock.ts";
 import { visibility } from "../visibility/protocol.ts";
@@ -23,12 +22,12 @@ export const runDoctor = Effect.gen(function* () {
       Effect.gen(function* () {
         const root = yield* Effect.acquireRelease(
           mkdtemp(join(tmpdir(), "abra-memory-doctor-")),
-          (p) => rm(p, { recursive: true, force: true }).pipe(Effect.orDie),
+          (p) =>
+            rm(p, { recursive: true, force: true }).pipe(
+              Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error)),
+            ),
         );
-        yield* Effect.tryPromise({
-          try: (signal) => checkMemoryVersion(executable, root, signal),
-          catch: memoryError,
-        });
+        yield* checkMemoryVersionEffect(executable, root);
         yield* Console.log("Basic Memory 1.0.0 available for local stdio.");
       }),
     ).pipe(
@@ -48,8 +47,8 @@ export const runDoctor = Effect.gen(function* () {
     `Capacity: ${config.max_workers} active workers; ${config.max_executions ?? config.max_workers} execution slots`,
   );
   const endpoint = yield* Service.discover({
-    file: join(config.home, ".abracode/state/opencode/service.json"),
-    version: "2.3.0",
+    file: runtimePaths(config.home).service,
+    version: OPENCODE_VERSION,
   });
   if (endpoint) {
     const client = yield* makeClient(endpoint);
@@ -105,7 +104,10 @@ export const runDoctor = Effect.gen(function* () {
     Effect.gen(function* () {
       const root = yield* Effect.acquireRelease(
         mkdtemp(join(tmpdir(), "abracode-doctor-lock-")),
-        (root) => rm(root, { recursive: true, force: true }).pipe(Effect.orDie),
+        (root) =>
+          rm(root, { recursive: true, force: true }).pipe(
+            Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error)),
+          ),
       );
       yield* new FileLocks(root).with(LockKey.make("doctor"), () =>
         Console.log("fs-ext: native kernel locking available"),

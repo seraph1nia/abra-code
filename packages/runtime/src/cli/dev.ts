@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 child process lifecycle APIs. */
 import { Console, Effect, Schedule } from "effect";
 import { ChildProcess } from "effect/process";
 import { CrewError } from "../domain.ts";

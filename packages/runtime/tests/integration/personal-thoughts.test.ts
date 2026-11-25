@@ -1,4 +1,4 @@
-import { Effect, Exit, Scope } from "effect";
+import { Deferred, Effect, Exit, Fiber, Scope } from "effect";
 import { SqliteWorkGraph } from "../../src/work/graph.ts";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -23,7 +23,11 @@ async function notebook(cleanup: (f: () => Promise<void>) => void) {
     text: 'literal "quoted"_%',
     space: "",
     loseCreate: false,
+    refuseCreate: false,
+    missingStatus: 404,
+    createAttempts: [] as string[],
     deleted: false,
+    beforeDetail: undefined as (() => Promise<void>) | undefined,
   };
   const calls: { path: string; filter: string; order: string }[] = [];
   const row = (id: string, content = state.text) => ({
@@ -88,12 +92,18 @@ async function notebook(cleanup: (f: () => Promise<void>) => void) {
       )[message.params.name]!;
       if (op === "create") {
         const { memoId, body: input } = message.params.arguments;
-        if (stored.has(memoId)) {
+        state.createAttempts.push(memoId);
+        if (state.refuseCreate || stored.has(memoId)) {
           res.end(
             JSON.stringify({
               jsonrpc: "2.0",
               id,
-              result: { isError: true, content: [{ type: "text", text: "409 Conflict" }] },
+              result: {
+                isError: true,
+                content: [
+                  { type: "text", text: state.refuseCreate ? "429 Rate Limited" : "409 Conflict" },
+                ],
+              },
             }),
           );
           return;
@@ -106,21 +116,25 @@ async function notebook(cleanup: (f: () => Promise<void>) => void) {
       }
     }
     const uid = args.memo ?? args.memoId ?? url.pathname.split("/").at(-1)!;
-    if (state.deleted && op === "get") {
+    if (op === "get" && (state.deleted || (uid.length === 36 && !stored.has(uid)))) {
       if (mcp)
         res.end(
           JSON.stringify({
             jsonrpc: "2.0",
             id,
-            result: { isError: true, content: [{ type: "text", text: "404 Not Found" }] },
+            result: {
+              isError: true,
+              content: [{ type: "text", text: String(state.missingStatus) }],
+            },
           }),
         );
       else {
-        res.writeHead(404);
+        res.writeHead(state.missingStatus);
         res.end("{}");
       }
       return;
     }
+    if (op === "get") await state.beforeDetail?.();
     const result =
       op === "list"
         ? {
@@ -212,8 +226,8 @@ test("publishing a Thought validates the live private selection before contactin
       `version: 1\nmodels: {default: {providerID: fixture, id: fixture}}\nmemory: ${JSON.stringify({ enabled: true, directory, executable: "/missing/bm" })}`,
     ),
   );
-  const memory = new AgentMemory(config, { projects: () => Effect.succeed([]) }, f.service);
-  t.onTestFinished(() => run(memory.close()));
+  const memory = new AgentMemory(config, { projects: Effect.succeed([]) }, f.service);
+  t.onTestFinished(() => run(memory.close));
   f.state.text = "One sentence. Another sentence.";
   const reference = (await run(f.service.list({}, "http"))).entries[0]!.reference;
   const publish = (content = "One sentence.") =>
@@ -262,6 +276,37 @@ test("durable save reservations reconcile concurrent writes and lost responses w
   assert.equal(f.stored.size, 2);
 });
 
+test("a refused save retries after verified absence and an uncertain save preserves deletion", async (t) => {
+  const f = await notebook((fn) => t.onTestFinished(fn));
+  const path = AbsolutePath.make(join(f.root, "retry.sqlite"));
+  const save = (id: string) =>
+    run(
+      Effect.flatMap(SqliteWorkGraph.open(path), (graph) =>
+        new PersonalThoughts(f.config, graph).save({
+          request_id: RequestId.make(id),
+          content: "original",
+        }),
+      ),
+    );
+  f.state.refuseCreate = true;
+  await assert.rejects(save("refused"), { code: "MEMOS_UNRESOLVED" });
+  f.state.refuseCreate = false;
+  f.state.missingStatus = 403;
+  await assert.rejects(save("refused"), { code: "MEMOS_UNRESOLVED" });
+  assert.equal(f.state.createAttempts.length, 1);
+  f.state.missingStatus = 404;
+  const ref = await save("refused");
+  assert.deepEqual(f.state.createAttempts, Array(2).fill(ref.name.slice(6)));
+  f.state.loseCreate = true;
+  f.state.deleted = true;
+  await assert.rejects(save("uncertain"), { code: "MEMOS_UNRESOLVED" });
+  const submitted = f.state.createAttempts.at(-1)!;
+  assert.equal(f.stored.delete(submitted), true);
+  await assert.rejects(save("uncertain"), { code: "MEMOS_UNRESOLVED" });
+  assert.equal(f.state.createAttempts.length, 3);
+  assert.equal(f.stored.has(submitted), false);
+});
+
 test("ordinary intake keeps only the accepted excerpt and replays after an external edit and database restart", async (t) => {
   const f = await notebook((fn) => t.onTestFinished(fn));
   const { fixture } = await import("../fixtures.ts");
@@ -278,14 +323,33 @@ test("ordinary intake keeps only the accepted excerpt and replays after an exter
     request_id: RequestId.make("weekly"),
     thought_source: { reference: ref, excerpt: "accepted words" },
   };
+  Object.assign(app.config, f.config);
+  const entered = Deferred.makeUnsafe<void>();
+  const release = Deferred.makeUnsafe<void>();
+  f.state.beforeDetail = () =>
+    run(Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))));
+  await run(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const saving = yield* app.controller
+          .createWork(request, SessionId.make("ses_supervisor"))
+          .pipe(Effect.forkScoped);
+        yield* Deferred.await(entered);
+        yield* app.records
+          .coordinateCommit(() => Effect.void)
+          .pipe(Effect.timeout("1 second"), Effect.ensuring(Deferred.succeed(release, undefined)));
+        yield* Fiber.join(saving);
+      }),
+    ),
+  );
+  f.state.beforeDetail = undefined;
   const path = AbsolutePath.make(join(f.root, "intake.sqlite"));
   const submit = (input = request) =>
     run(
       Effect.flatMap(SqliteWorkGraph.open(path), (graph) =>
-        new WorkIntake(graph, app.records, "full-openspec", { ...app.config, ...f.config }).create(
-          input,
-          SessionId.make("ses_supervisor"),
-        ),
+        new WorkIntake(graph, app.records, "full-openspec", { ...app.config, ...f.config })
+          .prepareIntake(input, SessionId.make("ses_supervisor"))
+          .pipe(Effect.flatMap((request) => graph.create(request))),
       ),
     );
   await assert.rejects(

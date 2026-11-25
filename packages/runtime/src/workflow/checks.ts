@@ -88,50 +88,54 @@ export class CodingChecks {
           deadline_at: started + options.deadline_ms,
         };
         yield* this.records.saveOwned(e, ["command_wait"]);
-        let lastOutput = started - 1000;
+        let lastOutput: bigint | undefined;
         let cleared = false;
         const result = yield* Effect.gen({ self: this }, function* () {
           const outcome = yield* Effect.result(
             this.git.runner.run(Executable.make(file), args, approved.worktree_directory, env, {
               ...options,
-              onProgress: (output) => {
-                if (output.at - lastOutput < 1000) return Effect.void;
-                lastOutput = output.at;
-                return progress({
-                  stage: "verify",
-                  status: "running",
-                  completed,
-                  total: p.verification.length,
-                  stdout_bytes: output.stdout_bytes,
-                  stderr_bytes: output.stderr_bytes,
-                }).pipe(
-                  Effect.andThen(
-                    this.records
-                      .update(e.issue_id, (current) => {
-                        if (
-                          current.control_generation !== e.control_generation ||
-                          current.command_wait?.operation_id !== operationId
-                        )
-                          return;
-                        return {
-                          ...current,
-                          progress: {
-                            schema_version: 1,
-                            generation: e.control_generation,
-                            session_id: e.apply_session_id ?? e.execution_id,
-                            at: output.at,
-                            source: "command",
-                            summary: `${file}: ${output.stdout_bytes} stdout / ${output.stderr_bytes} stderr bytes`,
-                            identity: ActivityId.make(
-                              `command:${output.stdout_bytes}:${output.stderr_bytes}`,
-                            ),
-                          },
-                        };
-                      })
-                      .pipe(Effect.asVoid),
-                  ),
-                );
-              },
+              onProgress: (output) =>
+                Clock.monotonicTimeNanos.pipe(
+                  Effect.flatMap((now) => {
+                    if (lastOutput !== undefined && now - lastOutput < 1_000_000_000n)
+                      return Effect.void;
+                    lastOutput = now;
+                    return progress({
+                      stage: "verify",
+                      status: "running",
+                      completed,
+                      total: p.verification.length,
+                      stdout_bytes: output.stdout_bytes,
+                      stderr_bytes: output.stderr_bytes,
+                    }).pipe(
+                      Effect.andThen(
+                        this.records
+                          .update(e.issue_id, (current) => {
+                            if (
+                              current.control_generation !== e.control_generation ||
+                              current.command_wait?.operation_id !== operationId
+                            )
+                              return;
+                            return {
+                              ...current,
+                              progress: {
+                                schema_version: 1,
+                                generation: e.control_generation,
+                                session_id: e.apply_session_id ?? e.execution_id,
+                                at: output.at,
+                                source: "command",
+                                summary: `${file}: ${output.stdout_bytes} stdout / ${output.stderr_bytes} stderr bytes`,
+                                identity: ActivityId.make(
+                                  `command:${output.stdout_bytes}:${output.stderr_bytes}`,
+                                ),
+                              },
+                            };
+                          })
+                          .pipe(Effect.asVoid),
+                      ),
+                    );
+                  }),
+                ),
             }),
           );
           delete e.command_wait;

@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 FileSystem and NodeHttpServer APIs. */
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { NodeHttpServer } from "@effect/platform-node";

@@ -8,6 +8,7 @@ export class SurfaceOwner<R, V> {
     private prepare: (record: R) => V,
     private dispose: (value: V) => void,
     private sameRecord: (previous: R, next: R) => boolean = Object.is,
+    private update?: (current: V, record: R) => boolean,
   ) {}
   read = () => this.view;
   subscribe = (listener: () => void) => {
@@ -24,7 +25,7 @@ export class SurfaceOwner<R, V> {
     };
   };
   replace(record: R) {
-    if (this.record === record || (!this.view.error && this.sameRecord(this.record, record)))
+    if (!this.view.error && (this.record === record || this.sameRecord(this.record, record)))
       return;
     this.record = record;
     if (this.listeners.size) this.stage();
@@ -36,13 +37,21 @@ export class SurfaceOwner<R, V> {
   }
   private stage() {
     try {
-      const rendered = this.prepare(this.record);
-      if (this.view.rendered) this.retired.add(this.view.rendered);
-      this.view = { rendered };
-    } catch {
+      const current = this.view.rendered;
+      if (current && this.update?.(current, this.record)) {
+        this.view = { rendered: current };
+      } else {
+        const rendered = this.prepare(this.record);
+        if (current) this.retired.add(current);
+        this.view = { rendered };
+      }
+    } catch (cause) {
       this.view = {
         ...this.view,
-        error: "Generated view update unavailable: its catalog or structure is invalid.",
+        error:
+          cause instanceof Error
+            ? cause.message.slice(0, 512)
+            : "Generated view update unavailable",
       };
     }
     for (const listener of this.listeners) listener();

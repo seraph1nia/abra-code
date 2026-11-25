@@ -26,7 +26,7 @@ test("ExecutionTransitions.fail preserves prior resume_phase from blocked, faile
     f.records,
     f.work,
     f.runtime,
-    f.records.coordinate(f.locks),
+    f.records.coordination,
     f.controller.queries,
     {} as never,
     {} as never,

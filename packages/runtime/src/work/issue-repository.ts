@@ -73,26 +73,12 @@ const ReportReferenceJsonSchema = Schema.fromJsonString(ReportReferenceSchema);
 const ThoughtSourceJsonSchema = Schema.fromJsonString(ThoughtSource);
 const DispatchJsonSchema = Schema.fromJsonString(DispatchSchema);
 
-export interface IssueRepositoryHooks {
-  readonly hydrate?: (rows: Row[], links: Row[]) => Issue[];
-  readonly taskRows?: (entries: readonly Issue[]) => TaskEvidence[];
-}
-
 export class IssueRepository {
   constructor(
     private readonly db: DatabaseSync,
     private readonly inbox: InboxIndex,
     private readonly nextId: (request: RequestId) => IssueId,
-    private readonly hooks: IssueRepositoryHooks = {},
   ) {}
-
-  private runHydrate(rows: Row[], links: Row[]): Issue[] {
-    return this.hooks.hydrate ? this.hooks.hydrate(rows, links) : this.hydrate(rows, links);
-  }
-
-  private runTaskRows(entries: readonly Issue[]): TaskEvidence[] {
-    return this.hooks.taskRows ? this.hooks.taskRows(entries) : this.taskRows(entries);
-  }
 
   hydrate(rows: Row[], links: Row[]): Issue[] {
     const dependenciesByID = new Map<string, string[]>();
@@ -151,7 +137,7 @@ export class IssueRepository {
   issuesByID(ids: readonly IssueId[]): Issue[] {
     if (!ids.length) return [];
     const encoded = JSON.stringify(ids);
-    return this.runHydrate(
+    return this.hydrate(
       this.db
         .prepare("SELECT * FROM issues WHERE id IN (SELECT value FROM json_each(?))")
         .all(encoded),
@@ -170,7 +156,7 @@ export class IssueRepository {
   }
 
   allIssues(): Issue[] {
-    return this.runHydrate(
+    return this.hydrate(
       this.db.prepare("SELECT * FROM issues ORDER BY priority, id").all(),
       this.db
         .prepare(
@@ -288,7 +274,7 @@ export class IssueRepository {
             )
             .all(...values, ...rankValues, limit, offset);
           return {
-            entries: this.runHydrate(
+            entries: this.hydrate(
               rows,
               this.db
                 .prepare(
@@ -407,7 +393,7 @@ export class IssueRepository {
   }
 
   taskEvidence(entries: readonly Issue[]) {
-    return sqlEffect(() => runTransaction(this.db, () => this.runTaskRows(entries), false));
+    return sqlEffect(() => runTransaction(this.db, () => this.taskRows(entries), false));
   }
 
   task(id: IssueId) {
@@ -416,7 +402,7 @@ export class IssueRepository {
         this.db,
         () => {
           const issue = this.issue(id);
-          const row = this.runTaskRows([issue])[0];
+          const row = this.taskRows([issue])[0];
           ensure(row, "ISSUE_MISSING", `Missing issue ${id}`);
           return { issue, dependencies: row.dependencies, closed_at: row.closed_at };
         },
@@ -431,7 +417,7 @@ export class IssueRepository {
         this.db,
         () => {
           const issues = this.issuesByID(ids).filter((issue) => issue.status !== "closed");
-          const evidenceByID = new Map(this.runTaskRows(issues).map((row) => [row.id, row]));
+          const evidenceByID = new Map(this.taskRows(issues).map((row) => [row.id, row]));
           const result: ReadyExplanation = { ready: [], blocked: [] };
           for (const issue of issues) {
             const evidence = evidenceByID.get(issue.id);

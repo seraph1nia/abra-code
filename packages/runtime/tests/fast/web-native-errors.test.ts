@@ -1,7 +1,7 @@
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { observerResult } from "../../src/visibility/errors.ts";
-import { Cause, Effect, Exit } from "effect";
+import { Effect } from "effect";
 import { CrewError } from "../../src/domain.ts";
 import { nativeRpcError, readWorkReport } from "../../src/web/native-errors.ts";
 
@@ -102,8 +102,9 @@ test("inbox handler failures reach the client with their domain identity and saf
     assert.ok(decoded.message.length <= 1500);
     assert.doesNotMatch(decoded.message, /secret-value/);
   }
-  const unexpected = await Effect.runPromiseExit(
-    observerResult(Effect.fail(new CrewError("UNEXPECTED", "bug")), factory, true),
+  const unexpected = await Effect.runPromise(
+    Effect.flip(observerResult(Effect.fail(new CrewError("UNEXPECTED", "bug")), factory, true)),
   );
-  assert.ok(Exit.isFailure(unexpected) && Cause.hasDies(unexpected.cause));
+  assert.equal(unexpected.type, "resource_unavailable");
+  assert.equal(nativeRpcError(unexpected).code, "UNEXPECTED");
 });

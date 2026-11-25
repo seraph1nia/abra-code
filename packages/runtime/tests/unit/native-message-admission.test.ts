@@ -76,6 +76,7 @@ test("native context with unfinished input cannot establish idle from an earlier
       storage: { get: () => Effect.void },
     } as unknown as Context,
     f.config,
+    f.records,
   );
   native.client = () =>
     Effect.succeed({
@@ -152,6 +153,7 @@ test("native stop cancels all owned queued prompts before one interrupt and pres
       },
     } as unknown as Context,
     f.config,
+    f.records,
   );
   native.client = () =>
     Effect.succeed({
@@ -174,12 +176,14 @@ test("native stop cancels all owned queued prompts before one interrupt and pres
 test("native admission observation validates payload and keeps failed reads distinct from absence", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const native = new NativeRuntime({} as Context, f.config);
+  const ctx = {} as Context;
+  const native = new NativeRuntime(ctx, f.config, f.records);
   const session = Id.SessionId.make("ses_owned"),
     id = Id.MessageId.make("msg_owned");
   let inbox: unknown[] = [{ id, type: "user", payload: { text: "Owned" } }];
   let context: unknown[] = [];
   let unavailable = false;
+  Object.assign(ctx, { session: { context: () => Effect.succeed(context) } });
   native.client = () =>
     Effect.succeed({
       session: {
@@ -189,7 +193,6 @@ test("native admission observation validates payload and keeps failed reads dist
               ? Effect.fail(new CrewError("OFFLINE", "Unavailable"))
               : Effect.succeed(inbox),
         },
-        context: () => Effect.succeed(context),
         message: { get: () => Effect.fail({ _tag: "MessageNotFoundError" as const }) },
       },
     } as unknown as Effect.Success<ReturnType<typeof native.client>>);
@@ -213,7 +216,8 @@ test("native admission observation validates payload and keeps failed reads dist
 test("a bounded admission batch reads inbox and context once and uses exact lookup only beyond context", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const native = new NativeRuntime({} as Context, f.config);
+  const ctx = {} as Context;
+  const native = new NativeRuntime(ctx, f.config, f.records);
   const session = Id.SessionId.make("ses_batch");
   const requests = ["queued", "context", "compacted"].map((name) => ({
     prompt_id: Id.MessageId.make(`msg_${name}`),
@@ -222,6 +226,15 @@ test("a bounded admission batch reads inbox and context once and uses exact look
   let inbox = 0,
     context = 0;
   const exact: string[] = [];
+  Object.assign(ctx, {
+    session: {
+      context: () =>
+        Effect.sync(() => {
+          context++;
+          return [{ id: requests[1]!.prompt_id, type: "user", text: "context" }];
+        }),
+    },
+  });
   native.client = () =>
     Effect.succeed({
       session: {
@@ -232,11 +245,6 @@ test("a bounded admission batch reads inbox and context once and uses exact look
               return [{ id: requests[0]!.prompt_id, type: "user", payload: { text: "queued" } }];
             }),
         },
-        context: () =>
-          Effect.sync(() => {
-            context++;
-            return [{ id: requests[1]!.prompt_id, type: "user", text: "context" }];
-          }),
         message: {
           get: ({ messageID }: { messageID: string }) =>
             Effect.sync(() => {
@@ -296,6 +304,7 @@ test("native assignment outcomes remain bound across later messages and compacti
       storage: { get: () => Effect.void },
     } as unknown as Context,
     f.config,
+    f.records,
   );
   native.client = () =>
     Effect.succeed({
@@ -331,17 +340,18 @@ test("native assignment outcomes remain bound across later messages and compacti
 test("compacted admission uses the exact retained input and refuses conflicting or unavailable history", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const native = new NativeRuntime({} as Context, f.config);
+  const ctx = {} as Context;
+  const native = new NativeRuntime(ctx, f.config, f.records);
   const session = Id.SessionId.make("ses_compacted"),
     id = Id.MessageId.make("msg_compacted");
   let text = "Retained request";
   let unavailable = false;
   const lookups: unknown[] = [];
+  Object.assign(ctx, { session: { context: () => Effect.succeed([]) } });
   native.client = () =>
     Effect.succeed({
       session: {
         inbox: { list: () => Effect.succeed([]) },
-        context: () => Effect.succeed([]),
         message: {
           get: (input: unknown) =>
             Effect.suspend(() => {
@@ -381,6 +391,7 @@ test("missing assignment history stays unknown after bounded server-cursor pagin
       storage: { get: () => Effect.void },
     } as unknown as Context,
     f.config,
+    f.records,
   );
   native.client = () =>
     Effect.succeed({
@@ -423,6 +434,7 @@ test("a cancel/consume race leaves stop unconfirmed until the native worker is q
       },
     } as unknown as Context,
     f.config,
+    f.records,
   );
   native.client = () =>
     Effect.succeed({

@@ -7,7 +7,7 @@ import type { ProjectSetup } from "../config/setup.ts";
 import { CrewError } from "../domain.ts";
 import { domainEffect } from "../effect.ts";
 import { workSurfaceTool } from "../web/render-tool.ts";
-import { nativeReviews, reviewTool, type NativeReviewOwner } from "../web/review-tool.ts";
+import { reviewTool, type NativeReviewOwner } from "../web/review-tool.ts";
 import type { Controller } from "../workflow/controller.ts";
 import { mermaidVerifierTool } from "./diagram-tool.ts";
 import { memoryTools } from "./memory-tools.ts";
@@ -26,21 +26,21 @@ export function registerTools(
   onboard: Onboarding,
   central: boolean,
   setup: ProjectSetup,
+  reviews: NativeReviewOwner,
   provide: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E> = (effect) => effect,
   configuration?: ConfigApplication,
-  reviews?: NativeReviewOwner,
 ) {
   return domainEffect(
     Effect.gen(function* () {
       const definitions = [
         ...(c.memory?.enabled ? memoryTools(ctx, c, central) : []),
-        workSurfaceTool(ctx, c),
-        ...(central ? [reviewTool(reviews ?? nativeReviews(ctx, c))] : []),
+        workSurfaceTool(c, reviews.surfaces),
+        ...(central ? [reviewTool(reviews)] : []),
         mermaidVerifierTool(c, central),
         ...inboxThoughtsTools(c),
         ...leadTools(c),
         ...projectTools(c, onboard, setup, configuration),
-        ...workTools(ctx, c),
+        ...workTools(c),
         ...workerTools(c),
         ...reviewTools(c),
       ];

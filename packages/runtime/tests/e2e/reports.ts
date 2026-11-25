@@ -1,3 +1,4 @@
+import { portableRpc } from "../helpers/portable-rpc.ts";
 import assert from "node:assert/strict";
 import { access, readFile, mkdir, copyFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -123,7 +124,7 @@ export async function reportJourney(o: {
       .digest("hex"),
     hash,
   );
-  const gateway = o.client.rpc(webGateway),
+  const gateway = o.client.rpc(portableRpc(webGateway)),
     options = { location: { directory: o.home } },
     target = {
       session_id: o.supervisor,

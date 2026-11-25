@@ -6,14 +6,7 @@ those same styles directly; work cards retain full-width titles even when app
 navigation is replaced with frozen text. Verified SVG canvases stay deliberately
 light, with themed frames and controls, without rewriting captured source.
 
-Legacy retained HTML and explicit HTML export previews use the shared
-`report-preview` reading area: full container width, explicit viewport-relative
-height and no flex shrinking inside the inspector. Scrolling stays local and
-expanded viewing follows the report canvas. Frames retain `sandbox="allow-scripts"`
-without same-origin privileges or parent-document measurement. The small legacy
-HTML in the HTTP/browser fixture proves host sizing/isolation rather than the
-layout of an arbitrary historical report; relocated export acceptance exercises
-the actual offline renderer separately.
+HTML export previews use the full width of the report inspector, with a viewport-relative height and local scrolling. The preview iframe uses `sandbox="allow-scripts"`. Portable export verification reopens the file after relocation.
 
 A report is an immutable JSON document rendered by the same React/A2UI catalog used in the workspace. Open a generated view and choose **Save snapshot**. The selected task must have a retained execution. Saving uses the observed surface revision, captures its live and snapshot inputs separately, and makes no provider call. If the response is uncertain, use **Retry same save**; **Save another snapshot** creates a new identity and revision.
 
@@ -61,9 +54,9 @@ pnpm report:validate /absolute/diagram.mmd
 
 The export command refuses to overwrite its output. Preview binds loopback only, opens no browser or native connection, serves only that file with an opaque sandbox/CSP, and ends on Ctrl+C. No detached preview starts automatically. Copy the HTML elsewhere and open it directly without sibling files or networking. A supported native graphical file viewer can also open an absolute-path Markdown link; clients without that viewer can use a browser. The Solid template/manual-authoring workflow is retired.
 
-## Legacy compatibility
+## Supported publications
 
-Published untagged version-1 HTML receipts retain their original request, file and integrity checks. Retrying an original request returns that artifact, even after the default changes. Validated legacy staging or an interrupted publication can reconcile its original bytes. Pending/unfinished legacy builds without verified output retain captured input, hashes, errors and staging evidence but become explicitly unavailable because their compiler is retired. Create a new request to capture JSON; upgrades never convert or overwrite an old artifact. Accepted research Markdown remains readable under its original receipt.
+The viewer accepts immutable JSON documents in the Work v1 catalog. Explicit exports produce portable HTML with their own digest and receipt. Installations with historical HTML builds require a fresh JSON capture to use this viewer. Accepted research Markdown uses its original receipt.
 
 See [frontend contracts](frontend.md), [API evidence](supported-apis.md#report-html-preview) and [verification](verification/README.md) for ownership, transport isolation and executable proof.
 
@@ -119,8 +112,7 @@ loss and HTML-before-receipt recovery coverage.
 staging, linking, post-link verification and scratch cleanup independently. They
 now select files and call this protocol. They still own locks, document/export
 validation, request identity, execution generation, authorization and receipts;
-verified file bytes alone grant no publication authority. Legacy Markdown and HTML
-publication retain their existing compatibility path and immutable identities.
+verified file bytes alone grant no publication authority. Accepted research Markdown retains its own publication identity.
 
 Saved generated surfaces resolve each required live task through the bounded
 summary read, including closed work outside loaded history. A missing or failed
@@ -135,7 +127,7 @@ adapter and perform no summary reads for frozen documents.
 
 ### Diagram collection limits
 
-New catalog-v2 reports support 32 diagram placements, 32 KiB UTF-8 source each and 256 KiB aggregate source across inline Mermaid and displayed captured-evidence sections. Repeated placements count even when preparation is reused. The new surface cap is 384 KiB; captured data/evidence remains bounded to 512 KiB, the canonical document to 1 MiB and the HTML artifact to 8 MiB. Every applicable bound must fit. Historical catalog-v1 documents retain their original eight-diagram and surface limits. Accepted research Markdown retains its enclosing 64 KiB publication bound.
+Work v1 reports support 32 diagram placements, 32 KiB UTF-8 source each and 256 KiB aggregate source across inline Mermaid and displayed captured-evidence sections. Repeated placements count even when preparation is reused. The new surface cap is 384 KiB; captured data/evidence remains bounded to 512 KiB, the canonical document to 1 MiB and the HTML artifact to 8 MiB. Every applicable bound must fit. Accepted research Markdown retains its enclosing 64 KiB publication bound.
 
 ### Shared diagram preparation and verifier
 

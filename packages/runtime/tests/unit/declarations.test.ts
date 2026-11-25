@@ -203,7 +203,7 @@ test("configuration conflicts and interrupted writes preserve the personal docum
     false,
   );
   assert.equal(
-    (await run(f.records.projects())).some((p) => p.id === "conflict"),
+    (await run(f.records.projects)).some((p) => p.id === "conflict"),
     false,
   );
 });

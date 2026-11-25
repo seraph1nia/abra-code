@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/unstable-api-usage -- Pinned Effect 4.1.4 Graph API for DAG acyclicity checks. */
 import { type DatabaseSync } from "node:sqlite";
 import { IssueId, type RequestId } from "@abracode/contracts/identities";
 import { Effect, Graph, Schema } from "effect";
@@ -24,7 +23,6 @@ export class BatchRepository {
     private readonly issues: IssueRepository,
     private readonly nextId: (request: RequestId) => IssueId,
     private validatedVersion?: number,
-    private readonly onValidateHistoricalEdges?: () => void,
   ) {}
 
   validateHistoricalEdges(): void {
@@ -135,8 +133,7 @@ export class BatchRepository {
         );
         validated = readDataVersion(this.db);
         if (validated !== this.validatedVersion) {
-          if (this.onValidateHistoricalEdges) this.onValidateHistoricalEdges();
-          else this.validateHistoricalEdges();
+          this.validateHistoricalEdges();
         }
         if (existing.length) {
           const found = new Set(

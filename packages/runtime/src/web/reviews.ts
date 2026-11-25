@@ -1,14 +1,9 @@
-import { constants } from "node:fs";
-import { open, realpath } from "node:fs/promises";
-import { resolve } from "node:path";
-import { createHash } from "node:crypto";
 import { Effect, Schema } from "effect";
 import {
   ReviewPublishSchema,
   ReviewRecordSchema,
   ReviewSelectionSchema,
   ReviewSubmitSchema,
-  ReviewAssetDataSchema,
   ReviewResponseQuerySchema,
   reviewAnswerErrors,
   reviewReference,
@@ -33,15 +28,12 @@ import { decode } from "../decode.ts";
 import { domainEffect } from "../effect.ts";
 import type { Store } from "../storage/store.ts";
 import type { Locks } from "../storage/lock.ts";
-import { within } from "../visibility/documents.ts";
 import { canonicalJSON, presentationHash } from "../presentation/identity.ts";
 import { SurfacePublications } from "./surface-publications.ts";
 import { PresentationAssociations } from "../presentation/associations.ts";
 import { committedScope } from "../visibility/invalidations.ts";
 import { PublicationStore } from "./publication-store.ts";
-
-const digest = (bytes: Uint8Array) =>
-  ContentHash.make(createHash("sha256").update(bytes).digest("hex"));
+import { ReviewAssets } from "./review-assets.ts";
 const fail = (message: string) => new CrewError("REVIEW_REFUSED", message);
 const PublicationSchema = Schema.Struct({ record: ReviewRecordSchema, input_hash: ContentHash });
 const HeadSchema = Schema.Struct({
@@ -49,12 +41,6 @@ const HeadSchema = Schema.Struct({
   committed: Schema.optionalKey(ReviewSelectionSchema),
   pending: Schema.optionalKey(PublicationSchema),
 });
-const LegacyHeadSchema = Schema.Struct({
-  schema_version: Schema.optionalKey(Schema.Never),
-  current: ReviewSelectionSchema,
-  pending: Schema.optionalKey(PublicationSchema),
-});
-const RetainedHeadSchema = Schema.Union([HeadSchema, LegacyHeadSchema]);
 type Head = typeof HeadSchema.Type;
 type Publication = typeof PublicationSchema.Type;
 type ReviewID = ReviewSelection["review_id"];
@@ -80,6 +66,7 @@ export interface ReviewAdmissions {
 
 /** Immutable reviews, assets and response reservations; observation never writes. */
 export class Reviews {
+  private readonly assets: ReviewAssets;
   private readonly publications: PublicationStore;
   private readonly surfaces: SurfacePublications;
   constructor(
@@ -100,6 +87,7 @@ export class Reviews {
       headKey: (session, id) => key(session, `head/${id}`),
       maxHeads: 32,
     });
+    this.assets = new ReviewAssets(store, this.publications);
     this.surfaces = surfaces ?? new SurfacePublications(store, locks, sharedAssociations);
   }
   private immutable(id: StorageKey, value: unknown) {
@@ -130,50 +118,17 @@ export class Reviews {
       },
     };
   }
-  private head(session: SessionId, id: ReviewID, metadataOnly = false) {
-    return this.publications.readHead(session, id, (raw) =>
-      this.decodeHead(session, id, raw, metadataOnly),
-    );
+  private head(session: SessionId, id: ReviewID) {
+    return this.publications.readHead(session, id, (raw) => this.decodeHead(session, id, raw));
   }
-  private decodeHead(session: SessionId, id: ReviewID, raw: unknown, metadataOnly = false) {
+  private decodeHead(session: SessionId, id: ReviewID, raw: unknown) {
     return Effect.gen({ self: this }, function* (): Effect.fn.Return<Head, CrewError> {
-      const head = yield* decode(RetainedHeadSchema, raw, "Review head");
+      const head = yield* decode(HeadSchema, raw, "Review head");
       if (
         head.pending &&
         (head.pending.record.session_id !== session || head.pending.record.review.review_id !== id)
       )
         return yield* fail("Review reservation belongs to another selection");
-      if ("current" in head) {
-        if (
-          head.current.review_id !== id ||
-          (head.pending && head.pending.record.revision !== head.current.revision)
-        )
-          return yield* fail("Legacy review head belongs to another selection");
-        if (!head.pending) return { schema_version: 1, committed: head.current };
-        // The legacy head advanced before publication. A predecessor remains
-        // visible only when its exact record and association survived.
-        const predecessor = { review_id: id, revision: head.current.revision - 1 };
-        if (metadataOnly && predecessor.revision > 0)
-          return yield* fail("Legacy pending review requires recovery to verify its predecessor");
-        const prior =
-          predecessor.revision > 0
-            ? yield* this.rawRecord(session, predecessor).pipe(
-                Effect.flatMap((record) =>
-                  this.publications.associations.retained(this.attachment(record)),
-                ),
-                Effect.result,
-              )
-            : undefined;
-        if (predecessor.revision > 0 && !(prior?._tag === "Success" && prior.success))
-          return yield* fail(
-            "Legacy review predecessor is unavailable; repair its publication evidence before recovery",
-          );
-        return {
-          schema_version: 1,
-          ...(prior?._tag === "Success" && prior.success ? { committed: predecessor } : {}),
-          pending: head.pending,
-        };
-      }
       if (
         (!head.committed && !head.pending) ||
         (head.committed && head.committed.review_id !== id) ||
@@ -190,7 +145,7 @@ export class Reviews {
       const saved = yield* this.publication(input);
       const r = saved.record;
       const id = r.review.review_id;
-      for (const asset of r.assets) yield* this.readAsset(r.session_id, asset);
+      for (const asset of r.assets) yield* this.assets.read(r.session_id, asset);
       yield* this.immutable(
         key(r.session_id, `call/${presentationHash([r.message_id, r.call_id])}`),
         saved,
@@ -250,68 +205,6 @@ export class Reviews {
         })
         .pipe(Effect.asVoid),
     );
-  }
-  private capture(
-    session: SessionId,
-    root: AbsolutePath | undefined,
-    previews: NonNullable<typeof ReviewPublishSchema.Type.previews>,
-  ) {
-    return Effect.gen({ self: this }, function* () {
-      if (previews.length && !root)
-        return yield* fail("Design images require an owned source worktree");
-      const assets: ReviewRecord["assets"][number][] = [];
-      let total = 0;
-      for (const preview of previews) {
-        if (assets.some((a) => a.id === preview.id))
-          return yield* fail("Preview identifiers must be unique");
-        const bytes = yield* Effect.tryPromise({
-          try: async () => {
-            const tree = AbsolutePath.make(await realpath(root!));
-            const original = resolve(tree, preview.path),
-              canonical = AbsolutePath.make(await realpath(original));
-            if (!within(tree, canonical) || canonical !== original)
-              throw fail("Preview must be a regular, non-symlink file inside its owned worktree");
-            const handle = await open(canonical, constants.O_RDONLY | constants.O_NOFOLLOW);
-            try {
-              const stat = await handle.stat();
-              if (!stat.isFile() || stat.size > 2 * 1024 * 1024)
-                throw fail("Preview exceeds 2 MiB or is not a regular file");
-              const buffer = Buffer.alloc(2 * 1024 * 1024 + 1);
-              const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-              if (bytesRead > 2 * 1024 * 1024) throw fail("Preview exceeds 2 MiB");
-              return buffer.subarray(0, bytesRead);
-            } finally {
-              await handle.close();
-            }
-          },
-          catch: CrewError.from,
-        });
-        total += bytes.length;
-        if (total > 8 * 1024 * 1024) return yield* fail("Review previews exceed 8 MiB");
-        const mime =
-          bytes.length >= 24 &&
-          bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-            ? ("image/png" as const)
-            : bytes.length >= 4 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
-              ? ("image/jpeg" as const)
-              : bytes.length >= 12 &&
-                  bytes.toString("ascii", 0, 4) === "RIFF" &&
-                  bytes.toString("ascii", 8, 12) === "WEBP"
-                ? ("image/webp" as const)
-                : undefined;
-        if (!mime) return yield* fail("Preview must be PNG, JPEG or WebP raster content");
-        const asset = { id: preview.id, hash: digest(bytes), mime, bytes: bytes.length };
-        // Asset content is immutable and independent of the worktree lifecycle.
-        yield* this.immutable(key(session, `asset/${asset.hash}`), {
-          hash: asset.hash,
-          mime,
-          bytes: asset.bytes,
-          data: bytes.toString("base64"),
-        });
-        assets.push(asset);
-      }
-      return assets;
-    });
   }
   publish(
     session: SessionId,
@@ -374,7 +267,7 @@ export class Reviews {
           )
             return yield* fail("At most 32 review identities per Abra conversation");
           const source = yield* this.source(session, value.review.source);
-          const assets = yield* this.capture(session, source.root, value.previews ?? []);
+          const assets = yield* this.assets.capture(session, source.root, value.previews ?? []);
           const referenced = value.review.fields.flatMap((f) =>
             f.component === "DesignChoiceGroup" ? f.options.map((o) => o.preview) : [],
           );
@@ -450,7 +343,7 @@ export class Reviews {
   }
   searchCommitted(session: SessionId, selection: ReviewSelection) {
     return Effect.gen({ self: this }, function* () {
-      const head = yield* this.head(session, selection.review_id, true);
+      const head = yield* this.head(session, selection.review_id);
       if (!head) return yield* fail("Review association has no committed head");
       return selection.revision <= (head.committed?.revision ?? 0);
     });
@@ -509,7 +402,7 @@ export class Reviews {
       return { reviews, diagnostics };
     });
   }
-  read(session: SessionId, selection: ReviewSelection) {
+  private readRecordWithFreshness(session: SessionId, selection: ReviewSelection) {
     return Effect.gen({ self: this }, function* () {
       const { record, latest } = yield* this.committedRecord(session, selection);
       const source = yield* this.source(session, record.review.source).pipe(Effect.result);
@@ -519,13 +412,18 @@ export class Reviews {
           : source._tag === "Failure"
             ? "The reviewed source changed or is unavailable. Ask Abra for an updated review; your draft is preserved."
             : undefined;
-      const all = yield* this.list(session);
       return {
         record,
         current_revision: latest,
         ...(unavailable ? { unavailable } : {}),
-        revisions: all.reviews,
       };
+    });
+  }
+  read(session: SessionId, selection: ReviewSelection) {
+    return Effect.gen({ self: this }, function* () {
+      const view = yield* this.readRecordWithFreshness(session, selection);
+      const { reviews } = yield* this.list(session);
+      return { ...view, revisions: reviews };
     });
   }
   presentations(session: SessionId, messages: readonly MessageId[]) {
@@ -558,28 +456,7 @@ export class Reviews {
       const { record } = yield* this.committedRecord(session, selection);
       const asset = record.assets.find((a) => a.hash === selection.hash);
       if (!asset) return yield* fail("Image does not belong to this review");
-      return yield* this.readAsset(session, asset);
-    });
-  }
-  private readAsset(session: SessionId, asset: ReviewRecord["assets"][number]) {
-    return Effect.gen({ self: this }, function* () {
-      const raw = yield* this.store.get(key(session, `asset/${asset.hash}`));
-      const data = yield* decode(
-        Schema.Record(Schema.String, Schema.Json),
-        raw,
-        "Retained image data",
-      );
-      const value = yield* decode(ReviewAssetDataSchema, { ...data, id: asset.id }, "Review image");
-      const bytes = Buffer.from(value.data, "base64");
-      if (
-        bytes.length !== asset.bytes ||
-        digest(bytes) !== asset.hash ||
-        value.hash !== asset.hash ||
-        value.bytes !== asset.bytes ||
-        value.mime !== asset.mime
-      )
-        return yield* fail("Retained image integrity check failed");
-      return value;
+      return yield* this.assets.read(session, asset);
     });
   }
   receipt(
@@ -623,7 +500,7 @@ export class Reviews {
                 return yield* fail("Response identity is already bound to different answers");
               return saved;
             }
-            const view = yield* this.read(session, value);
+            const view = yield* this.readRecordWithFreshness(session, value);
             if (view.unavailable) return yield* new CrewError("REVIEW_STALE", view.unavailable);
             const record = view.record;
             if (record.hash !== value.hash)

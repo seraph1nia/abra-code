@@ -5,8 +5,6 @@ import { exactParseOptions } from "../primitives.ts";
 import { ResourceSelectionSchema } from "./resources.ts";
 import {
   CreateSurfaceMessageSchema,
-  Catalog,
-  PayloadValidator,
   DataModel,
   getComponentReferences,
   MessageProcessor,
@@ -14,17 +12,11 @@ import {
 } from "@a2ui/web_core/v1_0";
 import {
   catalogId,
-  catalogV1Id,
-  catalogIds,
-  workCatalogs,
   contentProps,
-  sdkComponent,
   isChartComponent,
   ComponentId,
   ComponentSchema,
-  legacyCatalogId,
   validationCatalog,
-  workComponents,
 } from "./catalog.ts";
 export { catalogId, componentNames } from "./catalog.ts";
 
@@ -35,7 +27,7 @@ const PublicationSchema = Schema.Struct({
   version: Schema.Literal("1.0"),
   createSurface: Schema.Struct({
     surfaceId: ComponentId,
-    catalogId: Schema.Literals(catalogIds),
+    catalogId: Schema.Literal(catalogId),
     dataModel: Schema.optionalKey(Schema.Record(Schema.String, Schema.Json)),
     components: Schema.Array(ComponentSchema).check(Schema.isMinLength(1), Schema.isMaxLength(100)),
   }),
@@ -64,7 +56,7 @@ export const toSdkSurface = (surface: WorkSurface) =>
       ...(surface.createSurface.dataModel && {
         dataModel: structuredClone(surface.createSurface.dataModel),
       }),
-      components: surface.createSurface.components.map(sdkComponent),
+      components: structuredClone(surface.createSurface.components),
     },
   });
 
@@ -74,16 +66,6 @@ export const surfaceValidation = {
   maxDepth: 10,
   allowedMessages: ["createSurface"],
 };
-
-const historicalValidators = new Map<string, PayloadValidator>();
-function historicalValidator(version: Exclude<(typeof catalogIds)[number], typeof catalogId>) {
-  let validator = historicalValidators.get(version);
-  if (!validator) {
-    validator = new PayloadValidator(Catalog.fromJson(workCatalogs[version]), STRICT_VALIDATION);
-    historicalValidators.set(version, validator);
-  }
-  return validator;
-}
 
 export function referencedWorkIds(surface: WorkSurface): string[] {
   return surface.createSurface.components.flatMap((component) => {
@@ -119,24 +101,15 @@ function validateDecodedSurface(surface: WorkSurface, workIds?: ReadonlySet<stri
     if (workIds) validateSurfaceWorkIds(surface, workIds);
     return surface;
   }
-  const old = surface.createSurface.catalogId === catalogV1Id;
-  if (new TextEncoder().encode(JSON.stringify(surface)).length > (old ? 65536 : maxSurfaceBytes))
-    throw new Error(old ? "Surface exceeds the 64 KiB limit" : "Surface exceeds the 384 KiB limit");
-  if (old && surface.createSurface.components.some((c) => c.component === "Mermaid"))
-    throw new Error("Mermaid requires the v2 catalog");
+  if (new TextEncoder().encode(JSON.stringify(surface)).length > maxSurfaceBytes)
+    throw new Error("Surface exceeds the 384 KiB limit");
   const budget = diagramBudget(collectDiagrams(surface.createSurface.components));
   if (budget) throw new Error(budget);
-  const version = surface.createSurface.catalogId;
-  if (version !== catalogId && surface.createSurface.dataModel !== undefined)
-    throw new Error("Surface data requires the v5 catalog");
   const components = new Map<string, WorkComponent>();
   for (const c of surface.createSurface.components) {
     const id = Schema.decodeUnknownSync(ComponentId)(c.id);
     if (components.has(id)) throw new Error("Repeated component identity");
     if (typeof c.component !== "string") throw new Error("Missing component type");
-    if (!Object.hasOwn(workCatalogs[version].components, c.component))
-      throw new Error(`${c.component} is unavailable in this catalog version`);
-    if (version !== catalogId) historicalValidator(version).validateComponent(c);
     if (c.component === "Table") {
       const { columns, rows } = Schema.decodeUnknownSync(contentProps.Table)(c);
       if (rows.some((row) => row.length !== columns.length))
@@ -147,19 +120,8 @@ function validateDecodedSurface(surface: WorkSurface, workIds?: ReadonlySet<stri
     }
     if (c.component === "ResourceLink")
       Schema.decodeUnknownSync(ResourceSelectionSchema)(c.target, { onExcessProperty: "error" });
-    if (
-      c.component === "Text" &&
-      (typeof c.text === "string" ? c.text.length > 4096 : version !== catalogId)
-    )
+    if (c.component === "Text" && typeof c.text === "string" && c.text.length > 4096)
       throw new Error("Text requires bounded literal text");
-    if (
-      version !== catalogId &&
-      (c.component === "Column" || c.component === "Row") &&
-      (!Array.isArray(c.children) ||
-        c.children.length > 100 ||
-        c.children.some((id) => typeof id !== "string"))
-    )
-      throw new Error("Layout requires bounded child IDs");
     components.set(id, c);
   }
   validateSurfaceWorkIds(surface, workIds);
@@ -228,43 +190,4 @@ export function validateSurface(value: unknown, workIds?: ReadonlySet<string>): 
   }
   const surface = Schema.decodeUnknownSync(PublicationSchema)(value, { onExcessProperty: "error" });
   return validateDecodedSurface(surface, workIds);
-}
-
-/** Normalize legacy rendering semantics on read, without rewriting native storage. */
-export function normalizeSurface(value: unknown): WorkSurface {
-  const json = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(value);
-  const create = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
-    json.createSurface,
-  );
-  if (create.catalogId !== legacyCatalogId) return validateSurface(value);
-  if (new TextEncoder().encode(JSON.stringify(value)).length > 65536)
-    throw new Error("Legacy surface exceeds 64 KiB");
-  const components = Schema.decodeUnknownSync(
-    Schema.Array(Schema.Record(Schema.String, Schema.Json)),
-  )(create.components);
-  return validateSurface({
-    version: json.version,
-    createSurface: {
-      surfaceId: create.surfaceId,
-      catalogId,
-      components: components.map((c) => {
-        const common = { id: c.id, component: c.component };
-        if (c.component === "Column" || c.component === "Row")
-          return { ...common, children: c.children ?? [] };
-        if (c.component === "Text") return { ...common, text: c.text ?? "" };
-        if (c.component === "ReportLink") return { ...common, issueId: c.issueId };
-        if (typeof c.component !== "string" || !Object.hasOwn(workComponents, c.component))
-          throw new Error("Unknown legacy component");
-        return {
-          ...common,
-          ...(c.issueIds !== undefined
-            ? { issueIds: c.issueIds }
-            : c.issueId !== undefined
-              ? { issueIds: [c.issueId] }
-              : {}),
-          ...(c.mode !== undefined ? { mode: c.mode } : {}),
-        };
-      }),
-    },
-  });
 }

@@ -1,3 +1,4 @@
+import { portableRpc } from "../helpers/portable-rpc.ts";
 import { MemoryFixture } from "./agent-memory.ts";
 import {
   configureMemosFixture,
@@ -1236,7 +1237,7 @@ export function nativeTest(
 
     const api = client.rpc(probe);
     const loc = { location: { directory: home } };
-    const observer = client.rpc(visibility);
+    const observer = client.rpc(portableRpc(visibility));
     // Poll retained state without rerunning OpenSpec/Git diagnostics on every
     // tick. Assertions still obtain the complete native work_status response.
     const observeWork = async (id: string) => {
@@ -2659,7 +2660,7 @@ export function nativeTest(
     assert.equal(directWorkerProviderCalls, 0);
     await assert.rejects(
       client
-        .rpc(configuration)
+        .rpc(portableRpc(configuration))
         .reconcile({ session_id: e.explore_session_id!, action: "apply" }, loc),
       (error: any) => error.type === "refused" && error.data.code === "ABRA_REQUIRED",
     );
@@ -3263,7 +3264,7 @@ export function nativeTest(
     );
     await writeFile(personalPath, activeConfiguration.toString());
     const omitted = await client
-      .rpc(configuration)
+      .rpc(portableRpc(configuration))
       .reconcile({ session_id: supervisor.id, action: "status" }, loc);
     assert.equal(omitted.outcomes.find((d) => d.id === "api")?.status, "retained/undeclared");
     assert.equal(
@@ -3282,7 +3283,7 @@ export function nativeTest(
     });
     await writeFile(personalPath, activeConfiguration.toString());
     const applied = await client
-      .rpc(configuration)
+      .rpc(portableRpc(configuration))
       .reconcile({ session_id: supervisor.id, action: "apply" }, loc);
     assert.equal(applied.outcomes.find((d) => d.id === "api")?.status, "registered/ready");
     const preSuitePath = await capturePreSuite(

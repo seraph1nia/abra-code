@@ -18,6 +18,14 @@ const reporting = [
   "abra_worker_wait",
   "abra_worker_reply",
 ];
+const restrictedSupervisorTools = [
+  ...reporting,
+  "abra_spec",
+  "abra_review_report",
+  "abra_review_changes",
+  "abra_research_report",
+  "abra_lead_action",
+];
 const editing = ["edit", "write", "patch"];
 const policies = {
   supervisor: { tools: [...reading, "abra_*"], write_scope: "none" },
@@ -61,10 +69,11 @@ const policies = {
 export const memoryReadTools = ["abra_memory_search", "abra_memory_read"];
 export const rolePolicy = (role: ManagedRole) => policies[role];
 export const policyAllows = (role: ManagedRole, tool: string) =>
-  memoryReadTools.includes(tool) ||
-  policies[role].tools.some(
-    (name) => name === tool || (name === "abra_*" && tool.startsWith("abra_")),
-  );
+  !(role === "supervisor" && restrictedSupervisorTools.includes(tool)) &&
+  (memoryReadTools.includes(tool) ||
+    policies[role].tools.some(
+      (name) => name === tool || (name === "abra_*" && tool.startsWith("abra_")),
+    ));
 /** Authored denials support exact actions and prefix wildcards; reject other shapes at preparation. */
 export const validDenial = (action: string) => /^(?:\*|[a-z][a-z0-9_-]*\*?)$/.test(action);
 const matchesAction = (pattern: string, action: string) =>
@@ -94,7 +103,14 @@ export const permittedTools = (role: Role) =>
   new Set(policies[role].tools.map((name) => ToolName.make(name)));
 export const policyIdentity = (role: ManagedRole) =>
   createHash("sha256")
-    .update(JSON.stringify({ version: 2, role, ...policies[role] }))
+    .update(
+      JSON.stringify({
+        version: 2,
+        role,
+        ...policies[role],
+        ...(role === "supervisor" ? { excluded: restrictedSupervisorTools } : {}),
+      }),
+    )
     .digest("hex");
 // Existing Review sessions retain the original, narrower permission set and policy digest.
 const formerReviewPolicy = {
@@ -122,11 +138,11 @@ export function workerToolAllowed(role: Role, profile: StaticProfile | undefined
 export const compatiblePolicy = (role: ManagedRole, hash: string) =>
   hash === policyIdentity(role) || (role === "review" && hash === formerReviewIdentity);
 export const protectedControlPath = (file: string, root: string, role: Role) => {
-  const segments = relative(root, file).split(sep);
+  const segments = relative(root, file).toLowerCase().split(sep);
   return (
     segments.includes(".git") ||
     segments.includes(".opencode") ||
-    (role !== "apply" && basename(file) === "AGENTS.md")
+    (role !== "apply" && basename(file).toLowerCase() === "agents.md")
   );
 };
 export function nativePermissions(
@@ -145,6 +161,9 @@ export function nativePermissions(
       action === "shell" && "shell_commands" in policy ? policy.shell_commands : ["*"];
     for (const resource of resources) rules.push({ action, resource, effect: "allow" });
   }
+  if (role === "supervisor")
+    for (const action of restrictedSupervisorTools)
+      rules.push({ action, resource: "*", effect: "deny" });
   for (const action of memoryReadTools.filter((t) => selectedTools.includes(t)))
     rules.push({ action, resource: "*", effect: "allow" });
   for (const root of readRoots)

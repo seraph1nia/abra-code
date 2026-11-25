@@ -1,6 +1,6 @@
 import { Clock, Effect, Schema } from "effect";
 import { Count, NonEmpty } from "@abracode/contracts/primitives";
-import { IssueId } from "@abracode/contracts/identities";
+import { IssueId, timestampAt } from "@abracode/contracts/identities";
 import { type Execution, type Issue, CrewError } from "../domain.ts";
 import { OperationIntentSchema } from "@abracode/contracts/workflow/operation-contracts";
 import { ExecutionBusy } from "./operations.ts";
@@ -217,7 +217,7 @@ export function deliveryOutcomeLines(outcome: DeliveryOutcome): string[] {
     `Approval (${outcome.approval.kind}): ${outcome.approval.state}`,
     `Delivery (${outcome.delivery.kind}): ${outcome.delivery.state}`,
     `Cleanup: ${c.state} · Issue: ${outcome.closure}`,
-    `Observed: ${new Date(outcome.observed_at).toISOString()} (receipt evidence may be older)`,
+    `Observed: ${timestampAt(outcome.observed_at)} (receipt evidence may be older)`,
     ...(outcome.finishing
       ? [
           `Synchronization allowance: ${outcome.finishing.consumed} consumed · ${outcome.finishing.automatic_remaining} automatic remaining`,
@@ -242,7 +242,7 @@ export function deliveryOutcomeLines(outcome: DeliveryOutcome): string[] {
           c.blocker.truncated
             ? "Path sample truncated; inspect the owned worktree for the full inventory."
             : "Path inventory complete as of its observation.",
-          `Files observed: ${new Date(c.blocker.observed_at).toISOString()}`,
+          `Files observed: ${timestampAt(c.blocker.observed_at)}`,
           `Captured generated directories: ${JSON.stringify(c.generated_paths)}`,
         ]
       : []),

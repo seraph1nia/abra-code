@@ -8,7 +8,6 @@ import { DecisionsSchema } from "@abracode/contracts/web/http-api";
 import { MessagesPageSchema, FeedbackPageSchema } from "@abracode/contracts/web/wire";
 import { WorkerHistoryPageSchema } from "@abracode/contracts/web/worker-history";
 import { DocumentArtifactSchema } from "@abracode/contracts/web/wire";
-/* oxlint-disable effecttsgo/unstable-api-usage -- Disposable native API and Effect HTTP/AG-UI acceptance. */
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -288,7 +287,7 @@ export async function workspaceJourney(input: {
         await new Promise((done) => setTimeout(done, 100));
       }
       throw new Error(
-        `Browser command did not settle: ${tool}; ${JSON.stringify(await page.locator('[role="alert"]').allTextContents())}; ${JSON.stringify((await Effect.runPromise(backend.snapshot)).messages.slice(-8).map((message) => ({ id: message.id, role: message.role, text: message.text.slice(0, 180), tools: message.tools?.map((tool) => ({ name: tool.name, status: tool.status })) })))}`,
+        `Browser command did not settle: ${tool}; ${JSON.stringify(await page.locator('[role="alert"]').allTextContents())}; ${JSON.stringify((await Effect.runPromise(backend.snapshot.pipe(Effect.map(() => backend.nativeSnapshot()!.messages)))).slice(-8).map((message) => ({ id: message.id, role: message.role, text: message.text.slice(0, 180), tools: message.tools?.map((tool) => ({ name: tool.name, status: tool.status })) })))}`,
       );
     }
     await command("abra_project_onboard", {
@@ -323,7 +322,7 @@ export async function workspaceJourney(input: {
     }
     assert.equal(
       (await fetch(`${web.origin}/api/work/report?issue_id=abra-unknown-report`)).status,
-      409,
+      404,
     );
     const answer = await command("abra_work_list", {}, "What AbraCode work is currently retained?");
     assert.ok(answer.issues.some((item: { id: string }) => item.id === issue));
@@ -332,7 +331,11 @@ export async function workspaceJourney(input: {
       .filter({ hasText: "Browser implementation acceptance" })
       .last()
       .waitFor();
-    const observed = (await Effect.runPromise(backend.snapshot)).messages.find((message) =>
+    const observed = (
+      await Effect.runPromise(
+        backend.snapshot.pipe(Effect.map(() => backend.nativeSnapshot()!.messages)),
+      )
+    ).find((message) =>
       message.tools?.some(
         (tool) =>
           tool.name === "abra_work_create" &&
@@ -374,7 +377,9 @@ export async function workspaceJourney(input: {
           yield* Deferred.await(entered);
           const unavailable = yield* backend.snapshot;
           assert.match(unavailable.work_unavailable ?? "", /temporarily unavailable/);
-          assert.ok(unavailable.messages.some((message) => message.id === observed.id));
+          assert.ok(
+            backend.nativeSnapshot()!.messages.some((message) => message.id === observed.id),
+          );
           assert.ok(unavailable.work.work.some((work) => work.issue_id === issue));
           yield* Effect.promise(async () => {
             await page.reload();

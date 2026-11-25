@@ -1,4 +1,4 @@
-import { Button } from "@abracode/presentation/ui/button";
+import { Button } from "./ui/button.tsx";
 import { Component, lazy, Suspense, type ComponentType, type ReactNode } from "react";
 
 /** Optional chunk failures stay local; reload clears the browser's failed module cache. */
@@ -7,6 +7,7 @@ export function deferred<P extends object>(
   label: string,
   className?: string,
   isActive: (props: P) => boolean = () => true,
+  loading?: (props: P) => ReactNode,
 ) {
   const Loaded = lazy(load);
   class Boundary extends Component<{ children: ReactNode; active: boolean }, { failed: boolean }> {
@@ -35,7 +36,13 @@ export function deferred<P extends object>(
       <Boundary active={active}>
         <Suspense
           fallback={
-            active ? <output className={className}>Loading {label.toLowerCase()}…</output> : null
+            active ? (
+              loading ? (
+                loading(props)
+              ) : (
+                <output className={className}>Loading {label.toLowerCase()}…</output>
+              )
+            ) : null
           }
         >
           <Loaded {...props} />

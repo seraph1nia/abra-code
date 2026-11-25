@@ -64,6 +64,7 @@ for (const automaticReplies of [true, false])
       f.delivery.pr!.state = "MERGED";
     };
     const c = createWorkflow(
+      f.catalog,
       f.config,
       f.records,
       f.work,

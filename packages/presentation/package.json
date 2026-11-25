@@ -9,8 +9,10 @@
     "#utils": "./src/utils.ts"
   },
   "exports": {
+    "./deferred": "./src/deferred.tsx",
     "./catalog-media": "./src/catalog-media.tsx",
     "./icons": "./src/icons.ts",
+    "./diagram-svg": "./src/diagram-svg.ts",
     "./diagram-resource": "./src/diagram-resource.tsx",
     "./surface-owner": "./src/surface-owner.ts",
     "./ui/alert": "./src/ui/alert.tsx",
@@ -57,11 +59,13 @@
     "clsx": "2.1.1",
     "effect": "4.1.4",
     "lucide-react": "1.73.0",
+    "markdown-it": "14.3.3",
     "react": "19.3.1",
     "react-resizable-panels": "4.24.1",
     "tailwind-merge": "3.7.0"
   },
   "devDependencies": {
+    "@types/markdown-it": "14.1.2",
     "@types/react": "19.3.0",
     "typescript": "7.0.2"
   }

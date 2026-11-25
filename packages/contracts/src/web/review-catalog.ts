@@ -1,10 +1,8 @@
 import { Schema } from "effect";
 import { Catalog, basicCatalog, STRICT_VALIDATION, type ComponentApi } from "@a2ui/web_core/v1_0";
 import {
-  SingleSelectSchema,
-  MultiSelectSchema,
   DesignChoiceSchema,
-  CommentFieldSchema,
+  type ReviewField,
   type ReviewAnswers,
   type ReviewDefinition,
 } from "./reviews.ts";
@@ -17,10 +15,7 @@ export const ReviewFormSchema = Schema.Struct({
 });
 export const reviewComponentSchemas = {
   ReviewForm: ReviewFormSchema,
-  SingleSelect: SingleSelectSchema,
-  MultiSelect: MultiSelectSchema,
   DesignChoiceGroup: DesignChoiceSchema,
-  CommentField: CommentFieldSchema,
 };
 export const reviewValidation = {
   ...STRICT_VALIDATION,
@@ -29,7 +24,11 @@ export const reviewValidation = {
   allowedMessages: ["createSurface", "updateDataModel"],
 };
 const base = basicCatalog
-  .derive({ catalogId: reviewCatalogId, components: ["Column", "Row", "Text"], functions: [] })
+  .derive({
+    catalogId: reviewCatalogId,
+    components: ["Column", "Row", "Text", "ChoicePicker", "TextField"],
+    functions: ["required", "length"],
+  })
   .toJson();
 const object = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json));
 const custom = Object.entries(reviewComponentSchemas).map(([name, schema]) => ({
@@ -42,28 +41,84 @@ export const reviewCatalogDocument = {
     "App-only review input. No workflow approvals, executable actions or external URLs. The app owns submission.",
   components: {
     ...object(base.components),
-    ...Object.fromEntries(custom.map(({ name, document }) => [name, document.schema])),
+    ...Object.fromEntries(
+      custom.map(({ name, document }) => [
+        name,
+        name === "DesignChoiceGroup"
+          ? {
+              ...document.schema,
+              properties: {
+                ...object(document.schema.properties),
+                value: { $ref: "common_types.json#/$defs/DynamicString" },
+                checks: { $ref: "common_types.json#/$defs/Checkable/properties/checks" },
+              },
+            }
+          : document.schema,
+      ]),
+    ),
   },
   $defs: {
     ...object(base.$defs),
     ...Object.assign({}, ...custom.map(({ document }) => document.definitions)),
     anyComponent: {
-      oneOf: ["Column", "Row", "Text", ...Object.keys(reviewComponentSchemas)].map((name) => ({
-        $ref: `#/components/${name}`,
-      })),
+      oneOf: [...Object.keys(object(base.components)), ...Object.keys(reviewComponentSchemas)].map(
+        (name) => ({
+          $ref: `#/components/${name}`,
+        }),
+      ),
       discriminator: { propertyName: "component" },
     },
-    anyFunction: { not: {} },
   },
 };
 export const reviewCatalog = Catalog.fromJson(reviewCatalogDocument);
 export const implementedReviewCatalog = <T extends ComponentApi>(entries: readonly T[]) =>
-  new Catalog(reviewCatalogId, "1.0", entries, []);
+  new Catalog(
+    reviewCatalogId,
+    "1.0",
+    entries,
+    [...basicCatalog.functions.values()].filter((fn) => reviewCatalog.functions.has(fn.name)),
+    { themeSchema: basicCatalog.themeSchema, defs: reviewCatalogDocument.$defs },
+  );
 export type ReviewSurfaceState = {
   readonly answers?: ReviewAnswers;
   readonly errors?: Readonly<Record<string, string>>;
   readonly disabled?: boolean;
 };
+export function reviewControlValue(field: ReviewField, answer: ReviewAnswers[string] | undefined) {
+  if (field.component === "SingleSelect")
+    return typeof answer === "string" && answer ? [answer] : [];
+  return answer ?? (field.component === "MultiSelect" ? [] : "");
+}
+function reviewComponent(field: ReviewField) {
+  const value = { "@path": `/answers/${field.id}` };
+  const checks = [
+    ...(field.required
+      ? [{ condition: { "@call": "required", args: { value } }, message: "An answer is required." }]
+      : []),
+    ...(field.component === "CommentField"
+      ? [
+          {
+            condition: { "@call": "length", args: { value, max: 4096 } },
+            message: "Use at most 4096 characters.",
+          },
+        ]
+      : []),
+  ];
+  const input = { id: field.id, label: field.label, value, checks };
+  switch (field.component) {
+    case "CommentField":
+      return { ...input, component: "TextField", variant: "longText" };
+    case "DesignChoiceGroup":
+      return { ...field, ...input };
+    default:
+      return {
+        ...input,
+        component: "ChoicePicker",
+        variant: field.component === "MultiSelect" ? "multipleSelection" : "mutuallyExclusive",
+        options: field.options.map(({ label, value }) => ({ label, value })),
+      };
+  }
+}
 export function reviewSurface(review: ReviewDefinition, state?: ReviewSurfaceState) {
   return {
     version: "1.0" as const,
@@ -71,7 +126,12 @@ export function reviewSurface(review: ReviewDefinition, state?: ReviewSurfaceSta
       surfaceId: review.review_id,
       catalogId: reviewCatalogId,
       dataModel: {
-        answers: { ...state?.answers },
+        answers: Object.fromEntries(
+          review.fields.map((field) => [
+            field.id,
+            reviewControlValue(field, state?.answers?.[field.id]),
+          ]),
+        ),
         errors: { ...state?.errors },
         disabled: state?.disabled ?? false,
       },
@@ -87,7 +147,7 @@ export function reviewSurface(review: ReviewDefinition, state?: ReviewSurfaceSta
           title: review.title,
           ...(review.description ? { description: review.description } : {}),
         },
-        ...review.fields,
+        ...review.fields.map(reviewComponent),
       ],
     },
   };

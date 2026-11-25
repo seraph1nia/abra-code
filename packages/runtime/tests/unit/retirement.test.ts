@@ -206,6 +206,7 @@ test("cleanup waits back off, deduplicate attention, survive restart and finish 
     1,
   );
   const restart = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,

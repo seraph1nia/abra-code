@@ -4,7 +4,7 @@ import { run } from "../effects.ts";
 import { test, vi, type TestContext } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { symlink } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { type Context } from "@opencode/plugin/effect/plugin";
 import { applying, fixture } from "../fixtures.ts";
 import { installGuards } from "../../src/opencode/guards.ts";
@@ -27,6 +27,7 @@ async function guard(t: TestContext, role: "explore" | "apply" | "review" = "exp
   const sessionID = e[`${role}_session_id`];
   let before: (event: any) => import("effect").Effect.Effect<void>;
   let context: typeof before;
+  let shell: typeof before;
   const ctx = {
     session: {
       hook: (name: string, handler: typeof before) =>
@@ -34,7 +35,12 @@ async function guard(t: TestContext, role: "explore" | "apply" | "review" = "exp
           if (name === "context") context = handler;
         }),
     },
-    shell: { hook: () => Effect.void },
+    shell: {
+      hook: (_name: string, fn: typeof before) =>
+        Effect.sync(() => {
+          shell = fn;
+        }),
+    },
     tool: {
       hook: (_name: string, fn: typeof before) =>
         Effect.sync(() => {
@@ -46,6 +52,7 @@ async function guard(t: TestContext, role: "explore" | "apply" | "review" = "exp
   return {
     f,
     e,
+    shell: (cwd: string) => shell({ cwd, env: {} }),
     visible: async (names: string[]) => {
       const tools = Object.fromEntries(names.map((name) => [name, {}]));
       await run(context({ sessionID, model: f.config.models.default, tools, system: [] }));
@@ -104,6 +111,39 @@ test("native patch rejects symlink escapes, orchestration files and malformed in
   );
   await assert.rejects(run(check("*** Begin Patch\n*** End Patch")), /empty/);
   await assert.rejects(run(check("invalid patch")), /Invalid/);
+});
+
+test("native edits enforce role policy on the requested and resolved path", async (t) => {
+  const { e, edit } = await guard(t);
+  const base = join(e.worktree_directory!, "openspec/changes", e.openspec_change);
+  for (const name of [".Git", ".OpenCode"]) {
+    await mkdir(join(base, name));
+    await symlink(join(base, name), join(base, name + "-alias"));
+    await assert.rejects(run(edit("write", join(base, name + "-alias", "new"))), /orchestration/);
+  }
+  await writeFile(join(base, "Agents.MD"), "");
+  await symlink(join(base, "Agents.MD"), join(base, "guide"));
+  await assert.rejects(run(edit("edit", join(base, "guide"))), /orchestration/);
+  await symlink(join(base, "missing"), join(base, "dangling"));
+  await assert.rejects(run(edit("write", join(base, "dangling"))), /symlink/);
+});
+
+test("shell skips a missing external worktree and still enforces live custody", async (t) => {
+  const { f, e, shell } = await guard(t);
+  const retained = (await run(f.records.execution(e.issue_id)))!;
+  const custody = { custody: "external" } as NonNullable<typeof e.external_validation>;
+  vi.spyOn(f.controller.queries, "executions").mockReturnValue(
+    Effect.succeed([
+      {
+        ...retained,
+        external_validation: custody,
+        worktree_directory: Id.AbsolutePath.make(join(f.root, "missing")),
+      },
+      { ...retained, external_validation: custody },
+    ]),
+  );
+  await run(shell(f.root));
+  await assert.rejects(run(shell(e.worktree_directory!)), /external branch custody/);
 });
 
 test("execution checks reject forbidden management and inactive assigned sessions", async (t) => {

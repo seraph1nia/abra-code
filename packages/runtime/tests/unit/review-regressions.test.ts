@@ -47,6 +47,7 @@ test("research restarts from the saved phase before any worker admission intent 
   assert.equal(before.active_role, undefined);
   assert.equal(before.session_intent, undefined);
   const restarted = createWorkflow(
+    f.catalog,
     f.config,
     f.records,
     f.work,

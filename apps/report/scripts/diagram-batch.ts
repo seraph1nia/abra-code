@@ -9,6 +9,11 @@ import {
 } from "@abracode/contracts/presentation/diagrams";
 
 type Renderer = { render(source: string): Promise<string>; close(): Promise<void> };
+type Compilation = {
+  result: Promise<string>;
+  waiters: number;
+  stop: () => void;
+};
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 /** One service owner, with an existing renderer seam for bounded resource tests. */
 export class DiagramBatch {
@@ -16,7 +21,7 @@ export class DiagramBatch {
   private queue: Array<() => void> = [];
   private cache = new Map<string, string>();
   private bytes = 0;
-  private pending = new Map<string, Promise<string>>();
+  private pending = new Map<string, Compilation>();
 
   readonly metrics = { launches: 0, compilations: 0, hits: 0 };
   constructor(
@@ -61,12 +66,14 @@ export class DiagramBatch {
       expired = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let queued: (() => void) | undefined;
+    let release: (() => void) | undefined;
+    let closing: Promise<void> | undefined;
     const cleanup = async () => {
       if (renderer)
-        await renderer.then(
+        await (closing ??= renderer.then(
           (r) => r.close(),
           () => {},
-        );
+        ));
     };
     const run = async (): Promise<DiagramPreparation> => {
       if (this.active >= 2)
@@ -99,7 +106,8 @@ export class DiagramBatch {
             } else {
               let pending = this.pending.get(key);
               if (!pending) {
-                pending = (async () => {
+                let abandoned = false;
+                const result = (async () => {
                   if (!renderer) {
                     this.metrics.launches++;
                     metrics.launches++;
@@ -110,24 +118,45 @@ export class DiagramBatch {
                     });
                   }
                   const active = await renderer;
-                  if (expired)
+                  if (abandoned)
                     throw new Error("TIMEOUT: Diagram preparation exceeded its deadline");
                   this.metrics.compilations++;
                   metrics.compilations++;
                   const compiled = await active.render(input.source);
                   if (Buffer.byteLength(compiled) > diagramLimits.output)
                     throw new Error("LIMIT: Prepared diagram exceeds 8 MiB");
-                  if (!expired) this.remember(key, compiled);
+                  if (!abandoned) this.remember(key, compiled);
                   return compiled;
                 })();
+                pending = {
+                  result,
+                  waiters: 0,
+                  stop: () => {
+                    abandoned = true;
+                    void cleanup().catch(() => {});
+                  },
+                };
                 this.pending.set(key, pending);
-                void pending
+                void result
                   .finally(() => {
                     if (this.pending.get(key) === pending) this.pending.delete(key);
                   })
                   .catch(() => {});
               }
-              svg = await pending;
+              const compilation = pending;
+              compilation.waiters++;
+              release = () => {
+                if (--compilation.waiters === 0 && this.pending.get(key) === compilation) {
+                  this.pending.delete(key);
+                  compilation.stop();
+                }
+                release = undefined;
+              };
+              try {
+                svg = await compilation.result;
+              } finally {
+                release?.();
+              }
             }
             assets.push({ ...input, svg });
             if (Buffer.byteLength(JSON.stringify(assets)) > diagramLimits.output)
@@ -158,7 +187,9 @@ export class DiagramBatch {
               message: detail
                 .replace(/https?:\/\/[^\s)]+|(?:[A-Za-z]:)?\/(?:[^\s/:]+\/)+[^\s:]*/g, "[resource]")
                 .slice(0, 2048),
-              ...(line ? { line: Number(line) } : {}),
+              ...(line && Number.isSafeInteger(Number(line)) && Number(line) > 0
+                ? { line: Number(line) }
+                : {}),
             });
           }
         }
@@ -182,23 +213,29 @@ export class DiagramBatch {
         }
       }
     };
+    const expire = () => {
+      expired = true;
+      if (!started && queued) {
+        const index = this.queue.indexOf(queued);
+        if (index >= 0) this.queue.splice(index, 1);
+        queued();
+      }
+      release?.();
+    };
     const work = run();
     const timeout = new Promise<DiagramPreparation>((resolve) => {
       timer = setTimeout(() => {
-        expired = true;
-        if (!started && queued) {
-          const i = this.queue.indexOf(queued);
-          if (i >= 0) this.queue.splice(i, 1);
-          queued();
-        }
-        void cleanup().catch(() => {});
+        expire();
         resolve(error("timeout", "Diagram preparation exceeded its 60-second deadline"));
       }, this.options.deadlineMs ?? 60000);
     });
     // Caller cancellation detaches only this waiter; shared compilation keeps its bounded deadline.
     let detach: (() => void) | undefined;
     const canceled = new Promise<DiagramPreparation>((resolve) => {
-      detach = () => resolve(error("unavailable", "Diagram preparation canceled"));
+      detach = () => {
+        expire();
+        resolve(error("unavailable", "Diagram preparation canceled"));
+      };
       signal?.addEventListener("abort", detach, { once: true });
     });
     void work

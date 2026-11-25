@@ -64,7 +64,9 @@ function withBody<A>(content: string, action: (path: AbsolutePath) => Effect.Eff
   return Effect.scoped(
     Effect.gen(function* () {
       const temp = yield* Effect.acquireRelease(mkdtemp(join(tmpdir(), "abracode-pr-")), (dir) =>
-        rm(dir, { recursive: true }).pipe(Effect.orDie),
+        rm(dir, { recursive: true }).pipe(
+          Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error)),
+        ),
       );
       const path = AbsolutePath.make(join(temp, "body.md"));
       yield* writeFile(path, content, { mode: 0o600, flag: "wx" });

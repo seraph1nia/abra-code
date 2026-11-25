@@ -20,6 +20,6 @@ function acquire() {
     setTimeout(acquire, Math.min(25, remaining));
     return;
   }
-  process.stdout.write("locked\n");
+  process.stdout.end("locked\n");
 }
 acquire();

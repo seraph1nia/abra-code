@@ -128,16 +128,8 @@ export interface WebBackend {
   saveSurface(
     input: typeof SaveSurfaceSchema.Type,
   ): Effect.Effect<typeof ArtifactSummarySchema.Type, CrewError>;
-  artifact(
-    issue: string,
-    request: string,
-  ): Effect.Effect<
-    { readonly html: string; readonly hash: string; readonly bytes: number },
-    CrewError
-  >;
-  completionEvidence?: () => NonNullable<NativeSessionView["completions"]>;
   nativeEvent?: (event: NativeEventEnvelope) => { view?: NativeSessionView; repair?: boolean };
-  nativeSnapshot?: () => NativeSessionView | undefined;
+  nativeSnapshot: () => NativeSessionView | undefined;
   readonly changes: Stream.Stream<
     (ChangeScope & { native?: NativeEventEnvelope }) | void,
     CrewError

@@ -8,7 +8,6 @@ import { type Workspaces } from "../git/workspaces.ts";
 import { domainEffect } from "../effect.ts";
 import { decode } from "../decode.ts";
 import { externalOwns } from "@abracode/contracts/validation/contracts";
-import { sameDirectory } from "../git/retirement.ts";
 import { type CleanupPreflightSchema } from "./finishing-contracts.ts";
 
 export type PublicationObservation = {
@@ -197,32 +196,3 @@ export const observePreflight = Effect.fn("Finishing.observePreflight")(function
     fingerprint: residue?.fingerprint,
   } satisfies typeof CleanupPreflightSchema.Type;
 }, domainEffect);
-
-/** Binding comparison requires a fresh safety/inventory scan; a cached snapshot is insufficient. */
-export function preflightMatches(
-  e: ManagedExecution,
-  publication: PublicationObservation,
-  fresh: typeof CleanupPreflightSchema.Type,
-) {
-  const f = e.finishing?.preflight;
-  return !!(
-    f &&
-    e.worktree_identity &&
-    f.generation === e.control_generation &&
-    sameDirectory(f.worktree, e.worktree_identity) &&
-    fresh.generation === f.generation &&
-    sameDirectory(fresh.worktree, f.worktree) &&
-    fresh.status === f.status &&
-    fresh.fingerprint === f.fingerprint &&
-    fresh.truncated === f.truncated &&
-    fresh.head === f.head &&
-    fresh.published === f.published &&
-    fresh.content === f.content &&
-    fresh.authorization_revision === f.authorization_revision &&
-    f.head === publication.head &&
-    f.published === publication.published &&
-    f.content === publication.content &&
-    f.authorization_revision === (e.finishing?.authorizations?.at(-1)?.revision ?? 0) &&
-    !e.decisions?.some((d) => d.generation === e.control_generation && d.status === "open")
-  );
-}

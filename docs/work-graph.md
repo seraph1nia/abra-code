@@ -35,7 +35,7 @@ To roll back, stop all new writers, preserve the current state separately, and r
 
 Full-openspec creation accepts an optional kebab-case `openspec_schema` and an affirmative `require_plan_approval: true`. The schema is selected at the owned worktree before Explore; omitting it follows that repository’s default for a new execution. Other workflows reject these choices, and `false` is not an approval override. Single and atomic batch request identities retain both optional fields, so changing/removing a supplied choice requires a new request ID.
 
-Work database version 7 adds nullable schema/approval columns without rewriting historical `request_input` or batch receipt JSON. Existing omitted fields remain omitted, preserving old retry identities. Upgrade is additive; unsupported future versions are refused rather than downgraded. The native execution record captures effective approval policy separately before worker admission.
+A fresh work database initializes directly at version 1 with the current columns, tables, and indexes. Opening an incompatible database reports a version error. The native execution record captures effective approval policy separately before worker admission.
 
 Selected task detail uses a separate revision-validated capture of one issue,
 its direct dependency statuses and its exact execution record. Native activity
@@ -80,6 +80,6 @@ still return their original key-to-issue mapping.
 
 ## Personal thought references
 
-Format v11 adds an optional accepted thought source to an ordinary issue. Intake records the scoped Memos reference, digest of the selected wording and agreed excerpt in its transaction. Replaying the same intake uses the retained request even after an external edit. Worker intent includes the accepted excerpt alongside the goal.
+An ordinary issue may include an accepted thought source. Intake records the scoped Memos reference, digest of the selected wording and agreed excerpt in its transaction. Replaying the same intake uses the retained request even after an external edit. Worker intent includes the accepted excerpt alongside the goal.
 
-The separate `thought_saves` table maps a digest of the notebook, account and save request ID to a random upstream memo ID and the content digest. Only the original reservation attempts creation. After interruption, subsequent attempts read that upstream ID and compare the original wording. An unverified save remains unresolved. Notebook searches and detail reads go directly to Memos.
+The separate `thought_saves` table maps a digest of the notebook, account and save request ID to a random upstream memo ID and the content digest. A durable submission claim permits one create at a time. A retry first reads the same upstream ID and compares the original wording. A verified 404 permits another create only when the request was never submitted or Memos explicitly refused it. After an uncertain submission, a missing memo stays missing. An unverified save remains unresolved. Notebook searches and detail reads go directly to Memos.

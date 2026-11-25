@@ -118,16 +118,17 @@ test("memory/collections Effect Schema validation rejects malformed payloads wit
   const collections = new MemoryCollections(
     root,
     {
-      call: async (_r, tool) => {
-        if (tool === "bm_project")
-          return {
-            projects: [
-              { name: "abra-shared", source: "local", local_path: vault, external_id: projectId },
-            ],
-          };
-        if (tool === "bm_search") return { has_more: "not-a-boolean", results: [] };
-        return { file_path: "note.md", title: "Hi", checksum: hash("hello") };
-      },
+      callEffect: (_r, tool) =>
+        Effect.sync(() => {
+          if (tool === "bm_project")
+            return {
+              projects: [
+                { name: "abra-shared", source: "local", local_path: vault, external_id: projectId },
+              ],
+            };
+          if (tool === "bm_search") return { has_more: "not-a-boolean", results: [] };
+          return { file_path: "note.md", title: "Hi", checksum: hash("hello") };
+        }),
     },
     "text",
   );
@@ -140,15 +141,16 @@ test("memory/collections Effect Schema validation rejects malformed payloads wit
   const badMetaCollections = new MemoryCollections(
     root,
     {
-      call: async (_r, tool) => {
-        if (tool === "bm_project")
-          return {
-            projects: [
-              { name: "abra-shared", source: "local", local_path: vault, external_id: projectId },
-            ],
-          };
-        return { file_path: "note.md", title: "Hi", checksum: "not-64-hex" };
-      },
+      callEffect: (_r, tool) =>
+        Effect.sync(() => {
+          if (tool === "bm_project")
+            return {
+              projects: [
+                { name: "abra-shared", source: "local", local_path: vault, external_id: projectId },
+              ],
+            };
+          return { file_path: "note.md", title: "Hi", checksum: "not-64-hex" };
+        }),
     },
     "text",
   );

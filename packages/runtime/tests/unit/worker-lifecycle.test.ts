@@ -183,6 +183,7 @@ for (const admitted of [false, true]) {
       return prompt(id, text, messageID);
     };
     const restarted = createWorkflow(
+      f.catalog,
       f.config,
       f.records,
       f.work,
@@ -248,10 +249,7 @@ for (const failure of ["interrupt", "read"] as const) {
           assert.equal(pending.stop_status, "requested");
           assert.ok(consumesWorker(pending));
           assert.deepEqual(pending.capacity_reservation, e.capacity_reservation);
-          yield* f.records
-            .coordinate(f.locks)
-            .with(() => Effect.void)
-            .pipe(Effect.timeout("1 second"));
+          yield* f.records.coordination.with(() => Effect.void).pipe(Effect.timeout("1 second"));
           const replacement = yield* Effect.result(f.controller.control(e.issue_id, "resume"));
           assert.equal(replacement._tag, "Failure");
           if (replacement._tag === "Failure") assert.equal(replacement.failure.code, "LOCKED");
@@ -264,6 +262,7 @@ for (const failure of ["interrupt", "read"] as const) {
     );
     await assert.rejects(run(f.controller.control(e.issue_id, "resume")), { code: "STOP_PENDING" });
     const restarted = createWorkflow(
+      f.catalog,
       f.config,
       f.records,
       f.work,

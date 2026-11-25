@@ -51,9 +51,15 @@ export const readDiagnosticCapacity = (
   },
 ): Effect.Effect<DiagnosticCapacitySnapshot, CrewError> =>
   Effect.gen(function* () {
-    const [leads, executions] = yield* Effect.all([leadAccounting(records), records.executions()], {
-      concurrency: 2,
-    });
+    const [leads, executions] = yield* Effect.all(
+      [
+        leadAccounting(records),
+        records.capacityRecords().pipe(Effect.map((scan) => scan.executions)),
+      ],
+      {
+        concurrency: 2,
+      },
+    );
     const activeAttention = activeAttentionFromExecutions(executions, options.excludeIncidentId);
     const turnsUsed = (options.attentionTurns ?? 0) + leads.turns(issueId);
     const remainingTurns = Math.max(0, options.budget - turnsUsed);

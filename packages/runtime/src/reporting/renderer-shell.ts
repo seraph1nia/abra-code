@@ -1,13 +1,8 @@
-import { portableRendererABI as rendererABI } from "@abracode/contracts/presentation/report-export-contract";
 import { createHash } from "node:crypto";
-import { constants } from "node:fs";
-import { open, lstat as nodeLstat, realpath as nodeRealpath } from "node:fs/promises";
+import { lstat as nodeLstat, realpath as nodeRealpath } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { Effect, Schema } from "effect";
-import {
-  NoticeInventorySchema,
-  reportNoticeInputs,
-} from "@abracode/contracts/presentation/notices";
+import { Effect } from "effect";
+import { reportNoticeInputs } from "@abracode/contracts/presentation/notices";
 import {
   AbsolutePath,
   ContentHash,
@@ -27,84 +22,22 @@ import {
   reportHash,
   validatePortableHTML,
 } from "./report-build.ts";
-
+import {
+  Manifest,
+  ManifestJSON,
+  ReceiptJSON,
+  PointerJSON,
+  NoticeInventoryJSON,
+  diagramFileLimit,
+  io,
+  decodeShellJSON,
+  readBounded,
+  readBoundedText,
+  evidence,
+  type Shell,
+} from "./renderer-evidence.ts";
+export type { Shell } from "./renderer-evidence.ts";
 export { portableRendererABI as rendererABI } from "@abracode/contracts/presentation/report-export-contract";
-const Manifest = Schema.Struct({
-  abi: Schema.Literal(rendererABI),
-  inputs: Schema.Array(Schema.Struct({ file: RelativePath, hash: ContentHash })).check(
-    Schema.isMaxLength(8192),
-  ),
-  links: Schema.Array(Schema.Tuple([RelativePath, RelativePath])).check(Schema.isMaxLength(8192)),
-  notices_hash: ContentHash,
-});
-const Receipt = Schema.Struct({
-  abi: Schema.Literal(rendererABI),
-  fingerprint: ContentHash,
-  html_hash: ContentHash,
-  manifest_hash: ContentHash,
-  engine_hash: ContentHash,
-  host_hash: ContentHash,
-  bytes: Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(maximumHTMLBytes)),
-});
-const Pointer = Schema.Struct({ fingerprint: ContentHash });
-const ManifestJSON = Schema.fromJsonString(Manifest);
-const ReceiptJSON = Schema.fromJsonString(Receipt);
-const PointerJSON = Schema.fromJsonString(Pointer);
-const NoticeInventoryJSON = Schema.fromJsonString(NoticeInventorySchema);
-
-export type Shell = { fingerprint: ContentHash; html: string; engine: string; host: string };
-const diagramFileLimit = 16 * 1024 * 1024;
-const io = <A>(read: () => Promise<A>) => Effect.tryPromise({ try: read, catch: CrewError.from });
-
-function decodeShellJSON<A>(
-  codec: Schema.Codec<A, string>,
-  text: string,
-  message: string,
-): Effect.Effect<A, CrewError> {
-  return Schema.decodeEffect(codec, { reportInput: false })(text).pipe(
-    Effect.mapError(() => new CrewError("REPORT_SHELL", message)),
-  );
-}
-
-/** No-follow reads bound cache metadata and bytes before parsing or execution. */
-async function bounded(path: string, maximum: number) {
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const before = await file.stat();
-    ensure(
-      before.isFile() && before.size <= maximum,
-      "REPORT_SHELL",
-      "Renderer input/cache exceeds its regular-file bound",
-    );
-    const value = await file.readFile();
-    const after = await file.stat();
-    ensure(
-      value.length <= maximum && before.size === after.size && before.mtimeMs === after.mtimeMs,
-      "REPORT_SHELL",
-      "Renderer input changed during capture",
-    );
-    return value;
-  } finally {
-    await file.close();
-  }
-}
-
-const readBounded = (path: string, maximum: number) => io(() => bounded(path, maximum));
-const readBoundedText = (path: string, maximum: number) =>
-  readBounded(path, maximum).pipe(Effect.map((bytes) => bytes.toString("utf8")));
-
-function evidence(manifest: string, html: string, engine: string, host: string) {
-  const assets = {
-    abi: rendererABI,
-    manifest_hash: reportHash(manifest),
-    html_hash: reportHash(html),
-    engine_hash: reportHash(engine),
-    host_hash: reportHash(host),
-    bytes: Buffer.byteLength(html),
-  };
-  return { ...assets, fingerprint: reportHash(canonicalJSON(assets)) };
-}
-
 /** Preparation owns source discovery. Readers capture immutable assets from one active pointer. */
 export class RendererShell {
   constructor(

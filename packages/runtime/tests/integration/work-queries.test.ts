@@ -10,7 +10,7 @@ import { workDatabase, workGraphAt } from "../helpers/work-database.ts";
 
 import { goal } from "../helpers/work-goal.ts";
 
-test("file-backed legacy identifier ordering and normalized request bytes survive paged queries", async (t) => {
+test("file-backed identifier ordering and normalized request bytes survive paged queries", async (t) => {
   const { graph: initial, path, scope } = await workDatabase(t);
   const inputs = ["a-A", "a_a", "A", "a", "Z", "z-9"].map(goal);
   const ids = inputs.map((_, index) =>
@@ -21,7 +21,6 @@ test("file-backed legacy identifier ordering and normalized request bytes surviv
   await run(Scope.close(scope, Exit.void));
   const db = new DatabaseSync(path);
   try {
-    db.exec("DROP INDEX issues_repository_priority; PRAGMA user_version = 7");
     db.exec("BEGIN; PRAGMA defer_foreign_keys = ON");
     for (const [index, issue] of created.entries()) {
       db.prepare("UPDATE issues SET id = ? WHERE id = ?").run(ids[index]!, issue.id);

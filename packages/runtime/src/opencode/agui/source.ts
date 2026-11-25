@@ -29,7 +29,10 @@ export class NativeSessionReader {
   }
   private finishRead() {
     this.reading = false;
-    for (const event of this.queued.splice(0)) this.projection.apply(event);
+    let repair = false;
+    for (const event of this.queued.splice(0))
+      if (this.projection.apply(event).repair) repair = true;
+    return repair;
   }
   read(options: { transcript?: boolean; inbox?: boolean } = {}) {
     return domainEffect(
@@ -48,6 +51,7 @@ export class NativeSessionReader {
         const inbox = options.inbox
           ? yield* client.session.inbox.list({ sessionID: this.sessionID })
           : undefined;
+        let repair = false;
         if (page) {
           this.projection.baseline(
             [...page.data].reverse(),
@@ -56,11 +60,12 @@ export class NativeSessionReader {
             true,
           );
           this.initialized = true;
-          this.finishRead();
+          repair = this.finishRead();
         }
         return {
           client,
           session,
+          repair,
           page,
           busy,
           model: session.model
