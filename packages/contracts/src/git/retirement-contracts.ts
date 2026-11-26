@@ -1,3 +1,4 @@
+import { utf8Bytes } from "../utf8.ts";
 import { AbsolutePath, RelativePath, Fingerprint, Commit, ContentHash } from "../identities.ts";
 import { Count, Positive } from "../primitives.ts";
 import { Schema } from "effect";
@@ -38,9 +39,7 @@ export const CleanupPathsSchema = Schema.Array(
 ).check(
   Schema.isMaxLength(64),
   Schema.makeFilter(
-    (paths) =>
-      new TextEncoder().encode(JSON.stringify(paths)).length <= 16384 ||
-      "Cleanup sample exceeds 16 KiB",
+    (paths) => utf8Bytes(JSON.stringify(paths)) <= 16384 || "Cleanup sample exceeds 16 KiB",
   ),
 );
 export const CleanupBlockerSchema = Schema.Struct({

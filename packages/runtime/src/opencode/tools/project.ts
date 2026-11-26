@@ -2,7 +2,6 @@ import { Effect, Schema } from "effect";
 import { RepositoryId } from "@abracode/contracts/identities";
 import { Count } from "@abracode/contracts/primitives";
 import { CrewError } from "../../domain.ts";
-import { domainEffect } from "../../effect.ts";
 import type { ConfigApplication } from "../../config/application.ts";
 import { ProjectInputFields } from "../../config/contracts.ts";
 import { ConfigurationReportSchema, configurationReport } from "../../config/declarations.ts";
@@ -55,22 +54,16 @@ export function projectTools(
         initialize_openspec: Schema.optional(Schema.Boolean),
       }),
       run: (a, s) =>
-        domainEffect(
-          Effect.gen(function* () {
-            if (a.action !== "register") return yield* onboard.inspect(a);
-            const report = yield* onboard.register(a, a.initialize_openspec === true);
-            if (
-              report.project.managed &&
-              !report.project.openspec &&
-              a.initialize_openspec === true
-            )
-              return {
-                ...report,
-                setup: yield* setup.run(a.id, "prepare", s, true),
-              };
-            return report;
-          }),
-        ),
+        Effect.gen(function* () {
+          if (a.action !== "register") return yield* onboard.inspect(a);
+          const report = yield* onboard.register(a, a.initialize_openspec === true);
+          if (report.project.managed && !report.project.openspec && a.initialize_openspec === true)
+            return {
+              ...report,
+              setup: yield* setup.run(a.id, "prepare", s, true),
+            };
+          return report;
+        }),
     }),
     define({
       name: "project_list",
@@ -80,38 +73,34 @@ export function projectTools(
       description: "List explicitly registered repositories.",
       input: Schema.Struct({}),
       run: () =>
-        domainEffect(
-          Effect.gen(function* () {
-            return yield* Effect.forEach(
-              yield* c.queries.projects(),
-              (p) =>
-                domainEffect(
-                  Effect.gen(function* () {
-                    const currentSetup = yield* c.queries.setup(p.id);
-                    return {
-                      ...p,
-                      effective_capacity: {
-                        active_workers: p.max_workers,
-                        retained_executions: p.max_executions,
-                      },
-                      setup_blockers: [
-                        ...(!p.openspec
-                          ? [
-                              currentSetup?.current_phase === "queued"
-                                ? `Setup queued. ${currentSetup.error_or_recovery_reason ?? "Waiting for capacity"}.`
-                                : "OpenSpec configuration is missing; use abra_project_setup",
-                            ]
-                          : []),
-                        ...(!p.verification.length ? ["Verification commands are missing"] : []),
-                      ],
-                      setup: currentSetup,
-                    };
-                  }),
-                ),
-              { concurrency: "unbounded" },
-            );
-          }),
-        ),
+        Effect.gen(function* () {
+          return yield* Effect.forEach(
+            yield* c.queries.projects(),
+            (p) =>
+              Effect.gen(function* () {
+                const currentSetup = yield* c.queries.setup(p.id);
+                return {
+                  ...p,
+                  effective_capacity: {
+                    active_workers: p.max_workers,
+                    retained_executions: p.max_executions,
+                  },
+                  setup_blockers: [
+                    ...(!p.openspec
+                      ? [
+                          currentSetup?.current_phase === "queued"
+                            ? `Setup queued. ${currentSetup.error_or_recovery_reason ?? "Waiting for capacity"}.`
+                            : "OpenSpec configuration is missing; use abra_project_setup",
+                        ]
+                      : []),
+                    ...(!p.verification.length ? ["Verification commands are missing"] : []),
+                  ],
+                  setup: currentSetup,
+                };
+              }),
+            { concurrency: "unbounded" },
+          );
+        }),
     }),
     define({
       name: "project_setup",

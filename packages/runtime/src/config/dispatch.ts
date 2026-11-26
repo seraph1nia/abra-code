@@ -1,5 +1,6 @@
+import { ConfigurationError } from "../errors.ts";
 import { Schema } from "effect";
-import { CrewError, ensure, type Config, type Role, type WorkerModel } from "../domain.ts";
+import { ensure, type Config, type Role, type WorkerModel } from "../domain.ts";
 import {
   workerRoles,
   DispatchSchema,
@@ -21,7 +22,7 @@ export function normalizeDispatch(raw: unknown): Dispatch {
       reportInput: false,
     })(raw);
   } catch {
-    throw new CrewError(
+    throw new ConfigurationError(
       "DISPATCH",
       "Use known worker roles with exactly one complete model or profile each",
     );

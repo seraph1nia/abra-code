@@ -79,16 +79,27 @@ export const validDenial = (action: string) => /^(?:\*|[a-z][a-z0-9_-]*\*?)$/.te
 const matchesAction = (pattern: string, action: string) =>
   pattern === "*" ||
   (pattern.endsWith("*") ? action.startsWith(pattern.slice(0, -1)) : pattern === action);
+export const profileBaseline = (profile: StaticProfile) =>
+  profile.role === "project-lead"
+    ? leadPermissions()
+    : nativePermissions(profile.role, "*", [], profile);
+const capturedDenials = new WeakMap<StaticProfile, StaticProfile["permissions"]>();
+function authoredDenials(profile?: StaticProfile) {
+  if (!profile) return [];
+  let rules = capturedDenials.get(profile);
+  if (!rules) {
+    rules = profile.permissions
+      .slice(profileBaseline(profile).length)
+      .filter((rule) => rule.effect === "deny");
+    capturedDenials.set(profile, rules);
+  }
+  return rules;
+}
 export const definitionAllows = (profile: StaticProfile | undefined, tool: string) =>
-  // Ignore only the baseline FIRST deny-all rule, not additional authored wildcard denials.
-  !profile?.permissions
-    .slice(1)
-    .some(
-      (p) =>
-        p.effect === "deny" &&
-        (matchesAction(p.action, tool) ||
-          (editing.includes(tool) && matchesAction(p.action, "edit"))),
-    );
+  !authoredDenials(profile).some(
+    (p) =>
+      matchesAction(p.action, tool) || (editing.includes(tool) && matchesAction(p.action, "edit")),
+  );
 export const contributionAllows = (profile: StaticProfile | undefined, role: Role, tool: string) =>
   profile?.role === role &&
   profile.contributions.some(
@@ -112,31 +123,21 @@ export const policyIdentity = (role: ManagedRole) =>
       }),
     )
     .digest("hex");
-// Existing Review sessions retain the original, narrower permission set and policy digest.
-const formerReviewPolicy = {
-  ...policies.review,
-  tools: policies.review.tools.filter((name) => name !== "abra_review_changes"),
-};
-const formerReviewIdentity = createHash("sha256")
-  .update(JSON.stringify({ version: 2, role: "review", ...formerReviewPolicy }))
-  .digest("hex");
-export const legacyReviewProfile = (profile?: StaticProfile) =>
-  profile?.role === "review" &&
-  !profile.permissions.some((p) => p.action === "abra_review_changes" && p.effect === "allow");
-const capturedAction = (profile: StaticProfile | undefined, tool: string) =>
-  tool !== "abra_review_changes" || !legacyReviewProfile(profile);
+export const hasReviewDelegate = (profile?: StaticProfile) =>
+  !profile ||
+  (profile.role === "review" &&
+    profile.permissions.some((p) => p.action === "abra_review_changes" && p.effect === "allow"));
 
 export function workerToolAllowed(role: Role, profile: StaticProfile | undefined, tool: string) {
   if (profile && profile.role !== role) return false;
   if (memoryReadTools.includes(tool) && !profile?.tools.some((t) => t === tool)) return false;
   return (
-    capturedAction(profile, tool) &&
+    (tool !== "abra_review_changes" || hasReviewDelegate(profile)) &&
     definitionAllows(profile, tool) &&
     (policyAllows(role, tool) || contributionAllows(profile, role, tool))
   );
 }
-export const compatiblePolicy = (role: ManagedRole, hash: string) =>
-  hash === policyIdentity(role) || (role === "review" && hash === formerReviewIdentity);
+export const compatiblePolicy = (role: ManagedRole, hash: string) => hash === policyIdentity(role);
 export const protectedControlPath = (file: string, root: string, role: Role) => {
   const segments = relative(root, file).toLowerCase().split(sep);
   return (
@@ -174,7 +175,10 @@ export function nativePermissions(
       resource: policy.write_scope === "assigned-change" ? `openspec/changes/${change}/**` : "**",
       effect: "allow",
     });
-  return rules.filter((rule) => capturedAction(profile, rule.action));
+  return rules.filter(
+    (rule) =>
+      rule.effect === "deny" || rule.action !== "abra_review_changes" || hasReviewDelegate(profile),
+  );
 }
 export function workerPermissions(
   role: Role,
@@ -182,10 +186,7 @@ export function workerPermissions(
   change: string,
   roots: readonly string[],
 ) {
-  return [
-    ...nativePermissions(role, change, roots, profile),
-    ...(profile?.permissions.slice(1).filter((rule) => rule.effect === "deny") ?? []),
-  ];
+  return [...nativePermissions(role, change, roots, profile), ...authoredDenials(profile)];
 }
 export const leadPermissions = (): Agent.Info["permissions"] => [
   { action: "*", resource: "*", effect: "deny" },

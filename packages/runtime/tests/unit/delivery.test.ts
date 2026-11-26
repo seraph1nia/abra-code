@@ -1,10 +1,9 @@
-import { publicationDestination } from "../../src/workflow/publication-destination.ts";
+import { publicationDestination } from "../../src/workflow/finishing/contracts.ts";
 import { CrewError } from "../../src/domain.ts";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as Id from "@abracode/contracts/identities";
-import { run } from "../effects.ts";
-import { domainEffect } from "../../src/effect.ts";
+import { domainEffect, run } from "../effects.ts";
 import { Effect } from "effect";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -16,7 +15,7 @@ import { permittedTools } from "../../src/opencode/guards.ts";
 test("delivery rediscovers an existing PR and exact pushed head without creating or pushing duplicates", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f)),
+  let e = await run(delivered(f)),
     p = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   const calls: string[][] = [];
   const pr: PR = {
@@ -51,7 +50,7 @@ test("delivery rediscovers an existing PR and exact pushed head without creating
           : yield* original(cwd, args);
       }),
     );
-  e.pull_request_reference = pr.url;
+  e = { ...e, pull_request_reference: pr.url };
   const d = new GitHubDelivery(git, runner, Id.Executable.make("gh"));
   const result = await run(
     d.deliver(p, e, { commit: e.delivered_commit!, destination: publicationDestination(e) }),
@@ -67,7 +66,7 @@ test("delivery rediscovers an existing PR and exact pushed head without creating
 test("merge requires exact PR head and successful CI, honors requested changes", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f)),
+  let e = await run(delivered(f)),
     p = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   let pr: PR = {
     url: Id.PullRequestUrl.make("https://example.invalid/fixture/api/pull/7"),
@@ -82,7 +81,7 @@ test("merge requires exact PR head and successful CI, honors requested changes",
     statusCheckRollup: [{ status: "COMPLETED", conclusion: "FAILURE" }],
   };
   const { calls, runner: r } = forgeFixture(p, () => pr);
-  e.pull_request_reference = pr.url;
+  e = { ...e, pull_request_reference: pr.url };
   const d = new GitHubDelivery(f.git, r, Id.Executable.make("gh"));
   assert.equal((await run(d.merge(p, e))).category, "verification");
   pr.statusCheckRollup = [{ status: "COMPLETED", conclusion: "SUCCESS" }];
@@ -155,11 +154,11 @@ test("branch delivery publishes the bound SHA after local edits and branch movem
 test("PR creation confirms the returned identity, base and head and reconciles a lost response", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f));
+  let e = await run(delivered(f));
   const p = (await run(f.records.project(e.repository_id)))!;
   const pr = { ...f.delivery.pr!, body: "" };
-  delete e.pull_request_reference;
-  delete e.finishing;
+  e = { ...e, pull_request_reference: undefined };
+  e = { ...e, finishing: undefined };
   for (const observed of [
     { ...pr, baseRefName: e.branch },
     { ...pr, headRefOid: Id.Commit.make("a".repeat(40)) },

@@ -4,7 +4,6 @@ import {
   type FindingRevisionId,
   type IssueId,
   type RelativePath,
-  timestamp,
 } from "@abracode/contracts/identities";
 import {
   WorkDiscoveryQuery,
@@ -12,18 +11,18 @@ import {
   type SessionRow,
   type WorkDiscovery,
 } from "@abracode/contracts/visibility/discovery-contracts";
-import { BindingReadQuery, selectBindingRows } from "@abracode/contracts/web/bindings";
+import { type BindingReadQuery } from "@abracode/contracts/web/bindings";
 import type { ChangeScope } from "@abracode/contracts/web/changes";
 import { decode } from "../decode.ts";
 import { type CrewError } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import { presentationHash } from "../presentation/identity.ts";
 import { type Controller } from "../workflow/controller.ts";
 import { type Queries, type ReadBundle } from "../workflow/queries.ts";
 import { buildDetail, observeOverview } from "./detail.ts";
+import { readBindings } from "./bindings.ts";
 import { FleetCache } from "./fleet-cache.ts";
-import { bindRetainedWork, projectFinderWork, retainedWork, sessions } from "./projections.ts";
-import { type DiffScope, type WorkDetail, type WorkSnapshot } from "./protocol.ts";
+import { projectFinderWork, sessions } from "./projections.ts";
+import { type DiffScope, type WorkDetail } from "./protocol.ts";
 import { buildSnapshot } from "./snapshot.ts";
 
 /** Read-only projection. Lifecycle actions remain exclusively in the controller tools. */
@@ -103,146 +102,57 @@ export class Visibility {
     });
 
   find = (input: WorkDiscovery = {}) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const query = yield* decode(WorkDiscoveryQuery, input, "Work discovery");
-        const page = yield* this.c.observeFinder(query);
-        const { fleet, fleetCurrent } = yield* this.fleetCache.observeForFinder(
-          page.workRevision,
-          page.recordsRevision,
-        );
-        const at = yield* Clock.currentTimeMillis;
-        const entries = yield* Effect.forEach(
-          page.entries,
-          (entry) =>
-            Effect.gen({ self: this }, function* () {
-              const work = projectFinderWork(this.c.settings.supervisionMode, entry, at);
-              return {
-                ...work,
-                supervision: yield* this.c.supervision(
-                  entry.execution,
-                  work.blocker_details,
-                  entry.issue.status === "closed",
-                ),
-              };
-            }),
-          { concurrency: 4 },
-        );
-        return {
-          entries,
-          ...(page.capacity && { capacity: page.capacity }),
-          ...(page.project_capacity && { project_capacity: page.project_capacity }),
-          total: page.total,
-          offset: page.offset,
-          limit: page.limit,
-          next_offset: page.next_offset,
-          observed_at: page.observedAt,
-          work_revision: page.workRevision,
-          fleet: fleet?.data,
-          fleet_observation: {
-            state: fleetCurrent
-              ? ("current" as const)
-              : fleet
-                ? ("stale" as const)
-                : ("unavailable" as const),
-            work_revision: fleet?.workRevision,
-            observed_at: fleet?.at,
-          },
-        };
-      }),
-    );
-
-  binding = (input: typeof BindingReadQuery.Type) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const query = yield* decode(BindingReadQuery, input, "Work binding read");
-        const explicit = [...new Set(query.issue_ids)];
-        const population = query.include_population ? yield* this.c.bindingPopulation() : undefined;
-        const requested = [...new Set([...explicit, ...(population?.ids ?? [])])].slice(0, 100);
-        const results = yield* Effect.forEach(
-          requested,
-          (id) =>
-            this.c.observeTask(id).pipe(
-              Effect.map((task) => ({
-                issue_id: id,
-                status: task.execution_unavailable
-                  ? ("unavailable" as const)
-                  : ("available" as const),
-                task,
-              })),
-              Effect.catch((error) =>
-                Effect.succeed({
-                  issue_id: id,
-                  status:
-                    error.code === "ISSUE_MISSING"
-                      ? ("missing" as const)
-                      : ("unavailable" as const),
-                  task: undefined,
-                }),
+    Effect.gen({ self: this }, function* () {
+      const query = yield* decode(WorkDiscoveryQuery, input, "Work discovery");
+      const page = yield* this.c.observeFinder(query);
+      const { fleet, fleetCurrent } = yield* this.fleetCache.observeForFinder(
+        page.workRevision,
+        page.recordsRevision,
+      );
+      const at = yield* Clock.currentTimeMillis;
+      const entries = yield* Effect.forEach(
+        page.entries,
+        (entry) =>
+          Effect.gen({ self: this }, function* () {
+            const work = projectFinderWork(this.c.settings.supervisionMode, entry, at);
+            return {
+              ...work,
+              supervision: yield* this.c.supervision(
+                entry.execution,
+                work.blocker_details,
+                entry.issue.status === "closed",
               ),
-            ),
-          { concurrency: 4 },
-        );
-        const work = results.flatMap(({ task }) =>
-          task
-            ? [
-                bindRetainedWork(
-                  retainedWork(
-                    this.c.settings.supervisionMode,
-                    task.issue,
-                    task.execution,
-                    undefined,
-                    task.closed_at,
-                  ),
-                  task.execution,
-                  task.issue,
-                  Date.parse(task.source.captured_at),
-                ),
-              ]
-            : [],
-        );
-        const selected = selectBindingRows(
-          { ids: explicit, unfiltered: !!query.include_population },
-          work,
-          population?.total,
-        );
-        const unavailable = results.some((entry) => entry.status !== "available");
-        return {
-          ...(population?.capacity && { capacity: population.capacity }),
-          work: selected.rows,
-          coverage: {
-            ...selected.coverage,
-            unavailable_ids: [
-              ...new Set([
-                ...selected.coverage.unavailable_ids,
-                ...results
-                  .filter(
-                    (entry) => explicit.includes(entry.issue_id) && entry.status !== "available",
-                  )
-                  .map((entry) => entry.issue_id),
-              ]),
-            ],
-            status: unavailable ? ("unavailable" as const) : selected.coverage.status,
-          },
-          results: results
-            .filter((entry) => explicit.includes(entry.issue_id))
-            .map(({ issue_id, status }) => ({ issue_id, status })),
-          observed_at: yield* timestamp,
-          ...(population ? { work_revision: population.work_revision } : {}),
-        };
-      }),
-    );
+            };
+          }),
+        { concurrency: 4 },
+      );
+      return {
+        entries,
+        ...(page.capacity && { capacity: page.capacity }),
+        ...(page.project_capacity && { project_capacity: page.project_capacity }),
+        total: page.total,
+        offset: page.offset,
+        limit: page.limit,
+        next_offset: page.next_offset,
+        observed_at: page.observedAt,
+        work_revision: page.workRevision,
+        fleet: fleet?.data,
+        fleet_observation: {
+          state: fleetCurrent
+            ? ("current" as const)
+            : fleet
+              ? ("stale" as const)
+              : ("unavailable" as const),
+          work_revision: fleet?.workRevision,
+          observed_at: fleet?.at,
+        },
+      };
+    });
 
-  snapshot: (
-    closedPage?: number,
-    bundle?: ReadBundle,
-    includeLeads?: boolean,
-  ) => Effect.Effect<WorkSnapshot, CrewError> = Effect.fn("Visibility.snapshot")(
-    function* (this: Visibility, closedPage?: number, bundle?: ReadBundle, includeLeads = true) {
-      return yield* buildSnapshot(this.c, closedPage, bundle, includeLeads);
-    }.bind(this),
-    domainEffect,
-  );
+  binding = (input: typeof BindingReadQuery.Type) => readBindings(this.c, input);
+
+  snapshot = (closedPage?: number, bundle?: ReadBundle, includeLeads = true) =>
+    buildSnapshot(this.c, closedPage, bundle, includeLeads);
 
   report = (issueID: IssueId) =>
     this.c.report(issueID).pipe(Effect.map((content) => ({ content })));
@@ -251,23 +161,18 @@ export class Visibility {
     this.c.diff(issueID, scope, file);
 
   document = (issueID: IssueId, path: RelativePath) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const e = yield* this.c.get(issueID);
-        const content = yield* this.c.planDocument(e, path);
-        return { path, content, generation: e.control_generation, hash: presentationHash(content) };
-      }),
-    );
+    Effect.gen({ self: this }, function* () {
+      const e = yield* this.c.get(issueID);
+      const content = yield* this.c.planDocument(e, path);
+      return { path, content, generation: e.control_generation, hash: presentationHash(content) };
+    });
 
   overview = (issueID: IssueId) =>
     observeOverview(this.c, issueID).pipe(Effect.map((observed) => observed.overview));
 
   detail: (issueID: IssueId) => Effect.Effect<WorkDetail, CrewError> = Effect.fn(
     "Visibility.detail",
-  )(
-    function* (this: Visibility, issueID: IssueId) {
-      return yield* buildDetail(this.c, issueID);
-    }.bind(this),
-    domainEffect,
-  );
+  )({ self: this }, function* (issueID: IssueId) {
+    return yield* buildDetail(this.c, issueID);
+  });
 }

@@ -1,0 +1,212 @@
+import { WorkflowError } from "../../errors.ts";
+import { tryDomainValue } from "../../effect.ts";
+import { Effect } from "effect";
+import { ChangeName, timestamp } from "@abracode/contracts/identities";
+import { type Execution } from "../../domain.ts";
+import { type Git } from "../../git/repository.ts";
+import { type Records } from "../../storage/store.ts";
+import { sameDirectory } from "../../git/retirement.ts";
+import { type PublicationObservation } from "./readiness.ts";
+import { assertTransition, resetDeliveryArtifactsPatch } from "../transitions.ts";
+
+export const activeSynchronization = (e: Execution) => {
+  const attempt = e.finishing?.synchronization?.at(-1);
+  return attempt && !["published", "failed"].includes(attempt.stage) ? attempt : undefined;
+};
+
+export function synchronizationAuthority(e: Execution, observation: PublicationObservation) {
+  const receipt = (kind: "adopt" | "additional_attempt") =>
+    e.decisions?.find((d) => {
+      const t = d.finishing_target;
+      return (
+        d.status === "answered" &&
+        d.generation === e.control_generation &&
+        d.finishing_answer?.action === "authorize" &&
+        !!d.form_id &&
+        !!d.form_session &&
+        t?.kind === kind &&
+        t.fingerprint === observation.content &&
+        t.head === observation.head &&
+        t.published === observation.published &&
+        t.plan === e.plan_fingerprint &&
+        !!e.worktree_identity &&
+        sameDirectory(t.worktree, e.worktree_identity)
+      );
+    });
+  const attribution = e.finishing?.attribution;
+  const attributable =
+    attribution?.generation === e.control_generation &&
+    attribution.head === observation.head &&
+    attribution.fingerprint === observation.content;
+  const adoption = receipt("adopt");
+  const additional = receipt("additional_attempt");
+  return {
+    attributable:
+      !!attributable ||
+      !!adoption ||
+      !!e.finishing?.inclusions?.some(
+        (i) =>
+          i.generation === e.control_generation &&
+          i.stage === "staged" &&
+          i.source_clean &&
+          i.head === observation.head &&
+          i.content === observation.content,
+      ),
+    adoption,
+    additional:
+      additional &&
+      !e.finishing?.synchronization?.some((a) => a.additional_authorization === additional.key)
+        ? additional
+        : undefined,
+  };
+}
+
+/** Admission processes already present content. It never admits a new Apply turn. */
+export const admitSynchronization = Effect.fn("Synchronization.admit")(function* (
+  git: Git,
+  records: Records,
+  e: Execution,
+  observation: PublicationObservation,
+) {
+  const existing = activeSynchronization(e);
+  if (
+    e.operation?.generation !== e.control_generation ||
+    (!e.plan_fingerprint && !existing?.plan) ||
+    e.stop_status ||
+    !e.worktree_directory ||
+    !e.delivered_commit
+  )
+    return yield* new WorkflowError(
+      "SYNCHRONIZATION_OWNERSHIP",
+      "Current operation, scope and publication required",
+    );
+  if (
+    observation.state === "merged" ||
+    observation.remote !== e.delivered_commit ||
+    !observation.descendant
+  )
+    return yield* new WorkflowError(
+      "SYNCHRONIZATION_IDENTITY",
+      "Only an unchanged owned open publication can be synchronized",
+    );
+  if (existing && existing.stage !== "admitted")
+    return {
+      execution: e,
+      stage: existing.stage === "planning" ? ("planning" as const) : ("verifying" as const),
+    };
+  const authority = synchronizationAuthority(e, observation);
+  if (!existing && !authority.attributable)
+    return yield* new WorkflowError("SYNCHRONIZATION_ADOPTION", "Exact-content adoption required");
+  const ordinal = existing?.ordinal ?? (e.finishing?.synchronization?.length ?? 0) + 1;
+  if (!existing && ordinal > 2 && !authority.additional)
+    return yield* new WorkflowError(
+      "SYNCHRONIZATION_ALLOWANCE",
+      "Two automatic attempts consumed; authorize this exact additional revision",
+    );
+  if (
+    !existing &&
+    (observation.head !== (yield* git.head(e.worktree_directory)) ||
+      observation.content !== (yield* git.fingerprint(e.worktree_directory)))
+  )
+    return yield* new WorkflowError(
+      "SYNCHRONIZATION_STALE",
+      "Input changed before synchronization admission",
+    );
+  const revision = e.workflow_policy === "full-openspec" && !!e.archive_path;
+  const inputTree = yield* git.candidateTree(e.worktree_directory);
+  if (
+    !existing &&
+    (observation.head !== (yield* git.head(e.worktree_directory)) ||
+      observation.content !== (yield* git.fingerprint(e.worktree_directory)))
+  )
+    return yield* new WorkflowError("SYNCHRONIZATION_STALE", "Input changed during admission");
+  if (existing && inputTree !== existing.input_tree)
+    return yield* new WorkflowError(
+      "SYNCHRONIZATION_STALE",
+      "Admitted input changed during recovery",
+    );
+  const attempt = existing ?? {
+    schema_version: 1 as const,
+    generation: e.control_generation,
+    operation_id: e.operation.id,
+    ordinal,
+    input: observation.content,
+    input_tree: inputTree,
+    head: observation.head,
+    published: observation.published,
+    plan: e.plan_fingerprint!,
+    pr: e.pull_request_reference,
+    attribution: authority.adoption ? ("native_adoption" as const) : ("authorized_work" as const),
+    adoption_key: authority.adoption?.key,
+    additional_authorization: authority.additional?.key,
+    stage: "admitted" as const,
+    admitted_at: yield* timestamp,
+    prior_change: e.openspec_change,
+    prior_archive: e.archive_path,
+    prior_tree: e.archived_tree,
+    prior_approvals: structuredClone(e.approval_receipts),
+    worker_sessions: (["explore", "apply", "review", "research"] as const).flatMap((role) => {
+      const id = e[`${role}_session_id`];
+      return id ? [{ id, role }] : [];
+    }),
+  };
+  e = {
+    ...e,
+    finishing: {
+      ...e.finishing,
+      schema_version: 1,
+      synchronization: existing
+        ? e.finishing!.synchronization
+        : [...(e.finishing?.synchronization ?? []), attempt],
+      preflight: undefined,
+      current_question: undefined,
+    },
+  };
+  // Persist the allowance and original input before staging, checks or native admission.
+  e = yield* records.saveFinishing(e, ["synchronization", "preflight", "current_question"]);
+  if (e.decisions?.some((d) => d.generation === e.control_generation && d.status === "open"))
+    return yield* new WorkflowError(
+      "FINISHING_CHANGED",
+      "Resolve the current decision before staging admitted content",
+    );
+  if (!e.worktree_directory)
+    return yield* new WorkflowError(
+      "SYNCHRONIZATION_STALE",
+      "Worktree identity changed during staging",
+    );
+  yield* git.run(e.worktree_directory, ["add", "--all"]);
+  const planningBase = yield* git.tree(e.worktree_directory);
+  if (planningBase !== attempt.input_tree)
+    return yield* new WorkflowError(
+      "SYNCHRONIZATION_STALE",
+      "Content changed during synchronization staging",
+    );
+  const nextStage = revision ? ("planning" as const) : ("verifying" as const);
+  yield* tryDomainValue(assertTransition, e, nextStage);
+  // Historical sessions remain managed and cannot gain a new conversational entry point.
+  e = yield* records.commitOwned(e, (current) => ({
+    ...resetDeliveryArtifactsPatch({
+      clearDeliveryArtifacts: true,
+      clearForgeObservation: true,
+      clearReviewSession: true,
+      clearPlanningArtifacts: revision,
+    }),
+    finishing: {
+      ...current.finishing,
+      schema_version: 1,
+      synchronization: current.finishing?.synchronization?.map((a) =>
+        a.ordinal === ordinal ? { ...a, planning_base_tree: planningBase, stage: nextStage } : a,
+      ),
+    },
+    retry_instructions: `Synchronize existing content revision ${ordinal}. Assess only the retained work already present; do not implement new fixes or widen accepted scope. Preserve all historical archives. ${revision ? "Prepare a new revision plan describing existing implemented work, with accurate completed tasks. This authorizes planning artifacts only; after approval the controller runs checks and independent Review without Apply." : "Independent Review must confirm existing edits fit the approved scope."}`,
+    ...(revision && {
+      openspec_base_change: e.openspec_base_change ?? e.openspec_change,
+      openspec_change: ChangeName.make(
+        `${e.openspec_base_change ?? e.openspec_change}-sync${ordinal}`,
+      ),
+      planning_base_commit: observation.head,
+    }),
+    current_phase: nextStage,
+  }));
+  return { execution: e, stage: nextStage };
+});

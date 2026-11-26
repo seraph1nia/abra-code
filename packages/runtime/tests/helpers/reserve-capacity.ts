@@ -40,9 +40,14 @@ await run(
       Effect.repeat({ schedule: Schedule.spaced(10), until: Boolean }),
       Effect.timeout("10 seconds"),
     );
-    const admitted = yield* new Capacity(config, records).reserve(e, "explore", project, true);
+    const { admitted, execution } = yield* new Capacity(config, records).reserve(
+      e,
+      "explore",
+      project,
+      true,
+    );
     yield* Effect.sync(() =>
-      process.stdout.write(JSON.stringify({ id, admitted, wait: e.capacity_wait })),
+      process.stdout.write(JSON.stringify({ id, admitted, wait: execution.capacity_wait })),
     );
   }),
 );

@@ -91,7 +91,7 @@ export function rendererManifest(installation: string): Plugin {
       // Export receives the resulting bytes and supplies only the Chromium launcher.
       for (const [entry, format, fileName] of [
         ["mermaid-engine.ts", "iife", "diagram-engine.js"],
-        ["prepared-diagram-host.ts", "es", "diagram-host.mjs"],
+        ["prepared-diagram-host.ts", "cjs", "diagram-host.cjs"],
       ] as const) {
         const result = await build({
           root: resolve(canonical, "apps/report"),
@@ -134,6 +134,7 @@ export function rendererManifest(installation: string): Plugin {
         "packages/contracts/src/presentation/notices.ts",
         "packages/contracts/src/presentation/report-export-contract.ts",
         "apps/report/scripts/renderer-manifest.ts",
+        "apps/report/scripts/renderer-cache.ts",
         "apps/report/scripts/renderer-styles.ts",
         "apps/report/scripts/diagrams.ts",
         "apps/report/scripts/preparation.ts",

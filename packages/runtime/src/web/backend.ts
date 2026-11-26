@@ -1,3 +1,4 @@
+import { sha256 } from "../digest.ts";
 import type {
   ScopedMemorySearch,
   ScopedMemoryRead,
@@ -23,7 +24,6 @@ import type {
   ReadExportSchema,
 } from "@abracode/contracts/web/report-actions";
 import { workerHistoryMessage } from "@abracode/contracts/web/worker-history";
-import { createHash } from "node:crypto";
 import { Effect, Schema, Stream } from "effect";
 import type { OpenCodeClient } from "@opencode/client/effect";
 import { Form } from "@opencode/schema/form";
@@ -31,7 +31,6 @@ import { Permission } from "@opencode/schema/permission";
 import type { SessionMessage } from "@opencode/schema/session-message";
 import { type Endpoint } from "@opencode/client/effect/service";
 import { CrewError } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import {
   AbsolutePath,
   IssueId,
@@ -51,8 +50,7 @@ import { toolPresentation } from "./tool-presentation.ts";
 import { nativeRpcError, readWorkReport } from "./native-errors.ts";
 import { canonicalJSON } from "../presentation/identity.ts";
 import { isTransportFailure, nativeChanges } from "./native-changes.ts";
-export const fingerprint = (value: unknown) =>
-  createHash("sha256").update(canonicalJSON(value)).digest("hex");
+export const fingerprint = (value: unknown) => sha256(canonicalJSON(value));
 export const projectMessage = (message: SessionMessage.Info) =>
   projectNativeMessage(message, toolPresentation);
 
@@ -71,7 +69,7 @@ export class NativeWebBackend implements WebBackend {
     this.sessionID = SessionId.make(sessionID);
     this.reader = new NativeSessionReader(
       this.sessionID,
-      () => this.connection().pipe(domainEffect),
+      () => this.connection().pipe(Effect.mapError(nativeRpcError)),
       toolPresentation,
     );
   }
@@ -107,14 +105,14 @@ export class NativeWebBackend implements WebBackend {
       this.cachedClient = client;
       return { client, session };
     });
-  private cachedDiscovery = () =>
-    Effect.runSync(memoSuccessful(Effect.suspend(() => this.createConnection())));
-  private discovery = this.cachedDiscovery();
-  private discoverConnection = () => Effect.suspend(() => this.discovery);
+  private discovery = memoSuccessful(Effect.suspend(() => this.createConnection()));
+  private discoverConnection = () => this.discovery.read;
   private forget(client: OpenCodeClient) {
-    if (this.cachedClient !== client) return;
-    this.cachedClient = undefined;
-    this.discovery = this.cachedDiscovery();
+    return Effect.suspend(() => {
+      if (this.cachedClient !== client) return Effect.void;
+      this.cachedClient = undefined;
+      return this.discovery.invalidate;
+    });
   }
   private connection = () =>
     Effect.suspend(() => {
@@ -122,11 +120,9 @@ export class NativeWebBackend implements WebBackend {
       if (!cached) return this.discoverConnection();
       return this.verifySession(cached).pipe(
         Effect.map((session) => ({ client: cached, session })),
-        Effect.catch((cause) => {
-          if (!isTransportFailure(cause)) return Effect.fail(cause);
-          this.forget(cached);
-          return this.discoverConnection();
-        }),
+        Effect.catchIf(isTransportFailure, () =>
+          this.forget(cached).pipe(Effect.andThen(this.discoverConnection)),
+        ),
       );
     });
   private client = () =>
@@ -142,15 +138,17 @@ export class NativeWebBackend implements WebBackend {
       this.client().pipe(
         Effect.flatMap((client) =>
           fn(client).pipe(
-            Effect.catch((cause) => {
-              if (!isTransportFailure(cause)) return Effect.fail(cause);
-              this.forget(client);
-              return retry ? invoke(false) : Effect.fail(cause);
-            }),
+            Effect.catchIf(
+              (cause: E) => isTransportFailure(cause),
+              (cause) =>
+                this.forget(client).pipe(
+                  Effect.andThen(() => (retry ? invoke(false) : Effect.fail(cause))),
+                ),
+            ),
           ),
         ),
       );
-    return domainEffect(invoke(retryRead).pipe(Effect.mapError(nativeRpcError)));
+    return invoke(retryRead).pipe(Effect.mapError(nativeRpcError));
   }
   private read<A, E>(fn: (client: OpenCodeClient) => Effect.Effect<A, E>) {
     return this.use(fn, true);
@@ -158,69 +156,49 @@ export class NativeWebBackend implements WebBackend {
   private gateway(client: OpenCodeClient) {
     return client.rpc(webGateway);
   }
+  private gatewayCall<I extends object, A, E>(
+    mode: "read" | "write",
+    select: (
+      rpc: ReturnType<NativeWebBackend["gateway"]>,
+    ) => (
+      payload: NoInfer<I> & { session_id: SessionId },
+      options: ReturnType<NativeWebBackend["location"]>,
+    ) => Effect.Effect<A, E>,
+    input: I,
+  ) {
+    return this.use(
+      (client) =>
+        select(this.gateway(client))({ ...input, session_id: this.sessionID }, this.location()),
+      mode === "read",
+    );
+  }
   readonly memoryEnabled = Effect.suspend(() =>
-    this.read((client) =>
-      this.gateway(client).memoryEnabled({ session_id: this.sessionID }, this.location()),
-    ),
+    this.gatewayCall("read", (rpc) => rpc.memoryEnabled, {}),
   );
   memorySearch = (input: typeof ScopedMemorySearch.Type) =>
-    this.read((client) =>
-      this.gateway(client).memorySearch({ session_id: this.sessionID, ...input }, this.location()),
-    );
+    this.gatewayCall("read", (rpc) => rpc.memorySearch, input);
   memoryRead = (input: typeof ScopedMemoryRead.Type) =>
-    this.read((client) =>
-      this.gateway(client).memoryRead({ session_id: this.sessionID, ...input }, this.location()),
-    );
+    this.gatewayCall("read", (rpc) => rpc.memoryRead, input);
   memoryPublish = (input: MemoryPublication) =>
-    this.use((client) =>
-      this.gateway(client).memoryPublish({ session_id: this.sessionID, ...input }, this.location()),
-    );
-  readonly agents = Effect.suspend(() =>
-    this.read((client) =>
-      this.gateway(client).agents({ session_id: this.sessionID }, this.location()),
-    ),
-  );
-  readonly repositories = Effect.suspend(() =>
-    this.read((client) =>
-      this.gateway(client).projects({ session_id: this.sessionID }, this.location()),
-    ),
-  );
+    this.gatewayCall("write", (rpc) => rpc.memoryPublish, input);
+  readonly agents = Effect.suspend(() => this.gatewayCall("read", (rpc) => rpc.agents, {}));
+  readonly repositories = Effect.suspend(() => this.gatewayCall("read", (rpc) => rpc.projects, {}));
   private location() {
     return { location: { directory: this.home } };
   }
   readonly reviews = {
     receipt: (selection: typeof ReviewResponseQuerySchema.Type) =>
-      this.read((client) =>
-        this.gateway(client).reviewReceipt(
-          { session_id: this.sessionID, ...selection },
-          this.location(),
-        ),
-      ),
+      this.gatewayCall("read", (rpc) => rpc.reviewReceipt, selection),
     list: (issue?: string) =>
-      this.read((client) =>
-        this.gateway(client).reviewList(
-          { session_id: this.sessionID, ...(issue ? { issue_id: IssueId.make(issue) } : {}) },
-          this.location(),
-        ),
+      this.gatewayCall(
+        "read",
+        (rpc) => rpc.reviewList,
+        issue ? { issue_id: IssueId.make(issue) } : {},
       ),
-    read: (selection: ReviewSelection) =>
-      this.read((client) =>
-        this.gateway(client).review({ session_id: this.sessionID, ...selection }, this.location()),
-      ),
+    read: (selection: ReviewSelection) => this.gatewayCall("read", (rpc) => rpc.review, selection),
     asset: (selection: typeof ReviewAssetQuerySchema.Type) =>
-      this.read((client) =>
-        this.gateway(client).reviewAsset(
-          { session_id: this.sessionID, ...selection },
-          this.location(),
-        ),
-      ),
-    submit: (input: ReviewSubmit) =>
-      this.use((client) =>
-        this.gateway(client).reviewSubmit(
-          { session_id: this.sessionID, ...input },
-          this.location(),
-        ),
-      ),
+      this.gatewayCall("read", (rpc) => rpc.reviewAsset, selection),
+    submit: (input: ReviewSubmit) => this.gatewayCall("write", (rpc) => rpc.reviewSubmit, input),
   };
   private checkpoint(client: OpenCodeClient, form: Form.Info) {
     return Effect.gen({ self: this }, function* () {
@@ -244,175 +222,154 @@ export class NativeWebBackend implements WebBackend {
     });
   }
   observe = (scope: ChangeScope) =>
-    domainEffect(
-      Effect.suspend(() =>
-        this.reader
-          .read({
-            transcript: !this.lastObservation || scope.all || scope.transcript,
-            inbox: !this.lastObservation || scope.all || scope.admissions || scope.transcript,
-          })
-          .pipe(
-            Effect.filterOrElse(
-              (native) => !native.repair,
-              () => this.reader.read({ transcript: true, inbox: true }),
-            ),
-            Effect.filterOrFail(
-              (native) => !native.repair,
-              () =>
-                new CrewError(
-                  "WEB_OBSERVATION",
-                  "Native transcript changed while recovering. Reconnect for a fresh observation.",
-                ),
-            ),
-            Effect.flatMap((native) =>
-              Effect.gen({ self: this }, function* () {
-                const { client, session, page, inbox } = native;
-                const prior = this.lastObservation;
-                const all = !prior || scope.all;
-                const transcript = all || scope.transcript;
-                const attention = all || scope.attention;
-                const workChanged = all || scope.work_all || scope.finder || scope.issues?.length;
-
-                const rpc = this.gateway(client),
-                  opts = this.location();
-                const selection = {
-                  receipts: !!(all || scope.admissions),
-                  surfaces: !!(all || scope.presentations),
-                  projects: !!(all || scope.projects),
-                  ...(all || scope.presentations || transcript
-                    ? {
-                        message_ids:
-                          page?.data.map((message) => message.id) ??
-                          this.reader
-                            .current()
-                            ?.messages.map((message) => MessageId.make(message.id)) ??
-                          [],
-                      }
-                    : {}),
-                };
-                const { forms, permissions, observedWork, sections } = yield* Effect.all(
-                  {
-                    forms: attention
-                      ? client.session.form.list({ sessionID: this.sessionID }).pipe(
-                          Effect.flatMap((forms) =>
-                            Effect.forEach(forms, (form) => this.attentionForm(client, form), {
-                              concurrency: 4,
-                            }),
-                          ),
-                        )
-                      : Effect.undefined,
-                    permissions: attention
-                      ? client.permission.list({ sessionID: this.sessionID })
-                      : Effect.undefined,
-                    observedWork: workChanged
-                      ? client
-                          .rpc(visibility)
-                          .snapshot({}, opts)
-                          .pipe(
-                            Effect.flatMap((work) =>
-                              decode(WorkSnapshotSchema, work, "Retained work observation"),
-                            ),
-                            Effect.result,
-                          )
-                      : Effect.undefined,
-                    sections:
-                      selection.receipts ||
-                      selection.surfaces ||
-                      selection.projects ||
-                      selection.message_ids
-                        ? rpc.observeSections({ session_id: this.sessionID, ...selection }, opts)
-                        : Effect.undefined,
-                  },
-                  { concurrency: 4 },
-                );
-                if (observedWork?._tag === "Success") this.lastValidWork = observedWork.success;
-                const work = this.lastValidWork ?? {
-                  home: this.home,
-                  at: yield* timestamp,
-                  work: [],
-                };
-                const value = yield* decode(
-                  WorkspaceSnapshotSchema,
-                  {
-                    session_id: this.sessionID,
-                    agent_id: "abra" as const,
-                    at: yield* timestamp,
-                    busy: native.busy,
-                    outcome: session.outcome,
-                    model: native.model,
-                    older: page ? page.cursor.next : prior?.older,
-                    forms: forms ?? prior!.forms,
-                    permissions: permissions
-                      ? permissions.map((request) => ({ request, binding: fingerprint(request) }))
-                      : prior!.permissions,
-                    inbox: inbox ?? prior!.inbox,
-                    work,
-                    work_unavailable:
-                      observedWork?._tag === "Failure"
-                        ? "Retained work is temporarily unavailable. Showing the last valid work observation."
-                        : workChanged
-                          ? undefined
-                          : prior?.work_unavailable,
-                    receipts: selection.receipts ? sections?.receipts : prior!.receipts,
-                    surfaces: selection.surfaces ? sections?.surfaces : prior!.surfaces,
-                    presentations: selection.message_ids
-                      ? sections?.presentations
-                      : prior?.presentations,
-                    projects: selection.projects ? sections?.projects : prior!.projects,
-                  },
-                  "Workspace snapshot",
-                );
-                this.lastObservation = value;
-                return value;
-              }),
-            ),
+    Effect.suspend(() =>
+      this.reader
+        .read({
+          transcript: !this.lastObservation || scope.all || scope.transcript,
+          inbox: !this.lastObservation || scope.all || scope.admissions || scope.transcript,
+        })
+        .pipe(
+          Effect.filterOrElse(
+            (native) => !native.repair,
+            () => this.reader.read({ transcript: true, inbox: true }),
           ),
-      ),
-    );
+          Effect.filterOrFail(
+            (native) => !native.repair,
+            () =>
+              new CrewError(
+                "WEB_OBSERVATION",
+                "Native transcript changed while recovering. Reconnect for a fresh observation.",
+              ),
+          ),
+          Effect.flatMap((native) =>
+            Effect.gen({ self: this }, function* () {
+              const { client, session, page, inbox } = native;
+              const prior = this.lastObservation;
+              const all = !prior || scope.all;
+              const transcript = all || scope.transcript;
+              const attention = all || scope.attention;
+              const workChanged = all || scope.work_all || scope.finder || scope.issues?.length;
+
+              const rpc = this.gateway(client),
+                opts = this.location();
+              const selection = {
+                receipts: !!(all || scope.admissions),
+                surfaces: !!(all || scope.presentations),
+                projects: !!(all || scope.projects),
+                ...(all || scope.presentations || transcript
+                  ? {
+                      message_ids:
+                        page?.data.map((message) => message.id) ??
+                        this.reader
+                          .current()
+                          ?.messages.map((message) => MessageId.make(message.id)) ??
+                        [],
+                    }
+                  : {}),
+              };
+              const { forms, permissions, observedWork, sections } = yield* Effect.all(
+                {
+                  forms: attention
+                    ? client.session.form.list({ sessionID: this.sessionID }).pipe(
+                        Effect.flatMap((forms) =>
+                          Effect.forEach(forms, (form) => this.attentionForm(client, form), {
+                            concurrency: 4,
+                          }),
+                        ),
+                      )
+                    : Effect.undefined,
+                  permissions: attention
+                    ? client.permission.list({ sessionID: this.sessionID })
+                    : Effect.undefined,
+                  observedWork: workChanged
+                    ? client
+                        .rpc(visibility)
+                        .snapshot({}, opts)
+                        .pipe(
+                          Effect.flatMap((work) =>
+                            decode(WorkSnapshotSchema, work, "Retained work observation"),
+                          ),
+                          Effect.result,
+                        )
+                    : Effect.undefined,
+                  sections:
+                    selection.receipts ||
+                    selection.surfaces ||
+                    selection.projects ||
+                    selection.message_ids
+                      ? rpc.observeSections({ session_id: this.sessionID, ...selection }, opts)
+                      : Effect.undefined,
+                },
+                { concurrency: 4 },
+              );
+              if (observedWork?._tag === "Success") this.lastValidWork = observedWork.success;
+              const work = this.lastValidWork ?? {
+                home: this.home,
+                at: yield* timestamp,
+                work: [],
+              };
+              const value = yield* decode(
+                WorkspaceSnapshotSchema,
+                {
+                  session_id: this.sessionID,
+                  agent_id: "abra" as const,
+                  at: yield* timestamp,
+                  busy: native.busy,
+                  outcome: session.outcome,
+                  model: native.model,
+                  older: page ? page.cursor.next : prior?.older,
+                  forms: forms ?? prior!.forms,
+                  permissions: permissions
+                    ? permissions.map((request) => ({ request, binding: fingerprint(request) }))
+                    : prior!.permissions,
+                  inbox: inbox ?? prior!.inbox,
+                  work,
+                  work_unavailable:
+                    observedWork?._tag === "Failure"
+                      ? "Retained work is temporarily unavailable. Showing the last valid work observation."
+                      : workChanged
+                        ? undefined
+                        : prior?.work_unavailable,
+                  receipts: selection.receipts ? sections?.receipts : prior!.receipts,
+                  surfaces: selection.surfaces ? sections?.surfaces : prior!.surfaces,
+                  presentations: selection.message_ids
+                    ? sections?.presentations
+                    : prior?.presentations,
+                  projects: selection.projects ? sections?.projects : prior!.projects,
+                },
+                "Workspace snapshot",
+              );
+              this.lastObservation = value;
+              return value;
+            }),
+          ),
+        ),
+    ).pipe(Effect.mapError(nativeRpcError));
   get agentStatus() {
-    return this.reader.status;
+    return this.reader.status.pipe(Effect.mapError(nativeRpcError));
   }
   snapshot = this.observe({ all: true });
   history = (cursor: string) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const page = yield* this.reader.history(cursor);
-        return {
-          messages: page.messages,
-          older: page.older,
-          presentations: yield* this.gateway(page.client).presentations(
-            { session_id: this.sessionID, message_ids: page.messageIDs },
-            this.location(),
-          ),
-        };
-      }),
-    );
+    Effect.gen({ self: this }, function* () {
+      const page = yield* this.reader.history(cursor);
+      return {
+        messages: page.messages,
+        older: page.older,
+        presentations: yield* this.gateway(page.client).presentations(
+          { session_id: this.sessionID, message_ids: page.messageIDs },
+          this.location(),
+        ),
+      };
+    }).pipe(Effect.mapError(nativeRpcError));
   resolve = (target: ResourceSelection) =>
-    this.read((client) =>
-      this.gateway(client).resolve({ session_id: this.sessionID, target }, this.location()),
-    );
+    this.gatewayCall("read", (rpc) => rpc.resolve, { target });
   publications = (query: typeof PublicationQuery.Type) =>
-    this.read((client) =>
-      this.gateway(client).publications({ session_id: this.sessionID, ...query }, this.location()),
-    );
+    this.gatewayCall("read", (rpc) => rpc.publications, query);
   surface = (id: string, revision: number) =>
-    this.read((client) =>
-      this.gateway(client).surface(
-        { session_id: this.sessionID, surface_id: id, revision },
-        this.location(),
-      ),
-    );
-  submit = (input: Submission) =>
-    this.use((client) =>
-      this.gateway(client).submit({ session_id: this.sessionID, ...input }, this.location()),
-    );
+    this.gatewayCall("read", (rpc) => rpc.surface, { surface_id: id, revision });
+  submit = (input: Submission) => this.gatewayCall("write", (rpc) => rpc.submit, input);
   receipt = (requestID: string) =>
-    this.read((client) =>
-      this.gateway(client).receipt(
-        { session_id: this.sessionID, request_id: requestID },
-        this.location(),
-      ),
-    );
+    this.gatewayCall("read", (rpc) => rpc.receipt, { request_id: requestID });
   stop = this.use((client) =>
     client.session
       .interrupt({ sessionID: this.sessionID, resume: false })
@@ -466,34 +423,13 @@ export class NativeWebBackend implements WebBackend {
     report: (input) =>
       readWorkReport(this.workMethod((rpc) => rpc.report)(input), this.work.detail(input)),
     artifacts: (input) =>
-      this.read((client) =>
-        this.gateway(client).history(
-          {
-            session_id: this.sessionID,
-            issue_id: input.issue_id,
-            artifact_offset: input.offset ?? 0,
-          },
-          this.location(),
-        ),
-      ),
-    decisions: (input) =>
-      this.read((client) =>
-        this.gateway(client).history({ session_id: this.sessionID, ...input }, this.location()),
-      ),
-    artifactDocument: (input) =>
-      this.read((client) =>
-        this.gateway(client).artifactDocument(
-          { session_id: this.sessionID, ...input },
-          this.location(),
-        ),
-      ),
-    artifactSummary: (input) =>
-      this.read((client) =>
-        this.gateway(client).artifactSummary(
-          { session_id: this.sessionID, ...input },
-          this.location(),
-        ),
-      ),
+      this.gatewayCall("read", (rpc) => rpc.history, {
+        issue_id: input.issue_id,
+        artifact_offset: input.offset ?? 0,
+      }),
+    decisions: (input) => this.gatewayCall("read", (rpc) => rpc.history, input),
+    artifactDocument: (input) => this.gatewayCall("read", (rpc) => rpc.artifactDocument, input),
+    artifactSummary: (input) => this.gatewayCall("read", (rpc) => rpc.artifactSummary, input),
     "worker-history": (input) =>
       this.read((client) =>
         Effect.gen({ self: this }, function* () {
@@ -578,27 +514,13 @@ export class NativeWebBackend implements WebBackend {
       }),
     );
   exportDocument = (input: typeof ExportDocumentSchema.Type) =>
-    this.use((client) =>
-      this.gateway(client).exportDocument(
-        { session_id: this.sessionID, ...input },
-        this.location(),
-      ),
-    );
+    this.gatewayCall("write", (rpc) => rpc.exportDocument, input);
   readExport = (input: typeof ReadExportSchema.Type) =>
-    this.read((client) =>
-      this.gateway(client).readExport({ session_id: this.sessionID, ...input }, this.location()),
-    );
+    this.gatewayCall("read", (rpc) => rpc.readExport, input);
   prepareDiagrams = (selection: PrepareDiagramSelection) =>
-    this.read((client) =>
-      this.gateway(client).prepareDiagrams(
-        { session_id: this.sessionID, selection },
-        this.location(),
-      ),
-    );
+    this.gatewayCall("read", (rpc) => rpc.prepareDiagrams, { selection });
   saveSurface = (input: typeof SaveSurfaceSchema.Type) =>
-    this.use((client) =>
-      this.gateway(client).saveSurface({ session_id: this.sessionID, ...input }, this.location()),
-    );
+    this.gatewayCall("write", (rpc) => rpc.saveSurface, input);
   nativeEvent = (event: NativeEventEnvelope) => this.reader.apply(event);
   nativeSnapshot = () => this.reader.current();
   readonly changes = Stream.unwrap(

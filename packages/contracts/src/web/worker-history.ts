@@ -1,3 +1,4 @@
+import { utf8Bytes } from "../utf8.ts";
 import { Schema } from "effect";
 import { IssueId, SessionId, Timestamp } from "../identities.ts";
 import { TranscriptMessageSchema } from "./workspace-wire.ts";
@@ -20,17 +21,15 @@ export const WorkerHistoryPageSchema = Schema.Struct({
 }).check(
   Schema.makeFilter(
     (page) =>
-      new TextEncoder().encode(JSON.stringify(page)).length <= 512 * 1024 ||
-      "Worker transcript page exceeds 512 KiB",
+      utf8Bytes(JSON.stringify(page)) <= 512 * 1024 || "Worker transcript page exceeds 512 KiB",
   ),
 );
 
-const encoder = new TextEncoder();
 function excerpt(text: string, limit: number) {
   let size = 0,
     result = "";
   for (const character of text) {
-    size += encoder.encode(character).length;
+    size += utf8Bytes(character);
     if (size > limit) break;
     result += character;
   }
@@ -45,7 +44,7 @@ export function workerHistoryMessage(
     const input = tool.input === undefined ? undefined : excerpt(tool.input, 1024);
     const result = tool.result === undefined ? undefined : excerpt(tool.result, 2048);
     const presentation =
-      tool.presentation && encoder.encode(JSON.stringify(tool.presentation)).length <= 2048
+      tool.presentation && utf8Bytes(JSON.stringify(tool.presentation)) <= 2048
         ? tool.presentation
         : undefined;
     const truncated =
@@ -62,7 +61,7 @@ export function workerHistoryMessage(
       if (part.type === "tool")
         return tools?.some((tool) => tool.id === part.tool_id) ? [part] : [];
       const text = excerpt(part.text, remaining);
-      remaining -= encoder.encode(text).length;
+      remaining -= utf8Bytes(text);
       limited ||= text !== part.text;
       return text ? [{ type: "text" as const, text }] : [];
     });

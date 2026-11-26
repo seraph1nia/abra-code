@@ -19,7 +19,3 @@ export function ownObservationRequests(agent: { fetch: HttpAgentFetchFn }) {
     if (agent.fetch === owned) agent.fetch = original;
   };
 }
-
-export function bindObservationThread(agent: { threadId: string }, thread: string) {
-  agent.threadId = thread;
-}

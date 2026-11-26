@@ -6,7 +6,7 @@ import { canonicalJson } from "@abracode/contracts/canonical-json";
 import { RoleSchema, PolicySchema } from "@abracode/contracts/primitives";
 import { createHash } from "node:crypto";
 import { CapabilityRequirementsSchema } from "./capabilities.ts";
-import { nativePermissions, leadPermissions, validDenial } from "./policy.ts";
+import { profileBaseline, validDenial } from "./policy.ts";
 
 export { canonicalJson };
 export const digest = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -64,10 +64,7 @@ export const profileRevision = (profile: Omit<StaticProfile, "revision" | "id">)
   digest(canonicalJson(profile));
 export const validProfile = (profile: StaticProfile) => {
   const { id, revision, ...material } = profile;
-  const baseline =
-    profile.role === "project-lead"
-      ? leadPermissions()
-      : nativePermissions(profile.role, "*", [], profile);
+  const baseline = profileBaseline(profile);
   return (
     profile.permissions.length >= baseline.length &&
     canonicalJson(profile.permissions.slice(0, baseline.length)) === canonicalJson(baseline) &&

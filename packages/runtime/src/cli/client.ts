@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { CommandExit } from "./exit.ts";
 import { Service } from "@opencode/client/effect/service";
 import { Effect, Option } from "effect";
 import { ChildProcess } from "effect/process";
@@ -78,7 +79,5 @@ export const runClient = (options: ClientOptions) =>
         return yield* child.exitCode;
       }),
     ).pipe(Effect.mapError((cause) => CrewError.from(cause.reason.cause ?? cause)));
-    yield* Effect.sync(() => {
-      process.exitCode = Number(code);
-    });
+    if (code !== 0) return yield* new CommandExit({ status: Number(code) });
   });

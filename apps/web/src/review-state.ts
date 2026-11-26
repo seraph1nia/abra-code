@@ -2,7 +2,6 @@ import { useCallback, useContext, useEffect } from "react";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { Schema } from "effect";
-import { KeyValueStore } from "effect/persistence";
 import {
   ReviewAnswersSchema,
   ReviewSubmitSchema,
@@ -24,18 +23,10 @@ type Draft = Retained & {
   error?: string;
   errors?: Record<string, string>;
 };
-const storage = Atom.runtime(KeyValueStore.layerStorage(() => localStorage));
-const savedDraft = Atom.family((key: string) =>
-  Atom.kvs({
-    runtime: storage,
-    key,
-    schema: DraftSchema,
-    defaultValue: () => ({ answers: {} }),
-    mode: "sync",
-  }),
-);
-const localDraft = Atom.family((_key: string) =>
-  Atom.make<Partial<Draft>>({}).pipe(Atom.setIdleTTL("30 seconds")),
+const localDraft = Atom.family((key: string) =>
+  Atom.make<Draft>(readRetained(key, DraftSchema) ?? { answers: {} }).pipe(
+    Atom.setIdleTTL("30 seconds"),
+  ),
 );
 
 export function useReviewDraft({
@@ -46,7 +37,6 @@ export function useReviewDraft({
 }: ReviewRecord) {
   const registry = useContext(RegistryContext);
   const key = `abra-review-${session_id}-${review_id}-${revision}-${hash}`;
-  const saved = savedDraft(key);
   const local = localDraft(key);
   const valid = useCallback(
     (value: Retained) => {
@@ -62,29 +52,24 @@ export function useReviewDraft({
     },
     [review_id, revision, hash],
   );
-  const retained = useAtomValue(saved);
-  const state: Draft = {
-    ...(valid(retained) ? retained : { answers: {} }),
-    ...useAtomValue(local),
-  };
-  const current = useCallback(
-    (): Draft => ({
-      ...(valid(registry.get(saved)) ? registry.get(saved) : { answers: {} }),
-      ...registry.get(local),
-    }),
-    [registry, valid, saved, local],
-  );
+  const draft = useAtomValue(local);
+  const state = valid(draft) ? draft : { answers: {} };
+  const current = useCallback((): Draft => {
+    const value = registry.get(local);
+    return valid(value) ? value : { answers: {} };
+  }, [registry, local, valid]);
   useEffect(() => {
     const restore = () => {
       const previous = registry.get(local);
       if (previous.working) return;
       const value = readRetained(key, DraftSchema);
-      if (!value || !valid(value)) return;
+      if (value && !valid(value)) return;
+      const restored = value ?? { answers: {} };
       // A storage event already changed the backing store. Writing it back
       // would echo the event to other tabs and start duplicate receipt reads.
       registry.set(
         local,
-        previous.unsaved ? { ...value, answers: previous.answers, unsaved: true } : value,
+        previous.unsaved ? { ...restored, answers: previous.answers, unsaved: true } : restored,
       );
     };
     const receive = (event: StorageEvent) => {
@@ -93,7 +78,7 @@ export function useReviewDraft({
     restore();
     window.addEventListener("storage", receive);
     return () => window.removeEventListener("storage", receive);
-  }, [registry, key, local, saved, valid]);
+  }, [registry, key, local, valid]);
   const update = useCallback(
     (next: Partial<Draft>, required = false) => {
       const { answers, pending, receipt, ...ephemeral } = { ...current(), ...next };
@@ -104,14 +89,15 @@ export function useReviewDraft({
       };
       // Admission needs confirmation of durable identity before issuing the request.
       const persisted = writeRetained(key, retained);
-      if (persisted) registry.set(saved, retained);
-      if (!persisted && required)
+      if (!persisted && required) {
+        ephemeral.working = false;
         ephemeral.error =
           "Cannot retain submission identity in browser storage. Your draft is preserved; enable storage before sending.";
+      }
       registry.set(local, { ...retained, ...ephemeral, unsaved: !persisted });
       return persisted;
     },
-    [registry, current, key, saved, local],
+    [registry, current, key, local],
   );
   const change = useCallback(
     (id: string, answer: string | readonly string[]) => {

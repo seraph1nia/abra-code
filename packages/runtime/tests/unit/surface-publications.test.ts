@@ -68,6 +68,27 @@ test("draft checks leave publication state empty and a fresh publication recheck
   assert.equal((await run(f.owner.publish(request, f.observe))).revision, 1);
 });
 
+test("a full surface directory admits replacement revisions and refuses new captures", async () => {
+  const f = fixture();
+  for (let i = 0; i < 16; i++) {
+    await run(f.owner.publish(source(`msg_create${i}`, "First", `board${i}`), f.observe));
+  }
+  await assert.rejects(
+    run(f.owner.publish(source("msg_excess", "Extra", "overflow"), f.observe)),
+    /At most 16/,
+  );
+  assert.equal(f.reads(), 16);
+  assert.equal(
+    (await run(f.owner.publish(source("msg_update", "Updated", "board7"), f.observe))).revision,
+    2,
+  );
+  assert.equal((await run(f.owner.list(session))).length, 16);
+  assert.equal(
+    [...f.store.values.keys()].some((key) => key.startsWith("web/surface/")),
+    false,
+  );
+});
+
 test("cyclic, excessive, executable and unsafe replacements preserve the published revision", async () => {
   const f = fixture();
   await run(f.owner.publish(source("msg_valid", "Retain this view"), f.observe));
@@ -159,9 +180,9 @@ test("generated layouts and associations retain exact immutable revisions across
   assert.equal(
     (
       (await f.store
-        .get(StorageKey.make(`web/surface/${session}/board`))
-        .pipe(Effect.runPromise)) as { revision: number }
-    ).revision,
+        .get(StorageKey.make(`web/surface-head/${session}/board`))
+        .pipe(Effect.runPromise)) as { committed_revision: number }
+    ).committed_revision,
     2,
   );
   const page = await run(
@@ -188,7 +209,6 @@ for (const phase of [
   "web/surface-publication/",
   "web/surface-revision/",
   "web/surface-call/",
-  "web/surface/",
   "web/presentation/",
 ]) {
   for (const replacement of [false, true])
@@ -301,6 +321,9 @@ test("legacy latest-only layouts and original request retries do not invent earl
       snapshot: f.workspace.value.work.work,
     }),
   );
+  assert.deepEqual(await run(f.owner.list(session)), [
+    { surface_id: "board", unavailable: "Missing committed surface head" },
+  ]);
   await assert.rejects(run(f.owner.read(session, "board", 2)), /committed surface head/);
   await assert.rejects(run(f.owner.publish(old, f.observe)), /committed surface head/);
   assert.deepEqual((await run(f.owner.associations(session, [old.message_id]))).entries, []);

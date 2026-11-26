@@ -1,18 +1,15 @@
-import { createHash } from "node:crypto";
+import { sha256 } from "../digest.ts";
+import { ConfigurationError } from "../errors.ts";
 import { join } from "node:path";
 import { Effect, Redacted } from "effect";
 import { decodeJSON } from "../decode.ts";
 import { InlineMemosSettings } from "./contracts.ts";
-import { CrewError, type Config } from "../domain.ts";
+import { type Config } from "../domain.ts";
 import { readFile } from "../filesystem.ts";
 
 type NotebookLocation = Pick<Config, "home" | "config_path">;
 export const devNotebookPath = (config: NotebookLocation) =>
-  join(
-    config.home,
-    ".abracode",
-    `memos-${createHash("sha256").update(config.config_path).digest("hex")}.json`,
-  );
+  join(config.home, ".abracode", `memos-${sha256(config.config_path)}.json`);
 
 export const readDevNotebook = (config: NotebookLocation) =>
   readFile(devNotebookPath(config), "utf8").pipe(
@@ -27,14 +24,17 @@ export const readDevNotebook = (config: NotebookLocation) =>
 export const memosConnection = (config: Pick<Config, "memos">) =>
   Effect.gen(function* () {
     if (!config.memos)
-      return yield* new CrewError(
+      return yield* new ConfigurationError(
         "MEMOS_UNCONFIGURED",
         "Configure a Memos notebook in personal settings.",
       );
     const instance = new URL(config.memos.instance).origin;
     if ("token" in config.memos) return { instance, token: config.memos.token };
     const credentialError = () =>
-      new CrewError("MEMOS_CREDENTIAL", "The Memos token file is missing, unreadable or invalid.");
+      new ConfigurationError(
+        "MEMOS_CREDENTIAL",
+        "The Memos token file is missing, unreadable or invalid.",
+      );
     const value = (yield* readFile(config.memos.token_file, "utf8").pipe(
       Effect.mapError(credentialError),
     )).trim();

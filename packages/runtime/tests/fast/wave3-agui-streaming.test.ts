@@ -32,6 +32,35 @@ class Consumer extends AbstractAgent {
   }
 }
 
+test("state patches add and remove optional fields using their JSON wire presence", async () => {
+  const source = new WorkspaceFixture();
+  const native = { busy: false, messages: [], inbox: [] };
+  const adapter = new NativeAgentAdapter({
+    sessionID: source.sessionID,
+    current: Effect.succeed({ busy: false }),
+    stop: Effect.succeed(false),
+    submit: () => Effect.die("unexpected admission"),
+    receipt: () => Effect.succeed(null),
+    notifyAdmission: Effect.void,
+    updates: Stream.fromIterable(
+      [undefined, true, undefined].map((attention, sequence) => ({
+        type: "snapshot" as const,
+        native,
+        order: { epoch: "test", sequence, baseline: sequence === 0 },
+        state: () => ({ changes: { attention } }),
+      })),
+    ),
+  });
+  const events = await lastValueFrom(adapter.connect(source.sessionID).pipe(toArray()));
+  assert.deepEqual(
+    events.filter((e) => e.type === EventType.STATE_DELTA).map((e) => e.delta),
+    [
+      [{ op: "add", path: "/changes/attention", value: true }],
+      [{ op: "remove", path: "/changes/attention" }],
+    ],
+  );
+});
+
 test("NativeMessageCursor emits one TEXT_MESSAGE_START, multiple TEXT_MESSAGE_CONTENT deltas, and one TEXT_MESSAGE_END", async () => {
   const cursor = new NativeMessageCursor();
   const base = { id: "msg_stream", role: "assistant" as const, at: "2026-11-24T00:00:00Z" };
@@ -124,7 +153,9 @@ test("STATE_DELTA emits fine-grained RFC 6902 sub-path patches instead of replac
 
   const directDelta = jsonPatch({ workspace: first }, { workspace: second });
   assert.ok(directDelta.some((op) => op.path === "/workspace/busy" && op.op === "replace"));
-  assert.ok(directDelta.some((op) => op.path === "/workspace/work/work" && op.op === "replace"));
+  assert.ok(
+    directDelta.some((op) => op.path === "/workspace/work/work/0/title" && op.op === "replace"),
+  );
   assert.equal(
     directDelta.some((op) => op.path === "/workspace"),
     false,

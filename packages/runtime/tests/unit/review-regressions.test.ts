@@ -46,16 +46,20 @@ test("research restarts from the saved phase before any worker admission intent 
   assert.equal(before.current_phase, "researching");
   assert.equal(before.active_role, undefined);
   assert.equal(before.session_intent, undefined);
-  const restarted = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const restarted = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   const [after] = await run(restarted.reconcile(issue.id));
   assert.equal(after.current_phase, "researching");
@@ -70,13 +74,16 @@ test("stale operation saves preserve observation removal as well as newer values
   t.onTestFinished(() => run(f.close()));
   const e = await run(applying(f));
   await run(f.controller.workerProgress(e.apply_session_id!, 0, "Previous turn activity"));
-  const stale = await run(f.controller.get(e.issue_id));
-  const current = await run(f.controller.get(e.issue_id));
-  delete current.progress;
+  let stale = await run(f.controller.get(e.issue_id));
+  let current = await run(f.controller.get(e.issue_id));
+  current = { ...current, progress: undefined };
   await run(f.records.save(current));
   await assert.rejects(run(f.records.save(stale)), /revision changed/);
-  stale.error_or_recovery_reason = "Independent observation after progress was cleared";
-  await run(f.records.saveOwned(stale, ["error_or_recovery_reason"]));
+  stale = {
+    ...stale,
+    error_or_recovery_reason: "Independent observation after progress was cleared",
+  };
+  stale = await run(f.records.saveOwned(stale, ["error_or_recovery_reason"]));
   assert.equal(stale.progress, undefined);
   await run(f.records.save(stale));
   assert.equal((await run(f.controller.get(e.issue_id))).progress, undefined);

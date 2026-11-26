@@ -5,7 +5,7 @@ import { Agent } from "@opencode/schema/agent";
 import * as Id from "@abracode/contracts/identities";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import { LeadRecordSchema, leadKey, readLeads } from "../../src/workflow/lead-contracts.ts";
+import { LeadRecordSchema, leadKey, readLeads } from "../../src/workflow/leads/contracts.ts";
 import { LeadEvidencePageSchema } from "@abracode/contracts/visibility/lead-observation";
 import { visibility } from "../../src/visibility/protocol.ts";
 import { WorkSnapshotSchema as BrowserWorkSnapshot } from "@abracode/contracts/web/wire";
@@ -48,9 +48,9 @@ test("ticket lead reads hydrate only the selected issue as other repositories gr
   const queries = f.controller.queries;
   const fleet = vi.spyOn(queries, "observe");
   const summaries = vi.spyOn(f.work, "repositoryIssueSummaries");
-  const hydrate = f.work["issuesRepo"].hydrate.bind(f.work["issuesRepo"]);
+  const hydrate = f.work["queries"].hydrate.bind(f.work["queries"]);
   const hydrated: string[] = [];
-  f.work["issuesRepo"].hydrate = (rows, links) => {
+  f.work["queries"].hydrate = (rows, links) => {
     hydrated.push(...rows.map((row) => String(row.id)));
     return hydrate(rows, links);
   };

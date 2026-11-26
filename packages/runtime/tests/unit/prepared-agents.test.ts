@@ -395,19 +395,22 @@ test("interrupted preparation keeps its receipt unadmitted, releases capacity an
 });
 
 test("superseded cleanup cannot release a replacement or uncertain admission", async () => {
-  const { execution, records } = await retainedExecution({
+  let { execution, records } = await retainedExecution({
     capacity_reservation: { role: "explore", generation: 0, status: "preparing" },
   });
   const capacity = new Capacity(await run(fixtureConfig("/fixture")), records);
   const stale = structuredClone(execution);
-  await run(records.commitControl(execution));
+  execution = await run(records.commitControl(execution));
   await assert.rejects(run(capacity.releasePreparation(stale, "explore")), /superseded/);
-  execution.capacity_reservation = {
-    role: "explore",
-    generation: execution.control_generation,
-    status: "uncertain",
+  execution = {
+    ...execution,
+    capacity_reservation: {
+      role: "explore",
+      generation: execution.control_generation,
+      status: "uncertain",
+    },
   };
-  await run(records.saveOwned(execution, ["capacity_reservation"]));
+  execution = await run(records.saveOwned(execution, ["capacity_reservation"]));
   await assert.rejects(run(capacity.releasePreparation(execution, "explore")), /superseded/);
   assert.deepEqual(
     (await run(records.execution(execution.issue_id)))!.capacity_reservation,

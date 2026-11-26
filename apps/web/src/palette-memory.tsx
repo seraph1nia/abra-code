@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { useAtomValue, useAtomRefresh } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { RepositoryId } from "@abracode/contracts/identities";
 import { WorkspaceApi, memoryEnabledQuery, repositoriesQuery } from "./data.ts";
 import { type Hit, useSource, sourceFeedback } from "./palette-source.ts";
-import { requestError } from "./request-error.ts";
+import { RequestState } from "./request-state.tsx";
 import type { MemoryReference } from "@abracode/contracts/visibility/memory";
 import { Button } from "@abracode/presentation/ui/button";
 
@@ -102,8 +102,6 @@ function MemoryNote({
     payload: { reference, repository_id: repository, offset },
     timeToLive: "0 seconds",
   });
-  const result = useAtomValue(atom);
-  const refresh = useAtomRefresh(atom);
   return (
     <section aria-label="Memory note" className="min-h-0 overflow-y-auto p-3 text-sm">
       <Button variant="ghost" onClick={back}>
@@ -113,28 +111,23 @@ function MemoryNote({
         {reference.scope.kind === "shared" ? "Shared" : reference.scope.repository_id} ·{" "}
         {reference.path} · {reference.revision}
       </p>
-      {AsyncResult.isSuccess(result) ? (
-        <>
-          <pre className="whitespace-pre-wrap break-words">{result.value.body}</pre>
-          {offset > 0 && (
-            <Button variant="ghost" onClick={() => setOffset(0)}>
-              Read from start
-            </Button>
-          )}
-          {result.value.next_offset !== undefined && (
-            <Button variant="ghost" onClick={() => setOffset(result.value.next_offset!)}>
-              Read next section
-            </Button>
-          )}
-        </>
-      ) : AsyncResult.isFailure(result) ? (
-        <>
-          <p role="alert">{requestError(result.cause)}</p>
-          <Button onClick={refresh}>Retry read</Button>
-        </>
-      ) : (
-        <output>Reading note…</output>
-      )}
+      <RequestState query={atom} showRefresh={false}>
+        {(note) => (
+          <>
+            <pre className="whitespace-pre-wrap break-words">{note.body}</pre>
+            {offset > 0 && (
+              <Button variant="ghost" onClick={() => setOffset(0)}>
+                Read from start
+              </Button>
+            )}
+            {note.next_offset !== undefined && (
+              <Button variant="ghost" onClick={() => setOffset(note.next_offset!)}>
+                Read next section
+              </Button>
+            )}
+          </>
+        )}
+      </RequestState>
     </section>
   );
 }

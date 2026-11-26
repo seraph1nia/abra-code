@@ -1,10 +1,24 @@
+import { StorageError } from "../errors.ts";
 import { StorageKey, StoragePrefix } from "@abracode/contracts/identities";
 import { type StorageDomain } from "@opencode/plugin/effect/storage";
 import { Effect, type Schema } from "effect";
 import { CrewError } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 
-export interface Store {
+export interface PagedStore {
+  page(
+    prefix: StoragePrefix,
+    after: string | undefined,
+    limit: number,
+  ): Effect.Effect<
+    {
+      entries: Array<{ key: StorageKey; value: unknown }>;
+      next?: string;
+    },
+    CrewError
+  >;
+}
+
+export interface Store extends Partial<PagedStore> {
   get(key: StorageKey): Effect.Effect<unknown, CrewError>;
   set<T>(key: StorageKey, value: T): Effect.Effect<void, CrewError>;
   entries(
@@ -33,11 +47,11 @@ function normalizeJsonValue(value: unknown, key: StorageKey, seen: Set<object>):
     typeof value === "symbol" ||
     typeof value === "bigint"
   ) {
-    throw new CrewError("INVALID_RECORD", `Cannot encode ${key}`);
+    throw new StorageError("INVALID_RECORD", `Cannot encode ${key}`);
   }
-  if (typeof value !== "object") throw new CrewError("INVALID_RECORD", `Cannot encode ${key}`);
+  if (typeof value !== "object") throw new StorageError("INVALID_RECORD", `Cannot encode ${key}`);
 
-  if (seen.has(value)) throw new CrewError("INVALID_RECORD", `Cannot encode ${key}`);
+  if (seen.has(value)) throw new StorageError("INVALID_RECORD", `Cannot encode ${key}`);
   seen.add(value);
   try {
     if (hasToJSON(value)) {
@@ -67,24 +81,22 @@ function normalizeJsonValue(value: unknown, key: StorageKey, seen: Set<object>):
 export class NativeStore implements Store {
   constructor(private storage: StorageDomain) {}
   get(key: StorageKey) {
-    return domainEffect(this.storage.get(key));
+    return this.storage.get(key);
   }
   set<T>(key: StorageKey, value: T) {
-    return domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const json = yield* Effect.try({
-          try: () => normalizeJsonValue(value, key, new Set()),
-          catch: (error) =>
-            error instanceof CrewError
-              ? error
-              : new CrewError("INVALID_RECORD", `Cannot encode ${key}`),
-        });
-        yield* this.storage.set(key, json).pipe(Effect.uninterruptible);
-      }),
-    );
+    return Effect.gen({ self: this }, function* () {
+      const json = yield* Effect.try({
+        try: () => normalizeJsonValue(value, key, new Set()),
+        catch: (error) =>
+          error instanceof CrewError
+            ? error
+            : new StorageError("INVALID_RECORD", `Cannot encode ${key}`),
+      });
+      yield* this.storage.set(key, json).pipe(Effect.uninterruptible);
+    });
   }
   page(prefix: StoragePrefix, after: string | undefined, limit: number) {
-    return domainEffect(this.storage.scan({ prefix, after, limit })).pipe(
+    return this.storage.scan({ prefix, after, limit }).pipe(
       Effect.map((page) => ({
         entries: page.entries.map((entry) => ({ ...entry, key: StorageKey.make(entry.key) })),
         next: page.next,
@@ -92,19 +104,17 @@ export class NativeStore implements Store {
     );
   }
   entries(prefix: StoragePrefix) {
-    return domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const result: Array<{ key: StorageKey; value: unknown }> = [];
-        let after: string | undefined;
-        do {
-          const page = yield* this.storage.scan({ prefix, after, limit: 100 });
-          result.push(
-            ...page.entries.map((entry) => ({ ...entry, key: StorageKey.make(entry.key) })),
-          );
-          after = page.next;
-        } while (after);
-        return result;
-      }),
-    );
+    return Effect.gen({ self: this }, function* () {
+      const result: Array<{ key: StorageKey; value: unknown }> = [];
+      let after: string | undefined;
+      do {
+        const page = yield* this.storage.scan({ prefix, after, limit: 100 });
+        result.push(
+          ...page.entries.map((entry) => ({ ...entry, key: StorageKey.make(entry.key) })),
+        );
+        after = page.next;
+      } while (after);
+      return result;
+    });
   }
 }

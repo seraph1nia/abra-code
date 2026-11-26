@@ -1,3 +1,5 @@
+import { tryDomainValue } from "../effect.ts";
+import { stripUndefined } from "../json-wire.ts";
 import { randomUUID } from "node:crypto";
 import {
   IssueId,
@@ -8,7 +10,7 @@ import {
   timestamp,
 } from "@abracode/contracts/identities";
 import { needsDisposition } from "@abracode/contracts/workflow/message-contracts";
-import { Context, Layer, Effect, Schema, Option, Data } from "effect";
+import { Effect, Schema } from "effect";
 import { decode } from "../decode.ts";
 import {
   CrewError,
@@ -19,11 +21,12 @@ import {
   type SavedExecution,
   type SetupExecution,
 } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import { providerFailure } from "../observability.ts";
-import { committedScope } from "../visibility/invalidations.ts";
+import { committedScope } from "../invalidations.ts";
 import { Coordination } from "../workflow/coordination.ts";
-import { hasWorkerSession, workerSessionIDs } from "../workflow/worker-assignment.ts";
+import { WorkerTickets } from "./worker-tickets.ts";
+import { withActiveIndex, capacityRecords, updateActiveIndex } from "./active-index.ts";
+import { decodeRecord, unknownExtensions } from "./record-codec.ts";
 import {
   ExecutionRecordSchema,
   ProjectRecordSchema,
@@ -44,34 +47,8 @@ const executionSchema = ExecutionRecordSchema;
 const setupSchema = SetupRecordSchema;
 const projectSchema = ProjectRecordSchema;
 const observationKey = StorageKey.make("observation/records-revision");
-type ActiveIndex = {
-  records: Records;
-  executions: Map<IssueId, SavedExecution>;
-  setups: Map<RepositoryId, SetupExecution>;
-  diagnostics: RecordDiagnostic[];
-};
-const needsActiveIndex = (e: SavedExecution) =>
-  e.current_phase !== "completed" ||
-  e.attention?.some((item) => item.status === "uncertain" || item.status === "admitted");
-const activeIndex = Context.Reference<ActiveIndex | undefined>("abracode/active-execution-index", {
-  defaultValue: () => undefined,
-});
-class RecordFormatError extends Data.TaggedError("RecordFormatError")<{
-  code: "INVALID_RECORD" | "UNSUPPORTED_RECORD_VERSION" | "RECORD_IDENTITY";
-  message: string;
-}> {}
 const projectOwnedFields = new Set(Object.keys(ProjectRecordSchema.fields));
 const executionOwnedFields = new Set(Object.keys(executionRecordFields));
-const terminalWorkerPhases = new Set<string>(["completed", "cancelled", "archived"]);
-const maxWorkerTickets = 2048;
-
-/** Replace owned fields, including absence. Unknown additive evidence stays on disk. */
-export function synchronizeExecution(target: object, source: ManagedExecution) {
-  for (const field of executionOwnedFields)
-    if (!(field in source)) Reflect.deleteProperty(target, field);
-  Object.assign(target, source);
-}
-
 /** Identity/control replacement is separate from a writer's explicitly owned fields. */
 export type ExecutionOwnedField = Exclude<
   keyof Execution,
@@ -94,7 +71,10 @@ export type ExecutionPatch = {
     | (undefined extends Execution[K] ? typeof removeOwnedField : never);
 };
 
-function applyPatch<E extends ManagedExecution>(current: E, patch: ExecutionPatch): E {
+export function applyExecutionPatch<E extends ManagedExecution>(
+  current: E,
+  patch: ExecutionPatch,
+): E {
   const next = { ...current };
   for (const [field, value] of Object.entries(patch)) {
     ensure(value !== undefined, "INVALID_PATCH", "Use explicit removal to clear an owned field");
@@ -104,53 +84,8 @@ function applyPatch<E extends ManagedExecution>(current: E, patch: ExecutionPatc
   return next;
 }
 
-function isRecordObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function checkedRecord(key: StorageKey, raw: unknown): Record<string, unknown> {
-  if (!isRecordObject(raw))
-    throw new RecordFormatError({ code: "INVALID_RECORD", message: `${key}: Expected a record` });
-  if (raw.schema_version !== 1)
-    throw new RecordFormatError({
-      code: "UNSUPPORTED_RECORD_VERSION",
-      message: `${key}: Unsupported record version; preserve data and use a compatible runtime`,
-    });
-  const identity = key.startsWith("project/")
-    ? raw.id
-    : key.startsWith("setup/")
-      ? raw.repository_id
-      : raw.issue_id;
-  if (identity !== key.slice(key.indexOf("/") + 1))
-    throw new RecordFormatError({
-      code: "RECORD_IDENTITY",
-      message: `${key}: Record identity does not match its key`,
-    });
-  return raw;
-}
-
-function decodeRecord<S extends Schema.ConstraintDecoder<unknown>>(
-  key: StorageKey,
-  raw: unknown,
-  schema: S,
-) {
-  return Effect.try({
-    try: () => checkedRecord(key, raw),
-    catch: (error) =>
-      error instanceof RecordFormatError
-        ? new CrewError(error.code, error.message)
-        : CrewError.from(error),
-  }).pipe(Effect.flatMap((record) => decode(schema, record, key)));
-}
-
-function unknownExtensions(original: unknown, owned: ReadonlySet<string>): Record<string, unknown> {
-  return isRecordObject(original)
-    ? Object.fromEntries(Object.entries(original).filter(([field]) => !owned.has(field)))
-    : {};
-}
-
 export class Records {
-  private workerTickets = new Map<SessionId, IssueId>();
+  private readonly workerTickets = new WorkerTickets();
 
   constructor(
     public store: Store,
@@ -176,38 +111,34 @@ export class Records {
   }
 
   private read<S extends Schema.ConstraintDecoder<unknown>>(key: StorageKey, schema: S) {
-    return domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const raw = yield* this.store.get(key);
-        if (raw === undefined) return undefined;
-        return yield* decodeRecord(key, raw, schema);
-      }),
-    );
+    return Effect.gen({ self: this }, function* () {
+      const raw = yield* this.store.get(key);
+      if (raw === undefined) return undefined;
+      return yield* decodeRecord(key, raw, schema);
+    });
   }
 
   private scan<S extends Schema.ConstraintDecoder<unknown>>(prefix: StoragePrefix, schema: S) {
-    return domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const values: S["Type"][] = [];
-        const diagnostics: RecordDiagnostic[] = [];
-        for (const entry of yield* this.store.entries(prefix)) {
-          const result = yield* Effect.result(
-            domainEffect(Effect.suspend(() => decodeRecord(entry.key, entry.value, schema))),
-          );
-          if (result._tag === "Success") values.push(result.success);
-          else
-            diagnostics.push({
-              key: entry.key,
-              code:
-                result.failure.code === "UNSUPPORTED_RECORD_VERSION"
-                  ? "unsupported_version"
-                  : "invalid_record",
-              message: result.failure.message,
-            });
-        }
-        return { values, diagnostics };
-      }),
-    );
+    return Effect.gen({ self: this }, function* () {
+      const values: S["Type"][] = [];
+      const diagnostics: RecordDiagnostic[] = [];
+      for (const entry of yield* this.store.entries(prefix)) {
+        const result = yield* Effect.result(
+          Effect.suspend(() => decodeRecord(entry.key, entry.value, schema)),
+        );
+        if (result._tag === "Success") values.push(result.success);
+        else
+          diagnostics.push({
+            key: entry.key,
+            code:
+              result.failure.code === "UNSUPPORTED_RECORD_VERSION"
+                ? "unsupported_version"
+                : "invalid_record",
+            message: result.failure.message,
+          });
+      }
+      return { values, diagnostics };
+    });
   }
 
   get projectScan(): Effect.Effect<
@@ -243,119 +174,21 @@ export class Records {
     return this.executionScan.pipe(Effect.map((s) => s.values));
   }
 
-  /** Audit storage before taking the exclusive admission lock. The revision
-   * fence retries if another process wrote during capture. Nested admissions
-   * reuse this transaction's active records and its fail-closed diagnostics. */
-  withActiveIndex<A, E, R>(
-    action: () => Effect.Effect<A, E, R>,
-  ): Effect.Effect<A, E | CrewError, R> {
-    return Effect.gen({ self: this }, function* () {
-      if ((yield* activeIndex)?.records === this) return yield* action();
-      while (true) {
-        const revision = yield* this.coordination.with(() => this.observationRevision, {
-          shared: true,
-        });
-        const [executions, setups] = yield* Effect.all([this.executionScan, this.setupScan], {
-          concurrency: 2,
-        });
-        const index: ActiveIndex = {
-          records: this,
-          executions: new Map(
-            executions.values.filter(needsActiveIndex).map((e) => [e.issue_id, e]),
-          ),
-          setups: new Map(
-            setups.values
-              .filter((e) => e.current_phase !== "completed")
-              .map((e) => [e.repository_id, e]),
-          ),
-          diagnostics: [...executions.diagnostics, ...setups.diagnostics],
-        };
-        const result = yield* this.coordinateCommit(() =>
-          this.observationRevision.pipe(
-            Effect.flatMap((current) =>
-              current === revision
-                ? action().pipe(Effect.provideService(activeIndex, index), Effect.asSome)
-                : Effect.succeed(Option.none<A>()),
-            ),
-          ),
-        );
-        if (Option.isSome(result)) return result.value;
-      }
-    });
+  withActiveIndex<A, E, R>(action: () => Effect.Effect<A, E, R>) {
+    return withActiveIndex(this, action);
   }
 
   capacityRecords(selected: readonly IssueId[] = []) {
-    return Effect.gen({ self: this }, function* () {
-      const index = yield* activeIndex;
-      if (index?.records === this) {
-        const executions = [...index.executions.values()];
-        for (const id of selected) {
-          if (index.executions.has(id)) continue;
-          const result = yield* Effect.result(this.execution(id));
-          if (result._tag === "Success" && result.success) executions.push(result.success);
-        }
-        return { executions, setups: [...index.setups.values()], diagnostics: index.diagnostics };
-      }
-      const [executions, setups] = yield* Effect.all([this.executionScan, this.setupScan], {
-        concurrency: 2,
-      });
-      return {
-        executions: executions.values,
-        setups: setups.values,
-        diagnostics: [...executions.diagnostics, ...setups.diagnostics],
-      };
-    });
+    return capacityRecords(this, selected);
   }
 
   rememberWorkers(execution: Execution) {
-    if (terminalWorkerPhases.has(execution.current_phase)) {
-      for (const session of workerSessionIDs(execution)) {
-        if (session) this.workerTickets.delete(session);
-      }
-      for (const [session, issueId] of this.workerTickets) {
-        if (issueId === execution.issue_id) this.workerTickets.delete(session);
-      }
-      return;
-    }
-    for (const session of workerSessionIDs(execution)) {
-      if (!session) continue;
-      this.workerTickets.delete(session);
-      this.workerTickets.set(session, execution.issue_id);
-      if (this.workerTickets.size > maxWorkerTickets) {
-        const oldest = this.workerTickets.keys().next().value;
-        if (oldest !== undefined) this.workerTickets.delete(oldest);
-      }
-    }
+    this.workerTickets.remember(execution);
   }
 
-  workerAssignment = Effect.fn("Records.workerAssignment")(
-    function* (this: Records, session: SessionId) {
-      const ticket = this.workerTickets.get(session);
-      if (ticket) {
-        const current = yield* this.execution(ticket).pipe(Effect.result);
-        if (
-          current._tag === "Success" &&
-          current.success &&
-          hasWorkerSession(current.success, session)
-        )
-          return current.success;
-        if (
-          current._tag === "Failure" &&
-          ![
-            "INVALID_DATA",
-            "INVALID_RECORD",
-            "UNSUPPORTED_RECORD_VERSION",
-            "RECORD_IDENTITY",
-          ].includes(current.failure.code)
-        )
-          return yield* current.failure;
-        this.workerTickets.delete(session);
-      }
-      const found = (yield* this.executions).find((e) => hasWorkerSession(e, session));
-      if (found) this.rememberWorkers(found);
-      return found;
-    }.bind(this),
-  );
+  workerAssignment(session: SessionId) {
+    return this.workerTickets.lookup(this, session);
+  }
 
   execution(id: IssueId): Effect.Effect<SavedExecution | undefined, CrewError> {
     return this.read(StorageKey.make(`execution/${id}`), executionSchema);
@@ -414,40 +247,32 @@ export class Records {
     control = false,
   ): Effect.Effect<S["Type"], CrewError> {
     return this.coordinateCommit(() =>
-      domainEffect(
-        Effect.gen({ self: this }, function* () {
-          const original = yield* this.store.get(key);
-          const prior: S["Type"] | undefined =
-            original === undefined ? undefined : yield* decodeRecord(key, original, schema);
-          const value = change(prior);
-          if (!value) {
-            ensure(prior, "EXECUTION_MISSING", "No retained execution for update");
-            return prior;
-          }
-          if (prior) yield* validateExecutionTransition(key, prior, value, control);
-          const record: Record<string, unknown> = {
-            ...unknownExtensions(original, executionOwnedFields),
-            ...value,
-            updated_at: yield* timestamp,
-            schema_version: 1,
-            revision: prior ? prior.revision + 1 : 1,
-          };
-          const decoded = yield* decode(schema, record, key);
-          yield* this.commitRecord(key, record, decoded);
-          const failureRole = newWorkerFailureRole(prior, decoded);
-          if (failureRole) yield* providerFailure(failureRole);
-          const index = yield* activeIndex;
-          if (index?.records === this) {
-            if (decoded.setup) {
-              if (decoded.current_phase === "completed") index.setups.delete(decoded.repository_id);
-              else index.setups.set(decoded.repository_id, decoded);
-            } else if (!needsActiveIndex(decoded)) index.executions.delete(decoded.issue_id);
-            else index.executions.set(decoded.issue_id, decoded);
-          }
-          if (!decoded.setup) this.rememberWorkers(decoded);
-          return decoded;
-        }),
-      ),
+      Effect.gen({ self: this }, function* () {
+        const original = yield* this.store.get(key);
+        const prior: S["Type"] | undefined =
+          original === undefined ? undefined : yield* decodeRecord(key, original, schema);
+        const value = yield* tryDomainValue(change, prior);
+        if (!value) {
+          if (!prior)
+            return yield* new CrewError("EXECUTION_MISSING", "No retained execution for update");
+          return prior;
+        }
+        if (prior) yield* validateExecutionTransition(key, prior, value, control);
+        const record: Record<string, unknown> = stripUndefined({
+          ...unknownExtensions(original, executionOwnedFields),
+          ...value,
+          updated_at: yield* timestamp,
+          schema_version: 1,
+          revision: prior ? prior.revision + 1 : 1,
+        });
+        const decoded = yield* decode(schema, record, key);
+        yield* this.commitRecord(key, record, decoded);
+        const failureRole = newWorkerFailureRole(prior, decoded);
+        if (failureRole) yield* providerFailure(failureRole);
+        yield* updateActiveIndex(this, decoded);
+        if (!decoded.setup) this.rememberWorkers(decoded);
+        return decoded;
+      }),
     );
   }
 
@@ -475,8 +300,7 @@ export class Records {
       change,
       control,
     ).pipe(
-      Effect.tap((saved) => Effect.sync(() => synchronizeExecution(e, saved))),
-      Effect.as(e),
+      Effect.map((saved) => saved as E extends SetupExecution ? SetupExecution : SavedExecution),
     );
   }
 
@@ -487,6 +311,10 @@ export class Records {
         fields.map((field) => [field, e[field] === undefined ? removeOwnedField : e[field]]),
       ),
     );
+  }
+  /** Read the latest immutable snapshot under the same execution and operation ownership. */
+  ownedSnapshot(e: Execution) {
+    return this.commitOwned(e, () => undefined);
   }
   saveOwned(e: Execution, fields: readonly ExecutionOwnedField[]) {
     return this.saveFields(e, fields);
@@ -503,13 +331,13 @@ export class Records {
       ensure(current, "EXECUTION_MISSING", "No retained execution for owned update");
       this.assertOwner(e, current);
       const patch = typeof change === "function" ? change(current) : change;
-      return patch ? applyPatch(current, patch) : undefined;
+      return patch ? applyExecutionPatch(current, patch) : undefined;
     });
   }
   create<E extends ManagedExecution>(e: E, patch: ExecutionPatch = {}) {
     return this.mutate(e, (current) => {
       ensure(!current, "EXECUTION_EXISTS", "Execution is already retained");
-      return applyPatch(e, patch);
+      return applyExecutionPatch(e, patch);
     });
   }
   beginOperation<E extends ManagedExecution>(e: E, operation: NonNullable<E["operation"]>) {
@@ -540,10 +368,7 @@ export class Records {
         else Reflect.deleteProperty(finishing, field);
       }
       return { ...current, finishing };
-    }).pipe(
-      Effect.tap((saved) => Effect.sync(() => synchronizeExecution(e, saved))),
-      Effect.as(e),
-    );
+    });
   }
 
   /** Read, validate and change current state under the same commit lock. */
@@ -584,21 +409,19 @@ export class Records {
   saveProject(p: Project): Effect.Effect<Project, CrewError> {
     const key = StorageKey.make(`project/${p.id}`);
     return this.coordinateCommit(() =>
-      domainEffect(
-        Effect.gen({ self: this }, function* () {
-          const original = yield* this.store.get(key);
-          const prior =
-            original === undefined ? undefined : yield* decodeRecord(key, original, projectSchema);
-          const record: Record<string, unknown> = {
-            ...unknownExtensions(original, projectOwnedFields),
-            ...p,
-            schema_version: 1,
-            revision: prior ? prior.revision + 1 : 1,
-          };
-          const decoded = yield* decode(projectSchema, record, key);
-          return yield* this.commitRecord(key, record, decoded);
-        }),
-      ),
+      Effect.gen({ self: this }, function* () {
+        const original = yield* this.store.get(key);
+        const prior =
+          original === undefined ? undefined : yield* decodeRecord(key, original, projectSchema);
+        const record: Record<string, unknown> = stripUndefined({
+          ...unknownExtensions(original, projectOwnedFields),
+          ...p,
+          schema_version: 1,
+          revision: prior ? prior.revision + 1 : 1,
+        });
+        const decoded = yield* decode(projectSchema, record, key);
+        return yield* this.commitRecord(key, record, decoded);
+      }),
     );
   }
 
@@ -607,14 +430,5 @@ export class Records {
   }
   save(e: Execution) {
     return this.mutate(e, () => e);
-  }
-}
-
-export class RecordsService extends Context.Service<RecordsService, Records>()("abracode/Records") {
-  static layer(store: Store, coordination: Coordination) {
-    return Layer.effect(
-      RecordsService,
-      Effect.sync(() => new Records(store, coordination)),
-    );
   }
 }

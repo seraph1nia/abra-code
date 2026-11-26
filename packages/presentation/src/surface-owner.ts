@@ -1,3 +1,5 @@
+import { useState, useSyncExternalStore, useEffect } from "react";
+
 /** Stage validated models, retire only after commit, and recreate after detach. */
 export class SurfaceOwner<R, V> {
   private listeners = new Set<() => void>();
@@ -56,4 +58,18 @@ export class SurfaceOwner<R, V> {
     }
     for (const listener of this.listeners) listener();
   }
+}
+
+export function useSurfaceOwner<R, V>(
+  record: R,
+  prepare: (value: R) => V,
+  dispose: (value: V) => void,
+  sameRecord: (previous: R, next: R) => boolean,
+  update?: (current: V, record: R) => boolean,
+) {
+  const [owner] = useState(() => new SurfaceOwner(record, prepare, dispose, sameRecord, update));
+  const view = useSyncExternalStore(owner.subscribe, owner.read, owner.read);
+  useEffect(() => owner.replace(record), [owner, record]);
+  useEffect(() => owner.committed(view), [owner, view]);
+  return view;
 }

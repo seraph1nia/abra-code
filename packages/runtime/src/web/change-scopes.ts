@@ -52,7 +52,6 @@ export function nativeChangeScope(
   if (
     event.type.startsWith("session.reasoning.") ||
     event.type === "session.viewed" ||
-    event.type === "session.usage.updated" ||
     event.type === "session.skill.activated"
   )
     return;

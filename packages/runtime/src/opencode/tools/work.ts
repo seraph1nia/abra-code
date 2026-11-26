@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256 } from "../../digest.ts";
 import { Clock, Effect, Schema } from "effect";
 import {
   IncidentId,
@@ -13,13 +13,12 @@ import { ValidationInput } from "@abracode/contracts/validation/contracts";
 import { BriefingQuery, WorkBriefing } from "@abracode/contracts/visibility/briefing";
 import { MessageInputSchema } from "@abracode/contracts/workflow/message-contracts";
 import { CrewError } from "../../domain.ts";
-import { domainEffect } from "../../effect.ts";
 import { workBriefing } from "../../visibility/briefing.ts";
 import { BatchInputSchema } from "../../work/batch.ts";
 import { WorkInputSchema } from "../../work/model.ts";
 import { ScopeSchema } from "../../work/scope.ts";
 import type { Controller } from "../../workflow/controller.ts";
-import { deliveryAction, deliveryOutcome } from "../../workflow/delivery-outcome.ts";
+import { deliveryAction, deliveryOutcome } from "../../visibility/delivery-outcome.ts";
 import { WorkReportInputSchema } from "../../reporting/report-contracts.ts";
 import { diagnosticText } from "../diagnostics.ts";
 import { toolOutputs } from "../tool-contracts.ts";
@@ -218,75 +217,59 @@ export function workTools(c: Controller): DefinedTool[] {
         "Inspect issue status/history, Git, OpenSpec and native worker session progress.",
       input: issueInput,
       run: (a) =>
-        domainEffect(
-          Effect.gen(function* () {
-            const retained = yield* c.queries.observeTask(a.issue_id, true);
-            if (retained.execution_unavailable)
-              return yield* new CrewError(
-                "OBSERVATION_UNAVAILABLE",
-                retained.execution_unavailable,
-              );
-            const e = retained.execution;
-            if (!e)
-              return yield* new CrewError(
-                "EXECUTION_MISSING",
-                `Missing execution for ${a.issue_id}`,
-              );
-            return {
-              execution: e,
-              retained_source: retained.source,
-              execution_contract: c.queries.executionContract(e),
-              supervision: yield* c.queries.supervision(e, [], retained.issue.status === "closed"),
-              outcome: deliveryOutcome(e, retained.issue.status, yield* Clock.currentTimeMillis),
-              issue: retained.issue,
-              history: retained.history!,
-              openspec:
-                e.workflow_policy !== "full-openspec"
-                  ? null
-                  : e.archive_path
-                    ? { archive: e.archive_path }
-                    : e.worktree_directory
-                      ? yield* c.queries
-                          .specStatus(e)
-                          .pipe(
-                            Effect.catch((error) =>
-                              domainEffect(Effect.sync(() => ({ error: error.message }))),
-                            ),
-                          )
-                      : null,
-              git:
-                e.worktree_directory && e.current_phase !== "completed"
-                  ? yield* c.queries
-                      .dirty(e.worktree_directory)
-                      .pipe(
-                        Effect.catch((error) =>
-                          domainEffect(Effect.sync(() => ({ error: error.message }))),
-                        ),
-                      )
-                  : null,
-              sessions: yield* Effect.forEach(
-                [
-                  e.explore_session_id,
-                  e.apply_session_id,
-                  e.review_session_id,
-                  e.research_session_id,
-                ].filter((id): id is SessionId => !!id),
-                (id) =>
-                  c.queries.session(id).pipe(
-                    Effect.catch((error) =>
-                      domainEffect(
-                        Effect.sync(() => ({
-                          id,
-                          diagnostic_error: diagnosticText(error.message),
-                        })),
-                      ),
-                    ),
+        Effect.gen(function* () {
+          const retained = yield* c.queries.observeTask(a.issue_id, true);
+          if (retained.execution_unavailable)
+            return yield* new CrewError("OBSERVATION_UNAVAILABLE", retained.execution_unavailable);
+          const e = retained.execution;
+          if (!e)
+            return yield* new CrewError("EXECUTION_MISSING", `Missing execution for ${a.issue_id}`);
+          return {
+            execution: e,
+            retained_source: retained.source,
+            execution_contract: c.queries.executionContract(e),
+            supervision: yield* c.queries.supervision(e, [], retained.issue.status === "closed"),
+            outcome: deliveryOutcome(e, retained.issue.status, yield* Clock.currentTimeMillis),
+            issue: retained.issue,
+            history: retained.history!,
+            openspec:
+              e.workflow_policy !== "full-openspec"
+                ? null
+                : e.archive_path
+                  ? { archive: e.archive_path }
+                  : e.worktree_directory
+                    ? yield* c.queries
+                        .specStatus(e)
+                        .pipe(
+                          Effect.catch((error) => Effect.sync(() => ({ error: error.message }))),
+                        )
+                    : null,
+            git:
+              e.worktree_directory && e.current_phase !== "completed"
+                ? yield* c.queries
+                    .dirty(e.worktree_directory)
+                    .pipe(Effect.catch((error) => Effect.sync(() => ({ error: error.message }))))
+                : null,
+            sessions: yield* Effect.forEach(
+              [
+                e.explore_session_id,
+                e.apply_session_id,
+                e.review_session_id,
+                e.research_session_id,
+              ].filter((id): id is SessionId => !!id),
+              (id) =>
+                c.queries.session(id).pipe(
+                  Effect.catch((error) =>
+                    Effect.sync(() => ({
+                      id,
+                      diagnostic_error: diagnosticText(error.message),
+                    })),
                   ),
-                { concurrency: "unbounded" },
-              ),
-            };
-          }),
-        ),
+                ),
+              { concurrency: "unbounded" },
+            ),
+          };
+        }),
     }),
     define({
       name: "work_control",
@@ -317,9 +300,7 @@ export function workTools(c: Controller): DefinedTool[] {
             id:
               a.request_id ??
               RequestId.make(
-                createHash("sha256")
-                  .update(JSON.stringify([session, context.messageID, context.id, generation]))
-                  .digest("hex"),
+                sha256(JSON.stringify([session, context.messageID, context.id, generation])),
               ),
           });
         }),

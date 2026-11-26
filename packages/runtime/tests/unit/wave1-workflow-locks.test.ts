@@ -5,6 +5,7 @@ import { Deferred, Effect, Fiber } from "effect";
 import { test } from "vite-plus/test";
 import * as Id from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
+import { Operations } from "../../src/workflow/operations.ts";
 import { ExecutionTransitions } from "../../src/workflow/transitions.ts";
 import { InboxIndex, inboxTables } from "../../src/work/inbox-index.ts";
 import { fixture } from "../fixtures.ts";
@@ -18,34 +19,36 @@ test("ExecutionTransitions.fail preserves prior resume_phase from blocked, faile
   const issue = f.seed.named(Id.IssueId.make("resume-phase-keep"), Id.RepositoryId.make("api"));
   const started = await run(f.controller.start(issue.id));
   assert.ok("execution_id" in started);
-  const e = started;
+  let e = started;
   const initialPhase = e.current_phase;
   assert.equal(initialPhase, "exploring");
 
+  const operations = await run(Operations.make(f.records, f.locks, f.records.coordination, f.work));
+  t.onTestFinished(() => run(operations.close));
   const transitions = new ExecutionTransitions(
     f.records,
     f.work,
     f.runtime,
     f.records.coordination,
     f.controller.queries,
-    {} as never,
+    operations,
     {} as never,
   );
 
-  await run(transitions.fail(e, new Error("first failure"), "blocked"));
+  e = await run(transitions.fail(e, new Error("first failure"), "blocked"));
   assert.equal(e.current_phase, "blocked");
   assert.equal(e.resume_phase, initialPhase);
 
-  await run(transitions.fail(e, new Error("second failure"), "failed"));
+  e = await run(transitions.fail(e, new Error("second failure"), "failed"));
   assert.equal(e.current_phase, "failed");
   assert.equal(e.resume_phase, initialPhase);
 
-  await run(transitions.fail(e, new Error("third failure"), "recovery_required"));
+  e = await run(transitions.fail(e, new Error("third failure"), "recovery_required"));
   assert.equal(e.current_phase, "recovery_required");
   assert.equal(e.resume_phase, initialPhase);
 
-  await run(f.records.commitOwned(e, { current_phase: "interrupted" }));
-  await run(transitions.fail(e, new Error("fourth failure"), "blocked"));
+  e = await run(f.records.commitOwned(e, { current_phase: "interrupted" }));
+  e = await run(transitions.fail(e, new Error("fourth failure"), "blocked"));
   assert.equal(e.current_phase, "blocked");
   assert.equal(e.resume_phase, initialPhase);
 });

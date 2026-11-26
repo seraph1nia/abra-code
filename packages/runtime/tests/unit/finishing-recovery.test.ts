@@ -7,11 +7,11 @@ import { fixture, delivered } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { CrewError } from "../../src/domain.ts";
 import * as Id from "@abracode/contracts/identities";
-import { admitSynchronization } from "../../src/workflow/synchronization.ts";
-import { observePublication } from "../../src/workflow/finishing-readiness.ts";
+import { admitSynchronization } from "../../src/workflow/finishing/synchronization.ts";
+import { observePublication } from "../../src/workflow/finishing/readiness.ts";
 import { NativeRuntime } from "../../src/opencode/runtime.ts";
 import { type Context } from "@opencode/plugin/effect/plugin";
-import { type FinishingTarget } from "../../src/workflow/finishing-contracts.ts";
+import { type FinishingTarget } from "../../src/workflow/finishing/contracts.ts";
 
 test("native finishing forms reconcile response loss with exact metadata and reject free-text or changed selections", async (t) => {
   const f = await run(fixture);
@@ -137,20 +137,23 @@ test("synchronization retains one admission after lost staging response and cons
   const edit = async (value: string) => {
     await writeFile(join(e.worktree_directory!, "source.txt"), value);
     const observed = await observe();
-    e.finishing = {
-      ...e.finishing,
-      schema_version: 1,
-      attribution: {
+    e = {
+      ...e,
+      finishing: {
+        ...e.finishing,
         schema_version: 1,
-        generation: e.control_generation,
-        head: observed.head,
-        fingerprint: observed.content,
-        session_id: sourceSession,
-        prompt_id: Id.MessageId.make("msg_apply"),
-        at: Id.timestampAt(0),
+        attribution: {
+          schema_version: 1,
+          generation: e.control_generation,
+          head: observed.head,
+          fingerprint: observed.content,
+          session_id: sourceSession,
+          prompt_id: Id.MessageId.make("msg_apply"),
+          at: Id.timestampAt(0),
+        },
       },
     };
-    await run(f.records.save(e));
+    e = await run(f.records.save(e));
     return observed;
   };
   const input = await edit("sample first revision\n");
@@ -167,31 +170,36 @@ test("synchronization retains one admission after lost staging response and cons
       }),
     );
   await assert.rejects(run(admitSynchronization(f.git, f.records, e, input)), /response lost/);
+  e = (await run(f.records.execution(e.issue_id)))!;
   assert.equal(e.finishing!.synchronization!.length, 1);
   assert.equal(e.finishing!.synchronization![0].stage, "admitted");
   f.git.run = gitRun;
   e = (await run(f.records.execution(e.issue_id)))!;
-  await run(admitSynchronization(f.git, f.records, e, await observe()));
+  e = (await run(admitSynchronization(f.git, f.records, e, await observe()))).execution;
   assert.equal(e.finishing!.synchronization!.length, 1);
   const finishAttempt = async () => {
-    e.finishing = {
-      ...e.finishing,
-      schema_version: 1,
-      synchronization: e.finishing!.synchronization!.map((a) => ({
-        ...a,
-        stage: "published",
-        intended_commit: e.delivered_commit!,
-      })),
+    e = {
+      ...e,
+      finishing: {
+        ...e.finishing,
+        schema_version: 1,
+        synchronization: e.finishing!.synchronization!.map((a) => ({
+          ...a,
+          stage: "published",
+          intended_commit: e.delivered_commit!,
+        })),
+      },
     };
-    e.plan_fingerprint = original.plan;
-    e.archive_path = original.archive;
-    e.archived_tree = original.tree;
-    e.current_phase = "awaiting_merge";
-    await run(f.records.save(e));
+    e = { ...e, plan_fingerprint: original.plan };
+    e = { ...e, archive_path: original.archive };
+    e = { ...e, archived_tree: original.tree };
+    e = { ...e, current_phase: "awaiting_merge" };
+    e = await run(f.records.save(e));
     e = (await run(f.records.execution(e.issue_id)))!;
   };
   await finishAttempt();
-  await run(admitSynchronization(f.git, f.records, e, await edit("sample second revision\n")));
+  const second = await edit("sample second revision\n");
+  e = (await run(admitSynchronization(f.git, f.records, e, second))).execution;
   assert.equal(e.finishing!.synchronization!.length, 2);
   await finishAttempt();
   const third = await edit("sample third revision\n");
@@ -247,12 +255,15 @@ test("lost native retirement response confirms absence once and notification fai
   assert.equal((await run(f.work.show(e.issue_id))).status, "closed");
   assert.equal(e.finishing!.completion_notice!.status, "pending");
   const message = e.finishing!.completion_notice!.message_id;
-  e.finishing = {
-    ...e.finishing,
-    schema_version: 1,
-    completion_notice: { ...e.finishing!.completion_notice!, next_check_at: 0 },
+  e = {
+    ...e,
+    finishing: {
+      ...e.finishing,
+      schema_version: 1,
+      completion_notice: { ...e.finishing!.completion_notice!, next_check_at: 0 },
+    },
   };
-  await run(f.records.save(e));
+  e = await run(f.records.save(e));
   f.runtime.notify = () => Effect.void;
   e = (await run(f.controller.reconcile(e.issue_id)))[0];
   assert.equal(e.finishing!.completion_notice!.status, "delivered");

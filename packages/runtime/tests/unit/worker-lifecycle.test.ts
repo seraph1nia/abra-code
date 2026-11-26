@@ -182,16 +182,20 @@ for (const admitted of [false, true]) {
       submissions.push(messageID);
       return prompt(id, text, messageID);
     };
-    const restarted = createWorkflow(
-      f.catalog,
-      f.config,
-      f.records,
-      f.work,
-      f.spec,
-      f.git,
-      f.runtime,
-      f.delivery,
-      f.locks,
+    const restarted = (
+      await run(
+        createWorkflow(
+          f.catalog,
+          f.config,
+          f.records,
+          f.work,
+          f.spec,
+          f.git,
+          f.runtime,
+          f.delivery,
+          f.locks,
+        ),
+      )
     ).controller;
     const [recovered] = await run(restarted.reconcile(saved.issue_id));
     await run(restarted.reconcile(saved.issue_id));
@@ -261,16 +265,20 @@ for (const failure of ["interrupt", "read"] as const) {
       ),
     );
     await assert.rejects(run(f.controller.control(e.issue_id, "resume")), { code: "STOP_PENDING" });
-    const restarted = createWorkflow(
-      f.catalog,
-      f.config,
-      f.records,
-      f.work,
-      f.spec,
-      f.git,
-      f.runtime,
-      f.delivery,
-      f.locks,
+    const restarted = (
+      await run(
+        createWorkflow(
+          f.catalog,
+          f.config,
+          f.records,
+          f.work,
+          f.spec,
+          f.git,
+          f.runtime,
+          f.delivery,
+          f.locks,
+        ),
+      )
     ).controller;
     const [pending] = await run(restarted.reconcile(e.issue_id));
     assert.equal(pending.stop_status, "requested");

@@ -25,7 +25,7 @@ import { ArrowUp, Square } from "@abracode/presentation/icons";
 import { Button } from "@abracode/presentation/ui/button";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
 import { Textarea } from "@abracode/presentation/ui/textarea";
-import { memoryEnabledQuery } from "./data.ts";
+import { memoryEnabledQuery, stopTurn, useWorkspaceCall } from "./data.ts";
 import { useWorkspaceDraft } from "./workspace-state/draft.ts";
 import { useWorkspaceAdmission } from "./workspace-state/admission.ts";
 const ComposerSuggestions = deferred<
@@ -87,6 +87,7 @@ export function Composer({
   useLayoutEffect(() => {
     updateDraftLock(!isReady || Boolean(pending) || admitting);
   }, [updateDraftLock, pending, admitting, isReady]);
+  const stop = useWorkspaceCall(stopTurn);
   const [stopping, setStopping] = useState(false);
 
   const localTextarea = useRef<HTMLTextAreaElement>(null);
@@ -328,29 +329,12 @@ export function Composer({
                 onClick={async () => {
                   setStopping(true);
                   try {
-                    const response = await fetch(
-                      `/api/copilotkit/agent/abra/stop/${encodeURIComponent(workspace.session_id)}`,
-                      {
-                        method: "POST",
-                        headers: { "content-type": "application/json" },
-                        body: "{}",
-                      },
-                    );
-                    if (!response.ok)
-                      throw new Error("Stop could not be confirmed. Refresh the current turn.");
-                    const result: unknown = await response.json();
-                    if (
-                      !result ||
-                      typeof result !== "object" ||
-                      !("stopped" in result) ||
-                      result.stopped !== true
-                    )
-                      throw new Error("Abra did not confirm an active turn to stop.");
-                    refresh();
-                  } catch (error) {
-                    setError(
-                      error instanceof Error ? error.message : "Stop could not be confirmed.",
-                    );
+                    const reply = await stop(workspace.session_id);
+                    if (reply._tag === "Failure")
+                      setError("Stop could not be confirmed. Refresh the current turn.");
+                    else if (!reply.value.stopped)
+                      setError("Abra did not confirm an active turn to stop.");
+                    else refresh();
                   } finally {
                     setStopping(false);
                   }

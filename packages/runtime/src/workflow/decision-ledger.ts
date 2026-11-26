@@ -1,10 +1,9 @@
 import { Clock, Effect } from "effect";
 import type { Fingerprint, FormId, ObligationKey, SessionId } from "@abracode/contracts/identities";
 import { ensure, type Execution } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
-import { synchronizeExecution, type Records } from "../storage/store.ts";
+import { type Records } from "../storage/store.ts";
 import type { Runtime } from "../opencode/runtime.ts";
-import type { FinishingTarget } from "./finishing-contracts.ts";
+import type { FinishingTarget } from "./finishing/contracts.ts";
 import type { Decision } from "./obligation-contracts.ts";
 
 export const MAX_DECISIONS = 256;
@@ -60,43 +59,40 @@ export const openControllerDecision = (
     readonly limitMessage?: string;
   },
 ) =>
-  domainEffect(
-    Effect.gen(function* () {
-      const at = yield* Clock.currentTimeMillis;
-      const saved = yield* records.update(e.issue_id, (current) => {
-        ensure(
-          current.control_generation === e.control_generation &&
-            current.operation?.id === e.operation?.id,
-          "STALE_OPERATION",
-          input.staleMessage,
-        );
-        if (
-          current.decisions?.some(
-            (d) =>
-              d.key === input.key &&
-              (input.matchAnyGeneration || d.generation === current.control_generation),
-          )
+  Effect.gen(function* () {
+    const at = yield* Clock.currentTimeMillis;
+    const saved = yield* records.update(e.issue_id, (current) => {
+      ensure(
+        current.control_generation === e.control_generation &&
+          current.operation?.id === e.operation?.id,
+        "STALE_OPERATION",
+        input.staleMessage,
+      );
+      if (
+        current.decisions?.some(
+          (d) =>
+            d.key === input.key &&
+            (input.matchAnyGeneration || d.generation === current.control_generation),
         )
-          return;
-        return {
-          ...current,
-          decisions: appendDecision(
-            current.decisions,
-            makeControllerDecision({
-              key: input.key,
-              generation: current.control_generation,
-              scope: input.scope ?? current.workflow_policy,
-              question: input.question,
-              openedAt: at,
-            }),
-            input.limitMessage,
-          ),
-        };
-      });
-      synchronizeExecution(e, saved);
-      return input.key;
-    }),
-  );
+      )
+        return;
+      return {
+        ...current,
+        decisions: appendDecision(
+          current.decisions,
+          makeControllerDecision({
+            key: input.key,
+            generation: current.control_generation,
+            scope: input.scope ?? current.workflow_policy,
+            question: input.question,
+            openedAt: at,
+          }),
+          input.limitMessage,
+        ),
+      };
+    });
+    return { execution: saved, key: input.key };
+  });
 
 /** Request a native approval form and read its current decision state. */
 export const collectApprovalForm = (

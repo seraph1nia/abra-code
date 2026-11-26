@@ -2,9 +2,9 @@ import { ThoughtSource } from "./thought-source.tsx";
 import type { SubmissionReceipt } from "@abracode/contracts/web/workspace-wire";
 import { deferred } from "@abracode/presentation/deferred";
 import { selectionMarker, thoughtSubmission } from "@abracode/contracts/web/workspace-wire";
-import { createContext, useContext, memo, useMemo } from "react";
+import { useContext, memo, useMemo } from "react";
 import type { TranscriptMessage } from "@abracode/contracts/web/contracts";
-import type { WebWorkItem } from "@abracode/contracts/web/wire";
+
 import type {
   PresentationAttachmentSchema,
   PresentationDiagnosticSchema,
@@ -14,7 +14,7 @@ import { Paperclip } from "@abracode/presentation/icons";
 import { orderedParts } from "@abracode/contracts/web/transcript";
 import { Markdown } from "./markdown.tsx";
 import { ToolObservation } from "./presentation/tools.tsx";
-import { attachmentKey } from "./presentation/tool-context.ts";
+import { TranscriptData, attachmentKey } from "./presentation/tool-context.ts";
 
 const MessageAttachment = deferred<
   React.ComponentProps<typeof import("./presentation/attachments.tsx").MessageAttachment>
@@ -33,12 +33,11 @@ const SelectedMessage = deferred<{ message: TranscriptMessage }>(
   () => import("./presentation/selected-message.tsx"),
   "Captured selection",
 );
-export const TranscriptWork = createContext<readonly WebWorkItem[]>([]);
 function TranscriptTool(props: Omit<React.ComponentProps<typeof ToolObservation>, "work">) {
-  return <ToolObservation {...props} work={useContext(TranscriptWork)} />;
+  return <ToolObservation {...props} work={useContext(TranscriptData).work} />;
 }
 function TranscriptAttachment(props: Omit<React.ComponentProps<typeof MessageAttachment>, "work">) {
-  return <MessageAttachment {...props} work={useContext(TranscriptWork)} />;
+  return <MessageAttachment {...props} work={useContext(TranscriptData).work} />;
 }
 export const emptyAttachments: readonly (typeof PresentationAttachmentSchema.Type)[] = [];
 export const emptyDiagnostics: readonly (typeof PresentationDiagnosticSchema.Type)[] = [];

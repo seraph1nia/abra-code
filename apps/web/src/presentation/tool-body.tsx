@@ -17,7 +17,7 @@ import {
   ArtifactCard,
   type Inspect,
 } from "@abracode/presentation/cards";
-import { BriefingForms, ObservationContext, attachmentKey } from "./tool-context.ts";
+import { TranscriptData, ObservationContext, attachmentKey } from "./tool-context.ts";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 
 function resourceKey(target: ResourceSelection): string {
@@ -88,7 +88,7 @@ function BriefingSources({
   links: Extract<ToolPresentation, { kind: "briefing" }>["links"];
   inspect: Inspect;
 }) {
-  const forms = useContext(BriefingForms);
+  const forms = useContext(TranscriptData).forms;
   if (!links.length) return null;
   return (
     <details>

@@ -1,3 +1,4 @@
+import { GitError } from "../errors.ts";
 import {
   Executable,
   RepositorySlug,
@@ -13,8 +14,7 @@ import { CrewError, ensure, type Project } from "../domain.ts";
 import { decodeJSON } from "../decode.ts";
 import { type Runner, type RunOptions } from "../process.ts";
 import { remoteIdentity } from "./source.ts";
-import { mkdtemp, writeFile, rm } from "../filesystem.ts";
-import { tmpdir } from "node:os";
+import { scopedTemporaryDirectory, writeFile } from "../filesystem.ts";
 import { join } from "node:path";
 
 export const PRSchema = Schema.Struct({
@@ -167,7 +167,7 @@ export class Forge {
       ),
       Effect.mapError((error) =>
         ["COMMAND_FAILED", "COMMAND_TIMEOUT"].includes(error.code)
-          ? new CrewError(
+          ? new GitError(
               "FORGE_OBSERVATION_FAILED",
               "Forge observation unavailable; recheck before mutation",
             )
@@ -184,13 +184,7 @@ export class Forge {
   ) {
     return Effect.scoped(
       Effect.gen({ self: this }, function* () {
-        const directory = yield* Effect.acquireRelease(
-          mkdtemp(join(tmpdir(), "abracode-forge-")),
-          (d) =>
-            rm(d, { recursive: true }).pipe(
-              Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error)),
-            ),
-        );
+        const directory = yield* scopedTemporaryDirectory("abracode-forge-");
         const path = join(directory, "request.json");
         yield* writeFile(path, JSON.stringify(payload), { mode: 0o600, flag: "wx" });
         return yield* this.json(p, schema, ["api", "--method", method, endpoint, "--input", path]);

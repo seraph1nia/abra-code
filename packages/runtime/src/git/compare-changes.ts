@@ -1,12 +1,12 @@
+import { GitError } from "../errors.ts";
 import { Effect } from "effect";
-import { CrewError } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
+
 import { realpath } from "../filesystem.ts";
 import { AbsolutePath, Commit, RelativePath } from "@abracode/contracts/identities";
 import { type Git } from "./repository.ts";
 import { type WorkDiff } from "../visibility/protocol.ts";
-import { documentLimit } from "../visibility/documents.ts";
-import { untrackedDiff } from "../visibility/untracked-diff.ts";
+import { documentLimit } from "../workflow/read-model/documents.ts";
+import { untrackedDiff } from "../workflow/read-model/untracked-diff.ts";
 
 const fileLimit = 500;
 type DiffFile = WorkDiff["files"][number];
@@ -52,7 +52,7 @@ export const compareChanges = Effect.fn("Git.compareChanges")(function* (
     .map((path) => RelativePath.make(path));
   for (const record of records.slice(0, fileLimit)) {
     const parsed = /^(-|\d+)\t(-|\d+)\t([\s\S]+)$/.exec(record);
-    if (!parsed) return yield* new CrewError("DIFF_FORMAT", "Git returned invalid diff statistics");
+    if (!parsed) return yield* new GitError("DIFF_FORMAT", "Git returned invalid diff statistics");
     files.push({
       path: RelativePath.make(parsed[3]),
       status: statuses.get(RelativePath.make(parsed[3])) ?? "modified",
@@ -86,4 +86,4 @@ export const compareChanges = Effect.fn("Git.compareChanges")(function* (
       return { patch: patch.success };
     });
   return { files, preview, limited: new Set([...statuses.keys(), ...extra]).size > fileLimit };
-}, domainEffect);
+});

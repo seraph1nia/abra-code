@@ -1,21 +1,7 @@
-import { Timestamp } from "@abracode/contracts/identities";
 import type { WorkItem } from "./protocol.ts";
 import { taskAttention } from "@abracode/contracts/visibility/attention";
 import { fleetStates, type FleetState } from "@abracode/contracts/visibility/fleet";
 export * from "@abracode/contracts/visibility/fleet";
-/** Local calendar boundaries include the host's daylight-saving transitions. */
-export function localDay(at: number) {
-  const date = new Date(at);
-  return {
-    day_start: Timestamp.make(
-      new Date(date.getFullYear(), date.getMonth(), date.getDate()).toISOString(),
-    ),
-    day_end: Timestamp.make(
-      new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).toISOString(),
-    ),
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  };
-}
 export function fleetState(work: WorkItem): FleetState {
   if (
     work.issue_status === "unavailable" ||

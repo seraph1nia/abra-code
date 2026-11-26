@@ -1,8 +1,7 @@
 import { RememberThought } from "./remember-thought.tsx";
 import { RunCommand, composerCommands } from "./workspace-commands.ts";
-import { useContext, useState, type ReactNode } from "react";
-import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { AsyncResult, type Atom } from "effect/reactivity";
+import { useContext, useState } from "react";
+
 import { ArrowLeft, ArrowUpRight, Plus } from "@abracode/presentation/icons";
 import { EvidenceDisclosure, SectionCard, StatusBadge } from "@abracode/presentation/cockpit";
 import { Button } from "@abracode/presentation/ui/button";
@@ -11,30 +10,7 @@ import type { CollectionState } from "./navigation.ts";
 import type { ThoughtQuery, ThoughtReference } from "@abracode/contracts/visibility/thoughts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { WorkspaceApi } from "./data.ts";
-import { requestError } from "./request-error.ts";
-
-function Read<A, E>({
-  atom,
-  children,
-}: {
-  atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>;
-  children: (data: A) => ReactNode;
-}) {
-  const result = useAtomValue(atom);
-  const refresh = useAtomRefresh(atom);
-  if (AsyncResult.isFailure(result))
-    return (
-      <div role="alert" className="error-banner">
-        <span>{requestError(result.cause)}</span>
-        <Button variant="outline" size="sm" onClick={refresh}>
-          Retry
-        </Button>
-      </div>
-    );
-  if (!AsyncResult.isSuccess(result) || result.waiting)
-    return <output className="muted">Loading thoughts…</output>;
-  return children(result.value);
-}
+import { RequestState } from "./request-state.tsx";
 
 export function Thoughts({ discuss }: { discuss: (ref: ThoughtReference) => void }) {
   const { collection } = useSearch({ from: "__root__" });
@@ -89,8 +65,9 @@ function ThoughtView({
               <ArrowLeft aria-hidden="true" /> Back to results
             </Button>
           </div>
-          <Read
-            atom={WorkspaceApi.query("work", "thoughtDetail", {
+          <RequestState
+            showRefresh={false}
+            query={WorkspaceApi.query("work", "thoughtDetail", {
               query: selected,
               timeToLive: "0 seconds",
             })}
@@ -127,8 +104,9 @@ function ThoughtView({
                   onToggle={setUsed}
                 >
                   {used && (
-                    <Read
-                      atom={WorkspaceApi.query("work", "thoughtWork", {
+                    <RequestState
+                      showRefresh={false}
+                      query={WorkspaceApi.query("work", "thoughtWork", {
                         query: { ...item.reference, offset },
                         timeToLive: "0 seconds",
                       })}
@@ -190,12 +168,12 @@ function ThoughtView({
                           )}
                         </>
                       )}
-                    </Read>
+                    </RequestState>
                   )}
                 </EvidenceDisclosure>
               </SectionCard>
             )}
-          </Read>
+          </RequestState>
         </div>
       ) : (
         <>
@@ -246,7 +224,7 @@ function ThoughtView({
               </div>
             </form>
           </SectionCard>
-          <Read atom={list}>
+          <RequestState showRefresh={false} query={list}>
             {(page) => (
               <>
                 {page.entries.length === 0 && <p className="empty-note">No matching thoughts.</p>}
@@ -305,7 +283,7 @@ function ThoughtView({
                 )}
               </>
             )}
-          </Read>
+          </RequestState>
         </>
       )}
     </section>

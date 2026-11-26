@@ -1,46 +1,33 @@
+import { WorkspaceActions } from "./workspace-actions.ts";
 import { LiveActivities } from "./presentation/activity-reference.tsx";
-import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { useAtomSet, useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { AsyncResult } from "effect/reactivity";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { AsyncResult, Atom } from "effect/reactivity";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { Button } from "@abracode/presentation/ui/button";
-import { Bell, Expand, Minimize2, PanelRight } from "@abracode/presentation/icons";
-import { BriefingForms } from "./presentation/tool-context.ts";
+import { Bell } from "@abracode/presentation/icons";
+import { WorkspaceTopbar } from "./workspace-topbar.tsx";
+import { WorkspaceHubs } from "./workspace-hubs.tsx";
+import { WorkspaceTranscript } from "./workspace-transcript.tsx";
 import { ToolRenderingProvider } from "./presentation/tools.tsx";
-import { RunCommand, composerCommands, type ComposerCommand } from "./workspace-commands.ts";
+import { type ComposerCommand } from "./workspace-commands.ts";
 import { ReaderSplit } from "./reader-split.tsx";
 import { useMediaQuery } from "./use-media-query.ts";
 import {
-  OpenSurface,
-  destinations,
   resourceFromSearch,
   workspaceSearch,
   type Destination,
   type WorkspaceSearch,
 } from "./navigation.ts";
-import { AttentionPanel } from "./attention-panel-loader.tsx";
 import { Palette } from "./palette-loader.tsx";
 import type { PaletteActions } from "./workspace-palette.tsx";
 import { SearchTrigger } from "./search-trigger.tsx";
-import { RecentlyInspected, useRecordInspection } from "./recently-inspected.tsx";
-import {
-  TranscriptWork,
-  MessageContent,
-  emptyAttachments,
-  emptyDiagnostics,
-} from "./message-content.tsx";
+import { useRecordInspection } from "./recently-inspected.tsx";
 import { Composer } from "./composer.tsx";
-import {
-  workspaceDraft,
-  PrepareSurfaceMessage,
-  AttachSelection,
-  type DraftAttachment,
-} from "./workspace-state/draft.ts";
+import { workspaceDraft, type DraftAttachment } from "./workspace-state/draft.ts";
 import { useWorkspaceNavigation } from "./workspace-state/navigation.ts";
 import {
-  groupByMessage,
-  unattachedSurfaces,
   unmatchedWorkAttention,
   useInspectionMemory,
   usePhoneEscape,
@@ -52,29 +39,6 @@ import { useWorkspace } from "./use-workspace.ts";
 import { requestError } from "./request-error.ts";
 import { deferred } from "@abracode/presentation/deferred";
 
-const RetainedSurfaces = deferred<
-  React.ComponentProps<typeof import("./presentation/attachments.tsx").RetainedSurfaces>
->(
-  () =>
-    import("./presentation/attachments.tsx").then((module) => ({
-      default: module.RetainedSurfaces,
-    })),
-  "Retained presentation",
-);
-const WorkFinder = deferred<React.ComponentProps<typeof import("./work-finder.tsx").WorkFinder>>(
-  () => import("./work-finder.tsx").then((module) => ({ default: module.WorkFinder })),
-  "Work finder",
-  "deferred-panel",
-  ({ shown }) => shown,
-);
-const GithubInbox = deferred<React.ComponentProps<typeof import("./github-inbox.tsx").GithubInbox>>(
-  () => import("./github-inbox.tsx").then((m) => ({ default: m.GithubInbox })),
-  "GitHub inbox",
-);
-const Thoughts = deferred<React.ComponentProps<typeof import("./thoughts.tsx").Thoughts>>(
-  () => import("./thoughts.tsx").then((m) => ({ default: m.Thoughts })),
-  "Personal thoughts",
-);
 const Inspector = deferred<React.ComponentProps<typeof import("./inspector.tsx").Inspector>>(
   () => import("./inspector.tsx").then((module) => ({ default: module.Inspector })),
   "Work inspection",
@@ -93,20 +57,19 @@ type LayoutProps = {
   didFocus: () => void;
 };
 
+const retryBootstrap = bootstrapQuery.pipe(Atom.withRefresh("2 seconds"), Atom.setIdleTTL(0));
+const connecting = Atom.make((get) => {
+  const result = get(bootstrapQuery);
+  return AsyncResult.isFailure(result) ? get(retryBootstrap) : result;
+});
 export function Application(props: LayoutProps) {
-  const initial = useAtomValue(bootstrapQuery);
-  const retry = useAtomRefresh(bootstrapQuery);
+  const initial = useAtomValue(connecting);
   const [connected, setConnected] = useState<WorkspaceSnapshot>();
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- Retain the first authoritative bootstrap across subsequent resource refreshes.
     if (!connected && AsyncResult.isSuccess(initial)) setConnected(initial.value);
   }, [initial, connected]);
   const snapshot = connected ?? (AsyncResult.isSuccess(initial) ? initial.value : undefined);
-  useEffect(() => {
-    if (snapshot || !AsyncResult.isFailure(initial)) return;
-    const timer = setTimeout(retry, 2000);
-    return () => clearTimeout(timer);
-  }, [initial, retry, snapshot]);
   if (!snapshot)
     return (
       <main className="loading">
@@ -140,6 +103,7 @@ function Workspace({
   focusChat,
   didFocus,
 }: { initial: WorkspaceSnapshot } & LayoutProps) {
+  const view = useWorkspace(initial);
   const {
     workspace,
     isReady,
@@ -149,18 +113,15 @@ function Workspace({
     connectionError,
     refresh,
     messages,
-    presentations,
     activities,
     hasHistory,
     loadingHistory,
     loadHistory,
-  } = useWorkspace(initial);
+  } = view;
   const wide = useMediaQuery("(min-width: 1251px)");
-  const [retainedViews, setRetainedViews] = useState(false);
   const [thoughtToken, setThoughtToken] = useState<{ text: string; start: number; end: number }>();
   const [expanded, setExpanded] = useState(false);
 
-  const runCommand = useContext(RunCommand);
   const navigate = useNavigate();
   const inspecting = Boolean(
     resourceFromSearch(route) || route.surface || route.retained || route.review,
@@ -193,23 +154,9 @@ function Workspace({
 
   const navigation = useWorkspaceNavigation(route, viewport.rememberPosition);
   const { selected, tab, inspect, setTab, closeInspector, returnInspectorFocus } = navigation;
-  const { scroller, transcript, bottom } = viewport;
   usePhoneEscape(phoneCanvas, Boolean(palette), closeInspector);
 
   const setDraft = useAtomSet(workspaceDraft(initial.session_id));
-  const attachmentIndex = useMemo(
-    () => groupByMessage(presentations.entries),
-    [presentations.entries],
-  );
-  const thoughtReceipts = useMemo(
-    () =>
-      new Map(workspace.receipts.filter((r) => r.thought).map((r) => [String(r.message_id), r])),
-    [workspace.receipts],
-  );
-  const diagnosticIndex = useMemo(
-    () => groupByMessage(presentations.diagnostics),
-    [presentations.diagnostics],
-  );
   const managementAttention = workspace.work.management?.entries ?? [];
   const attention =
     workspace.forms.filter((item) => item.active).length + workspace.permissions.length;
@@ -224,7 +171,6 @@ function Workspace({
     active ? selected : undefined,
     work?.title,
   );
-  const otherViews = unattachedSurfaces(workspace.surfaces, presentations.entries, messages);
 
   function open(id: string, nextTab = "Overview") {
     const target = resourceFromSearch(workspaceSearch({ issue: id, tab: nextTab }));
@@ -273,6 +219,10 @@ function Workspace({
     [canPrepare, setDraft, desktopExpanded, focusComposer],
   );
 
+  const actions = useMemo(
+    () => ({ attach, prepare: ask, openSurface: navigation.openSurface }),
+    [attach, ask, navigation.openSurface],
+  );
   const picker = palette && (
     <Palette
       {...palette}
@@ -295,91 +245,46 @@ function Workspace({
   const sheet = active && inspecting && !phone && (!wide || route.canvas);
 
   const collectionHubs = (
-    <div className="canvas-hub-host" hidden={!collectionVisible}>
-      <section
-        data-scroll-restoration-id={"collection-" + destination}
-        className="collection-page"
-        hidden={!collectionVisible || attentionOpen}
-      >
-        {destination === "/work" && (
-          <WorkFinder
-            shown={collectionVisible}
-            workspace={workspace}
-            open={open}
-            inspect={inspect}
-          />
-        )}
-        {destination === "/github" && collectionVisible && (
-          <GithubInbox projects={workspace.projects} open={open} ask={ask} />
-        )}
-        {destination === "/thoughts" && collectionVisible && (
-          <Thoughts
-            discuss={(thought) => {
-              if (!canPrepare()) return;
-              setDraft({ thought, consume: thoughtToken });
-              setThoughtToken(undefined);
-              if (desktopExpanded) setExpanded(false);
-              focusComposer();
-            }}
-          />
-        )}
-        {destination === "/more" && (
-          <nav aria-label="More destinations" className="more-nav">
-            <Link to="/github">GitHub</Link>
-            <Link to="/settings">Settings</Link>
-          </nav>
-        )}
-        {collectionVisible && destination === "/work" && route.collection?.section === "recent" && (
-          <RecentlyInspected
-            writable={historyWritable}
-            session={workspace.session_id}
-            work={workspace.work.work}
-            open={open}
-          />
-        )}
-      </section>
-      <div className="collection-page" hidden={!attentionOpen}>
-        {!(attention + workAttention.length + managementAttention.length) && (
-          <div className="empty-attention">
-            <h2>Attention</h2>
-            <p className="muted">No pending attention in the observed workspace.</p>
-          </div>
-        )}
-        {(attentionOpen || workspace.forms.length > 0 || workspace.permissions.length > 0) && (
-          <AttentionPanel
-            workspace={workspace}
-            workAttention={workAttention}
-            attention={attention}
-            attentionOpen={attentionOpen}
-            refresh={refresh}
-            open={open}
-            inspect={inspect}
-          />
-        )}
-      </div>
-    </div>
+    <WorkspaceHubs
+      destination={destination}
+      collectionVisible={collectionVisible}
+      attentionOpen={attentionOpen}
+      workspace={workspace}
+      route={route}
+      historyWritable={historyWritable}
+      open={open}
+      inspect={inspect}
+      ask={ask}
+      attention={attention}
+      workAttention={workAttention}
+      refresh={refresh}
+      discuss={(thought) => {
+        if (!canPrepare()) return;
+        setDraft({ thought, consume: thoughtToken });
+        setThoughtToken(undefined);
+        if (desktopExpanded) setExpanded(false);
+        focusComposer();
+      }}
+    />
   );
-
   const inspectorView = (selected || route.surface || route.retained || route.review) && (
-    <AttachSelection.Provider value={attach}>
-      <Inspector
-        picker={sheet ? picker : undefined}
-        issue={selected}
-        surface={route.surface}
-        retained={route.retained}
-        review={route.review}
-        work={work}
-        tab={tab}
-        setTab={setTab}
-        close={() => closeInspector()}
-        returnFocus={returnInspectorFocus}
-        forms={workspace.forms}
-        focusForm={focusForm}
-        inspect={inspect}
-        ask={ask}
-        refresh={refresh}
-      />
-    </AttachSelection.Provider>
+    <Inspector
+      picker={sheet ? picker : undefined}
+      issue={selected}
+      surface={route.surface}
+      retained={route.retained}
+      review={route.review}
+      work={work}
+      tab={tab}
+      setTab={setTab}
+      close={() => closeInspector()}
+      returnFocus={returnInspectorFocus}
+      forms={workspace.forms}
+      focusForm={focusForm}
+      inspect={inspect}
+      ask={ask}
+      refresh={refresh}
+    />
   );
 
   const canvasPane = (
@@ -390,7 +295,7 @@ function Workspace({
   );
 
   const panels = (
-    <OpenSurface.Provider value={navigation.openSurface}>
+    <>
       {!sheet && picker}
       <div
         className="workspace"
@@ -402,115 +307,19 @@ function Workspace({
         }}
       >
         {!phone && (
-          <header className="topbar">
-            <div className="topbar-left">
-              <Link
-                to="/"
-                search={{}}
-                className="brand-home-link"
-                onClick={() => setExpanded(false)}
-              >
-                <span className="brand-mark" aria-hidden="true">
-                  a
-                </span>
-                <span className="brand-name">AbraCode</span>
-              </Link>
-              <span className="topbar-sep" aria-hidden="true" />
-              <h1 className="topbar-heading">{destinations[destination]}</h1>
-              {connectionError || workspace.busy ? (
-                <output
-                  className={
-                    connectionError ? "telemetry-pill is-warning" : "telemetry-pill is-running"
-                  }
-                >
-                  <span className="telemetry-dot" aria-hidden="true" />
-                  {connectionError ? "Reconnecting" : "Abra is working"}
-                </output>
-              ) : (
-                <span className="telemetry-pill is-ready" aria-hidden="true">
-                  <span className="telemetry-dot" />
-                  Connected
-                </span>
-              )}
-            </div>
-            <div className="topbar-center">
-              <SearchTrigger />
-            </div>
-            <div className="topbar-end">
-              {wide && (
-                <>
-                  <Link
-                    to="/work"
-                    search={{ collection: { section: "capacity" } }}
-                    className="telemetry-pill is-interactive"
-                    onClick={() => setExpanded(false)}
-                  >
-                    <span className="telemetry-dot" aria-hidden="true" />
-                    <span>
-                      {activeWorkCount} active {activeWorkCount === 1 ? "task" : "tasks"}
-                    </span>
-                  </Link>
-                  {totalAttention > 0 && (
-                    <Link
-                      to="/attention"
-                      search={{}}
-                      className="telemetry-pill is-attention is-interactive"
-                      onClick={() => setExpanded(false)}
-                    >
-                      <Bell aria-hidden="true" />
-                      <span>{totalAttention} pending</span>
-                    </Link>
-                  )}
-                  <fieldset className="layout-mode-group" aria-label="Workspace layout">
-                    <button
-                      type="button"
-                      className={focusMode ? "layout-mode-btn is-active" : "layout-mode-btn"}
-                      onClick={() => {
-                        setExpanded(false);
-                        void navigate({ to: "/", search: {} });
-                      }}
-                    >
-                      Chat
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        desktopCanvasOpen && !desktopExpanded
-                          ? "layout-mode-btn is-active"
-                          : "layout-mode-btn"
-                      }
-                      onClick={() => {
-                        setExpanded(false);
-                        if (!desktopCanvasOpen) {
-                          if (lastInspection) void navigate({ to: "/", search: lastInspection });
-                          else void navigate({ to: "/work", search: {} });
-                        }
-                      }}
-                    >
-                      <PanelRight aria-hidden="true" />
-                      Split
-                    </button>
-                    {desktopCanvasOpen && !route.canvas && (
-                      <button
-                        type="button"
-                        className={
-                          desktopExpanded ? "layout-mode-btn is-active" : "layout-mode-btn"
-                        }
-                        aria-label={desktopExpanded ? "Show chat beside canvas" : "Expand canvas"}
-                        onClick={() => setExpanded((value) => !value)}
-                      >
-                        {desktopExpanded ? (
-                          <Minimize2 aria-hidden="true" />
-                        ) : (
-                          <Expand aria-hidden="true" />
-                        )}
-                      </button>
-                    )}
-                  </fieldset>
-                </>
-              )}
-            </div>
-          </header>
+          <WorkspaceTopbar
+            destination={destination}
+            busy={workspace.busy}
+            connectionError={connectionError}
+            wide={wide}
+            activeWorkCount={activeWorkCount}
+            totalAttention={totalAttention}
+            desktopCanvasOpen={desktopCanvasOpen}
+            desktopExpanded={desktopExpanded}
+            showExpand={desktopCanvasOpen && !route.canvas}
+            lastInspection={lastInspection}
+            setExpanded={setExpanded}
+          />
         )}
         {!wide && collectionHubs}
         <ReaderSplit
@@ -532,91 +341,7 @@ function Workspace({
                 </output>
               )}
 
-              <div
-                className="conversation-scroll"
-                ref={scroller}
-                onScroll={viewport.onScroll}
-                onWheel={viewport.onReadingIntent}
-                onPointerDownCapture={viewport.onReadingIntent}
-                onKeyDownCapture={viewport.onReadingIntent}
-              >
-                <div
-                  className="transcript"
-                  ref={transcript}
-                  role="log"
-                  aria-label="Conversation with Abra"
-                >
-                  {hasHistory && (
-                    <Button
-                      variant="ghost"
-                      className="load-history"
-                      disabled={loadingHistory}
-                      onClick={() => void loadHistory(viewport.beforeHistory)}
-                    >
-                      {loadingHistory ? "Loading…" : "Load earlier messages"}
-                    </Button>
-                  )}
-                  {!messages.length && (
-                    <section className="welcome">
-                      <span className="brand-mark welcome-mark" aria-hidden="true">
-                        a
-                      </span>
-                      <h2>Abra</h2>
-                      <p className="muted">
-                        Your persistent supervisor. Coordinate tasks, review plans and diffs, or
-                        open any hub in the Canvas beside this thread.
-                      </p>
-                      {!workspace.projects.length && (
-                        <div className="welcome-actions">
-                          <Button variant="outline" onClick={() => runCommand(composerCommands[0])}>
-                            Add a project
-                          </Button>
-                        </div>
-                      )}
-                    </section>
-                  )}
-                  <TranscriptWork.Provider value={workspace.work.work}>
-                    <BriefingForms.Provider value={workspace.forms}>
-                      {messages.map((message) => (
-                        <MessageContent
-                          key={message.id}
-                          thoughtReceipt={thoughtReceipts.get(message.id)}
-                          message={message}
-                          inspect={inspect}
-                          attachments={attachmentIndex.get(message.id) ?? emptyAttachments}
-                          diagnostics={diagnosticIndex.get(message.id) ?? emptyDiagnostics}
-                        />
-                      ))}
-                    </BriefingForms.Provider>
-                  </TranscriptWork.Provider>
-                  {presentations.truncated && (
-                    <output className="muted">
-                      Presentation references exceed this conversation page's coverage. Retained
-                      task reports remain available through inspection.
-                    </output>
-                  )}
-                  {otherViews.length > 0 && (
-                    <details
-                      className="retained-views"
-                      open={retainedViews}
-                      onToggle={(event) => setRetainedViews(event.currentTarget.open)}
-                    >
-                      <summary>Other retained views ({otherViews.length})</summary>
-                      <p className="muted">
-                        These layouts have no matching message in the loaded conversation.
-                      </p>
-                      {retainedViews && (
-                        <RetainedSurfaces
-                          entries={otherViews}
-                          work={workspace.work.work}
-                          inspect={inspect}
-                        />
-                      )}
-                    </details>
-                  )}
-                  <div ref={bottom} />
-                </div>
-              </div>
+              <WorkspaceTranscript view={view} viewport={viewport} inspect={inspect} />
               {attention > 0 && (
                 <div className="composer-attention-dock">
                   <div className="composer-attention-bar">
@@ -681,11 +406,11 @@ function Workspace({
           reader={wide ? canvasPane : inspectorView}
         />
       </div>
-    </OpenSurface.Provider>
+    </>
   );
   return (
     <LiveActivities.Provider value={activities}>
-      <PrepareSurfaceMessage.Provider value={ask}>{panels}</PrepareSurfaceMessage.Provider>
+      <WorkspaceActions.Provider value={actions}>{panels}</WorkspaceActions.Provider>
     </LiveActivities.Provider>
   );
 }

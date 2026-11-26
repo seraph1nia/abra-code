@@ -57,46 +57,68 @@ export function nativeToolMessage(
 /** AG-UI has one text block followed by calls per assistant message. Split native
  * ordered content into stable display segments, retaining its original first ID
  * and explicit native-message provenance on every derived segment/result. */
-export function nativeAguiMessages(messages: readonly TranscriptMessage[]): Message[] {
-  return messages.flatMap((message): Message[] => {
-    const metadata = {
-      abracode_native_message_id: message.id,
-      abracode_at: message.at,
-      ...(message.files && { abracode_files: message.files }),
-    };
-    if (message.role !== "assistant")
-      return [{ id: message.id, role: message.role, content: message.text, metadata }];
-    const result: Message[] = [];
-    const tools = new Map(message.tools?.map((tool) => [tool.id, tool]));
-    let content = "";
-    let ordinal = 0;
-    const append = (tool?: TranscriptTool) => {
-      result.push({
-        id: ordinal === 0 ? message.id : `${message.id}:part:${ordinal}`,
-        role: "assistant",
-        content,
-        ...(tool ? { toolCalls: [nativeToolCall(tool)] } : {}),
-        metadata: { ...metadata, abracode_part: ordinal },
-      });
-      if (tool) {
-        const observation = nativeToolMessage(message.id, tool);
-        if (observation) result.push(observation);
-      }
-      content = "";
-      ordinal++;
-    };
-    for (const part of orderedParts(message)) {
-      if (part.type === "text") content += part.text;
-      else {
-        const tool = tools.get(part.tool_id);
-        if (tool) append(tool);
-      }
+const projectedMessages = new WeakMap<TranscriptMessage, Message[]>();
+function projectMessage(message: TranscriptMessage): Message[] {
+  const metadata = {
+    abracode_native_message_id: message.id,
+    abracode_at: message.at,
+    ...(message.files && { abracode_files: message.files }),
+  };
+  if (message.role !== "assistant")
+    return [{ id: message.id, role: message.role, content: message.text, metadata }];
+  const result: Message[] = [];
+  const tools = new Map(message.tools?.map((tool) => [tool.id, tool]));
+  let content = "";
+  let ordinal = 0;
+  const append = (tool?: TranscriptTool) => {
+    result.push({
+      id: ordinal === 0 ? message.id : `${message.id}:part:${ordinal}`,
+      role: "assistant",
+      content,
+      ...(tool ? { toolCalls: [nativeToolCall(tool)] } : {}),
+      metadata: { ...metadata, abracode_part: ordinal },
+    });
+    if (tool) {
+      const observation = nativeToolMessage(message.id, tool);
+      if (observation) result.push(observation);
     }
-    if (content || !result.length) append();
-    return result;
+    content = "";
+    ordinal++;
+  };
+  for (const part of orderedParts(message)) {
+    if (part.type === "text") content += part.text;
+    else {
+      const tool = tools.get(part.tool_id);
+      if (tool) append(tool);
+    }
+  }
+  if (content || !result.length) append();
+  return result;
+}
+
+export function nativeAguiMessages(messages: readonly TranscriptMessage[]): Message[] {
+  return messages.flatMap((message) => {
+    let projection = projectedMessages.get(message);
+    if (!projection) {
+      projection = projectMessage(message);
+      projectedMessages.set(message, projection);
+    }
+    return projection;
   });
 }
 
+type ToolEnvelope = { toolCall: ToolCall; toolMessage?: ToolMessage };
+const liveTools = new WeakMap<TranscriptTool, ToolEnvelope>();
+/** The live reader retains the exact AG-UI call. Older HTTP history supplies
+ * native observations, which use the same standard envelope as a baseline. */
+export function observedToolEnvelope(messageId: string, tool: TranscriptTool): ToolEnvelope {
+  return (
+    liveTools.get(tool) ?? {
+      toolCall: nativeToolCall(tool),
+      toolMessage: nativeToolMessage(messageId, tool),
+    }
+  );
+}
 /** Reassemble the native message's ordered display parts from the AG-UI client reducer. */
 export function transcriptFromAgent(messages: readonly Message[]): TranscriptMessage[] {
   const results = new Map<string, ToolMessage>();
@@ -146,7 +168,7 @@ export function transcriptFromAgent(messages: readonly Message[]): TranscriptMes
         );
         if (decoded._tag === "Success") presentation = decoded.success;
       }
-      tools.push({
+      const observation: TranscriptTool = {
         id: call.id,
         name: call.function.name,
         status,
@@ -160,7 +182,9 @@ export function transcriptFromAgent(messages: readonly Message[]): TranscriptMes
           : result
             ? { result: result.error ?? (typeof result.content === "string" ? result.content : "") }
             : {}),
-      });
+      };
+      liveTools.set(observation, { toolCall: call, toolMessage: result });
+      tools.push(observation);
       parts.push({ type: "tool", tool_id: call.id });
     }
     rows.set(id, {
@@ -186,6 +210,16 @@ const metadataSubset = (
   return Object.keys(previous).every((key) => key in next);
 };
 
+function indexTools(messages: readonly TranscriptMessage[]) {
+  const index = new Map<string, Map<string, TranscriptTool>>();
+  for (const message of messages)
+    for (const tool of message.tools ?? []) {
+      let owners = index.get(tool.id);
+      if (!owners) index.set(tool.id, (owners = new Map()));
+      owners.set(message.id, tool);
+    }
+  return index;
+}
 /** Incremental text and tool arguments retain native IDs. Incompatible structure,
  * argument rewrites and native-only result/status fields recover a complete view. */
 export function nativeMessageEvents(
@@ -193,24 +227,38 @@ export function nativeMessageEvents(
   after: readonly TranscriptMessage[],
   streaming?: { openText?: OpenTextStream },
 ): Event[] {
-  const old = nativeAguiMessages(before),
-    next = nativeAguiMessages(after);
-  // Native call IDs are scoped by message; incremental SDK lookups can be global.
-  // Reused IDs retain their original provenance through an authoritative baseline.
-  for (const message of after)
-    for (const tool of message.tools ?? []) {
-      const previous = before
-        .find((old) => old.id === message.id)
-        ?.tools?.find((old) => old.id === tool.id);
-      if (
-        JSON.stringify(previous) !== JSON.stringify(tool) &&
-        before.some(
-          (old) => old.id !== message.id && old.tools?.some((oldTool) => oldTool.id === tool.id),
-        )
-      )
+  return diffNativeMessages(
+    before,
+    after,
+    nativeAguiMessages(before),
+    nativeAguiMessages(after),
+    streaming,
+  );
+}
+
+function diffNativeMessages(
+  before: readonly TranscriptMessage[],
+  after: readonly TranscriptMessage[],
+  old: readonly Message[],
+  next: Message[],
+  streaming?: { openText?: OpenTextStream },
+): Event[] {
+  // A call ID can reappear in another native message. Only changed calls need
+  // the ownership index; ordinary text deltas never scan historical tools.
+  let previousTools: Map<string, Map<string, TranscriptTool>> | undefined;
+  for (const [index, message] of after.entries()) {
+    const prior = before[index];
+    if (prior === message || !message.tools?.length) continue;
+    for (const [offset, tool] of message.tools.entries()) {
+      if (prior?.id === message.id && prior.tools?.[offset] === tool) continue;
+      previousTools ??= indexTools(before);
+      const owners = previousTools.get(tool.id);
+      if (!owners || (owners.size === 1 && owners.has(message.id))) continue;
+      const previous = owners.get(message.id);
+      if (previous !== tool && (!previous || JSON.stringify(previous) !== JSON.stringify(tool)))
         return [{ type: EventType.MESSAGES_SNAPSHOT, messages: next }];
     }
-
+  }
   const snapshot = (): Event => ({ type: EventType.MESSAGES_SNAPSHOT, messages: next });
   if (old.length > next.length || old.some((message, i) => message.id !== next[i]?.id))
     return [snapshot()];
@@ -228,7 +276,9 @@ export function nativeMessageEvents(
   for (let i = 0; i < next.length; i++) {
     const message = next[i]!,
       prior = old[i];
-    if (JSON.stringify(message) === JSON.stringify(prior)) continue;
+    if (message === prior) continue;
+    if (message.content === prior?.content && JSON.stringify(message) === JSON.stringify(prior))
+      continue;
     if (message.role === "tool") {
       if (prior) return [snapshot()];
       closeOpenText();
@@ -328,6 +378,7 @@ export function nativeMessageEvents(
 /** Per-observer cursor closes only streams it opened before an authoritative reset. */
 export class NativeMessageCursor {
   private previous: readonly TranscriptMessage[] = [];
+  private previousAgui: Message[] = [];
   private open = new Set<string>();
   private openText: OpenTextStream | undefined;
   close(): Event[] {
@@ -341,21 +392,24 @@ export class NativeMessageCursor {
     return output;
   }
   update(messages: readonly TranscriptMessage[], baseline = false): Event[] {
+    const next = messages === this.previous ? this.previousAgui : nativeAguiMessages(messages);
     let events = baseline
       ? [
           {
             type: EventType.MESSAGES_SNAPSHOT,
-            messages: nativeAguiMessages(messages),
+            messages: next,
           } satisfies Event,
         ]
-      : nativeMessageEvents(this.previous, messages, { openText: this.openText });
+      : diffNativeMessages(this.previous, messages, this.previousAgui, next, {
+          openText: this.openText,
+        });
     const active = new Set(this.open);
     for (const event of events) {
       if (event.type === EventType.TOOL_CALL_START) active.add(event.toolCallId);
       if (event.type === EventType.TOOL_CALL_END) active.delete(event.toolCallId);
       if (event.type === EventType.MESSAGES_SNAPSHOT) active.clear();
       if (event.type === EventType.TOOL_CALL_ARGS && !active.has(event.toolCallId)) {
-        events = [{ type: EventType.MESSAGES_SNAPSHOT, messages: nativeAguiMessages(messages) }];
+        events = [{ type: EventType.MESSAGES_SNAPSHOT, messages: next }];
         break;
       }
     }
@@ -378,6 +432,7 @@ export class NativeMessageCursor {
       if (event.type === EventType.TOOL_CALL_END) this.open.delete(event.toolCallId);
     }
     this.previous = messages;
+    this.previousAgui = next;
     return output;
   }
 }

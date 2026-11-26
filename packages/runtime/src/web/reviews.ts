@@ -25,13 +25,12 @@ import {
 } from "@abracode/contracts/identities";
 import { CrewError } from "../domain.ts";
 import { decode } from "../decode.ts";
-import { domainEffect } from "../effect.ts";
 import type { Store } from "../storage/store.ts";
 import type { Locks } from "../storage/lock.ts";
 import { canonicalJSON, presentationHash } from "../presentation/identity.ts";
 import { SurfacePublications } from "./surface-publications.ts";
 import { PresentationAssociations } from "../presentation/associations.ts";
-import { committedScope } from "../visibility/invalidations.ts";
+import { committedScope } from "../invalidations.ts";
 import { PublicationStore } from "./publication-store.ts";
 import { ReviewAssets } from "./review-assets.ts";
 const fail = (message: string) => new CrewError("REVIEW_REFUSED", message);
@@ -67,8 +66,8 @@ export interface ReviewAdmissions {
 /** Immutable reviews, assets and response reservations; observation never writes. */
 export class Reviews {
   private readonly assets: ReviewAssets;
-  private readonly publications: PublicationStore;
-  private readonly surfaces: SurfacePublications;
+  private readonly publications: PublicationStore<Head>;
+  readonly surfaces: SurfacePublications;
   constructor(
     private store: Store,
     locks: Locks,
@@ -86,6 +85,8 @@ export class Reviews {
       headPrefix: (session) => StoragePrefix.make(`web/review/${session}/head/`),
       headKey: (session, id) => key(session, `head/${id}`),
       maxHeads: 32,
+      limit: () => fail("At most 32 review identities per Abra conversation"),
+      decodeHead: (session, id, raw) => this.decodeHead(session, id, raw),
     });
     this.assets = new ReviewAssets(store, this.publications);
     this.surfaces = surfaces ?? new SurfacePublications(store, locks, sharedAssociations);
@@ -119,10 +120,11 @@ export class Reviews {
     };
   }
   private head(session: SessionId, id: ReviewID) {
-    return this.publications.readHead(session, id, (raw) => this.decodeHead(session, id, raw));
+    return this.publications.readHead(session, id);
   }
   private decodeHead(session: SessionId, id: ReviewID, raw: unknown) {
     return Effect.gen({ self: this }, function* (): Effect.fn.Return<Head, CrewError> {
+      yield* decode(ReviewSelectionSchema.fields.review_id, id, "Review head key");
       const head = yield* decode(HeadSchema, raw, "Review head");
       if (
         head.pending &&
@@ -178,18 +180,8 @@ export class Reviews {
       this.publications
         .recover(session, {
           isolate: true,
-          decodeHead: (rawId, raw) =>
-            Effect.gen({ self: this }, function* () {
-              const reviewID = yield* decode(
-                ReviewSelectionSchema.fields.review_id,
-                rawId,
-                "Review head key",
-              );
-              const head = yield* this.decodeHead(session, reviewID, raw);
-              return { head: { reviewID, head }, pending: head.pending };
-            }),
           commit: (pending) => this.commit(pending),
-          onClean: (_rawId, { reviewID }) => this.clearDiagnostic(session, reviewID),
+          onClean: (id) => this.clearDiagnostic(session, id),
           onFailure: (rawId) =>
             this.store
               .set(
@@ -213,113 +205,102 @@ export class Reviews {
     input: typeof ReviewPublishSchema.Type,
   ) {
     return this.publications.withLock(() =>
-      domainEffect(
-        Effect.gen({ self: this }, function* () {
-          const value = yield* decode(ReviewPublishSchema, input, "Review input");
-          const id = value.review.review_id,
-            inputHash = presentationHash(value),
-            callKey = key(session, `call/${presentationHash([message, call])}`);
-          let head = yield* this.head(session, id);
-          const old = yield* this.store.get(callKey);
-          if (old !== undefined) {
-            const saved = yield* this.publication(old);
-            if (
-              saved.input_hash !== inputHash ||
-              saved.record.session_id !== session ||
-              saved.record.message_id !== message ||
-              saved.record.call_id !== call ||
-              saved.record.review.review_id !== id
-            )
-              return yield* fail("Native call is already bound to different review input");
-            if (head?.committed && saved.record.revision <= head.committed.revision) {
-              const committed = yield* this.rawRecord(session, {
-                review_id: id,
-                revision: saved.record.revision,
-              });
-              if (committed.hash !== saved.record.hash)
-                return yield* fail("Committed review no longer matches its native call");
-              if (saved.record.revision === head.committed.revision) {
-                yield* this.clearDiagnostic(session, id);
-                yield* committedScope({ presentations: true });
-              }
-              return reviewReference(committed);
+      Effect.gen({ self: this }, function* () {
+        const value = yield* decode(ReviewPublishSchema, input, "Review input");
+        const id = value.review.review_id,
+          inputHash = presentationHash(value),
+          callKey = key(session, `call/${presentationHash([message, call])}`);
+        let head = yield* this.publications.headForPublication(session, id);
+        const old = yield* this.store.get(callKey);
+        if (old !== undefined) {
+          const saved = yield* this.publication(old);
+          if (
+            saved.input_hash !== inputHash ||
+            saved.record.session_id !== session ||
+            saved.record.message_id !== message ||
+            saved.record.call_id !== call ||
+            saved.record.review.review_id !== id
+          )
+            return yield* fail("Native call is already bound to different review input");
+          if (head?.committed && saved.record.revision <= head.committed.revision) {
+            const committed = yield* this.rawRecord(session, {
+              review_id: id,
+              revision: saved.record.revision,
+            });
+            if (committed.hash !== saved.record.hash)
+              return yield* fail("Committed review no longer matches its native call");
+            if (saved.record.revision === head.committed.revision) {
+              yield* this.clearDiagnostic(session, id);
+              yield* committedScope({ presentations: true });
             }
-            if (head?.pending?.record.hash !== saved.record.hash)
-              return yield* fail(
-                "Original review publication has no matching retained reservation",
-              );
-            return yield* this.commit(head.pending);
+            return reviewReference(committed);
           }
-          if (head?.pending) {
-            const pending = head.pending;
-            const sameCall =
-              pending.record.message_id === message && pending.record.call_id === call;
-            if (sameCall && pending.input_hash !== inputHash)
-              return yield* fail("Reserved call input conflicts");
-            const committed = yield* this.commit(pending);
-            if (sameCall) return committed;
-            head = { schema_version: 1, committed };
-          }
-          if (
-            !head &&
-            (yield* this.store.entries(StoragePrefix.make(`web/review/${session}/head/`))).length >=
-              32
-          )
-            return yield* fail("At most 32 review identities per Abra conversation");
-          const source = yield* this.source(session, value.review.source);
-          const assets = yield* this.assets.capture(session, source.root, value.previews ?? []);
-          const referenced = value.review.fields.flatMap((f) =>
-            f.component === "DesignChoiceGroup" ? f.options.map((o) => o.preview) : [],
+          if (head?.pending?.record.hash !== saved.record.hash)
+            return yield* fail("Original review publication has no matching retained reservation");
+          return yield* this.commit(head.pending);
+        }
+        if (head?.pending) {
+          const pending = head.pending;
+          const sameCall = pending.record.message_id === message && pending.record.call_id === call;
+          if (sameCall && pending.input_hash !== inputHash)
+            return yield* fail("Reserved call input conflicts");
+          const committed = yield* this.commit(pending);
+          if (sameCall) return committed;
+          head = { schema_version: 1, committed };
+        }
+        const source = yield* this.source(session, value.review.source);
+        const assets = yield* this.assets.capture(session, source.root, value.previews ?? []);
+        const referenced = value.review.fields.flatMap((f) =>
+          f.component === "DesignChoiceGroup" ? f.options.map((o) => o.preview) : [],
+        );
+        if (
+          referenced.some((id) => !assets.some((a) => a.id === id)) ||
+          assets.some((a) => !referenced.includes(a.id))
+        )
+          return yield* fail("Design choices must reference exactly the supplied preview assets");
+        if (value.review.responds_to) {
+          const response = yield* this.store.get(
+            key(session, `response/${value.review.responds_to}`),
           );
-          if (
-            referenced.some((id) => !assets.some((a) => a.id === id)) ||
-            assets.some((a) => !referenced.includes(a.id))
-          )
-            return yield* fail("Design choices must reference exactly the supplied preview assets");
-          if (value.review.responds_to) {
-            const response = yield* this.store.get(
-              key(session, `response/${value.review.responds_to}`),
-            );
-            if (response === undefined)
-              return yield* fail("Follow-up review requires a retained submitted response");
-            const savedResponse = yield* decode(ResponseSchema, response, "Review response");
-            const receipt = yield* this.store.get(
-              StorageKey.make(`web/receipt/${session}/${value.review.responds_to}`),
-            );
-            const admitted = yield* decode(ReceiptSchema, receipt, "Review admission receipt");
-            if (
-              savedResponse.input.request_id !== value.review.responds_to ||
-              admitted.request_id !== value.review.responds_to ||
-              admitted.text !== savedResponse.text ||
-              admitted.status !== "admitted"
-            )
-              return yield* fail("Follow-up requires confirmed admission of the matching response");
-          }
-          const record = {
-            schema_version: 1 as const,
-            session_id: session,
-            message_id: message,
-            call_id: call,
-            revision: (head?.committed?.revision ?? 0) + 1,
-            at: yield* timestamp,
-            review: value.review,
-            source_text: source.text,
-            assets,
-          };
-          const saved = { record: { ...record, hash: recordHash(record) }, input_hash: inputHash };
-          yield* decode(ReviewRecordSchema, saved.record, "Published review");
-          return yield* this.publications.reserveAndCommit(
-            session,
-            id,
-            {
-              schema_version: 1,
-              ...(head?.committed ? { committed: head.committed } : {}),
-              pending: saved,
-            } satisfies Head,
-            () => this.commit(saved),
+          if (response === undefined)
+            return yield* fail("Follow-up review requires a retained submitted response");
+          const savedResponse = yield* decode(ResponseSchema, response, "Review response");
+          const receipt = yield* this.store.get(
+            StorageKey.make(`web/receipt/${session}/${value.review.responds_to}`),
           );
-        }),
-      ),
+          const admitted = yield* decode(ReceiptSchema, receipt, "Review admission receipt");
+          if (
+            savedResponse.input.request_id !== value.review.responds_to ||
+            admitted.request_id !== value.review.responds_to ||
+            admitted.text !== savedResponse.text ||
+            admitted.status !== "admitted"
+          )
+            return yield* fail("Follow-up requires confirmed admission of the matching response");
+        }
+        const record = {
+          schema_version: 1 as const,
+          session_id: session,
+          message_id: message,
+          call_id: call,
+          revision: (head?.committed?.revision ?? 0) + 1,
+          at: yield* timestamp,
+          review: value.review,
+          source_text: source.text,
+          assets,
+        };
+        const saved = { record: { ...record, hash: recordHash(record) }, input_hash: inputHash };
+        yield* decode(ReviewRecordSchema, saved.record, "Published review");
+        return yield* this.publications.reserveAndCommit(
+          session,
+          id,
+          {
+            schema_version: 1,
+            ...(head?.committed ? { committed: head.committed } : {}),
+            pending: saved,
+          } satisfies Head,
+          () => this.commit(saved),
+        );
+      }),
     );
   }
   private rawRecord(session: SessionId, selection: ReviewSelection) {
@@ -372,21 +353,13 @@ export class Reviews {
   }
   list(session: SessionId, issue?: string) {
     return Effect.gen({ self: this }, function* () {
-      const prefix = StoragePrefix.make(`web/review/${session}/head/`);
-      const rows = yield* this.store.entries(prefix);
       const reviews: CommittedReview[] = [];
       const diagnostics: string[] = [];
-      for (const row of rows.slice(0, 32)) {
-        const id = row.key.slice(prefix.length);
+      for (const { id, read } of yield* this.publications.heads(session)) {
         const observed = yield* Effect.gen({ self: this }, function* () {
-          const reviewID = yield* decode(
-            ReviewSelectionSchema.fields.review_id,
-            id,
-            "Review head key",
-          );
           const recovery = yield* this.store.get(key(session, `diagnostic/${id}`));
           if (typeof recovery === "string") diagnostics.push(`${id}: ${recovery}`);
-          const head = yield* this.decodeHead(session, reviewID, row.value);
+          const head = yield* read;
           if (head.pending && !recovery)
             diagnostics.push(`${id}: A revision is awaiting publication.`);
           if (!head.committed) return;
@@ -487,60 +460,58 @@ export class Reviews {
     });
   }
   submit(session: SessionId, input: ReviewSubmit, admissions: ReviewAdmissions) {
-    return domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const reserved = yield* this.publications.withLock(() =>
-          Effect.gen({ self: this }, function* () {
-            const value = yield* decode(ReviewSubmitSchema, input, "Review response");
-            const responseKey = key(session, `response/${value.request_id}`),
-              prior = yield* this.store.get(responseKey);
-            if (prior !== undefined) {
-              const saved = yield* decode(ResponseSchema, prior, "Retained response");
-              if (canonicalJSON(saved.input) !== canonicalJSON(value))
-                return yield* fail("Response identity is already bound to different answers");
-              return saved;
-            }
-            const view = yield* this.readRecordWithFreshness(session, value);
-            if (view.unavailable) return yield* new CrewError("REVIEW_STALE", view.unavailable);
-            const record = view.record;
-            if (record.hash !== value.hash)
-              return yield* fail("Review hash does not match the reviewed version");
-            const errors = reviewAnswerErrors(record.review, value.answers);
-            if (Object.keys(errors).length) return yield* fail(Object.values(errors).join("; "));
-            const answers = record.review.fields.map((f) => ({
-              question: f.label,
-              field_id: f.id,
-              answer: value.answers[f.id] ?? null,
-              ...("options" in f
-                ? {
-                    selected_options: f.options
-                      .filter((o) => {
-                        const v = value.answers[f.id];
-                        return Array.isArray(v) ? v.includes(o.value) : v === o.value;
-                      })
-                      .map((o) => ({ value: o.value, label: o.label })),
-                  }
-                : {}),
-            }));
-            const text = `Please revise the reviewed plan or respond to this report using my feedback. This is review input, not plan or merge approval. Follow the existing controller checkpoints. Read the retained review with abra_review_ui action read for captured source content. Publish a follow-up review with responds_to ${value.request_id} when a revision is available.\n\n${JSON.stringify({ review_id: value.review_id, revision: value.revision, hash: value.hash, source: record.review.source, title: record.review.title, answers }, null, 2)}`;
-            if (text.length > 32768) return yield* fail("Review response exceeds admission limits");
-            const saved = { input: value, text };
-            yield* this.immutable(responseKey, saved);
+    return Effect.gen({ self: this }, function* () {
+      const reserved = yield* this.publications.withLock(() =>
+        Effect.gen({ self: this }, function* () {
+          const value = yield* decode(ReviewSubmitSchema, input, "Review response");
+          const responseKey = key(session, `response/${value.request_id}`),
+            prior = yield* this.store.get(responseKey);
+          if (prior !== undefined) {
+            const saved = yield* decode(ResponseSchema, prior, "Retained response");
+            if (canonicalJSON(saved.input) !== canonicalJSON(value))
+              return yield* fail("Response identity is already bound to different answers");
             return saved;
-          }),
-        );
-        const receipt = yield* admissions.submit(session, {
-          request_id: reserved.input.request_id,
-          text: reserved.text,
-          delivery: "queue",
-        });
-        return {
-          ...receipt,
-          review_id: reserved.input.review_id,
-          revision: reserved.input.revision,
-          hash: reserved.input.hash,
-        };
-      }),
-    );
+          }
+          const view = yield* this.readRecordWithFreshness(session, value);
+          if (view.unavailable) return yield* new CrewError("REVIEW_STALE", view.unavailable);
+          const record = view.record;
+          if (record.hash !== value.hash)
+            return yield* fail("Review hash does not match the reviewed version");
+          const errors = reviewAnswerErrors(record.review, value.answers);
+          if (Object.keys(errors).length) return yield* fail(Object.values(errors).join("; "));
+          const answers = record.review.fields.map((f) => ({
+            question: f.label,
+            field_id: f.id,
+            answer: value.answers[f.id] ?? null,
+            ...("options" in f
+              ? {
+                  selected_options: f.options
+                    .filter((o) => {
+                      const v = value.answers[f.id];
+                      return Array.isArray(v) ? v.includes(o.value) : v === o.value;
+                    })
+                    .map((o) => ({ value: o.value, label: o.label })),
+                }
+              : {}),
+          }));
+          const text = `Please revise the reviewed plan or respond to this report using my feedback. This is review input, not plan or merge approval. Follow the existing controller checkpoints. Read the retained review with abra_review_ui action read for captured source content. Publish a follow-up review with responds_to ${value.request_id} when a revision is available.\n\n${JSON.stringify({ review_id: value.review_id, revision: value.revision, hash: value.hash, source: record.review.source, title: record.review.title, answers }, null, 2)}`;
+          if (text.length > 32768) return yield* fail("Review response exceeds admission limits");
+          const saved = { input: value, text };
+          yield* this.immutable(responseKey, saved);
+          return saved;
+        }),
+      );
+      const receipt = yield* admissions.submit(session, {
+        request_id: reserved.input.request_id,
+        text: reserved.text,
+        delivery: "queue",
+      });
+      return {
+        ...receipt,
+        review_id: reserved.input.review_id,
+        revision: reserved.input.revision,
+        hash: reserved.input.hash,
+      };
+    });
   }
 }

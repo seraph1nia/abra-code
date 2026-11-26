@@ -23,16 +23,9 @@ export const centralOnlySkillNames: readonly string[] = [
 ];
 
 export const skillNames = (central: boolean) => [
-  ...(central
-    ? [
-        "express",
-        "orchestration",
-        "openspec-execution",
-        "project-onboarding",
-        "recovery",
-        "browser",
-      ]
-    : ["openspec-execution", "browser"]),
+  ...(central ? centralOnlySkillNames : []),
+  "openspec-execution",
+  "browser",
   "memory",
   "open-code-review-delegate",
   ...engineeringSkills.map((s) => s.name),

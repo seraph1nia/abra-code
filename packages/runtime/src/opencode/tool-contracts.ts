@@ -2,12 +2,18 @@ import { MemoryBody, MemoryPage } from "@abracode/contracts/visibility/memory";
 import { ReviewChangesPage } from "../git/review-changes.ts";
 import { EvidenceDataSchema, EvidenceReceiptSchema } from "@abracode/contracts/web/worker-evidence";
 import { SessionObservationSchema } from "@abracode/contracts/opencode/session-observation-contracts";
-import { ExecutionContractSchema } from "../visibility/execution-contract.ts";
+import { ExecutionContractSchema } from "../workflow/read-model/execution-contract.ts";
 export { SessionObservationSchema } from "@abracode/contracts/opencode/session-observation-contracts";
 import { SelectionSourceSchema } from "../config/dispatch.ts";
-import { SupervisionSummarySchema, SupervisionAggregateSchema } from "../visibility/supervision.ts";
-import { DeliveryOutcomeSchema, OperationInProgressSchema } from "../workflow/delivery-outcome.ts";
-import { LeadRecordSchema, LeadRequestSchema } from "../workflow/lead-contracts.ts";
+import {
+  SupervisionSummarySchema,
+  SupervisionAggregateSchema,
+} from "../workflow/read-model/supervision.ts";
+import {
+  DeliveryOutcomeSchema,
+  OperationInProgressSchema,
+} from "../visibility/delivery-outcome.ts";
+import { LeadRecordSchema, LeadRequestSchema } from "../workflow/leads/contracts.ts";
 import {
   CommunicationSchema,
   MessageIntentSchema,
@@ -35,7 +41,7 @@ import {
   ProgressSchema,
   DeclaredWaitSchema,
 } from "../workflow/obligation-contracts.ts";
-import { ForgeFindingSchema } from "../workflow/correction-contracts.ts";
+import { ForgeFindingSchema } from "@abracode/contracts/workflow/correction-contracts";
 import { VisualBuildSummarySchema, ReportReceiptSchema } from "../reporting/report-contracts.ts";
 import { SpecStatusSchema, ApplyStatusSchema, InstructionsSchema } from "../openspec/contracts.ts";
 import { VerificationSchema } from "../config/contracts.ts";

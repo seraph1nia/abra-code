@@ -12,13 +12,13 @@ test("selected controller reads hydrate only requested work at both population s
     for (let i = 0; i < size; i++) await run(f.work.create(goal(`unrelated-${i}`)));
     const hydrated: string[] = [];
     let related = 0;
-    const hydrate = f.work["issuesRepo"].hydrate.bind(f.work["issuesRepo"]);
-    f.work["issuesRepo"].hydrate = (rows, links) => {
+    const hydrate = f.work["queries"].hydrate.bind(f.work["queries"]);
+    f.work["queries"].hydrate = (rows, links) => {
       hydrated.push(...rows.map((row) => String(row.id)));
       return hydrate(rows, links);
     };
-    const evidence = f.work["issuesRepo"].taskRows.bind(f.work["issuesRepo"]);
-    f.work["issuesRepo"].taskRows = (issues) => {
+    const evidence = f.work["queries"].taskRows.bind(f.work["queries"]);
+    f.work["queries"].taskRows = (issues) => {
       const rows = evidence(issues);
       related += rows.reduce((sum, row) => sum + row.dependencies.length, 0);
       return rows;

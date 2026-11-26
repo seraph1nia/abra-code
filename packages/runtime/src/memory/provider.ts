@@ -1,19 +1,7 @@
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import {
-  Context,
-  Layer,
-  Config,
-  Effect,
-  Schema,
-  Exit,
-  FileSystem,
-  Ref,
-  Scope,
-  Semaphore,
-  Stream,
-} from "effect";
+import { Config, Effect, Schema, Exit, FileSystem, RcMap, Scope, Stream } from "effect";
 import { ChildProcess } from "effect/process";
 import type { PlatformError } from "effect/PlatformError";
 import { CrewError, type Config as AppConfig } from "../domain.ts";
@@ -190,92 +178,72 @@ export function checkMemoryVersionEffect(
   );
 }
 
-type ProviderState =
-  | { readonly _tag: "Idle" }
-  | { readonly _tag: "Connected"; readonly client: Client; readonly scope: Scope.Closeable }
-  | { readonly _tag: "Closed" };
-
-/** One lazily connected stdio client per runtime scope. A dead child is discarded on close. */
-export class MemoryProvider {
-  private readonly scope = Scope.makeUnsafe();
-  private readonly state = Ref.makeUnsafe<ProviderState>({ _tag: "Idle" });
-  private readonly connectLock = Semaphore.makeUnsafe(1);
-  constructor(private executable: string) {}
-
-  private connect(root: string): Effect.Effect<Client, CrewError> {
-    return this.connectLock.withPermits(1)(
-      Effect.gen({ self: this }, function* () {
-        const current = yield* Ref.get(this.state);
-        if (current._tag === "Closed") return yield* unavailable();
-        if (current._tag === "Connected") return current.client;
-        const connScope = yield* Scope.fork(this.scope);
-        const client = yield* Effect.gen({ self: this }, function* () {
-          yield* checkMemoryVersionEffect(this.executable, root);
-          const env = yield* environment(root);
-          const resource = yield* Effect.acquireRelease(
-            Effect.sync(() => {
-              const transport = new StdioClientTransport({
-                command: this.executable,
-                args: ["mcp", "--transport", "stdio"],
-                env,
-                cwd: root,
-                stderr: "ignore",
-              });
-              const mcpClient = new Client({ name: "abracode-memory", version: "1" });
-              return { transport, client: mcpClient };
-            }),
-            ({ transport, client: mcpClient }) =>
-              Effect.promise(() =>
-                mcpClient
-                  .close()
-                  .catch(() => undefined)
-                  .then(() => transport.close().catch(() => undefined)),
-              ),
-          );
-          yield* Effect.tryPromise({
-            try: (signal) =>
-              resource.client.connect(resource.transport, { signal, timeout: 15_000 }),
-            catch: memoryError,
-          });
-          const { tools } = yield* Effect.tryPromise({
-            try: (signal) => resource.client.listTools(undefined, { signal, timeout: 5000 }),
-            catch: memoryError,
-          });
-          if (
-            !["bm_project", "bm_read", "bm_search", "bm_write"].every((name) =>
-              tools.some((t) => t.name === name),
-            )
-          )
-            return yield* unavailable();
-          return resource.client;
-        }).pipe(
-          Scope.provide(connScope),
-          Effect.timeoutOrElse({
-            duration: "20 seconds",
-            orElse: () => Effect.fail(unavailable()),
-          }),
-          Effect.onError(() => Scope.close(connScope, Exit.void)),
-          Effect.onInterrupt(() => Scope.close(connScope, Exit.void)),
-        );
-        const after = yield* Ref.get(this.state);
-        if (after._tag === "Closed") {
-          yield* Scope.close(connScope, Exit.void);
-          return yield* unavailable();
-        }
-        const services = yield* Effect.context<never>();
-        const runFork = Effect.runForkWith(services);
-        client.onclose = () => {
-          runFork(
-            Ref.update(this.state, (s): ProviderState =>
-              s._tag === "Connected" && s.client === client ? { _tag: "Idle" } : s,
-            ).pipe(Effect.andThen(Scope.close(connScope, Exit.void))),
-          );
-        };
-        yield* Ref.set(this.state, { _tag: "Connected", client, scope: connScope });
-        return client;
+function acquireClient(executable: string, root: string, disconnected: () => void) {
+  return Effect.gen(function* () {
+    yield* checkMemoryVersionEffect(executable, root);
+    const env = yield* environment(root);
+    const resource = yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        const transport = new StdioClientTransport({
+          command: executable,
+          args: ["mcp", "--transport", "stdio"],
+          env,
+          cwd: root,
+          stderr: "ignore",
+        });
+        const mcpClient = new Client({ name: "abracode-memory", version: "1" });
+        return { transport, client: mcpClient };
       }),
+      ({ transport, client: mcpClient }) =>
+        Effect.promise(() => {
+          mcpClient.onclose = undefined;
+          return mcpClient
+            .close()
+            .catch(() => undefined)
+            .then(() => transport.close().catch(() => undefined));
+        }),
     );
+    yield* Effect.tryPromise({
+      try: (signal) => resource.client.connect(resource.transport, { signal, timeout: 15_000 }),
+      catch: memoryError,
+    });
+    const { tools } = yield* Effect.tryPromise({
+      try: (signal) => resource.client.listTools(undefined, { signal, timeout: 5000 }),
+      catch: memoryError,
+    });
+    if (
+      !["bm_project", "bm_read", "bm_search", "bm_write"].every((name) =>
+        tools.some((t) => t.name === name),
+      )
+    )
+      return yield* unavailable();
+    resource.client.onclose = disconnected;
+    return resource.client;
+  }).pipe(
+    Effect.timeoutOrElse({ duration: "20 seconds", orElse: () => Effect.fail(unavailable()) }),
+  );
+}
+
+export class MemoryProvider {
+  static make(executable: string) {
+    return Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      const services = yield* Effect.context<never>();
+      const run = Effect.runForkWith(services);
+      const clients: RcMap.RcMap<string, Client, CrewError> = yield* RcMap.make({
+        lookup: (root: string) =>
+          acquireClient(executable, root, () => {
+            run(RcMap.invalidate(clients, root));
+          }),
+        idleTimeToLive: "5 minutes",
+      }).pipe(Scope.provide(scope));
+      return new MemoryProvider(scope, clients);
+    });
   }
+  private constructor(
+    private scope: Scope.Closeable,
+    private clients: RcMap.RcMap<string, Client, CrewError>,
+  ) {}
 
   callEffect(
     root: string,
@@ -283,7 +251,7 @@ export class MemoryProvider {
     args: Record<string, unknown>,
   ): Effect.Effect<unknown, CrewError> {
     return Effect.gen({ self: this }, function* () {
-      const client = yield* this.connect(root);
+      const client = yield* RcMap.get(this.clients, root);
       const result = yield* Effect.tryPromise({
         try: (signal) =>
           client.callTool({ name, arguments: { ...args, output_format: "json" } }, undefined, {
@@ -310,27 +278,10 @@ export class MemoryProvider {
       const value = result.structuredContent;
       if (!value) return yield* unavailable();
       return typeof value === "object" && "result" in value ? value.result : value;
-    });
+    }).pipe(Effect.scoped);
   }
 
   get closeEffect(): Effect.Effect<void> {
-    return Effect.gen({ self: this }, function* () {
-      yield* Ref.set(this.state, { _tag: "Closed" });
-      yield* Scope.close(this.scope, Exit.void);
-    });
-  }
-}
-
-export class MemoryProviderService extends Context.Service<MemoryProviderService, MemoryProvider>()(
-  "abracode/MemoryProvider",
-) {
-  static layer(executable: string) {
-    return Layer.effect(
-      MemoryProviderService,
-      Effect.acquireRelease(
-        Effect.sync(() => new MemoryProvider(executable)),
-        (provider) => provider.closeEffect,
-      ),
-    );
+    return Scope.close(this.scope, Exit.void);
   }
 }

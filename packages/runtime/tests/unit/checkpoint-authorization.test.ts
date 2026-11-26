@@ -96,16 +96,20 @@ test("checkpoint observation, lost form response, restart and admission share ex
   assert.equal(f.runtime.forms.get(receipt.form_id), "pending");
 
   await run(f.controller.close());
-  const restarted = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const restarted = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   t.onTestFinished(() => run(restarted.close()));
   const pending = await run(restarted.approve(e.issue_id, "plan", supervisor));
@@ -174,16 +178,20 @@ test("an interrupted approval receipt commit recollects the same answered form a
   );
   await run(f.controller.close());
 
-  const restarted = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const restarted = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   t.onTestFinished(() => run(restarted.close()));
   const [accepted] = await run(restarted.reconcile(e.issue_id));

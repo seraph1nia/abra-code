@@ -1,7 +1,16 @@
+import { utf8Bytes } from "../utf8.ts";
 import { Schema } from "effect";
-import { ContentHash, IssueId, MessageId, RequestId, SessionId, Timestamp } from "../identities.ts";
+import {
+  Identifier,
+  ContentHash,
+  IssueId,
+  MessageId,
+  RequestId,
+  SessionId,
+  Timestamp,
+} from "../identities.ts";
 import { exactParseOptions as exact } from "../primitives.ts";
-import { ComponentId } from "./catalog.ts";
+import { ComponentId, SurfaceId } from "./surface-destination.ts";
 import { ResourcePathSchema } from "./resources.ts";
 import { SubmissionSchema, ReceiptSchema } from "./workspace-wire.ts";
 
@@ -10,7 +19,7 @@ const label = text.check(Schema.isNonEmpty());
 const positive = Schema.Int.check(Schema.isGreaterThan(0));
 export const ReviewSurfaceSourceSchema = Schema.Struct({
   kind: Schema.Literal("surface"),
-  surface_id: ComponentId,
+  surface_id: SurfaceId,
   revision: positive,
   hash: ContentHash,
 }).annotate(exact);
@@ -33,13 +42,13 @@ export const ReviewSourceSchema = Schema.Union([
   ReviewPlanSourceSchema,
 ]);
 export type ReviewSource = typeof ReviewSourceSchema.Type;
-const optionFields = { value: ComponentId, label, description: Schema.optionalKey(text) };
+const optionFields = { value: Identifier, label, description: Schema.optionalKey(text) };
 const options = Schema.Array(Schema.Struct(optionFields).annotate(exact)).check(
   Schema.isMinLength(1),
   Schema.isMaxLength(32),
 );
 const field = {
-  id: ComponentId.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/)),
+  id: ComponentId,
   label,
   description: Schema.optionalKey(text),
   required: Schema.optionalKey(Schema.Boolean),
@@ -58,7 +67,7 @@ export const DesignChoiceSchema = Schema.Struct({
   component: Schema.Literal("DesignChoiceGroup"),
   ...field,
   options: Schema.Array(
-    Schema.Struct({ ...optionFields, preview: ComponentId }).annotate(exact),
+    Schema.Struct({ ...optionFields, preview: Identifier }).annotate(exact),
   ).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
 }).annotate(exact);
 export const CommentFieldSchema = Schema.Struct({
@@ -72,7 +81,7 @@ export const ReviewFieldSchema = Schema.Union([
   CommentFieldSchema,
 ]);
 export const ReviewDefinitionSchema = Schema.Struct({
-  review_id: ComponentId,
+  review_id: Identifier,
   title: label,
   description: Schema.optionalKey(text),
   source: ReviewSourceSchema,
@@ -92,9 +101,7 @@ export const ReviewDefinitionSchema = Schema.Struct({
         )
       )
         return "Option values must be unique";
-      return (
-        new TextEncoder().encode(JSON.stringify(review)).length <= 65536 || "Review exceeds 64 KiB"
-      );
+      return utf8Bytes(JSON.stringify(review)) <= 65536 || "Review exceeds 64 KiB";
     }),
   );
 export type ReviewDefinition = typeof ReviewDefinitionSchema.Type;
@@ -102,18 +109,18 @@ export type ReviewField = typeof ReviewFieldSchema.Type;
 export const ReviewPublishSchema = Schema.Struct({
   review: ReviewDefinitionSchema,
   previews: Schema.optionalKey(
-    Schema.Array(
-      Schema.Struct({ id: ComponentId, path: ResourcePathSchema }).annotate(exact),
-    ).check(Schema.isMaxLength(16)),
+    Schema.Array(Schema.Struct({ id: Identifier, path: ResourcePathSchema }).annotate(exact)).check(
+      Schema.isMaxLength(16),
+    ),
   ),
 }).annotate(exact);
 export const ReviewSelectionSchema = Schema.Struct({
-  review_id: ComponentId,
+  review_id: Identifier,
   revision: positive,
 }).annotate(exact);
 export type ReviewSelection = typeof ReviewSelectionSchema.Type;
 export const ReviewAssetSchema = Schema.Struct({
-  id: ComponentId,
+  id: Identifier,
   hash: ContentHash,
   mime: Schema.Literals(["image/png", "image/jpeg", "image/webp"]),
   bytes: positive.check(Schema.isLessThanOrEqualTo(2 * 1024 * 1024)),
@@ -161,8 +168,8 @@ export const ReviewAssetDataSchema = Schema.Struct({
   data: Schema.String.check(Schema.isMaxLength(3 * 1024 * 1024)),
 });
 export const ReviewAnswersSchema = Schema.Record(
-  ComponentId,
-  Schema.Union([text, Schema.Array(ComponentId).check(Schema.isMaxLength(32))]),
+  Identifier,
+  Schema.Union([text, Schema.Array(Identifier).check(Schema.isMaxLength(32))]),
 );
 export type ReviewAnswers = typeof ReviewAnswersSchema.Type;
 export const ReviewSubmitSchema = Schema.Struct({
@@ -174,15 +181,13 @@ export const ReviewSubmitSchema = Schema.Struct({
   .annotate(exact)
   .check(
     Schema.makeFilter(
-      (input) =>
-        new TextEncoder().encode(JSON.stringify(input.answers)).length <= 16384 ||
-        "Answers exceed 16 KiB",
+      (input) => utf8Bytes(JSON.stringify(input.answers)) <= 16384 || "Answers exceed 16 KiB",
     ),
   );
 export type ReviewSubmit = typeof ReviewSubmitSchema.Type;
 export const ReviewReceiptSchema = Schema.Struct({
   ...ReceiptSchema.fields,
-  review_id: ComponentId,
+  review_id: Identifier,
   revision: positive,
   hash: ContentHash,
 });

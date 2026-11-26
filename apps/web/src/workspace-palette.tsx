@@ -1,34 +1,21 @@
-import { useWorkspaceCall } from "./data.ts";
-import { memo, useContext, useEffect, useState } from "react";
+import { useInspectResource } from "./use-inspect-resource.ts";
+import { useDebouncedValue } from "./use-debounced-value.ts";
+import { memo, useContext, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { SearchDialog } from "@abracode/presentation/ui/search-dialog";
 import type { WorkspaceSnapshot, TranscriptMessage } from "@abracode/contracts/web/contracts";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
-import { Exit } from "effect";
-import { toast } from "./notifications.tsx";
-import { requestError } from "./request-error.ts";
-import { reviewListQuery } from "./review-data.ts";
+import { usePublicationSource } from "./palette-sources/publications.ts";
+import { useCollectionSources } from "./palette-sources/collections.ts";
 import { MessageId } from "@abracode/contracts/identities";
 import { selectionLabel } from "@abracode/contracts/web/resources";
 import { workspaceDraft } from "./workspace-state/draft.ts";
 import { EvidenceKind } from "@abracode/contracts/visibility/discovery-contracts";
-import {
-  WorkspaceApi,
-  resolveResource,
-  agentsQuery,
-  repositoriesQuery,
-  bootstrapQuery,
-  exportDocument,
-} from "./data.ts";
+import { bootstrapQuery, exportDocument } from "./data.ts";
 import { queries } from "./work-data.ts";
-import {
-  destinations,
-  destinationFor,
-  searchForResource,
-  type WorkspaceSearch,
-} from "./navigation.ts";
+import { destinations, destinationFor, type WorkspaceSearch } from "./navigation.ts";
 import { RunCommand, composerCommands, snippetDraft, workControl } from "./workspace-commands.ts";
 
 import {
@@ -37,7 +24,7 @@ import {
   sources,
   sourceFeedback,
   type Source,
-  type Hit,
+  paletteHits,
 } from "./palette-source.ts";
 import { useEvidenceSource } from "./palette-evidence.ts";
 import { useMemorySource } from "./palette-memory.tsx";
@@ -97,11 +84,7 @@ function WorkspacePalette({
           ? input.slice(1)
           : input
   ).trim();
-  const [settled, setSettled] = useState("");
-  useEffect(() => {
-    const timer = setTimeout(() => setSettled(input), 180);
-    return () => clearTimeout(timer);
-  }, [input]);
+  const settled = useDebouncedValue(input, 180);
   const explicit = Boolean(filter);
   const remoteReady = Boolean(input) && input === settled && (explicit || query.length >= 2);
   const active = (source: Source) => remoteReady && (!filter || filter === source);
@@ -116,51 +99,7 @@ function WorkspacePalette({
     () => bootstrapQuery,
   );
   const current = workspace ?? snapshot.data;
-  const [publicationPage, setPublicationPage] = useState<{
-    forInput: string;
-    session: string;
-    cursor: string;
-  }>();
-  const pubs = useSource(!!current && (activeExplicit("surface") || activeExplicit("review")), () =>
-    WorkspaceApi.query("workspace", "publications", {
-      query: {
-        search: query,
-        kind: filter === "surface" || filter === "review" ? filter : undefined,
-        cursor:
-          publicationPage?.session === current?.session_id && publicationPage?.forInput === input
-            ? publicationPage.cursor
-            : undefined,
-      },
-      reactivityKeys: ["publications/" + current?.session_id],
-      timeToLive: "15 seconds",
-    }),
-  );
-  const reviews = useSource(activeExplicit("review"), () => reviewListQuery());
-  const work = useSource(active("work"), () =>
-    queries.find({ search: query, state: "all", limit: 8 }),
-  );
-  const workers = useSource(active("session"), () =>
-    WorkspaceApi.query("work", "sessions", {
-      query: { search: query, limit: 8 },
-      timeToLive: "15 seconds",
-    }),
-  );
-  const notebook = query.startsWith("#") ? { tag: query.slice(1) } : { text: query };
-  const notes = useSource(active("thought"), () =>
-    WorkspaceApi.query("work", "thoughtList", { query: notebook, timeToLive: "15 seconds" }),
-  );
-  function github(state: "OPEN" | "CLOSED" | "MERGED") {
-    return WorkspaceApi.query("work", "githubInbox", {
-      query: { search: query, state },
-      timeToLive: "15 seconds",
-    });
-  }
-  const opened = useSource(active("github"), () => github("OPEN"));
-  const closed = useSource(activeExplicit("github"), () => github("CLOSED"));
-  const merged = useSource(activeExplicit("github"), () => github("MERGED"));
-  const agents = useSource(active("agent"), () => agentsQuery);
   const memory = useMemorySource(active("memory"), filter === "memory", query);
-  const repos = useSource(active("repo"), () => repositoriesQuery);
   const draft = useAtomValue(current ? workspaceDraft(current.session_id) : emptyDraft);
   const artifactSummary = useAtomValue(
     artifact
@@ -173,42 +112,9 @@ function WorkspacePalette({
       : idleResult,
   );
   const lower = query.toLowerCase();
-  const hits: Hit[] = [];
-  const add = (
-    source: Source,
-    identity: string,
-    label: string,
-    detail: string,
-    effect: Hit["effect"],
-    select: () => void,
-    aliases?: readonly string[],
-  ) => {
-    hits.push({
-      id: source + "/" + identity,
-      source,
-      identity,
-      label,
-      detail,
-      effect,
-      run: select,
-      aliases,
-    });
-  };
-  const resolve = useWorkspaceCall(resolveResource);
-  const go = (target: ResourceSelection) => {
-    if (inspect) inspect(target);
-    else {
-      const address = location.href;
-      void resolve({ payload: target }).then((result) => {
-        if (location.href !== address) return;
-        if (Exit.isFailure(result)) {
-          toast.error("Couldn’t open this work item", { description: requestError(result.cause) });
-          return;
-        }
-        void navigate({ to: "/", search: searchForResource(result.value) });
-      });
-    }
-  };
+  const { hits, add } = paletteHits();
+  const fallback = useInspectResource();
+  const go = inspect ?? fallback.inspect;
   const reader = (search: WorkspaceSearch) =>
     void navigate({
       to: destinationFor(location.pathname) ?? "/",
@@ -222,65 +128,17 @@ function WorkspacePalette({
     go,
     reader,
   );
-  hits.push(...evidence.hits);
-  for (const row of reviews.data?.reviews ?? [])
-    add(
-      "review",
-      row.review_id + "/" + row.revision,
-      row.title,
-      "Interactive review · " + row.hash,
-      "Open",
-      () => reader({ review: { review_id: row.review_id, revision: row.revision } }),
-    );
-  for (const row of current?.surfaces ?? [])
-    if (!("unavailable" in row) && current) {
-      const id = "surface" in row ? row.surface.createSurface.surfaceId : row.surface_id;
-      add(
-        "surface",
-        id + "/" + row.revision,
-        id,
-        "Generated view · revision " + row.revision,
-        "Open",
-        () =>
-          reader({
-            surface: { session_id: current.session_id, surface_id: id, revision: row.revision },
-          }),
-      );
-    }
-  const confirmedPublications = new Set<string>();
-  for (const entry of pubs.data?.entries ?? []) {
-    if (entry.session_id !== current?.session_id) continue;
-    if (entry.target.kind === "surface")
-      confirmedPublications.add("surface/" + entry.target.surface_id + "/" + entry.target.revision);
-    if (entry.target.kind === "review")
-      confirmedPublications.add("review/" + entry.target.review_id + "/" + entry.target.revision);
-    const t = entry.target;
-    if (t.kind === "surface")
-      add(
-        "surface",
-        t.surface_id + "/" + t.revision,
-        t.surface_id,
-        "Published revision " + t.revision + " · " + entry.message_id,
-        "Open",
-        () =>
-          reader({
-            surface: {
-              session_id: entry.session_id,
-              surface_id: t.surface_id,
-              revision: t.revision,
-            },
-          }),
-      );
-    if (t.kind === "review")
-      add(
-        "review",
-        t.review_id + "/" + t.revision,
-        t.review_id,
-        "Published revision " + t.revision + " · " + entry.message_id,
-        "Open",
-        () => reader({ review: { review_id: t.review_id, revision: t.revision } }),
-      );
-  }
+  const publications = usePublicationSource(input, query, filter, activeExplicit, current, reader);
+  const collections = useCollectionSources({
+    query,
+    active,
+    activeExplicit,
+    current,
+    chat,
+    finder,
+    go,
+  });
+  hits.push(...evidence.hits, ...publications.hits, ...collections.hits);
   for (const [path, label] of Object.entries(destinations))
     add(
       "page",
@@ -407,74 +265,6 @@ function WorkspacePalette({
         );
     }
   }
-  for (const row of work.data?.entries ?? [])
-    add(
-      "work",
-      row.issue_id,
-      row.title,
-      [row.repository_id, row.issue_status].filter(Boolean).join(" · "),
-      "Open",
-      () => go({ action: "open_task", issue_id: row.issue_id }),
-    );
-  if (current && active("session"))
-    add("session", current.session_id, "Abra", "Main conversation", "Open", chat);
-  for (const row of workers.data?.entries ?? [])
-    add(
-      "session",
-      row.session_id,
-      row.role + " · " + row.session_id,
-      row.title + " · " + row.repository_id + " · " + row.association + " · " + row.availability,
-      "Open",
-      () => go({ action: "open_session", issue_id: row.issue_id, session_id: row.session_id }),
-    );
-  for (const row of notes.data?.entries ?? [])
-    add(
-      "thought",
-      row.reference.name,
-      row.snippet,
-      row.reference.account + " · " + row.tags.map((t) => "#" + t).join(" "),
-      "Open",
-      () => void navigate({ to: "/thoughts", search: { collection: { memo: row.reference } } }),
-    );
-  for (const part of [opened, closed, merged])
-    for (const row of part.data?.entries ?? []) {
-      const { repository_id, repo_node, item_node, number, kind } = row;
-      add(
-        "github",
-        repository_id + "/" + item_node,
-        row.title,
-        `${repository_id} #${number} · ${row.state}`,
-        "Open",
-        () =>
-          void navigate({
-            to: "/github",
-            search: {
-              collection: {
-                item: { repository_id, repo_node, item_node, number, kind },
-                github: { state: row.state, search: query },
-              },
-            },
-          }),
-      );
-    }
-  for (const agent of agents.data?.agents ?? [])
-    add(
-      "agent",
-      agent.id,
-      agent.id,
-      agent.description,
-      "Open",
-      () => void navigate({ to: "/settings", hash: "agent-" + agent.id }),
-    );
-  for (const repo of repos.data ?? [])
-    add(
-      "repo",
-      repo.id,
-      repo.name,
-      repo.id,
-      "Open",
-      () => void navigate({ to: "/settings/repositories", hash: "repo-" + repo.id }),
-    );
   for (const form of current?.forms ?? [])
     if (form.active)
       add(
@@ -517,37 +307,11 @@ function WorkspacePalette({
         [m.text],
       );
   const { more, status, report } = sourceFeedback();
-  more.push(...memory.more);
-  status.push(...memory.status);
-  report("Publications", pubs);
-  if (pubs.data?.incomplete) status.push("Some retained publication associations are unavailable.");
-  const publicationNext = pubs.data?.next;
-  if (publicationNext)
-    more.push({
-      id: "more-publications",
-      label: "Search next publication page",
-      keepOpen: true,
-      run: () =>
-        setPublicationPage({
-          forInput: input,
-          session: current!.session_id,
-          cursor: publicationNext,
-        }),
-    });
+  more.push(...memory.more, ...publications.more, ...collections.more);
+  status.push(...memory.status, ...publications.status, ...collections.status);
   more.push(...evidence.more);
   status.push(...evidence.status);
-  report("Interactive reviews", reviews);
-  if (reviews.data) status.push(...reviews.data.diagnostics);
-  report("Work", work);
-  report("Sessions", workers);
-  report("Thoughts", notes);
-  report("Open GitHub", opened);
-  report("Closed GitHub", closed);
-  report("Merged GitHub", merged);
-  report("Agents", agents);
-  report("Repositories", repos);
   report("Workspace", snapshot);
-  if (work.data && !work.data.entries.length) status.push("No matching work.");
   if (input !== settled && (explicit || query.length >= 2)) status.push("Searching…");
   if (active("message")) {
     status.push("Messages cover the observed conversation window.");
@@ -562,47 +326,11 @@ function WorkspacePalette({
     else if (!history && current?.older)
       more.push({ id: "earlier-chat", label: "Open Chat for earlier messages", run: chat });
   }
-  if ([opened, closed, merged].some((s) => s.data?.coverage.some((c) => c.status !== "current")))
-    status.push("GitHub coverage is partial.");
-  if (active("work"))
-    more.push({ id: "all", label: "See all results in Work", run: () => finder(query) });
-  if (active("thought") && notes.data?.next_cursor)
-    more.push({
-      id: "more-thought",
-      label: "More in Thoughts",
-      run: () => void navigate({ to: "/thoughts", search: { collection: { notebook } } }),
-    });
-  if (active("session") && workers.data?.next_offset)
-    more.push({
-      id: "more-session",
-      label: "More in Sessions",
-      run: () =>
-        void navigate({
-          to: "/work",
-          search: { collection: { section: "sessions", work: { search: query } } },
-        }),
-    });
-  if (active("github"))
-    for (const [state, part] of [
-      ["OPEN", opened],
-      ["CLOSED", closed],
-      ["MERGED", merged],
-    ] as const)
-      if (part.data && part.data.total > 4)
-        more.push({
-          id: "more-" + state,
-          label: "More " + state.toLowerCase() + " items in GitHub",
-          run: () =>
-            void navigate({
-              to: "/github",
-              search: { collection: { github: { search: query, state } } },
-            }),
-        });
   const [expanded, setExpanded] = useState<Partial<Record<Source, number>>>({});
   const { rows, counts } = rankPaletteHits(
     hits,
     filter,
-    confirmedPublications,
+    publications.confirmedPublications,
     input,
     lower,
     expanded,
@@ -624,7 +352,7 @@ function WorkspacePalette({
     memory.reset();
     evidence.reset();
     setExpanded({});
-    setPublicationPage(undefined);
+    publications.reset();
   }
   return (
     <SearchDialog

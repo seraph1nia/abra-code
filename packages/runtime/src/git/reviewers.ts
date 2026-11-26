@@ -1,7 +1,7 @@
+import { GitError } from "../errors.ts";
 import { Effect, Schema } from "effect";
 import { NonEmpty } from "@abracode/contracts/primitives";
-import { ensure, type ManagedExecution, type Project } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
+import { type ManagedExecution, type Project } from "../domain.ts";
 import { type Git } from "./repository.ts";
 import { type Forge } from "./forge.ts";
 import { restPages } from "./feedback.ts";
@@ -68,38 +68,40 @@ export function ownersFor(content: string, files: readonly string[], organizatio
   }
   return { selected, notes };
 }
+const repositoryTeams = (forge: Forge, p: Project, slug: string) =>
+  restPages(
+    forge,
+    p,
+    Schema.Struct({ slug: NonEmpty, permission: NonEmpty }),
+    `repos/${slug}/teams?per_page=100`,
+  );
+
 export function reviewerPermission(
   forge: Forge,
   p: Project,
   slug: string,
   kind: "user" | "team",
   name: string,
+  availableTeams = repositoryTeams(forge, p, slug),
 ) {
-  return domainEffect(
-    Effect.gen(function* () {
-      ensure(
-        safeLogin.test(name),
+  return Effect.gen(function* () {
+    if (!safeLogin.test(name))
+      return yield* new GitError(
         "REVIEWER_TARGET",
         "Reviewer target must be an explicit login or team slug",
       );
-      if (kind === "user") {
-        const result = yield* forge.json(p, Schema.Struct({ permission: NonEmpty }), [
-          "api",
-          `repos/${slug}/collaborators/${name}/permission`,
-        ]);
-        return ["write", "maintain", "admin"].includes(result.permission);
-      }
-      const teams = yield* restPages(
-        forge,
-        p,
-        Schema.Struct({ slug: NonEmpty, permission: NonEmpty }),
-        `repos/${slug}/teams?per_page=100`,
-      );
-      return teams.some(
-        (t) => t.slug === name && ["push", "write", "maintain", "admin"].includes(t.permission),
-      );
-    }),
-  );
+    if (kind === "user") {
+      const result = yield* forge.json(p, Schema.Struct({ permission: NonEmpty }), [
+        "api",
+        `repos/${slug}/collaborators/${name}/permission`,
+      ]);
+      return ["write", "maintain", "admin"].includes(result.permission);
+    }
+    const teams = yield* availableTeams;
+    return teams.some(
+      (t) => t.slug === name && ["push", "write", "maintain", "admin"].includes(t.permission),
+    );
+  });
 }
 export class GitHubReviewers {
   constructor(
@@ -107,12 +109,13 @@ export class GitHubReviewers {
     private forge: Forge,
   ) {}
   suggest = Effect.fn("GitHubReviewers.suggest")(
-    function* (this: GitHubReviewers, p: Project, e: ManagedExecution) {
-      ensure(
-        e.delivered_commit && e.worktree_directory && e.base_commit,
-        "REVIEWER_HEAD",
-        "Suggestions require the retained delivered comparison",
-      );
+    { self: this },
+    function* (p: Project, e: ManagedExecution) {
+      if (!(e.delivered_commit && e.worktree_directory && e.base_commit))
+        return yield* new GitError(
+          "REVIEWER_HEAD",
+          "Suggestions require the retained delivered comparison",
+        );
       const repo = yield* this.forge.repo(p);
       const changed = yield* this.git.run(
         e.worktree_directory,
@@ -144,13 +147,19 @@ export class GitHubReviewers {
         sha: NonEmpty,
         author: Schema.NullOr(Schema.Struct({ login: NonEmpty })),
       });
-      for (const path of files) {
-        const result = yield* Effect.result(
-          this.forge.json(p, Schema.Array(CommitAuthor), [
-            "api",
-            `repos/${repo.full_name}/commits?sha=${e.delivered_commit}&path=${encodeURIComponent(path)}&per_page=5`,
-          ]),
-        );
+      const authors = yield* Effect.forEach(
+        files,
+        (path) =>
+          Effect.result(
+            this.forge.json(p, Schema.Array(CommitAuthor), [
+              "api",
+              `repos/${repo.full_name}/commits?sha=${e.delivered_commit}&path=${encodeURIComponent(path)}&per_page=5`,
+            ]),
+          ),
+        { concurrency: 4 },
+      );
+      for (const [index, result] of authors.entries()) {
+        const path = files[index]!;
         if (result._tag === "Failure") {
           notes.push(`Recent authorship unavailable for ${path}`);
           continue;
@@ -164,32 +173,36 @@ export class GitHubReviewers {
             );
           }
       }
-      const suggestions: (typeof ReviewerSuggestions.Type)["suggestions"][number][] = [];
-      for (const [key, evidence] of [...selected].slice(0, 40)) {
-        const [kind, name] = key.split(":") as ["user" | "team", string];
-        const permission = yield* Effect.result(
-          reviewerPermission(this.forge, p, repo.full_name, kind, name),
-        );
-        suggestions.push({
-          kind,
-          name,
-          evidence,
-          eligible: permission._tag === "Success" && permission.success,
-          reason:
-            permission._tag === "Failure"
-              ? "Eligibility could not be confirmed"
-              : permission.success
-                ? undefined
-                : "Repository write access is required",
-        });
-      }
+      const teams = yield* Effect.cached(repositoryTeams(this.forge, p, repo.full_name));
+      const suggestions = yield* Effect.forEach(
+        [...selected].slice(0, 40),
+        ([key, evidence]) =>
+          Effect.gen({ self: this }, function* () {
+            const [kind, name] = key.split(":") as ["user" | "team", string];
+            const permission = yield* Effect.result(
+              reviewerPermission(this.forge, p, repo.full_name, kind, name, teams),
+            );
+            return {
+              kind,
+              name,
+              evidence,
+              eligible: permission._tag === "Success" && permission.success,
+              reason:
+                permission._tag === "Failure"
+                  ? "Eligibility could not be confirmed"
+                  : permission.success
+                    ? undefined
+                    : "Repository write access is required",
+            };
+          }),
+        { concurrency: 4 },
+      );
       return {
         head: e.delivered_commit,
         suggestions,
         limited: all.length > 10 || selected.size > 40 || notes.length > 0,
         notes: notes.slice(0, 40),
       };
-    }.bind(this),
-    domainEffect,
+    },
   );
 }

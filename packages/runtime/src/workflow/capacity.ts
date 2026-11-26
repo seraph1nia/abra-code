@@ -1,3 +1,4 @@
+import { WorkflowError } from "../errors.ts";
 import { externalOwns } from "@abracode/contracts/validation/contracts";
 import { admissionWait } from "../observability.ts";
 import {
@@ -7,9 +8,7 @@ import {
   type RequestId,
 } from "@abracode/contracts/identities";
 import { Clock, Effect } from "effect";
-import { domainEffect } from "../effect.ts";
 import {
-  CrewError,
   type Execution,
   type Config,
   type ManagedExecution,
@@ -134,7 +133,7 @@ export function capacityBlockers(
   );
 }
 const unavailable = "Cannot verify capacity while issue or setup execution records are unreadable";
-export const unknownCapacity = () => new CrewError("CAPACITY_UNKNOWN", unavailable);
+export const unknownCapacity = () => new WorkflowError("CAPACITY_UNKNOWN", unavailable);
 
 /** Native admission reservations are persisted atomically, before resource/session submission. */
 export class Capacity {
@@ -161,7 +160,10 @@ export class Capacity {
           reservation.role !== role ||
           reservation.generation !== e.control_generation
         )
-          return yield* new CrewError("STALE_OPERATION", "Preparation reservation was superseded");
+          return yield* new WorkflowError(
+            "STALE_OPERATION",
+            "Preparation reservation was superseded",
+          );
         yield* this.records.commitOwned(e, {
           capacity_reservation: removeOwnedField,
           capacity_observed_idle: true,
@@ -169,59 +171,58 @@ export class Capacity {
       }),
     );
   }
-  reserve(
-    e: ManagedExecution,
+  reserve<E extends ManagedExecution>(
+    e: E,
     role: Role,
     project: Project,
     newExecution = false,
     request?: RequestId,
   ) {
     return this.records.withActiveIndex(() =>
-      domainEffect(
-        Effect.gen({ self: this }, function* () {
-          const scan = yield* this.records.capacityRecords();
-          if (newExecution && scan.diagnostics.length) return yield* unknownCapacity();
-          const blockers: ReadinessBlocker[] = scan.diagnostics.length
-            ? [{ code: "execution", message: unavailable }]
-            : capacityBlockers(
-                this.config,
-                project,
-                [...scan.executions, ...scan.setups],
-                role,
-                newExecution,
-                e.execution_id,
-              );
-          let patch: ExecutionPatch;
-          if (blockers.length) {
-            yield* admissionWait(role);
-            const now = yield* Clock.currentTimeMillis;
-            patch = {
-              capacity_wait: {
-                request_id: request,
-                role,
-                reasons: blockers.map((b) => b.message),
-                consuming: [...new Set(blockers.flatMap((b) => b.consuming ?? []))],
-                next_check_at: now + 1000,
-              },
-            };
-          } else {
-            patch = {
-              capacity_wait: removeOwnedField,
-              capacity_observed_idle: false,
-              capacity_reservation: {
-                role,
-                generation: e.control_generation,
-                status: "preparing",
-                ...(request && { session_id: e[`${role}_session_id`], prompt_id: e.prompt_id }),
-              },
-            };
-          }
-          if (newExecution && blockers.length) return false;
-          if (newExecution) yield* this.records.create(e, patch);
-          else yield* this.records.commitOwned(e, patch);
-          return blockers.length === 0;
-        }),
-      ),
+      Effect.gen({ self: this }, function* () {
+        const scan = yield* this.records.capacityRecords();
+        if (newExecution && scan.diagnostics.length) return yield* unknownCapacity();
+        const blockers: ReadinessBlocker[] = scan.diagnostics.length
+          ? [{ code: "execution", message: unavailable }]
+          : capacityBlockers(
+              this.config,
+              project,
+              [...scan.executions, ...scan.setups],
+              role,
+              newExecution,
+              e.execution_id,
+            );
+        let patch: ExecutionPatch;
+        if (blockers.length) {
+          yield* admissionWait(role);
+          const now = yield* Clock.currentTimeMillis;
+          patch = {
+            capacity_wait: {
+              request_id: request,
+              role,
+              reasons: blockers.map((b) => b.message),
+              consuming: [...new Set(blockers.flatMap((b) => b.consuming ?? []))],
+              next_check_at: now + 1000,
+            },
+          };
+        } else {
+          patch = {
+            capacity_wait: removeOwnedField,
+            capacity_observed_idle: false,
+            capacity_reservation: {
+              role,
+              generation: e.control_generation,
+              status: "preparing",
+              ...(request && { session_id: e[`${role}_session_id`], prompt_id: e.prompt_id }),
+            },
+          };
+        }
+        if (newExecution && blockers.length) return { execution: e, admitted: false };
+        const saved = newExecution
+          ? yield* this.records.create(e, patch)
+          : yield* this.records.commitOwned(e, patch);
+        return { execution: saved, admitted: blockers.length === 0 };
+      }),
     );
   }
 }

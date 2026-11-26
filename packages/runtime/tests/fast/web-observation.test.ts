@@ -1,3 +1,4 @@
+import { retainConversation } from "@abracode/web/conversation";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Schema } from "effect";
@@ -5,7 +6,6 @@ import {
   WorkspaceObservation,
   type ObservationAdapters,
   type ObservationClock,
-  type ObservationState,
 } from "@abracode/web/observation-client";
 import { WorkspaceStateJson } from "@abracode/contracts/web/workspace-wire";
 import type { WorkspaceSnapshot } from "../../src/web/contracts.ts";
@@ -35,10 +35,7 @@ const snapshot = (epoch: string, sequence: number, baseline = false, changes = {
   ...new WorkspaceFixture().value,
   observation: { epoch, sequence, baseline, changes },
 });
-function fixture(
-  initial: WorkspaceSnapshot = snapshot("first", 1, true),
-  retained?: ObservationState["conversation"],
-) {
+function fixture(initial: WorkspaceSnapshot = snapshot("first", 1, true)) {
   let receive!: Parameters<ObservationAdapters["transport"]["subscribe"]>[0];
   const clock = new Clock(),
     reads: {
@@ -53,44 +50,40 @@ function fixture(
     unsubscribed = 0,
     connections = 0;
   let disconnected!: () => void;
-  const owner = new WorkspaceObservation(
-    initial,
-    {
-      transport: {
-        current: () => ({}),
-        subscribe: (listener) => {
-          receive = listener;
-          return () => {
-            unsubscribed++;
-          };
-        },
-        connect: () => {
-          connections++;
-          return new Promise<void>((resolve) => {
-            disconnected = resolve;
-          });
-        },
-        detach: () => {
-          detached++;
-        },
-        publish: (value) => {
-          published.push(value);
-        },
+  const owner = new WorkspaceObservation(initial, {
+    transport: {
+      current: () => ({}),
+      subscribe: (listener) => {
+        receive = listener;
+        return () => {
+          unsubscribed++;
+        };
       },
-      baseline: (signal) =>
-        new Promise((resolve, reject) => {
-          reads.push({ signal, resolve, reject });
-        }),
-      invalidate: async (scope) => {
-        invalidations.push(scope);
+      connect: () => {
+        connections++;
+        return new Promise<void>((resolve) => {
+          disconnected = resolve;
+        });
       },
-      error: (error) => {
-        errors.push(error);
+      detach: () => {
+        detached++;
       },
-      clock,
+      publish: (value) => {
+        published.push(value);
+      },
     },
-    retained,
-  );
+    baseline: (signal) =>
+      new Promise((resolve, reject) => {
+        reads.push({ signal, resolve, reject });
+      }),
+    invalidate: async (scope) => {
+      invalidations.push(scope);
+    },
+    error: (error) => {
+      errors.push(error);
+    },
+    clock,
+  });
   return {
     owner,
     reads,
@@ -126,35 +119,27 @@ test("recent-window rollover retains loaded messages, exact attachments and unch
     ...base,
     presentations: { entries: [attachment], truncated: false },
   });
-  f.owner.receiveMessages([message(0), message(1)]);
-  const before = f.owner.current().conversation;
-  f.state({
-    ...snapshot("first", 3),
-    presentations: { entries: [], truncated: false },
-  });
-  f.owner.receiveMessages([message(1), message(2)]);
-  const after = f.owner.current();
-  assert.equal(Object.hasOwn(after.workspace, "messages"), false);
+  const before = retainConversation(undefined, f.owner.current().workspace, [
+    message(0),
+    message(1),
+  ]);
+  f.state(snapshot("first", 3));
+  const observed = f.owner.current().workspace;
+  const after = retainConversation(before, observed, [message(1), message(2)]);
+  assert.equal(Object.hasOwn(observed, "messages"), false);
   assert.deepEqual(
-    after.conversation.messages.map((row) => row.id),
+    after.messages.map((row) => row.id),
     ["msg_retained_0", "msg_retained_1", "msg_retained_2"],
   );
-  assert.equal(after.conversation.messages[1], before.messages[1]);
-  assert.equal(after.conversation.presentations.entries[0], before.presentations.entries[0]);
-  f.owner.dispose();
-  const replay = fixture(after.workspace, after.conversation);
-  assert.deepEqual(replay.owner.current().conversation, after.conversation);
-  replay.owner.dispose();
-  const foreign = fixture(
-    { ...after.workspace, session_id: SessionId.make("ses_different") },
-    after.conversation,
-  );
+  assert.equal(after.messages[1], before.messages[1]);
+  assert.equal(after.presentations.entries[0], before.presentations.entries[0]);
+  assert.equal(retainConversation(after, observed), after);
   assert.deepEqual(
-    foreign.owner.current().conversation.messages.map((row) => row.id),
+    retainConversation(after, { ...observed, session_id: SessionId.make("ses_different") })
+      .messages,
     [],
-    "display history never crosses native session ownership",
   );
-  foreign.owner.dispose();
+  f.owner.dispose();
 });
 
 test("complete observation excludes retired baselines and coalesces gaps with explicit refresh", async () => {

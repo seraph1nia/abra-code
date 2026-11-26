@@ -1,3 +1,4 @@
+import { PaginationBar } from "../pagination-bar.tsx";
 import { useState } from "react";
 import { useDeadline } from "../deadline.ts";
 import { Markdown as DeferredMarkdown } from "../markdown.tsx";
@@ -5,7 +6,6 @@ import type { IssueId } from "@abracode/contracts/identities";
 import type { FeedbackPageSchema } from "@abracode/contracts/web/wire";
 import { queries } from "../work-data.ts";
 import { RequestState } from "../request-state.tsx";
-import { Button } from "@abracode/presentation/ui/button";
 import {
   Card,
   CardHeader,
@@ -138,14 +138,13 @@ export function ReviewsPanel({ issue }: { issue: IssueId }) {
             {!evidence.external_validation && !evidence.external_history_total && (
               <p>No retained external validation. Its outcome is unavailable.</p>
             )}
-            <nav aria-label="Review and check pages" className="button-row">
-              <Button variant="outline" disabled={page === 0} onClick={() => setPage(page - 1)}>
-                Previous evidence
-              </Button>
-              <Button variant="outline" disabled={!next} onClick={() => setPage(page + 1)}>
-                Next evidence
-              </Button>
-            </nav>
+            <PaginationBar
+              label="Review and check pages"
+              previousLabel="Previous evidence"
+              nextLabel="Next evidence"
+              previous={page ? () => setPage(page - 1) : undefined}
+              next={next ? () => setPage(page + 1) : undefined}
+            />
           </div>
         );
       }}

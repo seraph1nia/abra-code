@@ -1,3 +1,4 @@
+import { GitError } from "../errors.ts";
 import {
   type BranchName,
   type Commit,
@@ -8,9 +9,8 @@ import {
 import { type Feedback } from "@abracode/contracts/workflow/feedback-contracts";
 import { Effect } from "effect";
 import { CrewError, type ManagedExecution, type Project } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import { completedProgress, progress } from "../opencode/progress.ts";
-import { type OperationResult } from "../workflow/results.ts";
+import { type OperationResult } from "./operation-result.ts";
 import { type GitHubFeedback } from "./feedback.ts";
 import { type Forge, type PR } from "./forge.ts";
 import { assertOwnedPR, type InspectPR } from "./publish.ts";
@@ -21,6 +21,7 @@ export interface DeliveryAssessment {
   pr: PR;
   feedback: Feedback;
   readiness: OperationResult;
+  forge_observation?: ManagedExecution["forge_observation"];
 }
 
 export function assessPR(
@@ -30,27 +31,25 @@ export function assessPR(
   p: Project,
   e: ManagedExecution,
 ): Effect.Effect<DeliveryAssessment, CrewError> {
-  return domainEffect(
-    Effect.gen(function* () {
-      const pr = yield* assertOwnedPR(
-        yield* inspect(p, e),
-        p,
-        e,
-        "Findings require the exact open delivered PR/head/target",
-        { states: ["OPEN"], base: e.target_branch },
-      );
-      const readiness = yield* readinessAdapter.check(p, e, pr);
-      const feedback = yield* feedbackAdapter.observe(p, e, pr, readiness);
-      yield* assertOwnedPR(
-        yield* inspect(p, e),
-        p,
-        e,
-        "PR changed identity or head while observing findings",
-        { states: ["OPEN"], url: pr.url, head: pr.headRefOid, base: pr.baseRefName },
-      );
-      return { pr, feedback, readiness };
-    }),
-  );
+  return Effect.gen(function* () {
+    const pr = yield* assertOwnedPR(
+      yield* inspect(p, e),
+      p,
+      e,
+      "Findings require the exact open delivered PR/head/target",
+      { states: ["OPEN"], base: e.target_branch },
+    );
+    const assessment = yield* readinessAdapter.check(p, e, pr);
+    const feedback = yield* feedbackAdapter.observe(p, e, pr, assessment);
+    yield* assertOwnedPR(
+      yield* inspect(p, e),
+      p,
+      e,
+      "PR changed identity or head while observing findings",
+      { states: ["OPEN"], url: pr.url, head: pr.headRefOid, base: pr.baseRefName },
+    );
+    return { pr, feedback, ...assessment };
+  });
 }
 
 export function mergePR(
@@ -66,7 +65,7 @@ export function mergePR(
     Effect.gen(function* () {
       yield* progress({ stage: "merge", status: "started" });
       const rawPr = yield* inspect(p, e);
-      if (!rawPr) return yield* new CrewError("PR_MISSING", "No matching PR");
+      if (!rawPr) return yield* new GitError("PR_MISSING", "No matching PR");
       const pr = yield* assertOwnedPR(
         rawPr,
         p,
@@ -85,11 +84,11 @@ export function mergePR(
         { url: pr.url },
       );
       if (current.state === "CLOSED") {
-        return yield* new CrewError("PR_CLOSED", "PR closed during readiness observation");
+        return yield* new GitError("PR_CLOSED", "PR closed during readiness observation");
       }
       if (current.state === "MERGED") return { category: "completed", value: undefined } as const;
       if (!beforeSubmit) {
-        return yield* new CrewError(
+        return yield* new GitError(
           "MERGE_GUARD",
           "Controller finishing readiness guard is required before merge submission",
         );
@@ -130,10 +129,10 @@ export function deliveryEvidence(
     Effect.gen(function* () {
       yield* progress({ stage: "deliver", status: "started" });
       if (p.delivery === "branch") {
-        if (!e.delivered_commit) return yield* new CrewError("DELIVERY", "No committed delivery");
+        if (!e.delivered_commit) return yield* new GitError("DELIVERY", "No committed delivery");
         const ref = yield* git.run(p.path, ["ls-remote", "origin", `refs/heads/${e.branch}`]);
         if (!ref.startsWith(`${e.delivered_commit}\t`)) {
-          return yield* new CrewError(
+          return yield* new GitError(
             "DELIVERY",
             "Exact commit is not preserved in configured remote branch",
           );
@@ -150,7 +149,7 @@ export function deliveryEvidence(
       );
       const mergeOid = pr.mergeCommit?.oid;
       if (!mergeOid) {
-        return yield* new CrewError(
+        return yield* new GitError(
           "NOT_MERGED",
           "Delivery is not a verified merge of the intended PR head",
         );

@@ -3,7 +3,6 @@ import { SessionMessage } from "@opencode/schema/session-message";
 import { TokenUsage } from "@opencode/schema/token-usage";
 import { Cause, Duration, Effect, Queue, Schedule, Stream } from "effect";
 import { identity } from "../config/identity.ts";
-import { domainEffect } from "../effect.ts";
 import { type Controller } from "../workflow/controller.ts";
 import { type Scheduler } from "../scheduler/scheduler.ts";
 import { workerFor } from "../opencode/guards.ts";
@@ -60,72 +59,67 @@ export function monitor(ctx: Context, c: Controller, scheduler: Scheduler) {
       Effect.repeat(Schedule.spaced(c.queries.settings.reconcileInterval)),
       Effect.forkScoped,
     );
-    const events = domainEffect(
-      nativeEventSubscribe(ctx, { types: MONITORED_EVENTS }).pipe(
-        Stream.runForEach((event) =>
-          Effect.gen(function* () {
-            if (event.type === "session.step.ended") {
-              // A single step measures the active context, including cached tokens.
-              // The session usage event instead accumulates every step since creation.
-              const { sessionID, assistantMessageID, tokens } = event.data;
-              if (TokenUsage.total(tokens) < 200_000) return;
-              yield* Effect.gen(function* () {
-                const sessions = nativeSession(ctx);
-                const session = yield* sessions.get({ sessionID });
-                // Native compact commits staged reverts. Leave that decision to the user.
-                if (
-                  session.agent !== identity.agent ||
-                  session.location.directory !== c.queries.settings.home ||
-                  session.metadata?.abracode_supervisor_home !== c.queries.settings.home ||
-                  session.parentID ||
-                  session.fork ||
-                  session.revert ||
-                  session.time.archived
-                )
-                  return;
-                yield* sessions.compact({
-                  sessionID,
-                  id: SessionMessage.ID.make(`${assistantMessageID}_abra_compact`),
-                  delivery: "steer",
-                });
-              }).pipe(
-                Effect.catch((error) => Effect.logError("Abra supervisor compaction", error)),
-              );
-            } else if (
-              event.type === "session.text.ended" ||
-              event.type === "session.tool.success" ||
-              event.type === "session.tool.failed" ||
-              event.type === "session.tool.progress"
-            ) {
-              yield* c.observeWorker(event.data.sessionID).pipe(Effect.ignore);
+    const events = nativeEventSubscribe(ctx, { types: MONITORED_EVENTS }).pipe(
+      Stream.runForEach((event) =>
+        Effect.gen(function* () {
+          if (event.type === "session.step.ended") {
+            // A single step measures the active context, including cached tokens.
+            // The session usage event instead accumulates every step since creation.
+            const { sessionID, assistantMessageID, tokens } = event.data;
+            if (TokenUsage.total(tokens) < 200_000) return;
+            yield* Effect.gen(function* () {
+              const sessions = nativeSession(ctx);
+              const session = yield* sessions.get({ sessionID });
+              // Native compact commits staged reverts. Leave that decision to the user.
               if (
-                event.type === "session.tool.success" &&
-                event.data.sessionID === (yield* c.queries.supervisor())
+                session.agent !== identity.agent ||
+                session.location.directory !== c.queries.settings.home ||
+                session.metadata?.abracode_supervisor_home !== c.queries.settings.home ||
+                session.parentID ||
+                session.fork ||
+                session.revert ||
+                session.time.archived
               )
-                yield* Queue.offer(requests, undefined);
-            } else if (
-              event.type === "session.execution.succeeded" ||
-              event.type === "session.execution.failed" ||
-              event.type === "session.execution.interrupted" ||
-              event.type === "session.idle"
-            ) {
-              if (yield* workerFor(c, event.data.sessionID)) {
-                if (event.type === "session.execution.failed")
-                  yield* c.recordWorkerFailure(event.data.sessionID, event.data.error);
-                yield* Queue.offer(requests, undefined);
-              }
-            } else if (event.type === "form.replied") {
+                return;
+              yield* sessions.compact({
+                sessionID,
+                id: SessionMessage.ID.make(`${assistantMessageID}_abra_compact`),
+                delivery: "steer",
+              });
+            }).pipe(Effect.catch((error) => Effect.logError("Abra supervisor compaction", error)));
+          } else if (
+            event.type === "session.text.ended" ||
+            event.type === "session.tool.success" ||
+            event.type === "session.tool.failed" ||
+            event.type === "session.tool.progress"
+          ) {
+            yield* c.observeWorker(event.data.sessionID).pipe(Effect.ignore);
+            if (
+              event.type === "session.tool.success" &&
+              event.data.sessionID === (yield* c.queries.supervisor())
+            )
+              yield* Queue.offer(requests, undefined);
+          } else if (
+            event.type === "session.execution.succeeded" ||
+            event.type === "session.execution.failed" ||
+            event.type === "session.execution.interrupted" ||
+            event.type === "session.idle"
+          ) {
+            if (yield* workerFor(c, event.data.sessionID)) {
+              if (event.type === "session.execution.failed")
+                yield* c.recordWorkerFailure(event.data.sessionID, event.data.error);
               yield* Queue.offer(requests, undefined);
             }
-          }).pipe(
-            Effect.catchCauseIf(
-              (cause) => !Cause.hasInterruptsOnly(cause),
-              (cause) => Effect.logError("AbraCode event", event.type, cause),
-            ),
+          } else if (event.type === "form.replied") {
+            yield* Queue.offer(requests, undefined);
+          }
+        }).pipe(
+          Effect.catchCauseIf(
+            (cause) => !Cause.hasInterruptsOnly(cause),
+            (cause) => Effect.logError("AbraCode event", event.type, cause),
           ),
         ),
       ),
-    ).pipe(
       Effect.catchCauseIf(
         (cause) => !Cause.hasInterruptsOnly(cause),
         (cause) => Effect.logError("AbraCode events", cause),

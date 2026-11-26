@@ -1,5 +1,6 @@
+import { sha256 } from "../digest.ts";
+import { Graph } from "effect";
 import { Schema } from "effect";
-import { createHash } from "node:crypto";
 import { Identifier, IssueId, RequestId } from "@abracode/contracts/identities";
 import { ensure } from "../domain.ts";
 import { decodeSync } from "../decode.ts";
@@ -37,11 +38,7 @@ export const BatchResultSchema = Schema.Struct({
 export type BatchResult = typeof BatchResultSchema.Type;
 
 export const batchItemRequest = (batch: RequestId, key: string) =>
-  RequestId.make(
-    `batch-${createHash("sha256")
-      .update(JSON.stringify([batch, key]))
-      .digest("hex")}`,
-  );
+  RequestId.make(`batch-${sha256(JSON.stringify([batch, key]))}`);
 
 /** Canonical keyed definitions, independent of ordering or future issue IDs. */
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -72,21 +69,25 @@ export function normalizeBatch(raw: unknown) {
       };
     })
     .sort((a, b) => compare(a.client_key, b.client_key));
-  const byKey = new Map(tasks.map((task) => [task.client_key, task]));
-  const visited = new Set<string>(),
-    visiting = new Set<string>();
-  const visit = (key: string) => {
-    ensure(!visiting.has(key), "BATCH_CYCLE", "Batch dependencies contain a cycle");
-    if (visited.has(key)) return;
-    const task = byKey.get(key);
-    ensure(task, "BATCH_DEPENDENCY", `Unknown local dependency ${key}`);
-    visiting.add(key);
-    for (const dependency of task.dependencies)
-      if (dependency.type === "local") visit(dependency.client_key);
-    visiting.delete(key);
-    visited.add(key);
-  };
-  for (const task of tasks) visit(task.client_key);
+  const graph = Graph.directed<string, undefined>((graph) => {
+    const nodes = new Map(
+      tasks.map((task) => [task.client_key, Graph.addNode(graph, task.client_key)]),
+    );
+    for (const task of tasks) {
+      const child = nodes.get(task.client_key)!;
+      for (const dependency of task.dependencies) {
+        if (dependency.type !== "local") continue;
+        const parent = nodes.get(dependency.client_key);
+        ensure(
+          parent !== undefined,
+          "BATCH_DEPENDENCY",
+          `Unknown local dependency ${dependency.client_key}`,
+        );
+        Graph.addEdge(graph, parent, child, undefined);
+      }
+    }
+  });
+  ensure(Graph.isAcyclic(graph), "BATCH_CYCLE", "Batch dependencies contain a cycle");
   return { request_id: batch.request_id, tasks };
 }
 export type NormalizedBatch = ReturnType<typeof normalizeBatch>;

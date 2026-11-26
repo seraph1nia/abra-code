@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { ensure, type Execution } from "../domain.ts";
+import { CrewError, type Execution } from "../domain.ts";
 import { type WorkGraph } from "../work/graph.ts";
 import { timestamp } from "@abracode/contracts/identities";
 import {
@@ -49,11 +49,11 @@ export const captureReportSnapshot = (
         });
     const evidence = e.report_intent?.evidence;
     if (evidence && e.report_receipt && markdown) {
-      ensure(
-        researchMarkdown(e, e.report_receipt.report_id, evidence) === markdown,
-        "REPORT_IDENTITY",
-        "Structured report input does not match the verified Markdown artifact",
-      );
+      if (researchMarkdown(e, e.report_receipt.report_id, evidence) !== markdown)
+        return yield* new CrewError(
+          "REPORT_IDENTITY",
+          "Structured report input does not match the verified Markdown artifact",
+        );
       findings.splice(0);
       for (const [i, finding] of evidence.findings.entries())
         findings.push({

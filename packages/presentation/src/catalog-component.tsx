@@ -14,7 +14,7 @@ export function catalogComponent(
         aria-description={accessibility?.description}
         aria-hidden={accessibility?.hidden}
         aria-live={accessibility?.live}
-        style={typeof weight === "number" ? { flexGrow: weight } : undefined}
+        style={typeof weight === "number" ? { flex: weight } : undefined}
       >
         {content}
       </div>

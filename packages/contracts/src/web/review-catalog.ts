@@ -1,3 +1,4 @@
+import { createCatalogDocument, catalogObject as object } from "./catalog-document.ts";
 import { Schema } from "effect";
 import { Catalog, basicCatalog, STRICT_VALIDATION, type ComponentApi } from "@a2ui/web_core/v1_0";
 import {
@@ -26,17 +27,17 @@ export const reviewValidation = {
 const base = basicCatalog
   .derive({
     catalogId: reviewCatalogId,
-    components: ["Column", "Row", "Text", "ChoicePicker", "TextField"],
+    components: ["Column", "ChoicePicker", "TextField"],
     functions: ["required", "length"],
   })
   .toJson();
-const object = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json));
 const custom = Object.entries(reviewComponentSchemas).map(([name, schema]) => ({
   name,
   document: Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" }),
 }));
-export const reviewCatalogDocument = {
-  ...base,
+export const reviewCatalogDocument = createCatalogDocument(base, {
+  catalogId: reviewCatalogId,
+  title: "AbraCode interactive reviews",
   instructions:
     "App-only review input. No workflow approvals, executable actions or external URLs. The app owns submission.",
   components: {
@@ -57,19 +58,8 @@ export const reviewCatalogDocument = {
       ]),
     ),
   },
-  $defs: {
-    ...object(base.$defs),
-    ...Object.assign({}, ...custom.map(({ document }) => document.definitions)),
-    anyComponent: {
-      oneOf: [...Object.keys(object(base.components)), ...Object.keys(reviewComponentSchemas)].map(
-        (name) => ({
-          $ref: `#/components/${name}`,
-        }),
-      ),
-      discriminator: { propertyName: "component" },
-    },
-  },
-};
+  definitions: Object.assign({}, ...custom.map(({ document }) => document.definitions)),
+});
 export const reviewCatalog = Catalog.fromJson(reviewCatalogDocument);
 export const implementedReviewCatalog = <T extends ComponentApi>(entries: readonly T[]) =>
   new Catalog(
@@ -126,6 +116,21 @@ export function reviewSurface(review: ReviewDefinition, state?: ReviewSurfaceSta
       surfaceId: review.review_id,
       catalogId: reviewCatalogId,
       dataModel: {
+        fieldHints: Object.fromEntries(
+          review.fields.map((field) => [
+            field.id,
+            {
+              required: field.required ?? false,
+              description: field.description ?? "",
+              options: Object.fromEntries(
+                ("options" in field ? field.options : []).map((o) => [
+                  o.value,
+                  o.description ?? "",
+                ]),
+              ),
+            },
+          ]),
+        ),
         answers: Object.fromEntries(
           review.fields.map((field) => [
             field.id,

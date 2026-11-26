@@ -204,14 +204,17 @@ test("invalid task profiles leave no issue; captured selections survive config e
     (await run(f.controller.createWork(input, Id.SessionId.make("ses_supervisor")))).issue.id,
     issue.id,
   );
-  const changed = structuredClone(resumed);
-  changed.configuration_snapshot = {
-    ...resumed.configuration_snapshot!,
-    workers: {
-      ...resumed.configuration_snapshot!.workers,
-      explore: {
-        ...resumed.configuration_snapshot!.workers.explore,
-        model: model("unauthorized-change"),
+  let changed = structuredClone(resumed);
+  changed = {
+    ...changed,
+    configuration_snapshot: {
+      ...resumed.configuration_snapshot!,
+      workers: {
+        ...resumed.configuration_snapshot!.workers,
+        explore: {
+          ...resumed.configuration_snapshot!.workers.explore,
+          model: model("unauthorized-change"),
+        },
       },
     },
   };

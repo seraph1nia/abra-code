@@ -46,6 +46,11 @@ test(
       id: Tool.CallID.make("verify"),
       progress: () => Effect.void,
     };
+    await assert.rejects(
+      run(tool!.execute({ diagrams: [{ id: "x", source: "flowchart LR" }] }, context)),
+      /diagram-verifier/,
+    );
+    f.runtime.origins.set(context.messageID, e.prompt_id!);
     const before = await run(f.controller.get(issue)),
       prompts = f.runtime.prompts;
     const result = await run(

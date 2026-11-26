@@ -1,5 +1,6 @@
-import { ErrorCode } from "@abracode/contracts/identities";
-import { Data, Schema } from "effect";
+import { CrewError } from "./errors.ts";
+export { CrewError } from "./errors.ts";
+import { Schema } from "effect";
 import {
   ApprovalSchema,
   Identifier,
@@ -17,56 +18,24 @@ export type Phase = typeof import("@abracode/contracts/primitives").PhaseSchema.
 export type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 export type Project = Mutable<typeof import("./storage/contracts.ts").ProjectRecordSchema.Type>;
 export type { Issue } from "./work/model.ts";
-export type Approval = Mutable<typeof ApprovalSchema.Type>;
-/** Current-version working state. Persistence additionally validates phase evidence. */
-type ExecutionState = Mutable<
-  Omit<
-    typeof import("./storage/contracts.ts").ExecutionStateSchema.Type,
-    "approval_receipts" | "openspec_change"
-  >
-> & { approval_receipts: Approval[] };
+export type Approval = typeof ApprovalSchema.Type;
+/** Validated execution snapshots. Persisted changes produce a new revision. */
+type ExecutionState = Omit<
+  typeof import("./storage/contracts.ts").ExecutionStateSchema.Type,
+  "openspec_change"
+>;
 export type Execution = ExecutionState & {
-  setup?: false;
-  openspec_change: import("@abracode/contracts/identities").ChangeName;
+  readonly setup?: false;
+  readonly openspec_change: import("@abracode/contracts/identities").ChangeName;
 };
 export type SetupExecution = ExecutionState & {
-  setup: true;
-  openspec_change: import("@abracode/contracts/identities").ChangeName | "";
+  readonly setup: true;
+  readonly openspec_change: import("@abracode/contracts/identities").ChangeName | "";
 };
 export type ManagedExecution = Execution | SetupExecution;
-export type SavedExecution = Mutable<
-  typeof import("./storage/contracts.ts").ExecutionRecordSchema.Type
->;
+export type SavedExecution = typeof import("./storage/contracts.ts").ExecutionRecordSchema.Type;
 export type Config = Mutable<typeof import("./config/contracts.ts").ConfigSchema.Type>;
 export type OnboardInput = typeof import("./config/contracts.ts").ProjectInputSchema.Type;
-export class CrewError extends Data.TaggedError("CrewError")<{
-  code: ErrorCode;
-  message: string;
-  details?: unknown;
-}> {
-  static from(this: void, cause: unknown): CrewError {
-    if (cause instanceof CrewError) return cause;
-    const rawCode =
-      typeof cause === "object" &&
-      cause !== null &&
-      "code" in cause &&
-      typeof cause.code === "string"
-        ? cause.code.trim()
-        : "";
-    const code = rawCode.length > 0 ? rawCode : "UNEXPECTED";
-    const message =
-      typeof cause === "object" &&
-      cause !== null &&
-      "message" in cause &&
-      typeof cause.message === "string"
-        ? cause.message
-        : String(cause);
-    return new CrewError(code, message, cause);
-  }
-  constructor(code: string, message: string, details?: unknown) {
-    super({ code: ErrorCode.make(code), message, details });
-  }
-}
 export function ensure(value: unknown, code: string, message: string): asserts value {
   if (!value) throw new CrewError(code, message);
 }

@@ -1,3 +1,4 @@
+import { GitError } from "../errors.ts";
 import {
   type BranchName,
   type Commit,
@@ -8,10 +9,9 @@ import {
 import { type Feedback } from "@abracode/contracts/workflow/feedback-contracts";
 import { Effect, Schema } from "effect";
 import { CrewError, type ManagedExecution, type Project } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import { type Runner } from "../process.ts";
-import { type ForgeFindingSchema } from "../workflow/correction-contracts.ts";
-import { type OperationResult } from "../workflow/results.ts";
+import { type ForgeFindingSchema } from "@abracode/contracts/workflow/correction-contracts";
+import { type OperationResult } from "./operation-result.ts";
 import { type PRActionAdapter } from "./action-contracts.ts";
 import { GitHubFeedback } from "./feedback.ts";
 import { Forge, PRSchema, type PR } from "./forge.ts";
@@ -101,7 +101,8 @@ export class GitHubDelivery implements Delivery {
   }
 
   inspect = Effect.fn("GitHubDelivery.inspect")(
-    function* (this: GitHubDelivery, p: Project, e: ManagedExecution) {
+    { self: this },
+    function* (p: Project, e: ManagedExecution) {
       const rows = yield* this.call(p, [
         "pr",
         "list",
@@ -115,25 +116,15 @@ export class GitHubDelivery implements Delivery {
         "100",
         "--json",
         "url,state,headRefOid,baseRefName,mergeCommit,mergedAt,reviewDecision,statusCheckRollup,isDraft,mergeable,mergeStateStatus,body,title",
-      ]).pipe(
-        Effect.mapError((error) =>
-          error.code === "COMMAND_FAILED"
-            ? new CrewError(
-                "FORGE_OBSERVATION_FAILED",
-                "Forge observation unavailable; recheck before mutation",
-              )
-            : error,
-        ),
-      );
+      ]);
       if (rows.length > 1) {
-        return yield* new CrewError(
+        return yield* new GitError(
           "PR_AMBIGUOUS",
           "Multiple PRs match the owned branch; recover manually",
         );
       }
       return rows[0];
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   deliver = (p: Project, e: ManagedExecution, publication: Publication, draft = false) =>

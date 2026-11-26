@@ -7,7 +7,7 @@ import {
   ObligationKey,
   RequestId,
   ContentHash,
-  RelativePath,
+  SafeRelativePath,
 } from "../identities.ts";
 
 export const TaskSectionSchema = Schema.Literals([
@@ -18,17 +18,7 @@ export const TaskSectionSchema = Schema.Literals([
   "activity",
   "reports",
 ]);
-export const ResourcePathSchema = RelativePath.check(
-  Schema.makeFilter(
-    (path) =>
-      (!!path &&
-        !path.startsWith("/") &&
-        !path.includes("\\") &&
-        !Array.from(path).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) &&
-        path.split("/").every((part) => part !== ".." && part !== "." && part !== "")) ||
-      "Select a safe relative path",
-  ),
-);
+export const ResourcePathSchema = SafeRelativePath;
 export const DiffSelectionSchema = Schema.Struct({
   kind: Schema.Literal("diff"),
   issue_id: IssueId,

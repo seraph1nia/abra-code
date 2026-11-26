@@ -19,7 +19,7 @@ import { platformLayer } from "../../src/platform.ts";
 import { capabilityRequirements } from "../../src/opencode/role-policy.ts";
 import { engineeringGuidance } from "@abracode/agents/engineering-skills";
 import { resolveSkills, resolveCapturedSkills } from "../../src/opencode/worker-environment.ts";
-import { workerPrompt } from "../../src/workflow/prompts.ts";
+import { workerPrompt } from "../../src/workflow/worker-context.ts";
 import { fixture } from "../fixtures.ts";
 import { access, cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import { run } from "../effects.ts";
@@ -81,7 +81,8 @@ test("portable registration preserves local skills without a developer skill dir
     assert.ok(inventory.has("abra-openspec-execution"));
     assert.ok(!inventory.has("abra-testing"));
     assert.ok(inventory.has("abra-memory"));
-    assert.equal(inventory.size, central ? 14 : 10);
+    assert.equal(inventory.has("abra-thoughts"), central);
+    assert.equal(inventory.size, central ? 15 : 10);
   }
 });
 

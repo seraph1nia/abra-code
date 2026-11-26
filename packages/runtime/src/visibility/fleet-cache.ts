@@ -3,7 +3,7 @@ import { type Timestamp } from "@abracode/contracts/identities";
 import type { ChangeScope } from "@abracode/contracts/web/changes";
 import { CrewError } from "../domain.ts";
 import { type Queries, type ReadBundle } from "../workflow/queries.ts";
-import { committedScope } from "./invalidations.ts";
+import { committedScope } from "../invalidations.ts";
 import { type WorkSnapshot } from "./protocol.ts";
 
 export type FleetCacheEntry = {

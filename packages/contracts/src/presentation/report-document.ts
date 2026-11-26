@@ -1,3 +1,4 @@
+import { utf8Bytes } from "../utf8.ts";
 import { ReportProducerSchema, ReportRevisionSchema } from "../workflow/report-metadata.ts";
 export { ReportProducerSchema } from "../workflow/report-metadata.ts";
 import { collectDiagrams, diagramBudget } from "./diagrams.ts";
@@ -16,7 +17,7 @@ import { Count, Commit } from "../primitives.ts";
 import { WorkSummarySchema } from "../visibility/work-summary.ts";
 import { ReportSnapshotSchema } from "./report-evidence.ts";
 import { SurfaceSchema, validateSurfaceWorkIds } from "../web/surfaces.ts";
-import { catalogId, ComponentId } from "../web/catalog.ts";
+import { catalogId, SurfaceId } from "../web/catalog.ts";
 
 export const maximumDocumentBytes = 1024 * 1024;
 export const reportRendererVersion = "abracode-react/v1";
@@ -27,7 +28,7 @@ export type ReportProducer = typeof ReportProducerSchema.Type;
 const text = Schema.String.check(Schema.isMaxLength(16384));
 const positive = ReportRevisionSchema;
 const withinBytes = (value: unknown, maximum: number) =>
-  new TextEncoder().encode(JSON.stringify(value)).length <= maximum;
+  utf8Bytes(JSON.stringify(value)) <= maximum;
 
 export const FrozenReportDataSchema = Schema.Struct({
   work: Schema.Array(WorkSummarySchema).check(Schema.isMaxLength(100)),
@@ -62,7 +63,7 @@ export const ReportDocumentSchema = Schema.Struct({
     source_surface: Schema.optionalKey(
       Schema.Struct({
         session_id: SessionId,
-        surface_id: ComponentId,
+        surface_id: SurfaceId,
         revision: positive,
         hash: ContentHash,
       }),
@@ -124,8 +125,7 @@ export function validateReportDocument(value: unknown) {
 export function readReportDocument(
   json: string,
 ): { supported: true; document: ReportDocument } | { supported: false; reason: string } {
-  if (new TextEncoder().encode(json).length > maximumDocumentBytes)
-    throw new Error("Report document exceeds 1 MiB");
+  if (utf8Bytes(json) > maximumDocumentBytes) throw new Error("Report document exceeds 1 MiB");
   const raw = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(JSON.parse(json));
   if (raw.format !== "a2ui-snapshot" || raw.format_version !== 1)
     return {

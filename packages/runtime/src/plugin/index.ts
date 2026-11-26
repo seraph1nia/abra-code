@@ -1,44 +1,21 @@
-import {
-  EvidenceSearchPage,
-  SessionPage,
-} from "@abracode/contracts/visibility/discovery-contracts";
-import { ThoughtWorkPage } from "@abracode/contracts/visibility/thoughts";
-import { ThoughtPage, ThoughtDetail } from "@abracode/contracts/visibility/thoughts";
-import { InboxPage, InboxDetail } from "@abracode/contracts/visibility/github-inbox";
-import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
-import { VerificationViewSchema } from "@abracode/contracts/web/verification";
-import { BindingReadSchema } from "@abracode/contracts/web/bindings";
-import { LeadEvidencePageSchema } from "@abracode/contracts/visibility/lead-observation";
 import { registerWebGateway } from "../web/gateway.ts";
 import { readAgentCatalog } from "../web/agent-settings.ts";
 import { nativeReviews } from "../web/review-tool.ts";
-import { WorkPageSchema } from "@abracode/contracts/visibility/discovery-contracts";
-import { WorkerInspectionSchema } from "@abracode/contracts/visibility/worker";
 import { configurationReport } from "../config/declarations.ts";
 import { configuration } from "../config/protocol.ts";
 import { CrewError } from "../domain.ts";
-import { FeedbackPageSchema } from "@abracode/contracts/workflow/feedback-contracts";
-import { MessagesPageSchema } from "@abracode/contracts/workflow/message-contracts";
 import { observerRequest } from "../observability.ts";
-import { Invalidations, publishInvalidations } from "../visibility/invalidations.ts";
+import { Invalidations, publishInvalidations } from "../invalidations.ts";
 import { observerResult } from "../visibility/errors.ts";
 import { OPENCODE_VERSION } from "../opencode/client.ts";
 import { nativeInvoke, nativeRpcRegister } from "../opencode/native-call.ts";
 import { assertSupervisor } from "../opencode/session-authority.ts";
-import { stripUndefined } from "../opencode/tool-definition.ts";
-import {
-  WorkSnapshotSchema,
-  WorkOverviewSchema,
-  WorkDetailSchema,
-  WorkDiffSchema,
-  WorkDocumentSchema,
-  WorkReportSchema,
-  visibility,
-} from "../visibility/protocol.ts";
+import { stripUndefined } from "../json-wire.ts";
+import { visibility } from "../visibility/protocol.ts";
 import { LockKey } from "@abracode/contracts/identities";
 import { Plugin } from "@opencode/plugin/effect";
 import type { Context as PluginContext } from "@opencode/plugin/effect/plugin";
-import { Context, Effect, Layer, Queue, Schedule, Schema } from "effect";
+import { Context, Effect, Layer, Queue, Schedule } from "effect";
 import { sourceInstallationRoot } from "../installation.ts";
 import { Crew, applicationLayer } from "../opencode/application.ts";
 import { installGuards } from "../opencode/guards.ts";
@@ -67,7 +44,7 @@ export const createPlugin = (
           effect.pipe(Effect.provide(services));
         const c = application.controller;
         const { config, central, locks } = application;
-        const reviews = nativeReviews(c, application.store, locks);
+        const reviews = nativeReviews(c, application.store, locks, application.surfaces);
         if (central) yield* locks.acquire(LockKey.make("scheduler-leader"));
         yield* installGuards(ctx, c, provide);
         yield* registerTools(
@@ -126,62 +103,47 @@ export const createPlugin = (
         );
         const observer = new Visibility(c, finderRequests);
         const read =
-          <I, S extends Schema.Constraint, R>(
-            schema: S,
-            handler: (input: I) => Effect.Effect<NoInfer<S["Type"]>, CrewError, R>,
+          <I, A, R>(
+            handler: (input: I) => Effect.Effect<A, CrewError, R>,
             method?: Parameters<typeof observerRequest>[0],
           ) =>
           (input: I, { error }: { error: Parameters<typeof observerResult>[1] }) =>
             observerResult(
               (method ? observerRequest(method) : Effect.void).pipe(
                 Effect.andThen(() => handler(input)),
-                Effect.flatMap((value) =>
-                  Schema.decodeUnknownEffect(Schema.toType(schema), { reportInput: false })(
-                    stripUndefined(value),
-                  ).pipe(
-                    Effect.mapError(
-                      (err) =>
-                        new CrewError(
-                          "INVALID_DATA",
-                          `Observer response: ${err.message.slice(0, 2048)}`,
-                        ),
-                    ),
-                    Effect.orDie,
-                  ),
-                ),
+                Effect.map(stripUndefined),
               ),
               error,
               method === "githubInbox" || method === "githubItem",
             ).pipe(provide);
         const registration = yield* nativeRpcRegister(ctx, visibility, {
-          binding: read(BindingReadSchema, (query) => observer.binding(query)),
-          evidenceSearch: read(EvidenceSearchPage, (q) =>
+          binding: read((query) => observer.binding(query)),
+          evidenceSearch: read((q) =>
             central
               ? c.queries.discoverEvidence(q)
               : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central workspace")),
           ),
-          sessions: read(SessionPage, (q) =>
+          sessions: read((q) =>
             central
               ? observer.sessionSearch(q)
               : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central workspace")),
           ),
-          thoughtWork: read(ThoughtWorkPage, (q) =>
+          thoughtWork: read((q) =>
             central
               ? c.thoughts.get(q, "http").pipe(Effect.andThen(() => c.queries.thoughtWork(q)))
               : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central workspace")),
           ),
-          thoughtList: read(ThoughtPage, (q) =>
+          thoughtList: read((q) =>
             central
               ? c.thoughts.list(q, "http")
               : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central Thoughts view")),
           ),
-          thoughtDetail: read(ThoughtDetail, (q) =>
+          thoughtDetail: read((q) =>
             central
               ? c.thoughts.get(q, "http")
               : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central Thoughts view")),
           ),
           githubInbox: read(
-            InboxPage,
             (query) =>
               central
                 ? c.inbox.list(query)
@@ -189,55 +151,32 @@ export const createPlugin = (
             "githubInbox",
           ),
           githubItem: read(
-            InboxDetail,
             (query) =>
               central
                 ? c.inbox.detail(query)
                 : Effect.fail(new CrewError("ABRA_REQUIRED", "Use the central work inbox")),
             "githubItem",
           ),
-          find: read(WorkPageSchema, (query) => observer.find(query)),
-          leads: read(LeadEvidencePageSchema, (query) => c.queries.leadEvidence(query)),
+          find: read((query) => observer.find(query)),
+          leads: read((query) => c.queries.leadEvidence(query)),
           messages: read(
-            MessagesPageSchema,
             ({ issue_id, offset }) => c.queries.messages(issue_id, offset),
             "messages",
           ),
-          worker: read(WorkerInspectionSchema, ({ issue_id, session_id }) =>
-            c.queries.inspectWorker(issue_id, session_id),
-          ),
+          worker: read(({ issue_id, session_id }) => c.queries.inspectWorker(issue_id, session_id)),
           feedback: read(
-            FeedbackPageSchema,
             ({ issue_id, page, finding_id, revision }) =>
               observer.feedback(issue_id, page, finding_id, revision),
             "feedback",
           ),
-          report: read(WorkReportSchema, ({ issue_id }) => observer.report(issue_id), "report"),
-          snapshot: read(
-            WorkSnapshotSchema,
-            ({ closed_page }) => observer.snapshot(closed_page),
-            "snapshot",
-          ),
-          diff: read(
-            WorkDiffSchema,
-            ({ issue_id, scope, file }) => observer.diff(issue_id, scope, file),
-            "diff",
-          ),
-          document: read(
-            WorkDocumentSchema,
-            ({ issue_id, path }) => observer.document(issue_id, path),
-            "document",
-          ),
-          evidence: read(EvidenceDataSchema, (query) => c.queries.evidence(query)),
-          verification: read(VerificationViewSchema, ({ issue_id }) =>
-            c.queries.verification(issue_id),
-          ),
-          overview: read(
-            WorkOverviewSchema,
-            ({ issue_id }) => observer.overview(issue_id),
-            "overview",
-          ),
-          detail: read(WorkDetailSchema, ({ issue_id }) => observer.detail(issue_id), "detail"),
+          report: read(({ issue_id }) => observer.report(issue_id), "report"),
+          snapshot: read(({ closed_page }) => observer.snapshot(closed_page), "snapshot"),
+          diff: read(({ issue_id, scope, file }) => observer.diff(issue_id, scope, file), "diff"),
+          document: read(({ issue_id, path }) => observer.document(issue_id, path), "document"),
+          evidence: read((query) => c.queries.evidence(query)),
+          verification: read(({ issue_id }) => c.queries.verification(issue_id)),
+          overview: read(({ issue_id }) => observer.overview(issue_id), "overview"),
+          detail: read(({ issue_id }) => observer.detail(issue_id), "detail"),
         });
         const invalidations = Context.get(services, Invalidations);
         yield* publishInvalidations(invalidations, c.queries.afterCommit(), (scope) =>

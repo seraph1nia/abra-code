@@ -18,7 +18,7 @@ for (const mode of ["standing", "human", "review"] as const) {
     const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
     project.merge_approval = mode === "human";
     await run(f.records.saveProject(project));
-    const e = await run(delivered(f));
+    let e = await run(delivered(f));
     let pr: PR = {
       url: Id.PullRequestUrl.make("https://example.invalid/fixture/api/pull/7"),
       state: "OPEN",
@@ -32,7 +32,7 @@ for (const mode of ["standing", "human", "review"] as const) {
     };
     let reads = 0,
       merges = 0;
-    e.pull_request_reference = pr.url;
+    e = { ...e, pull_request_reference: pr.url };
     await run(f.records.save(e));
     const forge = forgeFixture(
       (await run(f.records.project(Id.RepositoryId.make("api"))))!,
@@ -59,24 +59,30 @@ for (const mode of ["standing", "human", "review"] as const) {
         target: Id.BranchName.make("main"),
         at: Id.Timestamp.make("2026-10-16T10:00:00.000Z"),
       });
-    const controller = () =>
-      createWorkflow(
-        f.catalog,
-        f.config,
-        f.records,
-        f.work,
-        f.spec,
-        f.git,
-        f.runtime,
-        delivery,
-        f.locks,
+    const controller = async () =>
+      (
+        await run(
+          createWorkflow(
+            f.catalog,
+            f.config,
+            f.records,
+            f.work,
+            f.spec,
+            f.git,
+            f.runtime,
+            delivery,
+            f.locks,
+          ),
+        )
       ).controller;
     const clock = await run(TestClock.make());
-    const observe = () =>
-      run(controller().reconcile(e.issue_id).pipe(Effect.provideService(Clock.Clock, clock)));
+    const observe = async () =>
+      run(
+        (await controller()).reconcile(e.issue_id).pipe(Effect.provideService(Clock.Clock, clock)),
+      );
     if (mode === "human") {
       const pending = await run(
-        controller().approve(e.issue_id, "merge", Id.SessionId.make("ses_supervisor")),
+        (await controller()).approve(e.issue_id, "merge", Id.SessionId.make("ses_supervisor")),
       );
       assert.ok("form_id" in pending);
       f.runtime.forms.set(pending.form_id, "approved");
@@ -106,7 +112,7 @@ test("delivery waits preserve pauses, retry transient observations and refuse ch
   const project = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   project.merge_approval = false;
   await run(f.records.saveProject(project));
-  const e = await run(delivered(f));
+  let e = await run(delivered(f));
   let broken = true;
   let reads = 0;
   const pr: PR = {
@@ -119,7 +125,7 @@ test("delivery waits preserve pauses, retry transient observations and refuse ch
     mergeStateStatus: "CLEAN",
     statusCheckRollup: [{ status: "IN_PROGRESS" }],
   };
-  e.pull_request_reference = pr.url;
+  e = { ...e, pull_request_reference: pr.url };
   await run(f.records.save(e));
   const forge = forgeFixture(
     (await run(f.records.project(Id.RepositoryId.make("api"))))!,
@@ -137,16 +143,20 @@ test("delivery waits preserve pauses, retry transient observations and refuse ch
     },
     Id.Executable.make("fake-forge"),
   );
-  const c = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    delivery,
-    f.locks,
+  const c = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   const clock = await run(TestClock.make());
   const observe = () =>

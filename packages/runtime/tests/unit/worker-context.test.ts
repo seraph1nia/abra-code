@@ -207,7 +207,7 @@ test("legacy and malformed provenance stay explicit while context summaries rema
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const { id: issue } = await run(f.work.create(workGoal("legacy-context")));
-  const e = await run(f.controller.start(issue));
+  let e = await run(f.controller.start(issue));
   const context = legacyContext(
     await run(readWorkerContext(f.records.store, e.worker_context_id!)),
     join(f.root, "packages/agents/assets"),
@@ -228,7 +228,7 @@ test("legacy and malformed provenance stay explicit while context summaries rema
   assert.ok(!JSON.stringify(bounded.contexts).includes("private-prompt-sentinel"));
   assert.ok(f.records.store instanceof MemoryStore);
   f.records.store.values.delete(`worker-context-status/${e.execution_id}/explore`);
-  delete e.worker_context_id;
+  e = { ...e, worker_context_id: undefined };
   await run(f.records.save(e));
   assert.equal(
     (await run(f.controller.diagnostics(issue, "explore"))).contexts[0].provenance,

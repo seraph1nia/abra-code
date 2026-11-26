@@ -94,8 +94,7 @@ export const VisualBuildSchema = Schema.Struct({
 }).check(
   Schema.makeFilter(
     (b) =>
-      ((b.status !== "building" || b.deadline_at !== undefined) &&
-        (!["validated", "published"].includes(b.status) || !!b.artifact) &&
+      ((!["validated", "published"].includes(b.status) || !!b.artifact) &&
         (!b.artifact ||
           (b.artifact.request_id === b.request.request_id &&
             b.artifact.input_hash === b.input_hash &&

@@ -40,7 +40,7 @@ retained controller intent and cannot authorize a claim. Readiness/capacity and
 worker-inspection tests distinguish dependency, active/retained/role capacity,
 missing authority and native queued activity.
 
-`packages/runtime/tests/unit/configuration.test.ts`, `attention.test.ts`, `corrections.test.ts`
+`packages/runtime/tests/unit/configuration.test.ts`, `attention-stalls.test.ts`, `corrections.test.ts`
 and `supervision.test.ts` exercise omitted/conflicting postures, suppressed manual
 repairs, retained human forms, notice deduplication/provenance, bounded primary
 counts and unavailable native evidence. `packages/runtime/tests/integration/effect.test.ts`
@@ -62,7 +62,7 @@ results at `/tmp/abra-supervision-full2-20261018/native-engineering.json` record
 blockers, correlated replies, four completed parallel tasks, stable identities,
 human forms, PR feedback and finishing. The earlier full run exposed a zero-budget
 incident waiting behind an unrelated occupied attention slot; the retained
-`attention.test.ts` regression fails before the budget-order fix and passes after.
+`attention-stalls.test.ts` regression fails before the budget-order fix and passes after.
 
 Standalone `pnpm report:validate` and `pnpm report:build` also passed with the
 configured compatible Chromium. The manual portable report is 115.28 KB

@@ -1,12 +1,12 @@
 import { useWorkspaceCall } from "../data.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useAtomSet } from "@effect/atom-react";
+import { useRetainedSubmission } from "../use-retained-submission.ts";
 import { Cause, Equal, Exit, Option } from "effect";
 import { WebSubmissionId } from "@abracode/contracts/identities";
 import { SubmissionSchema } from "@abracode/contracts/web/workspace-wire";
 import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 import { readRetained, writeRetained } from "../retained-input.ts";
-import { readReceipt, submitMutation } from "../data.ts";
+import { readReceipt, submitMessage } from "../data.ts";
 import { requestError } from "../request-error.ts";
 
 type Pending = typeof SubmissionSchema.Type;
@@ -37,12 +37,10 @@ export function useWorkspaceAdmission({
 }) {
   const storageKey = `abra-pending-${workspace.session_id}`;
   const [pending, setPending] = useState(() => readRetained(storageKey, SubmissionSchema));
-  const [admitting, setAdmitting] = useState(false);
-  const admittingRef = useRef(false);
+  const { working: admitting, submit } = useRetainedSubmission(submitMessage);
   const mounted = useRef(false);
   const reconciledIds = useRef(new Set<string>());
   const lookupReceipt = useWorkspaceCall(readReceipt);
-  const submit = useAtomSet(submitMutation, { mode: "promiseExit" });
 
   useEffect(() => {
     mounted.current = true;
@@ -64,8 +62,6 @@ export function useWorkspaceAdmission({
         !Equal.equals(receipt.thought, expected.thought) ||
         !Equal.equals(receipt.capture?.selection, expected.selection)
       ) {
-        setAdmitting(false);
-        admittingRef.current = false;
         setError(
           "Submission identity conflicts with retained evidence. The pending input was preserved.",
         );
@@ -81,8 +77,6 @@ export function useWorkspaceAdmission({
           if (expected.selection || expected.thought) clearSent(expected);
         }
         setPending(undefined);
-        setAdmitting(false);
-        admittingRef.current = false;
         try {
           localStorage.removeItem(storageKey);
         } catch {
@@ -91,8 +85,6 @@ export function useWorkspaceAdmission({
         return "admitted";
       }
       if (receipt.status === "uncertain") {
-        setAdmitting(false);
-        admittingRef.current = false;
         setError(
           "Submission is uncertain. Use Reconcile submission to check the same input identity.",
         );
@@ -111,7 +103,7 @@ export function useWorkspaceAdmission({
       void Promise.resolve().then(() => {
         if (active) applyReceipt(pending, recent);
       });
-    } else if (!admittingRef.current) {
+    } else if (!admitting) {
       // History is a display window, not the admission ledger. Read the exact
       // retained identity on restored or subsequent server observations.
       void lookupReceipt(pending.request_id).then((result) => {
@@ -123,10 +115,10 @@ export function useWorkspaceAdmission({
     return () => {
       active = false;
     };
-  }, [workspace.receipts, pending, lookupReceipt, setError, applyReceipt]);
+  }, [workspace.receipts, pending, admitting, lookupReceipt, setError, applyReceipt]);
 
   async function send(input?: Pending) {
-    if (!isReady || admittingRef.current || (!input && pending)) return;
+    if (!isReady || admitting || (!input && pending)) return;
     const submission: Pending = input ?? {
       request_id: WebSubmissionId.make(crypto.randomUUID()),
       text: draft.trim(),
@@ -136,24 +128,22 @@ export function useWorkspaceAdmission({
     };
     if (!submission.text) return;
     // Persist before starting network admission; a storage failure leaves the draft intact.
-    if (!writeRetained(storageKey, submission)) {
-      setError(
-        "Cannot retain submission identity in browser storage. Enable storage before sending.",
-      );
-      return;
-    }
-    admittingRef.current = true;
-    setAdmitting(true);
-    setPending(submission);
-    if (!submission.selection && !submission.thought) setDraft("");
-    setError("");
-    const result = await submit({ payload: submission });
-    if (!mounted.current) return;
+    const result = await submit(submission, () => {
+      if (!writeRetained(storageKey, submission)) {
+        setError(
+          "Cannot retain submission identity in browser storage. Enable storage before sending.",
+        );
+        return false;
+      }
+      setPending(submission);
+      if (!submission.selection && !submission.thought) setDraft("");
+      setError("");
+      return true;
+    });
+    if (!result || !mounted.current) return;
     if (Exit.isSuccess(result)) {
       const outcome = applyReceipt(submission, result.value);
       if (outcome !== "admitted") {
-        admittingRef.current = false;
-        setAdmitting(false);
         refresh();
       }
       return;
@@ -176,8 +166,6 @@ export function useWorkspaceAdmission({
     } else if (!reconciledIds.current.has(submission.request_id)) {
       setError(message ?? "Submission could not be confirmed. Reconcile before sending again.");
     }
-    admittingRef.current = false;
-    setAdmitting(false);
     refresh();
   }
   return { pending, admitting, send };

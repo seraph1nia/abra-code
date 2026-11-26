@@ -7,9 +7,8 @@ import { WorkerModelSchema, WorkerErrorSchema } from "@abracode/contracts/primit
 import { Timestamp, timestamp } from "@abracode/contracts/identities";
 import { WorkInputSchema, normalizeIssue } from "../../src/work/model.ts";
 import { decodeJSON } from "../../src/decode.ts";
-import { run } from "../effects.ts";
+import { domainEffect, run } from "../effects.ts";
 import { CrewError } from "../../src/domain.ts";
-import { domainEffect } from "../../src/effect.ts";
 import { ProvisionedEvidenceSchema, DeliveredEvidenceSchema } from "../../src/workflow/evidence.ts";
 import { expectTypeOf } from "vite-plus/test";
 import { AbsolutePath, Commit } from "@abracode/contracts/identities";
@@ -104,15 +103,13 @@ test("expected errors and defects stay distinct and phase evidence has required 
 test("lazy single-flight acquisition retries failures and retains a successful client", async () => {
   let attempts = 0;
   const client = {};
-  const cached = await run(
-    memoSuccessful(
-      Effect.suspend(() => {
-        attempts++;
-        return attempts === 1
-          ? Effect.fail(new CrewError("DISCOVERY", "not ready"))
-          : Effect.succeed(client);
-      }),
-    ),
+  const { read: cached } = memoSuccessful(
+    Effect.suspend(() => {
+      attempts++;
+      return attempts === 1
+        ? Effect.fail(new CrewError("DISCOVERY", "not ready"))
+        : Effect.succeed(client);
+    }),
   );
   assert.equal(attempts, 0);
   await assert.rejects(run(cached), /not ready/);

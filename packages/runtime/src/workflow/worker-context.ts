@@ -1,3 +1,4 @@
+import { WorkflowError } from "../errors.ts";
 import { diagnosticText } from "../opencode/diagnostics.ts";
 import { Effect, Option, Schema } from "effect";
 import { Agents, PreparedAgent } from "@abracode/agents";
@@ -22,9 +23,8 @@ import {
 } from "@abracode/contracts/identities";
 import { type Records, type Store } from "../storage/store.ts";
 import { decode } from "../decode.ts";
-import { domainEffect } from "../effect.ts";
 import { pathExists, readFile } from "../filesystem.ts";
-import { policyIdentity, compatiblePolicy } from "../opencode/role-policy.ts";
+import { policyIdentity, compatiblePolicy, hasReviewDelegate } from "../opencode/role-policy.ts";
 import { workerBrowser } from "../opencode/browser.ts";
 import {
   digestText,
@@ -39,8 +39,8 @@ import {
   WorkerContextSummarySchema,
   contextDigest,
 } from "./worker-context-contracts.ts";
-import { workerPrompt } from "./prompts.ts";
 import { isActiveWorker } from "./worker-assignment.ts";
+import { engineeringGuidance } from "@abracode/agents/engineering-skills";
 
 const preparationBinding = {
   execution: ExecutionId,
@@ -68,7 +68,7 @@ export const readWorkerContext = (store: Store, id: MessageId) =>
       context.prompt_id === id
         ? Effect.void
         : Effect.fail(
-            new CrewError("CONTEXT_ID", "Captured payload has the wrong prompt identity"),
+            new WorkflowError("CONTEXT_ID", "Captured payload has the wrong prompt identity"),
           ),
     ),
   );
@@ -87,12 +87,12 @@ export const compatibleContext = (
       context.session_id !== assignment.session_id ||
       context.prompt_id !== assignment.prompt_id)
   )
-    throw new CrewError(
+    throw new WorkflowError(
       "CONTEXT_ASSIGNMENT",
       "Captured instructions do not match the retained admission; inspect native evidence before an explicit new turn",
     );
   if (!compatiblePolicy(context.role, context.policy))
-    throw new CrewError(
+    throw new WorkflowError(
       "CONTEXT_POLICY",
       "Captured role policy is incompatible; inspect retained admission evidence, then request an explicit new turn without replaying an admitted prompt",
     );
@@ -105,17 +105,18 @@ export class WorkerContexts {
     private assets: string = bundledAssets,
   ) {}
   prepareAgent = Effect.fn("WorkerContexts.prepareAgent")(
-    function* (this: WorkerContexts, e: Execution, role: Role, issue: Issue, prompt: MessageId) {
+    { self: this },
+    function* (e: Execution, role: Role, issue: Issue, prompt: MessageId) {
       const captured = e.configuration_snapshot?.definitions?.[role];
       if (e.configuration_snapshot?.agent_selection_version !== 1) return;
       if (!captured)
-        return yield* new CrewError(
+        return yield* new WorkflowError(
           "PREPARATION_ASSIGNMENT",
           "Configured assignment has no captured definition for its role",
         );
       const session = e.session_intent?.id ?? e[`${role}_session_id`];
       if (!session)
-        return yield* new CrewError(
+        return yield* new WorkflowError(
           "PREPARATION_ID",
           "Preparation requires a retained prospective session",
         );
@@ -134,7 +135,7 @@ export class WorkerContexts {
           if (existing !== undefined) return { stage: "retained", receipt: existing } as const;
           const catalog = yield* Effect.serviceOption(Agents);
           if (Option.isNone(catalog))
-            return yield* new CrewError(
+            return yield* new WorkflowError(
               "AGENTS_UNAVAILABLE",
               "Prepared assignment requires the application catalog",
             );
@@ -152,12 +153,12 @@ export class WorkerContexts {
           decoded.prompt !== prompt ||
           (decoded.stage === "complete" && decoded.prepared.profile.revision !== captured.revision)
         )
-          return yield* new CrewError(
+          return yield* new WorkflowError(
             "PREPARATION_ASSIGNMENT",
             "Preparation receipt conflicts with the retained assignment",
           );
         if (decoded.stage === "complete") return decoded.prepared;
-        return yield* new CrewError(
+        return yield* new WorkflowError(
           "PREPARATION_UNCERTAIN",
           "Definition preparation started without a complete capture; preserve this unadmitted identity and request an explicit fresh assignment",
         );
@@ -177,15 +178,14 @@ export class WorkerContexts {
           configuredModel: selected?.model,
           nativeOverride: selected?.agent,
         })
-        .pipe(Effect.mapError((error) => new CrewError(error.code, error.message)));
+        .pipe(Effect.mapError((error) => new WorkflowError(error.code, error.message)));
       yield* this.records.store.set(key, { ...binding, stage: "complete", prepared });
       return prepared;
-    }.bind(this),
-    domainEffect,
+    },
   );
   prepare = Effect.fn("WorkerContexts.prepare")(
+    { self: this },
     function* (
-      this: WorkerContexts,
       e: Execution,
       role: Role,
       issue: Issue,
@@ -195,7 +195,7 @@ export class WorkerContexts {
       artifacts: readonly string[],
     ) {
       if (!e.worktree_directory || !e.base_commit)
-        return yield* new CrewError(
+        return yield* new WorkflowError(
           "CONTEXT_LOCATION",
           "Worker context requires its owned worktree and retained base",
         );
@@ -206,7 +206,7 @@ export class WorkerContexts {
         ? source
         : source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
       if (!content)
-        return yield* new CrewError("CONTEXT_GUIDANCE", `Role guidance is empty: ${path}`);
+        return yield* new WorkflowError("CONTEXT_GUIDANCE", `Role guidance is empty: ${path}`);
       const instructions = join(e.worktree_directory, "AGENTS.md");
       const browser = workerBrowser(this.config.home, session);
       const material = {
@@ -266,44 +266,42 @@ export class WorkerContexts {
         { ...material, ...(prepared ? { capture_digest: contextDigest(material) } : {}) },
         "Worker context",
       );
-      const existing = yield* this.records.store.get(contextKey(prompt));
-      if (existing !== undefined)
-        return yield* new CrewError(
-          "CONTEXT_IMMUTABLE",
-          "Context identity already has a captured payload",
-        );
-      yield* this.records.store.set(contextKey(prompt), context);
       yield* this.records.coordinateCommit(() =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const current = yield* this.records.execution(e.issue_id);
-            if (
-              current?.execution_id !== e.execution_id ||
-              current.control_generation !== e.control_generation
-            )
-              return yield* new CrewError(
-                "STALE_CONTEXT",
-                "Context capture was superseded before publication",
-              );
-            yield* this.records.store.set(statusKey(e, role), {
-              schema_version: 1,
-              execution_id: e.execution_id,
-              role,
-              generation: e.control_generation,
-              directory: e.worktree_directory,
-              context_id: prompt,
-              stage: "captured",
-              at: context.at,
-            });
-          }),
-        ),
+        Effect.gen({ self: this }, function* () {
+          const current = yield* this.records.execution(e.issue_id);
+          if (
+            current?.execution_id !== e.execution_id ||
+            current.control_generation !== e.control_generation
+          )
+            return yield* new WorkflowError(
+              "STALE_CONTEXT",
+              "Context capture was superseded before publication",
+            );
+          const existing = yield* this.records.store.get(contextKey(prompt));
+          if (existing !== undefined)
+            return yield* new WorkflowError(
+              "CONTEXT_IMMUTABLE",
+              "Context identity already has a captured payload",
+            );
+          yield* this.records.store.set(contextKey(prompt), context);
+          yield* this.records.store.set(statusKey(e, role), {
+            schema_version: 1,
+            execution_id: e.execution_id,
+            role,
+            generation: e.control_generation,
+            directory: e.worktree_directory,
+            context_id: prompt,
+            stage: "captured",
+            at: context.at,
+          });
+        }),
       );
       return context;
-    }.bind(this),
-    domainEffect,
+    },
   );
   failure = Effect.fn("WorkerContexts.failure")(
-    function* (this: WorkerContexts, e: Execution, role: Role, error: CrewError) {
+    { self: this },
+    function* (e: Execution, role: Role, error: CrewError) {
       const priorRaw = yield* this.records.store.get(statusKey(e, role));
       const prior =
         priorRaw === undefined
@@ -331,73 +329,67 @@ export class WorkerContexts {
         "Context prerequisite failure",
       );
       yield* this.records.coordinateCommit(() =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const current = yield* this.records.execution(e.issue_id);
-            if (
-              current?.execution_id !== e.execution_id ||
-              current.control_generation !== e.control_generation
-            )
-              return yield* new CrewError("STALE_CONTEXT", "Prerequisite result was superseded");
-            yield* this.records.store.set(statusKey(e, role), status);
-          }),
-        ),
+        Effect.gen({ self: this }, function* () {
+          const current = yield* this.records.execution(e.issue_id);
+          if (
+            current?.execution_id !== e.execution_id ||
+            current.control_generation !== e.control_generation
+          )
+            return yield* new WorkflowError("STALE_CONTEXT", "Prerequisite result was superseded");
+          yield* this.records.store.set(statusKey(e, role), status);
+        }),
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
   observe = Effect.fn("WorkerContexts.observe")(
+    { self: this },
     function* (
-      this: WorkerContexts,
       e: Execution,
       context: WorkerContext,
       observation: typeof ToolObservationSchema.Type,
       blocked?: CrewError,
     ) {
       return yield* this.records.coordinateCommit(() =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const current = yield* this.records.execution(e.issue_id);
-            if (
-              !current ||
-              !isActiveWorker(current, context.session_id, {
-                role: context.role,
-                generation: context.generation,
-              }) ||
-              current.worker_context_id !== context.prompt_id
-            )
-              return yield* new CrewError(
-                "STALE_CONTEXT",
-                "Worker context observation was superseded",
-              );
-            yield* this.records.store.set(statusKey(e, context.role), {
-              schema_version: 1,
-              execution_id: e.execution_id,
+        Effect.gen({ self: this }, function* () {
+          const current = yield* this.records.execution(e.issue_id);
+          if (
+            !current ||
+            !isActiveWorker(current, context.session_id, {
               role: context.role,
               generation: context.generation,
-              directory: context.directory,
-              context_id: context.prompt_id,
-              stage: blocked ? "blocked" : "request",
-              observation,
-              blocker: blocked
-                ? {
-                    code: blocked.code,
-                    message: diagnosticText(blocked.message, 2048),
-                    clearing_action:
-                      "Repair the effective tool selection or request an explicit new turn; permissions cannot be expanded by requirements",
-                  }
-                : undefined,
-              at: observation.at,
-            });
-          }),
-        ),
+            }) ||
+            current.worker_context_id !== context.prompt_id
+          )
+            return yield* new WorkflowError(
+              "STALE_CONTEXT",
+              "Worker context observation was superseded",
+            );
+          yield* this.records.store.set(statusKey(e, context.role), {
+            schema_version: 1,
+            execution_id: e.execution_id,
+            role: context.role,
+            generation: context.generation,
+            directory: context.directory,
+            context_id: context.prompt_id,
+            stage: blocked ? "blocked" : "request",
+            observation,
+            blocker: blocked
+              ? {
+                  code: blocked.code,
+                  message: diagnosticText(blocked.message, 2048),
+                  clearing_action:
+                    "Repair the effective tool selection or request an explicit new turn; permissions cannot be expanded by requirements",
+                }
+              : undefined,
+            at: observation.at,
+          });
+        }),
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
   request = Effect.fn("WorkerContexts.request")(
+    { self: this },
     function* (
-      this: WorkerContexts,
       e: Execution,
       role: Role,
       session: SessionId,
@@ -405,7 +397,7 @@ export class WorkerContexts {
       names: import("@abracode/contracts/identities").ToolName[],
     ) {
       if (!isActiveWorker(e, session, { role }))
-        return yield* new CrewError(
+        return yield* new WorkflowError(
           "INACTIVE_WORKER",
           "Worker no longer owns an active workflow phase",
         );
@@ -417,12 +409,12 @@ export class WorkerContexts {
         context.role !== role ||
         context.prompt_id !== e.prompt_id
       )
-        return yield* new CrewError(
+        return yield* new WorkflowError(
           "STALE_CONTEXT",
           "Captured context does not match the active admission",
         );
       const blocked = !compatiblePolicy(role, context.policy)
-        ? new CrewError(
+        ? new WorkflowError(
             "CONTEXT_POLICY",
             "Captured policy is incompatible; inspect retained prompt evidence and explicitly request a new turn",
           )
@@ -441,11 +433,11 @@ export class WorkerContexts {
             ...(context.prepared.delivery === "external" ? [context.guidance.content] : []),
             ...context.prepared.fragments.map((fragment) => fragment.content),
           ].join("\n\n");
-    }.bind(this),
-    domainEffect,
+    },
   );
   summary = Effect.fn("WorkerContexts.summary")(
-    function* (this: WorkerContexts, e: Execution, role: Role) {
+    { self: this },
+    function* (e: Execution, role: Role) {
       const raw = yield* this.records.store.get(statusKey(e, role));
       const status =
         raw === undefined ? undefined : yield* decode(ContextStatusSchema, raw, statusKey(e, role));
@@ -486,14 +478,13 @@ export class WorkerContexts {
         status,
       };
       return yield* decode(WorkerContextSummarySchema, value, "Worker context summary");
-    }.bind(this),
-    domainEffect,
+    },
   );
 }
 export const toolBlocker = (context: WorkerContext, names: readonly string[]) => {
   const missing = missingTools(context.environment.tools, names);
   return missing.length
-    ? new CrewError(
+    ? new WorkflowError(
         "TOOLS_UNAVAILABLE",
         `${context.role} at ${context.directory}: missing required tool alternatives ${missing
           .map((group) => `${group.any_of.join("|")} (${group.source})`)
@@ -502,3 +493,32 @@ export const toolBlocker = (context: WorkerContext, names: readonly string[]) =>
       )
     : undefined;
 };
+
+export function workerPrompt(e: Execution, issue: Issue, role: Role) {
+  const common = `You are the AbraCode ${role} for issue ${issue.id}: ${issue.title}.\n${issue.description ?? ""}\n${e.retry_instructions ? `Recovery feedback: ${e.retry_instructions}\n` : ""}Control generation: ${e.control_generation}. Retained answers: ${JSON.stringify((e.decisions ?? []).filter((d) => d.status === "answered").map((d) => ({ key: d.key, answer: d.answer })))}.\nBase commit: ${e.base_commit}.\nWorktree: ${e.worktree_directory}\nOpenSpec change: ${e.openspec_change}.\nRetained schema: ${e.openspec_schema_binding?.state === "bound" ? e.openspec_schema_binding.name : "original metadata; historical content evidence unavailable"}. Human plan approval required: ${e.plan_approval_required}.\nRead repository AGENTS.md, the registered role instructions and abra-openspec-execution for policy-specific procedures. Remain in the assigned role/worktree.\n${engineeringGuidance(role, e.workflow_policy)}`;
+
+  const reviewGuide =
+    role === "review" && hasReviewDelegate(e.configuration_snapshot?.definitions?.review)
+      ? "Load abra-open-code-review-delegate and use abra_review_changes for the verified diff. "
+      : "";
+  if (role === "research")
+    return (
+      common +
+      `Investigate read-only against the retained base. Contract: ${JSON.stringify(e.scope?.contract)}. Submit the structured research report through the existing controller tool.`
+    );
+  if (e.workflow_policy === "lightweight-fix")
+    return (
+      common +
+      reviewGuide +
+      `Approved short scope: ${JSON.stringify(e.scope?.contract)}. ${role === "apply" ? "Implement this scope and run configured checks." : "Review implementation and proof read-only against this scope and submit the review report."}`
+    );
+  const task = {
+    explore:
+      "Investigate this issue and complete the selected schema's required planning artifacts and tasks through abra_spec.",
+    apply:
+      "Implement this approved change completely, use abra_spec apply and update its real task checklist.",
+    review:
+      "Review this approved change and current implementation/proof read-only. Submit abra_review_report with full-spec verification evidence.",
+  };
+  return common + reviewGuide + task[role];
+}

@@ -4,12 +4,15 @@ import { CheckName, ErrorCode, timestamp } from "@abracode/contracts/identities"
 
 import { Effect, Schema } from "effect";
 import { type ManagedExecution, type Project } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import { decode } from "../decode.ts";
 import { Count } from "@abracode/contracts/primitives";
 import { Forge, RuleSchema, RequiredParameters, ProtectionSchema, type PR } from "./forge.ts";
-import { type OperationResult } from "../workflow/results.ts";
+import { type OperationResult } from "./operation-result.ts";
 
+export type ReadinessAssessment = {
+  readiness: OperationResult;
+  forge_observation: NonNullable<ManagedExecution["forge_observation"]>;
+};
 export { ForgeObservationSchema } from "./readiness-contracts.ts";
 type Requirement = { context: CheckName; app_id?: number };
 const waiting = (code: string, reason: string, owner = "forge"): OperationResult => ({
@@ -29,7 +32,8 @@ const protectionQuery = `query($owner:String!,$name:String!,$ref:String!){reposi
 export class GitHubReadiness {
   constructor(private forge: Forge) {}
   check = Effect.fn("GitHubReadiness.check")(
-    function* (this: GitHubReadiness, p: Project, e: ManagedExecution, pr: PR, checksOnly = false) {
+    { self: this },
+    function* (p: Project, e: ManagedExecution, pr: PR, checksOnly = false) {
       const policy = e.effective_policy.ci_policy;
       const allowEmpty = e.effective_policy.allow_no_checks;
       const method = e.effective_policy.merge_method;
@@ -39,8 +43,12 @@ export class GitHubReadiness {
       let confirmed = false;
       const observedAt = yield* timestamp;
       let gate: OperationResult | undefined;
-      const observe = (result: OperationResult, requiredConfirmed = confirmed) => {
-        e.forge_observation = {
+      const observe = (
+        result: OperationResult,
+        requiredConfirmed = confirmed,
+      ): ReadinessAssessment => ({
+        readiness: gate ?? result,
+        forge_observation: {
           head: pr.headRefOid,
           at: observedAt,
           ci_policy: policy,
@@ -57,9 +65,8 @@ export class GitHubReadiness {
           checks_total: checks.length,
           limited: checks.length > 200,
           reasons: [...reasons, ...(result.category === "completed" ? [] : [result.reason])],
-        };
-        return gate ?? result;
-      };
+        },
+      });
       if (!checksOnly && pr.isDraft) gate = waiting("PR_DRAFT", "PR is a draft", "maintainer");
       if (!checksOnly && pr.reviewDecision === "CHANGES_REQUESTED")
         gate ??= failed("REVIEW_FAILED", "Forge review requests changes");
@@ -307,7 +314,6 @@ export class GitHubReadiness {
           waiting("PR_BLOCKED", `Forge merge state is ${pr.mergeStateStatus}`, "repository policy"),
         );
       return observe(ready);
-    }.bind(this),
-    domainEffect,
+    },
   );
 }

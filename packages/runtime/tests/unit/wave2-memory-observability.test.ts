@@ -14,7 +14,7 @@ import {
   searchPageSchema,
 } from "../../src/memory/collections.ts";
 import { decode } from "../../src/decode.ts";
-import { sha256Json, sha256Text } from "../../src/digest.ts";
+import { sha256Json, sha256 } from "../../src/digest.ts";
 import { CrewError } from "../../src/domain.ts";
 import { RepositoryId } from "@abracode/contracts/identities";
 
@@ -165,7 +165,7 @@ test("memory/collections Effect Schema validation rejects malformed payloads wit
 });
 
 test("digest helpers produce stable SHA-256 hex for text and canonical JSON", () => {
-  assert.equal(sha256Text("hello"), hash("hello"));
+  assert.equal(sha256("hello"), hash("hello"));
   assert.equal(sha256Json({ b: 2, a: 1 }), sha256Json({ a: 1, b: 2 }));
   assert.notEqual(sha256Json({ a: 1 }), sha256Json({ a: 2 }));
 });

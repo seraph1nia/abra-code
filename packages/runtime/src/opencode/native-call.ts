@@ -44,19 +44,31 @@ type NormalizedDomain<T> = {
       : T[K];
 };
 
-export const nativeDomain = <T extends object>(domain: T): NormalizedDomain<T> =>
-  new Proxy(domain, {
-    get(target, prop, receiver) {
-      const value = Reflect.get(target, prop, receiver);
-      if (typeof value !== "function") return value;
-      return (...args: unknown[]) => {
-        const result = (value as (...a: unknown[]) => unknown).apply(target, args);
-        if (Effect.isEffect(result)) return result.pipe(Effect.mapError(nativeError));
-        if (Stream.isStream(result)) return result.pipe(Stream.mapError(nativeError));
-        return result;
-      };
-    },
-  }) as NormalizedDomain<T>;
+// All consumers of one native domain share its adapter and its normalized methods.
+const domains = new WeakMap<object, object>();
+export function nativeDomain<T extends object>(domain: T): NormalizedDomain<T> {
+  let adapter = domains.get(domain);
+  if (!adapter) {
+    const methods = new Map<PropertyKey, unknown>();
+    adapter = new Proxy(domain, {
+      get(target, prop, receiver) {
+        if (methods.has(prop)) return methods.get(prop);
+        const value: unknown = Reflect.get(target, prop, receiver);
+        if (typeof value !== "function") return value;
+        const method = (...args: unknown[]) => {
+          const result: unknown = Reflect.apply(value, target, args);
+          if (Effect.isEffect(result)) return result.pipe(Effect.mapError(nativeError));
+          if (Stream.isStream(result)) return result.pipe(Stream.mapError(nativeError));
+          return result;
+        };
+        methods.set(prop, method);
+        return method;
+      },
+    });
+    domains.set(domain, adapter);
+  }
+  return adapter as NormalizedDomain<T>;
+}
 
 /** Typed adapter for @opencode/plugin session methods with CrewError error channel. */
 export const nativeSession = (ctx: Context) => nativeDomain(ctx.session);

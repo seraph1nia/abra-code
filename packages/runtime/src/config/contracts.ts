@@ -1,3 +1,4 @@
+import { ConfigurationError } from "../errors.ts";
 import { ProjectDispatchSchema, DispatchProfilesSchema } from "./dispatch.ts";
 import { CapabilityFields } from "@abracode/agents/capabilities";
 import {
@@ -204,7 +205,7 @@ export const parseYaml = (content: string, source: string) =>
       const error = document.errors[0];
       if (error) {
         const position = error.linePos?.[0];
-        throw new CrewError(
+        throw new ConfigurationError(
           "INVALID_DATA",
           `${source}: Invalid YAML or duplicate key (${error.code})${position ? ` at line ${position.line}, column ${position.col}` : ""}`,
         );
@@ -214,5 +215,5 @@ export const parseYaml = (content: string, source: string) =>
     catch: (error) =>
       error instanceof CrewError
         ? error
-        : new CrewError("INVALID_DATA", `${source}: Invalid YAML or duplicate key`),
+        : new ConfigurationError("INVALID_DATA", `${source}: Invalid YAML or duplicate key`),
   });

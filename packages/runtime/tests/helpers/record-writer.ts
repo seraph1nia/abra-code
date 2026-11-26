@@ -54,7 +54,7 @@ const store: Store = {
 const records = new Records(store, new Coordination(new FileLocks(AbsolutePath.make(locks))));
 const result = await Effect.runPromise(
   Effect.gen(function* () {
-    const e = yield* records.execution(IssueId.make(issue));
+    let e = yield* records.execution(IssueId.make(issue));
     if (!e) return yield* new CrewError("FIXTURE_RECORD", "Missing fixture execution");
     yield* Effect.tryPromise({
       try: () => writeFile(`${barrier}.${field}.ready`, "ready"),
@@ -67,8 +67,8 @@ const result = await Effect.runPromise(
       }).pipe(Effect.isSuccess))
     )
       yield* Effect.sleep("5 millis");
-    if (field === "retry_instructions") e.retry_instructions = field;
-    else e.error_or_recovery_reason = field;
+    if (field === "retry_instructions") e = { ...e, retry_instructions: field };
+    else e = { ...e, error_or_recovery_reason: field };
     const saved = yield* (
       mode === "replace"
         ? records.save(e)

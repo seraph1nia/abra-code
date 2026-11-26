@@ -1,3 +1,5 @@
+import { PaginationBar } from "./pagination-bar.tsx";
+import { useDebouncedValue } from "./use-debounced-value.ts";
 import { WorkCapacity } from "./work-capacity.tsx";
 import { WorkspaceApi } from "./data.ts";
 import type { Inspect } from "@abracode/presentation/cards";
@@ -35,6 +37,7 @@ export function WorkFinder({
   const settled = collection?.work?.search ?? "";
   const [draft, setDraft] = useState<{ base: string; value: string }>();
   const search = draft && draft.base === settled ? draft.value : settled;
+  const debounced = useDebouncedValue(search, 200);
   const section = collection?.section ?? "tasks";
   function update(change: Partial<WorkDiscovery>) {
     void navigate({
@@ -45,16 +48,13 @@ export function WorkFinder({
     });
   }
   useEffect(() => {
-    if (!shown || search === settled) return;
-    const timer = setTimeout(() => {
-      void navigate({
-        to: "/work",
-        replace: true,
-        search: { collection: { ...collection, work: { ...collection?.work, search, offset: 0 } } },
-      });
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [search, settled, shown, collection, navigate]);
+    if (!shown || search !== debounced || search === settled) return;
+    void navigate({
+      to: "/work",
+      replace: true,
+      search: { collection: { ...collection, work: { ...collection?.work, search, offset: 0 } } },
+    });
+  }, [search, settled, debounced, shown, collection, navigate]);
 
   const content = (
     <>
@@ -275,28 +275,20 @@ export function WorkFinder({
                 })}
                 {!page.entries.length && <p className="empty-note">No matching work.</p>}
               </nav>
-              <div className="finder-pagination">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={offset === 0}
-                  onClick={() => update({ offset: Math.max(0, offset - 50) })}
-                >
-                  Previous
-                </Button>
+              <PaginationBar
+                label="Work pages"
+                previous={offset ? () => update({ offset: Math.max(0, offset - 50) }) : undefined}
+                next={
+                  page.next_offset === undefined
+                    ? undefined
+                    : () => update({ offset: page.next_offset })
+                }
+              >
                 <span className="muted tabular">
                   {page.entries.length ? offset + 1 : 0}–{offset + page.entries.length} of{" "}
                   {page.total}
                 </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page.next_offset === undefined}
-                  onClick={() => update({ offset: page.next_offset })}
-                >
-                  Next
-                </Button>
-              </div>
+              </PaginationBar>
             </>
           )}
         </RequestState>

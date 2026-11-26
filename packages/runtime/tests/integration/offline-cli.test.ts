@@ -30,6 +30,8 @@ test("offline CLI redacts command secrets and doctor reports missing core withou
   await assert.rejects(cli("doctor"), (error) => {
     const output =
       String((error as { stdout: string }).stdout) + String((error as { stderr: string }).stderr);
+    assert.equal((error as { code: number }).code, 1);
+    assert.doesNotMatch(output, /CommandExit/);
     assert.match(output, /unverified/);
     assert.match(output, /node_modules\/\.bin\/opencode/);
     assert.match(output, /No browser was launched/);
@@ -37,6 +39,11 @@ test("offline CLI redacts command secrets and doctor reports missing core withou
   });
   assert.deepEqual(await readdir(root), ["selected.yaml"]);
   await writeFile(join(root, "selected.yaml"), base + "surprise: value\n");
-  await assert.rejects(cli("config", ["--json"]));
+  await assert.rejects(cli("config", ["--json"]), (error) => {
+    const failure = error as { code: number; stderr: string };
+    assert.equal(failure.code, 1);
+    assert.equal(JSON.parse(failure.stderr).valid, false);
+    return true;
+  });
   assert.deepEqual(await readdir(root), ["selected.yaml"]);
 });

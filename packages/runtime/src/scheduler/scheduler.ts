@@ -1,5 +1,4 @@
 import { Effect, Schema, Semaphore } from "effect";
-import { domainEffect } from "../effect.ts";
 import { decode } from "../decode.ts";
 import { Priority } from "@abracode/contracts/primitives";
 import { RepositoryId, StorageKey, type IssueId } from "@abracode/contracts/identities";
@@ -29,63 +28,59 @@ export class Scheduler {
     private records: Records,
     private setup: ProjectSetup,
   ) {}
-  tick = Effect.fn("Scheduler.tick")(
-    function* (this: Scheduler) {
-      return yield* this.turn.withPermits(1)(
-        Effect.gen({ self: this }, function* () {
-          yield* this.setup.reconcileQueued();
-          if (!this.controller.queries.settings.autoSchedule) return [];
-          const authority = yield* this.controller.queries.automaticAuthority();
-          if (!authority.session_id) return [];
-          let cursor = yield* decode(
-            Cursor,
-            (yield* this.records.store.get(key)) ?? { schema_version: 1, last: [] },
-            "Scheduler rotation",
+  tick = Effect.fn("Scheduler.tick")({ self: this }, function* () {
+    return yield* this.turn.withPermits(1)(
+      Effect.gen({ self: this }, function* () {
+        yield* this.setup.reconcileQueued();
+        if (!this.controller.queries.settings.autoSchedule) return [];
+        const authority = yield* this.controller.queries.automaticAuthority();
+        if (!authority.session_id) return [];
+        let cursor = yield* decode(
+          Cursor,
+          (yield* this.records.store.get(key)) ?? { schema_version: 1, last: [] },
+          "Scheduler rotation",
+        );
+        const attempted = new Set<IssueId>();
+        const results = [];
+        const limit = (yield* this.controller.ready()).length;
+        for (let attempt = 0; attempt < limit; attempt++) {
+          const eligible = (yield* this.controller.ready()).filter(
+            (item) => item.eligible && !attempted.has(item.issue.id),
           );
-          const attempted = new Set<IssueId>();
-          const results = [];
-          const limit = (yield* this.controller.ready()).length;
-          for (let attempt = 0; attempt < limit; attempt++) {
-            const eligible = (yield* this.controller.ready()).filter(
-              (item) => item.eligible && !attempted.has(item.issue.id),
-            );
-            if (!eligible.length) break;
-            const priority = Math.min(...eligible.map((item) => item.issue.priority));
-            const candidates = eligible.filter((item) => item.issue.priority === priority);
-            const repositories = [...new Set(candidates.map((item) => item.repository_id))].sort();
-            const previous = cursor.last.find((item) => item.priority === priority)?.repository_id;
-            const repository =
-              repositories.find((id) => previous === undefined || id > previous) ??
-              repositories[0]!;
-            const item = candidates
-              .filter((item) => item.repository_id === repository)
-              .sort((a, b) => (a.issue.id < b.issue.id ? -1 : a.issue.id > b.issue.id ? 1 : 0))[0]!;
-            attempted.add(item.issue.id);
-            // Rotate within this tick even on failure. Persist only once the
-            // controller has retained an execution intent for the selected issue.
-            cursor = {
-              schema_version: 1,
-              last: [
-                ...cursor.last.filter((item) => item.priority !== priority),
-                { priority, repository_id: repository },
-              ].sort((a, b) => a.priority - b.priority),
-            };
-            results.push(
-              yield* this.controller
-                .start(item.issue.id, authority.session_id)
-                .pipe(
-                  Effect.catch((error) =>
-                    Effect.succeed({ issue_id: item.issue.id, error: error.message }),
-                  ),
+          if (!eligible.length) break;
+          const priority = Math.min(...eligible.map((item) => item.issue.priority));
+          const candidates = eligible.filter((item) => item.issue.priority === priority);
+          const repositories = [...new Set(candidates.map((item) => item.repository_id))].sort();
+          const previous = cursor.last.find((item) => item.priority === priority)?.repository_id;
+          const repository =
+            repositories.find((id) => previous === undefined || id > previous) ?? repositories[0]!;
+          const item = candidates
+            .filter((item) => item.repository_id === repository)
+            .sort((a, b) => (a.issue.id < b.issue.id ? -1 : a.issue.id > b.issue.id ? 1 : 0))[0]!;
+          attempted.add(item.issue.id);
+          // Rotate within this tick even on failure. Persist only once the
+          // controller has retained an execution intent for the selected issue.
+          cursor = {
+            schema_version: 1,
+            last: [
+              ...cursor.last.filter((item) => item.priority !== priority),
+              { priority, repository_id: repository },
+            ].sort((a, b) => a.priority - b.priority),
+          };
+          results.push(
+            yield* this.controller
+              .start(item.issue.id, authority.session_id)
+              .pipe(
+                Effect.catch((error) =>
+                  Effect.succeed({ issue_id: item.issue.id, error: error.message }),
                 ),
-            );
-            if (yield* this.records.execution(item.issue.id))
-              yield* this.records.store.set(key, cursor);
-          }
-          return results;
-        }),
-      );
-    }.bind(this),
-    domainEffect,
-  );
+              ),
+          );
+          if (yield* this.records.execution(item.issue.id))
+            yield* this.records.store.set(key, cursor);
+        }
+        return results;
+      }),
+    );
+  });
 }

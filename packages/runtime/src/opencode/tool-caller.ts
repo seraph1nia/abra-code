@@ -1,18 +1,18 @@
+import { NativeAccessError } from "../errors.ts";
 import { Effect } from "effect";
 import type { Context } from "@opencode/plugin/effect/plugin";
 import type { Tool } from "@opencode/schema/tool";
-import { CrewError, type Execution } from "../domain.ts";
+import { type CrewError, type Execution } from "../domain.ts";
 import type { SessionId, MessageId } from "@abracode/contracts/identities";
 import { isActiveWorker } from "../workflow/worker-assignment.ts";
 import type { WorkerContext } from "../workflow/worker-context-contracts.ts";
 import { requireOwnedPromptEffect } from "./guards.ts";
 
+import { nativeSession } from "./native-call.ts";
+
 export const originatingUserMessage = (ctx: Context, session: SessionId, message: MessageId) =>
   Effect.gen(function* () {
-    // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- Normalize native context errors at the adapter.
-    const messages = yield* ctx.session
-      .context({ sessionID: session })
-      .pipe(Effect.mapError(CrewError.from));
+    const messages = yield* nativeSession(ctx).context({ sessionID: session });
     const index = messages.findIndex((m) => m.id === message);
     return messages.slice(0, index + 1).findLast((m) => m.type === "user");
   });
@@ -26,7 +26,10 @@ export const verifiedWorkerCaller = (
   Effect.gen(function* () {
     const role = assignment.active_role;
     if (!role || !isActiveWorker(assignment, call.sessionID, { role }))
-      return yield* new CrewError("WORKER_CALLER", "Current eligible worker assignment required");
+      return yield* new NativeAccessError(
+        "WORKER_CALLER",
+        "Current eligible worker assignment required",
+      );
     const context = yield* capture;
     if (
       context.schema_version !== 2 ||
@@ -36,16 +39,19 @@ export const verifiedWorkerCaller = (
       context.prompt_id !== assignment.prompt_id ||
       context.role !== role
     )
-      return yield* new CrewError(
+      return yield* new NativeAccessError(
         "WORKER_CALLER",
         "Tool call does not match the current worker capture",
       );
     const prompt = yield* origin;
     if (!prompt)
-      return yield* new CrewError("WORKER_CALLER", "Tool call lacks current assignment provenance");
+      return yield* new NativeAccessError(
+        "WORKER_CALLER",
+        "Tool call lacks current assignment provenance",
+      );
     yield* requireOwnedPromptEffect(assignment, call.sessionID, prompt).pipe(
       Effect.mapError(
-        () => new CrewError("WORKER_CALLER", "Tool call belongs to a stale assignment"),
+        () => new NativeAccessError("WORKER_CALLER", "Tool call belongs to a stale assignment"),
       ),
     );
     return { role, profile: context.prepared.profile };

@@ -1,6 +1,6 @@
 import { readRetained, writeRetained } from "../retained-input.ts";
-import { useRef, useState } from "react";
-import { useAtom } from "@effect/atom-react";
+import { useState } from "react";
+import { useRetainedSubmission } from "../use-retained-submission.ts";
 import { Exit, Schema } from "effect";
 import { saveSurface } from "../data.ts";
 import { SaveSurfaceSchema } from "@abracode/contracts/web/report-actions";
@@ -82,34 +82,27 @@ function SaveAttempt({
       return prior;
     return makeInput();
   });
-  const [state, invoke] = useAtom(saveSurface(attempt.input.request_id), { mode: "promiseExit" });
+  const { working, submit } = useRetainedSubmission(saveSurface);
   const [failed, setFailed] = useState(!!attempt.attempted && !attempt.result);
   const [storageError, setStorageError] = useState(false);
-  const submitting = useRef(false);
   const result = attempt.result;
   async function save() {
-    if (submitting.current) return;
-    if (!writeRetained(key, { ...attempt, attempted: true })) {
-      setStorageError(true);
-      return;
-    }
-    setStorageError(false);
-    submitting.current = true;
-    try {
-      const response = await invoke(attempt.input);
-      if (Exit.isSuccess(response) && response.value.request_id === attempt.input.request_id) {
-        const next = { input: attempt.input, result: response.value, attempted: true };
-        if (!writeRetained(key, next)) {
-          setStorageError(true);
-          setFailed(true);
-          return;
-        }
-        setAttempt(next);
-        setFailed(false);
-      } else setFailed(true);
-    } finally {
-      submitting.current = false;
-    }
+    const response = await submit(attempt.input, () => {
+      const persisted = writeRetained(key, { ...attempt, attempted: true });
+      setStorageError(!persisted);
+      return persisted;
+    });
+    if (!response) return;
+    if (Exit.isSuccess(response) && response.value.request_id === attempt.input.request_id) {
+      const next = { input: attempt.input, result: response.value, attempted: true };
+      if (!writeRetained(key, next)) {
+        setStorageError(true);
+        setFailed(true);
+        return;
+      }
+      setAttempt(next);
+      setFailed(false);
+    } else setFailed(true);
   }
   return (
     <div className="space-y-2">
@@ -148,12 +141,12 @@ function SaveAttempt({
         ) : (
           <Button
             variant="outline"
-            disabled={state.waiting}
+            disabled={working}
             onClick={() => {
               void save();
             }}
           >
-            {state.waiting ? "Saving snapshot…" : failed ? "Retry same save" : "Save snapshot"}
+            {working ? "Saving snapshot…" : failed ? "Retry same save" : "Save snapshot"}
           </Button>
         )}
       </div>

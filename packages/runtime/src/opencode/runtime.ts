@@ -1,4 +1,3 @@
-import { nativeError } from "./native-call.ts";
 import { Config as Env, Effect, Option } from "effect";
 import { Agent } from "@opencode/client/effect";
 import { Service } from "@opencode/client/effect/service";
@@ -21,13 +20,12 @@ import {
   type Role,
   type WorkerModel,
 } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import { provideFileSystem } from "../platform.ts";
 import { runtimePaths } from "../config/identity.ts";
 import { workerProfile } from "../config/snapshot.ts";
 import type { Records } from "../storage/store.ts";
 import { provisionedEvidence } from "../workflow/evidence.ts";
-import type { FinishingTarget } from "../workflow/finishing-contracts.ts";
+import type { FinishingTarget } from "../workflow/finishing/contracts.ts";
 import { workerBrowser } from "./browser.ts";
 import { makeClient, memoSuccessful, OPENCODE_VERSION } from "./client.ts";
 import {
@@ -56,6 +54,11 @@ import type { WorkerEnvironment } from "./worker-environment.ts";
 export { OPENCODE_VERSION, checkWorkerInventory };
 export type { DispositionAnswer, PromptAdmission, PromptIdentity, QuestionAnswer, SessionState };
 
+export type SessionIdentity = {
+  directory: string;
+  agent?: string;
+  metadata?: Record<string, unknown>;
+};
 export interface Runtime {
   managementSession(
     id: SessionId,
@@ -106,7 +109,7 @@ export interface Runtime {
   supervisorModel(id?: SessionId): Effect.Effect<WorkerModel | undefined, CrewError>;
   switchModel(id: SessionId, model: WorkerModel): Effect.Effect<void, CrewError>;
   switchAgent(id: SessionId, agent: Agent.ID): Effect.Effect<void, CrewError>;
-  sessionOwner?(id: SessionId): Effect.Effect<{ issue_id?: string; directory: string }, CrewError>;
+  sessionOwner?(id: SessionId): Effect.Effect<SessionIdentity & { issue_id?: string }, CrewError>;
   session(id: SessionId, assignment?: MessageId): Effect.Effect<SessionState, CrewError>;
   promptAdmissions(
     session: SessionId,
@@ -155,13 +158,12 @@ export class NativeRuntime implements Runtime {
     private records: Pick<Records, "projects" | "store">,
   ) {}
 
-  private cachedClient = Effect.runSync(
-    memoSuccessful(Effect.suspend(() => this.discoverClient())),
-  );
-  client = () => this.cachedClient;
+  private cachedClient = memoSuccessful(Effect.suspend(() => this.discoverClient()));
+  client = () => this.cachedClient.read;
 
   private discoverClient = Effect.fn("NativeRuntime.discoverClient")(
-    function* (this: NativeRuntime) {
+    { self: this },
+    function* () {
       const password = this.config.server_url
         ? Option.getOrUndefined(yield* Env.option(Env.String("ABRACODE_SERVER_PASSWORD")))
         : undefined;
@@ -188,13 +190,13 @@ export class NativeRuntime implements Runtime {
           "Cannot discover native service. Set server_url and ABRACODE_SERVER_PASSWORD for a standalone server",
         );
       return yield* makeClient(endpoint);
-    }.bind(this),
-    domainEffect,
+    },
+    Effect.mapError(CrewError.from),
   );
 
   requestDisposition = Effect.fn("NativeRuntime.requestDisposition")(
+    { self: this },
     function* (
-      this: NativeRuntime,
       sessionID: SessionId,
       id: FormId,
       question: string,
@@ -209,41 +211,37 @@ export class NativeRuntime implements Runtime {
         identity,
         target,
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   disposition = Effect.fn("NativeRuntime.disposition")(
+    { self: this },
     function* (
-      this: NativeRuntime,
       sessionID: SessionId,
       formID: FormId,
       identity: QuestionIdentity,
       target: FinishingTarget,
     ) {
       return yield* readDisposition(yield* this.client(), sessionID, formID, identity, target);
-    }.bind(this),
-    domainEffect,
+    },
   );
 
-  project = Effect.fn("NativeRuntime.project")(
-    function* (this: NativeRuntime, path: AbsolutePath) {
-      return (yield* (yield* this.client()).location.get({
-        location: { directory: path },
-      })).project.id;
-    }.bind(this),
-    domainEffect,
-  );
+  project = Effect.fn("NativeRuntime.project")({ self: this }, function* (path: AbsolutePath) {
+    return (yield* nativeDomain((yield* this.client()).location).get({
+      location: { directory: path },
+    })).project.id;
+  });
 
   inventory = Effect.fn("NativeRuntime.inventory")(
-    function* (this: NativeRuntime, projectID: NativeProjectId) {
+    { self: this },
+    function* (projectID: NativeProjectId) {
       return (yield* nativeWorktree(this.ctx).list({ projectID })).map((x) => x.directory);
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   createWorktree = Effect.fn("NativeRuntime.createWorktree")(
-    function* (this: NativeRuntime, p: Project, e: ManagedExecution, root: AbsolutePath) {
+    { self: this },
+    function* (p: Project, e: ManagedExecution, root: AbsolutePath) {
       if (!p.project_id)
         return yield* new CrewError("PROJECT_ID", "Repository not discovered by OpenCode");
       if (!e.base_commit)
@@ -258,12 +256,12 @@ export class NativeRuntime implements Runtime {
         name: e.execution_id,
         branch: e.base_commit,
       })).directory;
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   removeWorktree = Effect.fn("NativeRuntime.removeWorktree")(
-    function* (this: NativeRuntime, p: Project, e: ManagedExecution) {
+    { self: this },
+    function* (p: Project, e: ManagedExecution) {
       const evidence = yield* provisionedEvidence(e);
       if (!(p.project_id && e.worktree_directory))
         return yield* new CrewError("OWNERSHIP", "Missing native ownership");
@@ -272,12 +270,12 @@ export class NativeRuntime implements Runtime {
         directory: evidence.worktree_directory,
         force: false,
       });
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   private permissions = Effect.fn("NativeRuntime.permissions")(
-    function* (this: NativeRuntime, e: ManagedExecution, role: Role, id: SessionId) {
+    { self: this },
+    function* (e: ManagedExecution, role: Role, id: SessionId) {
       const projects = yield* this.records.projects;
       return workerPermissions(
         role,
@@ -285,26 +283,20 @@ export class NativeRuntime implements Runtime {
         e.openspec_change,
         [...projects.map((p) => p.path), workerBrowser(this.config.home, id).directory],
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   refreshPermissions = Effect.fn("NativeRuntime.refreshPermissions")(
-    function* (this: NativeRuntime, e: ManagedExecution, role: Role, id: SessionId) {
+    { self: this },
+    function* (e: ManagedExecution, role: Role, id: SessionId) {
       const permissions = yield* this.permissions(e, role, id);
       yield* nativeSession(this.ctx).update({ sessionID: id, permissions });
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   managementSession = Effect.fn("NativeRuntime.managementSession")(
-    function* (
-      this: NativeRuntime,
-      id: SessionId,
-      parent: SessionId,
-      model: WorkerModel,
-      lead: string,
-    ) {
+    { self: this },
+    function* (id: SessionId, parent: SessionId, model: WorkerModel, lead: string) {
       const location = { directory: this.config.home };
       const [agents, models] = yield* Effect.all(
         [
@@ -324,7 +316,6 @@ export class NativeRuntime implements Runtime {
       const existing = yield* nativeSession(this.ctx)
         .get({ sessionID: id })
         .pipe(
-          Effect.mapError(nativeError),
           Effect.catchIf(
             (error) => error.code === "SESSION_NOT_FOUND",
             () => Effect.void,
@@ -357,12 +348,12 @@ export class NativeRuntime implements Runtime {
           "LEAD_SESSION",
           "Retained management session identity conflicts",
         );
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   createSession = Effect.fn("NativeRuntime.createSession")(
-    function* (this: NativeRuntime, e: ManagedExecution, role: Role, id: SessionId) {
+    { self: this },
+    function* (e: ManagedExecution, role: Role, id: SessionId) {
       if (!e.worktree_directory) return yield* new CrewError("WORKTREE", "Missing worktree");
       const profile = workerProfile(e, role, this.config);
       const permissions = yield* this.permissions(e, role, id);
@@ -383,8 +374,7 @@ export class NativeRuntime implements Runtime {
           "OpenCode created a session at the wrong location",
         );
       return session.id;
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   sessionOwner = (id: SessionId) =>
@@ -400,12 +390,18 @@ export class NativeRuntime implements Runtime {
             typeof metadata.issue_id === "string"
               ? metadata.issue_id
               : undefined;
-          return { issue_id, directory: info.location.directory };
+          return {
+            issue_id,
+            directory: info.location.directory,
+            agent: info.agent,
+            metadata: info.metadata,
+          };
         }),
       );
 
   session = Effect.fn("NativeRuntime.session")(
-    function* (this: NativeRuntime, id: SessionId, assignment?: MessageId) {
+    { self: this },
+    function* (id: SessionId, assignment?: MessageId) {
       return yield* observeSession(
         this.ctx,
         this.records.store,
@@ -413,49 +409,46 @@ export class NativeRuntime implements Runtime {
         id,
         assignment,
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   supervisorModel: (id?: SessionId) => Effect.Effect<WorkerModel | undefined, CrewError> =
-    Effect.fn("NativeRuntime.supervisorModel")(
-      function* (this: NativeRuntime, id?: SessionId) {
-        if (id) {
-          const context = yield* nativeSession(this.ctx).context({ sessionID: id });
-          const assistant = context.findLast((m) => m.type === "assistant");
-          if (assistant?.type === "assistant") return assistant.model;
-        }
-        const model = (yield* nativeDomain(this.ctx.model).default({
-          location: { directory: this.config.home },
-        })).data;
-        if (!model || !model.enabled)
-          return yield* new CrewError(
-            "MODEL_UNAVAILABLE",
-            "No Supervisor or native default model is available; configure workers.<role>.model",
-          );
-        return { providerID: model.providerID, id: model.id };
-      }.bind(this),
-      domainEffect,
-    );
+    Effect.fn("NativeRuntime.supervisorModel")({ self: this }, function* (id?: SessionId) {
+      if (id) {
+        const context = yield* nativeSession(this.ctx).context({ sessionID: id });
+        const assistant = context.findLast((m) => m.type === "assistant");
+        if (assistant?.type === "assistant") return assistant.model;
+      }
+      const model = (yield* nativeDomain(this.ctx.model).default({
+        location: { directory: this.config.home },
+      })).data;
+      if (!model || !model.enabled)
+        return yield* new CrewError(
+          "MODEL_UNAVAILABLE",
+          "No Supervisor or native default model is available; configure workers.<role>.model",
+        );
+      return { providerID: model.providerID, id: model.id };
+    });
 
   switchModel = Effect.fn("NativeRuntime.switchModel")(
-    function* (this: NativeRuntime, id: SessionId, model: WorkerModel) {
+    { self: this },
+    function* (id: SessionId, model: WorkerModel) {
       yield* nativeSession(this.ctx).switchModel({ sessionID: id, model });
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   switchAgent = Effect.fn("NativeRuntime.switchAgent")(
-    function* (this: NativeRuntime, id: SessionId, agent: Agent.ID) {
+    { self: this },
+    function* (id: SessionId, agent: Agent.ID) {
       const current = yield* nativeSession(this.ctx).get({ sessionID: id });
       if ((current.agent ?? Agent.ID.make("build")) === agent) return;
       yield* nativeSession(this.ctx).switchAgent({ sessionID: id, agent });
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   preflight = Effect.fn("NativeRuntime.preflight")(
-    function* (this: NativeRuntime, e: ManagedExecution, role: Role, promptID?: MessageId) {
+    { self: this },
+    function* (e: ManagedExecution, role: Role, promptID?: MessageId) {
       return yield* preflightWorker(
         this.ctx,
         this.records.store,
@@ -465,32 +458,26 @@ export class NativeRuntime implements Runtime {
         role,
         promptID,
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   promptAdmission = Effect.fn("NativeRuntime.promptAdmission")(
-    function* (this: NativeRuntime, sessionID: SessionId, id: MessageId, text: string) {
+    { self: this },
+    function* (sessionID: SessionId, id: MessageId, text: string) {
       return (yield* this.promptAdmissions(sessionID, [{ prompt_id: id, prompt: text }])).get(id)!;
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   promptAdmissions = Effect.fn("NativeRuntime.promptAdmissions")(
-    function* (this: NativeRuntime, sessionID: SessionId, requests: readonly PromptIdentity[]) {
+    { self: this },
+    function* (sessionID: SessionId, requests: readonly PromptIdentity[]) {
       return yield* observePromptAdmissions(this.ctx, yield* this.client(), sessionID, requests);
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   prompt = Effect.fn("NativeRuntime.prompt")(
-    function* (
-      this: NativeRuntime,
-      sessionID: SessionId,
-      text: string,
-      id: MessageId,
-      steer = false,
-    ) {
+    { self: this },
+    function* (sessionID: SessionId, text: string, id: MessageId, steer = false) {
       yield* nativeSession(this.ctx)
         .prompt({
           sessionID,
@@ -500,45 +487,44 @@ export class NativeRuntime implements Runtime {
           metadata: { source: "abracode" },
         })
         .pipe(Effect.uninterruptible);
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   interrupt = Effect.fn("NativeRuntime.interrupt")(
-    function* (
-      this: NativeRuntime,
-      sessionID: SessionId,
-      promptID?: MessageId,
-      additional: readonly MessageId[] = [],
-    ) {
+    { self: this },
+    function* (sessionID: SessionId, promptID?: MessageId, additional: readonly MessageId[] = []) {
       const owned = new Set([...(promptID ? [promptID] : []), ...additional]);
       const client = owned.size ? yield* this.client() : undefined;
       if (client) {
-        const pending = yield* client.session.inbox.list({ sessionID });
+        const pending = yield* nativeDomain(client.session.inbox).list({ sessionID });
         for (const item of pending.filter((item) => owned.has(item.id)))
-          yield* client.session.inbox.cancel({ sessionID, inboxID: item.id });
+          yield* nativeDomain(client.session.inbox).cancel({ sessionID, inboxID: item.id });
       }
       const sessions = nativeSession(this.ctx);
       yield* sessions.interrupt({ sessionID, resume: false });
       yield* sessions.wait({ sessionID });
       if (client) {
-        if ((yield* client.session.inbox.list({ sessionID })).some((item) => owned.has(item.id)))
+        if (
+          (yield* nativeDomain(client.session.inbox).list({ sessionID })).some((item) =>
+            owned.has(item.id),
+          )
+        )
           return yield* new CrewError(
             "PROMPT_PENDING",
             "Owned prompt remains queued; stop is not confirmed",
           );
       }
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   notify = Effect.fn("NativeRuntime.notify")(
-    function* (this: NativeRuntime, sessionID: SessionId, text: string, id?: MessageId) {
+    { self: this },
+    function* (sessionID: SessionId, text: string, id?: MessageId) {
       if (id) {
         const client = yield* this.client();
         const [inbox, context] = yield* Effect.all(
           [
-            client.session.inbox.list({ sessionID }),
+            nativeDomain(client.session.inbox).list({ sessionID }),
             nativeSession(this.ctx).context({ sessionID }),
           ],
           { concurrency: "unbounded" },
@@ -563,48 +549,35 @@ export class NativeRuntime implements Runtime {
         text,
         metadata: { source: "abracode", notification: true },
       });
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   promptOrigin = Effect.fn("NativeRuntime.promptOrigin")(
-    function* (this: NativeRuntime, session: SessionId, message: MessageId) {
+    { self: this },
+    function* (session: SessionId, message: MessageId) {
       return yield* observePromptOrigin(this.ctx, session, message);
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   requestQuestion = Effect.fn("NativeRuntime.requestQuestion")(
-    function* (
-      this: NativeRuntime,
-      session: SessionId,
-      id: FormId,
-      question: string,
-      identity: QuestionIdentity,
-    ) {
+    { self: this },
+    function* (session: SessionId, id: FormId, question: string, identity: QuestionIdentity) {
       return yield* requestQuestion(yield* this.client(), session, id, question, identity);
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   questionAnswer = Effect.fn("NativeRuntime.questionAnswer")(
-    function* (this: NativeRuntime, session: SessionId, id: FormId) {
+    { self: this },
+    function* (session: SessionId, id: FormId) {
       return yield* readQuestionAnswer(yield* this.client(), session, id);
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   requestApproval = Effect.fn("NativeRuntime.requestApproval")(
-    function* (
-      this: NativeRuntime,
-      sessionID: SessionId,
-      id: FormId,
-      title: string,
-      fingerprint: Fingerprint | Commit,
-    ) {
+    { self: this },
+    function* (sessionID: SessionId, id: FormId, title: string, fingerprint: Fingerprint | Commit) {
       return yield* requestApproval(yield* this.client(), sessionID, id, title, fingerprint);
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   approval: (
@@ -612,10 +585,7 @@ export class NativeRuntime implements Runtime {
     formID: FormId,
   ) => Effect.Effect<"pending" | "approved" | "rejected", CrewError> = Effect.fn(
     "NativeRuntime.approval",
-  )(
-    function* (this: NativeRuntime, sessionID: SessionId, formID: FormId) {
-      return yield* readApproval(yield* this.client(), sessionID, formID);
-    }.bind(this),
-    domainEffect,
-  );
+  )({ self: this }, function* (sessionID: SessionId, formID: FormId) {
+    return yield* readApproval(yield* this.client(), sessionID, formID);
+  });
 }

@@ -53,6 +53,7 @@ function projectTool(
 export function projectNativeMessage(
   message: SessionMessage.Info,
   present?: ToolPresenter,
+  toolCache?: WeakMap<SessionMessage.AssistantTool, TranscriptTool>,
 ): TranscriptMessage | undefined {
   const base = { id: message.id, at: time(message.time.created) };
   if (message.type === "user")
@@ -67,13 +68,17 @@ export function projectNativeMessage(
   if (message.type === "assistant") {
     const tools = message.content
       .filter((part) => part.type === "tool")
-      .map((part) =>
-        projectTool(
+      .map((part) => {
+        const retained = toolCache?.get(part);
+        if (retained) return retained;
+        const projected = projectTool(
           part,
           part.time.completed ? Timestamp.make(time(part.time.completed)) : undefined,
           present,
-        ),
-      );
+        );
+        toolCache?.set(part, projected);
+        return projected;
+      });
     return {
       ...base,
       role: "assistant",

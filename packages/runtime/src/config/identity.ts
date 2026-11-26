@@ -30,9 +30,6 @@ export const resolveConfigurationPath = (home: string): Effect.Effect<string> =>
     Effect.orDie,
   );
 
-export const installationHome = () => resolve(process.env.ABRACODE_HOME ?? process.cwd());
-export const configurationPath = (home: string) =>
-  resolve(home, process.env.ABRACODE_CONFIG ?? identity.config);
 export const runtimePaths = (home: string) => ({
   state: join(home, identity.state),
   hostConfig: join(home, identity.state, "config/opencode/opencode.json"),

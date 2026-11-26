@@ -22,22 +22,22 @@ const originalOperation = {
 test("setup owned commits preserve newer capacity and independent evidence without replacing identity", async () => {
   const f = await retainedExecution();
   const original = f.execution;
-  const setup = {
+  let setup: import("../../src/domain.ts").SetupExecution = {
     ...original,
     setup: true as const,
     issue_id: Id.IssueId.make(`setup-${original.repository_id}`),
     openspec_change: "" as const,
   };
-  await run(f.records.create(setup));
-  const stale = structuredClone(setup);
+  setup = await run(f.records.create(setup));
+  let stale = structuredClone(setup);
   const peer = new Records(f.records.store, f.records.coordination);
-  const latest = (await run(peer.setup(setup.repository_id)))!;
-  latest.retry_instructions = "Preserve setup recovery instructions";
-  latest.capacity_observed_idle = true;
-  await run(peer.saveSetupOwned(latest, ["retry_instructions", "capacity_observed_idle"]));
-  stale.error_or_recovery_reason = "Delayed setup observation";
+  let latest = (await run(peer.setup(setup.repository_id)))!;
+  latest = { ...latest, retry_instructions: "Preserve setup recovery instructions" };
+  latest = { ...latest, capacity_observed_idle: true };
+  latest = await run(peer.saveSetupOwned(latest, ["retry_instructions", "capacity_observed_idle"]));
+  stale = { ...stale, error_or_recovery_reason: "Delayed setup observation" };
   await assert.rejects(run(f.records.saveSetup(stale)), /revision changed/);
-  await run(f.records.saveSetupOwned(stale, ["error_or_recovery_reason"]));
+  stale = await run(f.records.saveSetupOwned(stale, ["error_or_recovery_reason"]));
   assert.equal(stale.retry_instructions, latest.retry_instructions);
   assert.equal(stale.capacity_observed_idle, true);
   const before = await run(f.records.store.get(Id.StorageKey.make(`setup/${setup.repository_id}`)));
@@ -50,7 +50,7 @@ test("setup owned commits preserve newer capacity and independent evidence witho
 
 test("preparing a new operation preserves concurrent evidence and rejects the displaced owner", async () => {
   const f = await retainedExecution({ operation: originalOperation });
-  const e = f.execution;
+  let e = f.execution;
   const displaced = structuredClone(e);
   await run(
     f.records.update(e.issue_id, (current) => ({
@@ -63,7 +63,7 @@ test("preparing a new operation preserves concurrent evidence and rejects the di
     id: Id.OperationId.make("op-current-owner"),
     status: "prepared" as const,
   };
-  await run(f.records.beginOperation(e, operation));
+  e = await run(f.records.beginOperation(e, operation));
   assert.equal(e.retry_instructions, "New independent evidence");
   assert.equal(e.operation!.id, operation.id);
   const before = await run(f.records.store.get(Id.StorageKey.make(`execution/${e.issue_id}`)));
@@ -87,7 +87,7 @@ test("preparing a new operation preserves concurrent evidence and rejects the di
 test("stale full replacement cannot erase newer retry instructions", async () => {
   const f = await retainedExecution();
   const e = f.execution;
-  const stale = (await run(f.records.execution(e.issue_id)))!;
+  let stale = (await run(f.records.execution(e.issue_id)))!;
   await run(
     f.records.update(e.issue_id, (current) => ({
       ...current,
@@ -96,7 +96,7 @@ test("stale full replacement cannot erase newer retry instructions", async () =>
   );
   const key = Id.StorageKey.make(`execution/${e.issue_id}`);
   const before = await run(f.records.store.get(key));
-  stale.error_or_recovery_reason = "An unrelated late observation";
+  stale = { ...stale, error_or_recovery_reason: "An unrelated late observation" };
   const callerBefore = structuredClone(stale);
   await assert.rejects(
     run(f.records.save(stale)),
@@ -111,11 +111,11 @@ test("stale full replacement cannot erase newer retry instructions", async () =>
   await assert.rejects(run(f.records.commitControl(stale)), /revision changed/);
   assert.deepEqual(stale, callerBefore, "Rejected control must not advance its caller generation");
   assert.deepEqual(await run(f.records.store.get(key)), before);
-  await run(f.records.saveOwned(stale, ["error_or_recovery_reason"]));
+  stale = await run(f.records.saveOwned(stale, ["error_or_recovery_reason"]));
   const saved = (await run(f.records.execution(e.issue_id)))!;
   assert.equal(saved.retry_instructions, "Retain newer instructions");
   assert.equal(saved.error_or_recovery_reason, "An unrelated late observation");
-  delete stale.error_or_recovery_reason;
+  stale = { ...stale, error_or_recovery_reason: undefined };
   await run(f.records.saveOwned(stale, ["error_or_recovery_reason"]));
   assert.equal((await run(f.records.execution(e.issue_id)))!.error_or_recovery_reason, undefined);
   assert.equal(
@@ -126,10 +126,13 @@ test("stale full replacement cannot erase newer retry instructions", async () =>
 
 test("owned updates reject replaced operations and control generations", async () => {
   const f = await retainedExecution({ operation: originalOperation });
-  const e = f.execution;
+  let e = f.execution;
   const stale = (await run(f.records.execution(e.issue_id)))!;
-  e.operation = { ...e.operation!, id: Id.OperationId.make("op-replacement"), status: "prepared" };
-  await run(f.records.save(e));
+  e = {
+    ...e,
+    operation: { ...e.operation!, id: Id.OperationId.make("op-replacement"), status: "prepared" },
+  };
+  e = await run(f.records.save(e));
   await assert.rejects(run(f.records.saveOwned(stale, ["error_or_recovery_reason"])), /superseded/);
   const priorGeneration = (await run(f.records.execution(e.issue_id)))!;
   await run(f.records.commitControl(e));
@@ -141,13 +144,13 @@ test("owned updates reject replaced operations and control generations", async (
 
 test("owned updates retain independent field deletion and future additive evidence", async () => {
   const f = await retainedExecution();
-  const e = f.execution;
-  e.retry_instructions = "Old instructions";
-  await run(f.records.save(e));
-  const stale = (await run(f.records.execution(e.issue_id)))!;
+  let e = f.execution;
+  e = { ...e, retry_instructions: "Old instructions" };
+  e = await run(f.records.save(e));
+  let stale = (await run(f.records.execution(e.issue_id)))!;
   await run(
     f.records.update(e.issue_id, (current) => {
-      delete current.retry_instructions;
+      current = { ...current, retry_instructions: undefined };
       return current;
     }),
   );
@@ -158,7 +161,7 @@ test("owned updates retain independent field deletion and future additive eviden
       future_additive_evidence: { retained: true },
     }),
   );
-  stale.error_or_recovery_reason = "Late owned error";
+  stale = { ...stale, error_or_recovery_reason: "Late owned error" };
   await run(f.records.saveOwned(stale, ["error_or_recovery_reason"]));
   const raw = (await run(f.records.store.get(key))) as Record<string, unknown>;
   assert.equal("retry_instructions" in raw, false);
@@ -170,7 +173,7 @@ test("owned patches preserve extensions and refuse stale or invalid writes witho
   const key = Id.StorageKey.make(`execution/${e.issue_id}`);
   const original = structuredClone(e);
   await run(records.store.set(key, { ...e, retry_instructions: "clear me", future_field: 42 }));
-  const saved = await run(
+  let saved = await run(
     records.commitOwned(structuredClone(e), {
       retry_instructions: removeOwnedField,
       error_or_recovery_reason: "owned",
@@ -179,7 +182,7 @@ test("owned patches preserve extensions and refuse stale or invalid writes witho
   assert.equal(saved.retry_instructions, undefined);
   assert.equal(saved.error_or_recovery_reason, "owned");
   assert.equal(Reflect.get((await run(records.store.get(key))) as object, "future_field"), 42);
-  await run(records.commitControl(saved));
+  saved = await run(records.commitControl(saved));
   const before = await run(records.store.get(key));
   await assert.rejects(run(records.commitOwned(e, { retry_instructions: "stale" })), /superseded/);
   await assert.rejects(run(records.commitOwned(saved, { rounds: [{} as never] })));
@@ -191,10 +194,10 @@ test("independent repository instances commit disjoint owned fields from current
   const f = await retainedExecution();
   const initial = f.execution;
   const peer = new Records(f.records.store, f.records.coordination);
-  const first = (await run(f.records.execution(initial.issue_id)))!;
-  const second = (await run(peer.execution(initial.issue_id)))!;
-  first.retry_instructions = "Independent instructions";
-  second.error_or_recovery_reason = "Independent error";
+  let first = (await run(f.records.execution(initial.issue_id)))!;
+  let second = (await run(peer.execution(initial.issue_id)))!;
+  first = { ...first, retry_instructions: "Independent instructions" };
+  second = { ...second, error_or_recovery_reason: "Independent error" };
   await Promise.all([
     run(f.records.saveOwned(first, ["retry_instructions"])),
     run(peer.saveOwned(second, ["error_or_recovery_reason"])),
@@ -209,7 +212,7 @@ test("owned finishing receipts survive concurrent observations without dropping 
     apply_session_id: Id.SessionId.make("ses_apply"),
     delivered_commit: Id.Commit.make("a".repeat(40)),
   });
-  const e = f.execution;
+  let e = f.execution;
   const key = Id.ObligationKey.make("concurrent-question");
   await run(
     f.records.update(e.issue_id, (current) => ({
@@ -231,17 +234,20 @@ test("owned finishing receipts survive concurrent observations without dropping 
       finishing: { ...current.finishing, schema_version: 1, current_question: key },
     })),
   );
-  e.finishing = {
-    ...e.finishing,
-    schema_version: 1,
-    attribution: {
+  e = {
+    ...e,
+    finishing: {
+      ...e.finishing,
       schema_version: 1,
-      generation: e.control_generation,
-      session_id: e.apply_session_id!,
-      prompt_id: Id.MessageId.make("msg_concurrent"),
-      head: e.delivered_commit!,
-      fingerprint: Id.Fingerprint.make("new-evidence"),
-      at: Id.timestampAt(0),
+      attribution: {
+        schema_version: 1,
+        generation: e.control_generation,
+        session_id: e.apply_session_id!,
+        prompt_id: Id.MessageId.make("msg_concurrent"),
+        head: e.delivered_commit!,
+        fingerprint: Id.Fingerprint.make("new-evidence"),
+        at: Id.timestampAt(0),
+      },
     },
   };
   await run(f.records.saveFinishing(e, ["attribution"]));
@@ -278,8 +284,8 @@ test("versioned phase records reject missing preservation and planning evidence"
     base_commit: Id.Commit.make("a".repeat(40)),
     plan_fingerprint: Id.Fingerprint.make("planned"),
   });
-  const e = f.execution;
-  await run(f.records.save(e));
+  let e = f.execution;
+  e = await run(f.records.save(e));
   assert.equal(e.schema_version, 1);
   assert.ok(e.revision! > 1);
   assert.equal(e.control_generation, 0);
@@ -381,8 +387,8 @@ test("execution snapshots retain verification commands and remove cleared owned 
 
 test("durable authority cannot contradict its policy snapshot", async () => {
   const f = await retainedExecution();
-  const e = f.execution;
-  e.merge_approval_required = false;
+  let e = f.execution;
+  e = { ...e, merge_approval_required: false };
   await assert.rejects(run(f.records.save(e)), /policy snapshot/);
   assert.equal((await run(f.records.execution(e.issue_id)))!.merge_approval_required, true);
 });

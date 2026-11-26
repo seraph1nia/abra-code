@@ -1,7 +1,6 @@
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import * as Id from "@abracode/contracts/identities";
-import { run } from "../effects.ts";
-import { domainEffect } from "../../src/effect.ts";
+import { domainEffect, run } from "../effects.ts";
 import { Effect } from "effect";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -52,8 +51,8 @@ test("failed workers keep configured snapshots on retry and reuse their session 
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const { id: issueId } = await run(f.work.create(workGoal("abra-1")));
-  const e = await run(f.controller.start(issueId, Id.SessionId.make("ses_supervisor")));
-  delete e.worker_model;
+  let e = await run(f.controller.start(issueId, Id.SessionId.make("ses_supervisor")));
+  e = { ...e, worker_model: undefined };
   await run(f.records.save(e));
   const session = f.runtime.sessions.get(e.explore_session_id!)!;
   session.busy = false;

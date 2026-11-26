@@ -8,6 +8,7 @@
     "./navigation": "./src/navigation.ts",
     "./native-form": "./src/native-form.ts",
     "./diff-patch": "./src/diff-patch.ts",
+    "./conversation": "./src/workspace-state/conversation.ts",
     "./observation-client": "./src/workspace-state/observation-client.ts",
     "./observation-transport": "./src/workspace-state/observation-transport.ts"
   },

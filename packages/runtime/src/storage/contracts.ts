@@ -59,8 +59,14 @@ export {
   OperationIntentSchema,
   DeliveryWaitSchema,
 } from "@abracode/contracts/workflow/operation-contracts";
-import { RoundSchema, ScopeDispositionSchema } from "../workflow/correction-contracts.ts";
-import { PatchAssessment, SpecVerificationSchema } from "../workflow/review-contracts.ts";
+import {
+  RoundSchema,
+  ScopeDispositionSchema,
+} from "@abracode/contracts/workflow/correction-contracts";
+import {
+  PatchAssessment,
+  SpecVerificationSchema,
+} from "@abracode/contracts/workflow/review-contracts";
 import { ScopeRecordSchema } from "../work/scope.ts";
 import {
   VisualBuildsSchema,
@@ -85,7 +91,7 @@ import {
   currentPlanning,
   validPlanningGenerations,
 } from "../workflow/planning-contracts.ts";
-import { FinishingSchema, validFinishingGenerations } from "../workflow/finishing-contracts.ts";
+import { FinishingSchema, validFinishingGenerations } from "../workflow/finishing/contracts.ts";
 
 import { ForgeObservationSchema } from "../git/readiness-contracts.ts";
 
@@ -228,7 +234,7 @@ const fields = {
   branch: BranchName,
   openspec_change: ChangeName,
   openspec_base_change: Schema.optional(ChangeName),
-  approval_receipts: Schema.mutable(Schema.Array(ApprovalSchema)),
+  approval_receipts: Schema.Array(ApprovalSchema),
   updated_at: Timestamp,
   worktree_directory: Schema.optional(AbsolutePath),
   base_commit: Schema.optional(Commit),
@@ -305,6 +311,7 @@ const fields = {
   delivered_commit: Schema.optional(Commit),
   error_or_recovery_reason: Schema.optional(Schema.String),
   resume_phase: Schema.optional(PhaseSchema),
+  pending_issue_status: Schema.optional(Schema.Literals(["blocked", "in_progress", "closed"])),
   delivery_wait: Schema.optional(DeliveryWaitSchema),
   operation: Schema.optional(OperationIntentSchema),
 };
@@ -317,136 +324,130 @@ export const ExecutionStateSchema = Schema.Struct({
   Schema.makeFilter(validMessageGenerations),
   Schema.makeFilter(validPlanningGenerations),
 );
-const provisioned = {
-  worktree_directory: AbsolutePath,
-  base_commit: Commit,
-  target_branch: BranchName,
-};
-const approvedPlan = { ...provisioned, plan_fingerprint: Fingerprint };
-const verified = {
-  ...approvedPlan,
-  verification_receipt: fields.verification_receipt.schema,
-  review_receipt: fields.review_receipt.schema,
-};
-/** Transitional in-memory objects are allowed; persisted phase variants require their evidence. */
-export const ExecutionRecordSchema = Schema.Union([
-  Schema.Struct({
-    ...fields,
-    ...provisioned,
-    workflow_policy: Schema.Literal("research-only"),
-    current_phase: Schema.Literal("researching"),
-    scope: ScopeRecordSchema,
-    plan_fingerprint: Fingerprint,
-  }),
-  Schema.Struct({
-    ...fields,
-    ...provisioned,
-    workflow_policy: Schema.Literal("research-only"),
-    current_phase: Schema.Literals(["cleaning", "completed"]),
-    scope: ScopeRecordSchema,
-    report_receipt: ReportReceiptSchema,
-    report_acceptance_met: Schema.Literal(true),
-  }),
-  Schema.Struct({
-    ...fields,
-    ...verified,
-    workflow_policy: Schema.Literal("lightweight-fix"),
-    current_phase: Schema.Literal("delivering"),
-    archived_tree: GitTree,
-    scope: ScopeRecordSchema,
-  }),
-  Schema.Struct({
-    ...fields,
-    current_phase: Schema.Literals([
-      "queued",
-      "claiming",
-      "provisioning",
-      "blocked",
-      "interrupted",
-      "failed",
-      "recovery_required",
-    ]),
-  }),
-  Schema.Struct({
-    ...fields,
-    ...provisioned,
-    current_phase: Schema.Literals(["exploring", "planning"]),
-  }),
-  Schema.Struct({
-    ...fields,
-    ...approvedPlan,
-    current_phase: Schema.Literals([
-      "awaiting_plan_approval",
-      "applying",
-      "verifying",
-      "validating_external",
-    ]),
-  }),
-  Schema.Struct({ ...fields, ...verified, current_phase: Schema.Literal("archiving") }),
-  Schema.Struct({
-    ...fields,
-    ...verified,
-    archive_path: RelativePath,
-    archived_tree: GitTree,
-    current_phase: Schema.Literal("delivering"),
-  }),
-  Schema.Struct({
-    ...fields,
-    ...provisioned,
-    delivered_commit: Commit,
-    current_phase: Schema.Literal("awaiting_merge"),
-  }),
-  Schema.Struct({
-    ...fields,
-    ...provisioned,
-    delivered_commit: Commit,
-    delivery_receipt: DeliveryReceiptSchema,
-    current_phase: Schema.Literals(["cleaning", "completed"]),
-  }),
-]).check(
-  Schema.makeFilter((e) => {
-    const planning = validPlanningGenerations(e);
-    if (planning !== true) return planning;
-    const finishing = validFinishingGenerations(e);
-    if (finishing !== true) return finishing;
-    const messages = validMessageGenerations(e);
-    if (messages !== true) return messages;
-    if (e.setup) return "Use the setup record contract";
-    if (
-      e.plan_approval_required !== e.effective_policy.plan_approval ||
-      e.merge_approval_required !== e.effective_policy.merge_approval ||
-      e.delivery_policy !== e.effective_policy.delivery
+/** Decode fields once, then check the evidence required by the persisted phase. */
+const recordFields = Schema.Struct(fields);
+type RecordFields = typeof recordFields.Type;
+type Evidence<
+  P extends RecordFields["current_phase"],
+  K extends keyof RecordFields = never,
+> = RecordFields & { readonly current_phase: P } & Required<Pick<RecordFields, K>>;
+type Provisioned = "worktree_directory" | "base_commit" | "target_branch";
+type Approved = Provisioned | "plan_fingerprint";
+type Verified = Approved | "verification_receipt" | "review_receipt";
+type PersistedExecution =
+  | Evidence<
+      | "queued"
+      | "claiming"
+      | "provisioning"
+      | "blocked"
+      | "interrupted"
+      | "failed"
+      | "recovery_required"
+    >
+  | Evidence<"exploring" | "planning", Provisioned>
+  | Evidence<"researching", Approved | "scope">
+  | Evidence<"awaiting_plan_approval" | "applying" | "verifying" | "validating_external", Approved>
+  | Evidence<"archiving", Verified>
+  | Evidence<"delivering", Verified | "archived_tree">
+  | Evidence<"awaiting_merge", Provisioned | "delivered_commit">
+  | Evidence<"cleaning" | "completed", Provisioned>;
+
+function phaseEvidence(e: RecordFields): true | string {
+  if (
+    e.pending_issue_status === "closed" &&
+    (e.current_phase !== "cleaning" || e.retirement?.native !== "confirmed")
+  )
+    return "Closing the issue requires confirmed worktree retirement during cleaning";
+  if (e.pending_issue_status === "blocked" && !["blocked", "failed"].includes(e.current_phase))
+    return "Blocking the issue requires a stopped execution";
+  if (
+    e.pending_issue_status === "in_progress" &&
+    ["queued", "completed", "blocked", "failed", "recovery_required", "interrupted"].includes(
+      e.current_phase,
     )
-      return "Execution authority differs from its retained policy snapshot";
-    const synchronization = e.finishing?.synchronization?.at(-1);
-    if (
-      e.workflow_policy === "full-openspec" &&
-      ["exploring", "planning"].includes(e.current_phase) &&
-      !e.planning_base_commit &&
-      !currentPlanning(e) &&
-      (!synchronization || ["published", "failed"].includes(synchronization.stage)) &&
-      e.approval_receipts.some((r) => r.kind === "plan" && r.authorized_at !== undefined)
-    )
-      return "Controlled replan requires an attributable planning baseline";
-    if (
-      ["researching", "applying", "verifying"].includes(e.current_phase) &&
-      e.workflow_policy !== "full-openspec" &&
-      !e.scope
-    )
-      return "Scoped policy requires retained scope";
-    if (
-      e.workflow_policy === "research-only" &&
-      ["cleaning", "completed"].includes(e.current_phase)
-    )
-      return (
-        !!(e.scope && e.report_receipt && e.report_acceptance_met) ||
-        "Research completion requires its scoped report receipt"
-      );
-    if (e.current_phase === "archiving" || e.current_phase === "delivering")
-      return e.review_receipt?.passed === true || "Successful independent review is required";
-    return true;
-  }),
+  )
+    return "Resuming the issue requires an active execution phase";
+  const provisioned = !!(e.worktree_directory && e.base_commit && e.target_branch);
+  const approved = provisioned && !!e.plan_fingerprint;
+  switch (e.current_phase) {
+    case "exploring":
+    case "planning":
+      if (!provisioned) return "Planning requires a provisioned worktree";
+      break;
+    case "researching":
+      if (e.workflow_policy !== "research-only" || !approved || !e.scope)
+        return "Research requires an approved research scope";
+      break;
+    case "awaiting_plan_approval":
+    case "applying":
+    case "verifying":
+    case "validating_external":
+      if (!approved)
+        return "Phase requires worktree_directory, base_commit, target_branch and plan_fingerprint";
+      break;
+    case "archiving":
+    case "delivering":
+      if (!approved || !e.verification_receipt || !e.review_receipt?.passed)
+        return "Delivery requires successful verification and independent review";
+      if (
+        e.current_phase === "delivering" &&
+        (!e.archived_tree || (e.workflow_policy === "lightweight-fix" ? !e.scope : !e.archive_path))
+      )
+        return "Delivery requires an identified source tree and retained scope or archive";
+      break;
+    case "awaiting_merge":
+      if (!provisioned || !e.delivered_commit) return "Merge requires a delivered commit";
+      break;
+    case "cleaning":
+    case "completed":
+      if (
+        !provisioned ||
+        (e.workflow_policy !== "research-only" && !(e.delivered_commit && e.delivery_receipt))
+      )
+        return "Completion requires a provisioned worktree, delivered_commit and delivery_receipt";
+      break;
+  }
+  if (e.setup) return "Use the setup record contract";
+  if (
+    e.plan_approval_required !== e.effective_policy.plan_approval ||
+    e.merge_approval_required !== e.effective_policy.merge_approval ||
+    e.delivery_policy !== e.effective_policy.delivery
+  )
+    return "Execution authority differs from its retained policy snapshot";
+  const synchronization = e.finishing?.synchronization?.at(-1);
+  if (
+    e.workflow_policy === "full-openspec" &&
+    ["exploring", "planning"].includes(e.current_phase) &&
+    !e.planning_base_commit &&
+    !currentPlanning(e) &&
+    (!synchronization || ["published", "failed"].includes(synchronization.stage)) &&
+    e.approval_receipts.some((r) => r.kind === "plan" && r.authorized_at !== undefined)
+  )
+    return "Controlled replan requires an attributable planning baseline";
+  if (
+    ["researching", "applying", "verifying"].includes(e.current_phase) &&
+    e.workflow_policy !== "full-openspec" &&
+    !e.scope
+  )
+    return "Scoped policy requires retained scope";
+  if (e.workflow_policy === "research-only" && ["cleaning", "completed"].includes(e.current_phase))
+    return (
+      !!(e.scope && e.report_receipt && e.report_acceptance_met) ||
+      "Research completion requires its scoped report receipt"
+    );
+  return true;
+}
+// phaseEvidence checks the same discriminated evidence represented by PersistedExecution.
+const persistedFields = recordFields.check(
+  Schema.makeFilter(validFinishingGenerations),
+  Schema.makeFilter(validMessageGenerations),
+  Schema.makeFilter(validPlanningGenerations),
+  Schema.makeFilter(phaseEvidence),
 );
+export const ExecutionRecordSchema = Schema.make<
+  Schema.Codec<PersistedExecution, typeof recordFields.Encoded>
+>(persistedFields.ast);
+
 // Setup has a separate completion path when the fetched base already contains OpenSpec.
 export const SetupRecordSchema = Schema.Struct({
   ...fields,
@@ -454,6 +455,7 @@ export const SetupRecordSchema = Schema.Struct({
   openspec_change: Schema.Union([ChangeName, Schema.Literal("")]),
 }).check(
   Schema.makeFilter((e) => {
+    if (e.pending_issue_status) return "Setup has no issue claim";
     const finishing = validFinishingGenerations(e);
     if (finishing !== true) return finishing;
     const messages = validMessageGenerations(e);

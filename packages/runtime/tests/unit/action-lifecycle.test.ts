@@ -1,3 +1,4 @@
+import type { Execution } from "../../src/domain.ts";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Effect, Schema } from "effect";
@@ -6,14 +7,14 @@ import { run } from "../effects.ts";
 import * as Id from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
 import { ActionSchema, CurrentActionSchema } from "@abracode/contracts/workflow/action-contracts";
-import { targetKey } from "../../src/workflow/action-state.ts";
-import { PRActions } from "../../src/workflow/pr-actions.ts";
+import { targetKey } from "../../src/workflow/pr/action-policy.ts";
+import { PRActions } from "../../src/workflow/pr/actions.ts";
 import { GitHubPRActions } from "../../src/git/pr-actions.ts";
 import { Forge } from "../../src/git/forge.ts";
 import { type Delivery } from "../../src/git/delivery.ts";
 
 test("two job findings reserve and submit one workflow attempt across restart and control generations", async (t) => {
-  const { f, e, p } = await deliveredPR(t, {
+  let { f, e, p } = await deliveredPR(t, {
     ci_retry: { max_reruns: 2, workflows: [".github/workflows/ci.yml"] },
   });
   const findings = [1, 2].map((n) => ({
@@ -35,8 +36,8 @@ test("two job findings reserve and submit one workflow attempt across restart an
       reason: "Runner outage",
     },
   }));
-  e.feedback = { ...e.feedback!, findings };
-  await run(f.records.save(e));
+  e = { ...e, feedback: { ...e.feedback!, findings } };
+  e = await run(f.records.save(e));
   let posts = 0;
   const adapter = new GitHubPRActions(
     new Forge(
@@ -87,17 +88,17 @@ test("two job findings reserve and submit one workflow attempt across restart an
     kind: "rerun" as const,
     finding_id: findings[0].id,
   };
-  await run(actions.run(e, p, input, undefined, true));
+  e = await run(actions.run(e, p, input, undefined, true));
   assert.equal(posts, 1);
   assert.equal(e.feedback!.actions.length, 1);
   const original = e.feedback!.actions[0];
   assert.equal(original.kind, "rerun");
   if (original.kind === "rerun") assert.equal(original.findings.length, 2);
-  await run(actions.run(e, p, { ...input, finding_id: findings[1].id }, undefined, true));
+  e = await run(actions.run(e, p, { ...input, finding_id: findings[1].id }, undefined, true));
   assert.equal(posts, 1, "A second job must not issue another run-level POST");
-  const restored = (await run(f.records.execution(e.issue_id)))!;
-  await run(f.records.commitControl(restored));
-  await run(
+  let restored: Execution = (await run(f.records.execution(e.issue_id)))!;
+  restored = await run(f.records.commitControl(restored));
+  restored = await run(
     new PRActions(f.records, delivery, f.runtime).run(
       restored,
       p,
@@ -110,7 +111,7 @@ test("two job findings reserve and submit one workflow attempt across restart an
   assert.equal(restored.feedback!.actions[0].id, original.id);
   assert.equal(restored.feedback!.actions.length, 1);
   const other = { ...findings[0], id: Id.FindingId.make("other-run"), run_id: 8 };
-  restored.feedback = { ...restored.feedback!, findings: [...findings, other] };
+  restored = { ...restored, feedback: { ...restored.feedback!, findings: [...findings, other] } };
   const independent = actions.prepare(
     restored,
     { ...input, generation: restored.control_generation, finding_id: other.id },
@@ -124,7 +125,7 @@ test("two job findings reserve and submit one workflow attempt across restart an
 });
 
 test("approved permission preflight failure retries once without fabricating send uncertainty", async (t) => {
-  const { f, e, p } = await deliveredPR(t);
+  let { f, e, p } = await deliveredPR(t);
   let unavailable = true,
     posts = 0;
   const adapter = new GitHubPRActions(
@@ -184,18 +185,18 @@ test("approved permission preflight failure retries once without fabricating sen
     kind: "reviewers" as const,
     users: ["alice"],
   };
-  await run(actions.run(e, p, input, actor));
+  e = await run(actions.run(e, p, input, actor));
   const form = e.feedback!.actions[0].form_id!;
   f.runtime.forms.set(form, "approved");
-  await run(actions.run(e, p, input, actor));
+  e = await run(actions.run(e, p, input, actor));
   assert.equal(posts, 0);
   const prepared = e.feedback!.actions[0];
   assert.equal(prepared.submission.stage, "unsubmitted");
   assert.equal(prepared.preflight?.retryable, true);
   assert.equal(prepared.status, "prepared");
   unavailable = false;
-  const restored = (await run(f.records.execution(e.issue_id)))!;
-  await run(actions.run(restored, p, input, actor));
+  let restored: Execution = (await run(f.records.execution(e.issue_id)))!;
+  restored = await run(actions.run(restored, p, input, actor));
   assert.equal(posts, 1, JSON.stringify(restored.feedback!.actions));
   assert.equal(restored.feedback!.actions[0].status, "confirmed");
   assert.equal(restored.feedback!.actions[0].form_id, form);
@@ -204,7 +205,7 @@ test("approved permission preflight failure retries once without fabricating sen
 });
 
 test("uncertain permission errors reconcile using the retained identity and form", async (t) => {
-  const { f, e, p } = await deliveredPR(t);
+  let { f, e, p } = await deliveredPR(t);
   const retained = {
     schema_version: 1 as const,
     id: "old-request",
@@ -224,8 +225,11 @@ test("uncertain permission errors reconcile using the retained identity and form
     session_id: Id.SessionId.make("ses_supervisor"),
     authorized_at: 1,
   };
-  e.feedback = { ...e.feedback!, actions: [retained, { ...retained, id: "old-duplicate" }] };
-  await run(f.records.save(e));
+  e = {
+    ...e,
+    feedback: { ...e.feedback!, actions: [retained, { ...retained, id: "old-duplicate" }] },
+  };
+  e = await run(f.records.save(e));
   let observations = 0;
   const delivery: Delivery = {
     deliver: f.delivery.deliver,
@@ -241,7 +245,7 @@ test("uncertain permission errors reconcile using the retained identity and form
       },
     },
   };
-  await run(
+  e = await run(
     new PRActions(f.records, delivery, f.runtime).run(e, p, {
       issue_id: e.issue_id,
       generation: 0,
@@ -265,7 +269,7 @@ test("uncertain permission errors reconcile using the retained identity and form
 });
 
 test("pause between preparation and admission prevents any write", async (t) => {
-  const { f, e, p } = await deliveredPR(t, {
+  let { f, e, p } = await deliveredPR(t, {
     reviewers: {
       users: ["alice"],
       teams: [],
@@ -281,10 +285,10 @@ test("pause between preparation and admission prevents any write", async (t) => 
     actions: {
       prepare: (_p, _e, action) =>
         Effect.gen(function* () {
-          const paused = (yield* f.records.execution(e.issue_id))!;
-          paused.stop_status = "confirmed";
-          paused.resume_phase = "awaiting_merge";
-          paused.current_phase = "interrupted";
+          let paused = (yield* f.records.execution(e.issue_id))!;
+          paused = { ...paused, stop_status: "confirmed" };
+          paused = { ...paused, resume_phase: "awaiting_merge" };
+          paused = { ...paused, current_phase: "interrupted" };
           yield* f.records.commitControl(paused);
           return {
             kind: "write" as const,
@@ -325,7 +329,7 @@ test("pause between preparation and admission prevents any write", async (t) => 
 });
 
 test("permanent preparation denial remains unsubmitted and automatic polling does not spin", async (t) => {
-  const { f, e, p } = await deliveredPR(t, {
+  let { f, e, p } = await deliveredPR(t, {
     reviewers: {
       users: ["alice"],
       teams: [],
@@ -349,8 +353,8 @@ test("permanent preparation denial remains unsubmitted and automatic polling doe
     },
   };
   const service = new PRActions(f.records, delivery, f.runtime);
-  await run(service.automatic(e, p));
-  await run(service.automatic(e, p));
+  e = await run(service.automatic(e, p));
+  e = await run(service.automatic(e, p));
   assert.equal(reads, 1);
   const action = e.feedback!.actions[0];
   assert.equal(action.submission.stage, "unsubmitted");

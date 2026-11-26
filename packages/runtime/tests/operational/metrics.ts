@@ -8,7 +8,7 @@ import type { NativeRuntime, Runtime } from "../../src/opencode/runtime.ts";
 import type { Context } from "@opencode/plugin/effect/plugin";
 import type { Records } from "../../src/storage/store.ts";
 import type { Locks } from "../../src/storage/lock.ts";
-import type { Messages } from "../../src/workflow/messages.ts";
+import type { Messages } from "../../src/workflow/messaging/messages.ts";
 import type { AttentionService } from "../../src/workflow/attention.ts";
 import type { Execution } from "../../src/domain.ts";
 import type { LockKey } from "@abracode/contracts/identities";
@@ -56,7 +56,7 @@ const clients = new WeakSet<object>();
 /** Installed only into disposable source copies by the opt-in native harness.
  * No production import, service, authority cache or persisted prompt is added. */
 export function measureApplication(
-  application: Pick<ReturnType<typeof createWorkflow>, "controller" | "scheduler">,
+  application: Pick<Effect.Success<ReturnType<typeof createWorkflow>>, "controller" | "scheduler">,
   owners: {
     runtime: Runtime;
     records: Records;

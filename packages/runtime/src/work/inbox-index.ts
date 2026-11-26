@@ -1,3 +1,4 @@
+import { WorkGraphError } from "../errors.ts";
 import { runTransaction } from "./transaction.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { Effect, Schema } from "effect";
@@ -60,9 +61,9 @@ function indexFailure(cause: unknown): CrewError {
     "code" in cause &&
     (String(cause.code).startsWith("ERR_SQLITE") || cause.code === "ERR_INVALID_STATE")
   )
-    return new CrewError("INBOX_STORAGE", "The local GitHub inbox database operation failed");
+    return new WorkGraphError("INBOX_STORAGE", "The local GitHub inbox database operation failed");
   if (cause instanceof TypeError && "code" in cause && cause.code === "ERR_INVALID_URL")
-    return new CrewError("INBOX_DATA", "GitHub item has an invalid URL");
+    return new WorkGraphError("INBOX_DATA", "GitHub item has an invalid URL");
   throw cause;
 }
 export const indexEffect = <A>(action: () => A) => Effect.try({ try: action, catch: indexFailure });

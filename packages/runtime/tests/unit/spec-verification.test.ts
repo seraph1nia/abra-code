@@ -8,7 +8,7 @@ import { fixture, applying } from "../fixtures.ts";
 import { verifiedSpec } from "../helpers/spec-review.ts";
 import { run } from "../effects.ts";
 import { RepositoryId, SessionId, RequestId } from "@abracode/contracts/identities";
-import { type SpecVerification } from "../../src/workflow/review-contracts.ts";
+import { type SpecVerification } from "@abracode/contracts/workflow/review-contracts";
 
 const newFixture = () => run(fixture);
 async function reviewing(f: Awaited<ReturnType<typeof newFixture>>) {
@@ -127,16 +127,20 @@ test("intentional schema omissions and suggestions permit verified delivery and 
     ),
   );
   assert.equal(await run(f.git.fingerprint(e.worktree_directory!)), before);
-  const c = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const c = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   assert.deepEqual((await run(c.get(e.issue_id))).review_receipt!.spec_verification, report);
   f.runtime.success(e.review_session_id!);
@@ -279,11 +283,14 @@ test("legacy full-spec pass cannot archive without verification and retry return
   const f = await newFixture();
   t.onTestFinished(() => run(f.close()));
   let e = await reviewing(f);
-  e.review_receipt = {
-    passed: true,
-    findings: "Legacy pass",
-    session_id: e.review_session_id!,
-    fingerprint: e.verification_receipt!.fingerprint,
+  e = {
+    ...e,
+    review_receipt: {
+      passed: true,
+      findings: "Legacy pass",
+      session_id: e.review_session_id!,
+      fingerprint: e.verification_receipt!.fingerprint,
+    },
   };
   await run(f.records.save(e));
   f.runtime.success(e.review_session_id!);

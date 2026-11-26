@@ -1,4 +1,5 @@
-import { tmpdir } from "node:os";
+import { tryDomainValue } from "../effect.ts";
+import { GitError } from "../errors.ts";
 import { join } from "node:path";
 import {
   AbsolutePath,
@@ -8,11 +9,10 @@ import {
 } from "@abracode/contracts/identities";
 import { Effect } from "effect";
 import { CrewError, type ManagedExecution, type Project } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
-import { mkdtemp, rm, writeFile } from "../filesystem.ts";
+import { scopedTemporaryDirectory, writeFile } from "../filesystem.ts";
 import { completedProgress, progress } from "../opencode/progress.ts";
-import type { PublicationDestination } from "../workflow/finishing-contracts.ts";
-import { publicationDestination } from "../workflow/publication-destination.ts";
+import type { PublicationDestination } from "../workflow/finishing/contracts.ts";
+import { publicationDestination } from "../workflow/finishing/contracts.ts";
 import { type Forge, type PR } from "./forge.ts";
 import { prContent, updateSummary } from "./pr-content.ts";
 import { type Git } from "./repository.ts";
@@ -63,11 +63,7 @@ export function assertOwnedPR(
 function withBody<A>(content: string, action: (path: AbsolutePath) => Effect.Effect<A, CrewError>) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const temp = yield* Effect.acquireRelease(mkdtemp(join(tmpdir(), "abracode-pr-")), (dir) =>
-        rm(dir, { recursive: true }).pipe(
-          Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error)),
-        ),
-      );
+      const temp = yield* scopedTemporaryDirectory("abracode-pr-");
       const path = AbsolutePath.make(join(temp, "body.md"));
       yield* writeFile(path, content, { mode: 0o600, flag: "wx" });
       return yield* action(path);
@@ -88,7 +84,7 @@ export function deliverPublication(
     Effect.gen(function* () {
       yield* progress({ stage: "deliver", status: "started" });
       const worktree = e.worktree_directory;
-      if (!worktree) return yield* new CrewError("WORKTREE", "Missing worktree");
+      if (!worktree) return yield* new GitError("WORKTREE", "Missing worktree");
       const predecessor = destination.kind === "initial" ? undefined : destination.predecessor;
       const ref = `refs/heads/${e.branch}`;
       const readRemote = () => git.run(worktree, ["ls-remote", "origin", ref]);
@@ -126,7 +122,7 @@ export function deliverPublication(
 
       if (remote !== intended) {
         if (remote !== (predecessor ? `${predecessor}\t${ref}` : "")) {
-          return yield* new CrewError(
+          return yield* new GitError(
             "DELIVERY_CHANGED",
             "Owned destination has a conflicting head",
           );
@@ -150,23 +146,20 @@ export function deliverPublication(
           `${commit}:${ref}`,
         ]);
         if ((yield* readRemote()) !== intended) {
-          return yield* new CrewError(
-            "DELIVERY_CHANGED",
-            "Remote did not confirm the bound commit",
-          );
+          return yield* new GitError("DELIVERY_CHANGED", "Remote did not confirm the bound commit");
         }
       }
 
       if (p.delivery === "branch") return { commit };
 
-      const content = prContent(p, e, commit);
+      const content = yield* tryDomainValue(prContent, p, e, commit);
       const existing = yield* inspect(p, e);
       if (existing) {
         if (existing.state === "CLOSED") {
-          return yield* new CrewError("PR_CLOSED", "Existing PR was closed without merging");
+          return yield* new GitError("PR_CLOSED", "Existing PR was closed without merging");
         }
         if (destination.pr && existing.url !== destination.pr) {
-          return yield* new CrewError("PR_IDENTITY", "Owned PR identity changed");
+          return yield* new GitError("PR_IDENTITY", "Owned PR identity changed");
         }
         yield* assertOwnedPR(existing, p, e, "Owned PR head differs from the intended delivery", {
           states: ["OPEN", "MERGED"],
@@ -174,12 +167,12 @@ export function deliverPublication(
           head: commit,
         });
         if (existing.body === undefined) {
-          return yield* new CrewError(
+          return yield* new GitError(
             "PR_BODY_UNKNOWN",
             "PR body unavailable; do not replace unknown user content",
           );
         }
-        const updated = updateSummary(existing.body, content.body);
+        const updated = yield* tryDomainValue(updateSummary, existing.body, content.body);
         if (existing.state === "OPEN" && updated !== existing.body) {
           yield* withBody(updated, (body) =>
             client.run(p, ["pr", "edit", existing.url, "--body-file", body]),
@@ -195,7 +188,7 @@ export function deliverPublication(
         return { commit, pr: existing.url };
       }
 
-      if (destination.pr) return yield* new CrewError("PR_IDENTITY", "Owned PR is missing");
+      if (destination.pr) return yield* new GitError("PR_IDENTITY", "Owned PR is missing");
       const createdUrl = yield* withBody(content.body, (body) =>
         client.run(p, [
           "pr",
@@ -213,7 +206,7 @@ export function deliverPublication(
       );
       const created = yield* inspect(p, e);
       if (!created) {
-        return yield* new CrewError(
+        return yield* new GitError(
           "PR_UNKNOWN",
           "PR creation outcome unknown; reconcile before retrying",
         );
@@ -237,23 +230,21 @@ export function provisionalPublication(
   p: Project,
   e: ManagedExecution,
 ): Effect.Effect<{ commit: Commit; pr?: PullRequestUrl }, CrewError> {
-  return domainEffect(
-    Effect.gen(function* () {
-      if (!e.worktree_directory) return yield* new CrewError("WORKTREE", "Missing worktree");
-      const commit = yield* git.commit(
-        e.worktree_directory,
-        e.issue_id,
-        `Publish draft implementation ${e.issue_id}`,
-      );
-      return yield* deliverPublication(
-        git,
-        client,
-        inspect,
-        p,
-        e,
-        { commit, destination: publicationDestination(e) },
-        true,
-      );
-    }),
-  );
+  return Effect.gen(function* () {
+    if (!e.worktree_directory) return yield* new GitError("WORKTREE", "Missing worktree");
+    const commit = yield* git.commit(
+      e.worktree_directory,
+      e.issue_id,
+      `Publish draft implementation ${e.issue_id}`,
+    );
+    return yield* deliverPublication(
+      git,
+      client,
+      inspect,
+      p,
+      e,
+      { commit, destination: publicationDestination(e) },
+      true,
+    );
+  });
 }

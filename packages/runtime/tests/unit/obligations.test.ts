@@ -29,16 +29,20 @@ test("keyed questions survive unrelated progress and restart; stale and wrong-ro
     /different/,
   );
   await run(f.controller.workerProgress(sid, 0, "Inspected serializers"));
-  const c = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const c = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   assert.equal((await run(c.get(e.issue_id))).decisions!.length, 1);
   assert.equal((await run(c.reconcile(e.issue_id)))[0].decisions![0].status, "open");
@@ -91,16 +95,20 @@ test("user decisions retain native form identity, recreate after restart, collec
   );
   assert.ok(pending.form_id);
   f.runtime.questions.clear();
-  const c = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const c = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   await run(c.reconcile(e.issue_id));
   assert.equal((await run(c.get(e.issue_id))).decisions![0].form_id, pending.form_id);
@@ -234,16 +242,20 @@ test("worker capture owns its scratch files and retains one exact image across r
   await rm(dir, { recursive: true });
   assert.deepEqual((await capture(0)).capture, receipt);
   await assert.rejects(capture(0, { description: "Changed" }), /different inputs/);
-  const c = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const c = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   const { captureSelection } = await import("../../src/web/capture-selection.ts");
   const region = {

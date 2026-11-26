@@ -10,10 +10,12 @@ import { run } from "../effects.ts";
 import * as Id from "@abracode/contracts/identities";
 import { decode } from "../../src/decode.ts";
 import { NativeRuntime, type Runtime } from "../../src/opencode/runtime.ts";
-import { responseState } from "../../src/workflow/messages.ts";
+import { responseState } from "../../src/workflow/messaging/messages.ts";
 import { messageRequests } from "@abracode/contracts/workflow/message-contracts";
 
 import { CrewError } from "../../src/domain.ts";
+import { NativeAccessError } from "../../src/errors.ts";
+import { nativeError } from "../../src/opencode/native-call.ts";
 import { requireOwnedPrompt, installGuards } from "../../src/opencode/guards.ts";
 
 async function recoverable(
@@ -151,16 +153,20 @@ for (const admitted of [false, true]) {
     assert.equal(before.status, "admission_uncertain");
     const prompts = f.runtime.prompts;
     f.runtime.prompt = prompt;
-    const restarted = createWorkflow(
-      f.catalog,
-      f.config,
-      f.records,
-      f.work,
-      f.spec,
-      f.git,
-      f.runtime,
-      f.delivery,
-      f.locks,
+    const restarted = (
+      await run(
+        createWorkflow(
+          f.catalog,
+          f.config,
+          f.records,
+          f.work,
+          f.spec,
+          f.git,
+          f.runtime,
+          f.delivery,
+          f.locks,
+        ),
+      )
     ).controller;
     t.onTestFinished(() => run(restarted.close()));
     await run(restarted.reconcile(e.issue_id));
@@ -230,6 +236,7 @@ test("reminder prompt hooks reject foreign identity, payload, delivery and attac
               if (name === "prompt") hook = callback;
             }),
         },
+        permission: { hook: () => Effect.void },
         shell: { hook: () => Effect.void },
         tool: { hook: () => Effect.void },
       } as unknown as Context,
@@ -279,6 +286,7 @@ test("a response committed at the native guard suppresses the unused identity wi
               if (name === "prompt") hook = callback;
             }),
         },
+        permission: { hook: () => Effect.void },
         shell: { hook: () => Effect.void },
         tool: { hook: () => Effect.void },
       } as unknown as Context,
@@ -289,7 +297,14 @@ test("a response committed at the native guard suppresses the unused identity wi
   f.runtime.prompt = (session, text, id) =>
     reply().pipe(
       Effect.andThen(
-        hook({ sessionID: session, messageID: id, prompt: { text }, delivery: "queue" }),
+        hook({ sessionID: session, messageID: id, prompt: { text }, delivery: "queue" }).pipe(
+          // The native host returns hook refusal as a failed prompt RPC.
+          Effect.catchDefect((cause) =>
+            cause instanceof NativeAccessError
+              ? Effect.fail(nativeError(cause))
+              : Effect.die(cause),
+          ),
+        ),
       ),
       Effect.andThen(prompt(session, text, id)),
     );

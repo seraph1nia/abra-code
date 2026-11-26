@@ -1,8 +1,8 @@
+import { GitError } from "../errors.ts";
 import { createHash } from "node:crypto";
 import { Effect } from "effect";
 import { AbsolutePath, Fingerprint, RelativePath } from "@abracode/contracts/identities";
-import { CrewError } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
+
 import { type Git } from "./repository.ts";
 import { type CleanupBlocker } from "@abracode/contracts/git/retirement-contracts";
 
@@ -17,7 +17,7 @@ export const inspectCleanup = Effect.fn("Cleanup.inspect")(function* (
   const options = { trim: false, max_output_bytes: 65536 };
   const tracked = yield* git.run(root, ["diff", "--name-only", "-z", "HEAD"], options);
   if (tracked)
-    return yield* new CrewError("DELIVERY_CHANGED", "Tracked content changed before retirement");
+    return yield* new GitError("DELIVERY_CHANGED", "Tracked content changed before retirement");
   const paths: Array<CleanupBlocker["paths"][number]> = [];
   const hash = createHash("sha256");
   let truncated = false;
@@ -37,7 +37,7 @@ export const inspectCleanup = Effect.fn("Cleanup.inspect")(function* (
       options,
     );
     if (raw && !raw.endsWith("\0"))
-      return yield* new CrewError(
+      return yield* new GitError(
         "CLEANUP_INSPECTION",
         "Incomplete path inventory; retain the worktree",
       );
@@ -50,7 +50,7 @@ export const inspectCleanup = Effect.fn("Cleanup.inspect")(function* (
         path.startsWith("/") ||
         path.split("/").some((p) => p === ".." || p === "." || !p)
       )
-        return yield* new CrewError(
+        return yield* new GitError(
           "CLEANUP_INSPECTION",
           "Invalid worktree-relative path inventory",
         );
@@ -70,4 +70,4 @@ export const inspectCleanup = Effect.fn("Cleanup.inspect")(function* (
     truncated,
     fingerprint: Fingerprint.make(hash.digest("hex")),
   } satisfies CleanupSample;
-}, domainEffect);
+});

@@ -1,10 +1,24 @@
 import { EvidenceReceiptSchema } from "../web/worker-evidence.ts";
 import { ResourceSelectionSchema } from "../web/resources.ts";
 import { Schema } from "effect";
-import { Count, RoleSchema } from "../primitives.ts";
-import { IssueId, SessionId, RepositoryId, Timestamp } from "../identities.ts";
+import { Count, RoleSchema, exactParseOptions } from "../primitives.ts";
+import { IssueId, SessionId, RepositoryId, Timestamp, RelativePath } from "../identities.ts";
 import { WorkSummarySchema } from "./work-summary.ts";
 import { FleetSchema } from "./fleet.ts";
+
+export const WorkQuery = Schema.Struct({ issue_id: IssueId }).annotate(exactParseOptions);
+export const WorkDocumentQuery = Schema.Struct({
+  ...WorkQuery.fields,
+  path: RelativePath,
+}).annotate(exactParseOptions);
+export const WorkWorkerQuery = Schema.Struct({
+  ...WorkQuery.fields,
+  session_id: SessionId,
+}).annotate(exactParseOptions);
+export const WorkPageQuery = Schema.Struct({
+  ...WorkQuery.fields,
+  offset: Schema.optional(Count),
+}).annotate(exactParseOptions);
 
 export const WorkDiscoveryQuery = Schema.Struct({
   repository_id: Schema.optional(RepositoryId),

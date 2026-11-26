@@ -55,19 +55,23 @@ test("one restart retains current full-spec delivery authorization, decisions, r
         : adapter(e).merge(),
     evidence: (p, e) => adapter(e).evidence(p, e),
   };
-  const restart = () =>
-    createWorkflow(
-      f.catalog,
-      f.config,
-      f.records,
-      f.work,
-      f.spec,
-      f.git,
-      f.runtime,
-      delivery,
-      f.locks,
+  const restart = async () =>
+    (
+      await run(
+        createWorkflow(
+          f.catalog,
+          f.config,
+          f.records,
+          f.work,
+          f.spec,
+          f.git,
+          f.runtime,
+          delivery,
+          f.locks,
+        ),
+      )
     ).controller;
-  f.controller = restart();
+  f.controller = await restart();
   let full = await run(delivered(f));
   const approval = await run(
     f.controller.approve(full.issue_id, "merge", Id.SessionId.make("ses_supervisor")),
@@ -182,7 +186,7 @@ test("one restart retains current full-spec delivery authorization, decisions, r
   l = await run(f.controller.advance(l.issue_id));
   const prompts = f.runtime.prompts,
     ids = [full.explore_session_id, l.apply_session_id, l.review_session_id, r.research_session_id];
-  f.controller = restart();
+  f.controller = await restart();
   assert.equal(
     (await run(f.controller.get(l.issue_id))).decisions![0].answer,
     "Use the retained contract",

@@ -11,7 +11,7 @@ import { SessionId } from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
 import { run } from "../effects.ts";
 import { toolOutputs } from "../../src/opencode/tool-contracts.ts";
-import { deliveryAction } from "../../src/workflow/delivery-outcome.ts";
+import { deliveryAction } from "../../src/visibility/delivery-outcome.ts";
 import { ExecutionBusy } from "../../src/workflow/operations.ts";
 import { IssueId } from "@abracode/contracts/identities";
 

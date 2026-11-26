@@ -1,3 +1,4 @@
+import { PaginationBar } from "../pagination-bar.tsx";
 import { useId, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { Markdown } from "../markdown.tsx";
@@ -37,19 +38,13 @@ export function SessionsPanel({ work, inspect }: { work: WebWorkItem; inspect: I
         ))}
       </div>
       {work.sessions.length > 8 && (
-        <nav aria-label="Worker summary pages" className="button-row">
-          <Button variant="outline" size="sm" disabled={!page} onClick={() => setPage(page - 1)}>
-            Previous sessions
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={(page + 1) * 8 >= work.sessions.length}
-            onClick={() => setPage(page + 1)}
-          >
-            Next sessions
-          </Button>
-        </nav>
+        <PaginationBar
+          label="Worker summary pages"
+          previousLabel="Previous sessions"
+          nextLabel="Next sessions"
+          previous={page ? () => setPage(page - 1) : undefined}
+          next={(page + 1) * 8 < work.sessions.length ? () => setPage(page + 1) : undefined}
+        />
       )}
       {selected && (
         <SectionCard

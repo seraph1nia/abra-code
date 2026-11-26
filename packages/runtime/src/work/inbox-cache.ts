@@ -1,4 +1,4 @@
-import { Context, Layer, Clock, Effect, Exit } from "effect";
+import { Context, Cache, Effect, Exit } from "effect";
 import type { InboxDetail } from "@abracode/contracts/visibility/github-inbox";
 import type { CrewError } from "../domain.ts";
 import { freshMs } from "./inbox-index.ts";
@@ -8,61 +8,27 @@ export type DetailObservation = {
   readonly data: Omit<InboxDetail, "links" | "observed_at">;
 };
 
-type Entry = { read: Effect.Effect<DetailObservation, CrewError>; expires?: number };
+class DetailRead extends Context.Service<DetailRead, Effect.Effect<DetailObservation, CrewError>>()(
+  "abracode/InboxDetailRead",
+) {}
 
-/** Readers share the selected observation. Each forced refresh selects a new entry immediately. */
 export class InboxDetailCache {
-  private readonly entries = new Map<string, Entry>();
-
+  private cache?: Cache.Cache<string, DetailObservation, CrewError, DetailRead>;
   observe(id: string, force: boolean, read: Effect.Effect<DetailObservation, CrewError>) {
     return Effect.gen({ self: this }, function* () {
-      const now = yield* Clock.currentTimeMillis;
-      const prior = this.entries.get(id);
-      this.entries.delete(id);
-      if (!force && prior && (prior.expires === undefined || prior.expires > now)) {
-        this.entries.set(id, prior);
-        return yield* prior.read;
-      }
-      const entry: Entry = {
-        read: yield* Effect.cached(
-          read.pipe(
-            Effect.onExit((exit) =>
-              Clock.currentTimeMillis.pipe(
-                Effect.map((completed) => {
-                  if (this.entries.get(id) !== entry) return;
-                  if (Exit.isSuccess(exit)) entry.expires = completed + freshMs;
-                  else this.entries.delete(id);
-                }),
-              ),
-            ),
-          ),
-        ),
-      };
-      this.entries.set(id, entry);
-      if (this.entries.size > 32) {
-        const oldest = this.entries.keys().next();
-        if (!oldest.done) this.entries.delete(oldest.value);
-      }
-      return yield* entry.read;
+      const cache = (this.cache ??= yield* Cache.makeWith(
+        (_id: string) => Effect.flatten(DetailRead),
+        {
+          capacity: 32,
+          requireServicesAt: "lookup",
+          timeToLive: (exit) => (Exit.isSuccess(exit) ? freshMs : 0),
+        },
+      ));
+      if (force) yield* Cache.invalidate(cache, id);
+      return yield* Cache.get(cache, id).pipe(Effect.provideService(DetailRead, read));
     });
   }
-
   get clear() {
-    return Effect.sync(() => this.entries.clear());
-  }
-}
-
-export class InboxDetailCacheService extends Context.Service<
-  InboxDetailCacheService,
-  InboxDetailCache
->()("abracode/InboxDetailCache") {
-  static layer() {
-    return Layer.effect(
-      InboxDetailCacheService,
-      Effect.acquireRelease(
-        Effect.sync(() => new InboxDetailCache()),
-        (cache) => cache.clear,
-      ),
-    );
+    return Effect.suspend(() => (this.cache ? Cache.invalidateAll(this.cache) : Effect.void));
   }
 }

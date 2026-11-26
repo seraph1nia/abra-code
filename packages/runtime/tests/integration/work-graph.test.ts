@@ -597,8 +597,8 @@ test("batch integrity is checked on reopen and after peer commits, and reused on
   const receipt = await run(reopened.createBatch(attempt));
   assert.equal(cold, 3);
   let issueRows = 0;
-  const hydrate = reopened["issuesRepo"].hydrate.bind(reopened["issuesRepo"]);
-  reopened["issuesRepo"].hydrate = (rows, links) => {
+  const hydrate = reopened["queries"].hydrate.bind(reopened["queries"]);
+  reopened["queries"].hydrate = (rows, links) => {
     issueRows += rows.length;
     return hydrate(rows, links);
   };

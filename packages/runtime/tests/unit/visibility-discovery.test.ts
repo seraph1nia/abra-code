@@ -5,7 +5,7 @@ import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fixture, planned } from "../fixtures.ts";
+import { delivered, fixture, planned } from "../fixtures.ts";
 import { Visibility } from "../../src/visibility/read-model.ts";
 test("a plan passage is bound to its occurrence, generation and exact document", async (t) => {
   const { captureSelection } = await import("../../src/web/capture-selection.ts");
@@ -100,16 +100,19 @@ test("retained discovery pages same-file plan passages, checks the owner and nev
 test("worker discovery returns current and retired identities without a transcript read", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(planned(f));
+  const e = await run(delivered(f));
   const view = new Visibility(f.controller);
   const inspect = vi.spyOn(f.runtime, "session");
   const search = await run(view.sessionSearch({ search: e.explore_session_id, limit: 1 }));
   assert.equal(search.entries.length, 1);
   assert.equal(search.entries[0].issue_id, e.issue_id);
   assert.equal(search.entries[0].session_id, e.explore_session_id);
+  assert.equal(inspect.mock.calls.length, 0);
+  f.delivery.merged = true;
+  f.delivery.pr!.state = "MERGED";
+  await run(f.controller.finish(e.issue_id));
+  inspect.mockClear();
   const retained = await run(f.controller.queries.executions());
-  retained[0].current_phase = "completed";
-  vi.spyOn(f.controller.queries, "executions").mockReturnValue(Effect.succeed(retained));
   Object.assign(f.runtime, {
     sessionOwner: () => Effect.succeed({ issue_id: "unrelated", directory: e.worktree_directory }),
   });

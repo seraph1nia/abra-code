@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
-import { validateSnapshot, snapshotJSON } from "@abracode/contracts/presentation/report-evidence";
+import { validateSnapshot } from "@abracode/contracts/presentation/report-evidence";
 const snapshot = {
   schema_version: 1,
   issue_id: "fixture-issue",
@@ -108,25 +108,6 @@ test("snapshot sources reject unsafe URLs and malformed identities", () => {
     }).findings.length,
     1,
   );
-});
-
-test("snapshot JSON escapes script delimiters without changing repository text", () => {
-  const hostile = "</script><script>globalThis.snapshotExecuted=true</script><!--\u2028\u2029";
-  const input = {
-    ...snapshot,
-    title: hostile,
-    excerpts: [
-      {
-        title: "Untrusted code",
-        kind: "diff",
-        text: hostile,
-        provenance: "Untrusted repository text",
-      },
-    ],
-  };
-  const json = snapshotJSON(input);
-  assert.doesNotMatch(json, /<script|<\/script|<!--|[\u2028\u2029]/);
-  assert.deepEqual(JSON.parse(json), validateSnapshot(input));
 });
 
 test("generated Mermaid data refuses executable directives, HTML, links and external resources", () => {

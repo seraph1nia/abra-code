@@ -66,16 +66,20 @@ async function prepare(
   await run(f.git.commit(project.path, Id.IssueId.make("schema-setup"), "Own target-only schema"));
   await run(f.git.run(project.path, ["push", "origin", "main"]));
   const spec = new OpenSpec(runner, bin);
-  const controller = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const controller = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   t.onTestFinished(() => run(controller.close()));
   const parent = Id.SessionId.make("ses_supervisor");

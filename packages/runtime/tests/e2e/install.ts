@@ -93,7 +93,7 @@ export async function installSource(home: string, options: { buildWeb?: boolean 
       throw Error("Native metrics fixture seam changed");
     await writeFile(
       path,
-      'import { measureApplication } from "../../tests/operational/metrics.ts";\n' +
+      'import { measureApplication } from "../operational/metrics.ts";\n' +
         source
           .replace(anchor, "  const application = {\n    controller,")
           .replace(
@@ -107,7 +107,7 @@ export async function installSource(home: string, options: { buildWeb?: boolean 
     if (!entry.includes(monitor)) throw Error("Native event fixture seam changed");
     await writeFile(
       plugin,
-      'import { faultEvents } from "../../tests/operational/faults.ts";\n' +
+      'import { faultEvents } from "../operational/faults.ts";\n' +
         entry.replace(monitor, "monitor(faultEvents(ctx), c, application.scheduler)"),
     );
   }

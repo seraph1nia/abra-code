@@ -1,15 +1,14 @@
+import { GitError } from "../errors.ts";
 import { actionsEvidence } from "./actions.ts";
 import { digest } from "../digest.ts";
 import { replyBody } from "@abracode/contracts/workflow/action-contracts";
 import { Clock, Effect, Schema } from "effect";
 import { Commit, NonEmpty, Positive } from "@abracode/contracts/primitives";
 import { FindingId, Timestamp, PullRequestUrl } from "@abracode/contracts/identities";
-import { CrewError, ensure, type ManagedExecution, type Project } from "../domain.ts";
+import { type ManagedExecution, type Project } from "../domain.ts";
 import { decode } from "../decode.ts";
-import { domainEffect } from "../effect.ts";
 import { Forge, type PR } from "./forge.ts";
-import { type OperationResult } from "../workflow/results.ts";
-import { GitHubReadiness } from "./readiness.ts";
+import { GitHubReadiness, type ReadinessAssessment } from "./readiness.ts";
 import {
   FeedbackSchema,
   type Feedback,
@@ -79,39 +78,33 @@ export function restPages<S extends Schema.ConstraintDecoder<unknown>>(
       Effect.flatMap((pages) =>
         pages.length
           ? Effect.succeed(pages.flat())
-          : Effect.fail(new CrewError("FEEDBACK_INCOMPLETE", "Missing REST pagination evidence")),
+          : Effect.fail(new GitError("FEEDBACK_INCOMPLETE", "Missing REST pagination evidence")),
       ),
     );
 }
 export function prEndpoint(slug: string, url: PullRequestUrl) {
-  const parsed = new URL(url);
-  const match = /^\/(.+)\/pull\/(\d+)$/.exec(parsed.pathname);
-  ensure(
-    match && match[1] === slug,
-    "PR_IDENTITY",
-    "Feedback PR does not match registered repository",
-  );
-  return {
+  const match = /^\/(.+)\/pull\/(\d+)$/.exec(URL.parse(url)?.pathname ?? "");
+  if (!match || match[1] !== slug)
+    return Effect.fail(
+      new GitError("PR_IDENTITY", "Feedback PR does not match registered repository"),
+    );
+  return Effect.succeed({
     endpoint: `repos/${slug}/pulls/${match[2]}`,
     number: match[2]!,
     issue: `repos/${slug}/issues/${match[2]}`,
-  };
+  });
 }
 export class GitHubFeedback {
   constructor(private forge: Forge) {}
   observe = Effect.fn("GitHubFeedback.observe")(
-    function* (
-      this: GitHubFeedback,
-      p: Project,
-      e: ManagedExecution,
-      pr: PR,
-      assessed?: OperationResult,
-    ) {
+    { self: this },
+    function* (p: Project, e: ManagedExecution, pr: PR, assessed?: ReadinessAssessment) {
       const repo = yield* this.forge.repo(p);
-      const { endpoint, number, issue } = prEndpoint(repo.full_name, pr.url);
+      const { endpoint, number, issue } = yield* prEndpoint(repo.full_name, pr.url);
       const now = yield* Clock.currentTimeMillis;
-      const readiness = assessed ?? (yield* new GitHubReadiness(this.forge).check(p, e, pr, true));
-      let complete = !!e.forge_observation?.required_confirmed && !e.forge_observation.limited;
+      const { readiness, forge_observation } =
+        assessed ?? (yield* new GitHubReadiness(this.forge).check(p, e, pr, true));
+      let complete = forge_observation.required_confirmed && !forge_observation.limited;
       let error = complete
         ? undefined
         : readiness.category === "completed"
@@ -226,11 +219,11 @@ export class GitHubFeedback {
                 comment.pullRequestReview?.state !== "PENDING" &&
                 !own(comment.body, comment.author?.login)
               ) {
-                ensure(
-                  comment.url,
-                  "FEEDBACK_INCOMPLETE",
-                  "Published thread comment has no source URL",
-                );
+                if (!comment.url)
+                  return yield* new GitError(
+                    "FEEDBACK_INCOMPLETE",
+                    "Published thread comment has no source URL",
+                  );
                 add(`thread-${thread.id}-${comment.id}`, "thread", comment.body, {
                   thread_id: thread.id,
                   comment_id: comment.databaseId ?? undefined,
@@ -245,11 +238,11 @@ export class GitHubFeedback {
               }
             if (!comments.pageInfo.hasNextPage) break;
             const next = comments.pageInfo.endCursor;
-            ensure(
-              next && !seen.has(next) && seen.size < 32,
-              "FEEDBACK_INCOMPLETE",
-              "Unconfirmed nested comment pagination",
-            );
+            if (!next || seen.has(next) || !(seen.size < 32))
+              return yield* new GitError(
+                "FEEDBACK_INCOMPLETE",
+                "Unconfirmed nested comment pagination",
+              );
             seen.add(next);
             const nested = (yield* this.forge.json(p, CommentResponse, [
               "api",
@@ -261,29 +254,30 @@ export class GitHubFeedback {
               "-f",
               `cursor=${next}`,
             ])).data.node;
-            ensure(
-              nested.id === thread.id,
-              "FEEDBACK_INCOMPLETE",
-              "Nested comment page belongs to another thread",
-            );
+            if (nested.id !== thread.id)
+              return yield* new GitError(
+                "FEEDBACK_INCOMPLETE",
+                "Nested comment page belongs to another thread",
+              );
             comments = nested.comments;
           }
         }
         if (!page.pageInfo.hasNextPage) break;
         const next = page.pageInfo.endCursor;
-        ensure(
-          next && !visited.has(next) && visited.size < 32,
-          "FEEDBACK_INCOMPLETE",
-          "Unconfirmed thread pagination",
-        );
+        if (!next || visited.has(next) || !(visited.size < 32))
+          return yield* new GitError("FEEDBACK_INCOMPLETE", "Unconfirmed thread pagination");
         visited.add(next);
         cursor = next;
       } while (true);
-      const checks = e.forge_observation?.checks ?? [];
+      const checks = forge_observation.checks;
       let detailBytes = 0;
       for (const check of checks)
         if (["fail", "cancel"].includes(check.bucket)) {
-          ensure(check.source, "CHECKS_UNCONFIRMED", "Check has no canonical source identity");
+          if (!check.source)
+            return yield* new GitError(
+              "CHECKS_UNCONFIRMED",
+              "Check has no canonical source identity",
+            );
           const source = check.source;
           let evidence: Partial<Finding> = source.link
             ? yield* actionsEvidence(this.forge, p, repo.full_name, source.link, pr.headRefOid)
@@ -330,7 +324,6 @@ export class GitHubFeedback {
         actions: [],
       };
       return yield* decode(FeedbackSchema, result, "GitHub feedback observation");
-    }.bind(this),
-    domainEffect,
+    },
   );
 }

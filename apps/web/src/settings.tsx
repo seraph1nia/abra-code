@@ -32,8 +32,8 @@ function AgentDetails({ agent }: { agent: AgentDefinitionView }) {
   const [expanded, setExpanded] = useState(hash === "agent-" + agent.id);
   useLayoutEffect(() => {
     if (hash !== "agent-" + agent.id) return;
-    const element = document.getElementById(hash) as HTMLDetailsElement | null;
-    if (!element) return;
+    const element = document.getElementById(hash);
+    if (!(element instanceof HTMLDetailsElement)) return;
     element.open = true;
     element.querySelector("summary")?.focus({ preventScroll: true });
     element.scrollIntoView({ block: "nearest" });

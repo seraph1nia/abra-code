@@ -100,3 +100,28 @@ export function rankPaletteHits(
     }));
   return { rows, counts };
 }
+
+export function paletteHits() {
+  const hits: Hit[] = [];
+  const add = (
+    source: Source,
+    identity: string,
+    label: string,
+    detail: string,
+    effect: Hit["effect"],
+    select: () => void,
+    aliases?: readonly string[],
+  ) => {
+    hits.push({
+      id: source + "/" + identity,
+      source,
+      identity,
+      label,
+      detail,
+      effect,
+      run: select,
+      aliases,
+    });
+  };
+  return { hits, add };
+}

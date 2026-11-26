@@ -1,6 +1,7 @@
+import { tryDomainValue } from "../effect.ts";
 import { Effect } from "effect";
 import { withinImage, type WorkSelection } from "@abracode/contracts/web/resources";
-import { selectedDiffExcerpt } from "../visibility/ticket-diff.ts";
+import { selectedDiffExcerpt } from "../workflow/read-model/ticket-diff.ts";
 import { presentationHash } from "../presentation/identity.ts";
 import type { Queries } from "../workflow/queries.ts";
 import { CrewError } from "../domain.ts";
@@ -81,6 +82,6 @@ export function captureSelection(queries: Queries, selection: WorkSelection) {
               "The selected diff is unavailable. Open the updated diff or remove the selection.",
             ),
         ),
-        Effect.map((diff) => selectedDiffExcerpt(diff, selection)),
+        Effect.flatMap((diff) => tryDomainValue(selectedDiffExcerpt, diff, selection)),
       );
 }

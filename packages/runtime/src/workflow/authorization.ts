@@ -1,3 +1,4 @@
+import { WorkflowError } from "../errors.ts";
 import {
   type AbsolutePath,
   SessionId,
@@ -15,9 +16,8 @@ import {
   CrewError,
   ensure,
 } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import { type Runtime } from "../opencode/runtime.ts";
-import { readLeads } from "./lead-contracts.ts";
+import { readLeads } from "./leads/contracts.ts";
 import { createHash } from "node:crypto";
 import type { Git } from "../git/repository.ts";
 import type { Records } from "../storage/store.ts";
@@ -107,20 +107,17 @@ export class CheckpointEvidence {
     });
   }
 
-  assertPlan = Effect.fn("CheckpointEvidence.assertPlan")(
-    function* (this: CheckpointEvidence, e: Execution) {
-      const fingerprint = yield* this.plan(e);
-      if (fingerprint !== e.plan_fingerprint)
-        return yield* new CrewError(
-          "PLAN_CHANGED",
-          "Approved planning artifacts changed; prepare a new approval",
-        );
-      if (e.plan_approval_required !== false && this.status(e, "plan") !== "approved")
-        return yield* new CrewError("APPROVAL_REQUIRED", "Plan approval is missing or stale");
-      return yield* approvedEvidence(e);
-    }.bind(this),
-    domainEffect,
-  );
+  assertPlan = Effect.fn("CheckpointEvidence.assertPlan")({ self: this }, function* (e: Execution) {
+    const fingerprint = yield* this.plan(e);
+    if (fingerprint !== e.plan_fingerprint)
+      return yield* new WorkflowError(
+        "PLAN_CHANGED",
+        "Approved planning artifacts changed; prepare a new approval",
+      );
+    if (e.plan_approval_required !== false && this.status(e, "plan") !== "approved")
+      return yield* new WorkflowError("APPROVAL_REQUIRED", "Plan approval is missing or stale");
+    return yield* approvedEvidence(e);
+  });
 }
 
 export type ApprovalActorCheck = (session: SessionId) => Effect.Effect<void, CrewError>;
@@ -130,7 +127,7 @@ export const assertApprovalActor =
   (session) =>
     Effect.gen(function* () {
       if (yield* records.workerAssignment(session))
-        return yield* new CrewError("SELF_APPROVAL", "Workers cannot authorize decisions");
+        return yield* new WorkflowError("SELF_APPROVAL", "Workers cannot authorize decisions");
       const native = yield* runtime.session(session);
       if (
         native.agent !== "abra" ||
@@ -139,7 +136,7 @@ export const assertApprovalActor =
           (lead) => lead.session_id === session || lead.retired_sessions.includes(session),
         )
       )
-        return yield* new CrewError("ABRA_REQUIRED", "Use the central Abra session");
+        return yield* new WorkflowError("ABRA_REQUIRED", "Use the central Abra session");
     });
 
 /** Owns durable form ordering and retry collection; callers own locks and transitions. */
@@ -153,7 +150,8 @@ export class Authorizations {
   ) {}
 
   collect = Effect.fn("Authorizations.collect")(
-    function* (this: Authorizations, e: Execution, kind: Kind, supervisor: SessionId) {
+    { self: this },
+    function* (e: Execution, kind: Kind, supervisor: SessionId) {
       yield* this.assertActor(supervisor);
       if (kind === "plan") {
         if (e.workflow_policy === "full-openspec") yield* this.validatePlanning?.(e) ?? Effect.void;
@@ -162,46 +160,48 @@ export class Authorizations {
           e.workflow_policy !== "full-openspec" &&
           !(e.scope && e.scope.fingerprint === fingerprint && e.plan_fingerprint === fingerprint)
         )
-          return yield* new CrewError(
+          return yield* new WorkflowError(
             "SCOPE_CHANGED",
             "Scoped contract changed; explicitly revise and approve it",
           );
         if (!fingerprint || fingerprint !== e.plan_fingerprint)
-          return yield* new CrewError("STALE_CHECKPOINT", "Checkpoint changed");
+          return yield* new WorkflowError("STALE_CHECKPOINT", "Checkpoint changed");
         return yield* this.collectIdentity(e, supervisor, { kind: "plan", fingerprint });
       }
       const fingerprint = e.delivered_commit;
-      if (!fingerprint) return yield* new CrewError("STALE_CHECKPOINT", "Checkpoint changed");
+      if (!fingerprint) return yield* new WorkflowError("STALE_CHECKPOINT", "Checkpoint changed");
       return yield* this.collectIdentity(e, supervisor, { kind: "merge", fingerprint });
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   /** Recollect retained forms without reauthorizing content; later admission rechecks it. */
   collectPending = Effect.fn("Authorizations.collectPending")(
-    function* (this: Authorizations, e: Execution) {
+    { self: this },
+    function* (e: Execution) {
       const kind =
         e.current_phase === "awaiting_plan_approval"
           ? "plan"
           : e.current_phase === "awaiting_merge"
             ? "merge"
             : undefined;
-      if (!kind) return;
+      if (!kind) return { execution: e };
       for (const receipt of currentReceipts(e, kind).filter((a) => !a.authorized_at)) {
         yield* this.assertActor(receipt.session_id);
         const target: ApprovalTarget =
           receipt.kind === "plan"
             ? { kind: "plan", fingerprint: receipt.fingerprint }
             : { kind: "merge", fingerprint: receipt.fingerprint };
-        const { decision } = yield* this.collectIdentity(e, receipt.session_id, target);
-        if (decision === "rejected") return kind;
+        const result = yield* this.collectIdentity(e, receipt.session_id, target);
+        e = result.execution;
+        if (result.decision === "rejected") return { execution: e, rejected: kind };
       }
-    }.bind(this),
-    domainEffect,
+      return { execution: e };
+    },
   );
 
   private collectIdentity = Effect.fn("Authorizations.collectIdentity")(
-    function* (this: Authorizations, e: Execution, supervisor: SessionId, target: ApprovalTarget) {
+    { self: this },
+    function* (e: Execution, supervisor: SessionId, target: ApprovalTarget) {
       const checkpoint: ApprovalCheckpoint =
         target.kind === "plan"
           ? { kind: "plan", fingerprint: target.fingerprint, session_id: supervisor }
@@ -216,13 +216,14 @@ export class Authorizations {
           ? () => this.validatePlanning?.(e) ?? Effect.void
           : undefined,
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
 }
 
-export const collectForm = Effect.fn("Authorizations.collectForm")(function* (
-  e: ManagedExecution,
+export const collectForm = Effect.fn("Authorizations.collectForm")(function* <
+  E extends ManagedExecution,
+>(
+  e: E,
   records: Records,
   runtime: Runtime,
   checkpoint: ApprovalCheckpoint,
@@ -260,11 +261,11 @@ export const collectForm = Effect.fn("Authorizations.collectForm")(function* (
     };
   });
   const receipt = reserved.approval_receipts.find(active)!;
-  if (receipt.authorized_at) return { decision: "approved" as const, receipt };
+  if (receipt.authorized_at) return { execution: reserved, decision: "approved" as const, receipt };
   const { session_id, form_id } = receipt;
   yield* runtime.requestApproval(session_id, form_id, title, fingerprint);
   const decision = yield* runtime.approval(session_id, form_id);
-  if (decision === "pending") return { decision, receipt };
+  if (decision === "pending") return { execution: reserved, decision, receipt };
   if (decision === "approved" && validate) yield* validate();
   const at = yield* timestamp;
   const matches = (r: Approval) =>
@@ -289,5 +290,5 @@ export const collectForm = Effect.fn("Authorizations.collectForm")(function* (
       ),
     };
   });
-  return { decision, receipt: saved.approval_receipts.find(matches)! };
-}, domainEffect);
+  return { execution: saved, decision, receipt: saved.approval_receipts.find(matches)! };
+});

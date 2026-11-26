@@ -1,11 +1,13 @@
 import { analysisCharts } from "../helpers/chart-fixtures.ts";
 import { mixedDiagrams, denseFlowchart } from "../helpers/diagram-fixtures.ts";
 import { validateReportDocument } from "@abracode/contracts/presentation/report-document";
+import { tmpdir } from "node:os";
+import { runReportExport } from "../../src/cli/report.ts";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fixture } from "../fixtures.ts";
@@ -15,6 +17,24 @@ import { ReactDocumentRenderer } from "../../src/reporting/report-export.ts";
 import { ProcessRunner } from "../../src/process.ts";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 import { installSource } from "../e2e/install.ts";
+
+test("report CLI reads a selected regular file through a directory alias and refuses a linked file", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "abra-report-input-"));
+  t.onTestFinished(() => rm(root, { recursive: true, force: true }));
+  const source = join(root, "input");
+  const directoryAlias = join(root, "alias");
+  await mkdir(source);
+  await writeFile(join(source, "saved.json"), "{}");
+  await symlink(source, directoryAlias);
+  await symlink(join(source, "saved.json"), join(source, "linked.json"));
+  const output = join(root, "export.html");
+  await assert.rejects(run(runReportExport(join(directoryAlias, "saved.json"), output)), {
+    code: "REPORT_DOCUMENT",
+  });
+  await assert.rejects(run(runReportExport(join(directoryAlias, "linked.json"), output)), {
+    code: "REPORT_INPUT",
+  });
+});
 
 test(
   "React exports reuse frozen catalog components with prepared diagrams and local feedback in an offline opaque frame",

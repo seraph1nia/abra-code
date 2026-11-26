@@ -7,7 +7,6 @@ import {
   WorkerReferenceSchema,
 } from "@abracode/contracts/web/worker-evidence";
 import { WorkerReplySchema } from "@abracode/contracts/workflow/message-contracts";
-import { domainEffect } from "../../effect.ts";
 import type { Controller } from "../../workflow/controller.ts";
 import { QuestionInputSchema, WaitInputSchema } from "../../workflow/obligation-contracts.ts";
 import { ReportInputSchema } from "../../reporting/report-contracts.ts";
@@ -21,7 +20,7 @@ export function workerTools(c: Controller): DefinedTool[] {
       name: "worker_reply",
       description:
         "Acknowledge or answer a controller request, or submit keyed findings for Abra to route. Findings grant no authority.",
-      worker: true,
+      access: "worker",
       input: WorkerReplySchema,
       output: toolOutputs.worker_reply,
       run: (a, s) => c.workerReply(s, a),
@@ -32,7 +31,7 @@ export function workerTools(c: Controller): DefinedTool[] {
       description:
         "Submit the assigned immutable research report for controller publication outside the worktree.",
       input: ReportInputSchema,
-      worker: true,
+      access: "worker",
       run: (a, s) => c.researchReport(s, a),
     }),
     define({
@@ -41,7 +40,7 @@ export function workerTools(c: Controller): DefinedTool[] {
       description:
         "Open a durable keyed scope question. Answers never authorize plan, merge or delivery.",
       input: QuestionInputSchema,
-      worker: true,
+      access: "worker",
       run: (a, s) => c.workerQuestion(s, a),
     }),
     define({
@@ -60,7 +59,7 @@ export function workerTools(c: Controller): DefinedTool[] {
         }),
         Schema.Struct({ generation: Count, read_evidence: EvidenceQuerySchema }),
       ]),
-      worker: true,
+      access: "worker",
       run: (input, session) => {
         if ("summary" in input)
           return c.workerProgress(
@@ -87,7 +86,7 @@ export function workerTools(c: Controller): DefinedTool[] {
       description:
         "Declare a bounded dependency, decision or controller-owned command wait with its clearing evidence.",
       input: WaitInputSchema,
-      worker: true,
+      access: "worker",
       run: (a, s) => c.workerWait(s, a),
     }),
     define({
@@ -103,18 +102,16 @@ export function workerTools(c: Controller): DefinedTool[] {
           (a) => a.action !== "instructions" || !!a.artifact || "Instructions require an artifact",
         ),
       ),
-      worker: true,
+      access: "worker",
       run: (a, s) =>
-        domainEffect(
-          Effect.gen(function* () {
-            const { execution: e } = yield* assertActiveWorker(c, s);
-            return yield* a.action === "status"
-              ? c.queries.specStatus(e)
-              : a.action === "apply"
-                ? c.queries.specApply(e)
-                : c.queries.specInstructions(e, a.artifact!);
-          }),
-        ),
+        Effect.gen(function* () {
+          const { execution: e } = yield* assertActiveWorker(c, s);
+          return yield* a.action === "status"
+            ? c.queries.specStatus(e)
+            : a.action === "apply"
+              ? c.queries.specApply(e)
+              : c.queries.specInstructions(e, a.artifact!);
+        }),
     }),
   ];
 }

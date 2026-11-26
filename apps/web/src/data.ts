@@ -8,7 +8,7 @@ import type {
   ExportDocumentSchema,
 } from "@abracode/contracts/web/report-actions";
 import { Effect, Schema } from "effect";
-import { FetchHttpClient } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { Atom, AtomRegistry, AtomHttpApi, Reactivity } from "effect/reactivity";
 import { Form } from "@opencode/schema/form";
 import { Permission } from "@opencode/schema/permission";
@@ -40,11 +40,12 @@ export const readReceipt = (request_id: string) =>
 export function useWorkspaceCall<I, A, E>(call: (input: I) => Effect.Effect<A, E, WorkspaceApi>) {
   const registry = useContext(RegistryContext);
   return useCallback(
-    (input: I) =>
+    (input: I, signal?: AbortSignal) =>
       Effect.runPromiseExit(
         AtomRegistry.getResult(registry, WorkspaceApi.runtime).pipe(
           Effect.flatMap((context) => call(input).pipe(Effect.provide(context))),
         ),
+        { signal },
       ),
     [registry, call],
   );
@@ -112,15 +113,27 @@ export const permissionReply = Atom.family((_binding: string) =>
     Effect.flatMap(WorkspaceApi, (client) => client.workspace.replyPermission({ payload })),
   ),
 );
-export const submitMutation = WorkspaceApi.mutation("workspace", "submit");
+// Stop belongs to the CopilotKit transport and requires positive acknowledgement.
+export const stopTurn = (session: string) =>
+  HttpClient.execute(
+    HttpClientRequest.post(`/api/copilotkit/agent/abra/stop/${encodeURIComponent(session)}`).pipe(
+      HttpClientRequest.bodyJsonUnsafe({}),
+    ),
+  ).pipe(
+    Effect.flatMap(HttpClientResponse.filterStatusOk),
+    Effect.flatMap((response) => response.json),
+    Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ stopped: Schema.Boolean }))),
+    Effect.provide(FetchHttpClient.layer),
+  );
+export const submitMessage = (
+  payload: import("@abracode/contracts/web/workspace-wire").Submission,
+) => Effect.flatMap(WorkspaceApi, (client) => client.workspace.submit({ payload }));
 export const resolveResource = ({ payload }: { payload: ResourceSelection }) =>
   Effect.flatMap(WorkspaceApi, (client) => client.work.resolve({ payload }));
-export const saveSurface = Atom.family((_request: string) =>
-  WorkspaceApi.runtime.fn<typeof SaveSurfaceSchema.Type>()((payload) =>
-    Effect.flatMap(WorkspaceApi, (client) => client.work.saveSurface({ payload })),
-  ),
-);
-export const invalidateWork = WorkspaceApi.runtime.fn((scope: ChangeScope) => {
+export const saveSurface = (payload: typeof SaveSurfaceSchema.Type) =>
+  Effect.flatMap(WorkspaceApi, (client) => client.work.saveSurface({ payload }));
+const workReactivity = WorkspaceApi.runtime.atom(Reactivity.Reactivity);
+export const invalidateWork = (registry: AtomRegistry.AtomRegistry, scope: ChangeScope) => {
   const keys = [
     ...workInvalidationKeys(scope),
     ...(scope.all ||
@@ -131,8 +144,12 @@ export const invalidateWork = WorkspaceApi.runtime.fn((scope: ChangeScope) => {
       ? ["reviews-observed"]
       : []),
   ];
-  return keys.length ? Reactivity.invalidate(keys) : Effect.void;
-});
+  return keys.length
+    ? AtomRegistry.getResult(registry, workReactivity).pipe(
+        Effect.flatMap((service) => service.invalidate(keys)),
+      )
+    : Effect.void;
+};
 
 export const exportDocument = Atom.family((_identity: string) =>
   WorkspaceApi.runtime.fn<typeof ExportDocumentSchema.Type>()((payload) =>

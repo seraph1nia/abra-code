@@ -40,7 +40,7 @@ async function registeredGateway(f: Effect.Success<typeof fixture>, workspace: W
         Effect.sync(() => Object.assign(handlers, methods)),
     },
   } as unknown as Context;
-  const sessions = vi.spyOn(f.controller.queries, "session").mockImplementation(() =>
+  const sessions = vi.spyOn(f.controller.queries, "sessionIdentity").mockImplementation(() =>
     Effect.succeed({
       id,
       agent: AgentId.make("abra"),

@@ -7,14 +7,14 @@ import type { Inspect } from "@abracode/presentation/cards";
 import { ObservationContext } from "./tool-context.ts";
 import { deferred } from "@abracode/presentation/deferred";
 
-import { nativeToolCall, nativeToolMessage } from "@abracode/contracts/web/transcript";
+import { observedToolEnvelope } from "@abracode/contracts/web/transcript";
 const ObservedTool = deferred<{ toolCallId: string }>(
   () => import("./tool-body.tsx").then((module) => ({ default: module.ObservedTool })),
   "Native tool presentation",
 );
 
 /** Render-only registry: no handler, parameter registration, follow-up or model tool. */
-export function useNativeToolRendering() {
+function useNativeToolRendering() {
   useRenderTool(
     {
       name: "*",
@@ -47,11 +47,10 @@ export function ToolObservation({
     () => ({ tool, inspect, work, attachments }),
     [tool, inspect, work, attachments],
   );
-  const toolCall = useMemo(() => nativeToolCall(tool), [tool]);
-  const toolMessage = useMemo(() => nativeToolMessage(messageID, tool), [messageID, tool]);
+  const envelope = useMemo(() => observedToolEnvelope(messageID, tool), [messageID, tool]);
   return (
     <ObservationContext.Provider value={observation}>
-      <div data-native-renderer="copilotkit">{render?.({ toolCall, toolMessage })}</div>
+      <div data-native-renderer="copilotkit">{render?.(envelope)}</div>
     </ObservationContext.Provider>
   );
 }

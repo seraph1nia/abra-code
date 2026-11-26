@@ -80,19 +80,13 @@ export function normalizeIssue(value: unknown): NewIssue {
     "ISSUE_DESCRIPTION",
     "Describe the requested goal; Explore can resolve implementation details",
   );
-  const workflow_policy = Schema.decodeSync(PolicySchema)(input.workflow_policy ?? "full-openspec");
+  const workflow_policy = input.workflow_policy ?? "full-openspec";
   ensure(
     workflow_policy === "full-openspec" ||
       (input.openspec_schema === undefined && input.require_plan_approval === undefined),
     "OPENSPEC_WORKFLOW",
     "OpenSpec schema and human plan requirements require full-openspec work",
   );
-  const scope =
-    input.scope === undefined ? undefined : Schema.decodeSync(ScopeDraftSchema)(input.scope);
-  const report_reference =
-    input.report_reference === undefined
-      ? undefined
-      : Schema.decodeSync(ReportReferenceSchema)(input.report_reference);
   return {
     ...(input.openspec_schema === undefined ? {} : { openspec_schema: input.openspec_schema }),
     ...(input.require_plan_approval === undefined
@@ -101,8 +95,8 @@ export function normalizeIssue(value: unknown): NewIssue {
     ...(input.quality_profile === undefined ? {} : { quality_profile: input.quality_profile }),
     ...(input.dispatch === undefined ? {} : { dispatch: normalizeDispatch(input.dispatch) }),
     workflow_policy,
-    scope,
-    report_reference,
+    scope: input.scope,
+    report_reference: input.report_reference,
     ...(input.thought_source && { thought_source: input.thought_source }),
     repository_id,
     title: input.title.trim(),

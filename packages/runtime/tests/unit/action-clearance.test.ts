@@ -10,12 +10,12 @@ import * as Id from "@abracode/contracts/identities";
 
 import { GitHubDelivery, type Delivery } from "../../src/git/delivery.ts";
 import { CrewError } from "../../src/domain.ts";
-import { actionPlan } from "../../src/workflow/action-plan.ts";
-import { prepareAction } from "../../src/workflow/action-policy.ts";
+import { actionPlan } from "../../src/workflow/pr/action-policy.ts";
+import { prepareAction } from "../../src/workflow/pr/action-policy.ts";
 
 for (const automaticReplies of [true, false])
   test(`every controller merge route accounts for absent required actions: replies ${automaticReplies}`, async (t) => {
-    const { f, e, p } = await deliveredPR(t, {
+    let { f, e, p } = await deliveredPR(t, {
       discussion: { replies: automaticReplies ? "verified" : "manual", resolve_threads: "manual" },
     });
     f.delivery.pr!.statusCheckRollup = [{ status: "COMPLETED", conclusion: "SUCCESS" }];
@@ -30,21 +30,24 @@ for (const automaticReplies of [true, false])
       },
     ];
     const github = new GitHubDelivery(f.git, forge.runner, Id.Executable.make("fake-forge"));
-    e.feedback = await run(github.feedback(p, e));
-    e.feedback = {
-      ...e.feedback,
-      findings: e.feedback.findings.map((finding) => ({
-        ...finding,
-        disposition: {
-          status: "addressed",
-          head: e.delivered_commit!,
-          at: 1,
-          actor: "controller",
-          reason: "Published correction passed verification and Review",
-        },
-      })),
+    e = { ...e, feedback: await run(github.feedback(p, e)) };
+    e = {
+      ...e,
+      feedback: {
+        ...e.feedback!,
+        findings: e.feedback!.findings.map((finding) => ({
+          ...finding,
+          disposition: {
+            status: "addressed",
+            head: e.delivered_commit!,
+            at: 1,
+            actor: "controller",
+            reason: "Published correction passed verification and Review",
+          },
+        })),
+      },
     };
-    await run(f.records.save(e));
+    e = await run(f.records.save(e));
     const delivery: Delivery = {
       deliver: f.delivery.deliver,
       inspect: github.inspect,
@@ -63,16 +66,20 @@ for (const automaticReplies of [true, false])
       f.delivery.merged = true;
       f.delivery.pr!.state = "MERGED";
     };
-    const c = createWorkflow(
-      f.catalog,
-      f.config,
-      f.records,
-      f.work,
-      f.spec,
-      f.git,
-      f.runtime,
-      delivery,
-      f.locks,
+    const c = (
+      await run(
+        createWorkflow(
+          f.catalog,
+          f.config,
+          f.records,
+          f.work,
+          f.spec,
+          f.git,
+          f.runtime,
+          delivery,
+          f.locks,
+        ),
+      )
     ).controller;
     t.onTestFinished(() => run(c.close()));
     const pending = await run(c.approve(e.issue_id, "merge", Id.SessionId.make("ses_supervisor")));
@@ -129,7 +136,7 @@ for (const automaticReplies of [true, false])
   });
 
 test("reply and resolution obligations retain dependency, rejection and new-thread objections", async (t) => {
-  const { f, e } = await deliveredPR(t, {
+  let { f, e } = await deliveredPR(t, {
     discussion: { replies: "verified", resolve_threads: "addressed" },
   });
   const finding = {
@@ -150,7 +157,7 @@ test("reply and resolution obligations retain dependency, rejection and new-thre
       reason: "Published verified correction",
     },
   };
-  e.feedback = { ...e.feedback!, findings: [finding] };
+  e = { ...e, feedback: { ...e.feedback!, findings: [finding] } };
   const pr = f.delivery.pr!;
   const initial = actionPlan(e, pr, 2);
   assert.equal(initial.pending, true);
@@ -170,35 +177,44 @@ test("reply and resolution obligations retain dependency, rejection and new-thre
     true,
     2,
   );
-  e.feedback = {
-    ...e.feedback,
-    actions: [{ ...reply, status: "rejected", result: "Human rejected" }],
+  e = {
+    ...e,
+    feedback: {
+      ...e.feedback!,
+      actions: [{ ...reply, status: "rejected", result: "Human rejected" }],
+    },
   };
   assert.equal(actionPlan(e, pr, 3).pending, true);
-  e.feedback = {
-    ...e.feedback,
-    actions: [
-      {
-        ...reply,
-        status: "confirmed",
-        result: "Reply receipt",
-        submission: { stage: "confirmed", receipt: "Reply receipt", at: 3 },
-      },
-    ],
+  e = {
+    ...e,
+    feedback: {
+      ...e.feedback!,
+      actions: [
+        {
+          ...reply,
+          status: "confirmed",
+          result: "Reply receipt",
+          submission: { stage: "confirmed", receipt: "Reply receipt", at: 3 },
+        },
+      ],
+    },
   };
   const resolving = actionPlan(e, pr, 4);
   assert.ok(resolving.required.find((r) => r.input.kind === "resolve")!.action);
-  e.feedback = {
-    ...e.feedback,
-    findings: [
-      ...e.feedback.findings,
-      {
-        ...finding,
-        id: Id.FindingId.make("new-objection"),
-        revision: "r2",
-        disposition: undefined,
-      },
-    ],
+  e = {
+    ...e,
+    feedback: {
+      ...e.feedback!,
+      findings: [
+        ...e.feedback!.findings,
+        {
+          ...finding,
+          id: Id.FindingId.make("new-objection"),
+          revision: "r2",
+          disposition: undefined,
+        },
+      ],
+    },
   };
   const changed = actionPlan(e, pr, 5);
   assert.equal(changed.pending, true);
@@ -209,7 +225,7 @@ test("reply and resolution obligations retain dependency, rejection and new-thre
 });
 
 test("edited or removed sources supersede only unsubmitted obligations and retain possible effects", async (t) => {
-  const { f, e } = await deliveredPR(t, {
+  let { f, e } = await deliveredPR(t, {
     discussion: { replies: "verified", resolve_threads: "manual" },
   });
   const finding = {
@@ -228,7 +244,7 @@ test("edited or removed sources supersede only unsubmitted obligations and retai
       reason: "Published verified fix",
     },
   };
-  e.feedback = { ...e.feedback!, findings: [finding] };
+  e = { ...e, feedback: { ...e.feedback!, findings: [finding] } };
   const reply = prepareAction(
     e,
     {
@@ -241,10 +257,13 @@ test("edited or removed sources supersede only unsubmitted obligations and retai
     true,
     2,
   );
-  e.feedback = {
-    ...e.feedback,
-    actions: [reply],
-    findings: [{ ...finding, revision: "r2", disposition: undefined }],
+  e = {
+    ...e,
+    feedback: {
+      ...e.feedback!,
+      actions: [reply],
+      findings: [{ ...finding, revision: "r2", disposition: undefined }],
+    },
   };
   const edited = actionPlan(e, f.delivery.pr!, 3);
   assert.deepEqual(
@@ -256,13 +275,16 @@ test("edited or removed sources supersede only unsubmitted obligations and retai
     false,
     "The action planner clears stale unsent work; finding assessment remains a separate gate",
   );
-  e.feedback = {
-    ...e.feedback,
-    actions: [{ ...reply, status: "uncertain", submission: { stage: "admitted", at: 2 } }],
+  e = {
+    ...e,
+    feedback: {
+      ...e.feedback!,
+      actions: [{ ...reply, status: "uncertain", submission: { stage: "admitted", at: 2 } }],
+    },
   };
   const uncertain = actionPlan(e, f.delivery.pr!, 4);
   assert.equal(uncertain.stale.length, 0);
   assert.equal(uncertain.pending, true, "Source edits cannot erase a possible public effect");
-  e.feedback = { ...e.feedback, findings: [] };
+  e = { ...e, feedback: { ...e.feedback!, findings: [] } };
   assert.equal(actionPlan(e, f.delivery.pr!, 5).pending, true);
 });

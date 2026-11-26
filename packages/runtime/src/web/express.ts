@@ -64,12 +64,9 @@ export function compileWorkView(surfaceId: string, source: string) {
     cachedParser?.surfaceId === surfaceId
       ? cachedParser
       : (cachedParser = new ExpressParser(catalog, surfaceId, "v1.0"));
-  // The tool expects a bare Express body without chat <a2ui> wrappers or surrounding prose.
-  // Use ExpressParser's native unwrap/hasFormatContent check before compiling, while still
-  // allowing literal "<a2ui>" text inside quoted Express strings.
-  if (parser.hasFormatContent(source) && hasTopLevelSentinelTag(source)) {
+  // The native compiler accepts chat wrappers; a bare body is required by this tool.
+  if (/<\/?a2ui/i.test(source) && hasTopLevelSentinelTag(source))
     throw new Error("Supply a complete Express body without chat tags or surrounding prose");
-  }
   const messages = parser.compile(source, true);
   const [message] = messages;
   if (messages.length !== 1 || !message || !("createSurface" in message))

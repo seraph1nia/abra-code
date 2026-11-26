@@ -28,11 +28,18 @@ async function guard(t: TestContext, role: "explore" | "apply" | "review" = "exp
   let before: (event: any) => import("effect").Effect.Effect<void>;
   let context: typeof before;
   let shell: typeof before;
+  let permission: typeof before;
   const ctx = {
     session: {
       hook: (name: string, handler: typeof before) =>
         Effect.sync(() => {
           if (name === "context") context = handler;
+        }),
+    },
+    permission: {
+      hook: (_name: string, handler: typeof before) =>
+        Effect.sync(() => {
+          permission = handler;
         }),
     },
     shell: {
@@ -53,6 +60,17 @@ async function guard(t: TestContext, role: "explore" | "apply" | "review" = "exp
     f,
     e,
     shell: (cwd: string) => shell({ cwd, env: {} }),
+    permission: async (resources: string[]) => {
+      const event = {
+        sessionID,
+        action: "edit",
+        resources,
+        effect: "ask",
+        source: { type: "tool" },
+      };
+      await run(permission(event));
+      return event.effect;
+    },
     visible: async (names: string[]) => {
       const tools = Object.fromEntries(names.map((name) => [name, {}]));
       await run(context({ sessionID, model: f.config.models.default, tools, system: [] }));
@@ -65,7 +83,9 @@ async function guard(t: TestContext, role: "explore" | "apply" | "review" = "exp
   };
 }
 test("native patch validates every file and move destination inside the Explore change", async (t) => {
-  const { e, check } = await guard(t);
+  const { e, check, permission } = await guard(t);
+  assert.equal(await permission([`openspec/changes/${e.openspec_change}/proposal.md`]), "ask");
+  assert.equal(await permission([".git/config"]), "deny");
   const denied = await run(Effect.exit(check("invalid patch")));
   assert.ok(Exit.isFailure(denied));
   assert.deepEqual(
@@ -130,17 +150,8 @@ test("native edits enforce role policy on the requested and resolved path", asyn
 
 test("shell skips a missing external worktree and still enforces live custody", async (t) => {
   const { f, e, shell } = await guard(t);
-  const retained = (await run(f.records.execution(e.issue_id)))!;
-  const custody = { custody: "external" } as NonNullable<typeof e.external_validation>;
-  vi.spyOn(f.controller.queries, "executions").mockReturnValue(
-    Effect.succeed([
-      {
-        ...retained,
-        external_validation: custody,
-        worktree_directory: Id.AbsolutePath.make(join(f.root, "missing")),
-      },
-      { ...retained, external_validation: custody },
-    ]),
+  vi.spyOn(f.controller.queries, "externalWorktrees").mockReturnValue(
+    Effect.succeed([Id.AbsolutePath.make(join(f.root, "missing")), e.worktree_directory!]),
   );
   await run(shell(f.root));
   await assert.rejects(run(shell(e.worktree_directory!)), /external branch custody/);

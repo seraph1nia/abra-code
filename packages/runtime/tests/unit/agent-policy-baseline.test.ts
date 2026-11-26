@@ -41,7 +41,7 @@ test("historical policy bytes, permission order/resources and engineering prereq
       assert.ok(compatiblePolicy(role, policyIdentity(role)));
       continue;
     }
-    assert.ok(compatiblePolicy(role, baseline[role][0]));
+    assert.equal(compatiblePolicy(role, baseline[role][0]), role !== "review");
     if (role !== "review") assert.equal(policyIdentity(role), baseline[role][0]);
     const payload = {
       permissions: nativePermissions(role, "assigned", ["/read-root"]).filter(

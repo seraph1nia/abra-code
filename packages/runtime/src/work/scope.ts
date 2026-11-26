@@ -1,6 +1,6 @@
+import { sha256 } from "../digest.ts";
 import { IssueId, ReportId, ContentHash, Fingerprint } from "@abracode/contracts/identities";
 import { Schema } from "effect";
-import { createHash } from "node:crypto";
 import { NonEmpty } from "@abracode/contracts/primitives";
 const text = NonEmpty.check(Schema.isMaxLength(8192));
 const list = Schema.Array(text).check(Schema.isMaxLength(64));
@@ -16,9 +16,7 @@ export const ScopeSchema = Schema.Struct({
 });
 export type Scope = typeof ScopeSchema.Type;
 export const scopeIdentity = (revision: number, contract: Scope) =>
-  Fingerprint.make(
-    createHash("sha256").update(JSON.stringify({ revision, contract })).digest("hex"),
-  );
+  Fingerprint.make(sha256(JSON.stringify({ revision, contract })));
 export const ScopeRecordSchema = Schema.Struct({
   schema_version: Schema.Literal(1),
   revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),

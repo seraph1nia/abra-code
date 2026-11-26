@@ -1,12 +1,13 @@
+import { tryDomainValue } from "../effect.ts";
+import { StorageError } from "../errors.ts";
 import { LockKey, AbsolutePath } from "@abracode/contracts/identities";
-import { ChildProcess, ChildProcessSpawner } from "effect/process";
-import { provideProcess } from "../platform.ts";
+import { ChildProcess } from "effect/process";
+import { processDriver } from "../platform.ts";
 import { mkdir, open } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Context, Layer, Clock, Effect, Fiber, Stream } from "effect";
-import { CrewError, ensure, identifier } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
+import { Config, Schedule, Effect, Fiber, Stream } from "effect";
+import { CrewError, identifier } from "../domain.ts";
 export interface Locks {
   with<A, E, R>(
     key: LockKey,
@@ -20,9 +21,7 @@ export class FileLocks implements Locks {
     private root: AbsolutePath,
     // OpenCode's Bun host cannot execute fs-ext's NAN error path. Keep that
     // binding in the Node runtime it was compiled for; Node callers use it directly.
-    private nodeBinary = process.versions.bun
-      ? (process.env.ABRACODE_NODE_BINARY ?? "node")
-      : undefined,
+    private nodeBinary?: string,
   ) {}
   with<A, E, R>(
     key: LockKey,
@@ -37,64 +36,68 @@ export class FileLocks implements Locks {
     );
   }
   acquire(key: LockKey, waitSeconds = 0, shared = false) {
-    return domainEffect(
-      Effect.gen({ self: this }, function* () {
-        identifier(key);
-        ensure(
-          Number.isFinite(waitSeconds) && waitSeconds >= 0,
+    return Effect.gen({ self: this }, function* () {
+      yield* tryDomainValue(identifier, key);
+      if (!(Number.isFinite(waitSeconds) && waitSeconds >= 0))
+        return yield* new StorageError(
           "LOCK_ERROR",
           "Lock wait must be a finite nonnegative number of seconds",
         );
-        yield* Effect.tryPromise({
-          try: () => mkdir(this.root, { recursive: true, mode: 0o700 }),
+      yield* Effect.tryPromise({
+        try: () => mkdir(this.root, { recursive: true, mode: 0o700 }),
+        catch: CrewError.from,
+      });
+      if (this.nodeBinary !== undefined || process.versions.bun) {
+        const node =
+          this.nodeBinary ??
+          (yield* Config.String("ABRACODE_NODE_BINARY").pipe(
+            Config.withDefault("node"),
+            Effect.mapError(
+              (cause) =>
+                new StorageError("LOCK_ERROR", "Cannot read lock holder executable", cause),
+            ),
+          ));
+        return yield* this.acquireInNode(node, key, waitSeconds, shared);
+      }
+      const { default: fsExt } = yield* Effect.tryPromise({
+        try: () => import("fs-ext"),
+        catch: (cause) => new StorageError("LOCK_ERROR", "Native lock binding unavailable", cause),
+      });
+      const file = yield* Effect.acquireRelease(
+        Effect.tryPromise({
+          try: () => open(join(this.root, `${key}.lock`), "a", 0o600),
           catch: CrewError.from,
-        });
-        if (this.nodeBinary !== undefined)
-          return yield* this.acquireInNode(this.nodeBinary, key, waitSeconds, shared);
-        const { default: fsExt } = yield* Effect.tryPromise({
-          try: () => import("fs-ext"),
-          catch: (cause) => new CrewError("LOCK_ERROR", "Native lock binding unavailable", cause),
-        });
-        const file = yield* Effect.acquireRelease(
-          Effect.tryPromise({
-            try: () => open(join(this.root, `${key}.lock`), "a", 0o600),
-            catch: CrewError.from,
-          }),
-          // Closing the owning descriptor releases the lock. Never unlink the
-          // path: another process may already have opened the same inode.
-          (file) => Effect.tryPromise(() => file.close()).pipe(Effect.ignore),
-        );
-        const started = yield* Clock.monotonicTimeNanos;
-        while (true) {
-          // Only nonblocking syscalls run synchronously. Blocking flock work in
-          // libuv cannot be cancelled safely and could outlive this descriptor.
-          const acquired = yield* Effect.try({
-            try: () => {
-              try {
-                fsExt.flockSync(file.fd, shared ? "shnb" : "exnb");
-                return true;
-              } catch (cause) {
-                const error = CrewError.from(cause);
-                if (error.code === "EAGAIN" || error.code === "EWOULDBLOCK") return false;
-                throw cause;
-              }
-            },
-            catch: (cause) =>
-              new CrewError("LOCK_ERROR", `Lock acquisition failed for ${key}`, cause),
-          });
-          if (acquired) return;
-          const elapsed = Number((yield* Clock.monotonicTimeNanos) - started) / 1_000_000;
-          const remaining = waitSeconds * 1000 - elapsed;
-          if (remaining <= 0)
-            return yield* new CrewError("LOCKED", `${key} is busy; observe current progress`);
-          yield* Effect.sleep(Math.min(25, remaining));
-        }
-      }),
-    );
+        }),
+        // Closing the owning descriptor releases the lock. Never unlink the
+        // path: another process may already have opened the same inode.
+        (file) => Effect.tryPromise(() => file.close()).pipe(Effect.ignore),
+      );
+      const attempt = Effect.try({
+        try: () => fsExt.flockSync(file.fd, shared ? "shnb" : "exnb"),
+        catch: (cause) => {
+          const error = CrewError.from(cause);
+          return ["EAGAIN", "EWOULDBLOCK"].includes(error.code)
+            ? new StorageError("LOCKED", `${key} is busy; observe current progress`)
+            : new StorageError("LOCK_ERROR", `Lock acquisition failed for ${key}`, cause);
+        },
+      });
+      if (waitSeconds === 0) return yield* attempt;
+      return yield* attempt.pipe(
+        Effect.retry({
+          while: (error) => error.code === "LOCKED",
+          schedule: Schedule.spaced("25 millis"),
+        }),
+        Effect.timeoutOrElse({
+          duration: waitSeconds * 1000,
+          orElse: () =>
+            Effect.fail(new StorageError("LOCKED", `${key} is busy; observe current progress`)),
+        }),
+      );
+    });
   }
   private acquireInNode(node: string, key: LockKey, waitSeconds: number, shared: boolean) {
     return Effect.gen({ self: this }, function* () {
-      const spawner = yield* provideProcess(ChildProcessSpawner.ChildProcessSpawner);
+      const spawner = yield* processDriver;
       const child = yield* spawner
         .spawn(
           ChildProcess.make(
@@ -132,16 +135,22 @@ export class FileLocks implements Locks {
         Stream.runForEach((chunk) =>
           Effect.gen(function* () {
             if (frame.length + chunk.length > 7)
-              return yield* new CrewError("LOCK_ERROR", `Invalid lock acknowledgement for ${key}`);
+              return yield* new StorageError(
+                "LOCK_ERROR",
+                `Invalid lock acknowledgement for ${key}`,
+              );
             frame += Buffer.from(chunk).toString("latin1");
             if (!"locked\n".startsWith(frame))
-              return yield* new CrewError("LOCK_ERROR", `Invalid lock acknowledgement for ${key}`);
+              return yield* new StorageError(
+                "LOCK_ERROR",
+                `Invalid lock acknowledgement for ${key}`,
+              );
           }),
         ),
         Effect.timeoutOrElse({
           duration: (waitSeconds + 5) * 1000,
           orElse: () =>
-            Effect.fail(new CrewError("LOCK_ERROR", `Lock holder startup timed out for ${key}`)),
+            Effect.fail(new StorageError("LOCK_ERROR", `Lock holder startup timed out for ${key}`)),
         }),
       );
       if (frame === "locked\n" && (yield* child.isRunning)) return;
@@ -149,22 +158,15 @@ export class FileLocks implements Locks {
         Effect.timeoutOrElse({
           duration: "1 second",
           orElse: () =>
-            Effect.fail(new CrewError("LOCK_ERROR", `Incomplete lock acknowledgement for ${key}`)),
+            Effect.fail(
+              new StorageError("LOCK_ERROR", `Incomplete lock acknowledgement for ${key}`),
+            ),
         }),
       );
       yield* Fiber.join(stderr);
       return yield* code === 75
-        ? new CrewError("LOCKED", `${key} is busy; observe current progress`)
-        : new CrewError("LOCK_ERROR", `Node lock holder failed for ${key}`, diagnostic);
-    });
-  }
-}
-
-export class LocksService extends Context.Service<LocksService, FileLocks>()("abracode/Locks") {
-  static layer(root: AbsolutePath) {
-    return Layer.effect(
-      LocksService,
-      Effect.sync(() => new FileLocks(root)),
-    );
+        ? new StorageError("LOCKED", `${key} is busy; observe current progress`)
+        : new StorageError("LOCK_ERROR", `Node lock holder failed for ${key}`, diagnostic);
+    }).pipe(Effect.mapError(CrewError.from));
   }
 }

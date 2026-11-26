@@ -2,6 +2,8 @@ import { WorkspaceApi, queryOptions } from "./data.ts";
 import { AsyncResult, Atom, Reactivity } from "effect/reactivity";
 import {
   IssueId,
+  FindingId,
+  FindingRevisionId,
   RelativePath,
   SessionId,
   RequestId,
@@ -104,7 +106,9 @@ export const queries = {
       query: {
         issue_id: IssueId.make(issue),
         page,
-        ...(finding_id && revision ? { finding_id, revision } : {}),
+        ...(finding_id && revision
+          ? { finding_id: FindingId.make(finding_id), revision: FindingRevisionId.make(revision) }
+          : {}),
       },
       ...queryOptions(issue),
     }),

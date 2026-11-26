@@ -120,7 +120,7 @@ test("worktree orphan listings distinguish missing and unreadable roots before p
   const workspaces = new Workspaces(f.git, sources, f.runtime, f.config.worktree_root);
   const create = vi.spyOn(f.runtime, "createWorktree");
   t.onTestFinished(() => create.mockRestore());
-  const provision = workspaces.provision(project, e, () => Effect.void);
+  const provision = workspaces.provision(project, e, (candidate) => Effect.succeed(candidate));
   await assert.rejects(
     run(
       Effect.gen(function* () {
@@ -147,9 +147,9 @@ test("worktree orphan listings distinguish missing and unreadable roots before p
   );
   assert.equal(create.mock.calls.length, 0);
   await unlink(f.config.worktree_root);
-  await run(provision);
+  const provisioned = await run(provision);
   assert.equal(create.mock.calls.length, 1);
-  assert.ok(e.worktree_directory);
+  assert.ok(provisioned.worktree_directory);
 });
 
 test("clone recovery and OpenSpec creation preserve failed probes and dangling entries", async (t) => {

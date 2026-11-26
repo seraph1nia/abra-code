@@ -1,3 +1,5 @@
+import { DiffScopeSchema } from "../visibility/document-contracts.ts";
+import { FeedbackQuery } from "../workflow/feedback-contracts.ts";
 import {
   ScopedMemorySearch,
   ScopedMemoryRead,
@@ -8,6 +10,10 @@ import {
 } from "../visibility/memory.ts";
 import { PublicationPage, PublicationQuery } from "../presentation/contracts.ts";
 import {
+  WorkQuery,
+  WorkDocumentQuery,
+  WorkWorkerQuery,
+  WorkPageQuery,
   EvidenceSearch,
   EvidenceSearchPage,
   SessionQuery,
@@ -30,7 +36,7 @@ import { BindingReadQuery, BindingReadSchema } from "./bindings.ts";
 import { ReportExportSchema } from "../presentation/report-export-contract.ts";
 import { LeadEvidenceQuery, LeadEvidencePageSchema } from "../visibility/lead-observation.ts";
 import { WorkerHistoryQuery, WorkerHistoryPageSchema } from "./worker-history.ts";
-import { Effect, Schema } from "effect";
+import { Effect, Schema, Struct } from "effect";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
 import { Form } from "@opencode/schema/form";
 import { Permission } from "@opencode/schema/permission";
@@ -51,7 +57,7 @@ import {
   DocumentArtifactSchema,
   ArtifactSummarySchema,
 } from "./wire.ts";
-import { IssueId, RelativePath, SessionId, RequestId, ContentHash } from "../identities.ts";
+import { RelativePath, SessionId } from "../identities.ts";
 import { exactParseOptions as exact } from "../primitives.ts";
 
 const errorFields = { code: Schema.String, message: Schema.String };
@@ -115,7 +121,7 @@ import {
   ReviewResponseQuerySchema,
   ReviewReceiptLookupSchema,
 } from "./reviews.ts";
-import { ComponentId } from "./catalog.ts";
+import { SurfaceId } from "./catalog.ts";
 import { SaveSurfaceSchema, ExportDocumentSchema, ReadExportSchema } from "./report-actions.ts";
 export const HistorySchema = Schema.Struct({
   messages: Schema.Array(TranscriptMessageSchema),
@@ -137,7 +143,7 @@ export const PermissionReplySchema = Schema.Struct({
   binding: identity,
   decision: Permission.Reply,
 }).annotate(exact);
-export const WorkQuery = Schema.Struct({ issue_id: IssueId }).annotate(exact);
+export { WorkQuery } from "../visibility/discovery-contracts.ts";
 const error = [
   WorkspaceBadRequest,
   WorkspaceNotFound,
@@ -145,334 +151,273 @@ const error = [
   WorkspaceError,
   WorkspaceForbidden,
 ] as const;
+function apiGet<
+  const Name extends string,
+  const Path extends `/${string}`,
+  S extends Schema.Top,
+  Q extends Schema.Top = never,
+>(name: Name, path: Path, options: { success: S; query?: Q }) {
+  return HttpApiEndpoint.get(name, path, { ...options, error });
+}
+function apiPost<
+  const Name extends string,
+  const Path extends `/${string}`,
+  S extends Schema.Top,
+  P extends Schema.Top,
+>(name: Name, path: Path, options: { success: S; payload: P }) {
+  return HttpApiEndpoint.post(name, path, { ...options, error });
+}
 const html = Schema.String.pipe(HttpApiSchema.asText({ contentType: "text/html; charset=utf-8" }));
-const documentQuery = Schema.Struct({
-  issue_id: IssueId,
-  request_id: RequestId,
-  hash: ContentHash,
-}).annotate(exact);
 const documentJSON = Schema.String.pipe(
   HttpApiSchema.asText({ contentType: "application/json; charset=utf-8" }),
 );
 
 export const reviewGroup = HttpApiGroup.make("reviews").add(
-  HttpApiEndpoint.get("reviewReceipt", "/api/review/receipt", {
+  apiGet("reviewReceipt", "/api/review/receipt", {
     query: ReviewResponseQuerySchema,
     success: ReviewReceiptLookupSchema,
-    error,
   }),
-  HttpApiEndpoint.get("reviewList", "/api/reviews", {
+  apiGet("reviewList", "/api/reviews", {
     query: ReviewListQuerySchema,
     success: ReviewListSchema,
-    error,
   }),
-  HttpApiEndpoint.get("review", "/api/review", {
+  apiGet("review", "/api/review", {
     query: ReviewSelectionSchema,
     success: ReviewViewSchema,
-    error,
   }),
-  HttpApiEndpoint.get("reviewAsset", "/api/review/asset", {
+  apiGet("reviewAsset", "/api/review/asset", {
     query: ReviewAssetQuerySchema,
     success: ReviewAssetDataSchema,
-    error,
   }),
-  HttpApiEndpoint.post("reviewSubmit", "/api/review/submit", {
+  apiPost("reviewSubmit", "/api/review/submit", {
     payload: ReviewSubmitSchema,
     success: ReviewReceiptSchema,
-    error,
   }),
 );
 
 export const workspaceApi = HttpApi.make("abra-workspace")
   .add(
     HttpApiGroup.make("workspace").add(
-      HttpApiEndpoint.get("agents", "/api/settings/agents", {
+      apiGet("agents", "/api/settings/agents", {
         success: AgentCatalogSchema,
-        error,
       }),
-      HttpApiEndpoint.get("repositories", "/api/settings/repositories", {
+      apiGet("repositories", "/api/settings/repositories", {
         success: ProjectsSchema,
-        error,
       }),
-      HttpApiEndpoint.post("prepareDiagrams", "/api/diagrams/prepare", {
+      apiPost("prepareDiagrams", "/api/diagrams/prepare", {
         payload: PrepareDiagramSelectionSchema,
         success: DiagramPreparationSchema,
-        error,
       }),
-      HttpApiEndpoint.get("publications", "/api/search/publications", {
+      apiGet("publications", "/api/search/publications", {
         query: PublicationQuery.annotate(exact),
         success: PublicationPage,
-        error,
       }),
-      HttpApiEndpoint.get("surface", "/api/surface", {
+      apiGet("surface", "/api/surface", {
         query: Schema.Struct({
           session_id: Schema.optionalKey(SessionId),
-          surface_id: ComponentId,
+          surface_id: SurfaceId,
           revision: Schema.Int.check(Schema.isGreaterThan(0)),
         }),
         success: SurfaceEntrySchema,
-        error,
       }),
       HttpApiEndpoint.get("bootstrap", "/api/bootstrap", {
+        error,
         disableCodecs: true,
         success: WorkspaceSnapshotSchema,
-        error,
       }),
-      HttpApiEndpoint.get("history", "/api/history", {
+      apiGet("history", "/api/history", {
         query: Schema.Struct({ cursor: identity }).annotate(exact),
         success: HistorySchema,
-        error,
       }),
-      HttpApiEndpoint.get("receipt", "/api/admission/receipt", {
+      apiGet("receipt", "/api/admission/receipt", {
         query: ReceiptQuerySchema,
         success: ReceiptLookupSchema,
-        error,
       }),
-      HttpApiEndpoint.post("submit", "/api/abra/submit", {
+      apiPost("submit", "/api/abra/submit", {
         payload: SubmissionSchema.annotate(exact),
         success: ReceiptSchema,
-        error,
       }),
-      HttpApiEndpoint.post("replyForm", "/api/form/reply", {
+      apiPost("replyForm", "/api/form/reply", {
         payload: FormReplySchema,
         success: Schema.Struct({ status: Schema.Literal("answered") }),
-        error,
       }),
-      HttpApiEndpoint.post("replyPermission", "/api/permission/reply", {
+      apiPost("replyPermission", "/api/permission/reply", {
         payload: PermissionReplySchema,
         success: Schema.Struct({ status: Schema.Literal("answered") }),
-        error,
       }),
-      HttpApiEndpoint.get("memorySearch", "/api/memory/search", {
+      apiGet("memorySearch", "/api/memory/search", {
         query: ScopedMemorySearch.annotate(exact),
         success: MemoryPage,
-        error,
       }),
-      HttpApiEndpoint.post("memoryRead", "/api/memory/read", {
+      apiPost("memoryRead", "/api/memory/read", {
         payload: ScopedMemoryRead.annotate(exact),
         success: MemoryBody,
-        error,
       }),
-      HttpApiEndpoint.post("memoryPublish", "/api/memory/publish", {
+      apiPost("memoryPublish", "/api/memory/publish", {
         payload: MemoryPublication.annotate(exact),
         success: MemoryReference,
-        error,
       }),
-      HttpApiEndpoint.get("memoryEnabled", "/api/memory/enabled", {
+      apiGet("memoryEnabled", "/api/memory/enabled", {
         success: Schema.Boolean,
-        error,
       }),
     ),
-    HttpApiGroup.make("work").add(
-      HttpApiEndpoint.get("binding", "/api/work/binding", {
-        // URL search parameters omit empty arrays on an all-work read.
-        query: Schema.Struct({
-          ...BindingReadQuery.fields,
-          issue_ids: BindingReadQuery.fields.issue_ids.pipe(
-            Schema.withDecodingDefaultKey(Effect.succeed([])),
-          ),
-        }).annotate(exact),
-        success: BindingReadSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("evidenceSearch", "/api/work/search/evidence", {
-        query: EvidenceSearch.annotate(exact),
-        success: EvidenceSearchPage,
-        error,
-      }),
-      HttpApiEndpoint.get("sessions", "/api/work/sessions", {
-        query: SessionQuery.annotate(exact),
-        success: SessionPage,
-        error,
-      }),
-      HttpApiEndpoint.get("thoughtWork", "/api/thoughts/work", {
-        query: ThoughtWorkQuery.annotate(exact),
-        success: ThoughtWorkPage,
-        error,
-      }),
-      HttpApiEndpoint.get("thoughtList", "/api/thoughts", {
-        query: ThoughtQuery.annotate(exact),
-        success: ThoughtPage,
-        error,
-      }),
-      HttpApiEndpoint.get("thoughtDetail", "/api/thoughts/detail", {
-        query: ThoughtReference.annotate(exact),
-        success: ThoughtDetail,
-        error,
-      }),
-      HttpApiEndpoint.get("githubInbox", "/api/work/github", {
-        query: InboxQuery,
-        success: InboxPage,
-        error,
-      }),
-      HttpApiEndpoint.get("githubItem", "/api/work/github/item", {
-        query: InboxTarget,
-        success: InboxDetail,
-        error,
-      }),
-      HttpApiEndpoint.get("find", "/api/work/find", {
-        query: WorkDiscoveryQuery,
-        success: WorkPageSchema,
-        error,
-      }),
-      HttpApiEndpoint.post("resolve", "/api/work/resolve", {
-        payload: ResourceSelectionSchema,
-        success: ResourceSelectionSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("evidence", "/api/work/evidence", {
-        query: EvidenceQuerySchema,
-        success: EvidenceDataSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("verification", "/api/work/verification", {
-        query: WorkQuery,
-        success: VerificationViewSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("overview", "/api/work/overview", {
-        query: WorkQuery,
-        success: WorkOverviewSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("detail", "/api/work/detail", {
-        query: WorkQuery,
-        success: WorkDetailSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("document", "/api/work/document", {
-        query: Schema.Struct({ issue_id: IssueId, path: RelativePath }).annotate(exact),
-        success: WorkDocumentSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("diff", "/api/work/diff", {
-        query: Schema.Struct({
-          issue_id: IssueId,
-          file: Schema.optional(RelativePath),
-          scope: Schema.optional(Schema.Literals(["all", "uncommitted"])),
-        }).annotate(exact),
-        success: WorkDiffSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("worker", "/api/work/worker", {
-        query: Schema.Struct({ issue_id: IssueId, session_id: SessionId }).annotate(exact),
-        success: WorkerInspectionSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("worker-history", "/api/work/worker-history", {
-        query: WorkerHistoryQuery.annotate(exact),
-        success: WorkerHistoryPageSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("leads", "/api/work/leads", {
-        query: LeadEvidenceQuery.annotate(exact),
-        success: LeadEvidencePageSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("messages", "/api/work/messages", {
-        query: Schema.Struct({
-          issue_id: IssueId,
-          offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-        }).annotate(exact),
-        success: MessagesPageSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("feedback", "/api/work/feedback", {
-        query: Schema.Struct({
-          issue_id: IssueId,
-          page: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-          finding_id: Schema.optionalKey(Schema.String),
-          revision: Schema.optionalKey(Schema.String),
-        }).annotate(exact),
-        success: FeedbackPageSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("report", "/api/work/report", {
-        query: WorkQuery,
-        success: WorkReportSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("artifacts", "/api/work/artifacts", {
-        query: Schema.Struct({
-          issue_id: IssueId,
-          offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-        }).annotate(exact),
-        success: ArtifactsSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("artifactSummary", "/api/work/artifact-summary", {
-        query: documentQuery,
-        success: ArtifactSummarySchema,
-        error,
-      }),
-      HttpApiEndpoint.get("artifactDocument", "/api/work/artifact-document", {
-        query: documentQuery,
-        success: DocumentArtifactSchema,
-        error,
-      }),
-      HttpApiEndpoint.post("exportDocument", "/api/report/export", {
-        payload: ExportDocumentSchema,
-        success: ReportExportSchema,
-        error,
-      }),
-      HttpApiEndpoint.get("exportPreview", "/api/report/export/preview", {
-        query: ReadExportSchema,
-        success: html,
-        error,
-      }),
-      HttpApiEndpoint.get("exportDownload", "/api/report/export/download", {
-        query: ReadExportSchema,
-        success: HttpApiSchema.WithHeaders(html, { "content-disposition": Schema.String }),
-        error,
-      }),
-      HttpApiEndpoint.post("saveSurface", "/api/report/save-surface", {
-        payload: SaveSurfaceSchema,
-        success: ArtifactSummarySchema,
-        error,
-      }),
-      HttpApiEndpoint.get("downloadDocument", "/api/report/document/download", {
-        query: documentQuery,
-        success: HttpApiSchema.WithHeaders(documentJSON, { "content-disposition": Schema.String }),
-        error,
-      }),
-      HttpApiEndpoint.get("decisions", "/api/work/decisions", {
-        query: WorkQuery,
-        success: DecisionsSchema,
-        error,
-      }),
-    ),
+    HttpApiGroup.make("work")
+      .add(
+        apiGet("binding", "/binding", {
+          // URL search parameters omit empty arrays on an all-work read.
+          query: Schema.Struct({
+            ...BindingReadQuery.fields,
+            issue_ids: BindingReadQuery.fields.issue_ids.pipe(
+              Schema.withDecodingDefaultKey(Effect.succeed([])),
+            ),
+          }).annotate(exact),
+          success: BindingReadSchema,
+        }),
+        apiGet("evidenceSearch", "/search/evidence", {
+          query: EvidenceSearch.annotate(exact),
+          success: EvidenceSearchPage,
+        }),
+        apiGet("sessions", "/sessions", {
+          query: SessionQuery.annotate(exact),
+          success: SessionPage,
+        }),
+        apiGet("githubInbox", "/github", {
+          query: InboxQuery,
+          success: InboxPage,
+        }),
+        apiGet("githubItem", "/github/item", {
+          query: InboxTarget,
+          success: InboxDetail,
+        }),
+        apiGet("find", "/find", {
+          query: WorkDiscoveryQuery,
+          success: WorkPageSchema,
+        }),
+        apiPost("resolve", "/resolve", {
+          payload: ResourceSelectionSchema,
+          success: ResourceSelectionSchema,
+        }),
+        apiGet("evidence", "/evidence", {
+          query: EvidenceQuerySchema,
+          success: EvidenceDataSchema,
+        }),
+        apiGet("verification", "/verification", {
+          query: WorkQuery,
+          success: VerificationViewSchema,
+        }),
+        apiGet("overview", "/overview", {
+          query: WorkQuery,
+          success: WorkOverviewSchema,
+        }),
+        apiGet("detail", "/detail", {
+          query: WorkQuery,
+          success: WorkDetailSchema,
+        }),
+        apiGet("document", "/document", {
+          query: WorkDocumentQuery,
+          success: WorkDocumentSchema,
+        }),
+        apiGet("diff", "/diff", {
+          query: Schema.Struct({
+            ...WorkQuery.fields,
+            file: Schema.optional(RelativePath),
+            scope: Schema.optional(DiffScopeSchema),
+          }).annotate(exact),
+          success: WorkDiffSchema,
+        }),
+        apiGet("worker", "/worker", {
+          query: WorkWorkerQuery,
+          success: WorkerInspectionSchema,
+        }),
+        apiGet("worker-history", "/worker-history", {
+          query: WorkerHistoryQuery.annotate(exact),
+          success: WorkerHistoryPageSchema,
+        }),
+        apiGet("leads", "/leads", {
+          query: LeadEvidenceQuery.annotate(exact),
+          success: LeadEvidencePageSchema,
+        }),
+        apiGet("messages", "/messages", {
+          query: WorkPageQuery,
+          success: MessagesPageSchema,
+        }),
+        apiGet("feedback", "/feedback", {
+          query: FeedbackQuery,
+          success: FeedbackPageSchema,
+        }),
+        apiGet("report", "/report", {
+          query: WorkQuery,
+          success: WorkReportSchema,
+        }),
+        apiGet("artifacts", "/artifacts", {
+          query: WorkPageQuery,
+          success: ArtifactsSchema,
+        }),
+        apiGet("artifactSummary", "/artifact-summary", {
+          query: ExportDocumentSchema,
+          success: ArtifactSummarySchema,
+        }),
+        apiGet("artifactDocument", "/artifact-document", {
+          query: ExportDocumentSchema,
+          success: DocumentArtifactSchema,
+        }),
+        apiGet("decisions", "/decisions", {
+          query: WorkQuery,
+          success: DecisionsSchema,
+        }),
+      )
+      .prefix("/api/work")
+      .add(
+        apiGet("thoughtWork", "/api/thoughts/work", {
+          query: ThoughtWorkQuery.annotate(exact),
+          success: ThoughtWorkPage,
+        }),
+        apiGet("thoughtList", "/api/thoughts", {
+          query: ThoughtQuery.annotate(exact),
+          success: ThoughtPage,
+        }),
+        apiGet("thoughtDetail", "/api/thoughts/detail", {
+          query: ThoughtReference.annotate(exact),
+          success: ThoughtDetail,
+        }),
+        apiPost("exportDocument", "/api/report/export", {
+          payload: ExportDocumentSchema,
+          success: ReportExportSchema,
+        }),
+        apiGet("exportPreview", "/api/report/export/preview", {
+          query: ReadExportSchema,
+          success: html,
+        }),
+        apiGet("exportDownload", "/api/report/export/download", {
+          query: ReadExportSchema,
+          success: HttpApiSchema.WithHeaders(html, { "content-disposition": Schema.String }),
+        }),
+        apiPost("saveSurface", "/api/report/save-surface", {
+          payload: SaveSurfaceSchema,
+          success: ArtifactSummarySchema,
+        }),
+        apiGet("downloadDocument", "/api/report/document/download", {
+          query: ExportDocumentSchema,
+          success: HttpApiSchema.WithHeaders(documentJSON, {
+            "content-disposition": Schema.String,
+          }),
+        }),
+      ),
     reviewGroup,
   )
   .annotate(HttpApi.QueryParseOptions, { onExcessProperty: "error", reportInput: false })
   .annotate(HttpApi.PayloadParseOptions, { onExcessProperty: "error", reportInput: false });
 
 /** Fixed retained-work reads. Types follow the HTTP owner, including decoded numeric queries. */
-export type WorkReadName =
-  | "binding"
-  | "evidenceSearch"
-  | "sessions"
-  | "thoughtWork"
-  | "thoughtList"
-  | "thoughtDetail"
-  | "githubInbox"
-  | "githubItem"
-  | "find"
-  | "leads"
-  | "evidence"
-  | "verification"
-  | "overview"
-  | "detail"
-  | "document"
-  | "diff"
-  | "worker"
-  | "worker-history"
-  | "messages"
-  | "feedback"
-  | "report"
-  | "decisions"
-  | "artifacts"
-  | "artifactDocument"
-  | "artifactSummary";
-type WorkEndpoints = typeof workspaceApi.groups.work.endpoints;
+export const workReadEndpoints = Struct.omit(workspaceApi.groups.work.endpoints, [
+  "exportDocument",
+  "resolve",
+  "exportPreview",
+  "exportDownload",
+  "saveSurface",
+  "downloadDocument",
+]);
+type WorkEndpoints = typeof workReadEndpoints;
+export type WorkReadName = keyof WorkEndpoints;
 export type WorkReadInput<K extends WorkReadName> = WorkEndpoints[K]["~Query"]["Type"];
 export type WorkReadOutput<K extends WorkReadName> = WorkEndpoints[K]["~Success"]["Type"];

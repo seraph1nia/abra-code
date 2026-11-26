@@ -1,11 +1,11 @@
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CommandExit } from "./exit.ts";
 import { AbsolutePath } from "@opencode/client/effect";
 import { Service } from "@opencode/client/effect/service";
 import { Console, Effect } from "effect";
 import { modelRoles, resolveInstallationHome, runtimePaths } from "../config/identity.ts";
 import { loadConfig } from "../config/load.ts";
-import { mkdtemp, rm } from "../filesystem.ts";
+import { scopedTemporaryDirectory } from "../filesystem.ts";
 import { Executable, LockKey } from "@abracode/contracts/identities";
 import { checkMemoryVersionEffect } from "../memory/provider.ts";
 import { makeClient, OPENCODE_VERSION } from "../opencode/client.ts";
@@ -16,30 +16,20 @@ import { visibility } from "../visibility/protocol.ts";
 export const runDoctor = Effect.gen(function* () {
   const config = yield* loadConfig(yield* resolveInstallationHome);
   const runner = new ProcessRunner();
+  let failed = false;
+  const recordFailure = Effect.sync(() => {
+    failed = true;
+  });
   if (config.memory?.enabled) {
     const executable = config.memory.executable;
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const root = yield* Effect.acquireRelease(
-          mkdtemp(join(tmpdir(), "abra-memory-doctor-")),
-          (p) =>
-            rm(p, { recursive: true, force: true }).pipe(
-              Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error)),
-            ),
-        );
+        const root = yield* scopedTemporaryDirectory("abra-memory-doctor-");
         yield* checkMemoryVersionEffect(executable, root);
         yield* Console.log("Basic Memory 1.0.0 available for local stdio.");
       }),
     ).pipe(
-      Effect.catch((error) =>
-        Console.error(error.message).pipe(
-          Effect.tap(() =>
-            Effect.sync(() => {
-              process.exitCode = 1;
-            }),
-          ),
-        ),
-      ),
+      Effect.catch((error) => Console.error(error.message).pipe(Effect.andThen(recordFailure))),
     );
   }
   const browser = join(config.home, "node_modules/.bin/agent-browser");
@@ -67,13 +57,7 @@ export const runDoctor = Effect.gen(function* () {
               model.variants.some((v) => v.id === selected.variant));
           return Console.log(
             `${role === "supervisor" ? "Abra" : role}: ${ready ? "native model/variant available" : "configured model/variant unavailable"}; provider authentication unverified until a request succeeds`,
-          ).pipe(
-            Effect.andThen(
-              Effect.sync(() => {
-                if (!ready) process.exitCode = 1;
-              }),
-            ),
-          );
+          ).pipe(Effect.andThen(ready ? Effect.void : recordFailure));
         }),
       ),
       Effect.catch(() =>
@@ -102,26 +86,14 @@ export const runDoctor = Effect.gen(function* () {
     );
   yield* Effect.scoped(
     Effect.gen(function* () {
-      const root = yield* Effect.acquireRelease(
-        mkdtemp(join(tmpdir(), "abracode-doctor-lock-")),
-        (root) =>
-          rm(root, { recursive: true, force: true }).pipe(
-            Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error)),
-          ),
-      );
+      const root = yield* scopedTemporaryDirectory("abracode-doctor-lock-");
       yield* new FileLocks(root).with(LockKey.make("doctor"), () =>
         Console.log("fs-ext: native kernel locking available"),
       );
     }),
   ).pipe(
     Effect.catch((error) =>
-      Console.error(`fs-ext: ${error.message}`).pipe(
-        Effect.andThen(
-          Effect.sync(() => {
-            process.exitCode = 1;
-          }),
-        ),
-      ),
+      Console.error(`fs-ext: ${error.message}`).pipe(Effect.andThen(recordFailure)),
     ),
   );
   const checks = [
@@ -146,13 +118,10 @@ export const runDoctor = Effect.gen(function* () {
               `${bin}: ${error.message}${bin === browser ? "\nRestore the central install with pnpm install --frozen-lockfile --prod=false; ensure agent-browser is allowed in pnpm-workspace.yaml allowBuilds, then run pnpm rebuild agent-browser. No global CLI fallback is used." : ""}`,
             ).pipe(
               Effect.andThen(
-                Effect.sync(() => {
-                  if (
-                    bin !== config.commands.forge ||
-                    config.repositories.some((r) => (r.delivery ?? "github-pr") === "github-pr")
-                  )
-                    process.exitCode = 1;
-                }),
+                bin !== config.commands.forge ||
+                  config.repositories.some((r) => (r.delivery ?? "github-pr") === "github-pr")
+                  ? recordFailure
+                  : Effect.void,
               ),
             ),
           ),
@@ -162,4 +131,5 @@ export const runDoctor = Effect.gen(function* () {
   yield* Console.log(
     "Browser setup (explicit, as the service user): pnpm browser:install, or set AGENT_BROWSER_EXECUTABLE_PATH to compatible system Chromium. Linux libraries must be installed separately; see docs/operations.md. Chrome is needed only for browser work. No browser was launched or repaired by this check.",
   );
+  if (failed) return yield* new CommandExit({ status: 1 });
 });

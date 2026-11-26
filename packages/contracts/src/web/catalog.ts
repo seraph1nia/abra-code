@@ -1,3 +1,4 @@
+import { createCatalogDocument, catalogObject as object } from "./catalog-document.ts";
 import { contentDefinitions, contentNames } from "./content-components.ts";
 export { contentNames, contentProps, type ContentName } from "./content-components.ts";
 import { chartComponents } from "./charts.ts";
@@ -17,13 +18,12 @@ import {
   Catalog,
   type ComponentApi,
   type DataContext,
-  PayloadValidator,
-  STRICT_VALIDATION,
 } from "@a2ui/web_core/v1_0";
 
 export const catalogId = "https://abracode.local/catalog/work/v1/catalog.json";
 export const basicComponentNames = [...basicCatalog.components.keys()];
-export { ComponentId } from "./surface-destination.ts";
+import { ComponentId } from "./surface-destination.ts";
+export { ComponentId, SurfaceId } from "./surface-destination.ts";
 const issueIds = Schema.Array(IssueId).check(Schema.isMaxLength(100));
 const workFields = {
   issueIds: Schema.optionalKey(issueIds),
@@ -99,7 +99,6 @@ export const componentNames = [...basicComponentNames, ...contentNames, ...workC
 export type WorkProps<N extends WorkComponentName> = (typeof workComponents)[N]["props"]["Type"];
 
 const upstream = basicCatalog.toJson();
-const object = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json));
 const definitions = object(upstream.$defs);
 function customDocument({ name, props, description }: (typeof workComponents)[WorkComponentName]) {
   const document = Schema.toJsonSchemaDocument(
@@ -115,12 +114,9 @@ const sharedDefinitions = {
   ...Object.assign({}, ...customDocuments.map((doc) => doc.definitions)),
 };
 
-export const workCatalogDocument = {
-  ...upstream,
-  protocolVersion: "1.0",
-  title: "AbraCode work views",
-  $id: catalogId,
+export const workCatalogDocument = createCatalogDocument(upstream, {
   catalogId,
+  title: "AbraCode work views",
   instructions:
     "Use root as the root component ID. Basic controls bind to the surface data model. " +
     "Button events prepare a message for the user. openUrl requires a user gesture and an HTTP(S) destination. " +
@@ -155,16 +151,8 @@ export const workCatalogDocument = {
       ]),
     ),
   },
-  functions: object(upstream.functions),
-  $defs: {
-    ...sharedDefinitions,
-    anyFunction: object(upstream.$defs).anyFunction,
-    anyComponent: {
-      discriminator: { propertyName: "component" },
-      oneOf: componentNames.map((name) => ({ $ref: `#/components/${name}` })),
-    },
-  },
-};
+  definitions: sharedDefinitions,
+});
 const workCatalogSchema = Catalog.fromJson(workCatalogDocument);
 
 export function catalogHttpUrl(value: string) {
@@ -192,24 +180,17 @@ const basicFunctions = [...basicCatalog.functions.values()].map((fn) =>
 );
 
 export function implementedCatalog<T extends ComponentApi>(entries: readonly T[]) {
-  const derived = basicCatalog.derive({
-    catalogId,
-    functions: basicFunctions,
-    instructions: workCatalogDocument.instructions,
-  });
   // Retain the host rendering type and the custom JSON-schema definitions referenced by its widgets.
-  return new Catalog(catalogId, derived.protocolVersion, entries, [...derived.functions.values()], {
-    themeSchema: derived.themeSchema,
+  return new Catalog(catalogId, basicCatalog.protocolVersion, entries, basicFunctions, {
+    themeSchema: basicCatalog.themeSchema,
     defs: sharedDefinitions,
-    instructions: derived.instructions,
+    instructions: workCatalogDocument.instructions,
     title: workCatalogDocument.title,
     schemaId: catalogId,
   });
 }
 export const catalog = implementedCatalog([...workCatalogSchema.components.values()]);
 export const validationCatalog = catalog;
-const validator = new PayloadValidator(validationCatalog, STRICT_VALIDATION);
-const componentIdentifier = Schema.String.check(Schema.isPattern(/^[a-zA-Z][a-zA-Z0-9_]{0,100}$/u));
 const componentIdentifierHelp =
   "Component IDs must start with a letter and contain only letters, digits or underscores (up to 101 characters); use projects_heading, not projects-heading.";
 
@@ -217,14 +198,9 @@ const componentIdentifierHelp =
 export const ComponentSchema = Schema.Record(Schema.String, Schema.Json).check(
   Schema.makeFilter(
     (value) => {
-      if (!Schema.is(componentIdentifier)(value.id))
+      if (!Schema.is(ComponentId)(value.id))
         return { path: ["id"], issue: componentIdentifierHelp };
-      try {
-        validator.validateComponent(value);
-        return true;
-      } catch (error) {
-        return error instanceof Error ? error.message.slice(0, 2048) : false;
-      }
+      return true;
     },
     {
       expected: "A component from the AbraCode work catalog",
@@ -232,7 +208,7 @@ export const ComponentSchema = Schema.Record(Schema.String, Schema.Json).check(
         ...validationCatalog.validationSchema,
         $defs: {
           ...object(validationCatalog.validationSchema.$defs),
-          ComponentId: Schema.toJsonSchemaDocument(componentIdentifier).schema,
+          ComponentId: Schema.toJsonSchemaDocument(ComponentId).schema,
         },
         $id: `${catalogId}/component`,
         $ref: "#/$defs/anyComponent",

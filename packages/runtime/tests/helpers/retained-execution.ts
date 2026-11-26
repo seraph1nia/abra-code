@@ -40,8 +40,8 @@ export async function retainedExecution(fields: Partial<Execution> = {}) {
     },
     ...fields,
   };
-  await run(records.create(execution));
-  return { execution, records, locks };
+  const saved = await run(records.create(execution));
+  return { execution: saved, records, locks };
 }
 
 const approvalRecord = Schema.Struct({ approval_receipts: Schema.Array(ApprovalSchema) });

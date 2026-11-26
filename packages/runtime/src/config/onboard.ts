@@ -1,3 +1,6 @@
+import { sha256 } from "../digest.ts";
+import { tryDomainValue } from "../effect.ts";
+import { ConfigurationError } from "../errors.ts";
 import { validateDispatch } from "./dispatch.ts";
 import { diagnosticText } from "../opencode/diagnostics.ts";
 import { declarationDigest, saveDeclaration, saveDeclarationOutcome } from "./declarations.ts";
@@ -11,9 +14,7 @@ import {
   RepositoryId,
 } from "@abracode/contracts/identities";
 
-import { createHash } from "node:crypto";
 import { type Locks } from "../storage/lock.ts";
-import { domainEffect } from "../effect.ts";
 import { Effect } from "effect";
 import { retainedEntry, readFile, readdirIfPresent } from "../filesystem.ts";
 import { join } from "node:path";
@@ -46,9 +47,7 @@ export class Onboarding {
         catch: CrewError.from,
       });
       return yield* this.locks.with(
-        LockKey.make(
-          `registration-${createHash("sha256").update(validId).digest("hex").slice(0, 40)}`,
-        ),
+        LockKey.make(`registration-${sha256(validId).slice(0, 40)}`),
         action,
         { waitSeconds: 0 },
       );
@@ -56,19 +55,21 @@ export class Onboarding {
   }
   inspect = (input: OnboardInput) => this.owned(input.id, () => this.inspectOwned(input));
   private inspectOwned = Effect.fn("Onboarding.inspect")(
-    function* (this: Onboarding, input: OnboardInput) {
+    { self: this },
+    function* (input: OnboardInput) {
       input = yield* decode(ProjectInputSchema, input, "Repository registration");
-      validateDispatch(this.config ?? {}, input.dispatch);
-      identifier(input.id);
+      yield* tryDomainValue(validateDispatch, this.config ?? {}, input.dispatch);
+      yield* tryDomainValue(identifier, input.id);
       const previous = yield* this.records.project(input.id);
       if (previous && input.remote) {
         if (
-          !(
-            remoteIdentity(previous.remote, previous.path) ===
-            remoteIdentity(input.remote, input.path ?? previous.path)
-          )
+          (yield* tryDomainValue(remoteIdentity, previous.remote, previous.path)) !==
+          (yield* tryDomainValue(remoteIdentity, input.remote, input.path ?? previous.path))
         )
-          return yield* new CrewError("PROJECT_REBIND", "Stable repository IDs cannot be rebound");
+          return yield* new ConfigurationError(
+            "PROJECT_REBIND",
+            "Stable repository IDs cannot be rebound",
+          );
       }
       const managed = input.managed ?? previous?.managed ?? !input.path;
       if (managed && previous && !(yield* retainedEntry(previous.path, "directory"))) {
@@ -76,26 +77,26 @@ export class Onboarding {
           (e) => e.repository_id === input.id && e.current_phase !== "completed",
         );
         const setup = yield* this.records.setup(input.id);
-        if (!(!active && (!setup || setup.current_phase === "completed")))
-          return yield* new CrewError(
+        if (active || (setup && setup.current_phase !== "completed"))
+          return yield* new ConfigurationError(
             "CACHE_MISSING",
             "Managed clone is missing while work owns resources; preserve worktrees and repair the cache",
           );
       }
       const root = this.repositoryRoot ?? input.path ?? previous?.path;
-      if (!root) return yield* new CrewError("CONFIG", "Repository root is required");
+      if (!root) return yield* new ConfigurationError("CONFIG", "Repository root is required");
       const sources = new RepositorySources(this.git, root);
       const identity = yield* Effect.gen({ self: this }, function* () {
         if (managed) {
           if (!this.repositoryRoot)
-            return yield* new CrewError("CONFIG", "Managed repository root is required");
+            return yield* new ConfigurationError("CONFIG", "Managed repository root is required");
           const remote = input.remote ?? previous?.remote;
           if (!remote)
-            return yield* new CrewError("REMOTE", "Managed repository remote is required");
+            return yield* new ConfigurationError("REMOTE", "Managed repository remote is required");
           return yield* sources.clone(input.id, remote);
         }
         const path = input.path ?? previous?.path;
-        if (!path) return yield* new CrewError("CONFIG", "Repository path is required");
+        if (!path) return yield* new ConfigurationError("CONFIG", "Repository path is required");
         return yield* this.git.identity(path);
       });
       const branchPolicy =
@@ -121,7 +122,7 @@ export class Onboarding {
                     decode(BranchName, current, "Current Git branch").pipe(
                       Effect.mapError(
                         () =>
-                          new CrewError(
+                          new ConfigurationError(
                             "BRANCH",
                             "Repository is in detached HEAD state; check out a branch or specify target_branch",
                           ),
@@ -136,12 +137,13 @@ export class Onboarding {
       const snapshot = managed ? yield* sources.inspect(identity.path, base.commit) : undefined;
       if (input.remote) {
         if (
-          !(
-            remoteIdentity(input.remote, identity.path) ===
-            remoteIdentity(identity.remote, identity.path)
-          )
+          (yield* tryDomainValue(remoteIdentity, input.remote, identity.path)) !==
+          (yield* tryDomainValue(remoteIdentity, identity.remote, identity.path))
         )
-          return yield* new CrewError("REMOTE_MISMATCH", "Configured remote does not match origin");
+          return yield* new ConfigurationError(
+            "REMOTE_MISMATCH",
+            "Configured remote does not match origin",
+          );
       }
       const openspec = snapshot
         ? snapshot.openspec_config !== null
@@ -197,9 +199,9 @@ export class Onboarding {
         allow_no_checks: input.allow_no_checks ?? previous?.allow_no_checks ?? false,
       };
       if (!(Number.isInteger(p.max_workers) && p.max_workers > 0))
-        return yield* new CrewError("CAPACITY", "max_workers must be positive");
+        return yield* new ConfigurationError("CAPACITY", "max_workers must be positive");
       if (!["github-pr", "branch"].includes(p.delivery))
-        return yield* new CrewError("DELIVERY_POLICY", "Unknown delivery policy");
+        return yield* new ConfigurationError("DELIVERY_POLICY", "Unknown delivery policy");
       p.verification = yield* decode(
         VerificationSchema,
         p.verification,
@@ -235,75 +237,74 @@ export class Onboarding {
           preserve_existing_instructions: true,
         },
       };
-    }.bind(this),
-    domainEffect,
+    },
   );
   register = (input: OnboardInput, initialize: boolean) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const existing = yield* this.records.project(input.id);
-        if (
-          existing &&
-          input.remote &&
-          remoteIdentity(input.remote, input.path ?? existing.path) !==
-            remoteIdentity(existing.remote, existing.path)
-        )
-          return yield* new CrewError("PROJECT_REBIND", "Stable repository IDs cannot be rebound");
-        if (existing && input.path && input.path !== existing.path)
-          return yield* new CrewError(
-            "PROJECT_REBIND",
-            "Stable repository IDs cannot be rebound to another checkout",
-          );
-        const declaration =
-          this.config && this.locks
-            ? yield* saveDeclaration(this.config, input, this.locks)
-            : input;
-        const digest = declarationDigest(declaration);
-        if (this.config)
-          yield* saveDeclarationOutcome(this.records, {
-            id: input.id,
-            digest,
-            status: "declared/pending",
-          });
-        return yield* this.owned(input.id, () => this.registerOwned(declaration, initialize)).pipe(
-          Effect.tap((report) =>
-            this.config
-              ? saveDeclarationOutcome(this.records, {
-                  id: input.id,
-                  digest,
-                  status:
-                    report.project.openspec && report.project.verification.length
-                      ? "registered/ready"
-                      : "registered/setup-blocked",
-                })
-              : Effect.void,
-          ),
-          Effect.catch((error) =>
-            this.config
-              ? saveDeclarationOutcome(this.records, {
-                  id: input.id,
-                  digest,
-                  status: "apply-failed",
-                  error: error.message.slice(0, 1024),
-                }).pipe(
-                  Effect.andThen(
-                    Effect.fail(
-                      new CrewError(
-                        "CONFIG_SAVED_PENDING",
-                        `Declaration saved; registration is pending: ${error.code}: ${diagnosticText(error.message, 512)}. Inspect config status and retry.`,
-                      ),
+    Effect.gen({ self: this }, function* () {
+      const existing = yield* this.records.project(input.id);
+      if (
+        existing &&
+        input.remote &&
+        (yield* tryDomainValue(remoteIdentity, input.remote, input.path ?? existing.path)) !==
+          (yield* tryDomainValue(remoteIdentity, existing.remote, existing.path))
+      )
+        return yield* new ConfigurationError(
+          "PROJECT_REBIND",
+          "Stable repository IDs cannot be rebound",
+        );
+      if (existing && input.path && input.path !== existing.path)
+        return yield* new ConfigurationError(
+          "PROJECT_REBIND",
+          "Stable repository IDs cannot be rebound to another checkout",
+        );
+      const declaration =
+        this.config && this.locks ? yield* saveDeclaration(this.config, input, this.locks) : input;
+      const digest = declarationDigest(declaration);
+      if (this.config)
+        yield* saveDeclarationOutcome(this.records, {
+          id: input.id,
+          digest,
+          status: "declared/pending",
+        });
+      return yield* this.owned(input.id, () => this.registerOwned(declaration, initialize)).pipe(
+        Effect.tap((report) =>
+          this.config
+            ? saveDeclarationOutcome(this.records, {
+                id: input.id,
+                digest,
+                status:
+                  report.project.openspec && report.project.verification.length
+                    ? "registered/ready"
+                    : "registered/setup-blocked",
+              })
+            : Effect.void,
+        ),
+        Effect.catch((error) =>
+          this.config
+            ? saveDeclarationOutcome(this.records, {
+                id: input.id,
+                digest,
+                status: "apply-failed",
+                error: error.message.slice(0, 1024),
+              }).pipe(
+                Effect.andThen(
+                  Effect.fail(
+                    new ConfigurationError(
+                      "CONFIG_SAVED_PENDING",
+                      `Declaration saved; registration is pending: ${error.code}: ${diagnosticText(error.message, 512)}. Inspect config status and retry.`,
                     ),
                   ),
-                )
-              : Effect.fail(error),
-          ),
-        );
-      }),
-    );
+                ),
+              )
+            : Effect.fail(error),
+        ),
+      );
+    });
   private registerOwned = Effect.fn("Onboarding.register")(
-    function* (this: Onboarding, input: OnboardInput, initialize: boolean) {
-      if (!((yield* this.records.diagnostics).length === 0))
-        return yield* new CrewError(
+    { self: this },
+    function* (input: OnboardInput, initialize: boolean) {
+      if ((yield* this.records.diagnostics).length !== 0)
+        return yield* new ConfigurationError(
           "RECORD_UNAVAILABLE",
           "Unavailable durable records require inspection before registry mutation",
         );
@@ -317,40 +318,39 @@ export class Onboarding {
         report = yield* this.inspectOwned(input);
       }
       return yield* this.records.coordinateCommit(() =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            if (!((yield* this.records.diagnostics).length === 0))
-              return yield* new CrewError(
-                "RECORD_UNAVAILABLE",
-                "Unavailable records require inspection before registry mutation",
-              );
-            const existing = yield* this.records.projects;
-            if (
+        Effect.gen({ self: this }, function* () {
+          if ((yield* this.records.diagnostics).length !== 0)
+            return yield* new ConfigurationError(
+              "RECORD_UNAVAILABLE",
+              "Unavailable records require inspection before registry mutation",
+            );
+          const existing = yield* this.records.projects;
+          if (
+            yield* tryDomainValue(() =>
               existing.some(
                 (p) =>
                   p.id !== input.id &&
                   (p.git_common_dir === report.project.git_common_dir ||
                     remoteIdentity(p.remote, p.path) ===
                       remoteIdentity(report.project.remote, report.project.path)),
-              )
+              ),
             )
-              return yield* new CrewError(
-                "DUPLICATE_PROJECT",
-                "This Git repository is already registered",
-              );
-            const previous = existing.find((p) => p.id === input.id);
-            if (!(!previous || previous.path === report.project.path))
-              return yield* new CrewError(
-                "PROJECT_REBIND",
-                "Stable repository IDs cannot be rebound",
-              );
-            if (this.config) report.project.declaration_digest = declarationDigest(input);
-            yield* this.records.saveProject(report.project);
-            return report;
-          }),
-        ),
+          )
+            return yield* new ConfigurationError(
+              "DUPLICATE_PROJECT",
+              "This Git repository is already registered",
+            );
+          const previous = existing.find((p) => p.id === input.id);
+          if (previous && previous.path !== report.project.path)
+            return yield* new ConfigurationError(
+              "PROJECT_REBIND",
+              "Stable repository IDs cannot be rebound",
+            );
+          if (this.config) report.project.declaration_digest = declarationDigest(input);
+          yield* this.records.saveProject(report.project);
+          return report;
+        }),
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
 }

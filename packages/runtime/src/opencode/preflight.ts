@@ -1,3 +1,4 @@
+import { tryDomainValue } from "../effect.ts";
 import { Effect } from "effect";
 import { Agent, type Model, type OpenCodeClient } from "@opencode/client/effect";
 import type { Context } from "@opencode/plugin/effect/plugin";
@@ -9,11 +10,10 @@ import {
   type Role,
   type WorkerModel,
 } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import { workerProfile } from "../config/snapshot.ts";
 import type { Store } from "../storage/store.ts";
 import { compatibleContext, readWorkerContext } from "../workflow/worker-context.ts";
-import { legacyReviewProfile } from "./role-policy.ts";
+import { hasReviewDelegate } from "./role-policy.ts";
 import {
   awaitWorkerPlugin,
   resolveCapturedSkills,
@@ -110,126 +110,121 @@ export const preflightWorker = (
   role: Role,
   promptID?: MessageId,
 ): Effect.Effect<WorkerEnvironment | void, CrewError> =>
-  domainEffect(
-    Effect.gen(function* () {
-      if (!e.worktree_directory)
-        return yield* new CrewError("WORKTREE", "Worker inventory requires the owned worktree");
-      const sessionID = e[`${role}_session_id`];
-      if (promptID && sessionID) {
-        const [inbox, context] = yield* Effect.all(
-          [
-            (yield* client()).session.inbox.list({ sessionID }),
-            nativeSession(ctx).context({ sessionID }),
-          ],
-          { concurrency: "unbounded" },
-        );
-        if (
-          inbox.some((item) => item.id === promptID) ||
-          context.some((message) => message.id === promptID)
-        )
-          return;
-      }
-      const captured =
-        promptID && e.worker_context_id
-          ? yield* readWorkerContext(store, e.worker_context_id)
-          : undefined;
-      if (captured) {
-        if (!sessionID || !promptID)
-          return yield* new CrewError(
-            "CONTEXT_ASSIGNMENT",
-            "Captured context lacks a retained native admission identity",
-          );
-        compatibleContext(captured, {
-          execution_id: e.execution_id,
-          generation: e.control_generation,
-          role,
-          session_id: sessionID,
-          prompt_id: promptID,
-        });
-      }
-      let profile = captured
-        ? {
-            agent: captured.environment.agent,
-            model: captured.environment.model,
-          }
-        : workerProfile(e, role, config);
-      if (!captured && !e.configuration_snapshot && sessionID) {
-        // Missing historical snapshots cannot adopt current worker configuration.
-        const historical = yield* nativeSession(ctx).get({ sessionID });
-        profile = {
-          agent: historical.agent ?? Agent.ID.make("build"),
-          model: e.worker_model ?? historical.model,
-        };
-      }
-      const requirements =
-        captured?.schema_version === 2
-          ? captured.prepared.profile.requirements
-          : e.configuration_snapshot?.definitions?.[role]?.requirements;
-      const effectiveProfile = {
-        ...profile,
-        required_skills: [
-          ...(requirements?.required_skills ?? []),
-          ...(profile?.required_skills ?? []),
-        ],
-        required_tools: [
-          ...(requirements?.required_tools ?? []),
-          ...(profile?.required_tools ?? []),
-        ],
-      };
-      const location = { directory: e.worktree_directory };
-      // The plugin domains are bound to their registration location. A controller in
-      // another worktree must observe the selected worker's actual registry.
-      const inventory =
-        ctx.location && ctx.location.directory !== location.directory ? yield* client() : ctx;
-      yield* awaitWorkerPlugin(
-        nativeDomain(inventory.plugin)
-          .list({ location })
-          .pipe(
-            Effect.map((inventory) => inventory.data),
-            Effect.mapError(
-              () =>
-                new CrewError(
-                  "INVENTORY_UNAVAILABLE",
-                  "Worker-location plugin inventory unavailable; retry after native activation",
-                ),
-            ),
-          ),
-      );
-      const [agents, models, skills] = yield* Effect.all(
+  Effect.gen(function* () {
+    if (!e.worktree_directory)
+      return yield* new CrewError("WORKTREE", "Worker inventory requires the owned worktree");
+    const sessionID = e[`${role}_session_id`];
+    if (promptID && sessionID) {
+      const [inbox, context] = yield* Effect.all(
         [
-          nativeDomain(inventory.agent).list({ location }),
-          nativeDomain(inventory.model).list({ location }),
-          nativeDomain(inventory.skill).list({ location }),
+          nativeDomain((yield* client()).session.inbox).list({ sessionID }),
+          nativeSession(ctx).context({ sessionID }),
         ],
         { concurrency: "unbounded" },
-      ).pipe(
-        Effect.mapError(
-          () =>
-            new CrewError(
-              "INVENTORY_UNAVAILABLE",
-              "Worker-location inventory unavailable; preserve the admission intent and retry after repair",
-            ),
-        ),
       );
-      const selected = yield* checkWorkerInventory(
-        profile,
-        e.worker_model,
+      if (
+        inbox.some((item) => item.id === promptID) ||
+        context.some((message) => message.id === promptID)
+      )
+        return;
+    }
+    const captured =
+      promptID && e.worker_context_id
+        ? yield* readWorkerContext(store, e.worker_context_id)
+        : undefined;
+    if (captured) {
+      if (!sessionID || !promptID)
+        return yield* new CrewError(
+          "CONTEXT_ASSIGNMENT",
+          "Captured context lacks a retained native admission identity",
+        );
+      yield* tryDomainValue(compatibleContext, captured, {
+        execution_id: e.execution_id,
+        generation: e.control_generation,
         role,
-        agents.data,
-        models.data,
-      );
-      return {
-        ...selected,
-        ...(yield* captured
-          ? resolveCapturedSkills(role, captured.environment, skills.data, e.worktree_directory)
-          : resolveSkills(
-              role,
-              e.workflow_policy,
-              effectiveProfile,
-              skills.data,
-              e.worktree_directory,
-              !legacyReviewProfile(e.configuration_snapshot?.definitions?.[role]),
-            )),
+        session_id: sessionID,
+        prompt_id: promptID,
+      });
+    }
+    let profile = captured
+      ? {
+          agent: captured.environment.agent,
+          model: captured.environment.model,
+        }
+      : workerProfile(e, role, config);
+    if (!captured && !e.configuration_snapshot && sessionID) {
+      // Missing historical snapshots cannot adopt current worker configuration.
+      const historical = yield* nativeSession(ctx).get({ sessionID });
+      profile = {
+        agent: historical.agent ?? Agent.ID.make("build"),
+        model: e.worker_model ?? historical.model,
       };
-    }),
-  );
+    }
+    const requirements =
+      captured?.schema_version === 2
+        ? captured.prepared.profile.requirements
+        : e.configuration_snapshot?.definitions?.[role]?.requirements;
+    const effectiveProfile = {
+      ...profile,
+      required_skills: [
+        ...(requirements?.required_skills ?? []),
+        ...(profile?.required_skills ?? []),
+      ],
+      required_tools: [...(requirements?.required_tools ?? []), ...(profile?.required_tools ?? [])],
+    };
+    const location = { directory: e.worktree_directory };
+    // The plugin domains are bound to their registration location. A controller in
+    // another worktree must observe the selected worker's actual registry.
+    const inventory =
+      ctx.location && ctx.location.directory !== location.directory ? yield* client() : ctx;
+    yield* awaitWorkerPlugin(
+      nativeDomain(inventory.plugin)
+        .list({ location })
+        .pipe(
+          Effect.map((inventory) => inventory.data),
+          Effect.mapError(
+            () =>
+              new CrewError(
+                "INVENTORY_UNAVAILABLE",
+                "Worker-location plugin inventory unavailable; retry after native activation",
+              ),
+          ),
+        ),
+    );
+    const [agents, models, skills] = yield* Effect.all(
+      [
+        nativeDomain(inventory.agent).list({ location }),
+        nativeDomain(inventory.model).list({ location }),
+        nativeDomain(inventory.skill).list({ location }),
+      ],
+      { concurrency: "unbounded" },
+    ).pipe(
+      Effect.mapError(
+        () =>
+          new CrewError(
+            "INVENTORY_UNAVAILABLE",
+            "Worker-location inventory unavailable; preserve the admission intent and retry after repair",
+          ),
+      ),
+    );
+    const selected = yield* checkWorkerInventory(
+      profile,
+      e.worker_model,
+      role,
+      agents.data,
+      models.data,
+    );
+    return {
+      ...selected,
+      ...(yield* captured
+        ? resolveCapturedSkills(role, captured.environment, skills.data, e.worktree_directory)
+        : resolveSkills(
+            role,
+            e.workflow_policy,
+            effectiveProfile,
+            skills.data,
+            e.worktree_directory,
+            hasReviewDelegate(e.configuration_snapshot?.definitions?.[role]),
+          )),
+    };
+  });

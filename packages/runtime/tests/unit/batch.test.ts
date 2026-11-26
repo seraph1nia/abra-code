@@ -160,16 +160,20 @@ test("a lost batch response returns the original mapping after controller restar
   const sender = Id.SessionId.make("ses_supervisor");
   await assert.rejects(run(f.controller.createWorkBatch(batch, sender)), { code: "RESPONSE_LOST" });
   const recorded = await run(f.work.list);
-  const restarted = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const restarted = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   t.onTestFinished(() => run(restarted.close()));
   const recovered = await run(restarted.createWorkBatch(batch, sender));

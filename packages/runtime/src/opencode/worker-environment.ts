@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256 } from "../digest.ts";
 import { Effect, Schema } from "effect";
 import { Agent } from "@opencode/schema/agent";
 import { Skill } from "@opencode/schema/skill";
@@ -8,7 +8,7 @@ import { CrewError, type Role, type Policy } from "../domain.ts";
 import { type CapabilityRequirements } from "@abracode/agents/capabilities";
 import { capabilityRequirements } from "./role-policy.ts";
 
-export const digestText = (text: string) => createHash("sha256").update(text).digest("hex");
+export const digestText = (text: string) => sha256(text);
 export const ToolGroupSchema = Schema.Struct({
   any_of: Schema.Array(ToolName),
   source: Schema.String,

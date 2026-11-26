@@ -1,6 +1,6 @@
 import { useWorkspaceCall } from "../data.ts";
 import { useEffect, useState, type ComponentProps } from "react";
-import { useAtomSet } from "@effect/atom-react";
+import { useRetainedSubmission } from "../use-retained-submission.ts";
 import { Cause, Exit, Option } from "effect";
 import {
   reviewAnswerErrors,
@@ -90,7 +90,7 @@ function ReviewPanel({
 }) {
   const { record } = view;
   const { state, update, change, current } = useReviewDraft(record);
-  const send = useAtomSet(submitReview(record.hash), { mode: "promiseExit" });
+  const { submit: send } = useRetainedSubmission(submitReview);
   const receiptLookup = useWorkspaceCall(readReviewReceipt);
   const pending = state.pending;
   const pendingId = pending?.request_id;
@@ -147,11 +147,11 @@ function ReviewPanel({
       }
       input = decoded.success;
     }
-    if (!update({ pending: input, working: true, error: undefined }, true)) {
-      update({ working: false });
-      return;
-    }
-    const result = await send(input);
+    const result = await send(input, () =>
+      update({ pending: input, working: true, error: undefined }, true),
+    );
+    if (!result) return;
+    if (current().receipt?.status === "admitted") return;
     if (Exit.isSuccess(result) && !matchesReceipt(input, result.value)) {
       update({
         working: false,
@@ -213,6 +213,7 @@ function ReviewPanel({
       >
         <ReviewControls
           review={record.review}
+          hash={record.hash}
           answers={state.answers}
           errors={state.errors ?? {}}
           disabled={!!(view.unavailable || pending || received || state.working)}

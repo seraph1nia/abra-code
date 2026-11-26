@@ -1,3 +1,5 @@
+import { PaginationBar } from "../pagination-bar.tsx";
+import { ArrowUpRight } from "@abracode/presentation/icons";
 import type { EvidenceReferenceSchema } from "@abracode/contracts/workflow/report-contracts";
 import { useState, type ReactNode } from "react";
 import { useSearch } from "@tanstack/react-router";
@@ -183,24 +185,13 @@ export function CommunicationPanel({ issue, inspect }: { issue: IssueId; inspect
             ))}
           </div>
           {!page.entries.length && <p>No retained communication on this page.</p>}
-          <nav aria-label="Communication pages" className="button-row">
-            <Button
-              variant="outline"
-              disabled={offset === 0}
-              onClick={() => setOffset(Math.max(0, offset - page.limit))}
-            >
-              Previous communication
-            </Button>
-            <Button
-              variant="outline"
-              disabled={page.next_offset === undefined}
-              onClick={() => {
-                if (page.next_offset !== undefined) setOffset(page.next_offset);
-              }}
-            >
-              Next communication
-            </Button>
-          </nav>
+          <PaginationBar
+            label="Communication pages"
+            previousLabel="Previous communication"
+            nextLabel="Next communication"
+            previous={offset ? () => setOffset(Math.max(0, offset - page.limit)) : undefined}
+            next={page.next_offset === undefined ? undefined : () => setOffset(page.next_offset!)}
+          />
         </>
       )}
     </RequestState>
@@ -321,4 +312,3 @@ function EvidenceReferences({
     </ul>
   ) : null;
 }
-import { ArrowUpRight } from "@abracode/presentation/icons";

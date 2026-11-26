@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 
 import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { Effect, Schema } from "effect";
+import { ConfigProvider, Effect, Schema } from "effect";
 import { encode } from "@toon-format/toon";
 import { fixture, applying } from "../fixtures.ts";
 import { run } from "../effects.ts";
@@ -14,7 +14,7 @@ import {
   SkippedSteps,
   externalOwns,
 } from "@abracode/contracts/validation/contracts";
-import { machineDocument, intentDigest } from "../../src/validation/no-mistakes.ts";
+import { NoMistakes, machineDocument, intentDigest } from "../../src/validation/no-mistakes.ts";
 import { ExecutionRecordSchema } from "../../src/storage/contracts.ts";
 import { consumesWorker } from "../../src/workflow/capacity.ts";
 import { CrewError } from "../../src/domain.ts";
@@ -148,19 +148,49 @@ test("external launch proof, skipped stages and custody return precede fresh nat
             throw new CrewError("FIXTURE", `Unexpected external mutation ${args[1]}`);
           }),
   };
-  f.controller = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  f.controller = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   t.onTestFinished(() => run(f.controller.close()));
   let e = await run(applying(f));
+  const engine = new NoMistakes(f.git.runner);
+  const configuredByHost = {
+    ...e,
+    effective_policy: { ...e.effective_policy, validation: { ...p.validation, home: undefined } },
+  };
+  const hostHome = Id.AbsolutePath.make(`${f.root}/host-home`);
+  const provider = ConfigProvider.fromUnknown({ NM_HOME: hostHome });
+  assert.equal(
+    (
+      await run(
+        engine
+          .settings(configuredByHost)
+          .pipe(Effect.provideService(ConfigProvider.ConfigProvider, provider)),
+      )
+    ).home,
+    hostHome,
+  );
+  assert.equal(
+    (
+      await run(
+        engine.settings(e).pipe(Effect.provideService(ConfigProvider.ConfigProvider, provider)),
+      )
+    ).home,
+    f.root,
+  );
+
   f.spec.done = true;
   f.runtime.success(e.apply_session_id!);
   const writes = vi.spyOn(f.records.store, "set");
@@ -367,16 +397,20 @@ test("lost launch/response, pause and explicit abort retain one engine run and e
             return yield* new CrewError("FIXTURE", `Unexpected engine call ${args.join(" ")}`);
           }),
   };
-  f.controller = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  f.controller = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   t.onTestFinished(() => run(f.controller.close()));
   const clock = await run(TestClock.make());
@@ -391,16 +425,20 @@ test("lost launch/response, pause and explicit abort retain one engine run and e
   assert.equal(e.external_validation!.launch, undefined);
   const savedNonce = e.external_validation!.nonce;
   await run(f.controller.close());
-  f.controller = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  f.controller = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   await call(clock.setTime(31000));
   e = (await call(f.controller.reconcile(e.issue_id)))[0];
@@ -433,16 +471,20 @@ test("lost launch/response, pause and explicit abort retain one engine run and e
   e = await call(f.controller.validation(input, Id.SessionId.make("ses_supervisor")));
   assert.equal(e.external_validation!.responses[0].status, "uncertain");
   await run(f.controller.close());
-  f.controller = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  f.controller = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   f.runtime.forms.clear();
   await call(clock.setTime(62000));
@@ -520,16 +562,20 @@ test("engine selection never initializes implicitly; explicit setup retains its 
               : encode({ error: "Repository requires explicit initialization" });
           }),
   };
-  f.controller = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  f.controller = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   t.onTestFinished(() => run(f.controller.close()));
   let e = await run(applying(f));
@@ -585,16 +631,20 @@ test("external preflight failure releases its worker reservation before any engi
       return Effect.fail(new CrewError("COMMAND_FAILED", "Engine version read unavailable"));
     },
   };
-  f.controller = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  f.controller = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   t.onTestFinished(() => run(f.controller.close()));
   let e = await run(applying(f));

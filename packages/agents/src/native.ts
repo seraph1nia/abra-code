@@ -167,14 +167,7 @@ export const OpenCodeAgentsLive = (
       // Authorization runs inside each custom tool's execute handler so native and direct calls
       // share one single authorization path without double execution.
       yield* ctx.tool.transform((editor) => {
-        for (const tool of tools) {
-          if (editor.get(tool.id))
-            throw new AgentRegistrationError({
-              code: "TOOL_COLLISION",
-              message: `Native tool ${tool.id} already exists`,
-            });
-          tool.register(editor, options.authorize);
-        }
+        for (const tool of tools) tool.register(editor, options.authorize);
       });
       return { register };
     }),

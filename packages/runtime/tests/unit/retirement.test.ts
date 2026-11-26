@@ -3,7 +3,7 @@ import { ToolProgress, type ProgressUpdate } from "../../src/opencode/progress.t
 import { TestClock } from "effect/testing";
 
 import { inspectCleanup } from "../../src/git/cleanup.ts";
-import { deliveryAction } from "../../src/workflow/delivery-outcome.ts";
+import { deliveryAction } from "../../src/visibility/delivery-outcome.ts";
 import { Visibility } from "../../src/visibility/read-model.ts";
 import * as Id from "@abracode/contracts/identities";
 import { test } from "vite-plus/test";
@@ -14,7 +14,7 @@ import { Schema, Effect, Clock } from "effect";
 import { GeneratedPathsSchema } from "@abracode/contracts/config/paths";
 import { fixture, delivered } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import { CrewError } from "../../src/domain.ts";
+import { CrewError, type Execution } from "../../src/domain.ts";
 
 test("generated paths accept exact directories and reject roots, control paths, patterns and overlap", () => {
   const decode = Schema.decodeSync(GeneratedPathsSchema);
@@ -39,7 +39,10 @@ test("generated paths accept exact directories and reject roots, control paths, 
   ])
     assert.throws(() => decode(paths));
 });
-async function prepare(f: Awaited<ReturnType<typeof runFixture>>, paths: string[]) {
+async function prepare(
+  f: Awaited<ReturnType<typeof runFixture>>,
+  paths: string[],
+): Promise<Execution> {
   const p = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   p.generated_paths = paths.map((value) => Id.RelativePath.make(value));
   await run(f.records.saveProject(p));
@@ -48,8 +51,7 @@ async function prepare(f: Awaited<ReturnType<typeof runFixture>>, paths: string[
   const e = await run(delivered(f));
   f.delivery.merged = true;
   f.delivery.pr!.state = "MERGED";
-  await run(f.records.save(e));
-  return e;
+  return run(f.records.save(e));
 }
 const runFixture = () => run(fixture);
 
@@ -71,7 +73,7 @@ for (const kind of ["unapproved", "tracked", "escaping", "ancestor-link", "neste
   test(`cleanup preserves ${kind} paths`, async (t) => {
     const f = await runFixture();
     t.onTestFinished(() => run(f.close()));
-    const e = await prepare(f, kind === "unapproved" ? [] : ["node_modules"]);
+    let e = await prepare(f, kind === "unapproved" ? [] : ["node_modules"]);
     const dir = join(e.worktree_directory!, "node_modules");
     if (kind === "ancestor-link") await symlink(f.root, dir);
     else {
@@ -82,8 +84,8 @@ for (const kind of ["unapproved", "tracked", "escaping", "ancestor-link", "neste
       if (kind === "tracked") {
         await run(f.git.run(e.worktree_directory!, ["add", "-f", "node_modules/note"]));
         await run(f.git.run(e.worktree_directory!, ["commit", "-m", "Tracked descendant"]));
-        e.delivered_commit = await run(f.git.head(e.worktree_directory!));
-        f.delivery.pr!.headRefOid = e.delivered_commit;
+        e = { ...e, delivered_commit: await run(f.git.head(e.worktree_directory!)) };
+        f.delivery.pr!.headRefOid = e.delivered_commit!;
         await run(f.records.save(e));
       }
     }
@@ -156,10 +158,10 @@ test("a replacement worktree at the original path is retained", async (t) => {
 test("cleanup waits back off, deduplicate attention, survive restart and finish without another merge", async (t) => {
   const f = await runFixture();
   t.onTestFinished(() => run(f.close()));
-  const e = await prepare(f, []);
-  e.supervisor_session_id = Id.SessionId.make("ses_supervisor");
-  f.runtime.sessions.set(e.supervisor_session_id, {
-    id: e.supervisor_session_id,
+  let e = await prepare(f, []);
+  e = { ...e, supervisor_session_id: Id.SessionId.make("ses_supervisor") };
+  f.runtime.sessions.set(e.supervisor_session_id!, {
+    id: e.supervisor_session_id!,
     directory: f.config.home,
     busy: false,
   });
@@ -205,16 +207,20 @@ test("cleanup waits back off, deduplicate attention, survive restart and finish 
     ).length,
     1,
   );
-  const restart = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const restart = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   t.onTestFinished(() => run(restart.close()));
   const skipped = (await timed(restart.reconcile(e.issue_id)))[0];
@@ -269,7 +275,7 @@ test("cleanup waits back off, deduplicate attention, survive restart and finish 
 test("cleanup samples preserve odd filenames, bound output and refuse failed inspection", async (t) => {
   const f = await runFixture();
   t.onTestFinished(() => run(f.close()));
-  const e = await prepare(f, []);
+  let e = await prepare(f, []);
   const odd = "$(touch never)\n\u001b[31m note";
   await writeFile(join(e.worktree_directory!, odd), "private");
   await symlink(f.root, join(e.worktree_directory!, "external-link"));
@@ -286,12 +292,15 @@ test("cleanup samples preserve odd filenames, bound output and refuse failed ins
   assert.ok(sample.paths.length <= 64);
   assert.ok(Buffer.byteLength(JSON.stringify(sample.paths)) <= 16384);
   // Enter cleanup with preservation already verified; pre-preservation drift remains a refusal.
-  e.delivery_receipt = {
-    commit: e.delivered_commit!,
-    target: e.target_branch!,
-    at: Id.timestampAt(0),
+  e = {
+    ...e,
+    delivery_receipt: {
+      commit: e.delivered_commit!,
+      target: e.target_branch!,
+      at: Id.timestampAt(0),
+    },
   };
-  e.current_phase = "cleaning";
+  e = { ...e, current_phase: "cleaning" };
   await run(f.records.save(e));
   const original = f.git.run.bind(f.git);
   for (const error of ["COMMAND_OUTPUT_LIMIT", "COMMAND_FAILED"]) {
@@ -316,18 +325,46 @@ test("cleanup samples preserve odd filenames, bound output and refuse failed ins
 test("legacy unsafe recovery is not resumed from ignored-file error text", async (t) => {
   const f = await runFixture();
   t.onTestFinished(() => run(f.close()));
-  const e = await prepare(f, []);
-  e.delivery_receipt = {
-    commit: e.delivered_commit!,
-    target: e.target_branch!,
-    at: Id.timestampAt(0),
+  let e = await prepare(f, []);
+  e = {
+    ...e,
+    delivery_receipt: {
+      commit: e.delivered_commit!,
+      target: e.target_branch!,
+      at: Id.timestampAt(0),
+    },
   };
-  e.current_phase = "recovery_required";
-  e.resume_phase = "cleaning";
-  e.error_or_recovery_reason = "Unapproved ignored files prevent cleanup";
+  e = { ...e, current_phase: "recovery_required" };
+  e = { ...e, resume_phase: "cleaning" };
+  e = { ...e, error_or_recovery_reason: "Unapproved ignored files prevent cleanup" };
   await run(f.records.save(e));
   const observed = (await run(f.controller.reconcile(e.issue_id)))[0];
   assert.equal(observed.current_phase, "recovery_required");
   assert.equal(observed.cleanup_blocker, undefined);
   await access(e.worktree_directory!);
+});
+
+test("lost SQLite close acknowledgement replays a confirmed retirement and its completion notice", async (t) => {
+  const f = await runFixture();
+  t.onTestFinished(() => run(f.close()));
+  const e = await prepare(f, []);
+  const close = f.work.close.bind(f.work);
+  f.work.close = (id, owner) =>
+    close(id, owner).pipe(
+      Effect.andThen(Effect.fail(new CrewError("LOST", "Lost SQLite close acknowledgement"))),
+    );
+  await assert.rejects(run(f.controller.finish(e.issue_id)), /Lost SQLite close/);
+  const cleaning = await run(f.controller.get(e.issue_id));
+  assert.equal(cleaning.current_phase, "cleaning");
+  assert.equal(cleaning.pending_issue_status, "closed");
+  assert.equal(cleaning.retirement?.native, "confirmed");
+  f.work.close = close;
+  const [done] = await run(f.controller.reconcile(e.issue_id));
+  assert.equal(done.current_phase, "completed");
+  assert.equal(done.pending_issue_status, undefined);
+  assert.ok(done.finishing?.completion_notice);
+  assert.equal(
+    (await run(f.work.history(e.issue_id))).filter((event) => event.kind === "closed").length,
+    1,
+  );
 });

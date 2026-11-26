@@ -1,3 +1,6 @@
+import { sha256 } from "../digest.ts";
+import { tryDomainValue } from "../effect.ts";
+import { WorkGraphError } from "../errors.ts";
 import { PersonalThoughts } from "./thoughts.ts";
 import { validateDispatch } from "../config/dispatch.ts";
 import { type Config } from "../domain.ts";
@@ -7,9 +10,7 @@ import { codingPolicy } from "../config/policy.ts";
 import { RequestId, SessionId } from "@abracode/contracts/identities";
 
 import { Effect } from "effect";
-import { createHash } from "node:crypto";
-import { domainEffect } from "../effect.ts";
-import { CrewError } from "../domain.ts";
+
 import { type Records } from "../storage/store.ts";
 import { type WorkGraph } from "./graph.ts";
 import { normalizeIssue, type WorkInput } from "./model.ts";
@@ -23,25 +24,27 @@ export class WorkIntake {
   ) {}
 
   validateProject = Effect.fn("WorkIntake.validateProject")(
-    function* (this: WorkIntake, request: WorkInput) {
+    { self: this },
+    function* (request: WorkInput) {
       const project = yield* this.records.project(request.repository_id);
       if (!project)
-        return yield* new CrewError(
+        return yield* new WorkGraphError(
           "PROJECT_MISSING",
           "Register the repository before creating work",
         );
-      validateDispatch(this.config ?? {}, request.dispatch);
-      codingPolicy(
+      yield* tryDomainValue(validateDispatch, this.config ?? {}, request.dispatch);
+      yield* tryDomainValue(
+        codingPolicy,
         project,
         request.workflow_policy ?? this.defaultWorkflow,
         request.quality_profile,
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
   private prepare = Effect.fn("WorkIntake.prepare")(
-    function* (this: WorkIntake, input: WorkInput, supervisor: SessionId) {
-      const request = normalizeIssue({
+    { self: this },
+    function* (input: WorkInput, supervisor: SessionId) {
+      const request = yield* tryDomainValue(normalizeIssue, {
         ...input,
         workflow_policy: input.workflow_policy ?? this.defaultWorkflow,
         priority: input.priority ?? 2,
@@ -50,19 +53,15 @@ export class WorkIntake {
       });
       if (input.request_id === undefined) {
         const { request_id: _id, ...fields } = request;
-        request.request_id = RequestId.make(
-          createHash("sha256")
-            .update(JSON.stringify([supervisor, fields]))
-            .digest("hex"),
-        );
+        request.request_id = RequestId.make(sha256(JSON.stringify([supervisor, fields])));
       }
       yield* this.validateProject(request);
       return request;
-    }.bind(this),
-    domainEffect,
+    },
   );
   prepareIntake = Effect.fn("WorkIntake.prepareIntake")(
-    function* (this: WorkIntake, input: WorkInput, supervisor: SessionId) {
+    { self: this },
+    function* (input: WorkInput, supervisor: SessionId) {
       const request = yield* this.prepare(input, supervisor);
       if (request.thought_source && !(yield* this.work.hasRequest(request.request_id))) {
         const { reference, excerpt } = request.thought_source;
@@ -71,17 +70,17 @@ export class WorkIntake {
           "http",
         );
         if (!memo.content.includes(excerpt))
-          return yield* new CrewError(
+          return yield* new WorkGraphError(
             "MEMOS_EXCERPT",
             "Reselect the exact wording to accept for this issue.",
           );
       }
       return request;
-    }.bind(this),
-    domainEffect,
+    },
   );
   createBatch = Effect.fn("WorkIntake.createBatch")(
-    function* (this: WorkIntake, input: BatchInput, supervisor: SessionId) {
+    { self: this },
+    function* (input: BatchInput, supervisor: SessionId) {
       const batch = {
         ...input,
         tasks: input.tasks.map((task) => ({
@@ -102,13 +101,12 @@ export class WorkIntake {
           supervisor,
         );
         if (request.workflow_policy !== "full-openspec" && !completeScope(request.scope))
-          return yield* new CrewError(
+          return yield* new WorkGraphError(
             "SCOPE_REQUIRED",
             `Batch task ${client_key} requires a complete goal, acceptance and constraints contract`,
           );
       }
       return yield* this.work.createBatch(batch);
-    }.bind(this),
-    domainEffect,
+    },
   );
 }

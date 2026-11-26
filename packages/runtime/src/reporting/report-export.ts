@@ -1,3 +1,6 @@
+import { tryDomainValue } from "../effect.ts";
+import { compileFunction } from "node:vm";
+import { createRequire } from "node:module";
 import type { createPreparedDiagrams } from "@abracode/report-export/preparation";
 import { DiagramPreparationSchema } from "@abracode/contracts/presentation/diagrams";
 import { decode } from "../decode.ts";
@@ -6,7 +9,6 @@ import { RendererShell, type Shell } from "./renderer-shell.ts";
 import { Effect } from "effect";
 import { AbsolutePath, ContentHash } from "@abracode/contracts/identities";
 import { CrewError, ensure } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import { canonicalJSON } from "../presentation/identity.ts";
 import {
   validateReportDocument,
@@ -95,15 +97,18 @@ export class ReactDocumentRenderer implements DocumentRenderer {
       service: Promise<ReturnType<typeof createPreparedDiagrams>>;
     } = {
       fingerprint: shell.fingerprint,
-      service: Promise.all([
-        import(
-          `data:text/javascript;base64,${Buffer.from(shell.host).toString("base64")}`
-        ) as Promise<{ createPreparedDiagrams: typeof createPreparedDiagrams }>,
-        import("playwright-core"),
-      ])
-        .then(([host, browser]) =>
-          host.createPreparedDiagrams(shell.fingerprint, shell.engine, browser.chromium),
-        )
+      service: import("playwright-core")
+        .then(({ chromium }) => {
+          // Compile the bytes captured with this shell. No disk reread or global module-cache entry.
+          const module = {
+            exports: {} as { createPreparedDiagrams?: typeof createPreparedDiagrams },
+          };
+          const execute = compileFunction(shell.host, ["exports", "module", "require"]);
+          execute(module.exports, module, createRequire(import.meta.url));
+          if (typeof module.exports.createPreparedDiagrams !== "function")
+            throw new Error("Prepared diagram host is missing its factory");
+          return module.exports.createPreparedDiagrams(shell.fingerprint, shell.engine, chromium);
+        })
         .catch((error) => {
           if (this.diagrams === entry) this.diagrams = undefined;
           throw error;
@@ -113,41 +118,41 @@ export class ReactDocumentRenderer implements DocumentRenderer {
     return entry.service;
   }
   private render = (input: ReportDocument, shell: Shell) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const document = yield* Effect.try({
-          try: () => validateReportDocument(input),
-          catch: CrewError.from,
-        });
-        const json = canonicalJSON(document);
-        ensure(
-          Buffer.byteLength(json) <= 1024 * 1024,
-          "REPORT_DOCUMENT",
-          "Captured report exceeds 1 MiB",
-        );
-        const sources = documentDiagrams(document);
-        const batch = sources.length
-          ? yield* Effect.tryPromise({
-              try: async (signal) => (await this.diagramService(shell)).prepare(sources, signal),
-              catch: CrewError.from,
-            }).pipe(
-              Effect.flatMap((value) =>
-                decode(DiagramPreparationSchema, value, "Prepared diagram batch"),
-              ),
-            )
-          : undefined;
-        ensure(
-          !batch || batch.verified,
+    Effect.gen({ self: this }, function* () {
+      const document = yield* Effect.try({
+        try: () => validateReportDocument(input),
+        catch: CrewError.from,
+      });
+      const json = canonicalJSON(document);
+      if (!(Buffer.byteLength(json) <= 1024 * 1024))
+        return yield* new CrewError("REPORT_DOCUMENT", "Captured report exceeds 1 MiB");
+      const sources = documentDiagrams(document);
+      const batch = sources.length
+        ? yield* Effect.tryPromise({
+            try: async (signal) => (await this.diagramService(shell)).prepare(sources, signal),
+            catch: CrewError.from,
+          }).pipe(
+            Effect.flatMap((value) =>
+              decode(DiagramPreparationSchema, value, "Prepared diagram batch"),
+            ),
+          )
+        : undefined;
+      if (batch && !batch.verified)
+        return yield* new CrewError(
           "REPORT_DIAGRAM",
           batch?.results
             .filter((r) => r.status !== "verified")
             .map((r) => `${r.id}: ${r.status}: ${r.message}`)
             .join("\n") ?? "Diagram preparation failed",
         );
-        const prepared = batch?.assets ?? [];
-        const output = embedReportPayload(shell.html, json, canonicalJSON(prepared));
-        validateDocumentHTML(output, document);
-        return output;
-      }),
-    );
+      const prepared = batch?.assets ?? [];
+      const output = yield* tryDomainValue(
+        embedReportPayload,
+        shell.html,
+        json,
+        canonicalJSON(prepared),
+      );
+      yield* tryDomainValue(validateDocumentHTML, output, document);
+      return output;
+    });
 }

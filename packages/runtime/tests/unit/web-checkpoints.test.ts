@@ -106,9 +106,9 @@ test("browser plan checkpoint observes current Git bytes and leaves the native a
 test("merge checkpoint does not authorize another delivered-content identity", async (t) => {
   const root = "/fixture";
   const f = await checkpointFixture(t, root, "merge");
-  const { execution: retained, approval } = f;
+  let { execution: retained, approval } = f;
   assert.equal((await run(f.queries.checkpoint(supervisor, approval.form_id))).active, true);
-  retained.delivered_commit = Id.Commit.make("f".repeat(40));
+  retained = { ...retained, delivered_commit: Id.Commit.make("f".repeat(40)) };
   await run(f.records.save(retained));
   assert.equal((await run(f.queries.checkpoint(supervisor, approval.form_id))).active, false);
   assert.equal(
@@ -120,35 +120,38 @@ test("merge checkpoint does not authorize another delivered-content identity", a
 });
 
 test("decision generation and finishing targets remain exact native bindings after supersession", async (t) => {
-  const { records, execution, queries } = await checkpointFixture(t, "/fixture", "merge");
+  let { records, execution, queries } = await checkpointFixture(t, "/fixture", "merge");
   const key = Id.ObligationKey.make("finishing-residue");
-  execution.decisions = [
-    {
-      schema_version: 1,
-      generation: execution.control_generation,
-      key,
-      scope: "finishing",
-      question: "Preserve local residue?",
-      owner: "user",
-      session_id: "controller",
-      opened_at: 0,
-      status: "open",
-      form_session: supervisor,
-      form_id: Id.FormId.make("frm_finishing"),
-      finishing_target: {
+  execution = {
+    ...execution,
+    decisions: [
+      {
         schema_version: 1,
         generation: execution.control_generation,
-        kind: "residue",
-        worktree: { path: execution.worktree_directory!, device: "1", inode: "2", birth: "3" },
-        fingerprint: Id.Fingerprint.make("residue"),
-        paths: [{ path: Id.RelativePath.make("cache"), kind: "directory", category: "ignored" }],
-        files: [],
-        directories: [],
-        truncated: false,
+        key,
+        scope: "finishing",
+        question: "Preserve local residue?",
+        owner: "user",
+        session_id: "controller",
+        opened_at: 0,
+        status: "open",
+        form_session: supervisor,
+        form_id: Id.FormId.make("frm_finishing"),
+        finishing_target: {
+          schema_version: 1,
+          generation: execution.control_generation,
+          kind: "residue",
+          worktree: { path: execution.worktree_directory!, device: "1", inode: "2", birth: "3" },
+          fingerprint: Id.Fingerprint.make("residue"),
+          paths: [{ path: Id.RelativePath.make("cache"), kind: "directory", category: "ignored" }],
+          files: [],
+          directories: [],
+          truncated: false,
+        },
       },
-    },
-  ];
-  await run(records.save(execution));
+    ],
+  };
+  execution = await run(records.save(execution));
   const retained = (await run(records.execution(execution.issue_id)))!;
   const current = retained.decisions!.find((item) => item.key === key)!;
   assert.ok(current.finishing_target);

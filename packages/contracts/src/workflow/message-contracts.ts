@@ -1,3 +1,4 @@
+import { utf8Bytes } from "../utf8.ts";
 import { Schema } from "effect";
 import { Count, RoleSchema } from "../primitives.ts";
 import {
@@ -16,15 +17,13 @@ import { AttentionSchema } from "./attention-contracts.ts";
 const MessageEvidence = Schema.Array(
   EvidenceReferenceSchema.check(
     Schema.makeFilter(
-      (ref) =>
-        new TextEncoder().encode(JSON.stringify(ref)).length <= 2048 ||
-        "Evidence reference exceeds 2 KiB",
+      (ref) => utf8Bytes(JSON.stringify(ref)) <= 2048 || "Evidence reference exceeds 2 KiB",
     ),
   ),
 ).check(Schema.isMaxLength(16));
 
 export const MessageBody = Schema.NonEmptyString.check(
-  Schema.makeFilter((body) => new TextEncoder().encode(body).length <= 8192 || "Maximum 8 KiB"),
+  Schema.makeFilter((body) => utf8Bytes(body) <= 8192 || "Maximum 8 KiB"),
 );
 export const LinkedCheckSchema = Schema.Struct({
   fingerprint: Fingerprint,
@@ -38,9 +37,7 @@ export const MessageReplySchema = Schema.Struct({
   at: Timestamp,
 });
 const RequestPrompt = Schema.NonEmptyString.check(
-  Schema.makeFilter(
-    (text) => new TextEncoder().encode(text).length <= 32768 || "Maximum rendered prompt 32 KiB",
-  ),
+  Schema.makeFilter((text) => utf8Bytes(text) <= 32768 || "Maximum rendered prompt 32 KiB"),
 );
 /** A single reserved response-only turn; presence permanently consumes the attempt. */
 export const ResponseRecoverySchema = Schema.Struct({

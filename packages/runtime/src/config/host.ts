@@ -1,9 +1,11 @@
+import { ConfigurationError } from "../errors.ts";
 import { Effect } from "effect";
 import { dirname, join, relative, resolve } from "node:path";
 import { type Config, CrewError } from "../domain.ts";
-import { mkdir, writeFile, rename, pathExists, realpath } from "../filesystem.ts";
+import { mkdir, pathExists, realpath } from "../filesystem.ts";
 import { runtimePaths, identity } from "./identity.ts";
-import { randomUUID } from "node:crypto";
+import { FileSystem } from "effect";
+import { provideFileSystem } from "../platform.ts";
 
 export const hostConfiguration = (config: Config) => ({
   $schema: "https://opencode.ai/config.json",
@@ -29,7 +31,7 @@ export const assertFreshPaths = (config: Config) =>
       const canonical = resolve(yield* realpath(ancestor), relative(ancestor, selected));
       for (const root of roots)
         if ([selected, canonical].some((path) => path === root || path.startsWith(root + "/")))
-          return yield* new CrewError(
+          return yield* new ConfigurationError(
             "LEGACY_STATE",
             "AbraCode starts fresh. Choose .abracode paths; stop the legacy service separately. Legacy data was not changed.",
           );
@@ -41,10 +43,20 @@ export const generateHostConfiguration = (config: Config) =>
     yield* assertFreshPaths(config);
     const path = runtimePaths(config.home).hostConfig;
     yield* mkdir(dirname(path), { recursive: true, mode: 0o700 });
-    const temporary = `${path}.${randomUUID()}.tmp`;
-    yield* writeFile(temporary, JSON.stringify(hostConfiguration(config), null, 2) + "\n", {
-      mode: 0o600,
-    });
-    yield* rename(temporary, path);
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const temporary = yield* fs.makeTempFileScoped({
+          directory: dirname(path),
+          prefix: ".opencode-",
+          suffix: ".tmp",
+        });
+        yield* fs.writeFileString(
+          temporary,
+          JSON.stringify(hostConfiguration(config), null, 2) + "\n",
+        );
+        yield* fs.rename(temporary, path);
+      }),
+    ).pipe(provideFileSystem, Effect.mapError(CrewError.from));
     return path;
   });

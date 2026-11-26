@@ -2,8 +2,7 @@ import { goal as workGoal } from "../helpers/work-goal.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import * as Id from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
-import { run } from "../effects.ts";
-import { domainEffect } from "../../src/effect.ts";
+import { domainEffect, run } from "../effects.ts";
 import { Effect } from "effect";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -124,16 +123,20 @@ test("a lost creation response recovers the authoritative issue across controlle
     run(f.controller.createWork(goal, Id.SessionId.make("ses_supervisor"))),
     /response lost/,
   );
-  const restarted = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const restarted = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   const recovered = await run(restarted.createWork(goal, Id.SessionId.make("ses_supervisor")));
   assert.equal(recovered.issue.id, (await run(f.work.list))[0]!.id);

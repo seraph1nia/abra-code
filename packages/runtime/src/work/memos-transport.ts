@@ -1,8 +1,8 @@
+import { WorkGraphError } from "../errors.ts";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { NodeHttpClient } from "@effect/platform-node";
-import { Effect, Option, Redacted } from "effect";
-import { HttpClient, HttpClientRequest } from "effect/http";
+import { Effect, Redacted } from "effect";
+import { FetchHttpClient, type HttpClient, HttpClientRequest } from "effect/http";
 import { CrewError } from "../domain.ts";
 
 type Operation = "create" | "list" | "get";
@@ -12,28 +12,16 @@ const tools = {
   get: "memo_get_memo",
 } as const;
 
-const provideHttpClient = <A, E>(
-  effect: Effect.Effect<A, E, HttpClient.HttpClient>,
-): Effect.Effect<A, E> =>
-  Effect.serviceOption(HttpClient.HttpClient).pipe(
-    Effect.flatMap((service) =>
-      Option.isSome(service)
-        ? effect.pipe(Effect.provideService(HttpClient.HttpClient, service.value))
-        : effect.pipe(
-            Effect.provide(NodeHttpClient.layerFetch),
-            Effect.provideService(NodeHttpClient.RequestInit, { redirect: "error" }),
-          ),
-    ),
-  );
-
 export class MemosTransport {
-  constructor(private connection: { instance: string; token: Redacted.Redacted<string> }) {}
+  constructor(
+    private connection: { instance: string; token: Redacted.Redacted<string> },
+    private client: HttpClient.HttpClient,
+  ) {}
   private get headers() {
     return { Authorization: "Bearer " + Redacted.value(this.connection.token) };
   }
-  http(path: string, query: Record<string, string> = {}): Effect.Effect<unknown, CrewError> {
+  http(path: string, query: Record<string, string> = {}) {
     return Effect.gen({ self: this }, function* () {
-      const client = yield* HttpClient.HttpClient;
       const url = yield* Effect.try({
         try: () => new URL("/api/" + path, this.connection.instance),
         catch: transportError,
@@ -42,11 +30,15 @@ export class MemosTransport {
         headers: this.headers,
         urlParams: query,
       });
-      const response = yield* client.execute(request);
+      const response = yield* this.client.execute(request);
       if (response.status < 200 || response.status >= 300)
         return yield* responseError(response.status);
       return yield* response.json;
-    }).pipe(provideHttpClient, Effect.timeout("10 seconds"), Effect.mapError(transportError));
+    }).pipe(
+      Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
+      Effect.timeout("10 seconds"),
+      Effect.mapError(transportError),
+    );
   }
   mcp(op: Operation, args: Record<string, unknown>): Effect.Effect<unknown, CrewError> {
     return Effect.acquireUseRelease(
@@ -82,7 +74,7 @@ export class MemosTransport {
                 await client.connect(transport);
               } catch (error) {
                 if (op === "create")
-                  throw new CrewError(
+                  throw new WorkGraphError(
                     "MEMOS_CREATE_UNSUBMITTED",
                     "Could not connect to submit the memo.",
                   );
@@ -98,7 +90,10 @@ export class MemosTransport {
                 const status =
                   first?.type === "text" ? Number(/^([0-9]{3})\b/u.exec(first.text)?.[1]) : 0;
                 if (op === "create" && [400, 401, 403, 404, 422, 429].includes(status))
-                  throw new CrewError("MEMOS_CREATE_REFUSED", "Memos refused the create request.");
+                  throw new WorkGraphError(
+                    "MEMOS_CREATE_REFUSED",
+                    "Memos refused the create request.",
+                  );
                 throw responseError(status);
               }
               return result.structuredContent;
@@ -118,12 +113,15 @@ export class MemosTransport {
 }
 function responseError(status: number) {
   if (status === 401)
-    return new CrewError("MEMOS_AUTH", "Memos authentication failed. Check the notebook token.");
+    return new WorkGraphError(
+      "MEMOS_AUTH",
+      "Memos authentication failed. Check the notebook token.",
+    );
   if (status === 403 || status === 404)
-    return new CrewError("MEMOS_MISSING", "The selected thought is unavailable.", status);
+    return new WorkGraphError("MEMOS_MISSING", "The selected thought is unavailable.", status);
   if (status === 409)
-    return new CrewError("MEMOS_CONFLICT", "The memo identity is already in use.");
-  return new CrewError(
+    return new WorkGraphError("MEMOS_CONFLICT", "The memo identity is already in use.");
+  return new WorkGraphError(
     "MEMOS_UNAVAILABLE",
     "Memos could not complete the request. Retry the notebook connection.",
   );

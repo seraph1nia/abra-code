@@ -7,16 +7,16 @@ import type { WorkInput } from "../work/intake.ts";
 import type { BatchInput, BatchResultSchema } from "../work/batch.ts";
 import type { Issue } from "../work/model.ts";
 import type { Queries } from "./queries.ts";
-import type { PRFeedback } from "./pr-feedback.ts";
+import type { PRFeedback } from "./pr/supervision.ts";
 import type { ExternalValidation } from "./external-validation.ts";
 import type { Reports } from "../reporting/reports.ts";
 import type { AttentionService } from "./attention.ts";
 import type { Obligations } from "./obligations.ts";
-import type { Messages } from "./messages.ts";
+import type { Messages } from "./messaging/messages.ts";
 import type { WorkerContexts } from "./worker-context.ts";
 import type { WorkerSessions } from "./sessions.ts";
 import type { CodingChecks } from "./checks.ts";
-import type { Leads } from "./leads.ts";
+import type { LeadActions as Leads } from "./leads/actions.ts";
 
 /** Public ports name domain responsibilities. Composition supplies implementations;
  * callers never traverse advancement's private dependency graph. */
@@ -111,7 +111,7 @@ export interface ControllerServices {
     request: import("@abracode/contracts/identities").WebSubmissionId,
     issue: import("@abracode/contracts/identities").IssueId,
     answer: string,
-  ) => ReturnType<typeof import("./selected-requests.ts").answerSelection>;
+  ) => ReturnType<typeof import("./messaging/selected-requests.ts").answerSelection>;
   readonly memory: import("../memory/service.ts").AgentMemory;
   readonly thoughts: import("../work/thoughts.ts").PersonalThoughts;
   readonly inbox: import("../work/github-inbox.ts").GithubInbox;

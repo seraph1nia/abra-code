@@ -1,7 +1,14 @@
 import { ExternalRecord } from "../validation/contracts.ts";
 import { Schema } from "effect";
-import { Commit, Count, NonEmpty, Positive } from "../primitives.ts";
-import { BranchName, FindingId, IssueId, PullRequestUrl, ObligationKey } from "../identities.ts";
+import { Commit, Count, exactParseOptions, NonEmpty, Positive } from "../primitives.ts";
+import {
+  BranchName,
+  FindingId,
+  FindingRevisionId,
+  IssueId,
+  PullRequestUrl,
+  ObligationKey,
+} from "../identities.ts";
 
 const text = NonEmpty.check(Schema.isMaxLength(8192));
 export const FeedbackDisposition = Schema.Literals([
@@ -183,6 +190,20 @@ export const FeedbackBatchSchema = Schema.Struct({
   ),
 });
 
+export const FeedbackQuery = Schema.Struct({
+  issue_id: IssueId,
+  page: Schema.optional(Count),
+  finding_id: Schema.optionalKey(FindingId),
+  revision: Schema.optionalKey(FindingRevisionId),
+})
+  .check(
+    Schema.makeFilter(
+      (input) =>
+        (input.finding_id === undefined) === (input.revision === undefined) ||
+        "Finding selection requires both finding_id and revision",
+    ),
+  )
+  .annotate(exactParseOptions);
 export const FeedbackPageSchema = Schema.Struct({
   external_validation: Schema.optional(ExternalRecord),
   external_gate_digest: Schema.optional(NonEmpty),

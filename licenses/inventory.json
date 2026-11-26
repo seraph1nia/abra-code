@@ -1,7 +1,7 @@
 {
   "version": 1,
   "distribution": "source clone; dependencies downloaded by the operator from their suppliers",
-  "lock_sha256": "120b798206478d4d6d107f8b617c93ebae02212cd00d9eae68243808ad2f8e9d",
+  "lock_sha256": "a971e8488deb9aadab4863e94a96510a0b3f111f94bca265b0e0e7f62464e1a1",
   "packages": [
     {
       "id": "@0no-co/graphql.web@1.3.4",

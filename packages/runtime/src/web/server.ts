@@ -37,11 +37,13 @@ export interface WorkspaceServerOptions {
 export const workspaceServer = (options: WorkspaceServerOptions) =>
   Effect.gen(function* () {
     const feed = yield* WorkspaceFeed.make(options.backend);
-    const runner = new AbraRunner(options.backend, feed);
+    const runner = new AbraRunner(options.backend, feed, yield* Effect.context<never>());
     const runtime = new CopilotRuntime({
       agents: { abra: new AbraAgent(runner, options.backend.sessionID) },
       runner,
+      // OpenCode owns the tool loop: never let CopilotKit inject UI-generation middleware.
       a2ui: { enabled: false },
+      generativeUI: false,
     });
     const forbiddenSession = () =>
       Response.json(
@@ -119,7 +121,7 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
           }),
       });
       return HttpServerResponse.fromWeb(response);
-    });
+    }).pipe(Effect.catchTag("WorkspaceUnavailable", (error) => Effect.succeed(json(error, 503))));
     const frontend = HttpServerResponse.file(join(assets, "index.html"), {
       contentType: "text/html; charset=utf-8",
     }).pipe(
@@ -179,58 +181,61 @@ export const workspaceServer = (options: WorkspaceServerOptions) =>
       HttpRouter.add("GET", "/", frontend),
       HttpRouter.add("GET", "/*", spaFallback),
     ).pipe(Layer.provide(NodeHttpServer.layerHttpServices));
-    const app = yield* HttpRouter.toHttpEffect(routes);
-    const guarded = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest;
-      if (
-        request.headers.host !== new URL(origin).host ||
-        (request.headers.origin !== undefined && request.headers.origin !== origin) ||
-        ["cross-site", "same-site"].includes(request.headers["sec-fetch-site"] ?? "")
-      )
-        return json({ _tag: "WorkspaceForbidden", message: "Use the local AbraCode URL" }, 403);
-      if (!["GET", "HEAD", "POST"].includes(request.method))
-        return json({ error: "Method not allowed" }, 405);
-      if (request.method === "POST" && request.headers.origin !== origin)
-        return json(
-          { _tag: "WorkspaceForbidden", message: "Same-origin requests are required" },
-          403,
-        );
-      const raw = request.originalUrl.startsWith(origin + "/")
-        ? request.originalUrl.slice(origin.length).split("?")[0]
-        : "";
-      if (
-        !/^\/(?:[a-zA-Z0-9_.-]+\/?)*$/.test(raw) ||
-        raw.split("/").some((part) => part === "." || part === "..")
-      )
-        return json({ error: "Invalid request path" }, 400);
-      return yield* app;
-    }).pipe(
-      Effect.catchTag("WorkspaceUnavailable", (error) => Effect.succeed(json(error, 503))),
-      Effect.flatMap((response) =>
+    const security = HttpRouter.middleware(
+      (app) =>
         Effect.gen(function* () {
           const request = yield* HttpServerRequest.HttpServerRequest;
-          const preview = request.url.split("?")[0] === "/api/report/export/preview";
-          return HttpServerResponse.setHeaders(response, {
-            ...securityHeaders,
-            ...(response.status === 200 &&
-            /^(?:GET|HEAD)$/.test(request.method) &&
-            /^\/assets\/[a-zA-Z0-9_.-]+-[a-zA-Z0-9_-]{8,}\.(?:js|css|svg|woff2?|ttf)$/.test(
-              request.url.split("?")[0]!,
-            )
-              ? { "cache-control": "public, max-age=31536000, immutable" }
-              : {}),
-            ...(preview
-              ? {
-                  "content-security-policy":
-                    "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; media-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'",
-                }
-              : {}),
-          });
-        }),
-      ),
-      Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(maximumBodyBytes)),
-      Effect.interruptible,
+          if (
+            request.headers.host !== new URL(origin).host ||
+            (request.headers.origin !== undefined && request.headers.origin !== origin) ||
+            ["cross-site", "same-site"].includes(request.headers["sec-fetch-site"] ?? "")
+          )
+            return json({ _tag: "WorkspaceForbidden", message: "Use the local AbraCode URL" }, 403);
+          if (!["GET", "HEAD", "POST"].includes(request.method))
+            return json({ error: "Method not allowed" }, 405);
+          if (request.method === "POST" && request.headers.origin !== origin)
+            return json(
+              { _tag: "WorkspaceForbidden", message: "Same-origin requests are required" },
+              403,
+            );
+          const raw = request.originalUrl.startsWith(origin + "/")
+            ? request.originalUrl.slice(origin.length).split("?")[0]
+            : "";
+          if (
+            !/^\/(?:[a-zA-Z0-9_.-]+\/?)*$/.test(raw) ||
+            raw.split("/").some((part) => part === "." || part === "..")
+          )
+            return json({ error: "Invalid request path" }, 400);
+          return yield* app;
+        }).pipe(
+          Effect.flatMap((response) =>
+            Effect.gen(function* () {
+              const request = yield* HttpServerRequest.HttpServerRequest;
+              const preview = request.url.split("?")[0] === "/api/report/export/preview";
+              return HttpServerResponse.setHeaders(response, {
+                ...securityHeaders,
+                ...(response.status === 200 &&
+                /^(?:GET|HEAD)$/.test(request.method) &&
+                /^\/assets\/[a-zA-Z0-9_.-]+-[a-zA-Z0-9_-]{8,}\.(?:js|css|svg|woff2?|ttf)$/.test(
+                  request.url.split("?")[0]!,
+                )
+                  ? { "cache-control": "public, max-age=31536000, immutable" }
+                  : {}),
+                ...(preview
+                  ? {
+                      "content-security-policy":
+                        "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; media-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'",
+                    }
+                  : {}),
+              });
+            }),
+          ),
+          Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(maximumBodyBytes)),
+          Effect.interruptible,
+        ),
+      { global: true },
     );
+    const guarded = yield* HttpRouter.toHttpEffect(Layer.merge(routes, security));
     yield* server.serve(guarded).pipe(Effect.provide(NodeHttpServer.layerHttpServices));
     return { origin, url: origin };
   });

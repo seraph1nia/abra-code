@@ -9,9 +9,9 @@ import { CrewError } from "../../src/domain.ts";
 import * as Id from "@abracode/contracts/identities";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import { responseState } from "../../src/workflow/messages.ts";
+import { responseState } from "../../src/workflow/messaging/messages.ts";
 import { messageRequests } from "@abracode/contracts/workflow/message-contracts";
-import { nativeActivity } from "../../src/visibility/supervision.ts";
+import { nativeActivity } from "../../src/workflow/read-model/supervision.ts";
 
 test("native context with unfinished input cannot establish idle from an earlier active snapshot", async (t) => {
   const f = await run(fixture);

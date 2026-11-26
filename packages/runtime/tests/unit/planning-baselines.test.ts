@@ -17,17 +17,21 @@ import { workDatabase, workGraphAt } from "../helpers/work-database.ts";
 type Fixture = Effect.Success<typeof fixture>;
 const supervisor = Id.SessionId.make("ses_supervisor");
 const request = (id: string) => ({ id: Id.RequestId.make(id), sender: supervisor });
-const restart = (f: Fixture) =>
-  createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+const restart = async (f: Fixture) =>
+  (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
 async function attributed(f: Fixture, id = Id.IssueId.make("abra-1")) {
   let e = await run(applying(f, id));
@@ -67,7 +71,7 @@ test("dirty Apply source survives a formatting-only replan and fresh approval ac
   assert.equal(first.provenance.kind, "apply");
   assert.equal(first.admissions.length, 1);
   const prompts = f.runtime.prompts;
-  const controller = restart(f);
+  const controller = await restart(f);
   await run(controller.control(e.issue_id, "replan", "Format the plan", request("replan-1")));
   assert.equal(f.runtime.prompts, prompts);
   await run(f.git.run(root, ["gc", "--prune=now"]));
@@ -144,7 +148,7 @@ for (const mutation of [
     assert.deepEqual(e.planning!.attempts[0]!.source, original);
     assert.equal(e.planning!.attempts[0]!.violations.length, 1);
     await assert.rejects(
-      run(restart(f).control(e.issue_id, "replan", undefined, request("new-request"))),
+      run((await restart(f)).control(e.issue_id, "replan", undefined, request("new-request"))),
       { code: "PLANNING_UNRESOLVED" },
     );
     assert.deepEqual(
@@ -162,7 +166,7 @@ test("a pending plan form cannot approve a new source mutation", async (t) => {
   assert.ok("form_id" in pending);
   await writeFile(join(e.worktree_directory!, "source.txt"), "Changed after plan presentation");
   f.runtime.forms.set(pending.form_id, "approved");
-  await run(restart(f).reconcile(e.issue_id));
+  await run((await restart(f)).reconcile(e.issue_id));
   const saved = await run(f.controller.get(e.issue_id));
   assert.equal(saved.current_phase, "recovery_required");
   assert.ok(!saved.approval_receipts.some((r) => r.form_id === pending.form_id && r.authorized_at));
@@ -177,11 +181,11 @@ test("background polling does not capture an unanswered plan during editor churn
   const capture = f.git.sourceTrees.bind(f.git);
   f.git.sourceTrees = () =>
     Effect.fail(new CrewError("PLANNING_RACE", "Concurrent planning editor"));
-  await run(restart(f).reconcile(e.issue_id));
+  await run((await restart(f)).reconcile(e.issue_id));
   assert.equal((await run(f.controller.get(e.issue_id))).current_phase, "awaiting_plan_approval");
   assert.equal(f.runtime.forms.get(pending.form_id), "pending");
   f.runtime.forms.set(pending.form_id, "approved");
-  await run(restart(f).reconcile(e.issue_id));
+  await run((await restart(f)).reconcile(e.issue_id));
   const stopped = await run(f.controller.get(e.issue_id));
   assert.equal(stopped.current_phase, "recovery_required");
   assert.ok(
@@ -195,12 +199,19 @@ test("a captured baseline survives pin failure and the same request never recapt
   t.onTestFinished(() => run(f.close()));
   const e = await attributed(f);
   const index = await indexBytes(f, e.worktree_directory!);
+  const capture = f.git.sourceTrees.bind(f.git);
+  let captures = 0;
+  f.git.sourceTrees = (...args) => {
+    captures++;
+    return capture(...args);
+  };
   const pin = f.git.pinTree.bind(f.git);
   f.git.pinTree = () => Effect.fail(new CrewError("TEST_PIN_FAILURE", "Interrupted before pin"));
   await assert.rejects(
     run(f.controller.control(e.issue_id, "replan", undefined, request("pin-loss"))),
     { code: "TEST_PIN_FAILURE" },
   );
+  assert.equal(captures, 1, "reuse the exact private tree capture when journaling its source");
   let saved = await run(f.controller.get(e.issue_id));
   const captured = structuredClone(saved.planning!.attempts[0]!.source);
   assert.equal(saved.plan_fingerprint, e.plan_fingerprint);
@@ -209,7 +220,7 @@ test("a captured baseline survives pin failure and the same request never recapt
   f.git.pinTree = pin;
   await writeFile(join(e.worktree_directory!, "source.txt"), "Concurrent new content");
   await assert.rejects(
-    run(restart(f).control(e.issue_id, "replan", undefined, request("pin-loss"))),
+    run((await restart(f)).control(e.issue_id, "replan", undefined, request("pin-loss"))),
     { code: "PLANNING_RACE" },
   );
   saved = await run(f.controller.get(e.issue_id));
@@ -227,7 +238,7 @@ test("pause and explicit resume continue the same immutable source boundary", as
   await run(f.controller.reconcile(e.issue_id));
   e = await run(f.controller.get(e.issue_id));
   assert.equal(e.stop_status, "confirmed");
-  e = await run(restart(f).control(e.issue_id, "resume"));
+  e = await run((await restart(f)).control(e.issue_id, "resume"));
   assert.deepEqual(e.planning!.attempts[0]!.source, original.source);
   assert.equal(e.planning!.attempts[0]!.generation, original.generation);
   assert.equal(e.planning!.attempts[0]!.continuations.at(-1)!.generation, e.control_generation);
@@ -241,9 +252,9 @@ for (const action of ["reject", "defer", "changed"] as const) {
     const f = await run(fixture);
     t.onTestFinished(() => run(f.close()));
     let e = await attributed(f);
-    e.current_phase = "recovery_required";
-    e.resume_phase = "planning";
-    delete e.active_role;
+    e = { ...e, current_phase: "recovery_required" };
+    e = { ...e, resume_phase: "planning" };
+    e = { ...e, active_role: undefined };
     await run(f.records.save(e));
     const prompts = f.runtime.prompts;
     e = await run(
@@ -263,11 +274,15 @@ for (const action of ["reject", "defer", "changed"] as const) {
     if (action === "changed") {
       await writeFile(join(e.worktree_directory!, "source.txt"), "Stale offer");
       await assert.rejects(
-        run(restart(f).control(e.issue_id, "recover_planning", undefined, request("offer"))),
+        run(
+          (await restart(f)).control(e.issue_id, "recover_planning", undefined, request("offer")),
+        ),
         { code: "PLANNING_OFFER_CHANGED" },
       );
     } else
-      await run(restart(f).control(e.issue_id, "recover_planning", undefined, request("offer")));
+      await run(
+        (await restart(f)).control(e.issue_id, "recover_planning", undefined, request("offer")),
+      );
     e = await run(f.controller.get(e.issue_id));
     assert.equal(e.current_phase, "recovery_required");
     assert.equal(e.planning!.attempts[0]!.stage, "offered");
@@ -290,8 +305,8 @@ test("owned persistence refuses rewriting captured source or removing planning h
     await run(f.records.store.get(Id.StorageKey.make(`execution/${e.issue_id}`))),
     before,
   );
-  const fresh = await run(f.controller.get(e.issue_id));
-  delete fresh.planning;
+  let fresh = await run(f.controller.get(e.issue_id));
+  fresh = { ...fresh, planning: undefined };
   await assert.rejects(run(f.records.save(fresh)), /Planning history|Planning evidence|Expected/);
   assert.deepEqual(
     await run(f.records.store.get(Id.StorageKey.make(`execution/${e.issue_id}`))),
@@ -318,8 +333,8 @@ test("baseline history survives native-style JSON normalization and preserves un
   const raw = await run(f.records.store.get(key));
   assert.ok(raw && typeof raw === "object");
   await run(set(key, { ...raw, future_observation: { preserved: true } }));
-  e = await run(restart(f).get(e.issue_id));
-  e.retry_instructions = "Independent scoped observation";
+  e = await run((await restart(f)).get(e.issue_id));
+  e = { ...e, retry_instructions: "Independent scoped observation" };
   await run(f.records.saveOwned(e, ["retry_instructions"]));
   assert.deepEqual(JSON.parse(JSON.stringify(e.planning)), before);
   assert.deepEqual(Reflect.get((await run(f.records.store.get(key)))!, "future_observation"), {
@@ -327,7 +342,7 @@ test("baseline history survives native-style JSON normalization and preserves un
   });
   const future = { ...e, planning: { ...e.planning!, schema_version: 999 } };
   await run(set(key, future));
-  await assert.rejects(run(restart(f).get(e.issue_id)));
+  await assert.rejects(run((await restart(f)).get(e.issue_id)));
   assert.equal(
     Reflect.get(Reflect.get((await run(f.records.store.get(key)))!, "planning"), "schema_version"),
     999,
@@ -339,12 +354,12 @@ test("historical recovery reuses complete originally bound objects without prosp
   t.onTestFinished(() => run(f.close()));
   let e = await plannedReplan(f);
   const original = structuredClone(e.planning!.attempts[0]!);
-  e.current_phase = "recovery_required";
-  e.resume_phase = "planning";
-  e.error_or_recovery_reason = "Interrupted planning checkpoint";
+  e = { ...e, current_phase: "recovery_required" };
+  e = { ...e, resume_phase: "planning" };
+  e = { ...e, error_or_recovery_reason: "Interrupted planning checkpoint" };
   await run(f.records.save(e));
   e = await run(
-    restart(f).control(e.issue_id, "recover_planning", undefined, request("historical")),
+    (await restart(f)).control(e.issue_id, "recover_planning", undefined, request("historical")),
   );
   assert.deepEqual(e.planning!.attempts[0], original);
   assert.deepEqual(e.planning!.attempts[1]!.source, original.source);
@@ -455,10 +470,10 @@ test("legacy missing baseline requires exact prospective native adoption and a f
   t.onTestFinished(() => run(f.close()));
   let e = await attributed(f);
   const oldPlan = e.plan_fingerprint;
-  e.current_phase = "recovery_required";
-  e.resume_phase = "planning";
-  e.error_or_recovery_reason = "Explore modified files outside assigned OpenSpec change";
-  delete e.active_role;
+  e = { ...e, current_phase: "recovery_required" };
+  e = { ...e, resume_phase: "planning" };
+  e = { ...e, error_or_recovery_reason: "Explore modified files outside assigned OpenSpec change" };
+  e = { ...e, active_role: undefined };
   await run(f.records.save(e));
   const before = await indexBytes(f, e.worktree_directory!);
   const prompts = f.runtime.prompts;
@@ -495,7 +510,9 @@ test("legacy missing baseline requires exact prospective native adoption and a f
     f.controller.decision(e.issue_id, decision.key, e.control_generation, supervisor, "collect"),
   );
   assert.equal((await run(f.controller.get(e.issue_id))).current_phase, "recovery_required");
-  e = await run(restart(f).control(e.issue_id, "recover_planning", undefined, request("adopt-1")));
+  e = await run(
+    (await restart(f)).control(e.issue_id, "recover_planning", undefined, request("adopt-1")),
+  );
   assert.equal(e.current_phase, "planning");
   assert.equal(e.planning!.attempts[0]!.provenance.kind, "prospective_adoption");
   assert.match(e.planning!.attempts[0]!.prior.error!, /outside assigned/);

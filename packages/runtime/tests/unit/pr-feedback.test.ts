@@ -8,7 +8,8 @@ import { fixture, delivered } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { forgeFixture } from "../forge.ts";
 import { GitHubDelivery } from "../../src/git/delivery.ts";
-import { FeedbackService, pendingFindings } from "../../src/workflow/feedback.ts";
+import { pendingFindings } from "../../src/workflow/pr/action-policy.ts";
+import { FeedbackService } from "../../src/workflow/pr/feedback.ts";
 import { FeedbackSchema, mergeFeedback } from "@abracode/contracts/workflow/feedback-contracts";
 import * as Id from "@abracode/contracts/identities";
 
@@ -60,10 +61,10 @@ for (const current of ["failure", "success"] as const)
       { id: 100, context: Id.CheckName.make("same-name"), state: "failure" },
     ];
     const delivery = new GitHubDelivery(f.git, forge.runner, Id.Executable.make("fake-forge"));
-    const observed = await run(delivery.feedback(p, e));
+    const { feedback: observed, forge_observation } = await run(delivery.assessment(p, e));
     assert.equal(observed.complete, true);
     assert.deepEqual(
-      e.forge_observation!.checks.map((c) => c.blocking),
+      forge_observation!.checks.map((c) => c.blocking),
       [true, false, false],
     );
     assert.deepEqual(
@@ -84,13 +85,13 @@ for (const current of ["failure", "success"] as const)
 test("inline-only and ordinary comments retain old context; fresh observations deduplicate edits", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f)),
+  let e = await run(delivered(f)),
     p = (await run(f.records.project(e.repository_id)))!;
   const pr = {
     ...f.delivery.pr!,
     url: Id.PullRequestUrl.make("https://example.invalid/fixture/api/pull/1"),
   };
-  e.pull_request_reference = pr.url;
+  e = { ...e, pull_request_reference: pr.url };
   const forge = forgeFixture(p, () => pr);
   forge.config.reviews = [
     {
@@ -161,13 +162,13 @@ test("inline-only and ordinary comments retain old context; fresh observations d
 test("retained feedback classification requires exact generation/head/revision and survives reconstruction", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f)),
+  let e = await run(delivered(f)),
     p = (await run(f.records.project(e.repository_id)))!;
   const pr = {
     ...f.delivery.pr!,
     url: Id.PullRequestUrl.make("https://example.invalid/fixture/api/pull/1"),
   };
-  e.pull_request_reference = pr.url;
+  e = { ...e, pull_request_reference: pr.url };
   await run(f.records.save(e));
   const forge = forgeFixture(p, () => pr);
   forge.config.comments = [
@@ -182,6 +183,7 @@ test("retained feedback classification requires exact generation/head/revision a
   const delivery = new GitHubDelivery(f.git, forge.runner, Id.Executable.make("fake-forge"));
   const service = new FeedbackService(f.records, delivery);
   await run(service.refresh(e, p, true));
+  e = await run(f.controller.get(e.issue_id));
   const id = e.feedback!.findings[0].id;
   const input = {
     issue_id: e.issue_id,
@@ -205,7 +207,8 @@ test("retained feedback classification requires exact generation/head/revision a
   const reconstructed = await run(f.records.execution(e.issue_id));
   assert.equal(reconstructed!.feedback!.findings[0].disposition!.status, "in_scope");
   assert.equal(pendingFindings(reconstructed!.feedback).length, 0);
-  await run(new FeedbackService(f.records, delivery).refresh(e, p, true));
+  await run(new FeedbackService(f.records, delivery).refresh(reconstructed!, p, true));
+  e = await run(f.controller.get(e.issue_id));
   assert.equal(e.feedback!.findings[0].disposition!.status, "in_scope");
   await assert.rejects(
     run(
@@ -222,8 +225,8 @@ test("retained feedback classification requires exact generation/head/revision a
 test("unreadable sources retain unconfirmed evidence and respect backoff without reasoning", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f)),
-    p = (await run(f.records.project(e.repository_id)))!;
+  let e = await run(delivered(f));
+  const p = (await run(f.records.project(e.repository_id)))!;
   const base = f.delivery;
   const initialPrompts = f.runtime.prompts;
   let reads = 0;
@@ -240,12 +243,13 @@ test("unreadable sources retain unconfirmed evidence and respect backoff without
   });
   const clock = await run(TestClock.make());
   await run(service.refresh(e, p).pipe(Effect.provideService(Clock.Clock, clock)));
+  e = await run(f.controller.get(e.issue_id));
   assert.equal(e.feedback?.complete, false);
   const count = reads;
   await run(service.refresh(e, p).pipe(Effect.provideService(Clock.Clock, clock)));
   assert.equal(reads, count);
   assert.throws(() =>
-    Schema.decodeUnknownSync(FeedbackSchema)({ ...e.feedback, schema_version: 2 }),
+    Schema.decodeUnknownSync(FeedbackSchema)({ ...e.feedback!, schema_version: 2 }),
   );
   assert.equal(f.runtime.prompts, initialPrompts);
 });
@@ -253,7 +257,7 @@ test("unreadable sources retain unconfirmed evidence and respect backoff without
 test("incomplete observations preserve unresolved revisions and immutable paged history", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f));
+  let e = await run(delivered(f));
   const finding = {
     id: Id.FindingId.make("comment-old"),
     source_id: "comment-1",
@@ -299,20 +303,23 @@ test("incomplete observations preserve unresolved revisions and immutable paged 
   });
   assert.equal(incomplete.findings[0].id, finding.id);
   assert.equal(incomplete.complete, false);
-  e.feedback = mergeFeedback(original, {
-    ...original,
-    findings: [],
-    observed_at: 3,
-    next_check_at: 4,
-  });
-  await run(f.records.save(e));
+  e = {
+    ...e,
+    feedback: mergeFeedback(original, {
+      ...original,
+      findings: [],
+      observed_at: 3,
+      next_check_at: 4,
+    }),
+  };
+  e = await run(f.records.save(e));
   const before = await run(f.records.execution(e.issue_id));
   const page = await run(f.controller.queries.feedback(e.issue_id));
   assert.equal(page.history[0].text, finding.text);
   assert.equal(page.history_total, 1);
   assert.equal((await run(f.controller.queries.feedback(e.issue_id, 1))).history.length, 0);
   assert.deepEqual(await run(f.records.execution(e.issue_id)), before);
-  e.feedback = { ...e.feedback, history: [] };
+  e = { ...e, feedback: { ...e.feedback!, history: [] } };
   await assert.rejects(run(f.records.save(e)), /history/);
 });
 
@@ -366,16 +373,20 @@ test("due feedback is retained before human merge approval and recovers a known 
       });
     },
   };
-  const c = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    delivery,
-    f.locks,
+  const c = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   t.onTestFinished(() => run(c.close()));
   await call(c.reconcile(e.issue_id));
@@ -386,9 +397,9 @@ test("due feedback is retained before human merge approval and recovers a known 
   await call(c.reconcile(e.issue_id));
   assert.equal(reads, 1);
   e = await run(c.get(e.issue_id));
-  e.current_phase = "blocked";
-  e.resume_phase = "awaiting_merge";
-  e.delivery_block = "CI_FAILED";
+  e = { ...e, current_phase: "blocked" };
+  e = { ...e, resume_phase: "awaiting_merge" };
+  e = { ...e, delivery_block: "CI_FAILED" };
   await run(f.records.save(e));
   await run(f.work.block(e.issue_id, e.execution_id, "CI failed"));
   failed = false;
@@ -408,7 +419,7 @@ test("due feedback is retained before human merge approval and recovers a known 
 test("a feedback disposition commits alongside a newer native progress observation", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f));
+  let e = await run(delivered(f));
   const finding = {
     id: Id.FindingId.make("concurrent"),
     source_id: "comment-5",
@@ -418,19 +429,22 @@ test("a feedback disposition commits alongside a newer native progress observati
     text: "Check accepted behavior",
     blocking: true,
   };
-  e.feedback = {
-    schema_version: 1,
-    head: e.delivered_commit!,
-    pr: e.pull_request_reference!,
-    target: e.target_branch!,
-    observed_at: 1,
-    next_check_at: 2,
-    attempts: 0,
-    complete: true,
-    digest: "current",
-    findings: [finding],
-    history: [],
-    actions: [],
+  e = {
+    ...e,
+    feedback: {
+      schema_version: 1,
+      head: e.delivered_commit!,
+      pr: e.pull_request_reference!,
+      target: e.target_branch!,
+      observed_at: 1,
+      next_check_at: 2,
+      attempts: 0,
+      complete: true,
+      digest: "current",
+      findings: [finding],
+      history: [],
+      actions: [],
+    },
   };
   await run(f.records.save(e));
   await run(
@@ -470,13 +484,13 @@ for (const mode of ["complete", "foreign-thread", "missing-page", "mixed-head"] 
     const { CrewError } = await import("../../src/domain.ts");
     const f = await run(fixture);
     t.onTestFinished(() => run(f.close()));
-    const e = await run(delivered(f)),
+    let e = await run(delivered(f)),
       p = (await run(f.records.project(e.repository_id)))!;
     const pr = {
       ...f.delivery.pr!,
       url: Id.PullRequestUrl.make("https://example.invalid/fixture/api/pull/1"),
     };
-    e.pull_request_reference = pr.url;
+    e = { ...e, pull_request_reference: pr.url };
     const forge = forgeFixture(p, () => pr);
     const comment = (id: string, body: string, state = "COMMENTED") => ({
       id,
@@ -559,13 +573,13 @@ for (const mode of ["complete", "foreign-thread", "missing-page", "mixed-head"] 
 test("own reply recognition requires the authenticated author, exact content and retained marker", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f)),
+  let e = await run(delivered(f)),
     p = (await run(f.records.project(e.repository_id)))!;
   const pr = {
     ...f.delivery.pr!,
     url: Id.PullRequestUrl.make("https://example.invalid/fixture/api/pull/1"),
   };
-  e.pull_request_reference = pr.url;
+  e = { ...e, pull_request_reference: pr.url };
   const forge = forgeFixture(p, () => pr);
   const delivery = new GitHubDelivery(
     f.git,
@@ -578,30 +592,33 @@ test("own reply recognition requires the authenticated author, exact content and
     Id.Executable.make("fake-forge"),
   );
   const first = await run(delivery.feedback(p, e));
-  e.feedback = {
-    ...first,
-    actions: [
-      {
-        schema_version: 1,
-        id: "reply-1",
-        generation: e.control_generation,
-        head: e.delivered_commit!,
-        kind: "reply",
-        status: "uncertain",
-        authority: "execution-policy",
-        repository_id: e.repository_id,
-        pr: pr.url,
-        submission: { stage: "admitted", at: 1 },
-        target: {
-          destination: { kind: "issue" },
-          finding: Id.FindingId.make("source-1"),
-          revision: "rev-1",
-          body: "Verified correction",
+  e = {
+    ...e,
+    feedback: {
+      ...first,
+      actions: [
+        {
+          schema_version: 1,
+          id: "reply-1",
+          generation: e.control_generation,
+          head: e.delivered_commit!,
+          kind: "reply",
+          status: "uncertain",
+          authority: "execution-policy",
+          repository_id: e.repository_id,
+          pr: pr.url,
+          submission: { stage: "admitted", at: 1 },
+          target: {
+            destination: { kind: "issue" },
+            finding: Id.FindingId.make("source-1"),
+            revision: "rev-1",
+            body: "Verified correction",
+          },
+          created_at: 0,
+          updated_at: 1,
         },
-        created_at: 0,
-        updated_at: 1,
-      },
-    ],
+      ],
+    },
   };
   const exact = "Verified correction\n\n<!-- abracode-action:reply-1 -->";
   for (const [body, author, findings] of [

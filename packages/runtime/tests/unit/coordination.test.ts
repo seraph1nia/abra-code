@@ -1,7 +1,7 @@
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { verificationCommand } from "../../src/config/contracts.ts";
-import { deliveryAction } from "../../src/workflow/delivery-outcome.ts";
+import { deliveryAction } from "../../src/visibility/delivery-outcome.ts";
 import { verifiedSpec } from "../helpers/spec-review.ts";
 import * as Id from "@abracode/contracts/identities";
 import { Deferred, Effect, Fiber } from "effect";
@@ -111,10 +111,10 @@ test("independent operation owners use kernel exclusion and preserve intent befo
   const root = join(f.root, "operation-locks");
   const coordination = f.records.coordination;
   const a = await run(
-    Operations.make(f.records, new FileLocks(Id.AbsolutePath.make(root)), coordination),
+    Operations.make(f.records, new FileLocks(Id.AbsolutePath.make(root)), coordination, f.work),
   );
   const b = await run(
-    Operations.make(f.records, new FileLocks(Id.AbsolutePath.make(root)), coordination),
+    Operations.make(f.records, new FileLocks(Id.AbsolutePath.make(root)), coordination, f.work),
   );
   const entered = Deferred.makeUnsafe<void>();
   await run(
@@ -188,6 +188,7 @@ test("independent operation owners use kernel exclusion and preserve intent befo
       f.records,
       { with: () => Effect.fail(new CrewError("LOCK_ERROR", "Native lock failed")) },
       coordination,
+      f.work,
     ),
   );
   await assert.rejects(
@@ -402,19 +403,23 @@ test("restart after push rediscovers the exact remote ref and creates one PR", a
     },
     Id.Executable.make("fake-forge"),
   );
-  const controller = () =>
-    createWorkflow(
-      f.catalog,
-      f.config,
-      f.records,
-      f.work,
-      f.spec,
-      f.git,
-      f.runtime,
-      delivery,
-      f.locks,
+  const controller = async () =>
+    (
+      await run(
+        createWorkflow(
+          f.catalog,
+          f.config,
+          f.records,
+          f.work,
+          f.spec,
+          f.git,
+          f.runtime,
+          delivery,
+          f.locks,
+        ),
+      )
     ).controller;
-  f.controller = controller();
+  f.controller = await controller();
   const e = await run(applying(f));
   f.spec.done = true;
   f.runtime.success(e.apply_session_id!);
@@ -435,7 +440,7 @@ test("restart after push rediscovers the exact remote ref and creates one PR", a
   assert.equal((await run(f.controller.get(e.issue_id))).current_phase, "delivering");
   assert.equal(pushes, 1);
   interrupted = false;
-  const restarted = controller();
+  const restarted = await controller();
   assert.equal((await run(restarted.reconcile(e.issue_id)))[0].current_phase, "awaiting_merge");
   await run(restarted.reconcile(e.issue_id));
   assert.equal(pushes, 1);
@@ -472,9 +477,9 @@ test("an older pause cannot stop the next control generation", async (t) => {
   ) {
     return quiescent.call(this, id, () =>
       Effect.gen(function* () {
-        const current = yield* f.controller.get(id);
-        current.stop_status = undefined;
-        current.current_phase = "applying";
+        let current = yield* f.controller.get(id);
+        current = { ...current, stop_status: undefined };
+        current = { ...current, current_phase: "applying" };
         yield* f.records.commitControl(current);
         return yield* inspect();
       }),

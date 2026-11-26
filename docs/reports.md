@@ -36,7 +36,7 @@ Older applications do not understand the new receipt union or catalog: downgradi
 Choose **Export offline HTML** in an opened report. The explicit export uses only its saved JSON, compatible installed React/catalog components, shared design tokens, prepared SVG diagrams and supplier notices. The file has local filtering/disclosures and Markdown/JSON feedback controls; feedback is review input only. App navigation is unavailable offline. External images, fonts, scripts and framework/diagram downloads are unsupported. Mermaid runs during preparation and is absent from the exported runtime.
 
 Exports are cached by document hash and exporter identity. The
-`abracode-portable-renderer-v3` identity covers the prepared shell bytes, actual
+`abracode-portable-renderer-v4` identity covers the prepared shell bytes, actual
 compiler modules, explicit stylesheet scan inputs, resolved package/tool links,
 Mermaid preparation sources and installed rendering dependency closure, shared
 asset-format ABI and embedded notices. Backend-only changes and unrelated lockfile
@@ -66,7 +66,7 @@ See [frontend contracts](frontend.md), [API evidence](supported-apis.md#report-h
 
 CLI and workspace exports load the selected bundle into memory before rendering. Source edits take effect after the next successful preparation. Each export verifies the prepared HTML (including styles and notices), diagram host, browser engine and integrity metadata. Mermaid documents use the runtime’s Playwright driver and require a compatible Chromium installation. Export reads no renderer source files and runs no application compiler. Missing bundles report the preparation command. Damaged bytes remain available for inspection.
 
-The cache is `.abracode/reports/renderers/v3/<identity>/` and retains up to eight complete identities. An in-flight export can finish using its captured bytes after another preparation activates or evicts a bundle. Published HTML and historical export receipts remain independently readable under their original hashes. Source verification during preparation is bounded to 8192 files, 128 MiB and a 2 MiB manifest. Saved JSON and exported HTML retain their 1 MiB and 8 MiB limits.
+The cache is `.abracode/reports/renderers/v4/<identity>/` and retains up to eight complete identities. An in-flight export can finish using its captured bytes after another preparation activates or evicts a bundle. Published HTML and historical export receipts remain independently readable under their original hashes. Source verification during preparation is bounded to 8192 files, 128 MiB and a 2 MiB manifest. Saved JSON and exported HTML retain their 1 MiB and 8 MiB limits.
 
 Each export injects escaped canonical JSON and separately prepared SVG as inert
 JSON script data. Captured content never becomes source code, a Vite config or a

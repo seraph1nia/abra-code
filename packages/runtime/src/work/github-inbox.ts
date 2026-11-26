@@ -1,24 +1,13 @@
-import {
-  Context,
-  Layer,
-  Clock,
-  Effect,
-  Exit,
-  Fiber,
-  Ref,
-  Result,
-  Scope,
-  SynchronizedRef,
-  Semaphore,
-} from "effect";
+import { tryDomainValue } from "../effect.ts";
+import { WorkGraphError } from "../errors.ts";
+import { Clock, Effect, Exit, Fiber, Ref, Result, Scope, SynchronizedRef, Semaphore } from "effect";
 import type {
   InboxPage,
   InboxQuery,
   InboxTarget,
 } from "@abracode/contracts/visibility/github-inbox";
-import { CrewError, ensure, type Config, type Project } from "../domain.ts";
+import { CrewError, type Config, type Project } from "../domain.ts";
 import { sha256Json } from "../digest.ts";
-import { domainEffect } from "../effect.ts";
 import type { Records } from "../storage/store.ts";
 import type { SessionId } from "@abracode/contracts/identities";
 import { InboxForge, githubHosts, inboxOrigin, type InboxOrigin } from "../git/inbox.ts";
@@ -142,75 +131,60 @@ export class GithubInbox {
     });
   }
   private page(job: Job, prior: Scan, now: number) {
-    return domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const resume = !!prior.cursor;
-        const full = job.history ? "history" : "open";
-        const mode = resume
-          ? prior.mode
-          : !prior.last || now - prior.full >= dayMs
-            ? full
-            : "delta";
-        const start = resume ? prior.start : now;
-        const observed = yield* domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const page = yield* this.remote.page(
-              job.p,
-              job.o,
-              job.kind,
-              mode,
-              prior.cursor,
-              job.label,
-            );
-            ensure(
-              !prior.repo || (prior.repo === page.repo && prior.viewer === page.viewer),
-              "INBOX_ACCESS",
-              "GitHub repository or viewer identity changed",
-            );
-            ensure(
-              (yield* this.remote.partition(job.p, job.o)) === job.credential,
-              "INBOX_ACCESS",
-              "GitHub credentials changed during refresh",
-            );
-            return page;
-          }),
-        ).pipe(Effect.result);
-        if (Result.isFailure(observed))
-          return yield* this.recordFailure(job, prior, now, observed.failure);
-        const page = observed.success;
-        if (yield* indexEffect(() => this.index.cooldown(job.partition, now))) return;
-        const { high, times } = computeHighWatermark(
-          resume ? prior.high : prior.watermark,
+    return Effect.gen({ self: this }, function* () {
+      const resume = !!prior.cursor;
+      const full = job.history ? "history" : "open";
+      const mode = resume ? prior.mode : !prior.last || now - prior.full >= dayMs ? full : "delta";
+      const start = resume ? prior.start : now;
+      const observed = yield* Effect.gen({ self: this }, function* () {
+        const page = yield* this.remote.page(job.p, job.o, job.kind, mode, prior.cursor, job.label);
+        if (prior.repo && (prior.repo !== page.repo || prior.viewer !== page.viewer))
+          return yield* new WorkGraphError(
+            "INBOX_ACCESS",
+            "GitHub repository or viewer identity changed",
+          );
+        if ((yield* this.remote.partition(job.p, job.o)) !== job.credential)
+          return yield* new WorkGraphError(
+            "INBOX_ACCESS",
+            "GitHub credentials changed during refresh",
+          );
+        return page;
+      }).pipe(Effect.result);
+      if (Result.isFailure(observed))
+        return yield* this.recordFailure(job, prior, now, observed.failure);
+      const page = observed.success;
+      if (yield* indexEffect(() => this.index.cooldown(job.partition, now))) return;
+      const { high, times } = computeHighWatermark(
+        resume ? prior.high : prior.watermark,
+        page.items,
+      );
+      const reached = mode === "delta" && times.some((t) => t < prior.watermark - 60000);
+      const cursor = reached ? undefined : page.cursor;
+      const next: Scan = {
+        mode,
+        start,
+        last: cursor ? prior.last : now,
+        full: !cursor && mode !== "delta" ? now : prior.full,
+        watermark: cursor ? prior.watermark : Math.max(high, start),
+        high,
+        repo: page.repo,
+        viewer: page.viewer,
+        cursor,
+        attempt: now,
+        retry: 0,
+        denied: false,
+      };
+      yield* indexEffect(() =>
+        this.index.page(
+          job.stream,
+          job.partition,
           page.items,
-        );
-        const reached = mode === "delta" && times.some((t) => t < prior.watermark - 60000);
-        const cursor = reached ? undefined : page.cursor;
-        const next: Scan = {
-          mode,
-          start,
-          last: cursor ? prior.last : now,
-          full: !cursor && mode !== "delta" ? now : prior.full,
-          watermark: cursor ? prior.watermark : Math.max(high, start),
-          high,
-          repo: page.repo,
-          viewer: page.viewer,
-          cursor,
-          attempt: now,
-          retry: 0,
-          denied: false,
-        };
-        yield* indexEffect(() =>
-          this.index.page(
-            job.stream,
-            job.partition,
-            page.items,
-            next,
-            now,
-            !cursor && mode === "open" && !job.label ? { kind: job.kind, start } : undefined,
-          ),
-        );
-      }),
-    );
+          next,
+          now,
+          !cursor && mode === "open" && !job.label ? { kind: job.kind, start } : undefined,
+        ),
+      );
+    });
   }
   private start(job: Job, background: boolean) {
     return SynchronizedRef.modifyEffect(this.runningRef, (running) =>
@@ -258,188 +232,182 @@ export class GithubInbox {
     });
   }
   list = (q: InboxQuery = {}) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const now = yield* Clock.currentTimeMillis;
-        const jobs: Job[] = [],
-          errors: Coverage[] = [];
-        const keys = new Map<string, string | undefined>();
-        let selected = false;
-        const hosts = yield* githubHosts;
-        for (const p of yield* this.records.projects) {
-          if (q.repository_id && q.repository_id !== p.id) continue;
-          const o = inboxOrigin(p, hosts);
-          if (!o) continue;
-          selected = true;
-          if (!keys.has(o.host))
-            keys.set(
-              o.host,
-              yield* this.remote.partition(p, o).pipe(Effect.orElseSucceed(() => undefined)),
-            );
-          const credential = keys.get(o.host);
-          for (const kind of q.kind ? [q.kind] : (["issue", "pr"] as const)) {
-            if (q.state === "MERGED" && kind === "issue") continue;
-            if (!credential) {
-              errors.push({
-                repository_id: p.id,
-                kind,
-                status: "unavailable",
-                message: "GitHub credentials unavailable",
-              });
-              continue;
-            }
-            const partition = JSON.stringify([credential, p.id, o.host, o.owner, o.name]);
-            const history = !!q.state && q.state !== "OPEN";
-            const baseline = JSON.stringify([partition, kind, history, ""]);
-            const label =
-              q.label &&
-              (yield* indexEffect(
-                () =>
-                  !this.index.scan(baseline)?.last || this.index.needsLabelScan(partition, kind),
-              ))
-                ? q.label
-                : undefined;
-            jobs.push({
-              p,
-              o,
-              partition,
-              credential,
-              stream: label ? JSON.stringify([partition, kind, history, label]) : baseline,
+    Effect.gen({ self: this }, function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const jobs: Job[] = [],
+        errors: Coverage[] = [];
+      const keys = new Map<string, string | undefined>();
+      let selected = false;
+      const hosts = yield* githubHosts;
+      for (const p of yield* this.records.projects) {
+        if (q.repository_id && q.repository_id !== p.id) continue;
+        const o = yield* tryDomainValue(inboxOrigin, p, hosts);
+        if (!o) continue;
+        selected = true;
+        if (!keys.has(o.host))
+          keys.set(
+            o.host,
+            yield* this.remote.partition(p, o).pipe(Effect.orElseSucceed(() => undefined)),
+          );
+        const credential = keys.get(o.host);
+        for (const kind of q.kind ? [q.kind] : (["issue", "pr"] as const)) {
+          if (q.state === "MERGED" && kind === "issue") continue;
+          if (!credential) {
+            errors.push({
+              repository_id: p.id,
               kind,
-              history,
-              label,
+              status: "unavailable",
+              message: "GitHub credentials unavailable",
             });
+            continue;
           }
-        }
-        if (q.repository_id && !selected)
-          return yield* new CrewError("INBOX_PROJECT", "Select an onboarded GitHub project");
-        const failure = yield* Ref.modify(this.refreshFailures, (map) => {
-          for (const { partition } of jobs) {
-            const found = map.get(partition);
-            if (found) {
-              const next = new Map(map);
-              next.delete(partition);
-              return [found, next] as const;
-            }
-          }
-          return [undefined, map] as const;
-        });
-        if (failure) return yield* failure;
-        const states = yield* Effect.forEach(jobs, (job) =>
-          this.state(job, now).pipe(Effect.map((prior) => ({ job, prior }))),
-        );
-        if (q.refresh)
-          for (const entry of states) {
-            if (entry.prior.last && !entry.prior.cursor && entry.prior.retry <= now) {
-              entry.prior = { ...entry.prior, requested: true };
-              yield* indexEffect(() => this.index.save(entry.job.stream, entry.prior));
-            }
-          }
-        const due = states.filter(
-          ({ prior }) =>
-            prior.retry <= now &&
-            (prior.cursor || !prior.last || prior.requested || now - prior.last >= freshMs),
-        );
-        due.sort((a, b) => a.prior.attempt - b.prior.attempt);
-        const cold = states.every(({ prior }) => !prior.last && !prior.cursor);
-        const fibers = yield* Effect.forEach(due.slice(0, 2), ({ job }) => this.start(job, !cold));
-        if (cold) yield* Effect.forEach(fibers, (f) => Fiber.join(f));
-        const active = yield* SynchronizedRef.get(this.runningRef);
-        const coverage: Coverage[] = [...errors];
-        const scopes = new Set<string>();
-        for (const { job } of states) {
-          const state = yield* this.state(job, now);
-          if (!state.denied) scopes.add(job.partition);
-          coverage.push({
-            repository_id: job.p.id,
-            kind: job.kind,
-            status: state.error
-              ? state.last && !state.denied
-                ? "stale"
-                : "unavailable"
-              : state.cursor || !state.last
-                ? "loading"
-                : state.requested || active.has(job.stream) || now - state.last >= freshMs
-                  ? "stale"
-                  : "current",
-            observed_at: state.last || undefined,
-            message: state.error,
+          const partition = JSON.stringify([credential, p.id, o.host, o.owner, o.name]);
+          const history = !!q.state && q.state !== "OPEN";
+          const baseline = JSON.stringify([partition, kind, history, ""]);
+          const label =
+            q.label &&
+            (yield* indexEffect(
+              () => !this.index.scan(baseline)?.last || this.index.needsLabelScan(partition, kind),
+            ))
+              ? q.label
+              : undefined;
+          jobs.push({
+            p,
+            o,
+            partition,
+            credential,
+            stream: label ? JSON.stringify([partition, kind, history, label]) : baseline,
+            kind,
+            history,
+            label,
           });
         }
-        const deliveries = yield* this.deliveries;
-        const found = yield* indexEffect(() => this.index.find([...scopes], q, deliveries));
-        return { ...found, coverage };
-      }),
-    );
+      }
+      if (q.repository_id && !selected)
+        return yield* new WorkGraphError("INBOX_PROJECT", "Select an onboarded GitHub project");
+      const failure = yield* Ref.modify(this.refreshFailures, (map) => {
+        for (const { partition } of jobs) {
+          const found = map.get(partition);
+          if (found) {
+            const next = new Map(map);
+            next.delete(partition);
+            return [found, next] as const;
+          }
+        }
+        return [undefined, map] as const;
+      });
+      if (failure) return yield* failure;
+      const states = yield* Effect.forEach(jobs, (job) =>
+        this.state(job, now).pipe(Effect.map((prior) => ({ job, prior }))),
+      );
+      if (q.refresh)
+        for (const entry of states) {
+          if (entry.prior.last && !entry.prior.cursor && entry.prior.retry <= now) {
+            entry.prior = { ...entry.prior, requested: true };
+            yield* indexEffect(() => this.index.save(entry.job.stream, entry.prior));
+          }
+        }
+      const due = states.filter(
+        ({ prior }) =>
+          prior.retry <= now &&
+          (prior.cursor || !prior.last || prior.requested || now - prior.last >= freshMs),
+      );
+      due.sort((a, b) => a.prior.attempt - b.prior.attempt);
+      const cold = states.every(({ prior }) => !prior.last && !prior.cursor);
+      const fibers = yield* Effect.forEach(due.slice(0, 2), ({ job }) => this.start(job, !cold));
+      if (cold) yield* Effect.forEach(fibers, (f) => Fiber.join(f));
+      const active = yield* SynchronizedRef.get(this.runningRef);
+      const coverage: Coverage[] = [...errors];
+      const scopes = new Set<string>();
+      for (const { job } of states) {
+        const state = yield* this.state(job, now);
+        if (!state.denied) scopes.add(job.partition);
+        coverage.push({
+          repository_id: job.p.id,
+          kind: job.kind,
+          status: state.error
+            ? state.last && !state.denied
+              ? "stale"
+              : "unavailable"
+            : state.cursor || !state.last
+              ? "loading"
+              : state.requested || active.has(job.stream) || now - state.last >= freshMs
+                ? "stale"
+                : "current",
+          observed_at: state.last || undefined,
+          message: state.error,
+        });
+      }
+      const deliveries = yield* this.deliveries;
+      const found = yield* indexEffect(() => this.index.find([...scopes], q, deliveries));
+      return { ...found, coverage };
+    });
   private project = (target: InboxTarget) =>
     Effect.gen({ self: this }, function* () {
       const p = yield* this.records.project(target.repository_id);
-      const o = p && inboxOrigin(p, yield* githubHosts);
+      const hosts = yield* githubHosts;
+      const o = p && (yield* tryDomainValue(inboxOrigin, p, hosts));
       if (!p || !o)
-        return yield* new CrewError("INBOX_PROJECT", "Select an onboarded GitHub project");
+        return yield* new WorkGraphError("INBOX_PROJECT", "Select an onboarded GitHub project");
       return { p, o };
     });
   detail = (target: InboxTarget, force = false) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const { p, o } = yield* this.project(target);
-        const credential = yield* this.remote.partition(p, o);
-        const key = sha256Json([
-          credential,
-          p.id,
-          o,
-          target.repo_node,
-          target.item_node,
-          target.kind,
-          target.number,
-        ]);
-        const now = yield* Clock.currentTimeMillis;
-        const partition = JSON.stringify([credential, p.id, o.host, o.owner, o.name]);
-        const denied = yield* indexEffect(() => this.index.cooldown(partition, now));
-        if (denied) return yield* new CrewError("INBOX_ACCESS", denied.error);
-        const read = domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const observedAt = yield* Clock.currentTimeMillis;
-            const limit = yield* indexEffect(() => this.index.cooldown(credential, observedAt));
-            if (limit) return yield* new CrewError("INBOX_LIMIT", limit.error);
-            const data = yield* this.remote.detail(p, o, target).pipe(
-              Effect.tapError((error) =>
-                Effect.gen({ self: this }, function* () {
-                  if (error.code === "INBOX_LIMIT")
-                    yield* indexEffect(() =>
-                      this.index.backoff(credential, observedAt + 3600000, error.message),
-                    );
-                  if (error.code === "INBOX_ACCESS") {
-                    yield* this.details.clear;
-                    yield* indexEffect(() =>
-                      this.index.revoke(partition, observedAt + 60000, error.message),
-                    );
-                  }
-                }),
-              ),
-            );
-            ensure(
-              (yield* this.remote.partition(p, o)) === credential,
-              "INBOX_ACCESS",
-              "GitHub credentials changed during detail read",
-            );
-            ensure(
-              !(yield* indexEffect(() => this.index.cooldown(partition, observedAt))),
-              "INBOX_ACCESS",
-              "Repository access changed during detail read",
-            );
-            return { at: observedAt, data };
-          }),
+    Effect.gen({ self: this }, function* () {
+      const { p, o } = yield* this.project(target);
+      const credential = yield* this.remote.partition(p, o);
+      const key = sha256Json([
+        credential,
+        p.id,
+        o,
+        target.repo_node,
+        target.item_node,
+        target.kind,
+        target.number,
+      ]);
+      const now = yield* Clock.currentTimeMillis;
+      const partition = JSON.stringify([credential, p.id, o.host, o.owner, o.name]);
+      const denied = yield* indexEffect(() => this.index.cooldown(partition, now));
+      if (denied) return yield* new WorkGraphError("INBOX_ACCESS", denied.error);
+      const read = Effect.gen({ self: this }, function* () {
+        const observedAt = yield* Clock.currentTimeMillis;
+        const limit = yield* indexEffect(() => this.index.cooldown(credential, observedAt));
+        if (limit) return yield* new WorkGraphError("INBOX_LIMIT", limit.error);
+        const data = yield* this.remote.detail(p, o, target).pipe(
+          Effect.tapError((error) =>
+            Effect.gen({ self: this }, function* () {
+              if (error.code === "INBOX_LIMIT")
+                yield* indexEffect(() =>
+                  this.index.backoff(credential, observedAt + 3600000, error.message),
+                );
+              if (error.code === "INBOX_ACCESS") {
+                yield* this.details.clear;
+                yield* indexEffect(() =>
+                  this.index.revoke(partition, observedAt + 60000, error.message),
+                );
+              }
+            }),
+          ),
         );
-        const hit = yield* this.details.observe(key, force, read);
-        const deliveries = yield* this.deliveries;
-        return {
-          ...hit.data,
-          observed_at: hit.at,
-          links: yield* indexEffect(() => this.index.links(hit.data, deliveries)),
-        };
-      }),
-    );
+        if ((yield* this.remote.partition(p, o)) !== credential)
+          return yield* new WorkGraphError(
+            "INBOX_ACCESS",
+            "GitHub credentials changed during detail read",
+          );
+        if (yield* indexEffect(() => this.index.cooldown(partition, observedAt)))
+          return yield* new WorkGraphError(
+            "INBOX_ACCESS",
+            "Repository access changed during detail read",
+          );
+        return { at: observedAt, data };
+      });
+      const hit = yield* this.details.observe(key, force, read);
+      const deliveries = yield* this.deliveries;
+      return {
+        ...hit.data,
+        observed_at: hit.at,
+        links: yield* indexEffect(() => this.index.links(hit.data, deliveries)),
+      };
+    });
   assign = (target: InboxTarget, session: SessionId, instructions = "") =>
     assignInboxWork(
       {
@@ -454,15 +422,4 @@ export class GithubInbox {
       session,
       instructions,
     );
-}
-
-export class GithubInboxService extends Context.Service<GithubInboxService, GithubInbox>()(
-  "abracode/GithubInbox",
-) {
-  static layer(inbox: GithubInbox) {
-    return Layer.effect(
-      GithubInboxService,
-      Effect.acquireRelease(Effect.succeed(inbox), (service) => service.close),
-    );
-  }
 }

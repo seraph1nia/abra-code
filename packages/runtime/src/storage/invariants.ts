@@ -1,3 +1,4 @@
+import { StorageError } from "../errors.ts";
 import { isDeepStrictEqual } from "node:util";
 import { type StorageKey } from "@abracode/contracts/identities";
 import {
@@ -60,7 +61,7 @@ function validateControlAndRevision(
 ): CrewError | undefined {
   const expectedGeneration = control ? prior.control_generation + 1 : prior.control_generation;
   if (expectedGeneration !== next.control_generation) {
-    return new CrewError(
+    return new StorageError(
       "STALE_OPERATION",
       `${key}: Control generation changed; discard stale result`,
     );
@@ -73,14 +74,14 @@ function validateControlAndRevision(
     const preparedAtSameRevision =
       next.operation.status === "prepared" && next.revision === prior.revision;
     if (!sameOperation && !preparedAtSameRevision) {
-      return new CrewError(
+      return new StorageError(
         "STALE_OPERATION",
         `${key}: Operation identity changed; discard stale result`,
       );
     }
   }
   if (next.revision !== prior.revision) {
-    return new CrewError(
+    return new StorageError(
       "STALE_REVISION",
       `${key}: Record revision changed; reread or commit only explicitly owned fields`,
     );
@@ -95,7 +96,7 @@ function validateSchemaAndPolicy(
   control: boolean,
 ): CrewError | undefined {
   if (prior.openspec_schema !== next.openspec_schema) {
-    return new CrewError("SCHEMA_REBIND", `${key}: Captured schema selection is immutable`);
+    return new StorageError("SCHEMA_REBIND", `${key}: Captured schema selection is immutable`);
   }
   const before = prior.openspec_schema_binding;
   const after = next.openspec_schema_binding;
@@ -106,13 +107,13 @@ function validateSchemaAndPolicy(
         ? !isDeepStrictEqual(before, after)
         : !after || before.selection_source !== after.selection_source))
   ) {
-    return new CrewError(
+    return new StorageError(
       "SCHEMA_REBIND",
       `${key}: Schema binding cannot be removed, rebound or fabricated for a legacy execution`,
     );
   }
   if (!control && !jsonEqual(prior.effective_policy, next.effective_policy)) {
-    return new CrewError(
+    return new StorageError(
       "POLICY_DRIFT",
       `${key}: Effective execution policy is immutable without an explicit revision`,
     );
@@ -122,7 +123,7 @@ function validateSchemaAndPolicy(
     (!next.configuration_snapshot ||
       !jsonEqual(prior.configuration_snapshot, next.configuration_snapshot))
   ) {
-    return new CrewError(
+    return new StorageError(
       "CONFIG_SNAPSHOT",
       "Captured execution model selections cannot be rewritten or removed",
     );
@@ -143,19 +144,22 @@ function validateRetainedHistories(
   next: ManagedExecution,
 ): CrewError | undefined {
   if (prior.rounds && !hasAppendOnlyPrefix(prior.rounds, next.rounds)) {
-    return new CrewError("ROUND_HISTORY", "Correction history cannot be rewritten or removed");
+    return new StorageError("ROUND_HISTORY", "Correction history cannot be rewritten or removed");
   }
   if (
     prior.external_history &&
     !hasAppendOnlyPrefix(prior.external_history, next.external_history)
   ) {
-    return new CrewError("EXTERNAL_HISTORY", "External run history cannot be rewritten or removed");
+    return new StorageError(
+      "EXTERNAL_HISTORY",
+      "External run history cannot be rewritten or removed",
+    );
   }
   if (prior.external_validation && prior.external_validation.custody !== "returned") {
     const nextExternal = next.external_validation;
     for (const field of externalIdentityFields) {
       if (!nextExternal || !jsonEqual(nextExternal[field], prior.external_validation[field])) {
-        return new CrewError(
+        return new StorageError(
           "EXTERNAL_IDENTITY",
           "Active external launch cannot be rebound or removed",
         );
@@ -166,14 +170,14 @@ function validateRetainedHistories(
     prior.feedback?.history &&
     !hasAppendOnlyPrefix(prior.feedback.history, next.feedback?.history)
   ) {
-    return new CrewError(
+    return new StorageError(
       "FEEDBACK_HISTORY",
       "Retained feedback history cannot be removed or rewritten",
     );
   }
   if (prior.visual_reports) {
     const error = visualReportHistoryError(prior.visual_reports, next.visual_reports);
-    if (error) return new CrewError("REPORT_HISTORY", error);
+    if (error) return new StorageError("REPORT_HISTORY", error);
   }
   return undefined;
 }
@@ -185,6 +189,22 @@ export function validateExecutionTransition(
   control: boolean,
 ): Effect.Effect<void, CrewError> {
   return Effect.gen(function* () {
+    if (
+      prior.pending_issue_status &&
+      (prior.control_generation !== next.control_generation ||
+        (next.pending_issue_status !== undefined &&
+          next.pending_issue_status !== prior.pending_issue_status) ||
+        (prior.current_phase !== next.current_phase &&
+          !(
+            prior.pending_issue_status === "closed" &&
+            next.pending_issue_status === undefined &&
+            next.current_phase === "completed"
+          )))
+    )
+      return yield* new StorageError(
+        "PENDING_ISSUE_STATUS",
+        "Reconcile the pending issue update before changing execution control",
+      );
     const syncFailure =
       validateControlAndRevision(key, prior, next, control) ??
       validateSchemaAndPolicy(key, prior, next, control) ??
@@ -194,12 +214,12 @@ export function validateExecutionTransition(
     if (prior.messages) {
       const nextMessages = yield* decode(MessageIntentsSchema, next.messages, "Message history");
       const error = messageHistoryError(prior.messages, nextMessages);
-      if (error) return yield* new CrewError("MESSAGE_HISTORY", error);
+      if (error) return yield* new StorageError("MESSAGE_HISTORY", error);
     }
     if (prior.planning) {
       const nextPlanning = yield* decode(PlanningSchema, next.planning, "Planning history");
       const error = planningHistoryError(prior.planning, nextPlanning);
-      if (error) return yield* new CrewError("PLANNING_HISTORY", error);
+      if (error) return yield* new StorageError("PLANNING_HISTORY", error);
     }
   });
 }

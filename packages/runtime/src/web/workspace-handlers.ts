@@ -5,6 +5,9 @@ import { CrewError } from "../domain.ts";
 import { WorkspaceFeed } from "./agent.ts";
 import {
   workspaceApi,
+  workReadEndpoints,
+  type WorkReadName,
+  type WorkReadInput,
   WorkspaceError,
   WorkspaceBadRequest,
   WorkspaceUnavailable,
@@ -78,9 +81,13 @@ export function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
   const handle = <A>(operation: Effect.Effect<A, CrewError>) =>
     operation.pipe(Effect.mapError(refused));
   const workRead =
-    <I, A>(read: (query: I) => Effect.Effect<A, CrewError>) =>
-    ({ query }: { query: I }) =>
-      handle(read(query));
+    <K extends WorkReadName>(name: K) =>
+    ({ query }: { query: WorkReadInput<K> }) =>
+      handle(backend.work[name](query));
+  // Each identifier comes from the same HTTP contract as its decoded query and result.
+  const reads = Object.fromEntries(
+    Object.values(workReadEndpoints).map(({ identifier }) => [identifier, workRead(identifier)]),
+  ) as { [K in WorkReadName]: ReturnType<typeof workRead<K>> };
   const operations = HttpApiBuilder.group(workspaceApi, "workspace", (handlers) =>
     handlers
       .handle("memorySearch", ({ query }) => handle(backend.memorySearch(query)))
@@ -129,103 +136,7 @@ export function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
   );
   const work = HttpApiBuilder.group(workspaceApi, "work", (handlers) =>
     handlers
-      .handle(
-        "evidenceSearch",
-        workRead((q) => backend.work.evidenceSearch(q)),
-      )
-      .handle(
-        "sessions",
-        workRead((q) => backend.work.sessions(q)),
-      )
-      .handle(
-        "thoughtWork",
-        workRead((q) => backend.work.thoughtWork(q)),
-      )
-      .handle(
-        "thoughtList",
-        workRead((q) => backend.work.thoughtList(q)),
-      )
-      .handle(
-        "thoughtDetail",
-        workRead((q) => backend.work.thoughtDetail(q)),
-      )
-      .handle(
-        "githubInbox",
-        workRead((q) => backend.work.githubInbox(q)),
-      )
-      .handle(
-        "githubItem",
-        workRead((q) => backend.work.githubItem(q)),
-      )
-      .handle(
-        "binding",
-        workRead((q) => backend.work.binding(q)),
-      )
-      .handle(
-        "find",
-        workRead((q) => backend.work.find(q)),
-      )
       .handle("resolve", ({ payload }) => handle(backend.resolve(payload)))
-      .handle(
-        "evidence",
-        workRead((q) => backend.work.evidence(q)),
-      )
-      .handle(
-        "verification",
-        workRead((q) => backend.work.verification(q)),
-      )
-      .handle(
-        "overview",
-        workRead((q) => backend.work.overview(q)),
-      )
-      .handle(
-        "detail",
-        workRead((q) => backend.work.detail(q)),
-      )
-      .handle(
-        "document",
-        workRead((q) => backend.work.document(q)),
-      )
-      .handle(
-        "diff",
-        workRead((q) => backend.work.diff(q)),
-      )
-      .handle(
-        "worker",
-        workRead((q) => backend.work.worker(q)),
-      )
-      .handle(
-        "worker-history",
-        workRead((q) => backend.work["worker-history"](q)),
-      )
-      .handle(
-        "leads",
-        workRead((q) => backend.work.leads(q)),
-      )
-      .handle(
-        "messages",
-        workRead((q) => backend.work.messages(q)),
-      )
-      .handle(
-        "feedback",
-        workRead((q) => backend.work.feedback(q)),
-      )
-      .handle(
-        "report",
-        workRead((q) => backend.work.report(q)),
-      )
-      .handle(
-        "artifacts",
-        workRead((q) => backend.work.artifacts(q)),
-      )
-      .handle(
-        "artifactSummary",
-        workRead((q) => backend.work.artifactSummary(q)),
-      )
-      .handle(
-        "artifactDocument",
-        workRead((q) => backend.work.artifactDocument(q)),
-      )
       .handle("exportDocument", ({ payload }) => handle(backend.exportDocument(payload)))
       .handle("exportPreview", ({ query }) =>
         backend.readExport(query).pipe(
@@ -265,10 +176,7 @@ export function workspaceHandlers(backend: WebBackend, feed: WorkspaceFeed) {
           Effect.mapError(refused),
         ),
       )
-      .handle(
-        "decisions",
-        workRead((q) => backend.work.decisions(q)),
-      ),
+      .handleAll(reads),
   );
   const reviewUnavailable = () =>
     Effect.fail(new CrewError("REVIEW_UNAVAILABLE", "Reviews are unavailable"));

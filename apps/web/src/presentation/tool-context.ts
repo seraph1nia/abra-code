@@ -14,7 +14,10 @@ export const ObservationContext = createContext<
   | undefined
 >(undefined);
 
-export const BriefingForms = createContext<readonly AttentionForm[]>([]);
+export const TranscriptData = createContext<{
+  work: readonly WebWorkItem[];
+  forms: readonly AttentionForm[];
+}>({ work: [], forms: [] });
 
 export function attachmentKey(attachment: typeof PresentationAttachmentSchema.Type): string {
   const { target } = attachment;

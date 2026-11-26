@@ -1,11 +1,10 @@
+import { maxUtf8Bytes, utf8Bytes } from "../utf8.ts";
 import { DiagramCollectionSchema, StoredDiagramCollectionSchema } from "./diagrams.ts";
 import { Schema } from "effect";
 
 const boundedText = (bytes: number) =>
   Schema.String.check(
-    Schema.makeFilter(
-      (value) => new TextEncoder().encode(value).length <= bytes || `Maximum ${bytes} UTF-8 bytes`,
-    ),
+    Schema.makeFilter(maxUtf8Bytes(bytes), { expected: `Maximum ${bytes} UTF-8 bytes` }),
   );
 const text = boundedText(16384);
 const required = text.check(Schema.isNonEmpty());
@@ -99,9 +98,7 @@ export const ReportSnapshotSchema = Schema.Struct({
   limitations: Schema.Array(required).check(Schema.isMaxLength(64)),
 }).check(
   Schema.makeFilter(
-    (value) =>
-      new TextEncoder().encode(JSON.stringify(value)).length <= 524288 ||
-      "Report snapshot exceeds 512 KiB",
+    (value) => utf8Bytes(JSON.stringify(value)) <= 524288 || "Report snapshot exceeds 512 KiB",
   ),
 );
 export type ReportSnapshot = typeof ReportSnapshotSchema.Type;
@@ -112,11 +109,4 @@ export function validateSnapshot(input: unknown): ReportSnapshot {
   })(input);
   if (value.diagrams) Schema.decodeSync(DiagramCollectionSchema)(value.diagrams);
   return value;
-}
-/** For inert application/json script bodies, never executable authored code. */
-export function snapshotJSON(input: unknown): string {
-  return JSON.stringify(validateSnapshot(input))
-    .replaceAll("<", "\\u003c")
-    .replaceAll("\u2028", "\\u2028")
-    .replaceAll("\u2029", "\\u2029");
 }

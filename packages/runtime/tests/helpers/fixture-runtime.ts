@@ -9,7 +9,7 @@ import {
   type SessionState,
 } from "../../src/opencode/runtime.ts";
 import * as Id from "@abracode/contracts/identities";
-import { domainEffect } from "../../src/effect.ts";
+import { domainEffect } from "../effects.ts";
 import { Effect } from "effect";
 import { mkdir } from "../../src/filesystem.ts";
 import { join } from "node:path";

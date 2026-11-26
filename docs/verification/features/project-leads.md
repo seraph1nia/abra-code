@@ -16,7 +16,7 @@ work notices, revocation/stop and explicit session rotation. The actual native
 model turn executes only `abra_lead_action`. The integrated journey retains the
 original human plan/merge approval and independent worker permissions scenarios.
 
-`packages/runtime/tests/unit/leads.test.ts` exercises retained create intent after response loss,
+The `leads-registration.test.ts`, `leads-requests.test.ts` and `leads-authority.test.ts` suites exercise retained create intent after response loss,
 wrong sender/revision, conflicting identities, cross-project queries/proposals and
 dependencies, duplicate admission/replies, uncertain absent admission, shared
 attention capacity/budget, failed stop, revoked historical sessions, forged Abra

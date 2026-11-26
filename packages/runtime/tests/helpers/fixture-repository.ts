@@ -2,7 +2,7 @@ import { cp } from "node:fs/promises";
 import { decode } from "../../src/decode.ts";
 import { ConfigSchema } from "../../src/config/contracts.ts";
 import * as Id from "@abracode/contracts/identities";
-import { domainEffect } from "../../src/effect.ts";
+import { domainEffect } from "../effects.ts";
 import { Effect } from "effect";
 import { mkdir, writeFile } from "../../src/filesystem.ts";
 import { join } from "node:path";

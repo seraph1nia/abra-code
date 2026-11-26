@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { Count } from "@abracode/contracts/primitives";
 import { FormId, SessionId } from "@abracode/contracts/identities";
-import { FinishingTargetSchema, FinishingAnswerSchema } from "./finishing-contracts.ts";
+import { FinishingTargetSchema, FinishingAnswerSchema } from "./finishing/contracts.ts";
 import { DecisionSummarySchema } from "@abracode/contracts/workflow/obligation-summary";
 import { DeclaredWaitSchema } from "@abracode/contracts/workflow/obligation-summary";
 export {

@@ -1,3 +1,4 @@
+import { WorkflowError } from "../../errors.ts";
 import { Clock, Effect, Ref, Schedule } from "effect";
 import {
   type IssueId,
@@ -17,10 +18,9 @@ import {
   type ReadinessBlocker,
   type SetupExecution,
 } from "../../domain.ts";
-import { domainEffect } from "../../effect.ts";
 import { diagnosticText } from "../../opencode/diagnostics.ts";
 import { type Records } from "../../storage/store.ts";
-import { localDay } from "../../visibility/fleet.ts";
+import { localDay } from "@abracode/contracts/visibility/fleet";
 import { type WorkGraph } from "../../work/graph.ts";
 import { explainIssues } from "../../work/model.ts";
 import { summarizeCapacity, type CapacitySummary } from "../capacity.ts";
@@ -120,25 +120,26 @@ export class SnapshotQueries {
   capture = <A>(read: (revision: string) => Effect.Effect<A, CrewError>) =>
     this.deps.records
       .coordinateRead(() =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const revision = yield* this.deps.work.revision;
-            const value = yield* read(revision);
-            if (revision !== (yield* this.deps.work.revision))
-              return yield* new CrewError(
-                "OBSERVATION_CHANGED",
-                "Work graph changed during retained-state capture",
-              );
-            return value;
-          }),
-        ),
+        Effect.gen({ self: this }, function* () {
+          const revision = yield* this.deps.work.revision;
+          const value = yield* read(revision);
+          if (revision !== (yield* this.deps.work.revision))
+            return yield* new WorkflowError(
+              "OBSERVATION_CHANGED",
+              "Work graph changed during retained-state capture",
+            );
+          return value;
+        }),
       )
       .pipe(
         Effect.timeoutOrElse({
           duration: "500 millis",
           orElse: () =>
             Effect.fail(
-              new CrewError("OBSERVATION_TIMEOUT", "Retained-state capture exceeded its deadline"),
+              new WorkflowError(
+                "OBSERVATION_TIMEOUT",
+                "Retained-state capture exceeded its deadline",
+              ),
             ),
         }),
         Effect.retry({
@@ -149,72 +150,69 @@ export class SnapshotQueries {
         }),
         Effect.mapError((error) =>
           ["LOCKED", "OBSERVATION_CHANGED", "OBSERVATION_TIMEOUT"].includes(error.code)
-            ? new CrewError(
+            ? new WorkflowError(
                 "OBSERVATION_UNAVAILABLE",
                 `Coherent retained state is temporarily unavailable: ${error.message}`,
               )
             : error,
         ),
-        domainEffect,
       );
 
   observe = (query?: WorkDiscovery, includeRecords = false) =>
     this.capture((revision) =>
-      domainEffect(
-        Effect.gen({ self: this }, function* () {
-          const day = localDay(yield* Clock.currentTimeMillis);
-          const scans = yield* Effect.all(
-            {
-              issues: this.deps.work.list,
-              page: query ? this.deps.work.find(query) : Effect.undefined,
-              closures: this.deps.work.closureTimes,
-              completions: this.deps.work.completions(day.day_start, day.day_end),
-              projects: this.deps.records.projectScan,
-              executions: this.deps.records.executionScan,
-              setups: this.deps.records.setupScan,
-              recordsRevision: this.deps.records.observationRevision,
-              exported: includeRecords ? this.deps.records.export : Effect.undefined,
-            },
-            { concurrency: "unbounded" },
-          );
-          return {
-            issues: scans.issues,
-            exported: scans.exported,
-            page: scans.page,
-            closures: scans.closures,
-            completions: scans.completions,
-            day,
-            explanation: explainIssues(scans.issues),
-            projects: scans.projects.values,
-            executions: scans.executions.values,
-            setups: scans.setups.values,
-            recordsRevision: scans.recordsRevision,
-            diagnostics: [
-              ...scans.projects.diagnostics,
-              ...scans.executions.diagnostics,
-              ...scans.setups.diagnostics,
-            ],
-            source: {
-              work_revision: revision,
-              captured_at: yield* timestamp,
-              executions: scans.executions.values.map((e) => ({
-                issue_id: e.issue_id,
-                execution_id: e.execution_id,
-                revision: e.revision,
-              })),
-              projects: scans.projects.values.map((p) => ({
-                repository_id: p.id,
-                revision: p.revision,
-              })),
-              setups: scans.setups.values.map((e) => ({
-                repository_id: e.repository_id,
-                execution_id: e.execution_id,
-                revision: e.revision,
-              })),
-            },
-          };
-        }),
-      ),
+      Effect.gen({ self: this }, function* () {
+        const day = localDay(yield* Clock.currentTimeMillis);
+        const scans = yield* Effect.all(
+          {
+            issues: this.deps.work.list,
+            page: query ? this.deps.work.find(query) : Effect.undefined,
+            closures: this.deps.work.closureTimes,
+            completions: this.deps.work.completions(day.day_start, day.day_end),
+            projects: this.deps.records.projectScan,
+            executions: this.deps.records.executionScan,
+            setups: this.deps.records.setupScan,
+            recordsRevision: this.deps.records.observationRevision,
+            exported: includeRecords ? this.deps.records.export : Effect.undefined,
+          },
+          { concurrency: "unbounded" },
+        );
+        return {
+          issues: scans.issues,
+          exported: scans.exported,
+          page: scans.page,
+          closures: scans.closures,
+          completions: scans.completions,
+          day,
+          explanation: explainIssues(scans.issues),
+          projects: scans.projects.values,
+          executions: scans.executions.values,
+          setups: scans.setups.values,
+          recordsRevision: scans.recordsRevision,
+          diagnostics: [
+            ...scans.projects.diagnostics,
+            ...scans.executions.diagnostics,
+            ...scans.setups.diagnostics,
+          ],
+          source: {
+            work_revision: revision,
+            captured_at: yield* timestamp,
+            executions: scans.executions.values.map((e) => ({
+              issue_id: e.issue_id,
+              execution_id: e.execution_id,
+              revision: e.revision,
+            })),
+            projects: scans.projects.values.map((p) => ({
+              repository_id: p.id,
+              revision: p.revision,
+            })),
+            setups: scans.setups.values.map((e) => ({
+              repository_id: e.repository_id,
+              execution_id: e.execution_id,
+              revision: e.revision,
+            })),
+          },
+        };
+      }),
     );
 
   private slotUsage(cached: FinderCapacity, project?: Project) {
@@ -445,14 +443,14 @@ export class SnapshotQueries {
     });
 
   readinessContext = Effect.fn("Queries.readinessContext")(
-    function* (this: SnapshotQueries): Effect.fn.Return<ExternalReadinessContext, CrewError> {
+    { self: this },
+    function* (): Effect.fn.Return<ExternalReadinessContext, CrewError> {
       const declarations = yield* this.declarations();
       const authority = this.deps.config.auto_schedule
         ? (yield* this.deps.automaticAuthority()).blocker
         : undefined;
       return { declarations, authority };
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   readinessFor = (ids: readonly IssueId[], external?: ExternalReadinessContext) =>
@@ -498,34 +496,32 @@ export class SnapshotQueries {
     }: Pick<ReadBundle, "explanation" | "projects" | "executions" | "diagnostics" | "setups">,
     external?: ExternalReadinessContext,
   ) {
-    return domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const { declarations, authority } = external ?? (yield* this.readinessContext());
-        const capacity = summarizeCapacity([...executions, ...setups]);
-        const byID = new Map(executions.map((e) => [e.issue_id, e]));
-        const projectsByID = new Map(projects.map((p) => [p.id, p]));
-        const blocked = new Map(explanation.blocked.map((row) => [row.id, row.blocked_by]));
-        return [...explanation.ready, ...explanation.blocked]
-          .filter((issue) => issue.status !== "closed")
-          .map((issue) => ({
-            ...retainedReadiness(
-              this.deps.config,
-              issue,
-              blocked.get(issue.id) ?? [],
-              projectsByID.get(issue.repository_id),
-              byID.get(issue.id),
-              {
-                declarationDigest: declarations.digests.get(issue.repository_id),
-                declarationError: declarations.error,
-                authority,
-                capacity,
-                recordsUnavailable: diagnostics.length > 0,
-              },
-            ),
-            dependencies: blocked.get(issue.id) ?? issue.dependencies,
-          }));
-      }),
-    );
+    return Effect.gen({ self: this }, function* () {
+      const { declarations, authority } = external ?? (yield* this.readinessContext());
+      const capacity = summarizeCapacity([...executions, ...setups]);
+      const byID = new Map(executions.map((e) => [e.issue_id, e]));
+      const projectsByID = new Map(projects.map((p) => [p.id, p]));
+      const blocked = new Map(explanation.blocked.map((row) => [row.id, row.blocked_by]));
+      return [...explanation.ready, ...explanation.blocked]
+        .filter((issue) => issue.status !== "closed")
+        .map((issue) => ({
+          ...retainedReadiness(
+            this.deps.config,
+            issue,
+            blocked.get(issue.id) ?? [],
+            projectsByID.get(issue.repository_id),
+            byID.get(issue.id),
+            {
+              declarationDigest: declarations.digests.get(issue.repository_id),
+              declarationError: declarations.error,
+              authority,
+              capacity,
+              recordsUnavailable: diagnostics.length > 0,
+            },
+          ),
+          dependencies: blocked.get(issue.id) ?? issue.dependencies,
+        }));
+    });
   }
 }
 

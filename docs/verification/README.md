@@ -26,7 +26,7 @@ pnpm typecheck
 
 The native journey requires the frozen supplier cache, Git, the compiled `fs-ext` binding, and a previously provisioned compatible Chromium for agent-browser. Follow [browser prerequisites](../operations.md#browser-cli); browser installation is an explicit contributor setup step, never a recipe's automatic repair. `pnpm browser:install` provisions the browser if needed. Missing binaries/libraries must fail with the actual command output. Do not start or restart the operator's AbraCode service.
 
-The shared harness in [native-fixture.ts](../../packages/runtime/tests/e2e/native-fixture.ts) creates its own installation root using [install.ts](../../packages/runtime/tests/e2e/install.ts), isolated native config/data/cache/state, loopback ports/provider, local repositories and bare remotes. It checks the native server's `server.info()` and activates the central location before driving it. Worker preflight waits for the worker plugin to become active. A process merely listening is not sufficient health evidence.
+The shared harness in [native-harness.ts](../../packages/runtime/tests/e2e/native-harness.ts) creates its own installation root using [install.ts](../../packages/runtime/tests/e2e/install.ts), isolated native config/data/cache/state, loopback ports/provider, local repositories and bare remotes. It checks the native server's `server.info()` and activates the central location before driving it. Worker preflight waits for the worker plugin to become active. A process merely listening is not sufficient health evidence.
 
 ## Drive and retain evidence
 
@@ -66,7 +66,7 @@ and uses no user repository or remote. Contributor fixtures remain disposable.
 
 `pnpm test:one packages/runtime/tests/extended/installation.test.ts` builds and starts the shipped CopilotKit v2 workspace against its disposable installation. Runtime instructions and skills come from `packages/agents/assets`; the source-installation fixture omits the contributor `.agents` directory. Chromium opens the retained Abra without credentials, answers native conditional/default/hidden/string/number/integer/choice/multiselect/external fields, rejects an unbound controller checkpoint, reloads and reconnects after native service restart. Frontend shutdown must leave the native service and session usable. With `ABRACODE_TEST_EVIDENCE_DIR` set outside the fixture root, desktop and narrow screenshots survive teardown. It uses the existing report Chromium prerequisite and never touches the operator service.
 
-`pnpm exec vp test run --project integration packages/runtime/tests/integration/web-workspace.test.ts` exercises Effect HTTP plus shared `HttpApiClient`: response/payload/query validation, typed failures, exact host/origin checks, encoded-path rejection, raw native-route exclusion, CopilotKit v2 Fetch/AG-UI identity and retry behavior, and report sandbox/download headers. Unit tests in `web-admissions.test.ts` and `web-agent.test.ts` prove durable-before-admission identity binding, simultaneous tabs, response loss, interruptible observations and explicit native stop semantics. The retired general proxy/WebSocket/form-projection contract is removed.
+`pnpm exec vp test run --project integration packages/runtime/tests/integration/web-workspace-*.test.ts` exercises Effect HTTP plus shared `HttpApiClient`: response/payload/query validation, typed failures, exact host/origin checks, encoded-path rejection, raw native-route exclusion, CopilotKit v2 Fetch/AG-UI identity and retry behavior, and report sandbox/download headers. Unit tests in `web-admissions.test.ts` and `web-agent.test.ts` prove durable-before-admission identity binding, simultaneous tabs, response loss, interruptible observations and explicit native stop semantics. The retired general proxy/WebSocket/form-projection contract is removed.
 
 `pnpm test:one packages/runtime/tests/extended/development.test.ts` requires Docker Compose and starts a disposable native service and an isolated Memos Compose project on a dynamic port. It verifies that `pnpm dev` recreates Memos with its data volume intact and reuses its automatically provisioned notebook credential, replaces the native service process and retains the Abra session, exercises TanStack Router navigation, edits React source and checks that HMR preserves the draft, edits the Effect server and observes changed response headers through the Vite proxy, then proves shutdown preserves the native session. With an external evidence directory it retains `development.json` after cleanup.
 
@@ -131,7 +131,7 @@ outside its disposable state. This adds no browser polling or native admission.
 
 Native adapter/A2UI proof uses `native-agui-stream.test.ts`,
 `surface-publications.test.ts`, `presentation-associations.test.ts` and
-`web-workspace.test.ts`. These exercise real AG-UI reduction, complete-value
+`web-workspace-streaming.test.ts`. These exercise real AG-UI reduction, complete-value
 recovery, exact producing message/call/revision associations and refused generic
 callbacks. The native workspace journey adds 55 disposable closed-history rows
 and one blocked companion as setup data; those rows are not controller delivery

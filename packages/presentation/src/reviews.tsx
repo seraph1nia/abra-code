@@ -7,7 +7,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import {
@@ -33,17 +32,19 @@ import {
 } from "@abracode/contracts/web/review-catalog";
 import {
   ReviewDefinitionSchema,
+  ReviewFieldSchema,
   type ReviewAnswers,
   type ReviewDefinition,
   type ReviewField,
 } from "@abracode/contracts/web/reviews";
 import { A2uiMarkdown } from "./surfaces.tsx";
-import { SurfaceOwner } from "./surface-owner.ts";
+import { useSurfaceOwner } from "./surface-owner.ts";
 import { Button } from "./ui/button.tsx";
 import { Textarea } from "./ui/textarea.tsx";
 
 type Props = {
   review: ReviewDefinition;
+  hash: string;
   answers: ReviewAnswers;
   errors: Readonly<Record<string, string>>;
   disabled: boolean;
@@ -53,7 +54,6 @@ type Props = {
 
 /** Host-only capabilities that cannot live in A2UI data (DOM ID prefix, change callback, asset loader). */
 type ReviewHost = {
-  fields: readonly ReviewField[];
   prefix: string;
   change: (id: string, value: string | readonly string[]) => void;
   image: (id: string, label: string) => ReactNode;
@@ -66,16 +66,22 @@ function useReviewHost() {
   return value;
 }
 
+const decodeField = Schema.decodeUnknownSync(ReviewFieldSchema);
+const decodeOptions = Schema.decodeUnknownSync(
+  Schema.Array(
+    Schema.Struct({
+      value: Schema.String,
+      label: Schema.String,
+      preview: Schema.optionalKey(Schema.String),
+    }),
+  ),
+);
 const decodeReviewForm = Schema.decodeUnknownSync(ReviewFormSchema);
 function sameAnswer(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (Array.isArray(a) && Array.isArray(b))
     return a.length === b.length && a.every((v, i) => v === b[i]);
   return false;
-}
-
-function sameReviewDefinition(a: ReviewDefinition, b: ReviewDefinition): boolean {
-  return a === b || (a.review_id === b.review_id && JSON.stringify(a) === JSON.stringify(b));
 }
 
 function ReviewHeading({ title, description }: { title: string; description?: string }) {
@@ -254,7 +260,7 @@ function FieldControl({
 }
 
 const reactReviewCatalog = implementedReviewCatalog<ReactCatalogComponent>([
-  ...["Column", "Row", "Text"].map((name) => basicCatalog.components.get(name)!),
+  basicCatalog.components.get("Column")!,
   createComponentImplementation(reviewCatalog.components.get("ReviewForm")!, ({ props }) => {
     const form = useMemo(() => decodeReviewForm({ ...props, component: "ReviewForm" }), [props]);
     return <ReviewHeading title={form.title} description={form.description} />;
@@ -262,9 +268,33 @@ const reactReviewCatalog = implementedReviewCatalog<ReactCatalogComponent>([
   ...["ChoicePicker", "TextField", "DesignChoiceGroup"].map((name) => {
     const api = basicCatalog.components.get(name) ?? reviewCatalog.components.get(name)!;
     return createComponentImplementation(api, function ReviewInput({ props, context }) {
-      const host = useReviewHost();
-      const field = host.fields.find((field) => field.id === context.componentModel.id);
-      if (!field) throw new Error("Review field is unavailable");
+      const id = context.componentModel.id;
+      const model = context.dataContext.dataModel;
+      const hints = model.get<{
+        required: boolean;
+        description: string;
+        options: Record<string, string>;
+      }>(`/fieldHints/${id}`);
+      const field = decodeField({
+        id,
+        label: props.label,
+        required: hints?.required ?? false,
+        ...(hints?.description && { description: hints.description }),
+        component:
+          name === "TextField"
+            ? "CommentField"
+            : name === "DesignChoiceGroup"
+              ? name
+              : props.variant === "multipleSelection"
+                ? "MultiSelect"
+                : "SingleSelect",
+        ...(name !== "TextField" && {
+          options: decodeOptions(props.options).map((option) => ({
+            ...option,
+            ...(hints?.options[option.value] && { description: hints.options[option.value] }),
+          })),
+        }),
+      });
       return (
         <FieldControl
           field={field}
@@ -327,22 +357,15 @@ function syncReviewDataModel(
 }
 
 /** Pure A2UI presentation. State flows through SurfaceModel.dataModel; host owns assets & submission. */
-export function ReviewControls({ review, answers, errors, disabled, change, image }: Props) {
+export function ReviewControls({ review, hash, answers, errors, disabled, change, image }: Props) {
   const prefix = useId();
-  const [owner] = useState(
-    () =>
-      new SurfaceOwner(
-        review,
-        prepareReviewSurface,
-        (rendered) => rendered.processor.dispose(),
-        sameReviewDefinition,
-      ),
+  const revision = useMemo(() => ({ review, hash }), [review, hash]);
+  const { rendered, error } = useSurfaceOwner(
+    revision,
+    ({ review }) => prepareReviewSurface(review),
+    (view) => view.processor.dispose(),
+    (a, b) => a.hash === b.hash,
   );
-  const view = useSyncExternalStore(owner.subscribe, owner.read, owner.read);
-  useEffect(() => owner.replace(review), [owner, review]);
-  useEffect(() => owner.committed(view), [owner, view]);
-
-  const { rendered, error } = view;
   // Sync host-managed answers, validation errors and disabled state into the A2UI DataModel
   // without recreating the MessageProcessor.
   useEffect(() => {
@@ -350,10 +373,7 @@ export function ReviewControls({ review, answers, errors, disabled, change, imag
     syncReviewDataModel(rendered.surface, rendered.review, answers, errors, disabled);
   }, [rendered, answers, errors, disabled]);
 
-  const host = useMemo<ReviewHost>(
-    () => ({ fields: review.fields, prefix, change, image }),
-    [review.fields, prefix, change, image],
-  );
+  const host = useMemo<ReviewHost>(() => ({ prefix, change, image }), [prefix, change, image]);
 
   return (
     <ReviewHostContext.Provider value={host}>

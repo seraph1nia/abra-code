@@ -9,7 +9,7 @@ import { CrewError, type Execution, type ReadinessBlocker } from "../../src/doma
 import {
   supervisionSummary,
   SupervisionAggregateSchema,
-} from "../../src/visibility/supervision.ts";
+} from "../../src/workflow/read-model/supervision.ts";
 import { decode } from "../../src/decode.ts";
 
 test("primary supervision counts are exclusive projections; native queued and unavailable remain honest", async (t) => {

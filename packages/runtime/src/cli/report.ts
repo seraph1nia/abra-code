@@ -1,32 +1,31 @@
 import { createServer } from "node:http";
-import { resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { NodeHttpServer } from "@effect/platform-node";
-import { ByteSize, Console, Effect, FileSystem } from "effect";
+import { Console, Effect, FileSystem } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { CrewError } from "../domain.ts";
 import { AbsolutePath } from "@abracode/contracts/identities";
 import { sourceInstallationRoot } from "../installation.ts";
 import { readReportDocument } from "@abracode/contracts/presentation/report-document";
+import { realpath } from "../filesystem.ts";
 import { ProcessRunner } from "../process.ts";
 import { maximumHTMLBytes, validatePortableHTML } from "../reporting/report-build.ts";
+import { readBoundedText } from "../reporting/renderer-evidence.ts";
 import { ReactDocumentRenderer } from "../reporting/report-export.ts";
 
-const readBoundedReportFile = (input: string, maxBytes: number) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = resolve(input);
-    const stat = yield* fs
-      .lstat(path)
-      .pipe(Effect.mapError((cause) => CrewError.from(cause.reason.cause ?? cause)));
-    if (stat.type !== "File" || ByteSize.toBigInt(stat.size) > BigInt(maxBytes))
-      return yield* new CrewError(
-        "REPORT_INPUT",
-        "A bounded regular saved report file is required.",
-      );
-    return yield* fs
-      .readFileString(path, "utf8")
-      .pipe(Effect.mapError((cause) => CrewError.from(cause.reason.cause ?? cause)));
-  });
+const readBoundedReportFile = (input: string, maxBytes: number) => {
+  const path = resolve(input);
+  return realpath(dirname(path)).pipe(
+    Effect.flatMap((directory) => readBoundedText(join(directory, basename(path)), maxBytes)),
+    Effect.catchIf(
+      (error) => error.code === "REPORT_PATH",
+      () =>
+        Effect.fail(
+          new CrewError("REPORT_INPUT", "A bounded regular saved report file is required."),
+        ),
+    ),
+  );
+};
 
 export const runReportPrepare = Effect.gen(function* () {
   const renderer = new ReactDocumentRenderer(

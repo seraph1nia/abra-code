@@ -1,14 +1,14 @@
+import { sha256 } from "../digest.ts";
+import { tryDomainValue } from "../effect.ts";
 import { remoteIdentity } from "../git/source.ts";
 import { decode as decodeToon } from "@toon-format/toon";
-import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Effect, Schema } from "effect";
+import { Config, Effect, Schema } from "effect";
 import { AbsolutePath, Executable, GitRemote } from "@abracode/contracts/identities";
 import { Count, NonEmpty } from "@abracode/contracts/primitives";
-import { CrewError, ensure, type Execution, type Project } from "../domain.ts";
+import { CrewError, type Execution, type Project } from "../domain.ts";
 import { decode } from "../decode.ts";
-import { domainEffect } from "../effect.ts";
 import { pathExists, readFile } from "../filesystem.ts";
 import { parseYaml } from "../config/contracts.ts";
 import { type Runner } from "../process.ts";
@@ -21,7 +21,7 @@ import {
   type ExternalRecord,
 } from "@abracode/contracts/validation/contracts";
 
-export const intentDigest = (intent: string) => createHash("sha256").update(intent).digest("hex");
+export const intentDigest = (intent: string) => sha256(intent);
 export function machineDocument<S extends Schema.Constraint>(schema: S, output: string) {
   return Effect.try({
     try: () => decodeToon(output, { strict: true }),
@@ -50,7 +50,7 @@ const fixes = Schema.Struct({
 /** Pinned public CLI only. Output commands are compared to an allowlist and never evaluated as shell. */
 export class NoMistakes {
   constructor(private runner: Runner) {}
-  settings(e: Execution) {
+  settings = Effect.fn("NoMistakes.settings")(function* (e: Execution) {
     if (e.external_validation && e.external_validation.custody !== "returned")
       return {
         bin: e.external_validation.preflight.bin,
@@ -60,17 +60,20 @@ export class NoMistakes {
     return {
       bin: config?.bin ?? Executable.make("no-mistakes"),
       home:
-        config?.home ?? AbsolutePath.make(process.env.NM_HOME ?? join(homedir(), ".no-mistakes")),
+        config?.home ??
+        (yield* Config.String("NM_HOME").pipe(
+          Config.withDefault(join(homedir(), ".no-mistakes")),
+          Effect.mapError(CrewError.from),
+          Effect.flatMap((value) => decode(AbsolutePath, value, "External runtime home")),
+        )),
     };
-  }
+  });
   private call(e: Execution, args: string[], boundedWait = false) {
-    return Effect.suspend(() => {
+    return Effect.gen({ self: this }, function* () {
       if (!e.worktree_directory)
-        return Effect.fail(
-          new CrewError("WORKTREE", "External validation requires an owned worktree"),
-        );
-      const config = this.settings(e);
-      return this.runner.run(
+        return yield* new CrewError("WORKTREE", "External validation requires an owned worktree");
+      const config = yield* this.settings(e);
+      return yield* this.runner.run(
         config.bin,
         args,
         e.worktree_directory,
@@ -94,8 +97,9 @@ export class NoMistakes {
     );
   }
   preflight = Effect.fn("NoMistakes.preflight")(
-    function* (this: NoMistakes, p: Project, e: Execution) {
-      const config = this.settings(e);
+    { self: this },
+    function* (p: Project, e: Execution) {
+      const config = yield* this.settings(e);
       const [version, help, homeOutput] = yield* Effect.all(
         [
           this.call(e, ["--version"]),
@@ -104,12 +108,16 @@ export class NoMistakes {
         ],
         { concurrency: "unbounded" },
       );
-      ensure(
-        /^no-mistakes version v?1\.84\.0(?:\s|$)/.test(version.trim()) ||
-          /^no-mistakes v?1\.84\.0(?:\s|$)/.test(version.trim()),
-        "EXTERNAL_VERSION",
-        "Only no-mistakes v1.84.0 has a supported contract",
-      );
+      if (
+        !(
+          /^no-mistakes version v?1\.84\.0(?:\s|$)/.test(version.trim()) ||
+          /^no-mistakes v?1\.84\.0(?:\s|$)/.test(version.trim())
+        )
+      )
+        return yield* new CrewError(
+          "EXTERNAL_VERSION",
+          "Only no-mistakes v1.84.0 has a supported contract",
+        );
       for (const flag of [
         "--launch-nonce",
         "--validation-generation",
@@ -118,22 +126,22 @@ export class NoMistakes {
         "--skip",
         "--wait",
       ])
-        ensure(
-          help.includes(flag),
-          "EXTERNAL_FEATURE",
-          "Required no-mistakes launch feature is unavailable",
-        );
+        if (!help.includes(flag))
+          return yield* new CrewError(
+            "EXTERNAL_FEATURE",
+            "Required no-mistakes launch feature is unavailable",
+          );
       const home = yield* machineDocument(Home, homeOutput);
-      ensure(
-        home.daemon === "running",
-        "EXTERNAL_DAEMON",
-        "External daemon is stopped; selection never starts or restarts it",
-      );
-      ensure(
-        [p.path, e.worktree_directory].includes(home.repo) && home.current_branch === e.branch,
-        "EXTERNAL_REPOSITORY",
-        "Engine repository or branch identity differs from the owned worktree",
-      );
+      if (home.daemon !== "running")
+        return yield* new CrewError(
+          "EXTERNAL_DAEMON",
+          "External daemon is stopped; selection never starts or restarts it",
+        );
+      if (![p.path, e.worktree_directory].includes(home.repo) || home.current_branch !== e.branch)
+        return yield* new CrewError(
+          "EXTERNAL_REPOSITORY",
+          "Engine repository or branch identity differs from the owned worktree",
+        );
       const limits: Record<typeof ExternalStep.Type, number> = {
         intent: 0,
         rebase: 3,
@@ -152,11 +160,11 @@ export class NoMistakes {
       ]) {
         if (!(yield* pathExists(path))) continue;
         const text = yield* readFile(path, "utf8");
-        ensure(
-          Buffer.byteLength(text) <= 65536,
-          "EXTERNAL_CONFIG",
-          "External configuration exceeds bounded preflight size",
-        );
+        if (!(Buffer.byteLength(text) <= 65536))
+          return yield* new CrewError(
+            "EXTERNAL_CONFIG",
+            "External configuration exceeds bounded preflight size",
+          );
         content.push(text);
         const parsed = yield* parseYaml(text, "External configuration").pipe(
           Effect.flatMap((raw) => decode(fixes, raw, "External finite fix limits")),
@@ -179,8 +187,7 @@ export class NoMistakes {
         },
         "External preflight",
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
   start(e: Execution, r: ExternalRecord) {
     if (!e.target_branch)
@@ -234,40 +241,47 @@ export class NoMistakes {
     );
   }
   sync = Effect.fn("NoMistakes.sync")(
-    function* (this: NoMistakes, e: Execution, apply = false, expectedRemote?: GitRemote) {
+    { self: this },
+    function* (e: Execution, apply = false, expectedRemote?: GitRemote) {
       const observed = yield* this.call(e, ["axi", "sync", "--check"]).pipe(
         Effect.flatMap((out) => machineDocument(Schema.Struct({ branch_sync: BranchSync }), out)),
       );
       if (!apply) return observed.branch_sync;
       const r = e.external_validation,
         sync = observed.branch_sync;
-      ensure(
-        r?.launch &&
-          sync.pipeline.run === r.launch.run_id &&
-          sync.pipeline.submitted_head === r.submitted_head &&
-          sync.local.branch === r.branch,
-        "EXTERNAL_IDENTITY",
-        "Offered custody action belongs to another run or branch",
-      );
-      ensure(
-        expectedRemote &&
-          sync.target.url &&
-          (!sync.target.ref || sync.target.ref === `refs/heads/${e.branch}`) &&
-          !sync.pipeline.pushed_head,
-        "EXTERNAL_TARGET",
-        "External synchronization target differs from controller-owned unpublished delivery",
-      );
+      if (
+        !r?.launch ||
+        sync.pipeline.run !== r.launch.run_id ||
+        sync.pipeline.submitted_head !== r.submitted_head ||
+        sync.local.branch !== r.branch
+      )
+        return yield* new CrewError(
+          "EXTERNAL_IDENTITY",
+          "Offered custody action belongs to another run or branch",
+        );
+      if (
+        !expectedRemote ||
+        !sync.target.url ||
+        (sync.target.ref && sync.target.ref !== `refs/heads/${e.branch}`) ||
+        sync.pipeline.pushed_head
+      )
+        return yield* new CrewError(
+          "EXTERNAL_TARGET",
+          "External synchronization target differs from controller-owned unpublished delivery",
+        );
       const targetRemote = yield* decode(
         GitRemote,
         sync.target.url,
         "External synchronization target remote",
       );
-      ensure(
-        remoteIdentity(targetRemote, e.worktree_directory) ===
-          remoteIdentity(expectedRemote, e.worktree_directory),
-        "EXTERNAL_TARGET",
-        "External synchronization target differs from controller-owned unpublished delivery",
-      );
+      if (
+        (yield* tryDomainValue(remoteIdentity, targetRemote, e.worktree_directory)) !==
+        (yield* tryDomainValue(remoteIdentity, expectedRemote, e.worktree_directory))
+      )
+        return yield* new CrewError(
+          "EXTERNAL_TARGET",
+          "External synchronization target differs from controller-owned unpublished delivery",
+        );
       if (!sync.next_action) return sync;
       const offered = sync.next_action;
       const allowed: Record<string, readonly string[]> = {
@@ -276,16 +290,15 @@ export class NoMistakes {
         adopt_published: ["axi", "sync", "--adopt-published"],
       };
       const args = allowed[offered.code];
-      ensure(
-        args && offered.command === `no-mistakes ${args.join(" ")}`,
-        "EXTERNAL_SYNC",
-        "Custody action needs explicit manual recovery; no substitute command is safe",
-      );
+      if (!args || offered.command !== `no-mistakes ${args.join(" ")}`)
+        return yield* new CrewError(
+          "EXTERNAL_SYNC",
+          "Custody action needs explicit manual recovery; no substitute command is safe",
+        );
       return (yield* this.call(e, [...args]).pipe(
         Effect.flatMap((out) => machineDocument(Schema.Struct({ branch_sync: BranchSync }), out)),
       )).branch_sync;
-    }.bind(this),
-    domainEffect,
+    },
   );
   abort(e: Execution, run: string) {
     return this.call(e, ["axi", "abort", "--run", run]).pipe(

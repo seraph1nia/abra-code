@@ -8,7 +8,13 @@ import { EventType, type Event } from "@ag-ui/core";
 import { from } from "rxjs";
 import { SessionMessage } from "@opencode/schema/session-message";
 import { NativeSessionProjection } from "../../src/opencode/agui/native-state.ts";
-import { NativeMessageCursor, nativeAguiMessages } from "@abracode/contracts/web/transcript";
+import {
+  NativeMessageCursor,
+  nativeAguiMessages,
+  observedToolEnvelope,
+  transcriptFromAgent,
+} from "@abracode/contracts/web/transcript";
+import type { TranscriptTool } from "@abracode/contracts/web/presentation-contracts";
 import { projectNativeMessage } from "../../src/opencode/agui/messages.ts";
 
 const user = Schema.decodeSync(SessionMessage.User)({
@@ -100,10 +106,16 @@ test("native text and tool boundaries stream through the real AG-UI reducer with
     f.event("session.text.delta", { assistantMessageID, ordinal: 3, delta: "After" }, true),
     f.event("session.text.ended", { assistantMessageID, ordinal: 3, text: "After" }),
   ];
+  let completedTool: TranscriptTool | undefined;
   for (const step of steps) {
     const result = f.projection.apply(step);
     assert.equal(result.repair, undefined);
     if (result.view) {
+      const toolObservation = result.view.messages.at(-1)?.tools?.[0];
+      if (toolObservation?.status === "completed") {
+        if (completedTool) assert.equal(completedTool, toolObservation);
+        completedTool = toolObservation;
+      }
       events.push(...cursor.update(result.view.messages), {
         type: EventType.CUSTOM,
         name: "checkpoint",
@@ -114,6 +126,7 @@ test("native text and tool boundaries stream through the real AG-UI reducer with
   assert.ok(events.some((event) => event.type === EventType.TOOL_CALL_ARGS));
   assert.ok(events.some((event) => event.type === EventType.TOOL_CALL_END));
   assert.ok(events.some((event) => event.type === EventType.TOOL_CALL_RESULT));
+  assert.ok(completedTool);
   events.push({ type: EventType.RUN_FINISHED, threadId: "ses_native", runId: "stream" });
   const consumer = new Consumer(events);
   await consumer.runAgent(
@@ -150,6 +163,16 @@ test("native text and tool boundaries stream through the real AG-UI reducer with
   assert.deepEqual(
     consumer.messages,
     nativeAguiMessages([projectNativeMessage(user)!, projectNativeMessage(history)!]),
+  );
+  const observed = transcriptFromAgent(consumer.messages).at(-1)!.tools![0]!;
+  const envelope = observedToolEnvelope(assistantMessageID, observed);
+  const assistant = consumer.messages.find(
+    (message) => message.role === "assistant" && message.toolCalls?.length,
+  );
+  assert.equal(envelope.toolCall, assistant?.role === "assistant" && assistant.toolCalls?.[0]);
+  assert.equal(
+    envelope.toolMessage,
+    consumer.messages.find((message) => message.role === "tool"),
   );
   assert.doesNotMatch(JSON.stringify(events), /hidden-reasoning|secret-provider/);
 });

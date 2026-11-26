@@ -26,14 +26,8 @@ import { DiagramPreparationSchema } from "@abracode/contracts/presentation/diagr
 import { ReportExportSchema } from "@abracode/contracts/presentation/report-export-contract";
 import { Rpc } from "@opencode/plugin/rpc";
 import { Schema } from "effect";
-import {
-  SessionId,
-  IssueId,
-  RequestId,
-  MessageId,
-  ContentHash,
-} from "@abracode/contracts/identities";
-import { ComponentId } from "@abracode/contracts/web/catalog";
+import { SessionId, IssueId, MessageId } from "@abracode/contracts/identities";
+import { SurfaceId } from "@abracode/contracts/web/catalog";
 import { DocumentArtifactSchema, ArtifactSummarySchema } from "@abracode/contracts/web/wire";
 import {
   SaveSurfaceSchema,
@@ -125,7 +119,7 @@ export const webGateway = Rpc.define({
     surface: method(
       Schema.Struct({
         session_id: SessionId,
-        surface_id: ComponentId,
+        surface_id: SurfaceId,
         revision: Schema.Int.check(Schema.isGreaterThan(0)),
       }),
       SurfaceEntrySchema,
@@ -159,18 +153,14 @@ export const webGateway = Rpc.define({
     artifactDocument: method(
       Schema.Struct({
         session_id: SessionId,
-        issue_id: IssueId,
-        request_id: RequestId,
-        hash: ContentHash,
+        ...ExportDocumentSchema.fields,
       }),
       DocumentArtifactSchema,
     ),
     artifactSummary: method(
       Schema.Struct({
         session_id: SessionId,
-        issue_id: IssueId,
-        request_id: RequestId,
-        hash: ContentHash,
+        ...ExportDocumentSchema.fields,
       }),
       ArtifactSummarySchema,
     ),

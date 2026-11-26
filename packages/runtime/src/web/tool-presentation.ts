@@ -3,7 +3,7 @@ import { communicationSummary } from "@abracode/contracts/web/presentation-contr
 import { artifactSummary } from "./artifacts.ts";
 import { Schema } from "effect";
 import { toolOutputs } from "../opencode/tool-contracts.ts";
-import { nativeActivity } from "../visibility/supervision.ts";
+import { nativeActivity } from "../workflow/read-model/supervision.ts";
 import { IssueId, type Timestamp } from "@abracode/contracts/identities";
 import type { Issue } from "../work/model.ts";
 import type { Execution } from "../domain.ts";

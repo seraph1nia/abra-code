@@ -5,9 +5,9 @@ import { removeFixture } from "./helpers/resources.ts";
 import { Agent } from "@opencode/schema/agent";
 import { verifiedSpec } from "./helpers/spec-review.ts";
 import * as Id from "@abracode/contracts/identities";
-import { domainEffect } from "../src/effect.ts";
+import { domainEffect } from "./effects.ts";
 import { Effect, Exit, Scope } from "effect";
-import { mkdtemp, mkdir, writeFile, readFile } from "../src/filesystem.ts";
+import { temporaryDirectory, mkdir, writeFile, readFile } from "../src/filesystem.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProcessRunner } from "../src/process.ts";
@@ -30,8 +30,9 @@ export { repo, fixtureConfig } from "./helpers/fixture-repository.ts";
 
 export const fixture = domainEffect(
   Effect.gen(function* () {
-    const root = yield* mkdtemp(
-      join(process.env.ABRACODE_TEST_REPOSITORY_SEED ?? tmpdir(), "abracode-unit-"),
+    const root = yield* temporaryDirectory(
+      process.env.ABRACODE_TEST_REPOSITORY_SEED ?? tmpdir(),
+      "abracode-unit-",
     );
     const scope = Scope.makeUnsafe();
     const cleanup = Scope.close(scope, Exit.void).pipe(
@@ -95,7 +96,7 @@ export const fixture = domainEffect(
           false,
         );
       const catalog = yield* Agents;
-      const { controller, setup, scheduler } = createWorkflow(
+      const { controller, setup, scheduler } = yield* createWorkflow(
         catalog,
         config,
         records,

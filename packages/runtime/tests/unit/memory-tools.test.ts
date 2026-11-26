@@ -91,7 +91,7 @@ test("registered memory tools bind all worker roles, captured policy, actual use
       settings: { home: f.config.home },
       assignment: () => Effect.succeed(current),
       capturedWorkerPrompt: () => Effect.succeed(capture),
-      session: () =>
+      sessionIdentity: () =>
         Effect.succeed({
           agent,
           directory: current ? directory : f.config.home,

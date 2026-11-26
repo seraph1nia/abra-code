@@ -1,28 +1,27 @@
-import { useEffect, useRef, useSyncExternalStore } from "react";
-import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { PaginationBar } from "./pagination-bar.tsx";
+import { useContext, useEffect, useState, useSyncExternalStore } from "react";
+import { RegistryContext, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { Effect, Option } from "effect";
-import type {
-  InboxQuery,
-  InboxTarget,
-  InboxDetail,
+import {
+  InboxKind,
+  InboxState,
+  type InboxQuery,
+  type InboxTarget,
+  type InboxDetail,
 } from "@abracode/contracts/visibility/github-inbox";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowLeft, ArrowUpRight, RefreshCw } from "@abracode/presentation/icons";
 import { SectionCard, StatusBadge, statusTone } from "@abracode/presentation/cockpit";
 import { WorkspaceApi } from "./data.ts";
 import { RequestState } from "./request-state.tsx";
-import { requestError } from "./request-error.ts";
 import { Input } from "@abracode/presentation/ui/input";
 import { Button } from "@abracode/presentation/ui/button";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
 
-const forceRefresh = WorkspaceApi.runtime.fn((query: InboxQuery) =>
-  Effect.flatMap(WorkspaceApi, (client) =>
-    client.work.githubInbox({ query: { ...query, refresh: true } }),
-  ),
-);
-
+import { browserVisibility } from "./document-visibility.ts";
+import { RepositoryId } from "@abracode/contracts/identities";
+const roles = ["unassigned", "pickup", "review", "delivery"] as const;
 type Props = {
   query: InboxQuery;
   ask: (text: string) => void;
@@ -208,7 +207,11 @@ export function GithubInbox({
           aria-label="GitHub repository"
           value={query.repository_id ?? ""}
           onChange={(e) =>
-            update({ repository_id: (e.target.value || undefined) as InboxQuery["repository_id"] })
+            update({
+              repository_id: projects.some((p) => p.id === e.target.value)
+                ? RepositoryId.make(e.target.value)
+                : undefined,
+            })
           }
         >
           <option value="">All repositories</option>
@@ -226,7 +229,7 @@ export function GithubInbox({
             aria-label="GitHub item type"
             value={kind ?? ""}
             onChange={(e) => {
-              update({ kind: (e.target.value as typeof kind) || undefined });
+              update({ kind: InboxKind.literals.find((value) => value === e.target.value) });
             }}
           >
             <option value="">Issues and pull requests</option>
@@ -237,10 +240,11 @@ export function GithubInbox({
             aria-label="GitHub state"
             value={state}
             onChange={(e) => {
-              update({ state: e.target.value as typeof state });
+              const value = InboxState.literals.find((value) => value === e.target.value);
+              if (value) update({ state: value });
             }}
           >
-            {["OPEN", "CLOSED", "MERGED"].map((s) => (
+            {InboxState.literals.map((s) => (
               <option key={s} value={s}>
                 {s.toLowerCase()}
               </option>
@@ -250,11 +254,11 @@ export function GithubInbox({
             aria-label="Abra role"
             value={role ?? ""}
             onChange={(e) => {
-              update({ role: (e.target.value as typeof role) || undefined });
+              update({ role: roles.find((value) => value === e.target.value) });
             }}
           >
             <option value="">Any Abra role</option>
-            {["unassigned", "pickup", "review", "delivery"].map((s) => (
+            {roles.map((s) => (
               <option key={s}>{s}</option>
             ))}
           </NativeSelect>
@@ -279,35 +283,23 @@ export function GithubInbox({
           </Button>
         </div>
       </details>
-      <Rows query={query} select={setTarget} page={(offset) => update({ offset })} />
+      <Rows
+        key={JSON.stringify(query)}
+        query={query}
+        select={setTarget}
+        page={(offset) => update({ offset })}
+      />
     </section>
   );
 }
 
-const isVisible = () => !document.hidden;
-function subscribeVisibility(listener: () => void) {
-  document.addEventListener("visibilitychange", listener);
-  return () => document.removeEventListener("visibilitychange", listener);
-}
-const inboxQuery = (query: InboxQuery) =>
-  WorkspaceApi.query("work", "githubInbox", { query, timeToLive: "0 seconds" });
 const pollClock = Atom.family((frequent: boolean) =>
   Atom.make(() => performance.now()).pipe(
     Atom.withRefresh(frequent ? "1 second" : "5 minutes"),
-    Atom.setIdleTTL(0),
     Atom.refreshOnWindowFocus,
     Atom.setIdleTTL(0),
   ),
 );
-function InboxRefresh({ frequent, refresh }: { frequent: boolean; refresh: () => void }) {
-  const tick = useAtomValue(pollClock(frequent));
-  const previous = useRef(tick);
-  useEffect(() => {
-    if (previous.current !== tick) refresh();
-    previous.current = tick;
-  }, [tick, refresh]);
-  return null;
-}
 function Rows({
   query,
   select,
@@ -317,20 +309,31 @@ function Rows({
   select: (target: InboxTarget) => void;
   page: (offset: number) => void;
 }) {
-  const atom = inboxQuery(query);
-  const refresh = useAtomRefresh(atom);
-  const visible = useSyncExternalStore(subscribeVisibility, isVisible);
-  const current = useAtomValue(atom);
-  const data = Option.getOrUndefined(AsyncResult.value(current));
-  const pending = data?.coverage.some(
-    (c) => c.status === "loading" || (c.status === "stale" && !c.message),
-  );
-  const result = current;
-  const force = useAtomSet(forceRefresh, { mode: "promiseExit" });
+  const registry = useContext(RegistryContext);
+  const hidden = useSyncExternalStore(browserVisibility.subscribe, browserVisibility.hidden);
+  const [{ trigger, results }] = useState(() => {
+    const trigger = Atom.make({ force: false });
+    const results = WorkspaceApi.runtime.atom((get) => {
+      const { force } = get(trigger);
+      return Effect.flatMap(WorkspaceApi, (client) =>
+        client.work.githubInbox({ query: force ? { ...query, refresh: true } : query }),
+      );
+    });
+    return { trigger, results };
+  });
+  const refresh = useAtomSet(trigger);
+  const result = useAtomValue(results);
+  const data = Option.getOrUndefined(AsyncResult.value(result));
+  const pending =
+    data?.coverage.some((c) => c.status === "loading" || (c.status === "stale" && !c.message)) ??
+    false;
+  useEffect(() => {
+    if (hidden) return;
+    return registry.subscribe(pollClock(pending), () => refresh({ force: false }));
+  }, [registry, pending, hidden, refresh]);
   const offset = query.offset ?? 0;
   return (
     <>
-      {visible && <InboxRefresh frequent={pending === true} refresh={refresh} />}
       <div className="hub-meta-row">
         {data && data.coverage.length > 0 ? (
           <small className="muted">
@@ -341,98 +344,74 @@ function Rows({
         ) : (
           <span />
         )}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={async () => {
-            await force(query);
-            refresh();
-          }}
-        >
+        <Button variant="outline" size="sm" onClick={() => refresh({ force: true })}>
           <RefreshCw aria-hidden="true" />
           Refresh GitHub
         </Button>
       </div>
-      {AsyncResult.isFailure(result) && (
-        <p role="alert" className="error">
-          {requestError(result.cause)}
-        </p>
-      )}
-      {!data && !AsyncResult.isFailure(result) && (
-        <output className="muted">Loading GitHub work…</output>
-      )}
-      {data && (
-        <>
-          {data.coverage
-            .filter((c) => c.status !== "current")
-            .map((c) => (
-              <p className="muted" key={c.repository_id + c.kind}>
-                {c.repository_id} · {c.kind} · {c.status} {c.message}
-                {c.observed_at && " · Last checked " + new Date(c.observed_at).toLocaleString()}
-              </p>
-            ))}
-          <nav className="work-list list-group" aria-label="GitHub results">
-            {data.entries.map((row) => (
-              <Button
-                key={row.repository_id + row.item_node}
-                variant="ghost"
-                className="work-nav list-row h-auto whitespace-normal"
-                onClick={() =>
-                  select({
-                    repository_id: row.repository_id,
-                    repo_node: row.repo_node,
-                    item_node: row.item_node,
-                    number: row.number,
-                    kind: row.kind,
-                  })
-                }
-              >
-                <div className="work-nav-left">
-                  <span
-                    className={`status-dot ${row.state === "OPEN" ? "open" : row.state === "MERGED" ? "in_progress" : "closed"}`}
-                  />
-                  <div className="work-nav-text">
-                    <span className="work-title">
-                      {row.repository_id} {row.kind === "pr" ? "PR" : "issue"} #{row.number} ·{" "}
-                      {row.title}
-                    </span>
-                    <small>
-                      {row.author ?? "Unknown author"} · {row.draft ? "draft · " : ""}
-                      {row.links
-                        .map((l) => l.role + " (" + l.status.replaceAll("_", " ") + ")")
-                        .join(", ") || "No assignment"}
-                      {row.labels.length > 0 && ` · ${row.labels.join(", ")}`}
-                      {!row.labels_complete ? " …" : ""}
-                    </small>
+      <RequestState query={results} showRefresh={false} live={false}>
+        {(data) => (
+          <>
+            {data.coverage
+              .filter((c) => c.status !== "current")
+              .map((c) => (
+                <p className="muted" key={c.repository_id + c.kind}>
+                  {c.repository_id} · {c.kind} · {c.status} {c.message}
+                  {c.observed_at && " · Last checked " + new Date(c.observed_at).toLocaleString()}
+                </p>
+              ))}
+            <nav className="work-list list-group" aria-label="GitHub results">
+              {data.entries.map((row) => (
+                <Button
+                  key={row.repository_id + row.item_node}
+                  variant="ghost"
+                  className="work-nav list-row h-auto whitespace-normal"
+                  onClick={() =>
+                    select({
+                      repository_id: row.repository_id,
+                      repo_node: row.repo_node,
+                      item_node: row.item_node,
+                      number: row.number,
+                      kind: row.kind,
+                    })
+                  }
+                >
+                  <div className="work-nav-left">
+                    <span
+                      className={`status-dot ${row.state === "OPEN" ? "open" : row.state === "MERGED" ? "in_progress" : "closed"}`}
+                    />
+                    <div className="work-nav-text">
+                      <span className="work-title">
+                        {row.repository_id} {row.kind === "pr" ? "PR" : "issue"} #{row.number} ·{" "}
+                        {row.title}
+                      </span>
+                      <small>
+                        {row.author ?? "Unknown author"} · {row.draft ? "draft · " : ""}
+                        {row.links
+                          .map((l) => l.role + " (" + l.status.replaceAll("_", " ") + ")")
+                          .join(", ") || "No assignment"}
+                        {row.labels.length > 0 && ` · ${row.labels.join(", ")}`}
+                        {!row.labels_complete ? " …" : ""}
+                      </small>
+                    </div>
                   </div>
-                </div>
-                <StatusBadge tone={statusTone(row.state)}>{row.state.toLowerCase()}</StatusBadge>
-              </Button>
-            ))}
-            {!data.entries.length && <p className="empty-note">No matching GitHub items.</p>}
-          </nav>
-          {(offset > 0 || offset + 50 < data.total) && (
-            <div className="finder-pagination">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!offset}
-                onClick={() => page(Math.max(0, offset - 50))}
-              >
-                Previous GitHub page
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={offset + 50 >= data.total}
-                onClick={() => page(offset + 50)}
-              >
-                Next GitHub page
-              </Button>
-            </div>
-          )}
-        </>
-      )}
+                  <StatusBadge tone={statusTone(row.state)}>{row.state.toLowerCase()}</StatusBadge>
+                </Button>
+              ))}
+              {!data.entries.length && <p className="empty-note">No matching GitHub items.</p>}
+            </nav>
+            {(offset > 0 || offset + 50 < data.total) && (
+              <PaginationBar
+                label="GitHub pages"
+                previousLabel="Previous GitHub page"
+                nextLabel="Next GitHub page"
+                previous={offset ? () => page(Math.max(0, offset - 50)) : undefined}
+                next={offset + 50 < data.total ? () => page(offset + 50) : undefined}
+              />
+            )}
+          </>
+        )}
+      </RequestState>
     </>
   );
 }

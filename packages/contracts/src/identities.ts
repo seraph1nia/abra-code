@@ -6,6 +6,7 @@ import { Project } from "@opencode/schema/project";
 import { Model } from "@opencode/schema/model";
 import { Provider } from "@opencode/schema/provider";
 import { Agent } from "@opencode/schema/agent";
+import { RelativePath } from "@opencode/schema/schema";
 export { AbsolutePath, RelativePath } from "@opencode/schema/schema";
 
 export const Identifier = Schema.String.check(
@@ -131,3 +132,15 @@ export type Executable = typeof Executable.Type;
 
 export const OperationAction = Schema.NonEmptyString.pipe(Schema.brand("abracode/OperationAction"));
 export type OperationAction = typeof OperationAction.Type;
+
+export const SafeRelativePath = RelativePath.check(
+  Schema.makeFilter(
+    (path) =>
+      (!!path &&
+        !path.startsWith("/") &&
+        !path.includes("\\") &&
+        !Array.from(path).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) &&
+        path.split("/").every((part) => part !== ".." && part !== "." && part !== "")) ||
+      "Select a safe relative path",
+  ),
+);

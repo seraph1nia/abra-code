@@ -1,12 +1,5 @@
 import { Effect, Layer } from "effect";
-import {
-  Agents,
-  AgentSources,
-  agentLayer,
-  makeAgent,
-  makeCatalog,
-  type AgentDefinition,
-} from "./index.ts";
+import { Agents, AgentSources, makeAgent, makeCatalog, type AgentDefinition } from "./index.ts";
 import { engineeringSkills } from "./engineering-skills.ts";
 import { fileURLToPath } from "node:url";
 import { rolePolicy, memoryReadTools } from "./policy.ts";
@@ -78,12 +71,6 @@ export const definitions: readonly AgentDefinition[] = [
     tools: ["abra_lead_action"],
   },
 ];
-export const AbraLive = agentLayer(definitions[0]);
-export const ExploreLive = agentLayer(definitions[1]);
-export const ApplyLive = agentLayer(definitions[2]);
-export const ReviewLive = agentLayer(definitions[3]);
-export const ResearchLive = agentLayer(definitions[4]);
-export const ProjectLeadLive = agentLayer(definitions[5]);
 export const bundledCatalog = Effect.forEach(definitions, makeAgent).pipe(
   Effect.flatMap(makeCatalog),
 );

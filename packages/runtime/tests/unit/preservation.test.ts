@@ -1,4 +1,4 @@
-import { publicationDestination } from "../../src/workflow/publication-destination.ts";
+import { publicationDestination } from "../../src/workflow/finishing/contracts.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import * as Id from "@abracode/contracts/identities";
 import { Effect } from "effect";
@@ -20,7 +20,7 @@ for (const method of ["merge", "squash", "rebase"] as const) {
     const p = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
     p.merge_method = method;
     await run(f.records.saveProject(p));
-    const e = await run(delivered(f));
+    let e = await run(delivered(f));
     await run(f.git.run(e.worktree_directory!, ["push", "origin", e.branch]));
     if (method === "merge")
       await run(
@@ -61,20 +61,24 @@ for (const method of ["merge", "squash", "rebase"] as const) {
       await assert.rejects(
         run(f.git.run(p.path, ["merge-base", "--is-ancestor", e.delivered_commit!, "HEAD"])),
       );
-    e.delivery_receipt = receipt;
-    e.current_phase = "cleaning";
-    await run(f.records.save(e));
+    e = { ...e, delivery_receipt: receipt };
+    e = { ...e, current_phase: "cleaning" };
+    e = await run(f.records.save(e));
     await run(f.git.run(p.path, ["push", "--force", "origin", `${e.base_commit}:refs/heads/main`]));
-    const controller = createWorkflow(
-      f.catalog,
-      f.config,
-      f.records,
-      f.work,
-      f.spec,
-      f.git,
-      f.runtime,
-      delivery,
-      f.locks,
+    const controller = (
+      await run(
+        createWorkflow(
+          f.catalog,
+          f.config,
+          f.records,
+          f.work,
+          f.spec,
+          f.git,
+          f.runtime,
+          delivery,
+          f.locks,
+        ),
+      )
     ).controller;
     await assert.rejects(run(controller.finish(e.issue_id)));
     await access(e.worktree_directory!);
@@ -126,20 +130,27 @@ test("a lost merge response reconciles the exact merged PR without repeating sub
     },
     Id.Executable.make("fake-forge"),
   );
-  const controller = () =>
-    createWorkflow(
-      f.catalog,
-      f.config,
-      f.records,
-      f.work,
-      f.spec,
-      f.git,
-      f.runtime,
-      delivery,
-      f.locks,
+  const controller = async () =>
+    (
+      await run(
+        createWorkflow(
+          f.catalog,
+          f.config,
+          f.records,
+          f.work,
+          f.spec,
+          f.git,
+          f.runtime,
+          delivery,
+          f.locks,
+        ),
+      )
     ).controller;
-  await assert.rejects(run(controller().finish(e.issue_id)), /response lost/);
-  assert.equal((await run(controller().reconcile(e.issue_id)))[0].current_phase, "completed");
+  await assert.rejects(run((await controller()).finish(e.issue_id)), /response lost/);
+  assert.equal(
+    (await run((await controller()).reconcile(e.issue_id)))[0].current_phase,
+    "completed",
+  );
   assert.equal(submissions, 1);
   assert.equal((await run(f.work.show(e.issue_id))).status, "closed");
 });
@@ -147,9 +158,12 @@ test("a lost merge response reconciles the exact merged PR without repeating sub
 test("PR updates rediscover one identity, preserve outside user text and avoid repeated pushes/edits", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f)),
+  let e = await run(delivered(f)),
     p = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
-  e.intent = { title: "Preserve reconnect state", description: "Retain completed upload chunks." };
+  e = {
+    ...e,
+    intent: { title: "Preserve reconnect state", description: "Retain completed upload chunks." },
+  };
   const pr: PR = {
     url: e.pull_request_reference!,
     state: "OPEN",
@@ -188,7 +202,10 @@ test("PR updates rediscover one identity, preserve outside user text and avoid r
   assert.equal(edits, 1);
   assert.ok(pr.body!.startsWith("User notes.\n"));
   pr.body += "\nUser epilogue.\n";
-  e.review_receipt = { ...e.review_receipt!, findings: "Verified reconnect edge cases." };
+  e = {
+    ...e,
+    review_receipt: { ...e.review_receipt!, findings: "Verified reconnect edge cases." },
+  };
   await run(
     delivery.deliver(p, e, { commit: e.delivered_commit!, destination: publicationDestination(e) }),
   );

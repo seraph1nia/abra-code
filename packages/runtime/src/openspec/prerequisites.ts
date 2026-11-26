@@ -1,3 +1,4 @@
+import { Graph } from "effect";
 import type { ArtifactId } from "@abracode/contracts/identities";
 import { ensure } from "../domain.ts";
 import type { SpecStatus, ApplyStatus } from "./contracts.ts";
@@ -17,33 +18,33 @@ export function planningPrerequisites(status: SpecStatus) {
     "PLAN_INCOMPLETE",
     "Native artifact identities must be unique",
   );
-  const visited = new Set<ArtifactId>(),
-    visiting = new Set<ArtifactId>();
-  const visit = (id: ArtifactId) => {
-    ensure(
-      !visiting.has(id),
-      "PLAN_INCOMPLETE",
-      `Native artifact dependencies contain a cycle at ${id}`,
-    );
-    if (visited.has(id)) return;
-    const artifact = artifacts.get(id);
-    ensure(
-      artifact && Array.isArray(artifact.requires),
-      "PLAN_INCOMPLETE",
-      `Native prerequisite ${id} or its dependency list is missing`,
-    );
-    visiting.add(id);
-    for (const required of artifact.requires) visit(required);
-    ensure(
-      artifact.status === "done" || artifact.status === "skipped",
-      "PLAN_INCOMPLETE",
-      `Native prerequisite ${id} is ${artifact.status}; complete it or use a supported native omission`,
-    );
-    visiting.delete(id);
-    visited.add(id);
-  };
-  for (const id of status.applyRequires) visit(id);
-  return [...visited];
+  const nodes = new Map<ArtifactId, Graph.NodeIndex>();
+  const roots: Graph.NodeIndex[] = [];
+  const graph = Graph.directed<ArtifactId, undefined>((graph) => {
+    function include(id: ArtifactId): Graph.NodeIndex {
+      const existing = nodes.get(id);
+      if (existing !== undefined) return existing;
+      const artifact = artifacts.get(id);
+      ensure(
+        artifact && Array.isArray(artifact.requires),
+        "PLAN_INCOMPLETE",
+        `Native prerequisite ${id} or its dependency list is missing`,
+      );
+      ensure(
+        artifact.status === "done" || artifact.status === "skipped",
+        "PLAN_INCOMPLETE",
+        `Native prerequisite ${id} is ${artifact.status}; complete it or use a supported native omission`,
+      );
+      const node = Graph.addNode(graph, id);
+      nodes.set(id, node);
+      for (const required of artifact.requires)
+        Graph.addEdge(graph, node, include(required), undefined);
+      return node;
+    }
+    for (const id of status.applyRequires) roots.push(include(id));
+  });
+  ensure(Graph.isAcyclic(graph), "PLAN_INCOMPLETE", "Native artifact dependencies contain a cycle");
+  return [...Graph.values(Graph.dfsPostOrder(graph, { start: roots }))];
 }
 export function trackedImplementation(apply: ApplyStatus) {
   ensure(

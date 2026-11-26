@@ -23,7 +23,7 @@ import {
 import { Application } from "./workspace.tsx";
 import {
   destinations,
-  type WorkspaceSearch,
+  workspaceSearch,
   destinationFor,
   type CollectionState,
 } from "./navigation.ts";
@@ -56,7 +56,7 @@ export function WorkspaceShell() {
         for (const location of [fromLocation, toLocation]) {
           if (!location) continue;
           const target = destinationFor(location.pathname);
-          if (target) updates.push([target, (location.search as WorkspaceSearch).collection]);
+          if (target) updates.push([target, workspaceSearch(location.search).collection]);
         }
         if (toLocation && destinationFor(toLocation.pathname)) setVisited(true);
         if (!updates.length) return;

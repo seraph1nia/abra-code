@@ -15,8 +15,7 @@ import { hash } from "../memory/collections.ts";
 import { CrewError } from "../domain.ts";
 import type { Controller } from "../workflow/controller.ts";
 import { originatingUserMessage } from "./tool-caller.ts";
-import { workerToolAllowed } from "./role-policy.ts";
-import { assertSupervisor, assertVerifiedWorker } from "./session-authority.ts";
+import { assertSupervisor, authorizeHybridPrincipal } from "./session-authority.ts";
 import { defineTool } from "./tool-definition.ts";
 
 const forbidden = () => new CrewError("MEMORY_SCOPE", "Current authorized memory scope required.");
@@ -27,7 +26,7 @@ export function memoryTools(ctx: Context, c: Controller, central: boolean) {
     assertSupervisor(c, call.sessionID, {
       central,
       agent: call.agent,
-      verifyNative: true,
+      verifyNative: "identity",
       requireSupervisorMetadata: true,
       checkNotWorker: false,
       code: "MEMORY_SCOPE",
@@ -35,35 +34,23 @@ export function memoryTools(ctx: Context, c: Controller, central: boolean) {
     });
   const scope = (call: Tool.Context, tool: string, repo?: RepositoryId) =>
     Effect.gen(function* () {
-      const session = call.sessionID;
-      const assignment = yield* c.queries.assignment(session);
-      if (!assignment) {
-        yield* supervisor(call);
-        yield* c.guardAttention(session, call.messageID, true);
-        return repo;
-      }
-      const native = yield* c.queries.session(session);
-      if (
-        repo !== undefined ||
-        !assignment.configuration_snapshot?.memory_reads ||
-        native.directory !== assignment.worktree_directory ||
-        call.agent !== native.agent
-      )
-        return yield* forbidden();
-      const { role, profile } = yield* assertVerifiedWorker(
-        assignment,
+      const principal = yield* authorizeHybridPrincipal(
+        c,
+        central,
         call,
-        c.queries.capturedWorkerPrompt(assignment),
+        tool,
         origin(call).pipe(Effect.map((user) => user?.id)),
-        { code: "MEMORY_SCOPE", message: "Current authorized memory scope required." },
+        forbidden(),
       );
-      if (!workerToolAllowed(role, profile, tool)) return yield* forbidden();
-      return assignment.repository_id;
+      if (principal.kind === "supervisor") return repo;
+      if (repo !== undefined || !principal.assignment.configuration_snapshot?.memory_reads)
+        return yield* forbidden();
+      return principal.assignment.repository_id;
     });
   return [
     defineTool({
       name: "memory_search",
-      worker: true,
+      access: "supervisor_or_worker",
       diagnostic: true,
       description:
         "Find scoped, advisory Markdown. Workers omit repository_id. Abra selects a registered repository or omits it for shared alone. Continue with the same query and cursor.",
@@ -76,7 +63,7 @@ export function memoryTools(ctx: Context, c: Controller, central: boolean) {
     }),
     defineTool({
       name: "memory_read",
-      worker: true,
+      access: "supervisor_or_worker",
       diagnostic: true,
       description:
         "Open a scoped memory citation at its exact revision. Workers omit repository_id. Cite the revision and verify advice against current evidence.",

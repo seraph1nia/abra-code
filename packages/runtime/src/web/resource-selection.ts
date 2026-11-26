@@ -66,12 +66,7 @@ export function resolveOwnedResource(
         );
         break;
       case "open_artifact":
-        owned = !!execution.visual_reports?.some(
-          (report) =>
-            report.request.request_id === target.request_id &&
-            report.status === "published" &&
-            report.artifact?.hash === target.hash,
-        );
+        owned = !!ownedArtifact(execution, target.request_id, target.hash);
         break;
     }
     if (!owned)
@@ -81,4 +76,17 @@ export function resolveOwnedResource(
       );
     return target;
   });
+}
+
+export function ownedArtifact(
+  execution: import("../domain.ts").Execution | undefined,
+  request: string,
+  hash: string,
+) {
+  return execution?.visual_reports?.find(
+    (report) =>
+      report.request.request_id === request &&
+      report.status === "published" &&
+      report.artifact?.hash === hash,
+  );
 }

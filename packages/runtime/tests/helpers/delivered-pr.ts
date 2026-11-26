@@ -14,22 +14,25 @@ export async function deliveredPR(
   const p = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   Object.assign(p, policy);
   await run(f.records.saveProject(p));
-  const e = await run(delivered(f));
-  e.feedback = {
-    schema_version: 1,
-    head: e.delivered_commit!,
-    pr: e.pull_request_reference!,
-    target: e.target_branch!,
-    observed_at: 1,
-    next_check_at: 2,
-    complete: true,
-    attempts: 0,
-    digest: "fixture",
-    findings: [],
-    history: [],
-    actions: [],
+  let e = await run(delivered(f));
+  e = {
+    ...e,
+    feedback: {
+      schema_version: 1,
+      head: e.delivered_commit!,
+      pr: e.pull_request_reference!,
+      target: e.target_branch!,
+      observed_at: 1,
+      next_check_at: 2,
+      complete: true,
+      attempts: 0,
+      digest: "fixture",
+      findings: [],
+      history: [],
+      actions: [],
+    },
   };
-  await run(f.records.save(e));
+  e = await run(f.records.save(e));
   return { f, e, p };
 }
 

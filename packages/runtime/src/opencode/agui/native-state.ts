@@ -37,12 +37,18 @@ const visibleAssistant = (
  * their full-value boundary; fresh parts can stream immediately without replay. */
 export class NativeSessionProjection {
   private messages = new Map<string, SessionMessage.Info>();
+  private toolCache = new WeakMap<
+    SessionMessage.AssistantTool,
+    import("@abracode/contracts/web/presentation-contracts").TranscriptTool
+  >();
   private projected = new Map<string, TranscriptMessage>();
   private streamable = new Set<string>();
   private seen = new Set<string>();
   private seq?: number;
   private recovering = false;
   private busy = false;
+  private messageView?: readonly TranscriptMessage[];
+  private completions?: NativeSessionView["completions"];
   private inbox: readonly { id: string }[] = [];
   private delivered = new Set<string>();
   private turnInputs = new Map<string, readonly string[]>();
@@ -91,11 +97,13 @@ export class NativeSessionProjection {
       }
       nextMessages.set(resolved.id, resolved);
       const cached = old === resolved ? previousProjected.get(resolved.id) : undefined;
-      const projected = cached ?? projectNativeMessage(resolved, this.present);
+      const projected = cached ?? projectNativeMessage(resolved, this.present, this.toolCache);
       if (projected) nextProjected.set(resolved.id, projected);
     }
     this.messages = nextMessages;
     this.projected = nextProjected;
+    this.messageView = undefined;
+    this.completions = undefined;
     this.busy = busy;
     this.inbox = inbox;
     this.streamable = live;
@@ -107,11 +115,10 @@ export class NativeSessionProjection {
     }
     return this.current();
   }
-  current(): NativeSessionView {
+  private completionView() {
     const completions: NonNullable<NativeSessionView["completions"]>[number][] = [];
-    const projectedMessages: TranscriptMessage[] = [];
     let inputs: string[] = [];
-    for (const [id, message] of this.messages) {
+    for (const message of this.messages.values()) {
       if (message.type === "user") inputs.push(message.id);
       if (message.type === "idle") {
         completions.push({
@@ -121,23 +128,34 @@ export class NativeSessionProjection {
         });
         inputs = [];
       }
-      const projected = this.projected.get(id);
-      if (projected) projectedMessages.push(projected);
     }
+    return completions;
+  }
+  current(): NativeSessionView {
     return {
       busy: this.busy,
       inbox: this.inbox,
-      completions,
-      messages: projectedMessages,
+      completions: (this.completions ??= this.completionView()),
+      messages: (this.messageView ??= [...this.projected.values()]),
     };
   }
   private put(message: SessionMessage.Info) {
+    const prior = this.messages.get(message.id);
+    if (
+      message.type === "idle" ||
+      message.type === "user" ||
+      prior?.type === "user" ||
+      prior?.type === "idle"
+    )
+      this.completions = undefined;
+    this.messageView = undefined;
     this.messages.set(message.id, message);
-    const projected = projectNativeMessage(message, this.present);
+    const projected = projectNativeMessage(message, this.present, this.toolCache);
     if (projected) this.projected.set(message.id, projected);
     else this.projected.delete(message.id);
     while (this.messages.size > 100) {
       const evicted = this.messages.keys().next().value!;
+      this.completions = undefined;
       this.messages.delete(evicted);
       this.projected.delete(evicted);
     }
@@ -221,7 +239,10 @@ export class NativeSessionProjection {
     } else if ("assistantMessageID" in data) {
       const message = this.messages.get(data.assistantMessageID);
       if (!message || message.type !== "assistant") return { repair: true };
-      let content = [...message.content];
+      const content = [...message.content];
+      // Gaps represent hidden native ordinals. Only allocate their placeholders once.
+      if ("ordinal" in data)
+        while (content.length < data.ordinal) content.push({ type: "reasoning", text: "" });
       if (message.time.completed && event.type.startsWith("session.text.")) return {};
       if (event.type === "session.text.started") {
         const key = `${message.id}/text/${event.data.ordinal}`;
@@ -318,11 +339,6 @@ export class NativeSessionProjection {
         content[index] = next;
       } else if (event.type.startsWith("session.reasoning.")) return {};
       else return {};
-      // Holes represent hidden reasoning ordinals and carry no provider bytes.
-      content = Array.from(
-        { length: content.length },
-        (_, i) => content[i] ?? { type: "reasoning", text: "" },
-      );
       this.put(visibleAssistant(message, content));
     } else return {};
     return { view: this.current() };

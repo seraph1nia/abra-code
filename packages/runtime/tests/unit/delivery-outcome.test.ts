@@ -9,7 +9,7 @@ import {
   deliveryOutcome,
   deliveryOutcomeLines,
   deliveryAction,
-} from "../../src/workflow/delivery-outcome.ts";
+} from "../../src/visibility/delivery-outcome.ts";
 import { ExecutionBusy } from "../../src/workflow/operations.ts";
 import { CleanupBlockerSchema } from "@abracode/contracts/git/retirement-contracts";
 import { CrewError } from "../../src/domain.ts";
@@ -17,14 +17,14 @@ import { CrewError } from "../../src/domain.ts";
 test("outcome is read-only, receipt-bound and distinguishes approval, delivery, retirement and closure", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f));
-  e.merge_approval_required = true;
+  let e = await run(delivered(f));
+  e = { ...e, merge_approval_required: true };
   const pending = await run(
     f.controller.approve(e.issue_id, "merge", Id.SessionId.make("ses_supervisor")),
   );
   assert.ok("form_id" in pending);
   f.runtime.forms.set(pending.form_id, "approved");
-  const accepted = await run(
+  let accepted = await run(
     f.controller.approve(e.issue_id, "merge", Id.SessionId.make("ses_supervisor")),
   );
   assert.ok("current_phase" in accepted);
@@ -51,22 +51,25 @@ test("outcome is read-only, receipt-bound and distinguishes approval, delivery, 
   assert.match(stateLabel(item), /unconfirmed/);
   assert.ok(deliveryOutcomeLines(outcome).includes(outcome.next_action));
   assert.deepEqual(accepted, before);
-  accepted.delivery_receipt = {
-    commit: accepted.delivered_commit!,
-    target: accepted.target_branch!,
-    at: Id.timestampAt(100),
+  accepted = {
+    ...accepted,
+    delivery_receipt: {
+      commit: accepted.delivered_commit!,
+      target: accepted.target_branch!,
+      at: Id.timestampAt(100),
+    },
   };
-  accepted.current_phase = "cleaning";
+  accepted = { ...accepted, current_phase: "cleaning" };
   outcome = deliveryOutcome(accepted, "in_progress", 124);
   assert.equal(outcome.delivery.state, "verified");
   assert.equal(outcome.delivery.evidence_at, Id.timestampAt(100));
   assert.equal(outcome.closure, "open");
-  accepted.retirement = { generated: [], native: "confirmed" };
+  accepted = { ...accepted, retirement: { generated: [], native: "confirmed" } };
   assert.equal(deliveryOutcome(accepted, undefined, 125).closure, "unavailable");
   assert.equal(deliveryOutcome(accepted, "closed", 125).cleanup.state, "retired");
-  accepted.delivery_policy = "branch";
+  accepted = { ...accepted, delivery_policy: "branch" };
   assert.equal(deliveryOutcome(accepted, "closed", 125).delivery.kind, "branch");
-  accepted.delivered_commit = Id.Commit.make("f".repeat(40));
+  accepted = { ...accepted, delivered_commit: Id.Commit.make("f".repeat(40)) };
   outcome = deliveryOutcome(accepted, "in_progress", 126);
   assert.equal(outcome.approval.state, "unavailable");
   assert.equal(outcome.delivery.state, "unconfirmed");
@@ -88,7 +91,7 @@ test("outcome is read-only, receipt-bound and distinguishes approval, delivery, 
 test("cleanup diagnostics remain optional in retained records, bounded and safely displayed", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f));
+  let e = await run(delivered(f));
   assert.equal((await run(f.records.execution(e.issue_id)))!.cleanup_blocker, undefined);
   const blocker = {
     paths: [
@@ -106,13 +109,16 @@ test("cleanup diagnostics remain optional in retained records, bounded and safel
     attempts: 1,
     next_check_at: 30100,
   };
-  e.cleanup_blocker = Schema.decodeSync(CleanupBlockerSchema)(blocker);
-  e.delivery_receipt = {
-    commit: e.delivered_commit!,
-    target: e.target_branch!,
-    at: Id.timestampAt(100),
+  e = { ...e, cleanup_blocker: Schema.decodeSync(CleanupBlockerSchema)(blocker) };
+  e = {
+    ...e,
+    delivery_receipt: {
+      commit: e.delivered_commit!,
+      target: e.target_branch!,
+      at: Id.timestampAt(100),
+    },
   };
-  e.current_phase = "cleaning";
+  e = { ...e, current_phase: "cleaning" };
   await run(f.records.save(e));
   const retained = (await run(f.records.execution(e.issue_id)))!;
   const outcome = deliveryOutcome(retained, "in_progress", 200);

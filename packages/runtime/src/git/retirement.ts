@@ -7,25 +7,29 @@ export {
   DirectoryIdentitySchema,
   RetirementSchema,
 } from "@abracode/contracts/git/retirement-contracts";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { CrewError, type ManagedExecution } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
-import { identityStat, lstat, pathExists, readdir, readlink, realpath, rm } from "../filesystem.ts";
+import { lstat, pathExists, readDirectoryEntries, readlink, realpath, rm } from "../filesystem.ts";
 import { GeneratedPathsSchema } from "@abracode/contracts/config/paths";
 import { decode } from "../decode.ts";
 import { type Git } from "./repository.ts";
 export const directoryIdentity = Effect.fn("directoryIdentity")(function* (path: AbsolutePath) {
-  const stat = yield* identityStat(path);
-  if (!(stat.isDirectory() && !stat.isSymbolicLink()))
+  const stat = yield* lstat(path);
+  if (stat.type !== "Directory")
     return yield* new CrewError("CLEANUP_IDENTITY", "Owned path must be a real directory");
   return {
     path: yield* realpath(path),
     device: String(stat.dev),
-    inode: String(stat.ino),
-    birth: String(stat.birthtimeNs),
+    inode: String(Option.getOrElse(stat.ino, () => 0n)),
+    birth: String(
+      Option.match(stat.birthtime, {
+        onNone: () => 0n,
+        onSome: (date) => BigInt(date.getTime()) * 1_000_000n,
+      }),
+    ),
   };
-}, domainEffect);
+});
 export const sameDirectory = (
   a: typeof DirectoryIdentitySchema.Type,
   b: typeof DirectoryIdentitySchema.Type,
@@ -41,58 +45,54 @@ export const inspectGenerated = Effect.fn("inspectGenerated")(function* (
 ) {
   let entries = 0;
   const walk = (dir: AbsolutePath, depth: number): Effect.Effect<void, CrewError> =>
-    domainEffect(
-      Effect.gen(function* () {
-        if (!(depth <= 128))
+    Effect.gen(function* () {
+      if (!(depth <= 128))
+        return yield* new CrewError(
+          "CLEANUP_BOUND",
+          "Generated directory exceeds inspection depth",
+        );
+      const items = yield* readDirectoryEntries(dir);
+      const names = new Set(items.map((item) => item.name));
+      if (names.has(".git") || (names.has("HEAD") && names.has("objects") && names.has("refs")))
+        return yield* new CrewError(
+          "CLEANUP_REPOSITORY",
+          "Nested repository prevents generated-directory cleanup",
+        );
+      for (const item of items) {
+        if (!(++entries <= 200000))
           return yield* new CrewError(
             "CLEANUP_BOUND",
-            "Generated directory exceeds inspection depth",
+            "Generated directory exceeds inspection limit",
           );
-        const items = yield* readdir(dir, { withFileTypes: true });
-        const names = new Set(items.map((item) => item.name));
-        if (
-          !(!names.has(".git") && !(names.has("HEAD") && names.has("objects") && names.has("refs")))
-        )
-          return yield* new CrewError(
-            "CLEANUP_REPOSITORY",
-            "Nested repository prevents generated-directory cleanup",
-          );
-        for (const item of items) {
-          if (!(++entries <= 200000))
+        const child = AbsolutePath.make(join(dir, item.name));
+        if (item.type === "Directory") yield* walk(child, depth + 1);
+        else if (item.type === "SymbolicLink") {
+          const target = AbsolutePath.make(resolve(dir, yield* readlink(child)));
+          if (!inside(root, target))
+            return yield* new CrewError("CLEANUP_SYMLINK", "Generated link escapes the worktree");
+          // Resolve all existing ancestors to catch indirect escapes and allow contained broken links.
+          let ancestor = target;
+          while (!(yield* pathExists(ancestor)))
+            ancestor = AbsolutePath.make(resolve(ancestor, ".."));
+          if (!inside(root, yield* realpath(ancestor)))
             return yield* new CrewError(
-              "CLEANUP_BOUND",
-              "Generated directory exceeds inspection limit",
+              "CLEANUP_SYMLINK",
+              "Generated link resolves outside the worktree",
             );
-          const child = AbsolutePath.make(join(dir, item.name));
-          if (item.isDirectory()) yield* walk(child, depth + 1);
-          else if (item.isSymbolicLink()) {
-            const target = AbsolutePath.make(resolve(dir, yield* readlink(child)));
-            if (!inside(root, target))
-              return yield* new CrewError("CLEANUP_SYMLINK", "Generated link escapes the worktree");
-            // Resolve all existing ancestors to catch indirect escapes and allow contained broken links.
-            let ancestor = target;
-            while (!(yield* pathExists(ancestor)))
-              ancestor = AbsolutePath.make(resolve(ancestor, ".."));
-            if (!inside(root, yield* realpath(ancestor)))
-              return yield* new CrewError(
-                "CLEANUP_SYMLINK",
-                "Generated link resolves outside the worktree",
-              );
-          } else {
-            if (!item.isFile())
-              return yield* new CrewError(
-                "CLEANUP_SPECIAL",
-                "Special file prevents generated-directory cleanup",
-              );
-          }
+        } else {
+          if (item.type !== "File")
+            return yield* new CrewError(
+              "CLEANUP_SPECIAL",
+              "Special file prevents generated-directory cleanup",
+            );
         }
-      }),
-    );
+      }
+    });
   let cursor = root;
   for (const part of path.split("/")) {
     cursor = AbsolutePath.make(join(cursor, part));
     const stat = yield* lstat(cursor);
-    if (!(stat.isDirectory() && !stat.isSymbolicLink()))
+    if (stat.type !== "Directory")
       return yield* new CrewError(
         "CLEANUP_SYMLINK",
         "Generated path traverses a link or non-directory",
@@ -100,7 +100,7 @@ export const inspectGenerated = Effect.fn("inspectGenerated")(function* (
   }
   yield* walk(cursor, 0);
   return yield* directoryIdentity(cursor);
-}, domainEffect);
+});
 /** Shared by read-only preflight and post-preservation disposal. */
 export const generatedPaths = Effect.fn("generatedPaths")(function* (e: ManagedExecution) {
   const paths = [...e.effective_policy.generated_paths];
@@ -114,7 +114,7 @@ export const generatedPaths = Effect.fn("generatedPaths")(function* (e: ManagedE
     paths.push(...authorization.directories.map((d) => d.path));
   }
   return yield* decode(GeneratedPathsSchema, paths, "retained generated paths");
-}, domainEffect);
+});
 
 export const inspectGeneratedPath = Effect.fn("inspectGeneratedPath")(function* (
   git: Git,
@@ -151,32 +151,31 @@ export const inspectGeneratedPath = Effect.fn("inspectGeneratedPath")(function* 
       "Tracked descendants prevent generated-directory cleanup",
     );
   return identity;
-}, domainEffect);
+});
 
-export const removeGenerated = Effect.fn("removeGenerated")(function* (
+export const removeGenerated = Effect.fn("removeGenerated")(function* <E extends ManagedExecution>(
   git: Git,
-  e: ManagedExecution,
-  save: () => Effect.Effect<unknown, CrewError>,
+  execution: E,
+  save: (candidate: E) => Effect.Effect<E, CrewError>,
 ) {
+  let e = execution;
   const root = e.worktree_directory!;
   const paths = yield* generatedPaths(e);
-  e.retirement ??= { generated: [], native: "not_started" };
+  type Entry = (typeof RetirementSchema.Type)["generated"][number];
+  const retain = (entry: Entry) => {
+    const retirement = e.retirement ?? { generated: [], native: "not_started" as const };
+    const generated = retirement.generated.some((item) => item.path === entry.path)
+      ? retirement.generated.map((item) => (item.path === entry.path ? entry : item))
+      : [...retirement.generated, entry];
+    return save({ ...e, retirement: { ...retirement, generated } });
+  };
   for (const path of paths) {
-    let entry: (typeof RetirementSchema.Type)["generated"][number] | undefined =
-      e.retirement.generated.find((item) => item.path === path);
+    const entry = e.retirement?.generated.find((item) => item.path === path);
     if (!(yield* pathExists(join(root, path)))) {
-      if (entry && entry.state !== "removed") {
-        e.retirement = {
-          ...e.retirement,
-          generated: e.retirement.generated.map((item) =>
-            item.path === path ? { ...item, state: "removed" } : item,
-          ),
-        };
-        yield* save();
-      }
+      if (entry && entry.state !== "removed") e = yield* retain({ ...entry, state: "removed" });
       continue;
     }
-    if (!(entry?.state !== "removed"))
+    if (entry?.state === "removed")
       return yield* new CrewError(
         "CLEANUP_REPLACEMENT",
         "Previously removed generated directory was replaced",
@@ -187,20 +186,10 @@ export const removeGenerated = Effect.fn("removeGenerated")(function* (
         "Generated-directory removal was submitted but absence is unconfirmed; inspect before recovery",
       );
     const identity = yield* inspectGeneratedPath(git, e, path);
-    if (!(!entry || sameDirectory(entry.identity, identity)))
+    if (entry && !sameDirectory(entry.identity, identity))
       return yield* new CrewError("CLEANUP_REPLACEMENT", "Generated directory identity changed");
-    if (!entry) {
-      entry = { path, identity, state: "authorized" };
-      e.retirement = { ...e.retirement, generated: [...e.retirement.generated, entry] };
-      yield* save();
-    }
-    e.retirement = {
-      ...e.retirement,
-      generated: e.retirement.generated.map((item) =>
-        item.path === path ? { ...item, state: "removing" } : item,
-      ),
-    };
-    yield* save();
+    if (!entry) e = yield* retain({ path, identity, state: "authorized" });
+    e = yield* retain({ path, identity, state: "removing" });
     const current = yield* inspectGeneratedPath(git, e, path);
     if (!sameDirectory(identity, current))
       return yield* new CrewError(
@@ -208,12 +197,7 @@ export const removeGenerated = Effect.fn("removeGenerated")(function* (
         "Generated directory changed before deletion",
       );
     yield* rm(join(root, path), { recursive: true });
-    e.retirement = {
-      ...e.retirement,
-      generated: e.retirement.generated.map((item) =>
-        item.path === path ? { ...item, state: "removed" } : item,
-      ),
-    };
-    yield* save();
+    e = yield* retain({ path, identity, state: "removed" });
   }
-}, domainEffect);
+  return e;
+});

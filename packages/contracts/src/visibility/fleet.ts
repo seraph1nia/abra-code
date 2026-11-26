@@ -55,3 +55,17 @@ export const fleetLabels: Record<FleetState, string> = {
   completed: "Completed",
   unknown: "Native state unknown",
 };
+
+/** Local calendar boundaries include the host's daylight-saving transitions. */
+export function localDay(at: number) {
+  const date = new Date(at);
+  return {
+    day_start: Timestamp.make(
+      new Date(date.getFullYear(), date.getMonth(), date.getDate()).toISOString(),
+    ),
+    day_end: Timestamp.make(
+      new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).toISOString(),
+    ),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  };
+}

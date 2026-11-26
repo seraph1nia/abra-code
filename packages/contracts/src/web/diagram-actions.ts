@@ -1,11 +1,11 @@
 import { Schema } from "effect";
 import { IssueId, RequestId, ContentHash } from "../identities.ts";
-import { ComponentId } from "./catalog.ts";
+import { SurfaceId } from "./catalog.ts";
 
 export const PrepareDiagramSelectionSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("surface"),
-    surface_id: ComponentId,
+    surface_id: SurfaceId,
     revision: Schema.Int.check(Schema.isGreaterThan(0)),
     hash: ContentHash,
   }),

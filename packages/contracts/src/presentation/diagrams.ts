@@ -1,3 +1,4 @@
+import { utf8Bytes } from "../utf8.ts";
 import { Schema } from "effect";
 
 export const diagramLimits = {
@@ -6,7 +7,7 @@ export const diagramLimits = {
   total: 262144,
   output: 8 * 1024 * 1024,
 } as const;
-export const utf8Bytes = (value: string) => new TextEncoder().encode(value).length;
+
 export const DiagramLiteralSchema = Schema.String.check(
   Schema.isNonEmpty(),
   Schema.makeFilter(

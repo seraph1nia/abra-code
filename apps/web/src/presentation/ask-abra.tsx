@@ -2,19 +2,15 @@ import { useContext } from "react";
 import { selectionLabel } from "@abracode/contracts/web/resources";
 import { Button } from "@abracode/presentation/ui/button";
 import { snippetDraft } from "../workspace-commands.ts";
-import {
-  PrepareSurfaceMessage,
-  AttachSelection,
-  type DraftAttachment,
-} from "../workspace-state/draft.ts";
+import { type DraftAttachment } from "../workspace-state/draft.ts";
 
+import { WorkspaceActions } from "../workspace-actions.ts";
 export function AskAbra({
   selection,
   excerpt,
   disabled,
 }: DraftAttachment & { disabled?: boolean }) {
-  const insert = useContext(PrepareSurfaceMessage);
-  const attach = useContext(AttachSelection);
+  const { prepare: insert, attach } = useContext(WorkspaceActions);
   return (
     <div className="selection-action">
       {!disabled && (

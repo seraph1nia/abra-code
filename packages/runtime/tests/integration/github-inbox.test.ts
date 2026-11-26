@@ -4,7 +4,12 @@ import { freshMs } from "../../src/work/inbox-index.ts";
 import { workBriefing } from "../../src/visibility/briefing.ts";
 import assert from "node:assert/strict";
 import { test, vi } from "vite-plus/test";
-import { Clock, Deferred, Effect, SynchronizedRef } from "effect";
+import { Clock, ConfigProvider, Deferred, Effect, SynchronizedRef } from "effect";
+import { githubHosts } from "../../src/git/inbox.ts";
+import { join } from "node:path";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { removeFixture } from "../helpers/resources.ts";
 import { fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
@@ -25,6 +30,22 @@ import { workDatabase, workGraphAt } from "../helpers/work-database.ts";
 import { DatabaseSync } from "node:sqlite";
 import { dayMs, indexEffect } from "../../src/work/inbox-index.ts";
 import { Visibility } from "../../src/visibility/read-model.ts";
+
+test("GitHub hosts follow the effect configuration including the XDG fallback", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "abra-inbox-config-"));
+  t.onTestFinished(() => removeFixture(root));
+  await mkdir(join(root, "gh"));
+  await writeFile(join(root, "gh/hosts.yml"), "file.example: {}");
+  const hosts = await run(
+    githubHosts.pipe(
+      Effect.provideService(
+        ConfigProvider.ConfigProvider,
+        ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: root, GH_HOST: "ENV.example" }),
+      ),
+    ),
+  );
+  assert.deepEqual([...hosts].sort(), ["env.example", "file.example", "github.com"]);
+});
 
 async function setup(t: Parameters<typeof workDatabase>[0]) {
   const f = await run(fixture);
@@ -148,19 +169,23 @@ async function setup(t: Parameters<typeof workDatabase>[0]) {
       );
     },
   };
-  const open = (work: typeof graph) =>
-    createWorkflow(
-      f.catalog,
-      f.config,
-      f.records,
-      work,
-      f.spec,
-      new Git(runner),
-      f.runtime,
-      f.delivery,
-      f.locks,
+  const open = async (work: typeof graph) =>
+    (
+      await run(
+        createWorkflow(
+          f.catalog,
+          f.config,
+          f.records,
+          work,
+          f.spec,
+          new Git(runner),
+          f.runtime,
+          f.delivery,
+          f.locks,
+        ),
+      )
     ).controller;
-  const c = open(graph);
+  const c = await open(graph);
   t.onTestFinished(() => run(c.close()));
   const target = (pr = false): InboxTarget => ({
     repository_id: id,
@@ -239,7 +264,7 @@ test("partial pages survive restart and concurrent source pickup uses one SQL tr
   const first = await list({ kind: "issue" });
   assert.equal(first.coverage[0]?.status, "loading");
   const other = await workGraphAt(t, path),
-    restarted = open(other.graph);
+    restarted = await open(other.graph);
   t.onTestFinished(() => run(restarted.close()));
   await run(restarted.inbox.list({ kind: "issue" }));
   await expectPage(
@@ -402,7 +427,7 @@ test("Work and pre-existing publication records retain their identity alongside 
   );
   const reopened = await workGraphAt(t, path);
   assert.equal((await run(reopened.graph.show(issue.id))).title, "Existing task");
-  const controller = open(reopened.graph);
+  const controller = await open(reopened.graph);
   t.onTestFinished(() => run(controller.close()));
   const summary = await run(controller.inbox.detail(target(true)));
   const published = {

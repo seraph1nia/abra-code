@@ -3,7 +3,7 @@ import { IssueId, type RequestId } from "@abracode/contracts/identities";
 import { Effect, Graph, Schema } from "effect";
 import { decodeSync } from "../decode.ts";
 import { ensure } from "../domain.ts";
-import { committedScope } from "../visibility/invalidations.ts";
+import { committedScope } from "../invalidations.ts";
 import {
   BatchInputSchema,
   BatchResultSchema,
@@ -11,6 +11,7 @@ import {
   prepareBatch,
   type BatchInput,
 } from "./batch.ts";
+import type { IssueQueries } from "./issue-queries.ts";
 import { type IssueRepository } from "./issue-repository.ts";
 import { type Issue } from "./model.ts";
 import { readDataVersion, runTransaction, sqlEffect } from "./sqlite.ts";
@@ -21,6 +22,7 @@ export class BatchRepository {
   constructor(
     private readonly db: DatabaseSync,
     private readonly issues: IssueRepository,
+    private readonly queries: IssueQueries,
     private readonly nextId: (request: RequestId) => IssueId,
     private validatedVersion?: number,
   ) {}
@@ -93,7 +95,7 @@ export class BatchRepository {
             "Batch receipt is incomplete; do not recreate its issues",
           );
           const byId = new Map(
-            this.issues
+            this.queries
               .issuesByID(rows.map((row) => IssueId.make(String(row.issue_id))))
               .map((issue) => [issue.id, issue]),
           );

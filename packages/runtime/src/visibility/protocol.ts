@@ -1,5 +1,9 @@
 import { exactParseOptions } from "@abracode/contracts/primitives";
 import {
+  WorkQuery,
+  WorkDocumentQuery,
+  WorkWorkerQuery,
+  WorkPageQuery,
   EvidenceSearch,
   EvidenceSearchPage,
   SessionQuery,
@@ -22,7 +26,10 @@ import {
 import { ContentHash } from "@abracode/contracts/identities";
 import { EvidenceDataSchema, EvidenceQuerySchema } from "@abracode/contracts/web/worker-evidence";
 import { VerificationViewSchema } from "@abracode/contracts/web/verification";
-import { FilePatchId } from "@abracode/contracts/web/resources";
+import {
+  WorkDiffSchema as diff,
+  DiffScopeSchema,
+} from "@abracode/contracts/visibility/document-contracts";
 import {
   BindingReadQuery,
   BindingReadSchema,
@@ -40,10 +47,10 @@ import {
   WorkDiscoveryQuery,
   WorkPageSchema,
 } from "@abracode/contracts/visibility/discovery-contracts";
-import { SupervisionAggregateSchema } from "./supervision.ts";
+import { SupervisionAggregateSchema } from "../workflow/read-model/supervision.ts";
 import { FleetSchema } from "./fleet.ts";
 import { WorkerInspectionSchema } from "@abracode/contracts/visibility/worker";
-import { FeedbackPageSchema } from "@abracode/contracts/workflow/feedback-contracts";
+import { FeedbackQuery, FeedbackPageSchema } from "@abracode/contracts/workflow/feedback-contracts";
 import { MessagesPageSchema } from "@abracode/contracts/workflow/message-contracts";
 import { AutomationFields, QualityReceipt } from "../config/policy.ts";
 import { ProgressSchema as TaskProgressSchema, SpecArtifactSchema } from "../openspec/contracts.ts";
@@ -51,10 +58,7 @@ import {
   AbsolutePath,
   ChangeName,
   ArtifactId,
-  FindingId,
-  FindingRevisionId,
   IssueId,
-  SessionId,
   Commit,
   RelativePath,
   RoundId,
@@ -190,37 +194,15 @@ const detail = Schema.Struct({
   documents: Schema.optional(Schema.Array(RelativePath)),
   planning: Schema.optional(PlanningObservationSchema),
 });
-const diff = Schema.Struct({
-  base: Schema.optional(Commit),
-  head: Schema.optional(Commit),
-  at: Timestamp,
-  historical: Schema.Boolean,
-  files: Schema.Array(
-    Schema.Struct({
-      patch_id: FilePatchId,
-      path: RelativePath,
-      status: Schema.Literals(["added", "modified", "deleted"]),
-      additions: Count,
-      deletions: Count,
-      binary: Schema.Boolean,
-      limited: Schema.Boolean,
-    }),
-  ),
-  file: Schema.optional(RelativePath),
-  patch: Schema.optional(Schema.String),
-  message: Schema.optional(Schema.String),
-  limited: Schema.Boolean,
-});
 const document = Schema.Struct({
   hash: Schema.optionalKey(ContentHash),
   generation: Schema.optionalKey(Count),
   path: Schema.Union([RelativePath, Schema.Literal("@report")]),
   content: Schema.String,
 });
-export type WorkDiff = typeof diff.Type;
+export type { WorkDiff, DiffScope } from "@abracode/contracts/visibility/document-contracts";
+export { DiffScopeSchema } from "@abracode/contracts/visibility/document-contracts";
 export type WorkDocument = typeof document.Type;
-export const DiffScopeSchema = Schema.Literals(["all", "uncommitted"]);
-export type DiffScope = typeof DiffScopeSchema.Type;
 export type WorkItem = typeof work.Type;
 export type WorkSnapshot = typeof snapshot.Type;
 export type WorkDetail = typeof detail.Type;
@@ -230,136 +212,43 @@ export const observerErrors = {
   resource_unavailable: Schema.Struct({ code: Schema.String }),
   invalid_selection: Schema.Struct({ code: Schema.String }),
 };
+const method = <I, O>(input: Schema.Codec<I, unknown>, output: Schema.Codec<O, unknown>) => ({
+  input: input.annotate(exactParseOptions),
+  output,
+  errors: observerErrors,
+});
 // Native RPC methods decode their Effect codecs at the host boundary.
 export const visibility = Rpc.define({
   id: "abracode-visibility",
   methods: {
-    binding: {
-      errors: observerErrors,
-      input: BindingReadQuery.annotate(exactParseOptions),
-      output: BindingReadSchema,
-    },
-    evidenceSearch: {
-      errors: observerErrors,
-      input: EvidenceSearch.annotate(exactParseOptions),
-      output: EvidenceSearchPage,
-    },
-    sessions: {
-      errors: observerErrors,
-      input: SessionQuery.annotate(exactParseOptions),
-      output: SessionPage,
-    },
-    thoughtWork: {
-      errors: observerErrors,
-      input: ThoughtWorkQuery.annotate(exactParseOptions),
-      output: ThoughtWorkPage,
-    },
-    thoughtList: {
-      errors: observerErrors,
-      input: ThoughtQuery.annotate(exactParseOptions),
-      output: ThoughtPage,
-    },
-    thoughtDetail: {
-      errors: observerErrors,
-      input: ThoughtReference.annotate(exactParseOptions),
-      output: ThoughtDetail,
-    },
-    githubInbox: {
-      errors: observerErrors,
-      input: InboxQuery.annotate(exactParseOptions),
-      output: InboxPage,
-    },
-    githubItem: {
-      errors: observerErrors,
-      input: InboxTarget.annotate(exactParseOptions),
-      output: InboxDetail,
-    },
-    find: {
-      errors: observerErrors,
-      input: WorkDiscoveryQuery.annotate(exactParseOptions),
-      output: WorkPageSchema,
-    },
-    leads: {
-      errors: observerErrors,
-      input: LeadEvidenceQuery.annotate(exactParseOptions),
-      output: LeadEvidencePageSchema,
-    },
-    messages: {
-      errors: observerErrors,
-      input: Schema.Struct({ issue_id: IssueId, offset: Schema.optional(Count) }).annotate(
-        exactParseOptions,
-      ),
-      output: MessagesPageSchema,
-    },
-    worker: {
-      errors: observerErrors,
-      input: Schema.Struct({ issue_id: IssueId, session_id: SessionId }).annotate(
-        exactParseOptions,
-      ),
-      output: WorkerInspectionSchema,
-    },
-    feedback: {
-      errors: observerErrors,
-      input: Schema.Struct({
-        issue_id: IssueId,
-        page: Schema.optional(Count),
-        finding_id: Schema.optionalKey(FindingId),
-        revision: Schema.optionalKey(FindingRevisionId),
-      })
-        .check(
-          Schema.makeFilter(
-            (input) =>
-              (input.finding_id === undefined) === (input.revision === undefined) ||
-              "Finding selection requires both finding_id and revision",
-          ),
-        )
-        .annotate(exactParseOptions),
-      output: FeedbackPageSchema,
-    },
-    report: {
-      errors: observerErrors,
-      input: Schema.Struct({ issue_id: IssueId }).annotate(exactParseOptions),
-      output: WorkReportSchema,
-    },
-    snapshot: {
-      errors: observerErrors,
-      input: Schema.Struct({ closed_page: Schema.optional(Count) }).annotate(exactParseOptions),
-      output: snapshot,
-    },
-    diff: {
-      errors: observerErrors,
-      input: Schema.Struct({
+    binding: method(BindingReadQuery, BindingReadSchema),
+    evidenceSearch: method(EvidenceSearch, EvidenceSearchPage),
+    sessions: method(SessionQuery, SessionPage),
+    thoughtWork: method(ThoughtWorkQuery, ThoughtWorkPage),
+    thoughtList: method(ThoughtQuery, ThoughtPage),
+    thoughtDetail: method(ThoughtReference, ThoughtDetail),
+    githubInbox: method(InboxQuery, InboxPage),
+    githubItem: method(InboxTarget, InboxDetail),
+    find: method(WorkDiscoveryQuery, WorkPageSchema),
+    leads: method(LeadEvidenceQuery, LeadEvidencePageSchema),
+    messages: method(WorkPageQuery, MessagesPageSchema),
+    worker: method(WorkWorkerQuery, WorkerInspectionSchema),
+    feedback: method(FeedbackQuery, FeedbackPageSchema),
+    report: method(WorkQuery, WorkReportSchema),
+    snapshot: method(Schema.Struct({ closed_page: Schema.optional(Count) }), snapshot),
+    diff: method(
+      Schema.Struct({
         issue_id: IssueId,
         scope: DiffScopeSchema,
         file: Schema.optional(RelativePath),
-      }).annotate(exactParseOptions),
-      output: diff,
-    },
-    document: {
-      errors: observerErrors,
-      input: Schema.Struct({ issue_id: IssueId, path: RelativePath }).annotate(exactParseOptions),
-      output: document,
-    },
-    evidence: {
-      errors: observerErrors,
-      input: EvidenceQuerySchema.annotate(exactParseOptions),
-      output: EvidenceDataSchema,
-    },
-    verification: {
-      errors: observerErrors,
-      input: Schema.Struct({ issue_id: IssueId }).annotate(exactParseOptions),
-      output: VerificationViewSchema,
-    },
-    overview: {
-      errors: observerErrors,
-      input: Schema.Struct({ issue_id: IssueId }).annotate(exactParseOptions),
-      output: overview,
-    },
-    detail: {
-      errors: observerErrors,
-      input: Schema.Struct({ issue_id: IssueId }).annotate(exactParseOptions),
-      output: detail,
-    },
+      }),
+      diff,
+    ),
+    document: method(WorkDocumentQuery, document),
+    evidence: method(EvidenceQuerySchema, EvidenceDataSchema),
+    verification: method(WorkQuery, VerificationViewSchema),
+    overview: method(WorkQuery, overview),
+    detail: method(WorkQuery, detail),
   },
   events: {
     changed: {

@@ -1,6 +1,7 @@
+import { Semaphore } from "effect";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
-import { Context, Layer, Effect, Schedule } from "effect";
+import { Effect, Schedule } from "effect";
 import type {
   MemoryPublication,
   MemoryRead,
@@ -75,6 +76,7 @@ function receipt(db: DatabaseSync, input: MemoryPublication, projectName?: strin
 }
 
 export class AgentMemory {
+  private readonly providerLock = Semaphore.makeUnsafe(1);
   private receiptDb?: { root: string; db: DatabaseSync };
   private locks?: { root: string; locks: FileLocks };
   constructor(
@@ -136,10 +138,14 @@ export class AgentMemory {
           projects.map((p) => p.path),
         ),
       );
-      this.provider ??= new MemoryProvider(settings.executable);
+      const provider = yield* this.providerLock.withPermit(
+        Effect.gen({ self: this }, function* () {
+          return (this.provider ??= yield* MemoryProvider.make(settings.executable));
+        }),
+      );
       const notes = new MemoryCollections(
         root,
-        this.provider,
+        provider,
         settings.retrieval ?? "text",
         this.getLocks(root),
       );
@@ -215,23 +221,4 @@ export class AgentMemory {
         Effect.mapError((error) => (error instanceof CrewError ? error : unresolved())),
       );
     });
-}
-
-export class AgentMemoryService extends Context.Service<AgentMemoryService, AgentMemory>()(
-  "abracode/AgentMemory",
-) {
-  static layer(
-    config: Config,
-    records: Records,
-    thoughts: PersonalThoughts,
-    provider?: MemoryProvider,
-  ) {
-    return Layer.effect(
-      AgentMemoryService,
-      Effect.acquireRelease(
-        Effect.sync(() => new AgentMemory(config, records, thoughts, provider)),
-        (memory) => memory.close,
-      ),
-    );
-  }
 }

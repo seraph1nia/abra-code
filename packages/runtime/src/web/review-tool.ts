@@ -21,9 +21,13 @@ import { SurfacePublications } from "./surface-publications.ts";
 import { presentationHash } from "../presentation/identity.ts";
 import { Reviews, type ReviewSourceReader } from "./reviews.ts";
 
-export function nativeReviews(controller: Controller, store: Store, locks: Locks) {
+export function nativeReviews(
+  controller: Controller,
+  store: Store,
+  locks: Locks,
+  surfaces = new SurfacePublications(store, locks),
+) {
   const associations = new PresentationAssociations(store, locks);
-  const surfaces = new SurfacePublications(store, locks, associations);
   const source: ReviewSourceReader = (session, selection) =>
     Effect.gen(function* () {
       if (selection.kind === "surface") {

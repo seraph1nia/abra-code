@@ -305,6 +305,7 @@ test("execute.before guard enforces memory_reads policy and requireOwnedPromptEf
   let beforeHook: ((event: Record<string, unknown>) => Effect.Effect<void, Tool.Error>) | undefined;
   const ctx = {
     session: { hook: () => Effect.void },
+    permission: { hook: () => Effect.void },
     shell: { hook: () => Effect.void },
     tool: {
       hook: (

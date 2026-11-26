@@ -79,12 +79,7 @@ export function Overview({
             ))}
           </div>
         )}
-        <Markdown
-          key={detail.description}
-          className="prose"
-          content={detail.description}
-          mode="static"
-        />
+        <Markdown className="prose" content={detail.description} mode="static" />
         {detail.thought_source && (
           <ThoughtSource
             reference={detail.thought_source.reference}

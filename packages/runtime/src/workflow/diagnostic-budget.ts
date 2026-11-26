@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import type { IncidentId, IssueId } from "@abracode/contracts/identities";
 import type { CrewError } from "../domain.ts";
 import type { Records } from "../storage/store.ts";
-import { leadAccounting } from "./lead-contracts.ts";
+import { leadAccounting } from "./leads/contracts.ts";
 
 export interface DiagnosticCapacitySnapshot {
   readonly turnsUsed: number;

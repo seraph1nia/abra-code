@@ -6,9 +6,8 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import * as Id from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
-import { domainEffect } from "../../src/effect.ts";
 import { fixture } from "../fixtures.ts";
-import { run } from "../effects.ts";
+import { domainEffect, run } from "../effects.ts";
 
 const issue = Id.IssueId.make("abra-1");
 const generated = ".agents/skills/openspec-propose/SKILL.md";
@@ -47,16 +46,20 @@ test("controller refreshes instructions before Explore and retains its baseline 
   );
   const p = (await run(f.records.project(e.repository_id)))!;
   assert.equal(await run(f.git.head(p.path)), e.base_commit);
-  const restarted = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const restarted = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   await run(restarted.start(issue));
   assert.equal(updates, 1);

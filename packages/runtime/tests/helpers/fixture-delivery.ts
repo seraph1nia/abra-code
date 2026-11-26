@@ -1,5 +1,5 @@
 import * as Id from "@abracode/contracts/identities";
-import { domainEffect } from "../../src/effect.ts";
+import { domainEffect } from "../effects.ts";
 import { Effect } from "effect";
 import { Git } from "../../src/git/repository.ts";
 import { ensure, type ManagedExecution, type Project } from "../../src/domain.ts";

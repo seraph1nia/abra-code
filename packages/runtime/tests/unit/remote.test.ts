@@ -3,8 +3,7 @@ import { retainedExecution, interruptApprovalWrite } from "../helpers/retained-e
 import { summarizeCapacity } from "../../src/workflow/capacity.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import * as Id from "@abracode/contracts/identities";
-import { run } from "../effects.ts";
-import { domainEffect } from "../../src/effect.ts";
+import { domainEffect, run } from "../effects.ts";
 import { CrewError } from "../../src/domain.ts";
 import { Effect } from "effect";
 import { test } from "vite-plus/test";
@@ -643,16 +642,18 @@ test("setup recollects its original pending form after a lost save and rejects a
     run(f.setup.run(project.id, "approve", session, false)),
     /receipt interrupted/,
   );
-  const restarted = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const restarted = await run(
+    createWorkflow(
+      f.catalog,
+      f.config,
+      f.records,
+      f.work,
+      f.spec,
+      f.git,
+      f.runtime,
+      f.delivery,
+      f.locks,
+    ),
   );
   t.onTestFinished(() => run(restarted.controller.close()));
   const original = f.delivery.pr!.headRefOid;
@@ -678,16 +679,18 @@ test("branch-only setup finishes on confirmed Git evidence with no form", async 
   project.delivery = "branch";
   await run(f.records.saveProject(project));
   const delivery = new GitHubDelivery(f.git, f.git.runner, Id.Executable.make("unused-for-branch"));
-  const workflow = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    delivery,
-    f.locks,
+  const workflow = await run(
+    createWorkflow(
+      f.catalog,
+      f.config,
+      f.records,
+      f.work,
+      f.spec,
+      f.git,
+      f.runtime,
+      delivery,
+      f.locks,
+    ),
   );
   t.onTestFinished(() => run(workflow.controller.close()));
   const session = Id.SessionId.make("ses_setup");

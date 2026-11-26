@@ -4,7 +4,6 @@ import { Equal, Schema } from "effect";
 import { ThoughtReference } from "@abracode/contracts/visibility/thoughts";
 import { appendDraft } from "../workspace-commands.ts";
 import { toast } from "../notifications.tsx";
-import { createContext } from "react";
 import {
   CapturedSelectionSchema as AttachmentSchema,
   type Submission,
@@ -12,8 +11,6 @@ import {
 import { readRetained, writeRetained } from "../retained-input.ts";
 
 export type DraftAttachment = typeof AttachmentSchema.Type;
-export const PrepareSurfaceMessage = createContext<((text: string) => void) | undefined>(undefined);
-export const AttachSelection = createContext<(attachment: DraftAttachment) => void>(() => {});
 const DraftSchema = Schema.Struct({
   text: Schema.String.check(Schema.isMaxLength(32768)),
   attachment: Schema.optionalKey(AttachmentSchema),

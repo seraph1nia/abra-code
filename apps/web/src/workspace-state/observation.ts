@@ -1,3 +1,4 @@
+import { RuntimeDiscovered } from "../workspace-provider.tsx";
 import {
   useCallback,
   useContext,
@@ -8,7 +9,7 @@ import {
   useState,
 } from "react";
 import { useAgent, UseAgentUpdate } from "@copilotkit/react-core/v2/headless";
-import { RegistryContext, useAtomSet } from "@effect/atom-react";
+import { RegistryContext } from "@effect/atom-react";
 import { Effect, Exit, Schema } from "effect";
 import { AtomRegistry } from "effect/reactivity";
 import { WorkspaceStateJson } from "@abracode/contracts/web/workspace-wire";
@@ -17,7 +18,7 @@ import { bootstrapQuery, invalidateWork } from "../data.ts";
 import { requestError } from "../request-error.ts";
 import { WorkspaceObservation, type ObservationState } from "./observation-client.ts";
 import { HttpAgent } from "@ag-ui/client";
-import { bindObservationThread, ownObservationRequests } from "./observation-transport.ts";
+import { ownObservationRequests } from "./observation-transport.ts";
 import { transcriptFromAgent } from "@abracode/contracts/web/transcript";
 import { ConversationRetention, retainConversation } from "./conversation.ts";
 const updates = [UseAgentUpdate.OnMessagesChanged];
@@ -26,71 +27,75 @@ export function useWorkspaceObservation(
   setError: (message: string) => void,
 ) {
   const registry = useContext(RegistryContext);
-  const { agent, isReady } = useAgent({
-    agentId: "abra",
-    updates,
-    throttleMs: 50,
-  });
+  const discovered = useContext(RuntimeDiscovered);
+  // A proxy registered before runtime discovery performs a second /info fetch.
+  const { agent, isReady: registered } = useAgent(
+    discovered
+      ? {
+          agentId: `abra:${initial.session_id}`,
+          runtimeAgentId: "abra",
+          threadId: initial.session_id,
+          updates,
+          throttleMs: 50,
+        }
+      : { agentId: "abra", updates },
+  );
+  const isReady = discovered && registered;
   const [state, setState] = useState<ObservationState>({
     workspace: initial,
     stateError: "",
     connectionError: "",
-    conversation: retainConversation(undefined, initial),
   });
   const owner = useRef<WorkspaceObservation | undefined>(undefined);
   const initialRef = useRef(initial);
-  const [retained] = useState(() => new ConversationRetention(state.conversation));
-  const invalidate = useAtomSet(invalidateWork, { mode: "promiseExit" });
+  const [retained] = useState(
+    () => new ConversationRetention(retainConversation(undefined, initial)),
+  );
   useEffect(() => {
     if (!isReady) return;
-    bindObservationThread(agent, initialRef.current.session_id);
     const releaseRequests = agent instanceof HttpAgent ? ownObservationRequests(agent) : () => {};
     let publishedState: unknown;
-    const observation = new WorkspaceObservation(
-      initialRef.current,
-      {
-        transport: {
-          current: () => agent.state,
-          subscribe: (listener) => {
-            const subscription = agent.subscribe({
-              onStateChanged: ({ state }) => {
-                if (state === publishedState) {
-                  publishedState = undefined;
-                  return;
-                }
-                listener.state(state);
-              },
-              onCustomEvent: ({ event }) => listener.custom(event),
-            });
-            return () => subscription.unsubscribe();
-          },
-          connect: () => agent.connectAgent().then(() => undefined),
-          detach: () => {
-            void agent.detachActiveRun();
-          },
-          publish: (workspace) => {
-            const encoded = Schema.encodeSync(WorkspaceStateJson)({ workspace });
-            publishedState = encoded;
-            agent.setState(encoded);
-          },
+    const observation = new WorkspaceObservation(initialRef.current, {
+      transport: {
+        current: () => agent.state,
+        subscribe: (listener) => {
+          const subscription = agent.subscribe({
+            onStateChanged: ({ state }) => {
+              if (state === publishedState) {
+                publishedState = undefined;
+                return;
+              }
+              listener.state(state);
+            },
+            onCustomEvent: ({ event }) => listener.custom(event),
+          });
+          return () => subscription.unsubscribe();
         },
-        baseline: async (signal) => {
-          registry.refresh(bootstrapQuery);
-          const result = await Effect.runPromiseExit(
-            AtomRegistry.getResult(registry, bootstrapQuery, { suspendOnWaiting: true }),
-            { signal },
-          );
-          if (Exit.isFailure(result)) throw new Error(requestError(result.cause));
-          return result.value;
+        connect: () => agent.connectAgent().then(() => undefined),
+        detach: () => {
+          void agent.detachActiveRun();
         },
-        invalidate: async (scope) => {
-          const result = await invalidate(scope);
-          if (Exit.isFailure(result)) throw new Error(requestError(result.cause));
+        publish: (workspace) => {
+          const encoded = Schema.encodeSync(WorkspaceStateJson)({ workspace });
+          publishedState = encoded;
+          agent.setState(encoded);
         },
-        error: setError,
       },
-      retained.read(),
-    );
+      baseline: async (signal) => {
+        registry.refresh(bootstrapQuery);
+        const result = await Effect.runPromiseExit(
+          AtomRegistry.getResult(registry, bootstrapQuery, { suspendOnWaiting: true }),
+          { signal },
+        );
+        if (Exit.isFailure(result)) throw new Error(requestError(result.cause));
+        return result.value;
+      },
+      invalidate: async (scope, signal) => {
+        const result = await Effect.runPromiseExit(invalidateWork(registry, scope), { signal });
+        if (Exit.isFailure(result)) throw new Error(requestError(result.cause));
+      },
+      error: setError,
+    });
     owner.current = observation;
     const unsubscribe = observation.subscribe(setState);
     setState(observation.current());
@@ -101,7 +106,7 @@ export function useWorkspaceObservation(
       releaseRequests();
       owner.current = undefined;
     };
-  }, [agent, isReady, registry, invalidate, setError, retained]);
+  }, [agent, isReady, registry, setError]);
   const messages = agent.messages;
   const conversation = useMemo(
     () =>

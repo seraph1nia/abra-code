@@ -6,12 +6,11 @@ import { FileLocks, type Locks } from "../storage/lock.ts";
 import { AbsolutePath, LockKey, type RepositoryId } from "@abracode/contracts/identities";
 import { CrewError } from "../domain.ts";
 import { decode } from "../decode.ts";
-import { sha256Bytes, sha256Text } from "../digest.ts";
+import { sha256 } from "../digest.ts";
 import { provideFileSystem } from "../platform.ts";
 import { memoryError, type MemoryProvider } from "./provider.ts";
 
-export const hash = (value: string | Uint8Array) =>
-  typeof value === "string" ? sha256Text(value) : sha256Bytes(value);
+export const hash = (value: string | Uint8Array) => sha256(value);
 const projectName = (scope: MemoryScope) =>
   scope.kind === "shared" ? "abra-shared" : "abra-" + hash(scope.repository_id);
 export const sameScope = (left: MemoryScope, right: MemoryScope) =>
@@ -253,7 +252,7 @@ export class MemoryCollections {
             { concurrency: 4 },
           );
           const more = data.has_more;
-          const fingerprint = sha256Text(
+          const fingerprint = sha256(
             JSON.stringify([repo, input.query, this.mode, index, page, entries, more]),
           );
           return { entries, more, fingerprint };
@@ -265,7 +264,7 @@ export class MemoryCollections {
           Effect.map((pages) => ({
             entries: pages.flatMap((p) => p.entries),
             more: pages.some((p) => p.more),
-            fingerprint: sha256Text(JSON.stringify(pages.map((p) => p.fingerprint))),
+            fingerprint: sha256(JSON.stringify(pages.map((p) => p.fingerprint))),
           })),
         );
       let page = 1;

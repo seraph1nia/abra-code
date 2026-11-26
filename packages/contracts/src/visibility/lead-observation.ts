@@ -1,3 +1,4 @@
+import { utf8Bytes } from "../utf8.ts";
 import { Schema } from "effect";
 import { Count, PolicySchema, Priority, WorkerModelSchema } from "../primitives.ts";
 import {
@@ -150,9 +151,7 @@ export const LeadEvidencePageSchema = Schema.Struct({
   ),
 }).check(
   Schema.makeFilter(
-    (page) =>
-      new TextEncoder().encode(JSON.stringify(page)).length <= 1024 * 1024 ||
-      "Lead evidence exceeds 1 MiB",
+    (page) => utf8Bytes(JSON.stringify(page)) <= 1024 * 1024 || "Lead evidence exceeds 1 MiB",
   ),
 );
 

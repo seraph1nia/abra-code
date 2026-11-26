@@ -1,3 +1,5 @@
+import { WorkflowError } from "../errors.ts";
+import { executionAuthority } from "./execution-authority.ts";
 import { feedbackPage } from "./read-model/feedback-page.ts";
 import { Effect } from "effect";
 import {
@@ -23,21 +25,20 @@ import {
   type ReadinessBlocker,
   type Role,
 } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import { type Git } from "../git/repository.ts";
 import { diagnosticText } from "../opencode/diagnostics.ts";
 import { type Runtime } from "../opencode/runtime.ts";
 import { type OpenSpec } from "../openspec/adapter.ts";
 import { type Records } from "../storage/store.ts";
-import { archivedPlans } from "../visibility/archived-plans.ts";
-import { changeDocument, changeDocuments } from "../visibility/documents.ts";
-import { discoverEvidence } from "../visibility/evidence-discovery.ts";
-import { executionContract } from "../visibility/execution-contract.ts";
-import { type DiffScope } from "../visibility/protocol.ts";
-import { TicketDiff } from "../visibility/ticket-diff.ts";
+import { archivedPlans } from "./read-model/archived-plans.ts";
+import { changeDocument, changeDocuments } from "./read-model/documents.ts";
+import { discoverEvidence } from "./read-model/evidence-discovery.ts";
+import { executionContract } from "./read-model/execution-contract.ts";
+import { type DiffScope } from "@abracode/contracts/visibility/document-contracts";
+import { TicketDiff } from "./read-model/ticket-diff.ts";
 import { type WorkGraph } from "../work/graph.ts";
 import { CheckpointEvidence } from "./authorization.ts";
-import { scanLeads } from "./lead-contracts.ts";
+import { scanLeads } from "./leads/contracts.ts";
 import { leadEvidence, leadOverview } from "./read-model/lead-queries.ts";
 import { queryMessages } from "./read-model/message-queries.ts";
 import {
@@ -104,6 +105,8 @@ export class Queries {
   projects = () => this.records.projects;
   project = (id: RepositoryId) => this.records.project(id);
   executions = () => this.records.executions;
+  externalWorktrees = () =>
+    executionAuthority(this.records).pipe(Effect.map((index) => index.worktrees));
   execution = (id: IssueId) => this.records.execution(id);
   thoughtWork = (query: Parameters<WorkGraph["thoughtWork"]>[0]) => this.work.thoughtWork(query);
   searchOwners = (after: string, repository?: RepositoryId, issue?: IssueId) =>
@@ -141,9 +144,11 @@ export class Queries {
     );
 
   automaticAuthority = Effect.fn("Queries.automaticAuthority")(
-    function* (
-      this: Queries,
-    ): Effect.fn.Return<{ session_id?: SessionId; blocker?: ReadinessBlocker }, CrewError> {
+    { self: this },
+    function* (): Effect.fn.Return<
+      { session_id?: SessionId; blocker?: ReadinessBlocker },
+      CrewError
+    > {
       const session = yield* this.records.supervisor;
       if (!session)
         return {
@@ -168,36 +173,35 @@ export class Queries {
           },
         };
       return { session_id: session };
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   planDocuments = (e: Execution) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        if (e.archive_path || e.current_phase === "completed") {
-          const archive = yield* archivedPlans(this.git, yield* this.project(e.repository_id), e);
-          return {
-            paths: archive.paths,
-            read: archive.read,
-            observation: {
-              source: "archive" as const,
-              commit: archive.commit,
-              limited: archive.limited,
-            },
-          };
-        }
-        const paths = yield* changeDocuments(e);
+    Effect.gen({ self: this }, function* () {
+      if (e.archive_path || e.current_phase === "completed") {
+        const archive = yield* archivedPlans(this.git, yield* this.project(e.repository_id), e);
         return {
-          paths,
-          observation: { source: "worktree" as const, limited: paths.length >= 100 },
-          read: (path: RelativePath) =>
-            paths.includes(path)
-              ? changeDocument(e, path)
-              : Effect.fail(new CrewError("SPEC_PATH", "Select a document from the owned change")),
+          paths: archive.paths,
+          read: archive.read,
+          observation: {
+            source: "archive" as const,
+            commit: archive.commit,
+            limited: archive.limited,
+          },
         };
-      }),
-    );
+      }
+      const paths = yield* changeDocuments(e);
+      return {
+        paths,
+        observation: { source: "worktree" as const, limited: paths.length >= 100 },
+        read: (path: RelativePath) =>
+          paths.includes(path)
+            ? changeDocument(e, path)
+            : Effect.fail(
+                new WorkflowError("SPEC_PATH", "Select a document from the owned change"),
+              ),
+      };
+    });
 
   planDocument = (e: Execution, path: RelativePath) =>
     this.planDocuments(e).pipe(Effect.flatMap((docs) => docs.read(path)));
@@ -205,7 +209,11 @@ export class Queries {
   specApply = (e: Execution) => this.spec.apply(e);
   specInstructions = (e: Execution, artifact: ArtifactId) => this.spec.instructions(e, artifact);
   dirty = (path: AbsolutePath) => this.git.dirty(path);
+  promptOrigin = (...args: Parameters<Runtime["promptOrigin"]>) =>
+    this.runtime.promptOrigin(...args);
   session = (id: SessionId) => this.runtime.session(id);
+  sessionIdentity = (id: SessionId) =>
+    this.runtime.sessionOwner ? this.runtime.sessionOwner(id) : this.runtime.session(id);
 
   sessionAvailability = (
     e: Execution,
@@ -261,13 +269,13 @@ export class Queries {
   capturedWorkerPrompt = (e: Execution) =>
     e.worker_context_id
       ? readWorkerContext(this.records.store, e.worker_context_id)
-      : Effect.fail(new CrewError("PROMPT_INTENT", "No retained worker context"));
+      : Effect.fail(new WorkflowError("PROMPT_INTENT", "No retained worker context"));
 
   messages = Effect.fn("Queries.messages")(
-    function* (this: Queries, id: IssueId, offset = 0, limit = 20) {
+    { self: this },
+    function* (id: IssueId, offset = 0, limit = 20) {
       return yield* queryMessages({ runtime: this.runtime, get: this.get }, id, offset, limit);
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   assignment = (sessionID: SessionId) => this.records.workerAssignment(sessionID);
@@ -284,35 +292,37 @@ export class Queries {
       Effect.flatMap((e) =>
         this.reportReader
           ? this.reportReader(e)
-          : Effect.fail(new CrewError("REPORT_UNAVAILABLE", "Report reader unavailable")),
+          : Effect.fail(new WorkflowError("REPORT_UNAVAILABLE", "Report reader unavailable")),
       ),
     );
 
   effectiveProject = Effect.fn("Queries.effectiveProject")(
-    function* (this: Queries, e: Execution) {
+    { self: this },
+    function* (e: Execution) {
       const p = yield* this.records.project(e.repository_id);
-      if (!p) return yield* new CrewError("PROJECT_MISSING", "Repository is no longer registered");
+      if (!p)
+        return yield* new WorkflowError("PROJECT_MISSING", "Repository is no longer registered");
       if (e.delivery_policy !== p.delivery)
-        return yield* new CrewError(
+        return yield* new WorkflowError(
           "POLICY_DRIFT",
           "Registered delivery policy changed during execution",
         );
       return { ...p, verification: e.effective_policy.verification };
-    }.bind(this),
-    domainEffect,
+    },
   );
 
-  get = Effect.fn("Queries.get")(
-    function* (this: Queries, id: IssueId): Effect.fn.Return<Execution, CrewError> {
-      const e = yield* this.records.execution(id);
-      if (!e) return yield* new CrewError("EXECUTION_MISSING", `No execution for ${id}`);
-      return e;
-    }.bind(this),
-    domainEffect,
-  );
+  get = Effect.fn("Queries.get")({ self: this }, function* (id: IssueId): Effect.fn.Return<
+    Execution,
+    CrewError
+  > {
+    const e = yield* this.records.execution(id);
+    if (!e) return yield* new WorkflowError("EXECUTION_MISSING", `No execution for ${id}`);
+    return e;
+  });
 
   diagnostics = Effect.fn("Queries.diagnostics")(
-    function* (this: Queries, id: IssueId, role?: Role) {
+    { self: this },
+    function* (id: IssueId, role?: Role) {
       return yield* queryDiagnostics(
         {
           config: this.config,
@@ -324,8 +334,7 @@ export class Queries {
         id,
         role,
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   observe = (query?: WorkDiscovery, includeRecords = false) =>

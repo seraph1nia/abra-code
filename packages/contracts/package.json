@@ -66,7 +66,9 @@
     "./presentation/diagrams": "./src/presentation/diagrams.ts",
     "./web/diagram-actions": "./src/web/diagram-actions.ts",
     "./web/reviews": "./src/web/reviews.ts",
-    "./web/review-catalog": "./src/web/review-catalog.ts"
+    "./web/review-catalog": "./src/web/review-catalog.ts",
+    "./workflow/correction-contracts": "./src/workflow/correction-contracts.ts",
+    "./workflow/review-contracts": "./src/workflow/review-contracts.ts"
   },
   "scripts": {
     "check": "tsc --noEmit"

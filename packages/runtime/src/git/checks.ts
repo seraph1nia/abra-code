@@ -1,8 +1,8 @@
+import { GitError } from "../errors.ts";
 import { Effect, Schema } from "effect";
 import { type Commit, type RepositorySlug } from "@abracode/contracts/identities";
 import { type Check } from "./check-contracts.ts";
-import { ensure, type Project } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
+import { type Project } from "../domain.ts";
 import { CheckPageSchema, StatusSchema, type Forge } from "./forge.ts";
 
 function latest<A extends { id: number }>(values: readonly A[], key: (value: A) => string) {
@@ -36,30 +36,26 @@ export const observeChecks = Effect.fn("observeChecks")(function* (
     ],
     { concurrency: "unbounded" },
   );
-  ensure(
-    pages.length > 0 && statuses.length > 0,
-    "CHECKS_UNCONFIRMED",
-    "Missing check pagination evidence",
-  );
+  if (!(pages.length > 0 && statuses.length > 0))
+    return yield* new GitError("CHECKS_UNCONFIRMED", "Missing check pagination evidence");
   const runs = pages.flatMap((page) => page.check_runs);
-  ensure(
-    runs.every((run) => run.head_sha === head),
-    "CHECK_HEAD",
-    "Check attempt belongs to another commit",
-  );
-  ensure(
-    pages.every((page) => page.total_count === pages[0].total_count) &&
-      runs.length === pages[0].total_count &&
-      new Set(runs.map((run) => run.id)).size === pages[0].total_count,
-    "CHECKS_UNCONFIRMED",
-    "Check attempts changed during pagination; observe again",
-  );
+  if (!runs.every((run) => run.head_sha === head))
+    return yield* new GitError("CHECK_HEAD", "Check attempt belongs to another commit");
+  if (
+    !pages.every((page) => page.total_count === pages[0].total_count) ||
+    runs.length !== pages[0].total_count ||
+    new Set(runs.map((run) => run.id)).size !== pages[0].total_count
+  )
+    return yield* new GitError(
+      "CHECKS_UNCONFIRMED",
+      "Check attempts changed during pagination; observe again",
+    );
   const statusValues = statuses.flat();
-  ensure(
-    new Set(statusValues.map((s) => s.id)).size === statusValues.length,
-    "CHECKS_UNCONFIRMED",
-    "Commit status pagination contains repeated source identities",
-  );
+  if (new Set(statusValues.map((s) => s.id)).size !== statusValues.length)
+    return yield* new GitError(
+      "CHECKS_UNCONFIRMED",
+      "Commit status pagination contains repeated source identities",
+    );
   const checks: Check[] = latest(runs, (run) => `${run.name}\0${run.app.id}`).map((run) => ({
     name: run.name,
     app_id: run.app.id,
@@ -95,4 +91,4 @@ export const observeChecks = Effect.fn("observeChecks")(function* (
     })),
   );
   return checks;
-}, domainEffect);
+});

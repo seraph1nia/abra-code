@@ -1,6 +1,9 @@
+import { tryDomainValue } from "../../effect.ts";
 import type { Submission } from "@abracode/contracts/web/workspace-wire";
 import { randomUUID } from "node:crypto";
-import { Cause, Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
+import { stripUndefined } from "../../json-wire.ts";
+import jsonpatch from "fast-json-patch";
+import { Context, Cause, Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
 import { defer, Observable } from "rxjs";
 import {
   EventType,
@@ -10,7 +13,7 @@ import {
   type BaseEvent,
   type ActivityMessage,
 } from "@ag-ui/core";
-import { EventSchema, RunAgentInputSchema } from "@ag-ui/core/schemas";
+import { EventSchema } from "@ag-ui/core/schemas";
 import type { SubmissionReceipt } from "@abracode/contracts/web/workspace-wire";
 import { SubmissionOptionsSchema } from "@abracode/contracts/web/workspace-wire";
 import type { TranscriptMessage } from "@abracode/contracts/web/contracts";
@@ -45,36 +48,11 @@ export interface NativeAgentSource {
   notifyAdmission: Effect.Effect<void>;
   updates: Stream.Stream<NativeObservation>;
 }
-const same = (a: unknown, b: unknown) => Object.is(a, b) || JSON.stringify(a) === JSON.stringify(b);
-const plainObject = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object" && !Array.isArray(value);
-const escapePointer = (key: string) => key.replaceAll("~", "~0").replaceAll("/", "~1");
-
-/** Compute minimal RFC 6902 JSON Patch operations recursively across plain objects. */
-export function jsonPatch(
+/** Workspace snapshots contain JSON values from the wire schema. */
+export const jsonPatch = (
   prior: Record<string, unknown>,
   next: Record<string, unknown>,
-  prefix = "",
-  delta: JsonPatch = [],
-): JsonPatch {
-  if (Object.is(prior, next)) return delta;
-  for (const key of new Set([...Object.keys(prior), ...Object.keys(next)])) {
-    const before = prior[key];
-    const after = next[key];
-    if (Object.is(before, after)) continue;
-    const path = `${prefix}/${escapePointer(key)}`;
-    if (after === undefined) {
-      if (before !== undefined) delta.push({ op: "remove", path });
-    } else if (before === undefined) {
-      delta.push({ op: "add", path, value: after });
-    } else if (plainObject(before) && plainObject(after)) {
-      jsonPatch(before, after, path, delta);
-    } else if (!same(before, after)) {
-      delta.push({ op: "replace", path, value: after });
-    }
-  }
-  return delta;
-}
+): JsonPatch => jsonpatch.compare(prior, next).filter((op) => op.op !== "_get");
 
 /** Each observer owns a projection cursor, never native execution or retained history. */
 function projection() {
@@ -118,7 +96,7 @@ function projection() {
           activityType: activity.activityType,
           content: activity.content,
         });
-    const state = staleState ? undefined : event.state?.(baseline);
+    const state = staleState ? undefined : stripUndefined(event.state?.(baseline));
     if (!state) return messages;
     previousStateOrder = order;
     const priorState = previousState;
@@ -131,9 +109,9 @@ function projection() {
   return { push, close: () => cursor.close() };
 }
 /** Effect/Observable cancellation detaches the scoped observer; it never calls Stop. */
-const observable = (stream: Stream.Stream<Event, CrewError>) =>
+const observable = (context: Context.Context<never>, stream: Stream.Stream<Event, CrewError>) =>
   new Observable<BaseEvent>((observer) => {
-    const fiber = Effect.runFork(
+    const fiber = Effect.runForkWith(context)(
       stream.pipe(
         Stream.runForEach((event) =>
           Effect.try({
@@ -155,13 +133,16 @@ const observable = (stream: Stream.Stream<Event, CrewError>) =>
         );
     });
     return () => {
-      Effect.runFork(Fiber.interrupt(fiber));
+      Effect.runForkWith(context)(Fiber.interrupt(fiber));
     };
   });
 
 /** Native execution/admission semantics, independent of workspace widgets and CopilotKit hosting. */
 export class NativeAgentAdapter {
-  constructor(private source: NativeAgentSource) {}
+  constructor(
+    private source: NativeAgentSource,
+    private context = Context.empty(),
+  ) {}
   accessible(thread: string) {
     return thread === this.source.sessionID;
   }
@@ -169,33 +150,26 @@ export class NativeAgentAdapter {
     if (!this.accessible(thread) || agent !== "abra")
       throw new CrewError("WEB_INPUT", "Use the fixed Abra session and agent");
   }
-  run(thread: string, agent: string | undefined, raw: RunAgentInput) {
+  run(thread: string, agent: string | undefined, input: RunAgentInput) {
     const admitted = Effect.gen({ self: this }, function* () {
-      const input = yield* Effect.try({
-        try: () => {
-          this.assert(thread, agent);
-          const input = RunAgentInputSchema.parse(raw);
-          if (input.threadId !== thread || input.tools.length || input.context.length)
-            throw new CrewError(
-              "WEB_INPUT",
-              "Client tools and context cannot change Abra's native configuration; client state is read-only",
-            );
-          const user = input.messages.at(-1);
-          if (!user || user.role !== "user" || typeof user.content !== "string")
-            throw new CrewError("WEB_INPUT", "Submit one text message to Abra");
-          return { text: user.content, options: input.forwardedProps };
-        },
-        catch: CrewError.from,
-      });
+      yield* tryDomainValue(() => this.assert(thread, agent));
+      if (input.threadId !== thread || input.tools.length || input.context.length)
+        return yield* new CrewError(
+          "WEB_INPUT",
+          "Client tools and context cannot change Abra's native configuration; client state is read-only",
+        );
+      const user = input.messages.at(-1);
+      if (!user || user.role !== "user" || typeof user.content !== "string")
+        return yield* new CrewError("WEB_INPUT", "Submit one text message to Abra");
       const options = yield* Schema.decodeUnknownEffect(SubmissionOptionsSchema, {
         onExcessProperty: "error",
         reportInput: false,
-      })(input.options).pipe(
+      })(input.forwardedProps).pipe(
         Effect.mapError(() => new CrewError("WEB_INPUT", "Unsupported submission options")),
       );
       const receipt = yield* this.source.submit({
         request_id: options.request_id,
-        text: input.text,
+        text: user.content,
         delivery: options.delivery ?? "queue",
         ...(options.thought && { thought: options.thought }),
         ...(options.selection && { selection: options.selection }),
@@ -237,7 +211,7 @@ export class NativeAgentAdapter {
               ? ({
                   type: EventType.RUN_FINISHED,
                   threadId: thread,
-                  runId: raw.runId,
+                  runId: input.runId,
                 } satisfies Event)
               : ({
                   type: EventType.RUN_ERROR,
@@ -252,11 +226,12 @@ export class NativeAgentAdapter {
         ),
       );
       return observable(
+        this.context,
         Stream.concat(
           Stream.succeed({
             type: EventType.RUN_STARTED,
             threadId: thread,
-            runId: raw.runId,
+            runId: input.runId,
           } satisfies Event),
           Stream.concat(observation, finish).pipe(
             Stream.catch((error) =>
@@ -287,6 +262,7 @@ export class NativeAgentAdapter {
         }),
       );
       return observable(
+        this.context,
         Stream.concat(
           Stream.succeed({ type: EventType.RUN_STARTED, threadId: thread, runId } satisfies Event),
           Stream.concat(
@@ -310,7 +286,7 @@ export class NativeAgentAdapter {
   }
   async isRunning(thread: string) {
     this.assert(thread);
-    return (await Effect.runPromise(this.source.current)).busy;
+    return (await Effect.runPromiseWith(this.context)(this.source.current)).busy;
   }
   async stop(thread: string, run?: string) {
     this.assert(thread);
@@ -319,7 +295,7 @@ export class NativeAgentAdapter {
         "WEB_INPUT",
         "The native service cannot stop a particular historical run. Use Stop current Abra turn.",
       );
-    return Effect.runPromise(
+    return Effect.runPromiseWith(this.context)(
       this.source.stop.pipe(
         Effect.mapError(
           () =>

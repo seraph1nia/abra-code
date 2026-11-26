@@ -1,3 +1,5 @@
+import { tryDomainValue } from "../effect.ts";
+import { GitError } from "../errors.ts";
 import {
   AbsolutePath,
   BranchName,
@@ -8,14 +10,13 @@ import {
   RepositoryId,
 } from "@abracode/contracts/identities";
 
-import { domainEffect } from "../effect.ts";
 import { Effect, Schema } from "effect";
 import { decode, decodeJSON } from "../decode.ts";
 import { PackageSchema } from "../config/contracts.ts";
 import { NonEmpty } from "@abracode/contracts/primitives";
 import { retainedEntry, mkdir, readFile, rename, writeFile } from "../filesystem.ts";
 import { isAbsolute, join, resolve } from "node:path";
-import { CrewError, ensure, identifier, type Project } from "../domain.ts";
+import { ensure, identifier, type Project } from "../domain.ts";
 import { Git } from "./repository.ts";
 // Identity is separate from the transport URL: HTTPS and SSH may name the same repository.
 export function remoteIdentity(remote: GitRemote, cwd?: AbsolutePath): RemoteIdentity {
@@ -67,11 +68,12 @@ export class RepositorySources {
     private root: AbsolutePath,
   ) {}
   clone = Effect.fn("RepositorySources.clone")(
-    function* (this: RepositorySources, id: RepositoryId, remote: GitRemote) {
-      identifier(id);
-      const identity = remoteIdentity(remote);
+    { self: this },
+    function* (id: RepositoryId, remote: GitRemote) {
+      yield* tryDomainValue(identifier, id);
+      const identity = yield* tryDomainValue(remoteIdentity, remote);
       if (!isAbsolute(this.root))
-        return yield* new CrewError("CONFIG", "Managed repository root must be absolute");
+        return yield* new GitError("CONFIG", "Managed repository root must be absolute");
       const directory = AbsolutePath.make(join(this.root, id));
       yield* mkdir(directory, { recursive: true });
       const path = AbsolutePath.make(join(directory, "checkout"));
@@ -84,11 +86,11 @@ export class RepositorySources {
             yield* readFile(intent, "utf8"),
             "Clone intent",
           );
-          if (!(saved.remote === identity))
-            return yield* new CrewError("PROJECT_REBIND", "Clone intent belongs to another remote");
+          if (saved.remote !== identity)
+            return yield* new GitError("PROJECT_REBIND", "Clone intent belongs to another remote");
         } else {
           if (yield* retainedEntry(pending, "directory"))
-            return yield* new CrewError(
+            return yield* new GitError(
               "CLONE_AMBIGUOUS",
               "Unowned partial clone; preserve it and inspect manually",
             );
@@ -98,25 +100,25 @@ export class RepositorySources {
           yield* this.git.run(directory, ["clone", "--origin", "origin", "--", remote, pending]);
         // A complete interrupted clone can be adopted. Invalid partial directories are retained.
         const candidate = yield* this.git.identity(pending);
-        if (!(remoteIdentity(candidate.remote) === identity))
-          return yield* new CrewError("REMOTE_MISMATCH", "Partial clone has a different origin");
+        if ((yield* tryDomainValue(remoteIdentity, candidate.remote)) !== identity)
+          return yield* new GitError("REMOTE_MISMATCH", "Partial clone has a different origin");
         yield* this.git.head(pending);
         if (yield* this.git.dirty(pending))
-          return yield* new CrewError(
+          return yield* new GitError(
             "CLONE_AMBIGUOUS",
             "Partial clone has checkout changes; preserve it for inspection",
           );
         yield* rename(pending, path);
       }
       const current = yield* this.git.identity(path);
-      if (!(remoteIdentity(current.remote) === identity))
-        return yield* new CrewError("REMOTE_MISMATCH", "Managed clone has a different origin");
+      if ((yield* tryDomainValue(remoteIdentity, current.remote)) !== identity)
+        return yield* new GitError("REMOTE_MISMATCH", "Managed clone has a different origin");
       return current;
-    }.bind(this),
-    domainEffect,
+    },
   );
   fetch = Effect.fn("RepositorySources.fetch")(
-    function* (this: RepositorySources, path: AbsolutePath, target?: BranchName) {
+    { self: this },
+    function* (path: AbsolutePath, target?: BranchName) {
       if (target === undefined) {
         const output = yield* this.git.run(path, ["ls-remote", "--symref", "origin", "HEAD"]);
         const discovered = /^ref: refs\/heads\/([^\t\n]+)\tHEAD$/m.exec(output)?.[1];
@@ -124,7 +126,7 @@ export class RepositorySources {
           ? yield* decode(BranchName, discovered, "Discovered Git branch")
           : undefined;
         if (!target)
-          return yield* new CrewError(
+          return yield* new GitError(
             "DEFAULT_BRANCH",
             "Remote HEAD does not identify a default branch; configure target_branch explicitly",
           );
@@ -138,16 +140,16 @@ export class RepositorySources {
         "Fetched Git commit",
       );
       return { target_branch: target, commit };
-    }.bind(this),
-    domainEffect,
+    },
   );
   base = Effect.fn("RepositorySources.base")(
-    function* (this: RepositorySources, p: Project, executionID: ExecutionId) {
+    { self: this },
+    function* (p: Project, executionID: ExecutionId) {
       const result = yield* this.fetch(
         p.path,
         p.branch_policy === "default" ? undefined : p.target_branch,
       );
-      identifier(executionID);
+      yield* tryDomainValue(identifier, executionID);
       // Retain a fetched commit even if the remote moves before native provisioning recovers.
       yield* this.git.run(p.path, [
         "update-ref",
@@ -155,11 +157,11 @@ export class RepositorySources {
         result.commit,
       ]);
       return result;
-    }.bind(this),
-    domainEffect,
+    },
   );
   inspect = Effect.fn("RepositorySources.inspect")(
-    function* (this: RepositorySources, path: AbsolutePath, commit: Commit) {
+    { self: this },
+    function* (path: AbsolutePath, commit: Commit) {
       const files = new Set(
         (yield* this.git.run(path, ["ls-tree", "-r", "--name-only", "-z", commit])).split("\0"),
       );
@@ -193,7 +195,6 @@ export class RepositorySources {
           .filter((name) => pkg.scripts?.[name])
           .map((name) => [manager, "run", name]),
       };
-    }.bind(this),
-    domainEffect,
+    },
   );
 }

@@ -184,16 +184,20 @@ test("a captured task requirement survives registry changes, restart and replan 
   assert.equal(started.plan_approval_required, true);
   assert.equal(started.effective_policy.plan_approval_source, "task_requirement");
   assert.equal(started.openspec_schema, "spec-driven");
-  const restarted = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const restarted = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   f.seed.db.prepare("UPDATE issues SET require_plan_approval = ? WHERE id = ?").run(null, issue.id);
   project.plan_approval = false;

@@ -1,11 +1,11 @@
+import { GitError } from "../errors.ts";
 import { Effect, Schema } from "effect";
-import { CrewError } from "../domain.ts";
 import { decodeJSON } from "../decode.ts";
 import { AbsolutePath, Commit, Executable, RelativePath } from "@abracode/contracts/identities";
 import { Count } from "@abracode/contracts/primitives";
 import { type Git } from "./repository.ts";
 import { compareChanges } from "./compare-changes.ts";
-import { documentLimit } from "../visibility/documents.ts";
+import { documentLimit } from "../workflow/read-model/documents.ts";
 
 const pathEntry = Schema.Struct({ path: RelativePath });
 const previewSchema = Schema.Struct({
@@ -48,12 +48,12 @@ export const readReviewChanges = Effect.fn("Review.changes")(function* (
   const comparison = yield* compareChanges(git, directory, base, head, false);
   const files = selected ? comparison.files.filter((f) => f.path === selected) : comparison.files;
   if (selected && !files.length)
-    return yield* new CrewError(
+    return yield* new GitError(
       "REVIEW_PATH",
       "Select a path from the current net change inventory",
     );
   if (offset > files.length)
-    return yield* new CrewError("REVIEW_OFFSET", "Review page is outside the current comparison");
+    return yield* new GitError("REVIEW_OFFSET", "Review page is outside the current comparison");
   const run = (args: string[]) =>
     git.runner.run(
       executable,
@@ -110,7 +110,7 @@ export const readReviewChanges = Effect.fn("Review.changes")(function* (
     : [];
   const grouped = groups.flatMap((group) => group.files);
   if (grouped.length !== paths.length || paths.some((path) => !grouped.includes(path)))
-    return yield* new CrewError("REVIEW_RULES", "OCR did not resolve the requested file rules");
+    return yield* new GitError("REVIEW_RULES", "OCR did not resolve the requested file rules");
   const end = offset + changes.length;
   return {
     total: files.length,

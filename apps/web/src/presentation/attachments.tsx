@@ -1,8 +1,8 @@
 export { MessageAttachment } from "./activity-reference.tsx";
-import { PrepareSurfaceMessage } from "../workspace-state/draft.ts";
+import { WorkspaceActions } from "../workspace-actions.ts";
 import { ReviewAttachment, ReviewsForSource } from "./interactive-review-loader.tsx";
-import { RegistryContext } from "@effect/atom-react";
-import { AsyncResult, type Atom, type AtomRegistry } from "effect/reactivity";
+import { useCommittedAtomValue } from "../committed-atom.ts";
+import { AsyncResult } from "effect/reactivity";
 import { Option } from "effect";
 import {
   bindingRequirements,
@@ -11,11 +11,11 @@ import {
 } from "@abracode/contracts/web/bindings";
 import type { SurfaceRecord } from "@abracode/contracts/web/contracts";
 import type { PresentationAttachmentSchema } from "@abracode/contracts/presentation/contracts";
-import { useContext, useMemo, useSyncExternalStore, type ComponentProps } from "react";
+import { useContext, type ComponentProps } from "react";
 import { phaseLabel } from "@abracode/contracts/presentation/work-state";
 import { SessionId } from "@abracode/contracts/identities";
 import { useCanvasRead } from "../canvas-refresh.tsx";
-import { OpenSurface, type WorkspaceSearch } from "../navigation.ts";
+import { type WorkspaceSearch } from "../navigation.ts";
 import { Button } from "@abracode/presentation/ui/button";
 import { LayoutGrid, ChevronRight } from "@abracode/presentation/icons";
 import { deferred } from "@abracode/presentation/deferred";
@@ -110,7 +110,7 @@ export function SurfaceAttachment({
   );
 }
 function SurfacePreview({ record, inspect }: { record: SurfaceRecord; inspect: Inspect }) {
-  const open = useContext(OpenSurface);
+  const open = useContext(WorkspaceActions).openSurface;
   const { components, surfaceId } = record.surface.createSurface;
   const rich =
     components.some((c) =>
@@ -230,28 +230,7 @@ function BoundSurfaceContent({ record, inspect }: { record: SurfaceRecord; inspe
     />
   );
 }
-function liveBindingStore(
-  registry: AtomRegistry.AtomRegistry,
-  query: ReturnType<typeof bindingQuery>,
-  enabled: boolean,
-) {
-  // A lazy layout can render several times before it commits. Start its live
-  // binding only when React subscribes so discarded renders never issue reads.
-  let mounted = false;
-  const pending: Atom.Type<typeof query> = AsyncResult.initial();
-  return {
-    subscribe: (notify: () => void) => {
-      if (!enabled) return () => {};
-      mounted = true;
-      const release = registry.subscribe(query, notify);
-      return () => {
-        mounted = false;
-        release();
-      };
-    },
-    read: () => (mounted ? registry.get(query) : pending),
-  };
-}
+const pendingBinding = AsyncResult.initial<never, never>();
 function LiveSurface({
   record,
   inspect,
@@ -264,13 +243,8 @@ function LiveSurface({
   const query = bindingQuery(selection);
   const enabled = selection.unfiltered || selection.ids.length > 0;
   const { refresh } = useCanvasRead(query, enabled);
-  const prepareMessage = useContext(PrepareSurfaceMessage);
-  const registry = useContext(RegistryContext);
-  const reader = useMemo(
-    () => liveBindingStore(registry, query, enabled),
-    [registry, query, enabled],
-  );
-  const result = useSyncExternalStore(reader.subscribe, reader.read);
+  const prepareMessage = useContext(WorkspaceActions).prepare;
+  const result = useCommittedAtomValue(query, pendingBinding, enabled);
   const value = AsyncResult.value(result);
   const previous = Option.isSome(value) ? value.value : undefined;
   const coverage: BindingCoverage = {

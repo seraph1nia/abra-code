@@ -1,8 +1,9 @@
-import type { SessionInspection } from "./session-inspection.ts";
+import { WorkflowError } from "../errors.ts";
+import type { SessionInspection } from "./worker-assignment.ts";
 import type { PlanningBaselines } from "./planning.ts";
 import type { OpenSpec } from "../openspec/adapter.ts";
 import { WorkerContexts, readWorkerContext } from "./worker-context.ts";
-import { Messages } from "./messages.ts";
+import { Messages } from "./messaging/messages.ts";
 import {
   messageRequests,
   requiresResponse,
@@ -11,7 +12,7 @@ import {
 } from "@abracode/contracts/workflow/message-contracts";
 import { join } from "node:path";
 import { externalOwns } from "@abracode/contracts/validation/contracts";
-import { synchronizeExecution, removeOwnedField, type Records } from "../storage/store.ts";
+import { removeOwnedField, type Records } from "../storage/store.ts";
 import {
   SessionId,
   IssueId,
@@ -30,7 +31,6 @@ import {
   type Role,
   type WorkerError,
 } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 
 import { type Runtime, type SessionState } from "../opencode/runtime.ts";
 import { diagnosticError } from "../opencode/diagnostics.ts";
@@ -78,66 +78,67 @@ export class WorkerSessions {
     this.messages = new Messages(records, runtime, capacity, queries, attention);
   }
   recordFailure = Effect.fn("WorkerSessions.recordFailure")(
-    function* (this: WorkerSessions, sessionID: SessionId, error: WorkerError) {
+    { self: this },
+    function* (sessionID: SessionId, error: WorkerError) {
       return yield* this.coordination.with(() =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const e = yield* this.records.workerAssignment(sessionID);
-            if (!e || e.current_phase === "completed") return;
-            const role = (["explore", "apply", "review", "research"] as const).find(
-              (r) => this.sessionID(e, r) === sessionID,
-            );
-            if (!role || role !== e.active_role) return;
-            // Native failure events carry no prompt ID and may arrive after
-            // reconciliation has already stopped this turn with exact evidence.
-            // Preserve that stronger observation rather than erasing its binding.
-            const prior = e.worker_failure;
-            if (
-              !isActiveWorker(e, sessionID, { role }) &&
-              prior?.session_id === sessionID &&
-              prior.prompt_id &&
-              (prior.prompt_id === e.prompt_id ||
-                messageRequests(e.messages).some(
-                  (m) =>
-                    m.generation === e.control_generation &&
-                    m.assignment_id === e.prompt_id &&
-                    requestPromptIDs(m).includes(prior.prompt_id!),
-                ))
-            )
-              return;
-            yield* this.records.commitOwned(e, {
-              worker_failure: {
-                prompt_id: messageRequests(e.messages).some(
-                  (m) =>
-                    m.assignment_id === e.prompt_id &&
-                    ["admission_uncertain", "admitted", "acknowledged", "answered"].includes(
-                      m.status,
-                    ),
-                )
-                  ? undefined
-                  : e.prompt_id,
-                session_id: sessionID,
-                role,
-                error: diagnosticError(error),
-                at: yield* timestamp,
-              },
-            });
-          }),
-        ),
+        Effect.gen({ self: this }, function* () {
+          const e = yield* this.records.workerAssignment(sessionID);
+          if (!e || e.current_phase === "completed") return;
+          const role = (["explore", "apply", "review", "research"] as const).find(
+            (r) => this.sessionID(e, r) === sessionID,
+          );
+          if (!role || role !== e.active_role) return;
+          // Native failure events carry no prompt ID and may arrive after
+          // reconciliation has already stopped this turn with exact evidence.
+          // Preserve that stronger observation rather than erasing its binding.
+          const prior = e.worker_failure;
+          if (
+            !isActiveWorker(e, sessionID, { role }) &&
+            prior?.session_id === sessionID &&
+            prior.prompt_id &&
+            (prior.prompt_id === e.prompt_id ||
+              messageRequests(e.messages).some(
+                (m) =>
+                  m.generation === e.control_generation &&
+                  m.assignment_id === e.prompt_id &&
+                  requestPromptIDs(m).includes(prior.prompt_id!),
+              ))
+          )
+            return;
+          yield* this.records.commitOwned(e, {
+            worker_failure: {
+              prompt_id: messageRequests(e.messages).some(
+                (m) =>
+                  m.assignment_id === e.prompt_id &&
+                  ["admission_uncertain", "admitted", "acknowledged", "answered"].includes(
+                    m.status,
+                  ),
+              )
+                ? undefined
+                : e.prompt_id,
+              session_id: sessionID,
+              role,
+              error: diagnosticError(error),
+              at: yield* timestamp,
+            },
+          });
+        }),
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
   readonly contexts: WorkerContexts;
   readonly messages: Messages;
   private sessionID = workerSessionID;
   private project = (e: Execution) => this.queries.effectiveProject(e);
   private observe = Effect.fn("WorkerSessions.observe")(
-    function* (this: WorkerSessions, e: Execution): Effect.fn.Return<WorkerTurn, CrewError> {
-      if (!e.active_role) return { kind: "absent" };
-      if (!(yield* this.messages.reconcile(e))) return { kind: "waiting" };
+    { self: this },
+    function* (e: Execution): Effect.fn.Return<WorkerTurn & { execution: Execution }, CrewError> {
+      if (!e.active_role) return { execution: e, kind: "absent" };
+      const messages = yield* this.messages.reconcile(e);
+      e = messages.execution;
+      if (!messages.settled) return { execution: e, kind: "waiting" };
       let state = yield* this.runtime.session(this.sessionID(e)!, e.prompt_id);
-      if (state.busy || state.completion_pending) return { kind: "waiting" };
+      if (state.busy || state.completion_pending) return { execution: e, kind: "waiting" };
       if (state.assignment) {
         if (state.assignment.outcome === "failed" || state.assignment.outcome === "interrupted")
           state = {
@@ -148,20 +149,18 @@ export class WorkerSessions {
             error_at: state.assignment.at,
           };
         else if (state.outcome === "succeeded" && state.assignment.outcome !== "succeeded")
-          return { kind: "unadmitted", sessionID: state.id };
+          return { execution: e, kind: "unadmitted", sessionID: state.id };
       }
       if (state.outcome) {
         const current = yield* this.records.execution(e.issue_id);
         if (
-          !(
-            current &&
-            current.control_generation === e.control_generation &&
-            current.prompt_id === e.prompt_id
-          )
+          !current ||
+          current.control_generation !== e.control_generation ||
+          current.prompt_id !== e.prompt_id
         )
-          return yield* new CrewError("STALE_OPERATION", "Worker observation was superseded");
+          return yield* new WorkflowError("STALE_OPERATION", "Worker observation was superseded");
         // A reporting tool can commit while the native completion read is in flight.
-        synchronizeExecution(e, current);
+        e = current;
       }
       if (state.outcome === "succeeded") {
         if (
@@ -172,42 +171,48 @@ export class WorkerSessions {
               requiresResponse(m),
           )
         ) {
-          yield* this.records.commitOwned(e, idleCapacity);
-          yield* this.messages.recover(e);
-          return { kind: "waiting" };
+          e = yield* this.records.commitOwned(e, idleCapacity);
+          e = yield* this.messages.recover(e);
+          return { execution: e, kind: "waiting" };
         }
-        return { kind: "completed", role: e.active_role };
+        if (!e.active_role)
+          return yield* new WorkflowError(
+            "STALE_OPERATION",
+            "Worker assignment changed during completion",
+          );
+        return { execution: e, kind: "completed", role: e.active_role };
       }
       if (state.outcome === "failed" || state.outcome === "interrupted") {
-        yield* this.messages.recover(e);
+        e = yield* this.messages.recover(e);
         return {
+          execution: e,
           kind: "stopped",
           phase: state.outcome,
           ...this.stoppedWorker(e, state, yield* timestamp),
         };
       }
-      return { kind: "unadmitted", sessionID: state.id, outcome: state.outcome };
-    }.bind(this),
-    domainEffect,
+      return { execution: e, kind: "unadmitted", sessionID: state.id, outcome: state.outcome };
+    },
   );
   /** An open obligation can outlast the turn that raised it. Observe without waking it. */
   releaseWaitingTurn = Effect.fn("WorkerSessions.releaseWaitingTurn")(
-    function* (this: WorkerSessions, e: Execution) {
+    { self: this },
+    function* (e: Execution) {
       const session = this.sessionID(e);
       const reservation = e.capacity_reservation;
-      if (!session || !e.prompt_id || (!reservation && e.capacity_observed_idle)) return;
+      if (!session || !e.prompt_id || (!reservation && e.capacity_observed_idle)) return e;
       if (
         reservation &&
         (reservation.session_id !== session || reservation.prompt_id !== e.prompt_id)
       )
-        return;
+        return e;
       const revision = e.revision;
       const observed = yield* this.runtime.session(session, e.prompt_id).pipe(Effect.result);
       // Keep the open question and its reservation when native evidence is unavailable.
-      if (observed._tag === "Failure") return;
+      if (observed._tag === "Failure") return e;
       const state = observed.success;
-      if (state.busy || state.completion_pending || !state.outcome) return;
-      if (state.assignment?.id !== e.prompt_id || !state.assignment.outcome) return;
+      if (state.busy || state.completion_pending || !state.outcome) return e;
+      if (state.assignment?.id !== e.prompt_id || !state.assignment.outcome) return e;
       const requests = messageRequests(e.messages).filter(
         (m) => m.generation === e.control_generation && m.assignment_id === e.prompt_id,
       );
@@ -220,93 +225,104 @@ export class WorkerSessions {
               (m.status === "pending" || m.response_recovery?.status === "pending")),
         )
       )
-        return;
-      yield* this.coordination.with(() =>
+        return e;
+      return yield* this.coordination.with(() =>
         Effect.gen({ self: this }, function* () {
           // A concurrent steer or control change invalidates this native observation.
           const current = yield* this.records.execution(e.issue_id);
-          if (current?.revision === revision) yield* this.records.commitOwned(e, idleCapacity);
+          if (current?.revision === revision)
+            return yield* this.records.commitOwned(e, idleCapacity);
+          return e;
         }),
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
   /** Observe completion only: an explicit checkpoint never recovers prompt admission. */
   requireCompleted = Effect.fn("WorkerSessions.requireCompleted")(
-    function* (this: WorkerSessions, e: Execution) {
+    { self: this },
+    function* (e: Execution) {
       const turn = yield* this.observe(e);
-      if (turn.kind === "absent") return;
+      e = turn.execution;
+      if (turn.kind === "absent") return { execution: e, role: undefined };
       if (turn.kind === "waiting")
-        return yield* new CrewError("WRITER_BUSY", "A managed session still runs in this worktree");
+        return yield* new WorkflowError(
+          "WRITER_BUSY",
+          "A managed session still runs in this worktree",
+        );
       if (turn.kind === "stopped" && turn.phase === "failed") {
-        yield* this.records.commitOwned(e, {
+        e = yield* this.records.commitOwned(e, {
           ...idleCapacity,
           ...(turn.failure && { worker_failure: turn.failure }),
         });
         return yield* turn.error;
       }
-      yield* this.records.commitOwned(e, idleCapacity);
+      e = yield* this.records.commitOwned(e, idleCapacity);
       if (turn.kind !== "completed") {
         const outcome = turn.kind === "stopped" ? turn.phase : (turn.outcome ?? "unknown");
-        return yield* new CrewError("SESSION_OUTCOME", `Worker outcome is ${outcome}`);
+        return yield* new WorkflowError("SESSION_OUTCOME", `Worker outcome is ${outcome}`);
       }
       if (turn.role === "apply" && e.worktree_directory && e.apply_session_id && e.prompt_id) {
-        e.finishing = {
-          ...e.finishing,
-          schema_version: 1,
-          attribution: {
+        e = {
+          ...e,
+          finishing: {
+            ...e.finishing,
             schema_version: 1,
-            generation: e.control_generation,
-            fingerprint: yield* this.git.fingerprint(e.worktree_directory),
-            head: yield* this.git.head(e.worktree_directory),
-            session_id: e.apply_session_id,
-            prompt_id: e.prompt_id,
-            at: yield* timestamp,
+            attribution: {
+              schema_version: 1,
+              generation: e.control_generation,
+              fingerprint: yield* this.git.fingerprint(e.worktree_directory),
+              head: yield* this.git.head(e.worktree_directory),
+              session_id: e.apply_session_id,
+              prompt_id: e.prompt_id,
+              at: yield* timestamp,
+            },
           },
         };
-        yield* this.records.saveFinishing(e, ["attribution"]);
+        e = yield* this.records.saveFinishing(e, ["attribution"]);
       }
-      yield* this.records.commitOwned(e, { active_role: removeOwnedField });
-      return turn.role;
-    }.bind(this),
-    domainEffect,
+      e = yield* this.records.commitOwned(e, { active_role: removeOwnedField });
+      return { execution: e, role: turn.role };
+    },
   );
   /** Recover retained identities; only the controller may authorize a fresh turn. */
   reconcile = Effect.fn("WorkerSessions.reconcile")(
-    function* (this: WorkerSessions, e: Execution): Effect.fn.Return<ReconciledTurn, CrewError> {
+    { self: this },
+    function* (
+      e: Execution,
+    ): Effect.fn.Return<ReconciledTurn & { execution: Execution }, CrewError> {
       const turn = yield* this.observe(e);
+      e = turn.execution;
       if (turn.kind === "absent") {
-        if (!e.session_intent) return turn;
-        yield* this.admit(e, e.session_intent.role);
-        return { kind: "waiting" };
+        if (!e.session_intent) return { ...turn, execution: e };
+        e = yield* this.admit(e, e.session_intent.role);
+        return { execution: e, kind: "waiting" };
       }
       if (
         turn.kind === "completed" ||
         turn.kind === "stopped" ||
         (turn.kind === "unadmitted" && turn.outcome)
       )
-        yield* this.records.commitOwned(e, idleCapacity);
+        e = yield* this.records.commitOwned(e, idleCapacity);
       if (turn.kind === "stopped" && turn.failure) {
-        yield* this.records.commitOwned(e, { worker_failure: turn.failure });
+        e = yield* this.records.commitOwned(e, { worker_failure: turn.failure });
       }
-      if (turn.kind !== "unadmitted") return turn;
+      if (turn.kind !== "unadmitted") return { ...turn, execution: e };
       if (!e.prompt_id)
-        return yield* new CrewError("PROMPT_AMBIGUOUS", "No persisted prompt admission ID");
+        return yield* new WorkflowError("PROMPT_AMBIGUOUS", "No persisted prompt admission ID");
       yield* this.planning.beforeAdmission(e, e.active_role!);
       const selection = yield* this.runtime
         .preflight(e, e.active_role!, e.prompt_id)
         .pipe(Effect.tapError((error) => this.contexts.failure(e, e.active_role!, error)));
-      if (!selection) return { kind: "waiting" };
+      if (!selection) return { execution: e, kind: "waiting" };
       if (!e.worker_context_id)
-        return yield* new CrewError(
+        return yield* new WorkflowError(
           "LEGACY_CONTEXT",
           "Unadmitted legacy prompt has no captured payload; inspect native evidence and explicitly retry a new turn",
         );
       const context = yield* readWorkerContext(this.records.store, e.worker_context_id);
       yield* this.runtime.prompt(turn.sessionID, context.prompt, e.prompt_id);
-      return { kind: "waiting" };
-    }.bind(this),
-    domainEffect,
+      return { execution: e, kind: "waiting" };
+    },
   );
   validateLocations = (e: Execution) => this.inspection.validateLocations(e);
   idle = (e: Execution) => this.inspection.idle(e);
@@ -326,9 +342,10 @@ export class WorkerSessions {
       Effect.onError(() => this.capacity.releaseIfPreparing(e, role)),
     );
   private prepareAdmission = Effect.fn("WorkerSessions.admit")(
-    function* (this: WorkerSessions, e: Execution, role: Role) {
+    { self: this },
+    function* (e: Execution, role: Role) {
       if (externalOwns(e))
-        return yield* new CrewError(
+        return yield* new WorkflowError(
           "EXTERNAL_CUSTODY",
           "Return external branch custody before admitting a native writer or changing its scope",
         );
@@ -336,7 +353,9 @@ export class WorkerSessions {
       yield* this.planning.beforeAdmission(e, role);
       if (e.workflow_policy === "full-openspec") yield* this.spec.assertSchema(e);
       const project = yield* this.project(e);
-      if (!(yield* this.capacity.reserve(e, role, project))) return;
+      const reservation = yield* this.capacity.reserve(e, role, project);
+      e = reservation.execution;
+      if (!reservation.admitted) return e;
       let loadedIssue: import("../domain.ts").Issue | undefined;
       const loadIssue = () =>
         loadedIssue
@@ -355,11 +374,11 @@ export class WorkerSessions {
           prompt: SessionMessage.ID.create(),
         };
         if (intent.role !== role || !intent.prompt)
-          return yield* new CrewError(
+          return yield* new WorkflowError(
             "PREPARATION_INTENT",
             "Retained preparation identity conflicts with the assigned role",
           );
-        yield* this.records.commitOwned(e, { session_intent: intent });
+        e = yield* this.records.commitOwned(e, { session_intent: intent });
         yield* this.contexts
           .prepareAgent(e, role, yield* loadIssue(), intent.prompt)
           .pipe(Effect.tapError((error) => this.contexts.failure(e, role, error)));
@@ -368,12 +387,12 @@ export class WorkerSessions {
         .preflight(e, role)
         .pipe(Effect.tapError((error) => this.contexts.failure(e, role, error)));
       if (!environment)
-        return yield* new CrewError(
+        return yield* new WorkflowError(
           "CONTEXT_SELECTION",
           "New worker admission requires resolved environment",
         );
       if (e.session_intent?.prompt) {
-        yield* this.records.commitOwned(e, {
+        e = yield* this.records.commitOwned(e, {
           session_intent: { ...e.session_intent, native_started: true },
         });
       }
@@ -381,11 +400,11 @@ export class WorkerSessions {
       if (!id) {
         const intent = e.session_intent ?? { role, id: Session.ID.create() };
         if (intent.role !== role)
-          return yield* new CrewError(
+          return yield* new WorkflowError(
             "SESSION_INTENT",
             "A different role has an unresolved session intent",
           );
-        yield* this.records.commitOwned(e, { session_intent: intent });
+        e = yield* this.records.commitOwned(e, { session_intent: intent });
         // Native create accepts a client-generated ID. A missing-response retry cannot create a second session.
         id = yield* this.runtime.createSession(e, role, intent.id);
       } else yield* this.runtime.refreshPermissions(e, role, id);
@@ -414,7 +433,7 @@ export class WorkerSessions {
         prompt,
         artifacts,
       );
-      yield* this.records.commitOwned(e, {
+      e = yield* this.records.commitOwned(e, {
         ...assignment,
         session_intent: removeOwnedField,
         resume_after_decision: removeOwnedField,
@@ -436,8 +455,8 @@ export class WorkerSessions {
         },
         worker_context_id: context.prompt_id,
       });
-      yield* this.planning.preparedAdmission(e, role);
-      yield* this.records.commitOwned(e, {
+      e = yield* this.planning.preparedAdmission(e, role);
+      e = yield* this.records.commitOwned(e, {
         capacity_reservation: {
           role,
           generation: e.control_generation,
@@ -464,13 +483,13 @@ export class WorkerSessions {
           },
         };
       });
-      synchronizeExecution(e, saved);
-    }.bind(this),
-    domainEffect,
+      return saved;
+    },
   );
   /** Called under exclusive execution ownership, outside shared coordination. */
   confirmStopped = Effect.fn("WorkerSessions.confirmStopped")(
-    function* (this: WorkerSessions, e: Execution) {
+    { self: this },
+    function* (e: Execution) {
       const intent = nativeSessionIntent(e);
       if (intent) {
         const state = yield* this.runtime.session(intent.id);
@@ -493,8 +512,7 @@ export class WorkerSessions {
           ? ({ session_intent: removeOwnedField } as const)
           : {}),
       } as const;
-    }.bind(this),
-    domainEffect,
+    },
   );
   private stoppedWorker(e: Execution, state: SessionState, observedAt: Timestamp) {
     const failure = state.error
@@ -518,7 +536,7 @@ export class WorkerSessions {
     const model = state.model ? ` using ${state.model.providerID}/${state.model.id}` : "";
     return {
       failure,
-      error: new CrewError(
+      error: new WorkflowError(
         "WORKER_STOPPED",
         `Session ${state.id} ${state.outcome}${model}${detail}`,
       ),

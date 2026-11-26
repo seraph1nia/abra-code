@@ -1,5 +1,6 @@
-import { NodeRuntime, NodeServices } from "@effect/platform-node";
-import { Cause, Effect } from "effect";
+import { NodeRuntime } from "@effect/platform-node";
+import { platformLayer } from "../platform.ts";
+import { Cause, Effect, Runtime } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 import { runClient } from "./client.ts";
 import { runConfigApply, runConfigSchema, runConfigShow, runConfigValidate } from "./config.ts";
@@ -152,7 +153,7 @@ const configSchemaCommand = Command.make(
       Flag.withDescription("Verify abracode.schema.json matches the current schema"),
     ),
   },
-  ({ write }) => runConfigSchema({ write }),
+  ({ write, check }) => runConfigSchema({ write, check }),
 ).pipe(Command.withDescription("Verify or regenerate abracode.schema.json"));
 
 const configCommand = Command.make(
@@ -240,13 +241,13 @@ export const runMain = (prefix?: ReadonlyArray<string>) => {
     prefix === undefined ? runCli() : runCli([...prefix, ...process.argv.slice(2)])
   ).pipe(
     Effect.tapCause((cause) =>
-      Cause.hasInterruptsOnly(cause)
+      Cause.hasInterruptsOnly(cause) || !Runtime.getErrorReported(Cause.squash(cause))
         ? Effect.void
         : Effect.sync(() => {
             process.stderr.write(`${Cause.pretty(cause)}\n`);
           }),
     ),
-    Effect.provide(NodeServices.layer),
+    Effect.provide(platformLayer),
   );
   NodeRuntime.runMain(effect, { disableErrorReporting: true });
 };

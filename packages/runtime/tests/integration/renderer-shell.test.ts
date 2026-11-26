@@ -64,12 +64,12 @@ test(
       b = new ReactDocumentRenderer(home, runner);
     await assert.rejects(run(a.acquire), /pnpm report:prepare/);
     await assert.rejects(run(a.prepare), /Interrupted renderer preparation/);
-    assert.deepEqual(await readdir(join(home, ".abracode/reports/renderers/v3")), []);
+    assert.deepEqual(await readdir(join(home, ".abracode/reports/renderers/v4")), []);
     assert.deepEqual(await readdir(join(home, ".abracode/reports/.scratch")), []);
     const [first, parallel] = await Promise.all([run(a.prepare), run(b.prepare)]);
     assert.equal(first, parallel);
     const manifest = JSON.parse(
-      await readFile(join(home, ".abracode/reports/renderers/v3", first, "manifest.json"), "utf8"),
+      await readFile(join(home, ".abracode/reports/renderers/v4", first, "manifest.json"), "utf8"),
     );
     assert.ok(manifest.inputs.some((i: { file: string }) => i.file === visible));
     assert.ok(!manifest.inputs.some((i: { file: string }) => i.file === metadata));
@@ -126,9 +126,15 @@ test(
     const changed = await run(a.prepare);
     assert.notEqual(changed, first);
     assert.equal(builds, 2);
-    const firstDirectory = join(home, ".abracode/reports/renderers/v3", first);
+    const firstDirectory = join(home, ".abracode/reports/renderers/v4", first);
     await rm(firstDirectory, { recursive: true });
     assert.equal(await run(pinned.render(one)), htmlOne, "An in-flight export survives eviction");
+    const evictedDiagram = await run(other.render(captured));
+    validateDocumentHTML(evictedDiagram, captured);
+    assert.ok(
+      !evictedDiagram.includes("data-prepared-version"),
+      "First diagram use after eviction uses captured host and engine bytes",
+    );
     await appendFile(join(home, "LICENSE"), "\nChanged required notice input.\n");
     const noticeChanged = await run(a.prepare);
     assert.notEqual(noticeChanged, changed);
@@ -141,7 +147,7 @@ test(
     validateDocumentHTML(updatedDiagram, captured);
     assert.ok(updatedDiagram.includes("data-prepared-version"));
     await rename(join(home, "apps/hidden-report"), join(home, "apps/report"));
-    const dir = join(home, ".abracode/reports/renderers/v3", noticeChanged);
+    const dir = join(home, ".abracode/reports/renderers/v4", noticeChanged);
     const engine = join(dir, "diagram-engine.js");
     const receiptPath = join(dir, "receipt.json");
     const receipt = await readFile(receiptPath, "utf8");
@@ -157,14 +163,14 @@ test(
     await assert.rejects(run(a.acquire));
     await rm(engine);
     await rename(backup, engine);
-    const cache = join(dir, "diagram-host.mjs");
+    const cache = join(dir, "diagram-host.cjs");
     await writeFile(cache, "tampered");
     await assert.rejects(run(a.acquire), /digest/);
     assert.equal(await readFile(cache, "utf8"), "tampered");
     const outside = join(f.root, "outside-renderer.ts");
     await writeFile(outside, "preserved outside source");
     await symlink(outside, join(home, "packages/presentation/src/escape.ts"));
-    await rm(join(home, ".abracode/reports/renderers/v3"), { recursive: true });
+    await rm(join(home, ".abracode/reports/renderers/v4"), { recursive: true });
     await assert.rejects(run(a.prepare), /symlinks|escapes/);
     assert.equal(await readFile(outside, "utf8"), "preserved outside source");
   },

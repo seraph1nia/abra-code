@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { Atom } from "effect/reactivity";
+
 import { IssueId, type ContentHash } from "@abracode/contracts/identities";
 import type {
   ReviewSelection,
@@ -25,11 +25,8 @@ export const reviewAssetQuery = (selection: ReviewSelection, hash: ContentHash) 
     query: { ...selection, hash },
     timeToLive: "30 seconds",
   });
-export const submitReview = Atom.family((_id: string) =>
-  WorkspaceApi.runtime.fn<ReviewSubmit>()((payload) =>
-    Effect.flatMap(WorkspaceApi, (client) => client.reviews.reviewSubmit({ payload })),
-  ),
-);
+export const submitReview = (payload: ReviewSubmit) =>
+  Effect.flatMap(WorkspaceApi, (client) => client.reviews.reviewSubmit({ payload }));
 
 export const readReviewReceipt = (query: typeof ReviewResponseQuerySchema.Type) =>
   Effect.flatMap(WorkspaceApi, (client) => client.reviews.reviewReceipt({ query }));

@@ -1,48 +1,41 @@
+import { sha256 } from "../digest.ts";
 import { maximumPortableHTMLBytes } from "@abracode/contracts/presentation/report-export-contract";
 import { Effect } from "effect";
-import { createHash } from "node:crypto";
 import { join, resolve, relative } from "node:path";
-import { type ReportSnapshot } from "@abracode/contracts/presentation/report-evidence";
 import { AbsolutePath, ContentHash } from "@abracode/contracts/identities";
 import { CrewError, ensure } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import { lstat, mkdir, realpath } from "../filesystem.ts";
 
-export const reportHash = (text: string) =>
-  ContentHash.make(createHash("sha256").update(text).digest("hex"));
+export const reportHash = (text: string) => ContentHash.make(sha256(text));
 export const maximumHTMLBytes = maximumPortableHTMLBytes;
 
 /** Create one checked path segment at a time; never mkdir through a symlink. */
 export const reportDirectory = (home: AbsolutePath, segments: readonly string[]) =>
-  domainEffect(
-    Effect.gen(function* () {
-      const canonical = yield* realpath(home);
-      let path: AbsolutePath = home;
-      for (const segment of segments) {
-        ensure(
-          /^[a-zA-Z0-9._-]+$/.test(segment) && ![".", ".."].includes(segment),
-          "REPORT_PATH",
-          "Invalid owned report path segment",
-        );
-        path = AbsolutePath.make(join(path, segment));
-        yield* mkdir(path, { mode: 0o700 }).pipe(
-          Effect.catchIf(
-            (error) => error.code === "EEXIST",
-            () => Effect.void,
-          ),
-        );
-        const stat = yield* lstat(path);
-        ensure(
-          stat.isDirectory() &&
-            !stat.isSymbolicLink() &&
-            (yield* realpath(path)) === resolve(canonical, relative(home, path)),
+  Effect.gen(function* () {
+    const canonical = yield* realpath(home);
+    let path: AbsolutePath = home;
+    for (const segment of segments) {
+      if (!/^[a-zA-Z0-9._-]+$/.test(segment) || [".", ".."].includes(segment))
+        return yield* new CrewError("REPORT_PATH", "Invalid owned report path segment");
+      path = AbsolutePath.make(join(path, segment));
+      yield* mkdir(path, { mode: 0o700 }).pipe(
+        Effect.catchIf(
+          (error) => error.code === "EEXIST",
+          () => Effect.void,
+        ),
+      );
+      const stat = yield* lstat(path);
+      if (
+        stat.type !== "Directory" ||
+        (yield* realpath(path)) !== resolve(canonical, relative(home, path))
+      )
+        return yield* new CrewError(
           "REPORT_PATH",
           "Report storage must use owned real directories",
         );
-      }
-      return yield* realpath(path);
-    }),
-  );
+    }
+    return yield* realpath(path);
+  });
 
 /** Validation is independent of publication. Assets are inline; untrusted JSON
  * stays inert and must round-trip to the exact captured snapshot. */
@@ -92,16 +85,4 @@ export function embeddedReportJSON(text: string): unknown {
   } catch {
     throw new CrewError("REPORT_HTML", "Embedded report data is invalid JSON");
   }
-}
-
-export function validateReportHTML(html: string, snapshot: ReportSnapshot) {
-  validatePortableHTML(html);
-  const data = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)].find((match) =>
-    /\bid=["']?abracode-report-data(?:["'\s]|$)/i.test(match[1]!),
-  );
-  ensure(
-    data && JSON.stringify(embeddedReportJSON(data[2]!)) === JSON.stringify(snapshot),
-    "REPORT_HTML",
-    "HTML does not retain the captured snapshot",
-  );
 }

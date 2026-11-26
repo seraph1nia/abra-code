@@ -3,8 +3,8 @@ import { IssueId, RelativePath } from "@abracode/contracts/identities";
 import { Count } from "@abracode/contracts/primitives";
 import { ActionInput, FeedbackInput } from "@abracode/contracts/workflow/feedback-contracts";
 import type { Controller } from "../../workflow/controller.ts";
-import { CorrectionInputSchema } from "../../workflow/correction-contracts.ts";
-import { ReviewReportSchema } from "../../workflow/review-contracts.ts";
+import { CorrectionInputSchema } from "@abracode/contracts/workflow/correction-contracts";
+import { ReviewReportSchema } from "@abracode/contracts/workflow/review-contracts";
 import { toolOutputs } from "../tool-contracts.ts";
 import { defineTool as define, type DefinedTool } from "../tool-definition.ts";
 
@@ -66,7 +66,7 @@ export function reviewTools(c: Controller): DefinedTool[] {
     }),
     define({
       name: "review_changes",
-      worker: true,
+      access: "worker",
       description:
         "Read a page of OCR-filtered verified net patches and rules for the assigned Review. Begin with {} and follow next_offset. Use file for a specific excluded patch needed to assess acceptance.",
       input: Schema.Struct({
@@ -82,7 +82,7 @@ export function reviewTools(c: Controller): DefinedTool[] {
       description:
         "Record independent Review for current verified content. Full OpenSpec requires spec_verification with completeness/correctness/coherence evidence and unresolved conflicts. Conflicts require a scope decision, never automatic plan edits.",
       input: ReviewReportSchema,
-      worker: true,
+      access: "worker",
       run: (a, s) =>
         c.reviewReport(
           s,

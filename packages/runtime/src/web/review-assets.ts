@@ -1,8 +1,8 @@
+import { sha256 } from "../digest.ts";
 import { readFilePrefix } from "../storage/bounded-read.ts";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
-import { createHash } from "node:crypto";
 import { Effect, Schema } from "effect";
 import {
   ReviewPublishSchema,
@@ -13,18 +13,17 @@ import { AbsolutePath, ContentHash, SessionId, StorageKey } from "@abracode/cont
 import { CrewError } from "../domain.ts";
 import { decode } from "../decode.ts";
 import type { Store } from "../storage/store.ts";
-import { within } from "../visibility/documents.ts";
+import { within } from "../workflow/read-model/documents.ts";
 import { PublicationStore } from "./publication-store.ts";
 
-const digest = (bytes: Uint8Array) =>
-  ContentHash.make(createHash("sha256").update(bytes).digest("hex"));
+const digest = (bytes: Uint8Array) => ContentHash.make(sha256(bytes));
 const fail = (message: string) => new CrewError("REVIEW_REFUSED", message);
 const assetKey = (session: SessionId, hash: ContentHash) =>
   StorageKey.make(`web/review/${session}/asset/${hash}`);
 export class ReviewAssets {
   constructor(
     private store: Store,
-    private publications: PublicationStore,
+    private publications: Pick<PublicationStore<{ pending?: unknown }>, "immutable">,
   ) {}
   capture(
     session: SessionId,

@@ -16,7 +16,7 @@ import {
   publishInvalidations,
   committed,
   committedScope,
-} from "../../src/visibility/invalidations.ts";
+} from "../../src/invalidations.ts";
 import { WorkspaceFixture } from "../helpers/web.ts";
 
 const issue = IssueId.make("abra-observed");
@@ -137,7 +137,7 @@ test("native event scopes respect controller home and session ownership across n
     issues: [issue],
     finder: true,
   });
-  for (const type of ["session.reasoning.delta", "session.viewed", "session.usage.updated"])
+  for (const type of ["session.reasoning.delta", "session.viewed", "session.skill.activated"])
     assert.equal(read(type, { sessionID: "ses_abra" }), undefined);
   assert.equal(read("session.text.delta", { sessionID: "ses_foreign" }), undefined);
   assert.equal(read("session.text.delta", { sessionID: "ses_abra" }, "/foreign"), undefined);

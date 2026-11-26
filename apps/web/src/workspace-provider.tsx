@@ -1,6 +1,5 @@
 import { CopilotChatConfigurationProvider } from "@copilotkit/react-core/v2/headless";
-import { registerActivities } from "./presentation/activity-reference.tsx";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   CopilotKitContext,
   CopilotKitAgentIdContext,
@@ -13,6 +12,7 @@ import {
  * full `CopilotKitProvider` so A2UI, KaTeX, Marked, and CopilotKit CSS stay out
  * of the initial bundle budget (`docs/verification/frontend-budget.json`).
  */
+export const RuntimeDiscovered = createContext(false);
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [copilotkit] = useState(() => {
     const core = new CopilotKitCoreReact({
@@ -20,12 +20,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       runtimeTransport: "rest",
       deferInitialConnection: true,
     });
-    registerActivities(core);
     return core;
   });
+  const [discovered, setDiscovered] = useState(false);
   const [executingToolCallIds, setExecuting] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
     const subscription = copilotkit.subscribe({
+      onRuntimeConnectionStatusChanged: () => {
+        if (copilotkit.runtimeConnectionStatus === "connected") setDiscovered(true);
+      },
       onToolExecutionStart: ({ toolCallId }) =>
         setExecuting((previous) => {
           if (previous.has(toolCallId)) return previous;
@@ -52,7 +55,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     <CopilotKitContext.Provider value={value}>
       <CopilotKitAgentIdContext.Provider value="abra">
         <CopilotChatConfigurationProvider agentId="abra">
-          {children}
+          <RuntimeDiscovered.Provider value={discovered}>{children}</RuntimeDiscovered.Provider>
         </CopilotChatConfigurationProvider>
       </CopilotKitAgentIdContext.Provider>
     </CopilotKitContext.Provider>

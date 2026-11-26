@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { StrictMode, useState } from "react";
 import { Checkbox } from "@abracode/presentation/ui/checkbox";
-import { ReportDocumentView } from "@abracode/presentation/report-document";
+import { FrozenReportDocument } from "@abracode/presentation/report-document";
 import { readReportDocument } from "@abracode/contracts/presentation/report-document";
 import { FeedbackForm } from "./feedback.tsx";
 import { readPreparedDiagrams, verifiedReportBlock } from "@report/prepared-diagrams";
@@ -18,37 +18,31 @@ const reportEvidenceSectionLabels: Record<string, string> = {
   diagrams: "Diagrams",
 };
 
-function feedbackSections(json: string): readonly string[] {
-  try {
-    const parsed = readReportDocument(json);
-    if (!parsed.supported || !parsed.document.data.evidence) return [];
-    const seen = new Set<string>();
-    const sections: string[] = [];
-    for (const component of parsed.document.surface.createSurface.components) {
-      if (component.component !== "ReportEvidence" || typeof component.section !== "string")
-        continue;
-      const label = reportEvidenceSectionLabels[component.section];
-      if (!label || seen.has(label)) continue;
-      seen.add(label);
-      sections.push(label);
-    }
-    return sections;
-  } catch {
-    return [];
+function feedbackSections(parsed: ReturnType<typeof readReportDocument>): readonly string[] {
+  if (!parsed.supported || !parsed.document.data.evidence) return [];
+  const seen = new Set<string>();
+  const sections: string[] = [];
+  for (const component of parsed.document.surface.createSurface.components) {
+    if (component.component !== "ReportEvidence" || typeof component.section !== "string") continue;
+    const label = reportEvidenceSectionLabels[component.section];
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    sections.push(label);
   }
+  return sections;
 }
 
 function PortableReport({
-  json,
+  parsed,
   hash,
   preparedDiagrams,
 }: {
-  json: string;
+  parsed: ReturnType<typeof readReportDocument>;
   hash: ContentHash;
   preparedDiagrams: NonNullable<ReturnType<typeof readPreparedDiagrams>>;
 }) {
   const [dark, setDark] = useState(false);
-  const [sections] = useState(() => feedbackSections(json));
+  const [sections] = useState(() => feedbackSections(parsed));
   const notices =
     document.getElementById("abracode-license-notices")?.textContent ?? "Notices unavailable";
   return (
@@ -66,14 +60,15 @@ function PortableReport({
           />
         </label>
       </header>
-      <ReportDocumentView
-        artifact={{
-          json,
-          hash,
-          bytes: new TextEncoder().encode(json).length,
-        }}
-        preparedDiagrams={preparedDiagrams}
-      />
+      {parsed.supported ? (
+        <FrozenReportDocument
+          document={parsed.document}
+          hash={hash}
+          preparedDiagrams={preparedDiagrams}
+        />
+      ) : (
+        <output>{parsed.reason}</output>
+      )}
       <FeedbackForm sections={sections} />
       <details>
         <summary>Third-party notices</summary>
@@ -96,7 +91,11 @@ async function openReport() {
   if (!preparedDiagrams) throw new Error("Invalid diagram data");
   root.render(
     <StrictMode>
-      <PortableReport {...report} preparedDiagrams={preparedDiagrams} />
+      <PortableReport
+        parsed={readReportDocument(report.json)}
+        hash={report.hash}
+        preparedDiagrams={preparedDiagrams}
+      />
     </StrictMode>,
   );
 }

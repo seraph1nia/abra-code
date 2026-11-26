@@ -1,3 +1,4 @@
+import { ConfigurationError } from "../errors.ts";
 import { DispatchProfilesSchema } from "./dispatch.ts";
 import { Effect, Schema } from "effect";
 import { parseDocument } from "yaml";
@@ -11,7 +12,6 @@ import { configDigest, resolveConfig } from "./load.ts";
 import { ProjectInputSchema, ModelsSchema } from "./contracts.ts";
 import { digest } from "../digest.ts";
 import { decode } from "../decode.ts";
-import { domainEffect } from "../effect.ts";
 import { Count } from "@abracode/contracts/primitives";
 
 export const DeclarationOutcomeSchema = Schema.Struct({
@@ -82,51 +82,49 @@ export const saveDeclaration = (
   files = configurationFiles,
 ) =>
   locks.with(LockKey.make(`config-${configDigest(config.config_path).slice(0, 32)}`), () =>
-    domainEffect(
-      Effect.gen(function* () {
-        const before = yield* files.readFile(config.config_path, "utf8");
-        const current = yield* resolveConfig(config.home, config.config_path, before);
-        const previous = current.repositories.find((p) => p.id === input.id);
-        const updates = Object.fromEntries(
-          Object.entries(input).filter(
-            ([name, value]) => name in ProjectInputSchema.fields && value !== undefined,
+    Effect.gen(function* () {
+      const before = yield* files.readFile(config.config_path, "utf8");
+      const current = yield* resolveConfig(config.home, config.config_path, before);
+      const previous = current.repositories.find((p) => p.id === input.id);
+      const updates = Object.fromEntries(
+        Object.entries(input).filter(
+          ([name, value]) => name in ProjectInputSchema.fields && value !== undefined,
+        ),
+      );
+      const declaration = yield* decode(
+        ProjectInputSchema,
+        { ...previous, ...updates },
+        "Repository declaration",
+      );
+      const document = parseDocument(before, { uniqueKeys: true });
+      const index = current.repositories.findIndex((p) => p.id === input.id);
+      if (!document.has("repositories")) document.set("repositories", document.createNode([]));
+      if (index < 0) document.addIn(["repositories"], document.createNode(declaration));
+      else
+        for (const [name, value] of Object.entries(updates))
+          document.setIn(["repositories", index, name], document.createNode(value));
+      const after = document.toString();
+      const resolved = yield* resolveConfig(config.home, config.config_path, after);
+      if (after !== before) {
+        const temporary = `${config.config_path}.${randomUUID()}.tmp`;
+        yield* Effect.gen(function* () {
+          yield* files.writeFile(temporary, after, { mode: 0o600, flag: "wx" });
+          if ((yield* files.readFile(config.config_path, "utf8")) !== before)
+            return yield* new ConfigurationError(
+              "CONFIG_CONFLICT",
+              "Configuration changed while preparing a repository update; reread and retry. User edits were preserved.",
+            );
+          yield* files.rename(temporary, config.config_path);
+        }).pipe(
+          Effect.ensuring(
+            files
+              .rm(temporary, { force: true })
+              .pipe(Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error))),
           ),
         );
-        const declaration = yield* decode(
-          ProjectInputSchema,
-          { ...previous, ...updates },
-          "Repository declaration",
-        );
-        const document = parseDocument(before, { uniqueKeys: true });
-        const index = current.repositories.findIndex((p) => p.id === input.id);
-        if (!document.has("repositories")) document.set("repositories", document.createNode([]));
-        if (index < 0) document.addIn(["repositories"], document.createNode(declaration));
-        else
-          for (const [name, value] of Object.entries(updates))
-            document.setIn(["repositories", index, name], document.createNode(value));
-        const after = document.toString();
-        const resolved = yield* resolveConfig(config.home, config.config_path, after);
-        if (after !== before) {
-          const temporary = `${config.config_path}.${randomUUID()}.tmp`;
-          yield* Effect.gen(function* () {
-            yield* files.writeFile(temporary, after, { mode: 0o600, flag: "wx" });
-            if ((yield* files.readFile(config.config_path, "utf8")) !== before)
-              return yield* new CrewError(
-                "CONFIG_CONFLICT",
-                "Configuration changed while preparing a repository update; reread and retry. User edits were preserved.",
-              );
-            yield* files.rename(temporary, config.config_path);
-          }).pipe(
-            Effect.ensuring(
-              files
-                .rm(temporary, { force: true })
-                .pipe(Effect.catch((error) => Effect.logWarning("Resource cleanup failed", error))),
-            ),
-          );
-        }
-        config.repositories = resolved.repositories;
-        config.config_digest = resolved.config_digest;
-        return resolved.repositories.find((p) => p.id === input.id)!;
-      }),
-    ),
+      }
+      config.repositories = resolved.repositories;
+      config.config_digest = resolved.config_digest;
+      return resolved.repositories.find((p) => p.id === input.id)!;
+    }),
   );

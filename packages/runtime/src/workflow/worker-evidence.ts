@@ -1,8 +1,8 @@
+import { sha256 } from "../digest.ts";
 import type { Git } from "../git/repository.ts";
 import { constants } from "node:fs";
 import { open, realpath, lstat } from "node:fs/promises";
 import { resolve } from "node:path";
-import { createHash } from "node:crypto";
 import { Effect, Schema } from "effect";
 import {
   CaptureInputSchema,
@@ -27,8 +27,7 @@ import { canonicalJSON } from "../presentation/identity.ts";
 
 const maxBytes = 2 * 1024 * 1024;
 const fail = (message: string) => new CrewError("WORKER_EVIDENCE", message);
-const digest = (bytes: Buffer) =>
-  ContentHash.make(createHash("sha256").update(bytes).digest("hex"));
+const digest = (bytes: Buffer) => ContentHash.make(sha256(bytes));
 const key = (hash: ContentHash) => StorageKey.make("work/evidence/bytes/" + hash);
 
 /** Compare every path component with its canonical spelling. Never follow a replaced final link. */
@@ -84,7 +83,7 @@ export function captureEvidence(
         canonicalJSON(prior) !== canonicalJSON(source)
       )
         return yield* fail("Evidence request has different inputs or ownership");
-      return previous;
+      return { receipt: previous, persist: Effect.void };
     }
     if ((e.worker_evidence?.length ?? 0) >= 64)
       return yield* fail("The task already has 64 retained evidence items");
@@ -124,8 +123,7 @@ export function captureEvidence(
         return yield* fail("Unsupported image dimensions");
       receipt = { ...common, kind: "screenshot", width, height };
     }
-    yield* store.set(key(receipt.hash), bytes.toString("base64"));
-    return receipt;
+    return { receipt, persist: store.set(key(receipt.hash), bytes.toString("base64")) };
   });
 }
 export function retainedEvidence(store: Store, e: Execution | undefined, q: EvidenceQuery) {

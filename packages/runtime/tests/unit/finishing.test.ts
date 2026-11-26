@@ -19,13 +19,13 @@ import {
   FinishingSchema,
   FinishingTargetSchema,
   PublicationBindingSchema,
-} from "../../src/workflow/finishing-contracts.ts";
+} from "../../src/workflow/finishing/contracts.ts";
 import {
   finishingAction,
   observePublication,
   observePreflight,
   type PublicationObservation,
-} from "../../src/workflow/finishing-readiness.ts";
+} from "../../src/workflow/finishing/readiness.ts";
 
 const commit = Id.Commit.make("a".repeat(40));
 const next = Id.Commit.make("b".repeat(40));
@@ -146,7 +146,7 @@ test("finishing schemas preserve legacy absence and reject unsafe evidence rathe
 test("finishing selection preserves custody, decisions, unknown provenance and merged late work", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f));
+  let e = await run(delivered(f));
   const choose = (publication = observation, attributable = false) =>
     finishingAction(e, { quiescent: true, publication, attributable });
   assert.equal(choose().kind, "preflight");
@@ -168,18 +168,18 @@ test("finishing selection preserves custody, decisions, unknown provenance and m
   assert.equal(choose({ ...observation, head: next, descendant: false }, true).kind, "unsafe");
   assert.equal(finishingAction(e, { quiescent: true }).kind, "unsafe");
   assert.equal(finishingAction(e, { quiescent: false, publication: observation }).kind, "wait");
-  e.stop_status = "requested";
+  e = { ...e, stop_status: "requested" };
   assert.equal(choose({ ...observation, dirty: true }, true).kind, "wait");
-  delete e.stop_status;
-  e.current_phase = "completed";
+  e = { ...e, stop_status: undefined };
+  e = { ...e, current_phase: "completed" };
   assert.equal(choose().kind, "wait");
 });
 
 async function preflightFixture() {
   const f = await run(fixture);
-  const e = await run(delivered(f));
+  let e = await run(delivered(f));
   const p = (await run(f.records.project(e.repository_id)))!;
-  e.worktree_identity = await run(directoryIdentity(e.worktree_directory!));
+  e = { ...e, worktree_identity: await run(directoryIdentity(e.worktree_directory!)) };
   f.runtime.removeWorktree = () =>
     Effect.sync(() => assert.fail("Preflight attempted native removal"));
   const spaces = new Workspaces(
@@ -192,16 +192,19 @@ async function preflightFixture() {
 }
 
 test("preflight excludes only exact inspected generated directories without staging or removing output", async (t) => {
-  const { f, e, p, spaces } = await preflightFixture();
+  let { f, e, p, spaces } = await preflightFixture();
   t.onTestFinished(() => run(f.close()));
   // Use local exclude data so the published deliverable stays unchanged.
   const exclude = await run(
     f.git.run(e.worktree_directory!, ["rev-parse", "--git-path", "info/exclude"]),
   );
   await writeFile(exclude, "cache/\nprivate-note\n");
-  e.effective_policy = {
-    ...e.effective_policy,
-    generated_paths: [Id.RelativePath.make("cache/allowed")],
+  e = {
+    ...e,
+    effective_policy: {
+      ...e.effective_policy,
+      generated_paths: [Id.RelativePath.make("cache/allowed")],
+    },
   };
   await mkdir(join(e.worktree_directory!, "cache/allowed"), { recursive: true });
   await writeFile(join(e.worktree_directory!, "cache/allowed/build"), "generated");
@@ -221,9 +224,12 @@ test("preflight excludes only exact inspected generated directories without stag
 });
 
 test("preflight rejects resource replacement and unsafe generated descendants without disposal", async (t) => {
-  const { f, e, p, spaces } = await preflightFixture();
+  let { f, e, p, spaces } = await preflightFixture();
   t.onTestFinished(() => run(f.close()));
-  e.effective_policy = { ...e.effective_policy, generated_paths: [Id.RelativePath.make("cache")] };
+  e = {
+    ...e,
+    effective_policy: { ...e.effective_policy, generated_paths: [Id.RelativePath.make("cache")] },
+  };
   await mkdir(join(e.worktree_directory!, "cache"));
   await symlink(f.root, join(e.worktree_directory!, "cache/escape"));
   await assert.rejects(run(spaces.preflight(p, e)), /escapes|outside/);
@@ -299,20 +305,23 @@ test("mandatory generated-directory decision bypasses exhausted diagnostics and 
   await writeFile(exclude, "generated-output/\n");
   await mkdir(join(e.worktree_directory!, "generated-output"));
   await writeFile(join(e.worktree_directory!, "generated-output/cache"), "generated");
-  e.attention_turns = e.effective_policy.diagnostic_turns;
-  e.attention = [
-    {
-      schema_version: 1,
-      id: Id.IncidentId.make("old-stall"),
-      generation: e.control_generation,
-      key: "old-stall",
-      code: "suspected_stall",
-      evidence: "Old silence observation",
-      created_at: 0,
-      status: "exhausted",
-      attempts: 1,
-    },
-  ];
+  e = { ...e, attention_turns: e.effective_policy.diagnostic_turns };
+  e = {
+    ...e,
+    attention: [
+      {
+        schema_version: 1,
+        id: Id.IncidentId.make("old-stall"),
+        generation: e.control_generation,
+        key: "old-stall",
+        code: "suspected_stall",
+        evidence: "Old silence observation",
+        created_at: 0,
+        status: "exhausted",
+        attempts: 1,
+      },
+    ],
+  };
   await run(f.records.save(e));
   await run(f.controller.approve(e.issue_id, "merge", supervisor));
   e = await run(f.controller.get(e.issue_id));
@@ -432,16 +441,20 @@ for (const fault of ["commit", "push"] as const)
     );
     f.delivery.deliver = publish;
     f.git.commit = commitCall;
-    const recovery = createWorkflow(
-      f.catalog,
-      f.config,
-      f.records,
-      f.work,
-      f.spec,
-      f.git,
-      f.runtime,
-      f.delivery,
-      f.locks,
+    const recovery = (
+      await run(
+        createWorkflow(
+          f.catalog,
+          f.config,
+          f.records,
+          f.work,
+          f.spec,
+          f.git,
+          f.runtime,
+          f.delivery,
+          f.locks,
+        ),
+      )
     ).controller;
     t.onTestFinished(() => run(recovery.close()));
     e = (await run(recovery.reconcile(e.issue_id)))[0];
@@ -472,16 +485,20 @@ for (const fault of ["commit", "push"] as const)
     )!;
     assert.notEqual(fresh.form_id, old.form_id);
     f.runtime.forms.set(fresh.form_id, "approved");
-    const restarted = createWorkflow(
-      f.catalog,
-      f.config,
-      f.records,
-      f.work,
-      f.spec,
-      f.git,
-      f.runtime,
-      f.delivery,
-      f.locks,
+    const restarted = (
+      await run(
+        createWorkflow(
+          f.catalog,
+          f.config,
+          f.records,
+          f.work,
+          f.spec,
+          f.git,
+          f.runtime,
+          f.delivery,
+          f.locks,
+        ),
+      )
     ).controller;
     t.onTestFinished(() => run(restarted.close()));
     e = (await run(restarted.reconcile(e.issue_id)))[0];

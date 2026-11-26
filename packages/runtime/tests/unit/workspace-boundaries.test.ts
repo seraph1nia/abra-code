@@ -33,7 +33,7 @@ test("contributor lint rejects value, type and dynamic workspace escapes and mis
     name: "@abracode/web",
     imports: {
       "#local": "./src/local.ts",
-      "#escape": "./../../../packages/contracts/src/private.ts",
+      "#escape": "../../../packages/contracts/src/private.ts",
     },
     dependencies: { "@abracode/contracts": "workspace:*", "@abracode/agents": "workspace:*" },
     devDependencies: { "build-only": "1.0.0" },

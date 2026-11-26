@@ -1,14 +1,15 @@
-import { useRef, useState } from "react";
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useRetainedSubmission } from "./use-retained-submission.ts";
+import { useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
-import { Exit, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { RepositoryId, RequestId } from "@abracode/contracts/identities";
 import type { ThoughtDetail } from "@abracode/contracts/visibility/thoughts";
 import { Button } from "@abracode/presentation/ui/button";
 import { WorkspaceApi, repositoriesQuery, memoryEnabledQuery } from "./data.ts";
 import { requestError } from "./request-error.ts";
 
-import { MemoryScope } from "@abracode/contracts/visibility/memory";
+import { MemoryScope, type MemoryPublication } from "@abracode/contracts/visibility/memory";
 import { readRetained, writeRetained } from "./retained-input.ts";
 
 const Pending = Schema.Struct({
@@ -17,7 +18,8 @@ const Pending = Schema.Struct({
   offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   length: Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(8192)),
 });
-const publish = WorkspaceApi.mutation("workspace", "memoryPublish");
+const publish = (payload: MemoryPublication) =>
+  Effect.flatMap(WorkspaceApi, (client) => client.workspace.memoryPublish({ payload }));
 export function RememberThought({ item }: { item: typeof ThoughtDetail.Type }) {
   const enabled = useAtomValue(memoryEnabledQuery);
   const { instance, account, name, wording_hash } = item.reference;
@@ -59,7 +61,7 @@ function RememberForm({
   close: () => void;
 }) {
   const projects = useAtomValue(repositoriesQuery);
-  const send = useAtomSet(publish, { mode: "promiseExit" });
+  const { submit: send, working } = useRetainedSubmission(publish);
   const [pending] = useState(() => readRetained(storageKey, Pending));
   const [excerpt, setExcerpt] = useState(
     pending ? item.content.slice(pending.offset, pending.offset + pending.length) : initial,
@@ -76,7 +78,6 @@ function RememberForm({
     pending ? "failed" : "editing",
   );
   const [message, setMessage] = useState("");
-  const submitting = useRef(false);
   const changed = () => {
     setId(RequestId.make(crypto.randomUUID()));
     setState("editing");
@@ -89,7 +90,7 @@ function RememberForm({
       onSubmit={async (e) => {
         e.preventDefault();
         if (
-          submitting.current ||
+          working ||
           state === "saved" ||
           !destination ||
           !excerpt ||
@@ -103,28 +104,30 @@ function RememberForm({
                 kind: "repository" as const,
                 repository_id: RepositoryId.make(destination.slice(5)),
               };
-        if (
-          !writeRetained(storageKey, {
-            id,
-            destination: dest,
-            offset: item.content.indexOf(excerpt),
-            length: excerpt.length,
-          })
-        ) {
-          setMessage("Enable browser storage to keep this save available for retry.");
-          return;
-        }
-        submitting.current = true;
-        setState("busy");
-        const result = await send({
-          payload: {
+        const result = await send(
+          {
             request_id: id,
             destination: dest,
             content: excerpt,
             source: { kind: "thought", reference: item.reference },
           },
-        });
-        submitting.current = false;
+          () => {
+            if (
+              !writeRetained(storageKey, {
+                id,
+                destination: dest,
+                offset: item.content.indexOf(excerpt),
+                length: excerpt.length,
+              })
+            ) {
+              setMessage("Enable browser storage to keep this save available for retry.");
+              return false;
+            }
+            setState("busy");
+            return true;
+          },
+        );
+        if (!result) return;
         if (Exit.isFailure(result)) {
           setState("failed");
           setMessage(requestError(result.cause));

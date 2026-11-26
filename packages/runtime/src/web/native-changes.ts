@@ -57,6 +57,14 @@ const subscribedSessionEventTypes = [
   "session.viewed",
 ] as const;
 
+type SessionEventName = (typeof subscribedSessionEventTypes)[number];
+const sessionEventNames = new Set<string>(subscribedSessionEventTypes);
+function isSubscribedSessionEvent<T extends { readonly type: string }>(
+  event: T,
+): event is Extract<T, { type: SessionEventName }> {
+  return sessionEventNames.has(event.type);
+}
+
 const subscribedEventTypes = [
   "rpc.abracode-visibility.changed",
   "location.shutdown",
@@ -94,39 +102,24 @@ export function nativeChanges(
   home: AbsolutePath,
   sessionID: SessionId,
   issueForWorker: (session: string) => IssueId | undefined,
-  forget: (client: OpenCodeClient) => void,
+  forget: (client: OpenCodeClient) => Effect.Effect<void>,
 ) {
   return client.event.subscribe({ types: subscribedEventTypes }).pipe(
     Stream.filterMap((event) => {
       const scope = nativeChangeScope(event, home, sessionID, issueForWorker);
-      const isServerConnected = event.type === "server.connected";
-      const isSupervisorSession =
-        event.type.startsWith("session.") &&
-        "data" in event &&
-        event.data !== null &&
-        typeof event.data === "object" &&
-        "sessionID" in event.data &&
-        event.data.sessionID === sessionID &&
-        (!("location" in event) || !event.location?.directory || event.location.directory === home);
-      const nativeEnvelope: NativeEventEnvelope | undefined = isServerConnected
-        ? event
-        : isSupervisorSession
-          ? trustedSessionEvent(
-              event as Extract<
-                typeof event,
-                { type: (typeof subscribedSessionEventTypes)[number] }
-              >,
-            )
-          : undefined;
+      const nativeEnvelope: NativeEventEnvelope | undefined =
+        event.type === "server.connected"
+          ? event
+          : isSubscribedSessionEvent(event) &&
+              event.data.sessionID === sessionID &&
+              (!event.location?.directory || event.location.directory === home)
+            ? trustedSessionEvent(event)
+            : undefined;
       return scope || nativeEnvelope
         ? Result.succeed({ ...scope, ...(nativeEnvelope ? { native: nativeEnvelope } : {}) })
         : Result.fail(undefined);
     }),
-    Stream.tapError((cause) =>
-      Effect.sync(() => {
-        if (isTransportFailure(cause)) forget(client);
-      }),
-    ),
+    Stream.tapError((cause) => (isTransportFailure(cause) ? forget(client) : Effect.void)),
     Stream.mapError(CrewError.from),
   );
 }

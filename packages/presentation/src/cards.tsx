@@ -445,9 +445,7 @@ export function ArtifactCard({
       title={artifact.title ?? "Saved report"}
       status={words(artifact.status)}
       description={
-        artifact.format === "a2ui-snapshot"
-          ? "Saved JSON evidence snapshot"
-          : "Retained HTML report"
+        artifact.format === "a2ui-snapshot" ? "Saved JSON evidence snapshot" : "Saved report"
       }
     >
       <p className="muted">

@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { selectedDiffExcerpt } from "../../src/visibility/ticket-diff.ts";
+import { selectedDiffExcerpt } from "../../src/workflow/read-model/ticket-diff.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import { parseDiffPatch } from "@abracode/web/diff-patch";
 import * as Id from "@abracode/contracts/identities";
@@ -137,18 +137,20 @@ test("retired tickets use retained base/delivery objects; queued tickets have an
   const { id: abraQueuedId } = await run(f.work.create(workGoal("abra-queued")));
   const view = new Visibility(f.controller);
   assert.match((await run(view.diff(abraQueuedId, "all"))).message!, /No worktree/);
-  const e = await run(planned(f));
+  let e = await run(planned(f));
   await writeFile(join(e.worktree_directory!, "source.txt"), "delivered\n");
   await run(f.git.run(e.worktree_directory!, ["add", "."]));
   await run(f.git.run(e.worktree_directory!, ["commit", "-m", "Delivered"]));
-  e.delivered_commit = await run(f.git.head(e.worktree_directory!));
-  e.delivered_commit ??= await run(f.git.head(e.worktree_directory!));
-  e.delivery_receipt = {
-    commit: e.delivered_commit,
-    target: e.target_branch!,
-    at: Id.Timestamp.make(new Date().toISOString()),
+  e = { ...e, delivered_commit: await run(f.git.head(e.worktree_directory!)) };
+  e = {
+    ...e,
+    delivery_receipt: {
+      commit: e.delivered_commit!,
+      target: e.target_branch!,
+      at: Id.Timestamp.make(new Date().toISOString()),
+    },
   };
-  e.current_phase = "completed";
+  e = { ...e, current_phase: "completed" };
   await run(f.records.save(e));
   await run(f.work.close(e.issue_id, e.execution_id));
   await run(f.runtime.removeWorktree((await run(f.records.project(e.repository_id)))!, e));

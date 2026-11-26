@@ -10,7 +10,7 @@ import { run } from "../effects.ts";
 import * as Id from "@abracode/contracts/identities";
 import { NativeRuntime, type Runtime } from "../../src/opencode/runtime.ts";
 import { messageRequests } from "@abracode/contracts/workflow/message-contracts";
-import { Messages } from "../../src/workflow/messages.ts";
+import { Messages } from "../../src/workflow/messaging/messages.ts";
 import { Capacity } from "../../src/workflow/capacity.ts";
 import { AttentionService } from "../../src/workflow/attention.ts";
 
@@ -122,34 +122,39 @@ try {
     ]) {
       const samples = [];
       for (let rep = 0; rep < 6; rep++) {
-        const e = structuredClone(base);
-        e.control_generation = 2;
-        e.messages = Array.from({ length: n }, (_, i) => {
-          let status: typeof original.status = "answered";
-          if (distribution === "acknowledged") status = "acknowledged";
-          if (distribution === "terminal_one_pending" && i === n - 1) status = "pending";
-          if (distribution === "admission_uncertain" && i < Math.min(3, n))
-            status = "admission_uncertain";
-          if (distribution === "unanswered" && i < Math.min(3, n)) status = "admitted";
-          if (distribution === "superseded") status = "superseded";
-          const m = {
-            ...original,
-            request_id: Id.RequestId.make(`benchmark-${i}`),
-            prompt_id: Id.MessageId.make(`msg_benchmark${i}`),
-            generation: distribution === "mixed_generations" && i % 2 === 0 ? 1 : 2,
-            status,
-            response:
-              distribution === "acknowledged" ? ("acknowledgement" as const) : ("answer" as const),
-            ...(["answered", "acknowledged"].includes(status)
-              ? { acknowledged_at: original.created_at }
-              : {}),
-            ...(status === "answered"
-              ? { reply: { body: "Fixture answer", evidence: [], at: original.created_at } }
-              : {}),
-          };
-          f.runtime.admissions.add(m.prompt_id);
-          return m;
-        });
+        let e = structuredClone(base);
+        e = { ...e, control_generation: 2 };
+        e = {
+          ...e,
+          messages: Array.from({ length: n }, (_, i) => {
+            let status: typeof original.status = "answered";
+            if (distribution === "acknowledged") status = "acknowledged";
+            if (distribution === "terminal_one_pending" && i === n - 1) status = "pending";
+            if (distribution === "admission_uncertain" && i < Math.min(3, n))
+              status = "admission_uncertain";
+            if (distribution === "unanswered" && i < Math.min(3, n)) status = "admitted";
+            if (distribution === "superseded") status = "superseded";
+            const m = {
+              ...original,
+              request_id: Id.RequestId.make(`benchmark-${i}`),
+              prompt_id: Id.MessageId.make(`msg_benchmark${i}`),
+              generation: distribution === "mixed_generations" && i % 2 === 0 ? 1 : 2,
+              status,
+              response:
+                distribution === "acknowledged"
+                  ? ("acknowledgement" as const)
+                  : ("answer" as const),
+              ...(["answered", "acknowledged"].includes(status)
+                ? { acknowledged_at: original.created_at }
+                : {}),
+              ...(status === "answered"
+                ? { reply: { body: "Fixture answer", evidence: [], at: original.created_at } }
+                : {}),
+            };
+            f.runtime.admissions.add(m.prompt_id);
+            return m;
+          }),
+        };
         context = [
           { type: "user", id: e.prompt_id!, text: "Assignment", time: { created: 1 } },
           ...messageRequests(e.messages)

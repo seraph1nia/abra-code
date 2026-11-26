@@ -9,14 +9,14 @@ import { GitHubDelivery, type PR } from "../../src/git/delivery.ts";
 test("forge findings retain old unresolved and comment-only reviews, supersede verdicts and refuse changed heads", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f)),
+  let e = await run(delivered(f)),
     p = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
   const pr: PR = {
     ...f.delivery.pr!,
     url: Id.PullRequestUrl.make("https://example.invalid/fixture/api/pull/1"),
     statusCheckRollup: [{ status: "COMPLETED", conclusion: "FAILURE" }],
   };
-  e.pull_request_reference = pr.url;
+  e = { ...e, pull_request_reference: pr.url };
   const forge = forgeFixture(p, () => pr);
   const review = (id: number, head: string, state: string, user = id) => ({
     id,

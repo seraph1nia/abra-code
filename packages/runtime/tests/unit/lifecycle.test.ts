@@ -1,10 +1,10 @@
+import { canTransition } from "../../src/workflow/transitions.ts";
 import { goal as workGoal } from "../helpers/work-goal.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
 import { failedSpec } from "../helpers/spec-review.ts";
 import * as Id from "@abracode/contracts/identities";
 import { CrewError } from "../../src/domain.ts";
-import { run } from "../effects.ts";
-import { domainEffect } from "../../src/effect.ts";
+import { domainEffect, run } from "../effects.ts";
 import { Effect } from "effect";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -120,8 +120,8 @@ test("pending human form does not authorize Apply and workers cannot self-approv
   const e = await run(planned(f));
   await assert.rejects(run(f.controller.advance(Id.IssueId.make("abra-1"))), /approval/);
   await run(f.controller.control(Id.IssueId.make("abra-1"), "retry")).catch(() => {});
-  const record = await run(f.controller.get(Id.IssueId.make("abra-1")));
-  record.current_phase = "awaiting_plan_approval";
+  let record = await run(f.controller.get(Id.IssueId.make("abra-1")));
+  record = { ...record, current_phase: "awaiting_plan_approval" };
   await run(f.records.save(record));
   await assert.rejects(
     run(f.controller.approve(Id.IssueId.make("abra-1"), "plan", e.explore_session_id!)),
@@ -185,16 +185,20 @@ test("server restart reconciles interrupted session, reuses session and worktree
   t.onTestFinished(() => run(f.close()));
   const e = await run(applying(f));
   await run(f.runtime.interrupt(e.apply_session_id!));
-  const restarted = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const restarted = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   assert.equal(
     (await run(restarted.reconcile(Id.IssueId.make("abra-1"))))[0].current_phase,
@@ -223,10 +227,10 @@ test("claim recovery handles rollback, lost response and a crash before claiming
       /Claim response lost/,
     );
     f.work.claim = claim;
-    const saved = (await run(f.records.execution(claimRecoveryId)))!;
+    let saved = (await run(f.records.execution(claimRecoveryId)))!;
     let recovered;
     if (checkpoint === "crash") {
-      saved.current_phase = "claiming";
+      saved = { ...saved, current_phase: "claiming" };
       await run(f.records.save(saved));
       [recovered] = await run(f.controller.reconcile(saved.issue_id));
     } else recovered = await run(f.controller.control(saved.issue_id, "retry"));
@@ -415,4 +419,70 @@ test("failed review retry returns findings to existing Apply without simultaneou
   assert.equal(retry.apply_session_id, e.apply_session_id);
   assert.equal(retry.retry_instructions, "Missing boundary condition");
   assert.equal(f.runtime.creates, 3);
+});
+
+test("restart replays block and retry intents across lost issue database acknowledgements", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(planned(f));
+  const parent = Id.SessionId.make("ses_supervisor");
+  const pending = await run(f.controller.approve(e.issue_id, "plan", parent));
+  assert.ok("form_id" in pending && pending.form_id);
+  f.runtime.forms.set(Id.FormId.make(pending.form_id), "rejected");
+  const block = f.work.block.bind(f.work);
+  f.work.block = (...args) =>
+    block(...args).pipe(
+      Effect.andThen(Effect.fail(new CrewError("LOST", "Lost SQLite block acknowledgement"))),
+    );
+  await assert.rejects(run(f.controller.approve(e.issue_id, "plan", parent)), /Lost SQLite block/);
+  assert.equal((await run(f.controller.get(e.issue_id))).pending_issue_status, "blocked");
+  f.work.block = block;
+  const restarted = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
+  ).controller;
+  t.onTestFinished(() => run(restarted.close()));
+  const [blocked] = await run(restarted.reconcile(e.issue_id));
+  assert.equal(blocked.current_phase, "blocked");
+  assert.equal(blocked.pending_issue_status, undefined);
+  const resume = f.work.resume.bind(f.work);
+  f.work.resume = (...args) =>
+    resume(...args).pipe(
+      Effect.andThen(Effect.fail(new CrewError("LOST", "Lost SQLite resume acknowledgement"))),
+    );
+  await assert.rejects(
+    run(restarted.control(e.issue_id, "retry", "Revise the acceptance example")),
+    /Lost SQLite resume/,
+  );
+  assert.equal((await run(restarted.get(e.issue_id))).pending_issue_status, "in_progress");
+  f.work.resume = resume;
+  const [resumed] = await run(restarted.reconcile(e.issue_id));
+  assert.equal(resumed.current_phase, "planning");
+  assert.equal(resumed.pending_issue_status, undefined);
+  assert.equal(resumed.explore_session_id, e.explore_session_id);
+  assert.equal(resumed.retry_instructions, "Revise the acceptance example");
+  const history = await run(f.work.history(e.issue_id));
+  assert.equal(history.filter((event) => event.kind === "blocked").length, 1);
+  assert.equal(history.filter((event) => event.kind === "in_progress").length, 1);
+});
+
+test("recovery can resume only its retained phase or the requested corrective action", () => {
+  const halted = { current_phase: "blocked", resume_phase: "verifying" } as const;
+  assert.ok(canTransition(halted, "verifying"));
+  assert.equal(canTransition(halted, "applying"), false);
+  assert.ok(canTransition(halted, "applying", "review_retry"));
+  assert.equal(canTransition({ ...halted, stop_status: "requested" }, "verifying"), false);
+  assert.equal(canTransition(halted, "cleaning"), false);
+  assert.equal(canTransition({ current_phase: "queued" }, "completed"), false);
 });

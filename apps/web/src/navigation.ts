@@ -5,14 +5,9 @@ import {
 } from "@abracode/contracts/visibility/discovery-contracts";
 import { InboxQuery, InboxTarget } from "@abracode/contracts/visibility/github-inbox";
 import { ThoughtQuery, ThoughtReference } from "@abracode/contracts/visibility/thoughts";
-import { createContext } from "react";
 import { SurfaceDestinationSchema } from "@abracode/contracts/web/surface-destination";
 import { Schema } from "effect";
 import { ResourceSelectionSchema, type ResourceSelection } from "@abracode/contracts/web/resources";
-
-export const OpenSurface = createContext<(surface: typeof SurfaceDestinationSchema.Type) => void>(
-  () => {},
-);
 
 export const inspectorTabs = [
   "Overview",

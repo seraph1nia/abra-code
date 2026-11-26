@@ -4,10 +4,10 @@ import { messageRequests, requiresResponse } from "@abracode/contracts/workflow/
 import { workerRoles } from "../config/dispatch.ts";
 import { type Config, type Execution, type Issue } from "../domain.ts";
 import { diagnosticText } from "../opencode/diagnostics.ts";
-import { deliveryOutcome } from "../workflow/delivery-outcome.ts";
+import { deliveryOutcome } from "./delivery-outcome.ts";
 import { retainedOverviewBlockers } from "../workflow/read-model/snapshot.ts";
 import { historicalWorkers } from "../workflow/worker-assignment.ts";
-import { executionContract } from "./execution-contract.ts";
+import { executionContract } from "../workflow/read-model/execution-contract.ts";
 import { type WorkItem } from "./protocol.ts";
 
 export { retainedOverviewBlockers };

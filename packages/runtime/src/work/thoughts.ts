@@ -1,6 +1,8 @@
+import { sha256 } from "../digest.ts";
+import { WorkGraphError } from "../errors.ts";
 import type { WorkGraph } from "./graph.ts";
 import type { ThoughtSave } from "@abracode/contracts/visibility/thoughts";
-import { createHash, createHmac } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { Effect, Redacted, Result, Schema } from "effect";
 import {
   MemoAccount,
@@ -9,8 +11,9 @@ import {
   type ThoughtQuery,
 } from "@abracode/contracts/visibility/thoughts";
 import { memosConnection } from "../config/memos.ts";
-import { type Config, CrewError } from "../domain.ts";
+import { type Config } from "../domain.ts";
 import { decode } from "../decode.ts";
+import { httpDriver } from "../platform.ts";
 import { MemosTransport } from "./memos-transport.ts";
 
 const account = Schema.Struct({ user: Schema.Struct({ name: MemoAccount }) });
@@ -32,19 +35,22 @@ const page = Schema.Struct({
   memos: Schema.Array(memo),
   nextPageToken: Schema.optional(Schema.String),
 });
-const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+const hash = (value: string) => sha256(value);
 type Transport = "mcp" | "http";
 const changed = () =>
-  new CrewError("MEMOS_CHANGED", "This thought’s wording changed. Search again and reselect it.");
-const missing = () => new CrewError("MEMOS_MISSING", "The selected thought is unavailable.");
+  new WorkGraphError(
+    "MEMOS_CHANGED",
+    "This thought’s wording changed. Search again and reselect it.",
+  );
+const missing = () => new WorkGraphError("MEMOS_MISSING", "The selected thought is unavailable.");
 const queryError = () =>
-  new CrewError("MEMOS_QUERY", "Choose a valid UTC date range, with the end after the start.");
+  new WorkGraphError("MEMOS_QUERY", "Choose a valid UTC date range, with the end after the start.");
 
 function decodeMemos<S extends Schema.Constraint>(schema: S, raw: unknown) {
   return decode(schema, raw, "Memos response").pipe(
     Effect.mapError(
       () =>
-        new CrewError(
+        new WorkGraphError(
           "MEMOS_UNAVAILABLE",
           "The notebook returned an unexpected response. Check the Memos version and retry.",
         ),
@@ -98,7 +104,7 @@ export class PersonalThoughts {
   private connect() {
     return Effect.gen({ self: this }, function* () {
       const connection = yield* memosConnection(this.config);
-      const api = new MemosTransport(connection);
+      const api = new MemosTransport(connection, yield* httpDriver);
       const identity = yield* api
         .http("auth/me")
         .pipe(Effect.flatMap((r) => decodeMemos(account, r)));
@@ -119,7 +125,7 @@ export class PersonalThoughts {
         const i = q.cursor.indexOf(".");
         upstream = q.cursor.slice(i + 1);
         if (i < 0 || !upstream || q.cursor.slice(0, i) !== sign(upstream))
-          return yield* new CrewError(
+          return yield* new WorkGraphError(
             "MEMOS_CURSOR",
             "The notebook or filters changed. Restart the search.",
           );
@@ -171,14 +177,14 @@ export class PersonalThoughts {
       }
       if (!result) result = yield* Effect.result(read);
       if (Result.isFailure(result))
-        return yield* new CrewError(
+        return yield* new WorkGraphError(
           "MEMOS_UNRESOLVED",
           "Could not verify this save. Retry with the same request ID.",
         );
       const m = yield* decodeMemos(memo, result.success);
       const row = yield* Effect.try({ try: () => summary(instance, owner, m), catch: missing });
       if (m.name !== "memos/" + receipt.id || row.reference.wording_hash !== digest)
-        return yield* new CrewError(
+        return yield* new WorkGraphError(
           "MEMOS_CONFLICT",
           "The stored thought differs from this save request.",
         );

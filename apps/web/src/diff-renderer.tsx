@@ -1,6 +1,7 @@
+import { useDebouncedValue } from "./use-debounced-value.ts";
 import { useWorkspaceNavigate } from "./use-workspace-navigate.ts";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import type { SelectedLineRange, FileDiffMetadata } from "@pierre/diffs";
 import { IssueId } from "@abracode/contracts/identities";
@@ -28,45 +29,48 @@ export default function DiffRenderer({
   const search = useSearch({ from: "__root__" });
   const navigate = useWorkspaceNavigate();
   const routeKey = JSON.stringify([issue, search.file, search.scope]);
-  const [edit, setEdit] = useState({ routeKey, text: search.file ?? "" });
+  const [edit, setEdit] = useState({ routeKey, text: search.file ?? "", address: "" });
   const filter = edit.routeKey === routeKey ? edit.text : (search.file ?? "");
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), [routeKey]);
+  const debounced = useDebouncedValue(edit, 200);
   const needle = filter.trim().toLocaleLowerCase();
   const matches = diff.files.filter((file) => file.path.toLocaleLowerCase().includes(needle));
   const exact =
     diff.files.find((file) => file.path === filter)?.path ??
     (filter !== search.file && needle && matches.length === 1 ? matches[0]?.path : undefined);
   function changeFilter(text: string) {
-    setEdit({ routeKey, text });
-    clearTimeout(timer.current);
-    const query = text.trim().toLocaleLowerCase();
-    const matched = diff.files.filter((file) => file.path.toLocaleLowerCase().includes(query));
-    const selected =
-      diff.files.find((file) => file.path === text)?.path ??
-      (query && matched.length === 1 ? matched[0]?.path : undefined);
-    if ((!selected && query) || selected === search.file) return;
-    const address = window.location.href;
-    timer.current = setTimeout(() => {
-      if (window.location.href !== address) return;
-      setEdit({ routeKey: JSON.stringify([issue, selected, search.scope]), text });
-      void navigate({
-        replace: true,
-        search: (previous: WorkspaceSearch) => {
-          const resource =
-            previous.resource?.action === "open_changes"
-              ? {
-                  action: "open_changes" as const,
-                  issue_id: previous.resource.issue_id,
-                  scope: previous.resource.scope,
-                  file: selected,
-                }
-              : previous.resource;
-          return { ...previous, file: selected, resource };
-        },
-      });
-    }, 200);
+    setEdit({ routeKey, text, address: window.location.href });
   }
+  useEffect(() => {
+    if (edit !== debounced || edit.routeKey !== routeKey || edit.address !== window.location.href)
+      return;
+    const selected = exact || undefined;
+    if ((!selected && needle) || selected === search.file) return;
+    void navigate({
+      replace: true,
+      search: (previous: WorkspaceSearch) => {
+        const resource =
+          previous.resource?.action === "open_changes"
+            ? {
+                action: "open_changes" as const,
+                issue_id: previous.resource.issue_id,
+                scope: previous.resource.scope,
+                file: selected,
+              }
+            : previous.resource;
+        return { ...previous, file: selected, resource };
+      },
+    }).then(() => {
+      setEdit((current) =>
+        current === edit
+          ? {
+              routeKey: JSON.stringify([issue, selected, search.scope]),
+              text: edit.text,
+              address: "",
+            }
+          : current,
+      );
+    });
+  }, [edit, debounced, routeKey, exact, needle, issue, search.file, search.scope, navigate]);
   return (
     <div className="space-y-3 min-w-0">
       <Input

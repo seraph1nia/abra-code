@@ -5,7 +5,7 @@ import { deferred } from "./deferred.tsx";
 import { CatalogMedia } from "./catalog-media.tsx";
 import { contentImplementation } from "./catalog-content.tsx";
 import { CatalogIcon } from "./catalog-icon.tsx";
-import { SurfaceOwner } from "./surface-owner.ts";
+import { useSurfaceOwner } from "./surface-owner.ts";
 import { usePreparedDiagrams, type DiagramRequest } from "./diagrams.tsx";
 import { Button } from "./ui/button.tsx";
 import { collectDiagrams } from "@abracode/contracts/presentation/diagrams";
@@ -17,7 +17,6 @@ import {
   useLayoutEffect,
   useMemo,
   useState,
-  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { WorkWidget, type WorkWidgetInput } from "./work-widgets.tsx";
@@ -31,16 +30,10 @@ import {
   useSignalValue,
   type ReactCatalogComponent,
 } from "@a2ui/react";
-import {
-  DataModel,
-  basicCatalog,
-  injectBasicCatalogStyles,
-  MessageProcessor,
-  type SurfaceModel,
-} from "@a2ui/web_core/v1_0";
+import { DataModel, basicCatalog, MessageProcessor, type SurfaceModel } from "@a2ui/web_core/v1_0";
 import type { SurfaceEntry, SurfaceRecord } from "@abracode/contracts/web/contracts";
 import type { WebWorkItem as WorkItem } from "@abracode/contracts/web/wire";
-import { surfaceValidation, toSdkSurface, validateSurface } from "@abracode/contracts/web/surfaces";
+import { surfaceValidation, validateSurface } from "@abracode/contracts/web/surfaces";
 import {
   basicComponentNames,
   contentNames,
@@ -54,7 +47,6 @@ import {
   type WorkComponentName,
 } from "@abracode/contracts/web/catalog";
 
-injectBasicCatalogStyles();
 type WorkViewContext = {
   record: Pick<SurfaceRecord, "surface" | "snapshot" | "revision" | "at" | "coverage"> &
     Partial<Pick<SurfaceRecord, "session_id" | "surface_hash">>;
@@ -134,7 +126,7 @@ export const reactWorkCatalog = implementedCatalog<ReactCatalogComponent>([
       });
     if (name === "Icon")
       return catalogComponent(api, ({ props }) => <CatalogIcon name={props.name} />);
-    return { ...implementation, schema: api.schema };
+    return implementation;
   }),
   ...contentNames.map(contentImplementation),
   ...workComponentNames.map(bindWidget),
@@ -182,6 +174,7 @@ export function WorkViews({
   );
 }
 type Rendered = {
+  live: DataModel;
   processor: MessageProcessor<ReactCatalogComponent>;
   surface: SurfaceModel<ReactCatalogComponent>;
   record: WorkViewContext["record"];
@@ -196,11 +189,10 @@ function prepareSurface(record: WorkViewContext["record"]): Rendered {
     },
   });
   try {
-    validateSurface(record.surface);
-    processor.processMessages(toSdkSurface(record.surface));
+    validateSurface(record.surface, undefined, processor);
     const surface = processor.model.getSurface(record.surface.createSurface.surfaceId);
     if (!surface) throw new Error("Surface was not created");
-    return { processor, surface, record };
+    return { processor, surface, record, live: new DataModel() };
   } catch (error) {
     processor.dispose();
     throw error;
@@ -210,12 +202,13 @@ function updateSurface(current: Rendered, record: WorkViewContext["record"]) {
   const surfaceId = record.surface.createSurface.surfaceId;
   if (surfaceId !== current.surface.id || current.record.session_id !== record.session_id)
     return false;
-  const { components, dataModel } = toSdkSurface(validateSurface(record.surface)).createSurface;
-  current.processor.processMessages({
+  const { components, dataModel } = validateSurface(record.surface).createSurface;
+  const [failure] = current.processor.processMessagesWithErrors({
     version: "1.0",
-    updateComponents: { surfaceId, components: components ?? [] },
+    updateComponents: { surfaceId, components },
   });
-  const ids = new Set(components?.map((component) => component.id));
+  if (failure) throw new Error(failure.error.message);
+  const ids = new Set(components.map((component) => component.id));
   for (const previous of current.record.surface.createSurface.components) {
     if (typeof previous.id === "string" && !ids.has(previous.id))
       current.surface.componentsModel.removeComponent(previous.id);
@@ -262,31 +255,36 @@ export function GeneratedSurface({
     [record.surface, record.revision, record.surface_hash, evidence, diagramRequest],
   );
   const diagrams = usePreparedDiagrams(request, preparedDiagrams);
-  const [owner] = useState(
-    () =>
-      new SurfaceOwner(
-        record,
-        prepareSurface,
-        (view) => view.processor.dispose(),
-        (a, b) => a.revision === b.revision && JSON.stringify(a) === JSON.stringify(b),
-        updateSurface,
-      ),
+  const { rendered, error } = useSurfaceOwner(
+    record,
+    prepareSurface,
+    (view) => {
+      view.live.dispose();
+      view.processor.dispose();
+    },
+    (a, b) =>
+      a.revision === b.revision &&
+      a.session_id === b.session_id &&
+      a.surface.createSurface.surfaceId === b.surface.createSurface.surfaceId &&
+      (a.surface_hash && b.surface_hash
+        ? a.surface_hash === b.surface_hash
+        : a.surface === b.surface &&
+          a.snapshot === b.snapshot &&
+          a.coverage === b.coverage &&
+          a.at === b.at),
+    updateSurface,
   );
-  const view = useSyncExternalStore(owner.subscribe, owner.read, owner.read);
-  useEffect(() => owner.replace(record), [owner, record]);
-  useEffect(() => owner.committed(view), [owner, view]);
-  const { rendered, error } = view;
-  const [live] = useState(() => new DataModel({ work, coverage: liveCoverage }));
+  const live = rendered?.live;
   useLayoutEffect(() => {
-    live.set("/work", work);
+    live?.set("/work", work);
   }, [live, work]);
   useLayoutEffect(() => {
-    live.set("/coverage", liveCoverage);
+    live?.set("/coverage", liveCoverage);
   }, [live, liveCoverage]);
   const renderedRecord = rendered?.record;
   const viewContext = useMemo<WidgetContext | undefined>(
     () =>
-      renderedRecord
+      renderedRecord && live
         ? {
             record: renderedRecord,
             live,

@@ -61,21 +61,25 @@ test("enabled check correction consumes one immutable round, reruns checks and i
     consumed: 1,
     remaining: 0,
   });
-  const c = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const c = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   await run(c.reconcile(e.issue_id));
   assert.equal((await run(c.get(e.issue_id))).rounds!.length, 1);
-  const altered = structuredClone(await run(c.get(e.issue_id)));
-  altered.rounds = [];
+  let altered = structuredClone(await run(c.get(e.issue_id)));
+  altered = { ...altered, rounds: [] };
   await assert.rejects(run(f.records.save(altered)), /history/);
   await assert.rejects(run(f.records.saveOwned(altered, ["rounds"])), /history/);
 });
@@ -413,16 +417,20 @@ for (const kind of ["repeated", "exhausted", "scope-change"] as const)
     );
     assert.equal(e.delivered_commit, undefined);
     const prompts = f.runtime.prompts;
-    const restarted = createWorkflow(
-      f.catalog,
-      f.config,
-      f.records,
-      f.work,
-      f.spec,
-      f.git,
-      f.runtime,
-      f.delivery,
-      f.locks,
+    const restarted = (
+      await run(
+        createWorkflow(
+          f.catalog,
+          f.config,
+          f.records,
+          f.work,
+          f.spec,
+          f.git,
+          f.runtime,
+          f.delivery,
+          f.locks,
+        ),
+      )
     ).controller;
     t.onTestFinished(() => run(restarted.close()));
     await run(restarted.reconcile(e.issue_id));

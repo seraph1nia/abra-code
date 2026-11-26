@@ -28,7 +28,7 @@ independent Review and lightweight correction. It uses only loopback providers
 and disposable local remotes. A provider can receive one admitted instruction in
 several model requests; the test separately counts native user instructions.
 
-Unit tests in `messages.test.ts` cover generation/sender/recipient validation,
+The steering, obligation and recovery suites in `messages-*.test.ts` cover generation/sender/recipient validation,
 immutable request/reply/finding identity, byte/evidence limits, legacy reads,
 admission versus acknowledgement versus answer, response loss, concurrent early
 reply, bounded mutation-free inspection and decision-answer delivery referencing
@@ -76,18 +76,18 @@ have queued transport work.
 The executable transition evidence is mapped below. These names identify tests,
 not claims that a future invocation passed:
 
-| Contract                                                                                                   | Existing behavioral proof                                                                                                                                 |
-| ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Persist-before-call; uncertain admission across restart; absence does not permit replacement               | `messages.test.ts`: lost steering response with native admission true/false; failed admission bookkeeping                                                 |
-| Admission, acknowledgement and answer differ; duplicates cannot rebind; history survives generation change | `messages.test.ts`: admission, acknowledgement and answer remain separate with immutable duplicate replies                                                |
-| Replies during admission survive fresh record commits                                                      | `messages.test.ts`: a reply committed during native admission is not overwritten                                                                          |
-| Exact payload, delivery, attachments, current role/session/generation and location guard authority         | `messages.test.ts`: native prompt hook validates exact steering payload; foreign senders/wrong location; pause cancels every owned prompt                 |
-| Successful follow-up does not erase assignment failure; late event does not overwrite stronger observation | `messages.test.ts`: later successful message cannot mask original failure; late native failure event preserves prompt-bound failure                       |
-| Exact admission lookup and bounded compaction fallback preserve native evidence                            | `native-message-admission.test.ts`: native admission observation validates payload; assignment outcomes remain bound across later messages and compaction |
-| Cancel/consume race does not fabricate a stop                                                              | `native-message-admission.test.ts`: cancel/consume race leaves stop unconfirmed                                                                           |
-| Failure/interruption cannot be retried by queue wake                                                       | `messages.test.ts`: queue wake never retries a failed or interrupted native execution                                                                     |
-| Notification loss cannot erase a committed response or unanswered obligation                               | `attention.test.ts`: worker results coalesce across admission failure/restart; missing responses stay visible with exhausted diagnostics                  |
-| Lead revision/disable preserves history without stale authority                                            | `leads.test.ts`: shared native request recovery; disable confirms stop before revision; retired sessions never regain authority                           |
+| Contract                                                                                                   | Existing behavioral proof                                                                                                                                              |
+| ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Persist-before-call; uncertain admission across restart; absence does not permit replacement               | `messages-steering.test.ts`, `messages-recovery.test.ts`: lost steering response with native admission true/false; failed admission bookkeeping                        |
+| Admission, acknowledgement and answer differ; duplicates cannot rebind; history survives generation change | `messages-obligations.test.ts`: admission, acknowledgement and answer remain separate with immutable duplicate replies                                                 |
+| Replies during admission survive fresh record commits                                                      | `messages-obligations.test.ts`: a reply committed during native admission is not overwritten                                                                           |
+| Exact payload, delivery, attachments, current role/session/generation and location guard authority         | `messages-steering.test.ts`: native prompt hook validates exact steering payload; foreign senders/wrong location; pause cancels every owned prompt                     |
+| Successful follow-up does not erase assignment failure; late event does not overwrite stronger observation | `messages-recovery.test.ts`: later successful message cannot mask original failure; late native failure event preserves prompt-bound failure                           |
+| Exact admission lookup and bounded compaction fallback preserve native evidence                            | `native-message-admission.test.ts`: native admission observation validates payload; assignment outcomes remain bound across later messages and compaction              |
+| Cancel/consume race does not fabricate a stop                                                              | `native-message-admission.test.ts`: cancel/consume race leaves stop unconfirmed                                                                                        |
+| Failure/interruption cannot be retried by queue wake                                                       | `messages-recovery.test.ts`: queue wake never retries a failed or interrupted native execution                                                                         |
+| Notification loss cannot erase a committed response or unanswered obligation                               | `attention-notices.test.ts`: worker results coalesce across admission failure/restart; missing responses stay visible with exhausted diagnostics                       |
+| Lead revision/disable preserves history without stale authority                                            | `leads-requests.test.ts`, `leads-registration.test.ts`: shared native request recovery; disable confirms stop before revision; retired sessions never regain authority |
 
 Native duplicate-ID reconciliation precedes the plugin prompt hook in pinned
 OpenCode 2.0.28. A conflicting duplicate returns the original native payload;
@@ -117,10 +117,10 @@ the failure instead of manufacturing recovery from that empty success. A paused
 previous assignment's outcome is distinguished from failure in current owned
 inputs before waking a verified queue. Unknown failure ownership stays stopped.
 
-`attention.test.ts` exercises coalesced replies/findings, lost notice admission,
+`attention-notices.test.ts` exercises coalesced replies/findings, lost notice admission,
 stable diagnostic identity across controller restart, terminal research notices
 and exhausted budgets. Required responses and mandatory worker decisions remain
-retained independently of optional notifications. `messages.test.ts` also proves
+retained independently of optional notifications. `messages-recovery.test.ts` also proves
 pause of failed work keeps its real recovery checkpoint; cancellation and an
 explicit resume reuse the session but supersede the old instruction.
 
@@ -163,7 +163,7 @@ Inspect `native-engineering.json` after teardown for actual result and cleanup.
 
 `response-recovery.test.ts` forces concurrent ticks, early replies (including the
 native guard boundary), ambiguous/lost admission, native uncertainty, capacity
-wait, pause and diagnostic-budget races. `leads.test.ts` covers the same finite
+wait, pause and diagnostic-budget races. `leads-requests.test.ts` covers the same finite
 lead contract, revocation and parent-notice receipt loss. A successful native
 admission never substitutes for an acknowledgement or answer. Recovery metadata
 and accepted reply history remain retained; use the [recovery runbook](../../recovery.md)

@@ -8,7 +8,7 @@ import {
 import { fleetLabels, fleetState } from "./fleet.ts";
 import { taskAttention } from "@abracode/contracts/visibility/attention";
 import type { Controller } from "../workflow/controller.ts";
-import { Visibility } from "./read-model.ts";
+import { buildSnapshot } from "./snapshot.ts";
 import { timestamp } from "@abracode/contracts/identities";
 import type { WorkItem, WorkSnapshot } from "./protocol.ts";
 import type { ReadBundle } from "../workflow/queries.ts";
@@ -156,9 +156,9 @@ export function workBriefing(controller: Pick<Controller, "queries" | "inbox">, 
       [
         controller.queries.observe().pipe(
           Effect.flatMap((bundle) =>
-            new Visibility(controller)
-              .snapshot(0, bundle, false)
-              .pipe(Effect.map((snapshot) => ({ snapshot, bundle }))),
+            buildSnapshot(controller.queries, 0, bundle, false).pipe(
+              Effect.map((snapshot) => ({ snapshot, bundle })),
+            ),
           ),
           Effect.result,
         ),

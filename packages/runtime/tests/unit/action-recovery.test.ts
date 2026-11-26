@@ -1,3 +1,4 @@
+import type { Execution } from "../../src/domain.ts";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Deferred, Effect, Fiber, Schema } from "effect";
@@ -8,7 +9,7 @@ import { CrewError } from "../../src/domain.ts";
 import { type Delivery } from "../../src/git/delivery.ts";
 import { type PreparedWrite } from "../../src/git/action-contracts.ts";
 import { type CurrentAction, ActionSchema } from "@abracode/contracts/workflow/action-contracts";
-import { PRActions } from "../../src/workflow/pr-actions.ts";
+import { PRActions } from "../../src/workflow/pr/actions.ts";
 
 function command(action: CurrentAction): PreparedWrite["command"] {
   switch (action.kind) {
@@ -32,7 +33,7 @@ for (const kind of ["ready", "reviewers", "reply", "rerun"] as const)
     "interruption",
   ] as const)
     test(`${kind} ${failure} after admission reconciles after restart without replay`, async (t) => {
-      const { f, e, p } = await deliveredPR(t, {
+      let { f, e, p } = await deliveredPR(t, {
         ci_retry: { max_reruns: 1, workflows: [".github/workflows/ci.yml"] },
       });
       const source = {
@@ -54,8 +55,8 @@ for (const kind of ["ready", "reviewers", "reply", "rerun"] as const)
           reason: "Verified current evidence",
         },
       };
-      e.feedback = { ...e.feedback!, findings: [source] };
-      await run(f.records.save(e));
+      e = { ...e, feedback: { ...e.feedback!, findings: [source] } };
+      e = await run(f.records.save(e));
       let sends = 0,
         observations = 0;
       const entered = Deferred.makeUnsafe<void>();
@@ -93,7 +94,7 @@ for (const kind of ["ready", "reviewers", "reply", "rerun"] as const)
       const actor = Id.SessionId.make("ses_supervisor");
       // Reserve a manual form where needed, then approve that exact retained payload.
       if (kind !== "rerun") {
-        await run(service.run(e, p, input, actor));
+        e = await run(service.run(e, p, input, actor));
         f.runtime.forms.set(e.feedback!.actions[0].form_id!, "approved");
       }
       if (failure === "interruption")
@@ -106,13 +107,13 @@ for (const kind of ["ready", "reviewers", "reply", "rerun"] as const)
             }),
           ),
         );
-      else await run(service.run(e, p, input, actor));
-      const restored = (await run(f.records.execution(e.issue_id)))!;
+      else e = await run(service.run(e, p, input, actor));
+      let restored: Execution = (await run(f.records.execution(e.issue_id)))!;
       const action = restored.feedback!.actions[0];
       assert.equal(action.submission.stage, "admitted");
       assert.equal(action.status, failure === "interruption" ? "running" : "uncertain");
       assert.equal(sends, 1);
-      await run(f.records.commitControl(restored));
+      restored = await run(f.records.commitControl(restored));
       const restoredDelivery: Delivery = {
         ...delivery,
         actions: {
@@ -122,7 +123,7 @@ for (const kind of ["ready", "reviewers", "reply", "rerun"] as const)
             delivery.actions!.reconcile(project, execution, action),
         },
       };
-      await run(
+      restored = await run(
         new PRActions(f.records, restoredDelivery, f.runtime).run(
           restored,
           p,
@@ -160,7 +161,7 @@ test("stored flat action shapes are refused even at version one", async (t) => {
 });
 
 test("crash after durable admission but before process entry never resends", async (t) => {
-  const { f, e, p } = await deliveredPR(t);
+  let { f, e, p } = await deliveredPR(t);
   const service = new PRActions(f.records, f.delivery, f.runtime);
   const prepared = service.prepare(
     e,
@@ -168,14 +169,17 @@ test("crash after durable admission but before process entry never resends", asy
     false,
     1,
   );
-  e.feedback = {
-    ...e.feedback!,
-    actions: [
-      { ...prepared, status: "running", submission: { stage: "admitted", at: 2 }, updated_at: 2 },
-    ],
+  e = {
+    ...e,
+    feedback: {
+      ...e.feedback!,
+      actions: [
+        { ...prepared, status: "running", submission: { stage: "admitted", at: 2 }, updated_at: 2 },
+      ],
+    },
   };
-  await run(f.records.save(e));
-  const restored = (await run(f.records.execution(e.issue_id)))!;
+  e = await run(f.records.save(e));
+  let restored: Execution = (await run(f.records.execution(e.issue_id)))!;
   const delivery: Delivery = {
     deliver: f.delivery.deliver,
     inspect: f.delivery.inspect.bind(f.delivery),
@@ -187,7 +191,7 @@ test("crash after durable admission but before process entry never resends", asy
       reconcile: () => Effect.succeed({ kind: "awaiting", detail: "No postcondition yet" }),
     },
   };
-  await run(
+  restored = await run(
     new PRActions(f.records, delivery, f.runtime).run(restored, p, {
       issue_id: e.issue_id,
       generation: 0,
@@ -224,7 +228,7 @@ test("unsupported stored action remains intact and unavailable with a record dia
 
 for (const possibleEffect of [true, false])
   test(`mixed historical duplicate reservations preserve budget and admit at most once: possible effect ${possibleEffect}`, async (t) => {
-    const { f, e, p } = await deliveredPR(t, {
+    let { f, e, p } = await deliveredPR(t, {
       reviewers: {
         users: ["alice"],
         teams: [],
@@ -247,19 +251,22 @@ for (const possibleEffect of [true, false])
       target: { users: ["alice"], teams: [] },
       submission: { stage: "unsubmitted" as const },
     };
-    e.feedback = {
-      ...e.feedback!,
-      actions: [
-        first,
-        {
-          ...first,
-          id: "second-reservation",
-          status: possibleEffect ? "uncertain" : "prepared",
-          submission: possibleEffect ? { stage: "admitted", at: 2 } : { stage: "unsubmitted" },
-        },
-      ],
+    e = {
+      ...e,
+      feedback: {
+        ...e.feedback!,
+        actions: [
+          first,
+          {
+            ...first,
+            id: "second-reservation",
+            status: possibleEffect ? "uncertain" : "prepared",
+            submission: possibleEffect ? { stage: "admitted", at: 2 } : { stage: "unsubmitted" },
+          },
+        ],
+      },
     };
-    await run(f.records.save(e));
+    e = await run(f.records.save(e));
     let submits = 0;
     const delivery: Delivery = {
       deliver: f.delivery.deliver,
@@ -293,9 +300,9 @@ for (const possibleEffect of [true, false])
       3,
     );
     assert.equal(selected.id, possibleEffect ? "second-reservation" : "first-reservation");
-    await run(service.automatic(e, p));
-    const restored = (await run(f.records.execution(e.issue_id)))!;
-    await run(new PRActions(f.records, delivery, f.runtime).automatic(restored, p));
+    e = await run(service.automatic(e, p));
+    let restored: Execution = (await run(f.records.execution(e.issue_id)))!;
+    restored = await run(new PRActions(f.records, delivery, f.runtime).automatic(restored, p));
     assert.equal(submits, possibleEffect ? 0 : 1);
     assert.equal(restored.feedback!.actions.length, 2, "Keep both historical reservations");
     assert.ok(restored.feedback!.actions.some((a) => a.status === "superseded"));

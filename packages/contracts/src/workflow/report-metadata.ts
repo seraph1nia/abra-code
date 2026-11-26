@@ -10,7 +10,8 @@ import {
   SessionId,
   ContentHash,
   AbsolutePath,
-  RelativePath,
+  SafeRelativePath,
+  Identifier,
 } from "../identities.ts";
 import { NonEmpty, Commit, Count, Positive } from "../primitives.ts";
 const text = NonEmpty.check(Schema.isMaxLength(16384));
@@ -23,18 +24,7 @@ export const ReportProducerSchema = Schema.Struct({
 // Compact browser metadata must not import full document/build validation.
 export const EvidenceReferenceSchema = Schema.Struct({
   base: Schema.optional(Commit),
-  path: Schema.optional(
-    RelativePath.check(
-      Schema.isNonEmpty(),
-      Schema.makeFilter(
-        (p) =>
-          (!p.startsWith("/") &&
-            !p.includes("\\") &&
-            p.split("/").every((s) => s !== ".." && s !== "." && s !== "")) ||
-          "Evidence path must be relative",
-      ),
-    ),
-  ),
+  path: Schema.optional(SafeRelativePath),
   line: Schema.optional(Positive),
   url: Schema.optional(NonEmpty.check(Schema.isPattern(/^https?:\/\//))),
 }).check(
@@ -49,7 +39,7 @@ export const VisualRenderRequestSchema = Schema.Struct({
   title: Schema.optional(text),
   surface: Schema.optional(
     Schema.Struct({
-      surface_id: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,100}$/)),
+      surface_id: Identifier,
       revision: Schema.Int.check(Schema.isGreaterThan(0)),
     }),
   ),
@@ -84,11 +74,13 @@ export const visualBuildFields = {
   generation: Count,
   requested_by: SessionId,
   notify_session: Schema.optional(SessionId),
-  deadline_at: Schema.optional(Schema.Finite),
   source_report: ReportDocumentReceiptSchema.fields.source_report,
   input_hash: ContentHash,
   template_hash: ContentHash,
-  status: Schema.Literals(["pending", "building", "validated", "published", "failed"]),
+  status: Schema.Union([
+    Schema.Literals(["pending", "validated", "published", "failed"]),
+    Schema.Literal("building").transform("pending"),
+  ]),
   artifact: Schema.optional(ReportArtifactReceiptSchema),
   error: Schema.optional(text),
 };

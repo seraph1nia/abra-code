@@ -1,18 +1,17 @@
 import { Schema } from "effect";
-import { retainConversation, type Conversation } from "./conversation.ts";
+import { browserVisibility } from "../document-visibility.ts";
 import { observationDecision } from "@abracode/contracts/web/observation";
 import { mergeChanges, type ChangeScope, type Observation } from "@abracode/contracts/web/changes";
 import {
   WorkspaceStateJson,
   WorkspaceSnapshotSchema,
 } from "@abracode/contracts/web/workspace-wire";
-import type { WorkspaceSnapshot, TranscriptMessage } from "@abracode/contracts/web/contracts";
+import type { WorkspaceSnapshot } from "@abracode/contracts/web/contracts";
 
 export type ObservationState = {
   workspace: WorkspaceSnapshot;
   stateError: string;
   connectionError: string;
-  conversation: Conversation;
 };
 type Cancel = () => void;
 export type ObservationClock = { after: (delay: number, action: () => void) => Cancel };
@@ -42,14 +41,6 @@ const clock: ObservationClock = {
   after: (delay, action) => {
     const timer = setTimeout(action, delay);
     return () => clearTimeout(timer);
-  },
-};
-const browserVisibility: ObservationVisibility = {
-  hidden: () => typeof document !== "undefined" && document.visibilityState === "hidden",
-  subscribe: (listener) => {
-    if (typeof document === "undefined") return () => {};
-    document.addEventListener("visibilitychange", listener);
-    return () => document.removeEventListener("visibilitychange", listener);
   },
 };
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -106,13 +97,11 @@ export class WorkspaceObservation {
   constructor(
     initial: WorkspaceSnapshot,
     private adapters: ObservationAdapters,
-    retained?: Conversation,
   ) {
     this.value = {
       workspace: initial,
       stateError: "",
       connectionError: "",
-      conversation: retainConversation(retained, initial),
     };
     this.clock = adapters.clock ?? clock;
     this.visibility = adapters.visibility ?? browserVisibility;
@@ -138,10 +127,6 @@ export class WorkspaceObservation {
     this.value = { ...this.value, ...change };
     for (const listener of this.listeners) listener(this.value);
   }
-  receiveMessages(recent: readonly TranscriptMessage[]) {
-    const conversation = retainConversation(this.value.conversation, this.value.workspace, recent);
-    if (conversation !== this.value.conversation) this.update({ conversation });
-  }
   private accept(next: WorkspaceSnapshot) {
     if (
       next.session_id !== this.value.workspace.session_id ||
@@ -160,7 +145,6 @@ export class WorkspaceObservation {
     }
     this.update({
       workspace: retainJSON(this.value.workspace, next),
-      conversation: retainConversation(this.value.conversation, next),
     });
     const changes = order?.changes ?? { all: true };
     if (

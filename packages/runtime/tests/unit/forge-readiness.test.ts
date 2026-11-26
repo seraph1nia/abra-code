@@ -112,14 +112,9 @@ for (const scenario of ["advisory", "missing", "wrong-app", "latest", "default-f
           : scenario === "latest"
             ? [check(1, "build", 10, "failure"), check(2, "build", 10, "success")]
             : [check(1, "build", 10, "success"), check(2, "advisory", 20, "failure")];
-    const result = await run(
-      new GitHubDelivery(f.git, forge.runner, Id.Executable.make("fake-forge")).merge(
-        p,
-        e,
-        undefined,
-        () => Effect.void,
-      ),
-    );
+    const delivery = new GitHubDelivery(f.git, forge.runner, Id.Executable.make("fake-forge"));
+    const assessment = await run(delivery.assessment(p, e));
+    const result = await run(delivery.merge(p, e, assessment, () => Effect.void));
     assert.equal(
       result.category,
       scenario === "missing" || scenario === "wrong-app"
@@ -133,8 +128,8 @@ for (const scenario of ["advisory", "missing", "wrong-app", "latest", "default-f
       assert.match(result.reason, /build.*app 10/);
     }
     if (scenario === "advisory")
-      assert.match(e.forge_observation!.reasons.join(), /Advisory.*advisory/);
-    assert.equal(e.forge_observation!.required_confirmed, true);
+      assert.match(assessment.forge_observation!.reasons.join(), /Advisory.*advisory/);
+    assert.equal(assessment.forge_observation!.required_confirmed, true);
   });
 }
 
@@ -301,14 +296,17 @@ test("documented pending exit output decodes without error-prose parsing", async
 test("PR summaries describe actual intent/evidence and preserve user text outside owned markers", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(delivered(f)),
+  let e = await run(delivered(f)),
     p = (await run(f.records.project(Id.RepositoryId.make("api"))))!;
-  e.intent = {
-    title: "Handle interrupted uploads",
-    description: "Preserve uploaded chunks after reconnect.",
+  e = {
+    ...e,
+    intent: {
+      title: "Handle interrupted uploads",
+      description: "Preserve uploaded chunks after reconnect.",
+    },
   };
   const generated = prContent(p, e, e.delivered_commit!);
-  assert.equal(generated.title, e.intent.title);
+  assert.equal(generated.title, e.intent!.title);
   assert.match(generated.body, /Preserve uploaded chunks/);
   assert.match(generated.body, /Independent Review: passed/);
   const before = `User introduction.\n\n${generated.body}\n\nUser follow-up.\n`;

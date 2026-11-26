@@ -1,289 +1,41 @@
-import { pendingFindings } from "./feedback.ts";
+import { WorkflowError } from "../errors.ts";
+import { tryDomainValue } from "../effect.ts";
+import { executionAuthority } from "./execution-authority.ts";
+import {
+  attentionId,
+  attentionLock,
+  paused,
+  allowsAttention,
+  hasDecision,
+  detectAttention,
+  isObsoleteAttention,
+  shouldScanAttention,
+  planAttentionDelivery,
+} from "./attention-policy.ts";
 import {
   messageRequests,
   requiresResponse,
   type MessageIntent,
 } from "@abracode/contracts/workflow/message-contracts";
 import {
-  LockKey,
   IncidentId,
   IssueId,
   MessageId,
   SessionId,
   ObligationKey,
-  type RequestId,
 } from "@abracode/contracts/identities";
 import { Clock, Effect } from "effect";
-import { createHash } from "node:crypto";
 import { SessionMessage } from "@opencode/schema/session-message";
-import { CrewError, type Config, type Execution } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
+import { type Config, type Execution } from "../domain.ts";
 import { type Records } from "../storage/store.ts";
 import { type Runtime, type SessionState } from "../opencode/runtime.ts";
 import { type Coordination } from "./coordination.ts";
 import { type Locks } from "../storage/lock.ts";
 import { type Attention } from "@abracode/contracts/workflow/attention-contracts";
-import { workerSessionID } from "./sessions.ts";
+import { workerSessionID } from "./worker-assignment.ts";
 import { readDiagnosticCapacity } from "./diagnostic-budget.ts";
 import { appendDecision, makeControllerDecision } from "./decision-ledger.ts";
-import { formatNativeState, isUnresolvedRecovery } from "./response-recovery.ts";
-
-const hash = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 40);
-const decisionKey = (generation: number, key: string) => `decision:${generation}:${hash(key)}`;
-const hasDecision = (e: Execution, a: Attention) =>
-  e.decisions?.some(
-    (d) =>
-      d.status === "open" &&
-      d.generation === e.control_generation &&
-      decisionKey(d.generation, d.key) === a.key,
-  );
-const paused = (e: Execution) =>
-  e.stop_status !== undefined ||
-  e.current_phase === "interrupted" ||
-  e.current_phase === "completed";
-const allowsAttention = (e: Execution, code: Attention["code"]) =>
-  !paused(e) || (e.current_phase === "completed" && code === "message_update" && !e.stop_status);
-type MessageReference = NonNullable<Attention["message_refs"]>[number];
-const unresolvedMessage = (e: Execution, id: RequestId) =>
-  messageRequests(e.messages).some((m) => m.request_id === id && isUnresolvedRecovery(m));
-
-function communicationReferences(e: Execution): MessageReference[] {
-  const covered = new Set(
-    e.attention?.flatMap((a) => a.message_refs?.map((r) => `${r.request_id}:${r.state}`) ?? []) ??
-      [],
-  );
-  return (e.messages ?? [])
-    .flatMap((m): MessageReference[] => {
-      const state =
-        m.type === "finding"
-          ? "finding"
-          : m.status === "answered"
-            ? "answered"
-            : m.status === "acknowledged" && m.response === "acknowledgement"
-              ? "acknowledged"
-              : undefined;
-      return state && !covered.has(`${m.request_id}:${state}`)
-        ? [{ request_id: m.request_id, state }]
-        : [];
-    })
-    .sort((a, b) => a.request_id.localeCompare(b.request_id));
-}
-
-const pendingCommunicationNotice = (
-  e: Execution,
-  code: "message_update" | "message_pending" = "message_update",
-) => e.attention?.find((a) => a.code === code && ["pending", "uncertain"].includes(a.status));
-
-type DetectionOutcome =
-  | { readonly kind: "suppress" }
-  | {
-      readonly kind: "incident";
-      readonly code: Attention["code"];
-      readonly key: string;
-      readonly evidence: string;
-      readonly refs?: MessageReference[];
-      readonly batch?: Attention["batch"];
-    };
-
-interface AttentionContext {
-  readonly e: Execution;
-  readonly now: number;
-  readonly config: Config;
-  readonly decisions: readonly NonNullable<Execution["decisions"]>[number][];
-  readonly feedback: ReturnType<typeof pendingFindings>;
-  readonly invalidWait: NonNullable<Execution["waits"]>[number] | undefined;
-  readonly hasActiveWait: boolean;
-  readonly replies: MessageReference[];
-  readonly pendingNotice: Attention | undefined;
-  readonly pendingBlocker: Attention | undefined;
-}
-
-type AttentionDetector = (ctx: AttentionContext) => DetectionOutcome | undefined;
-
-const ATTENTION_DETECTORS: readonly AttentionDetector[] = [
-  ({ e, decisions }) => {
-    const decision = decisions.find(
-      (d) =>
-        !e.attention?.some(
-          (a) =>
-            a.key === decisionKey(d.generation, d.key) &&
-            !["pending", "uncertain"].includes(a.status),
-        ),
-    );
-    if (decision)
-      return {
-        kind: "incident",
-        code: "decision_pending",
-        key: decisionKey(decision.generation, decision.key),
-        evidence: JSON.stringify({
-          key: decision.key,
-          generation: decision.generation,
-          owner: decision.owner,
-          question: decision.question,
-          scope: decision.scope,
-        }).slice(0, 8192),
-      };
-    return decisions.length ? { kind: "suppress" } : undefined;
-  },
-  ({ e, feedback }) => {
-    if (
-      !feedback.length ||
-      !(
-        e.current_phase === "awaiting_merge" ||
-        (e.current_phase === "blocked" && !!e.delivery_block)
-      ) ||
-      e.session_intent ||
-      (e.operation?.action === "correct" &&
-        ["prepared", "running", "uncertain"].includes(e.operation.status)) ||
-      e.active_role ||
-      e.capacity_reservation ||
-      !e.delivered_commit
-    )
-      return undefined;
-    const evidence = JSON.stringify(
-      feedback.map(({ id, revision, kind, url }) => ({ id, revision, kind, url })),
-    ).slice(0, 8192);
-    return {
-      kind: "incident",
-      code: "pr_feedback",
-      key: `pr_feedback:${e.control_generation}:${e.delivered_commit}:${hash(evidence)}`,
-      evidence,
-      batch: {
-        schema_version: 1,
-        head: e.delivered_commit,
-        findings: feedback.map(({ id, revision }) => ({ id, revision })),
-      },
-    };
-  },
-  ({ e }) => {
-    const blocker = e.cleanup_blocker;
-    if (
-      blocker?.generation !== e.control_generation ||
-      e.error_or_recovery_reason ||
-      e.current_phase !== "cleaning"
-    )
-      return undefined;
-    return {
-      kind: "incident",
-      code: "cleanup_blocked",
-      key: `cleanup:${e.control_generation}:${blocker.preservation}:${blocker.fingerprint}`,
-      evidence: `Delivery preserved; cleanup requires file disposition in the owned worktree. ${JSON.stringify(blocker.paths).slice(0, 6000)}${blocker.truncated ? " (truncated sample)" : ""}. Inspect status for captured generated paths and next action; this is not deletion authority.`,
-    };
-  },
-  ({ e, invalidWait }) => {
-    if (!invalidWait) return undefined;
-    const code = invalidWait.status === "invalid" ? "wait_invalid" : "wait_expired";
-    return {
-      kind: "incident",
-      code,
-      key: `${e.control_generation}:${e.prompt_id ?? "controller"}:${code}:${invalidWait.key}`,
-      evidence: `${invalidWait.condition}; owner: ${invalidWait.owner}; expires: ${invalidWait.expires_at}`,
-    };
-  },
-  ({ e, now }) =>
-    e.command_wait && now <= e.command_wait.deadline_at ? { kind: "suppress" } : undefined,
-  ({ e }) =>
-    e.worker_failure &&
-    e.current_phase === "failed" &&
-    e.worker_failure.session_id === workerSessionID(e)
-      ? {
-          kind: "incident",
-          code: "worker_failure",
-          key: `${e.control_generation}:${e.prompt_id ?? "controller"}:worker_failure:${e.worker_failure.at}`,
-          evidence: `${e.worker_failure.error.type}: ${e.worker_failure.error.message}`,
-        }
-      : undefined,
-  ({ pendingBlocker }) =>
-    pendingBlocker
-      ? {
-          kind: "incident",
-          code: "message_pending",
-          key: pendingBlocker.key,
-          evidence: pendingBlocker.evidence,
-        }
-      : undefined,
-  ({ e, replies, pendingNotice }) =>
-    replies.length || pendingNotice
-      ? {
-          kind: "incident",
-          code: "message_update",
-          key:
-            pendingNotice?.key ??
-            `messages:${e.control_generation}:message_update:${hash(JSON.stringify(replies))}`,
-          evidence:
-            pendingNotice?.evidence ??
-            `Worker replies/findings are retained. Inspect abra_work_messages before making decisions: ${JSON.stringify(replies)}. This evidence grants no scope, approval or delivery authority.`,
-          refs: replies,
-        }
-      : undefined,
-  ({ e, hasActiveWait }) =>
-    hasActiveWait ||
-    e.capacity_wait ||
-    e.delivery_wait ||
-    ["awaiting_plan_approval", "awaiting_merge"].includes(e.current_phase) ||
-    e.decisions?.some(
-      (d) => d.status === "open" && d.owner === "user" && d.generation === e.control_generation,
-    )
-      ? { kind: "suppress" }
-      : undefined,
-  ({ e, now, config }) => {
-    const role = e.active_role;
-    const last = e.progress?.at ?? e.worker_started_at ?? e.operation?.started_at ?? now;
-    if (
-      now - last < config.progress_timeout_ms[role ?? "operation"] ||
-      !(role || (e.operation && ["prepared", "running", "uncertain"].includes(e.operation.status)))
-    )
-      return undefined;
-    const code = role ? "suspected_stall" : "operation_stall";
-    return {
-      kind: "incident",
-      code,
-      key: `${e.control_generation}:${e.prompt_id ?? "controller"}:${code}:${e.worker_failure?.at ?? e.progress?.at ?? e.worker_started_at ?? e.operation?.started_at}`,
-      evidence: `No meaningful progress since ${last}; role ${role ?? "controller"}; operation ${e.operation?.action ?? "none"}; last progress ${e.progress?.summary ?? "worker admission"}`,
-    };
-  },
-];
-
-function detectAttention(ctx: AttentionContext): DetectionOutcome | undefined {
-  for (const detector of ATTENTION_DETECTORS) {
-    const result = detector(ctx);
-    if (result) return result;
-  }
-  return undefined;
-}
-
-function isObsoleteAttention(current: Execution, a: Attention): boolean {
-  if (["handled", "superseded"].includes(a.status)) return false;
-  if (a.generation !== current.control_generation) return true;
-  if (a.code === "decision_pending") return !hasDecision(current, a);
-  if (a.code === "message_pending")
-    return !a.message_refs?.some((r) => unresolvedMessage(current, r.request_id));
-  if (a.code === "suspected_stall")
-    return (
-      (current.current_phase === "awaiting_plan_approval" &&
-        ["pending", "uncertain", "admitted"].includes(a.status)) ||
-      (current.progress?.generation === a.generation &&
-        (!a.observed_session || current.progress.session_id === a.observed_session) &&
-        current.progress.at > a.created_at) ||
-      (!current.active_role &&
-        !current.worker_failure &&
-        !current.error_or_recovery_reason &&
-        ["awaiting_merge", "cleaning", "completed"].includes(current.current_phase) &&
-        !!current.delivered_commit)
-    );
-  if (a.code === "cleanup_blocked")
-    return (
-      current.current_phase === "cleaning" &&
-      (!current.cleanup_blocker ||
-        a.key !==
-          `cleanup:${current.control_generation}:${current.cleanup_blocker.preservation}:${current.cleanup_blocker.fingerprint}`)
-    );
-  return (
-    a.code === "operation_stall" &&
-    current.operation?.status === "completed" &&
-    current.operation.id === a.observed_operation
-  );
-}
+import { formatNativeState, isUnresolvedRecovery } from "./messaging/durable-request-channel.ts";
 
 /** Observations never grant authority. Admission and handling are retained separately. */
 export class AttentionService {
@@ -296,13 +48,8 @@ export class AttentionService {
   ) {}
   /** One original-request incident; detection does not dispatch a model or answer it. */
   responseIncident = Effect.fn("Attention.responseIncident")(
-    function* (
-      this: AttentionService,
-      e: Execution,
-      request: MessageIntent,
-      reason: string,
-      state?: SessionState,
-    ) {
+    { self: this },
+    function* (e: Execution, request: MessageIntent, reason: string, state?: SessionState) {
       const now = yield* Clock.currentTimeMillis;
       yield* this.records.update(e.issue_id, (current) => {
         const m = messageRequests(current.messages).find(
@@ -334,14 +81,14 @@ export class AttentionService {
           };
         }
         if ((current.attention?.length ?? 0) >= 256)
-          throw new CrewError("ATTENTION_LIMIT", "Attention history is full");
+          throw new WorkflowError("ATTENTION_LIMIT", "Attention history is full");
         return {
           ...current,
           attention: [
             ...(current.attention ?? []),
             {
               schema_version: 1 as const,
-              id: IncidentId.make(`incident-${hash(`${current.execution_id}:${key}`)}`),
+              id: attentionId(current, key),
               key,
               generation: m.generation,
               code: "message_pending" as const,
@@ -363,286 +110,190 @@ export class AttentionService {
           ],
         };
       });
-    }.bind(this),
-    domainEffect,
+    },
   );
   guard = Effect.fn("Attention.guard")(
-    function* (
-      this: AttentionService,
-      session: SessionId,
-      message: MessageId,
-      diagnosticAllowed: boolean,
-    ) {
-      const owned = (yield* this.records.executions)
-        .flatMap((e) => e.attention ?? [])
-        .filter((a) => a.session_id === session && a.prompt_id);
-      if (!owned.length) return;
+    { self: this },
+    function* (session: SessionId, message: MessageId, diagnosticAllowed: boolean) {
+      if (diagnosticAllowed) return;
+      const owned = (yield* executionAuthority(this.records)).prompts.get(session);
+      if (!owned?.size) return;
       const origin = yield* this.runtime.promptOrigin(session, message);
-      if (origin && !owned.some((a) => a.prompt_id === origin)) return;
-      if (!diagnosticAllowed)
-        return yield* new CrewError(
+      if (!origin || owned.has(origin))
+        return yield* new WorkflowError(
           "ATTENTION_AUTHORITY",
           "A diagnostic turn cannot start, resume, steer, revise scope or deliver work. Use the finite correction route for supported in-scope findings or request an explicit user action.",
         );
-    }.bind(this),
-    domainEffect,
+    },
   );
-  observe = Effect.fn("Attention.observe")(
-    function* (this: AttentionService, session: SessionId) {
-      const assigned = yield* this.records.workerAssignment(session);
-      if (!assigned || workerSessionID(assigned) !== session || paused(assigned)) return;
-      const state = yield* this.runtime.session(session);
-      if (!state.activity || state.activity.at < (assigned.worker_started_at ?? 0)) return;
-      const activity = state.activity;
-      const at = yield* Clock.currentTimeMillis;
-      yield* this.records.update(assigned.issue_id, (e) => {
-        if (
-          paused(e) ||
-          workerSessionID(e) !== session ||
-          e.control_generation !== assigned.control_generation ||
-          e.progress?.identity === activity.identity
-        )
-          return;
-        return {
-          ...e,
-          progress: {
-            schema_version: 1,
-            generation: e.control_generation,
-            session_id: session,
-            at,
-            summary: activity.summary,
-            identity: activity.identity,
-            source: "native",
-          },
-        };
-      });
-    }.bind(this),
-    domainEffect,
-  );
-  scan = Effect.fn("Attention.scan")(
-    function* (this: AttentionService, id?: IssueId) {
-      const executions = id ? [yield* this.records.execution(id)] : yield* this.records.executions;
-      yield* Effect.forEach(
-        executions
-          .filter((e) => e !== undefined)
-          .filter(
-            (e) =>
-              !paused(e) ||
-              (!e.stop_status &&
-                e.current_phase === "completed" &&
-                (communicationReferences(e).length > 0 || pendingCommunicationNotice(e))),
-          ),
-        (record) =>
-          this.locks
-            .with(
-              LockKey.make(`attention-${hash(record.execution_id)}`),
-              () =>
-                domainEffect(
+  observe = Effect.fn("Attention.observe")({ self: this }, function* (session: SessionId) {
+    const assigned = yield* this.records.workerAssignment(session);
+    if (!assigned || workerSessionID(assigned) !== session || paused(assigned)) return;
+    const state = yield* this.runtime.session(session);
+    if (!state.activity || state.activity.at < (assigned.worker_started_at ?? 0)) return;
+    const activity = state.activity;
+    const at = yield* Clock.currentTimeMillis;
+    yield* this.records.update(assigned.issue_id, (e) => {
+      if (
+        paused(e) ||
+        workerSessionID(e) !== session ||
+        e.control_generation !== assigned.control_generation ||
+        e.progress?.identity === activity.identity
+      )
+        return;
+      return {
+        ...e,
+        progress: {
+          schema_version: 1,
+          generation: e.control_generation,
+          session_id: session,
+          at,
+          summary: activity.summary,
+          identity: activity.identity,
+          source: "native",
+        },
+      };
+    });
+  });
+  scan = Effect.fn("Attention.scan")({ self: this }, function* (id?: IssueId) {
+    const executions = id ? [yield* this.records.execution(id)] : yield* this.records.executions;
+    yield* Effect.forEach(
+      executions.filter((e) => e !== undefined).filter(shouldScanAttention),
+      (record) =>
+        this.locks
+          .with(
+            attentionLock(record),
+            () =>
+              Effect.gen({ self: this }, function* () {
+                const sid = workerSessionID(record);
+                if (sid) yield* this.observe(sid).pipe(Effect.ignore);
+                yield* this.records.update(record.issue_id, (current) => {
+                  if (!current.attention?.some((a) => isObsoleteAttention(current, a))) return;
+                  return {
+                    ...current,
+                    attention: current.attention.map((a) =>
+                      isObsoleteAttention(current, a)
+                        ? {
+                            ...a,
+                            status: "superseded" as const,
+                            disposition:
+                              "Superseded by current generation, meaningful progress or confirmed finishing postcondition",
+                          }
+                        : a,
+                    ),
+                  };
+                });
+                const e = (yield* this.records.execution(record.issue_id))!;
+                const now = yield* Clock.currentTimeMillis;
+                const detected = detectAttention(e, now, this.config);
+                if (!detected || detected.kind === "suppress") return;
+                const { code, key, evidence, refs, batch } = detected;
+                const incident = yield* this.coordination.with(() =>
                   Effect.gen({ self: this }, function* () {
-                    const sid = workerSessionID(record);
-                    if (sid) yield* this.observe(sid).pipe(Effect.ignore);
-                    yield* this.records.update(record.issue_id, (current) => {
-                      if (!current.attention?.some((a) => isObsoleteAttention(current, a))) return;
-                      return {
-                        ...current,
-                        attention: current.attention.map((a) =>
-                          isObsoleteAttention(current, a)
-                            ? {
-                                ...a,
-                                status: "superseded" as const,
-                                disposition:
-                                  "Superseded by current generation, meaningful progress or confirmed finishing postcondition",
-                              }
-                            : a,
-                        ),
-                      };
-                    });
-                    const e = (yield* this.records.execution(record.issue_id))!;
-                    const now = yield* Clock.currentTimeMillis;
-                    const detected = detectAttention({
-                      e,
-                      now,
-                      config: this.config,
-                      decisions:
-                        e.decisions?.filter(
-                          (d) => d.status === "open" && d.generation === e.control_generation,
-                        ) ?? [],
-                      feedback: pendingFindings(e.feedback),
-                      invalidWait: e.waits?.find(
-                        (w) =>
-                          w.generation === e.control_generation &&
-                          (w.status === "invalid" ||
-                            w.status === "expired" ||
-                            (w.status === "waiting" && w.expires_at <= now)),
-                      ),
-                      hasActiveWait:
-                        e.waits?.some(
-                          (w) =>
-                            w.generation === e.control_generation &&
-                            w.status === "waiting" &&
-                            w.expires_at > now,
-                        ) ?? false,
-                      replies: communicationReferences(e),
-                      pendingNotice: pendingCommunicationNotice(e),
-                      pendingBlocker: pendingCommunicationNotice(e, "message_pending"),
-                    });
-                    if (!detected || detected.kind === "suppress") return;
-                    const { code, key, evidence, refs, batch } = detected;
-                    const incident = yield* this.coordination.with(() =>
-                      domainEffect(
-                        Effect.gen({ self: this }, function* () {
-                          const current = (yield* this.records.execution(e.issue_id))!;
-                          if (
-                            !allowsAttention(current, code) ||
-                            current.control_generation !== e.control_generation
-                          )
-                            return;
-                          const existing = current.attention?.find(
-                            (a) => a.key === key && a.generation === current.control_generation,
-                          );
-                          if (existing) return existing;
-                          if (!((current.attention?.length ?? 0) < 256))
-                            return yield* new CrewError(
-                              "ATTENTION_LIMIT",
-                              "Attention history is full",
-                            );
-                          const a: Attention = {
-                            message_refs: refs,
-                            schema_version: 1,
-                            id: IncidentId.make(`incident-${hash(`${e.execution_id}:${key}`)}`),
-                            observed_operation:
-                              code === "operation_stall" ? e.operation?.id : undefined,
-                            observed_session:
-                              code === "suspected_stall" ? workerSessionID(e) : undefined,
-                            observed_prompt: code === "suspected_stall" ? e.prompt_id : undefined,
-                            key,
-                            generation: e.control_generation,
-                            code,
-                            batch,
-                            evidence: evidence.slice(0, 8192),
-                            created_at: now,
-                            attempts: 0,
-                            status: "pending",
-                          };
-                          current.attention = [...(current.attention ?? []), a];
-                          yield* this.records.saveOwned(current, ["attention"]);
-                          return a;
-                        }),
-                      ),
+                    let current = (yield* this.records.execution(e.issue_id))!;
+                    if (
+                      !allowsAttention(current, code) ||
+                      current.control_generation !== e.control_generation
+                    )
+                      return;
+                    const existing = current.attention?.find(
+                      (a) => a.key === key && a.generation === current.control_generation,
                     );
-                    if (incident && ["pending", "uncertain"].includes(incident.status))
-                      return incident.id;
+                    if (existing) return existing;
+                    if (!((current.attention?.length ?? 0) < 256))
+                      return yield* new WorkflowError(
+                        "ATTENTION_LIMIT",
+                        "Attention history is full",
+                      );
+                    const a: Attention = {
+                      message_refs: refs,
+                      schema_version: 1,
+                      id: attentionId(e, key),
+                      observed_operation: code === "operation_stall" ? e.operation?.id : undefined,
+                      observed_session: code === "suspected_stall" ? workerSessionID(e) : undefined,
+                      observed_prompt: code === "suspected_stall" ? e.prompt_id : undefined,
+                      key,
+                      generation: e.control_generation,
+                      code,
+                      batch,
+                      evidence: evidence.slice(0, 8192),
+                      created_at: now,
+                      attempts: 0,
+                      status: "pending",
+                    };
+                    current = { ...current, attention: [...(current.attention ?? []), a] };
+                    yield* this.records.saveOwned(current, ["attention"]);
+                    return a;
                   }),
-                ),
-              { waitSeconds: 0 },
-            )
-            .pipe(
-              Effect.flatMap((incident) =>
-                incident ? this.dispatch(record.issue_id, incident) : Effect.void,
-              ),
-              Effect.catchIf(
-                (error) => error.code === "LOCKED",
-                () => Effect.void,
-              ),
+                );
+                if (incident && ["pending", "uncertain"].includes(incident.status))
+                  yield* this.deliver(record.issue_id, incident.id);
+              }),
+            { waitSeconds: 0 },
+          )
+          .pipe(
+            Effect.catchIf(
+              (error) => error.code === "LOCKED",
+              () => Effect.void,
             ),
-        { concurrency: Math.max(1, Math.min(this.config.max_workers, 4)) },
-      );
-    }.bind(this),
-    domainEffect,
-  );
+          ),
+      { concurrency: Math.max(1, Math.min(this.config.max_workers, 4)) },
+    );
+  });
   private dispatch = Effect.fn("Attention.dispatch")(
-    function* (this: AttentionService, id: IssueId, incidentID: IncidentId) {
+    { self: this },
+    function* (id: IssueId, incidentID: IncidentId) {
       const record = yield* this.records.execution(id);
       if (!record) return;
-      return yield* this.locks.with(LockKey.make(`attention-${hash(record.execution_id)}`), () =>
-        this.deliver(id, incidentID),
-      );
-    }.bind(this),
-    domainEffect,
+      return yield* this.locks.with(attentionLock(record), () => this.deliver(id, incidentID));
+    },
   );
   private deliver = Effect.fn("Attention.deliver")(
-    function* (this: AttentionService, id: IssueId, incidentID: IncidentId) {
+    { self: this },
+    function* (id: IssueId, incidentID: IncidentId) {
       const prepared = yield* this.records.withActiveIndex(() =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const e = (yield* this.records.execution(id))!;
-            const a = e.attention!.find((item) => item.id === incidentID)!;
-            if (
-              !allowsAttention(e, a.code) ||
-              a.generation !== e.control_generation ||
-              !["pending", "uncertain"].includes(a.status)
-            )
-              return;
-            if (a.code === "decision_pending" && !hasDecision(e, a)) {
-              e.attention = e.attention!.map((item) =>
+        Effect.gen({ self: this }, function* () {
+          let e = (yield* this.records.execution(id))!;
+          const a = e.attention!.find((item) => item.id === incidentID)!;
+          if (
+            !allowsAttention(e, a.code) ||
+            a.generation !== e.control_generation ||
+            !["pending", "uncertain"].includes(a.status)
+          )
+            return;
+          if (a.code === "decision_pending" && !hasDecision(e, a)) {
+            e = {
+              ...e,
+              attention: e.attention!.map((item) =>
                 item.id === a.id ? { ...item, status: "superseded" as const } : item,
-              );
-              yield* this.records.saveOwned(e, ["attention"]);
-              return;
-            }
-            const supervisor =
-              a.session_id ?? e.supervisor_session_id ?? (yield* this.records.supervisor);
-            const capacity = yield* readDiagnosticCapacity(this.records, e.issue_id, {
-              attentionTurns: e.attention_turns,
-              budget: e.effective_policy.diagnostic_turns,
-              excludeIncidentId: a.id,
-            });
-            if (
-              a.code === "decision_pending" &&
-              capacity.activeAttention.some(
-                (item) => item.code === "decision_pending" && item.session_id === supervisor,
-              )
-            )
-              return;
-            if (
-              !a.prompt_id &&
-              ((this.config.supervision_mode === "manual" && a.code !== "decision_pending") ||
-                (this.config.supervision_mode === "unattended" &&
-                  a.code === "decision_pending" &&
-                  e.decisions?.some(
-                    (d) =>
-                      d.owner === "user" &&
-                      d.status === "open" &&
-                      decisionKey(d.generation, d.key) === a.key,
-                  )))
-            )
-              return;
-            const diagnostic = a.code !== "decision_pending";
-            const exhausted = diagnostic && !a.prompt_id && capacity.exhausted;
-            if (
-              !a.prompt_id &&
-              a.code === "message_update" &&
-              !exhausted &&
-              messageRequests(e.messages).some(
-                (m) =>
-                  m.generation === e.control_generation &&
-                  m.assignment_id === e.prompt_id &&
-                  requiresResponse(m) &&
-                  !m.response_recovery,
-              )
-            )
-              return;
-            if (diagnostic && !exhausted && capacity.totalActive >= this.config.attention_capacity)
-              return;
-
-            const next: Attention = {
-              ...a,
-              session_id: supervisor,
-              prompt_id:
-                a.prompt_id ?? (supervisor && !exhausted ? SessionMessage.ID.create() : undefined),
-              attempts: a.attempts + 1,
-              status: exhausted
-                ? "exhausted"
-                : a.attempts >= 3
-                  ? "unavailable"
-                  : supervisor
-                    ? "uncertain"
-                    : "unavailable",
+              ),
             };
-            if (exhausted && a.code === "pr_feedback") {
-              const key = ObligationKey.make(`feedback-budget-${a.id}`);
-              if (!e.decisions?.some((d) => d.key === key)) {
-                e.decisions = appendDecision(
+            e = yield* this.records.saveOwned(e, ["attention"]);
+            return;
+          }
+          const supervisor =
+            a.session_id ?? e.supervisor_session_id ?? (yield* this.records.supervisor);
+          const capacity = yield* readDiagnosticCapacity(this.records, e.issue_id, {
+            attentionTurns: e.attention_turns,
+            budget: e.effective_policy.diagnostic_turns,
+            excludeIncidentId: a.id,
+          });
+          const plan = planAttentionDelivery(e, a, supervisor, capacity, this.config);
+          if (!plan) return;
+          const next: Attention = {
+            ...a,
+            session_id: supervisor,
+            prompt_id: a.prompt_id ?? (plan.reservePrompt ? SessionMessage.ID.create() : undefined),
+            attempts: a.attempts + 1,
+            status: plan.status,
+          };
+          if (plan.status === "exhausted" && a.code === "pr_feedback") {
+            const key = ObligationKey.make(`feedback-budget-${a.id}`);
+            if (!e.decisions?.some((d) => d.key === key)) {
+              e = {
+                ...e,
+                decisions: yield* tryDomainValue(
+                  appendDecision,
                   e.decisions,
                   makeControllerDecision({
                     key,
@@ -651,54 +302,55 @@ export class AttentionService {
                     question: "PR feedback requires inspection; diagnostic budget is exhausted",
                     openedAt: yield* Clock.currentTimeMillis,
                   }),
-                );
-              }
+                ),
+              };
             }
-            if (diagnostic && !a.prompt_id && next.prompt_id)
-              e.attention_turns = (e.attention_turns ?? 0) + 1;
-            e.attention = e.attention!.map((item) => (item.id === incidentID ? next : item));
-            yield* this.records.saveOwned(e, ["decisions", "attention_turns", "attention"]);
-            return { e, a: next };
-          }),
-        ),
+          }
+          if (plan.chargeDiagnostic) e = { ...e, attention_turns: (e.attention_turns ?? 0) + 1 };
+          e = {
+            ...e,
+            attention: e.attention!.map((item) => (item.id === incidentID ? next : item)),
+          };
+          e = yield* this.records.saveOwned(e, ["decisions", "attention_turns", "attention"]);
+          return { e, a: next };
+        }),
       );
       if (!prepared?.a.prompt_id || prepared.a.status !== "uncertain") return;
       const { e, a } = prepared;
       let promptAttempted = false;
       const result = yield* Effect.result(
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const state = yield* this.runtime.session(a.session_id!);
-            if (!(state.directory === this.config.home))
-              return yield* new CrewError(
-                "SUPERVISOR_LOCATION",
-                "Retained Supervisor is outside the central checkout",
-              );
-            yield* this.runtime.switchModel(
-              a.session_id!,
-              e.configuration_snapshot?.supervisor ?? this.config.supervisor_model,
+        Effect.gen({ self: this }, function* () {
+          const state = yield* this.runtime.session(a.session_id!);
+          if (state.directory !== this.config.home)
+            return yield* new WorkflowError(
+              "SUPERVISOR_LOCATION",
+              "Retained Supervisor is outside the central checkout",
             );
-            const latest = (yield* this.records.execution(id))!;
-            if (!allowsAttention(latest, a.code) || latest.control_generation !== a.generation)
-              return yield* new CrewError(
-                "ATTENTION_PAUSED",
-                "Attention suppressed by a control change",
-              );
-            promptAttempted = true;
-            yield* this.runtime.prompt(
-              a.session_id!,
-              `AbraCode attention for ${e.issue_id}. Incident ${a.id}, generation ${a.generation}: ${a.code}. ${a.evidence}\n${a.code === "decision_pending" ? "A worker is waiting on a retained decision. Inspect abra_work_status for its full question, key, generation and owner. Use abra_work_decision to answer a supervisor-owned question from available evidence, or collect a user-owned question through its native form. If user input is needed, bring the question to this conversation. Record handled only after routing or answering it, or user_needed with a concrete blocker. A decision answer grants no plan or merge approval." : ""}\n${a.batch ? `PR feedback batch: ${JSON.stringify(a.batch)}. Inspect abra_work_feedback_status for exact retained source text, original/assessed heads and dispositions. Classify against accepted scope with abra_work_feedback. Only already-enabled finite repair policy may authorize abra_work_correct; uncertain or scope-changing findings require decisions.` : ""}\nInspect abra_work_status/abra_work_diagnostics, then record abra_work_attention disposition. One diagnostic turn is authorized; this notice grants no repair, resume, plan, merge or deletion authority. Retain any pause and ask the user when authority is missing.`,
-              a.prompt_id!,
+          yield* this.runtime.switchModel(
+            a.session_id!,
+            e.configuration_snapshot?.supervisor ?? this.config.supervisor_model,
+          );
+          const latest = (yield* this.records.execution(id))!;
+          if (!allowsAttention(latest, a.code) || latest.control_generation !== a.generation)
+            return yield* new WorkflowError(
+              "ATTENTION_PAUSED",
+              "Attention suppressed by a control change",
             );
-          }),
-        ),
+          promptAttempted = true;
+          yield* this.runtime.prompt(
+            a.session_id!,
+            `AbraCode attention for ${e.issue_id}. Incident ${a.id}, generation ${a.generation}: ${a.code}. ${a.evidence}\n${a.code === "decision_pending" ? "A worker is waiting on a retained decision. Inspect abra_work_status for its full question, key, generation and owner. Use abra_work_decision to answer a supervisor-owned question from available evidence, or collect a user-owned question through its native form. If user input is needed, bring the question to this conversation. Record handled only after routing or answering it, or user_needed with a concrete blocker. A decision answer grants no plan or merge approval." : ""}\n${a.batch ? `PR feedback batch: ${JSON.stringify(a.batch)}. Inspect abra_work_feedback_status for exact retained source text, original/assessed heads and dispositions. Classify against accepted scope with abra_work_feedback. Only already-enabled finite repair policy may authorize abra_work_correct; uncertain or scope-changing findings require decisions.` : ""}\nInspect abra_work_status/abra_work_diagnostics, then record abra_work_attention disposition. One diagnostic turn is authorized; this notice grants no repair, resume, plan, merge or deletion authority. Retain any pause and ask the user when authority is missing.`,
+            a.prompt_id!,
+          );
+        }),
       );
       yield* this.coordination.with(() =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const current = (yield* this.records.execution(id))!;
-            const deliveredAt = yield* Clock.currentTimeMillis;
-            current.attention = current.attention!.map((item) =>
+        Effect.gen({ self: this }, function* () {
+          let current = (yield* this.records.execution(id))!;
+          const deliveredAt = yield* Clock.currentTimeMillis;
+          current = {
+            ...current,
+            attention: current.attention!.map((item) =>
               item.id !== a.id || ["handled", "user_needed", "superseded"].includes(item.status)
                 ? item
                 : {
@@ -713,13 +365,12 @@ export class AttentionService {
                       ? { delivered_at: deliveredAt }
                       : { disposition: result.failure.message.slice(0, 8192) }),
                   },
-            );
-            yield* this.records.saveOwned(current, ["attention"]);
-          }),
-        ),
+            ),
+          };
+          yield* this.records.saveOwned(current, ["attention"]);
+        }),
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
   disposition = (
     id: IssueId,
@@ -728,44 +379,40 @@ export class AttentionService {
     action: "handled" | "user_needed" | "retry",
     reason: string,
   ) =>
-    domainEffect(
-      Effect.gen({ self: this }, function* () {
-        yield* this.coordination.with(() =>
-          domainEffect(
-            Effect.gen({ self: this }, function* () {
-              const e = yield* this.records.execution(id);
-              if (!(e?.control_generation === generation))
-                return yield* new CrewError("ATTENTION_STALE", "Attention generation changed");
-              const a = e.attention?.find((a) => a.id === incident && a.generation === generation);
-              if (!a) return yield* new CrewError("ATTENTION_MISSING", "Incident missing");
-              if (!(reason.length > 0 && reason.length <= 8192))
-                return yield* new CrewError(
-                  "ATTENTION_DISPOSITION",
-                  "Bounded disposition required",
-                );
-              if (
-                action === "retry" &&
-                !(a.status === "unavailable" && !paused(e) && a.attempts < 3)
-              )
-                return yield* new CrewError(
-                  "ATTENTION_RETRY",
-                  "Only an unavailable incident has a bounded explicit retry",
-                );
-              e.attention = e.attention!.map((item) =>
-                item.id === incident
-                  ? {
-                      ...item,
-                      status: action === "retry" ? "pending" : action,
-                      disposition: reason,
-                    }
-                  : item,
-              );
-              yield* this.records.saveOwned(e, ["attention"]);
-            }),
-          ),
-        );
-        if (action === "retry") yield* this.dispatch(id, incident);
-        return (yield* this.records.execution(id))!;
-      }),
-    );
+    Effect.gen({ self: this }, function* () {
+      yield* this.coordination.with(() =>
+        Effect.gen({ self: this }, function* () {
+          let e = yield* this.records.execution(id);
+          if (e?.control_generation !== generation)
+            return yield* new WorkflowError("ATTENTION_STALE", "Attention generation changed");
+          const a = e.attention?.find((a) => a.id === incident && a.generation === generation);
+          if (!a) return yield* new WorkflowError("ATTENTION_MISSING", "Incident missing");
+          if (!(reason.length > 0 && reason.length <= 8192))
+            return yield* new WorkflowError(
+              "ATTENTION_DISPOSITION",
+              "Bounded disposition required",
+            );
+          if (action === "retry" && !(a.status === "unavailable" && !paused(e) && a.attempts < 3))
+            return yield* new WorkflowError(
+              "ATTENTION_RETRY",
+              "Only an unavailable incident has a bounded explicit retry",
+            );
+          e = {
+            ...e,
+            attention: e.attention!.map((item) =>
+              item.id === incident
+                ? {
+                    ...item,
+                    status: action === "retry" ? "pending" : action,
+                    disposition: reason,
+                  }
+                : item,
+            ),
+          };
+          yield* this.records.saveOwned(e, ["attention"]);
+        }),
+      );
+      if (action === "retry") yield* this.dispatch(id, incident);
+      return (yield* this.records.execution(id))!;
+    });
 }

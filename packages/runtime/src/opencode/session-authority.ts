@@ -1,13 +1,16 @@
+import { NativeAccessError } from "../errors.ts";
 import { Effect } from "effect";
 import type { Tool } from "@opencode/schema/tool";
 import type { IssueId, MessageId, SessionId } from "@abracode/contracts/identities";
 import { CrewError, type Execution, type Role } from "../domain.ts";
 import type { Controller } from "../workflow/controller.ts";
-import type { LeadRecord } from "../workflow/lead-contracts.ts";
+import type { LeadRecord } from "../workflow/leads/contracts.ts";
 import { isActiveWorker } from "../workflow/worker-assignment.ts";
 import type { WorkerContext } from "../workflow/worker-context-contracts.ts";
 import { roleFor } from "./guards.ts";
+import type { SessionIdentity } from "./runtime.ts";
 import type { SessionState } from "./session-observer.ts";
+import { workerToolAllowed } from "./role-policy.ts";
 import { verifiedWorkerCaller } from "./tool-caller.ts";
 
 /** Check whether a lead principal is currently enabled, active, and bound to this session. */
@@ -50,46 +53,37 @@ export const assertActiveLead = (
   });
 
 /** Assert the caller is the central Abra supervisor session. */
+type SupervisorCheck = {
+  central?: boolean;
+  agent?: string;
+  checkNotWorker?: boolean;
+  code?: string;
+  message?: string;
+  requireSupervisorMetadata?: boolean;
+};
 export function assertSupervisor(
   controller: Controller,
   sessionID: SessionId,
-  options: {
-    readonly central?: boolean;
-    readonly agent?: string;
-    readonly verifyNative: true;
-    readonly nativeSession?: SessionState;
-    readonly requireSupervisorMetadata?: boolean;
-    readonly checkNotWorker?: boolean;
-    readonly code?: string;
-    readonly message?: string;
-  },
+  options: SupervisorCheck & { verifyNative: true },
 ): Effect.Effect<SessionState, CrewError>;
 export function assertSupervisor(
   controller: Controller,
   sessionID: SessionId,
-  options?: {
-    readonly central?: boolean;
-    readonly agent?: string;
-    readonly verifyNative?: false;
-    readonly checkNotWorker?: boolean;
-    readonly code?: string;
-    readonly message?: string;
-  },
+  options: SupervisorCheck & { verifyNative: "identity"; nativeSession?: SessionIdentity },
+): Effect.Effect<SessionIdentity, CrewError>;
+export function assertSupervisor(
+  controller: Controller,
+  sessionID: SessionId,
+  options?: SupervisorCheck & { verifyNative?: false },
 ): Effect.Effect<void, CrewError>;
 export function assertSupervisor(
   controller: Controller,
   sessionID: SessionId,
-  options: {
-    readonly central?: boolean;
-    readonly agent?: string;
-    readonly verifyNative?: boolean;
-    readonly nativeSession?: SessionState;
-    readonly requireSupervisorMetadata?: boolean;
-    readonly checkNotWorker?: boolean;
-    readonly code?: string;
-    readonly message?: string;
+  options: SupervisorCheck & {
+    verifyNative?: boolean | "identity";
+    nativeSession?: SessionIdentity;
   } = {},
-): Effect.Effect<SessionState | void, CrewError> {
+): Effect.Effect<SessionIdentity | void, CrewError> {
   return Effect.gen(function* () {
     const fail = (fallbackCode: string, fallbackMessage: string) =>
       new CrewError(options.code ?? fallbackCode, options.message ?? fallbackMessage);
@@ -101,7 +95,11 @@ export function assertSupervisor(
     if (options.agent !== undefined && options.agent !== "abra")
       return yield* fail("ABRA_REQUIRED", "Talk to Abra to manage work");
     if (!options.verifyNative) return;
-    const native = options.nativeSession ?? (yield* controller.queries.session(sessionID));
+    const native =
+      options.nativeSession ??
+      (yield* options.verifyNative === "identity"
+        ? controller.queries.sessionIdentity(sessionID)
+        : controller.queries.session(sessionID));
     const home = controller.queries.settings.home;
     if (
       native.agent !== "abra" ||
@@ -167,3 +165,78 @@ export const assertVerifiedWorker = (
         : error,
     ),
   );
+
+/** Hybrid tools accept only the native central supervisor or the current captured worker prompt. */
+export const authorizeHybridPrincipal = (
+  controller: Controller,
+  central: boolean,
+  call: Tool.Context,
+  tool: string,
+  origin: Effect.Effect<MessageId | undefined, CrewError>,
+  failure: { code: string; message: string },
+) =>
+  Effect.gen(function* () {
+    const assignment = yield* controller.queries.assignment(call.sessionID);
+    const native = yield* controller.queries.sessionIdentity(call.sessionID);
+    if (!assignment) {
+      yield* assertSupervisor(controller, call.sessionID, {
+        central,
+        agent: call.agent,
+        verifyNative: "identity",
+        nativeSession: native,
+        requireSupervisorMetadata: true,
+        checkNotWorker: false,
+        ...failure,
+      });
+      yield* controller.guardAttention(call.sessionID, call.messageID, true);
+      yield* controller.recordSupervisor(call.sessionID);
+      return { kind: "supervisor" } as const;
+    }
+    const { role, profile } = yield* assertVerifiedWorker(
+      assignment,
+      call,
+      controller.queries.capturedWorkerPrompt(assignment),
+      origin,
+      failure,
+    );
+    if (
+      native.agent !== call.agent ||
+      native.directory !== assignment.worktree_directory ||
+      !workerToolAllowed(role, profile, tool)
+    )
+      return yield* new CrewError(failure.code, failure.message);
+    return { kind: "worker", assignment } as const;
+  });
+
+export const authorizePrincipal = (
+  c: Controller,
+  central: boolean,
+  access: import("./tool-definition.ts").ToolAccess,
+  context: Tool.Context,
+) =>
+  Effect.gen(function* () {
+    const lead = yield* c.lead().principal(context.sessionID);
+    if (lead || context.agent === "project-lead") {
+      yield* assertActiveLead(c, context.sessionID, context.agent, {
+        lead,
+        central,
+        allowed: access.audience === "lead",
+        code: "LEAD_FORBIDDEN",
+        message: "Project leads use only their scoped management endpoint",
+      });
+      return;
+    }
+    if (access.audience === "lead")
+      return yield* new NativeAccessError("LEAD_REQUIRED", "Registered lead session required");
+    if (access.audience === "supervisor_or_worker") return;
+    if (access.audience === "worker") {
+      yield* assertActiveWorker(c, context.sessionID);
+      return;
+    }
+    yield* assertSupervisor(c, context.sessionID, {
+      central,
+      agent: context.agent,
+    });
+    yield* c.guardAttention(context.sessionID, context.messageID, access.diagnostic);
+    yield* c.recordSupervisor(context.sessionID);
+  });

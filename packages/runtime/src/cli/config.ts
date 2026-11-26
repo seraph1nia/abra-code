@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { CommandExit } from "./exit.ts";
 import { Service } from "@opencode/client/effect/service";
 import { Console, Effect, FileSystem, Schema } from "effect";
 import { ConfigInputSchema } from "../config/contracts.ts";
@@ -26,13 +27,7 @@ const runConfigInspect = (show: boolean, json: boolean) =>
     Effect.catch((error) =>
       Console.error(
         JSON.stringify({ valid: false, code: error.code, message: error.message }),
-      ).pipe(
-        Effect.andThen(
-          Effect.sync(() => {
-            process.exitCode = 1;
-          }),
-        ),
-      ),
+      ).pipe(Effect.andThen(Effect.fail(new CommandExit({ status: 1 })))),
     ),
   );
 
@@ -78,14 +73,14 @@ export const runConfigApply = (options: ConfigApplyOptions) =>
     );
     yield* Console.log(JSON.stringify(result, null, options.json ? undefined : 2));
     if (result.outcomes.some((o) => o.status === "apply-failed" || o.status === "declared/pending"))
-      yield* Effect.sync(() => {
-        process.exitCode = 1;
-      });
+      return yield* new CommandExit({ status: 1 });
   });
 
-export const runConfigSchema = (options: { readonly write: boolean }) =>
+export const runConfigSchema = (options: { readonly write: boolean; readonly check: boolean }) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
+    if (options.write && options.check)
+      return yield* new CrewError("CONFIG_SCHEMA_MODE", "Choose --write or --check");
     const document = Schema.toJsonSchemaDocument(ConfigInputSchema, { onExcessProperty: "error" });
     const output =
       JSON.stringify(

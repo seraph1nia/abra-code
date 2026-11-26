@@ -1,4 +1,4 @@
-import { type SpecVerification } from "../../src/workflow/review-contracts.ts";
+import { type SpecVerification } from "@abracode/contracts/workflow/review-contracts";
 
 export const verifiedSpec: SpecVerification = {
   completeness: { status: "passed", evidence: "Tracked fixture tasks and source.txt inspected." },

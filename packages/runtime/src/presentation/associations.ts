@@ -1,6 +1,6 @@
 import type { PublicationQuery } from "@abracode/contracts/presentation/contracts";
-import type { NativeStore } from "../storage/store.ts";
-import { committedScope } from "../visibility/invalidations.ts";
+import type { PagedStore } from "../storage/native-store.ts";
+import { committedScope } from "../invalidations.ts";
 import { Effect } from "effect";
 import { CrewError } from "../domain.ts";
 import { decode } from "../decode.ts";
@@ -34,7 +34,7 @@ function associationKey(value: Attachment) {
 
 /** Search the compact producing-message associations. Only opening a result reads its publication. */
 export function searchPublications(
-  store: Pick<NativeStore, "page">,
+  store: PagedStore,
   session: SessionId,
   query: typeof PublicationQuery.Type,
   committed: (

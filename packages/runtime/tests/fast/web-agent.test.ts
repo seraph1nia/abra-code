@@ -25,7 +25,7 @@ import { TestClock } from "effect/testing";
 import { AbraAgent, AbraRunner, WorkspaceFeed } from "../../src/web/agent.ts";
 import { CrewError } from "../../src/domain.ts";
 import { retainedExecution } from "../helpers/retained-execution.ts";
-import { deliveryOutcome } from "../../src/workflow/delivery-outcome.ts";
+import { deliveryOutcome } from "../../src/visibility/delivery-outcome.ts";
 import { WorkspaceFixture } from "../helpers/web.ts";
 
 for (const termination of ["EOF", "failure"] as const)
@@ -75,7 +75,7 @@ for (const termination of ["EOF", "failure"] as const)
         yield* Deferred.succeed(ended, undefined);
         yield* TestClock.adjust("0 millis");
         assert.equal(observedReconnection, true);
-        yield* TestClock.adjust("1 second");
+        yield* TestClock.adjust("2 seconds");
         assert.equal(subscriptions, 2);
         assert.equal(observedChange, true);
         const beforeFallback = reads;
@@ -283,13 +283,13 @@ test("unchanged fallbacks publish freshness only and scoped bursts keep off-page
       assert.equal(reads, 4, "One fallback schedule makes exactly one read per interval");
       assert.equal(
         events.filter((event) => event.type === "snapshot").length,
-        2,
-        "Initial read plus bootstrap delivery; wire projector suppresses the duplicate sequence",
+        1,
+        "Subscription and baseline capture deliver the initial observation exactly once",
       );
       assert.equal(events.filter((event) => event.type === "freshness").length, 3);
       execution.approval_receipts[0]!.authorized_at = timestampAt(15000);
       yield* TestClock.adjust("5 seconds");
-      assert.equal(events.filter((event) => event.type === "snapshot").length, 3);
+      assert.equal(events.filter((event) => event.type === "snapshot").length, 2);
       const peerObservations: Observation[] = [];
       const peer = yield* feed.updates.pipe(
         Stream.runForEach((event) =>
@@ -851,7 +851,15 @@ test("state survives a native token burst and the last disconnect suspends fallb
         assert.ok(
           observed.some((e) => e.type === "snapshot" && e.snapshot.model === "changed-model"),
         );
-        assert.ok(observed.some((e) => e.type === "native" && e.native.messages[0].text === "256"));
+        assert.ok(
+          observed.some(
+            (e) =>
+              e.type === "snapshot" &&
+              e.snapshot.observation?.baseline &&
+              e.native.messages[0]?.text === "256",
+          ),
+          "A slow observer recovers the latest transcript and workspace in one baseline",
+        );
         yield* Fiber.interrupt(observer);
         const before = reads;
         yield* TestClock.adjust("15 seconds");

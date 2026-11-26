@@ -1,3 +1,4 @@
+import { IssueRepository } from "./issue-repository.ts";
 import { randomUUID } from "node:crypto";
 import { type DatabaseSync } from "node:sqlite";
 import {
@@ -13,19 +14,18 @@ import {
   type ThoughtWorkPage,
   type ThoughtWorkQuery,
 } from "@abracode/contracts/visibility/thoughts";
-import { Context, Layer, Effect } from "effect";
+import { Effect } from "effect";
 import { type Config, type CrewError } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import { type BatchInput, type BatchResultSchema } from "./batch.ts";
 import { BatchRepository } from "./batch-repository.ts";
 import { InboxIndex, type SourceLink } from "./inbox-index.ts";
 import {
-  IssueRepository,
+  IssueQueries,
   type IssuePage,
   type TaskEvidence,
   type TaskIssue,
   type WorkEvent,
-} from "./issue-repository.ts";
+} from "./issue-queries.ts";
 import { type Issue, type NewIssue, type ReadyExplanation } from "./model.ts";
 import { openWorkDatabase } from "./sqlite.ts";
 import { ThoughtReceipts } from "./thought-receipts.ts";
@@ -37,11 +37,11 @@ export {
   type TaskEvidence,
   type TaskIssue,
   type WorkEvent,
-} from "./issue-repository.ts";
+} from "./issue-queries.ts";
 
 /** Open the configured SQLite work graph. */
 export function openWorkGraph(config: Pick<Config, "work_database">) {
-  return domainEffect(SqliteWorkGraph.open(config.work_database));
+  return SqliteWorkGraph.open(config.work_database);
 }
 
 /** All ownership checks and writes are atomic, including across independent processes. */
@@ -93,6 +93,7 @@ export class SqliteWorkGraph implements WorkGraph {
   readonly inbox: InboxIndex;
   private readonly db: DatabaseSync;
   private readonly issuesRepo: IssueRepository;
+  private readonly queries: IssueQueries;
   private readonly batchesRepo: BatchRepository;
   private readonly thoughtsRepo: ThoughtReceipts;
 
@@ -109,14 +110,21 @@ export class SqliteWorkGraph implements WorkGraph {
   ) {
     this.db = db;
     this.inbox = new InboxIndex(db);
-    this.issuesRepo = new IssueRepository(db, this.inbox, nextId);
-    this.batchesRepo = new BatchRepository(db, this.issuesRepo, nextId, validatedVersion);
+    this.queries = new IssueQueries(db);
+    this.issuesRepo = new IssueRepository(db, this.queries, this.inbox, nextId);
+    this.batchesRepo = new BatchRepository(
+      db,
+      this.issuesRepo,
+      this.queries,
+      nextId,
+      validatedVersion,
+    );
     this.thoughtsRepo = new ThoughtReceipts(db);
 
-    this.list = this.issuesRepo.list();
-    this.revision = this.issuesRepo.revision();
-    this.closureTimes = this.issuesRepo.closureTimes();
-    this.explain = this.issuesRepo.explain();
+    this.list = this.queries.list();
+    this.revision = this.queries.revision();
+    this.closureTimes = this.queries.closureTimes();
+    this.explain = this.queries.explain();
     this.ready = this.explain.pipe(Effect.map((result) => result.ready));
   }
 
@@ -130,7 +138,7 @@ export class SqliteWorkGraph implements WorkGraph {
   }
 
   hasRequest(id: RequestId) {
-    return this.issuesRepo.hasRequest(id);
+    return this.queries.hasRequest(id);
   }
 
   thoughtWork(query: typeof ThoughtWorkQuery.Type) {
@@ -154,31 +162,31 @@ export class SqliteWorkGraph implements WorkGraph {
   }
 
   show(id: IssueId) {
-    return this.issuesRepo.show(id);
+    return this.queries.show(id);
   }
 
   repositoryIssueSummaries(repository: RepositoryId) {
-    return this.issuesRepo.repositoryIssueSummaries(repository);
+    return this.queries.repositoryIssueSummaries(repository);
   }
 
   searchOwners(after: string, repository?: RepositoryId, issue?: IssueId) {
-    return this.issuesRepo.searchOwners(after, repository, issue);
+    return this.queries.searchOwners(after, repository, issue);
   }
 
   task(id: IssueId) {
-    return this.issuesRepo.task(id);
+    return this.queries.task(id);
   }
 
   taskEvidence(entries: readonly Issue[]) {
-    return this.issuesRepo.taskEvidence(entries);
+    return this.queries.taskEvidence(entries);
   }
 
   find(query?: WorkDiscovery) {
-    return this.issuesRepo.find(query);
+    return this.queries.find(query);
   }
 
   explainSelected(ids: readonly IssueId[]) {
-    return this.issuesRepo.explainSelected(ids);
+    return this.queries.explainSelected(ids);
   }
 
   claim(id: IssueId, execution: ExecutionId) {
@@ -204,18 +212,10 @@ export class SqliteWorkGraph implements WorkGraph {
   }
 
   history(id: IssueId) {
-    return this.issuesRepo.history(id);
+    return this.queries.history(id);
   }
 
   completions(start: Timestamp, end: Timestamp) {
-    return this.issuesRepo.completions(start, end);
-  }
-}
-
-export class WorkGraphService extends Context.Service<WorkGraphService, WorkGraph>()(
-  "abracode/WorkGraph",
-) {
-  static layer(config: Pick<Config, "work_database">) {
-    return Layer.effect(WorkGraphService, openWorkGraph(config));
+    return this.queries.completions(start, end);
   }
 }

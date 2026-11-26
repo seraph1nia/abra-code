@@ -6,7 +6,7 @@ import { join } from "node:path";
 import * as Id from "@abracode/contracts/identities";
 import { delivered, fixture } from "../fixtures.ts";
 import { run } from "../effects.ts";
-import { deliveryOutcome, DeliveryOutcomeSchema } from "../../src/workflow/delivery-outcome.ts";
+import { deliveryOutcome, DeliveryOutcomeSchema } from "../../src/visibility/delivery-outcome.ts";
 import { section, stateLabel } from "../../src/presentation/work-state.ts";
 import { Schema } from "effect";
 
@@ -21,9 +21,9 @@ async function retained(files: string[]) {
 }
 
 test("undelivered finishing forms remain visible and observers preserve the retained snapshot", async (t) => {
-  const { f, e, root } = await retained(["cache/"]);
+  let { f, e, root } = await retained(["cache/"]);
   t.onTestFinished(() => run(f.close()));
-  delete e.supervisor_session_id;
+  e = { ...e, supervisor_session_id: undefined };
   await run(f.records.save(e));
   await mkdir(join(root, "cache"));
   await writeFile(join(root, "cache/value"), "preserve");
@@ -178,16 +178,19 @@ test("preservation is verified by absence and resumes post-merge closure without
 });
 
 test("ignored inclusion stages only selected files and enters validation without another adoption form", async (t) => {
-  const { f, e, root } = await retained(["selected-note", "unselected-note"]);
+  const { f, e: initial, root } = await retained(["selected-note", "unselected-note"]);
   t.onTestFinished(() => run(f.close()));
-  await run(f.records.commitControl(e));
+  const e = await run(f.records.commitControl(initial));
   const save = f.records.saveFinishing.bind(f.records);
   f.records.saveFinishing = (execution, fields) => {
     const included = execution.finishing?.inclusions;
     if (included?.length === 1 && included[0]!.stage === "admitted") {
-      execution.finishing = {
-        ...execution.finishing!,
-        inclusions: [{ ...included[0]!, generation: 0 }, ...included],
+      execution = {
+        ...execution,
+        finishing: {
+          ...execution.finishing!,
+          inclusions: [{ ...included[0]!, generation: 0 }, ...included],
+        },
       };
     }
     return save(execution, fields);

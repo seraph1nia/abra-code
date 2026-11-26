@@ -6,7 +6,6 @@ import {
   generatedPaths,
   inspectGeneratedPath,
 } from "./retirement.ts";
-import { domainEffect } from "../effect.ts";
 import { CrewError, type ManagedExecution, type Project } from "../domain.ts";
 import { Effect } from "effect";
 import { pathExists, readdirIfPresent } from "../filesystem.ts";
@@ -24,6 +23,10 @@ export type WorkspaceField =
   | "retirement"
   | "cleanup_blocker"
   | "attention";
+type SaveWorkspace<E extends ManagedExecution> = (
+  candidate: E,
+  fields: readonly WorkspaceField[],
+) => Effect.Effect<E, CrewError>;
 export class Workspaces {
   constructor(
     private git: Git,
@@ -33,7 +36,8 @@ export class Workspaces {
   ) {}
   /** No staging, journaling, directory disposal or native removal is allowed here. */
   preflight = Effect.fn("Workspaces.preflight")(
-    function* (this: Workspaces, p: Project, e: ManagedExecution) {
+    { self: this },
+    function* (p: Project, e: ManagedExecution) {
       if (!(e.worktree_directory && p.project_id && e.worktree_identity))
         return yield* new CrewError(
           "OWNERSHIP",
@@ -49,16 +53,11 @@ export class Workspaces {
         if (yield* pathExists(join(e.worktree_directory, path)))
           yield* inspectGeneratedPath(this.git, e, path);
       return yield* inspectCleanup(this.git, e.worktree_directory, paths);
-    }.bind(this),
-    domainEffect,
+    },
   );
-  provision = Effect.fn("Workspaces.provision")(
-    function* (
-      this: Workspaces,
-      p: Project,
-      e: ManagedExecution,
-      save: (fields: readonly WorkspaceField[]) => Effect.Effect<unknown, CrewError>,
-    ) {
+  provision<E extends ManagedExecution>(p: Project, execution: E, save: SaveWorkspace<E>) {
+    return Effect.gen({ self: this }, function* () {
+      let e = execution;
       yield* this.git.validate(p);
       if (!p.project_id)
         return yield* new CrewError("PROJECT_ID", "Repository not discovered by OpenCode");
@@ -74,7 +73,7 @@ export class Workspaces {
               "BASE_AMBIGUOUS",
               "Native worktree exists without a recorded base",
             );
-          e.worktree_directory = matches[0];
+          e = { ...e, worktree_directory: matches[0] };
         } else {
           const orphans = (yield* readdirIfPresent(this.root)).filter((n) =>
             n.startsWith(e.execution_id),
@@ -86,13 +85,12 @@ export class Workspaces {
             );
           if (!e.base_commit) {
             const base = yield* this.sources.base(p, e.execution_id);
-            e.base_commit = base.commit;
-            e.target_branch = base.target_branch;
-            yield* save(["base_commit", "target_branch"]);
+            e = { ...e, base_commit: base.commit, target_branch: base.target_branch };
+            e = yield* save(e, ["base_commit", "target_branch"]);
           }
           if (!e.setup && e.workflow_policy === "full-openspec") {
-            const inspection = yield* this.sources.inspect(p.path, e.base_commit);
-            if (!(inspection.openspec_config !== null))
+            const inspection = yield* this.sources.inspect(p.path, e.base_commit!);
+            if (inspection.openspec_config === null)
               return yield* new CrewError(
                 "OPENSPEC_SETUP",
                 "Fetched base has no OpenSpec configuration; use abra_project_setup",
@@ -103,106 +101,102 @@ export class Workspaces {
                 "Select verification commands before starting work",
               );
           }
-          e.worktree_directory = yield* this.runtime.createWorktree(p, e, this.root);
+          e = { ...e, worktree_directory: yield* this.runtime.createWorktree(p, e, this.root) };
         }
-        yield* save(["worktree_directory"]);
+        e = yield* save(e, ["worktree_directory"]);
       }
-      const actual = yield* this.git.run(e.worktree_directory, ["branch", "--show-current"]);
+      const directory = e.worktree_directory!;
+      const actual = yield* this.git.run(directory, ["branch", "--show-current"]);
       if (actual !== e.branch) {
-        if (
-          !(!e.explore_session_id && (yield* this.git.head(e.worktree_directory)) === e.base_commit)
-        )
+        if (e.explore_session_id || (yield* this.git.head(directory)) !== e.base_commit)
           return yield* new CrewError(
             "BRANCH_AMBIGUOUS",
             "Unexpected branch/commits during provisioning",
           );
-        if (!(actual === ""))
+        if (actual !== "")
           return yield* new CrewError(
             "BRANCH_AMBIGUOUS",
             "Native provisioning unexpectedly selected a branch",
           );
-        yield* this.git.run(e.worktree_directory, ["switch", "-c", e.branch]);
+        yield* this.git.run(directory, ["switch", "-c", e.branch]);
       }
       yield* this.git.validate(p, e);
-      const identity = yield* directoryIdentity(e.worktree_directory!);
-      if (!(!e.worktree_identity || sameDirectory(e.worktree_identity, identity)))
+      const identity = yield* directoryIdentity(directory);
+      if (e.worktree_identity && !sameDirectory(e.worktree_identity, identity))
         return yield* new CrewError("CLEANUP_REPLACEMENT", "Owned worktree directory was replaced");
       if (!e.worktree_identity) {
-        e.worktree_identity = identity;
-        yield* save(["worktree_identity"]);
+        e = { ...e, worktree_identity: identity };
+        e = yield* save(e, ["worktree_identity"]);
       }
       return e;
-    }.bind(this),
-    domainEffect,
-  );
-  retire = Effect.fn("Workspaces.retire")(
-    function* (
-      this: Workspaces,
-      p: Project,
-      e: ManagedExecution,
-      save: (fields: readonly WorkspaceField[]) => Effect.Effect<unknown, CrewError>,
-    ) {
+    }).pipe(Effect.withSpan("Workspaces.provision"));
+  }
+  retire<E extends ManagedExecution>(p: Project, execution: E, save: SaveWorkspace<E>) {
+    return Effect.gen({ self: this }, function* () {
+      let e = execution;
       if (!(e.workflow_policy === "research-only" ? e.report_receipt : e.delivery_receipt))
         return yield* new CrewError("DELIVERY_REQUIRED", "No verified preservation receipt");
       if (!(e.worktree_directory && p.project_id))
         return yield* new CrewError("OWNERSHIP", "Missing owned worktree/project");
+      const directory = e.worktree_directory;
       yield* this.git.validate(p);
-      const present = yield* pathExists(e.worktree_directory);
+      const present = yield* pathExists(directory);
       if (present) {
         yield* this.git.validate(p, e);
         if (
-          !(
-            (yield* this.git.head(e.worktree_directory)) ===
-            (e.workflow_policy === "research-only" ? e.base_commit : e.delivered_commit)
-          )
+          (yield* this.git.head(directory)) !==
+          (e.workflow_policy === "research-only" ? e.base_commit : e.delivered_commit)
         )
           return yield* new CrewError("DELIVERY_CHANGED", "Delivered worktree changed");
-        if (!(yield* this.runtime.inventory(p.project_id)).includes(e.worktree_directory))
+        if (!(yield* this.runtime.inventory(p.project_id)).includes(directory))
           return yield* new CrewError("OWNERSHIP", "Worktree missing from native inventory");
-        const identity = yield* directoryIdentity(e.worktree_directory);
-        if (!(!e.worktree_identity || sameDirectory(e.worktree_identity, identity)))
+        const identity = yield* directoryIdentity(directory);
+        if (e.worktree_identity && !sameDirectory(e.worktree_identity, identity))
           return yield* new CrewError(
             "CLEANUP_REPLACEMENT",
             "Owned worktree directory was replaced",
           );
         if (!e.worktree_identity) {
-          e.worktree_identity = identity;
-          yield* save(["worktree_identity"]);
+          e = { ...e, worktree_identity: identity };
+          e = yield* save(e, ["worktree_identity"]);
         }
         if (e.retirement?.native === "requested" || e.retirement?.native === "confirmed")
           return yield* new CrewError(
             "CLEANUP_UNKNOWN",
             "Native removal was submitted but absence is unconfirmed; reconcile the original request before recovery",
           );
-        yield* removeGenerated(this.git, e, () => save(["retirement"]));
-        const blocker = yield* inspectCleanup(this.git, e.worktree_directory);
-        if (blocker) return blocker;
+        e = yield* removeGenerated(this.git, e, (candidate) => save(candidate, ["retirement"]));
+        const blocker = yield* inspectCleanup(this.git, directory);
+        if (blocker) return { execution: e, blocker };
         if (e.cleanup_blocker) {
-          delete e.cleanup_blocker;
-          e.attention = e.attention?.map((a) =>
-            a.code === "cleanup_blocked" ? { ...a, status: "superseded" as const } : a,
-          );
-          yield* save(["cleanup_blocker", "attention"]);
+          e = { ...e, cleanup_blocker: undefined };
+          e = {
+            ...e,
+            attention: e.attention?.map((a) =>
+              a.code === "cleanup_blocked" ? { ...a, status: "superseded" as const } : a,
+            ),
+          };
+          e = yield* save(e, ["cleanup_blocker", "attention"]);
         }
-        if (!sameDirectory(e.worktree_identity, yield* directoryIdentity(e.worktree_directory)))
+        if (!sameDirectory(identity, yield* directoryIdentity(directory)))
           return yield* new CrewError(
             "CLEANUP_REPLACEMENT",
             "Owned worktree changed before native removal",
           );
-        e.retirement = { generated: e.retirement?.generated ?? [], native: "requested" };
-        yield* save(["retirement"]);
+        e = { ...e, retirement: { generated: e.retirement?.generated ?? [], native: "requested" } };
+        e = yield* save(e, ["retirement"]);
         yield* this.runtime.removeWorktree(p, e);
       }
-      if (yield* pathExists(e.worktree_directory))
+      if (yield* pathExists(directory))
         return yield* new CrewError("CLEANUP_PENDING", "Native removal did not retire directory");
-      if ((yield* this.runtime.inventory(p.project_id)).includes(e.worktree_directory))
+      if ((yield* this.runtime.inventory(p.project_id)).includes(directory))
         return yield* new CrewError(
           "CLEANUP_PENDING",
           "Native inventory still retains the directory",
         );
-      e.retirement = { generated: e.retirement?.generated ?? [], native: "confirmed" };
-      yield* save(["retirement"]);
-    }.bind(this),
-    domainEffect,
-  );
+      e = { ...e, retirement: { generated: e.retirement?.generated ?? [], native: "confirmed" } };
+      e = yield* save(e, ["retirement"]);
+      return { execution: e, blocker: undefined };
+    }).pipe(Effect.withSpan("Workspaces.retire"));
+  }
 }

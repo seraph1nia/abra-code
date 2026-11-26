@@ -21,7 +21,6 @@ import {
   type Project,
   type SetupExecution,
 } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
 import { readFile, retainedEntry } from "../filesystem.ts";
 import { type Delivery } from "../git/delivery.ts";
 import { type Git } from "../git/repository.ts";
@@ -36,7 +35,7 @@ import { type ExecutionOwnedField, type Records } from "../storage/store.ts";
 import { collectForm } from "../workflow/authorization.ts";
 import { consumesRetained, unknownCapacity } from "../workflow/capacity.ts";
 import { createConfiguredExecution } from "../workflow/execution.ts";
-import { observePreflight } from "../workflow/finishing-readiness.ts";
+import { observePreflight } from "../workflow/finishing/readiness.ts";
 import { inputFingerprint } from "../workflow/operations.ts";
 import { OpenSpecConfigSchema, parseYaml } from "./contracts.ts";
 
@@ -65,7 +64,8 @@ export class ProjectSetup {
   constructor(private c: SetupDependencies) {}
 
   private readiness = Effect.fn("ProjectSetup.readiness")(
-    function* (this: ProjectSetup, p: Project, e: SetupExecution) {
+    { self: this },
+    function* (p: Project, e: SetupExecution) {
       for (const session of [
         e.explore_session_id,
         e.apply_session_id,
@@ -80,8 +80,8 @@ export class ProjectSetup {
         }
       }
       const observation = yield* observePreflight(this.c.git, this.c.workspaces, p, e);
-      e.finishing = { ...e.finishing, schema_version: 1, preflight: observation };
-      yield* this.save(e, ["finishing"]);
+      e = { ...e, finishing: { ...e.finishing, schema_version: 1, preflight: observation } };
+      e = yield* this.save(e, ["finishing"]);
       if (observation.status !== "ready") {
         return yield* new CrewError(
           "CLEANUP_PREFLIGHT",
@@ -94,27 +94,22 @@ export class ProjectSetup {
       ) {
         return yield* new CrewError("SETUP_CHANGED", "Prepared setup tree changed before merge");
       }
-    }.bind(this),
-    domainEffect,
+      return e;
+    },
   );
 
   private save = Effect.fn("ProjectSetup.save")(
-    function* (this: ProjectSetup, e: SetupExecution, fields: readonly ExecutionOwnedField[]) {
-      yield* this.c.records.saveSetupOwned(e, fields);
+    { self: this },
+    function* (e: SetupExecution, fields: readonly ExecutionOwnedField[]) {
+      e = yield* this.c.records.saveSetupOwned(e, fields);
       return e;
-    }.bind(this),
-    domainEffect,
+    },
   );
 
   run = Effect.fn("ProjectSetup.run")(
-    function* (
-      this: ProjectSetup,
-      id: RepositoryId,
-      action: SetupAction,
-      supervisor: SessionId,
-      initialize: boolean,
-    ) {
-      identifier(id);
+    { self: this },
+    function* (id: RepositoryId, action: SetupAction, supervisor: SessionId, initialize: boolean) {
+      yield* Effect.try({ try: () => identifier(id), catch: CrewError.from });
       return yield* this.c.locks.with(
         LockKey.make(`setup-${id}`),
         () =>
@@ -123,60 +118,58 @@ export class ProjectSetup {
           ),
         { waitSeconds: 0 },
       );
-    }.bind(this),
+    },
     completedProgress("setup"),
   );
 
   private recordFailure(id: RepositoryId, message: string) {
     return Effect.gen({ self: this }, function* () {
-      const e = yield* this.c.records.setup(id);
+      let e = yield* this.c.records.setup(id);
       if (e && e.current_phase !== "completed" && e.current_phase !== "queued") {
-        e.error_or_recovery_reason = message;
-        if (e.operation) e.operation = { ...e.operation, status: "uncertain" };
+        e = { ...e, error_or_recovery_reason: message };
+        if (e.operation) e = { ...e, operation: { ...e.operation, status: "uncertain" } };
         yield* this.save(e, ["error_or_recovery_reason", "operation"]);
       }
     });
   }
 
-  reconcileQueued = Effect.fn("ProjectSetup.reconcileQueued")(
-    function* (this: ProjectSetup) {
-      const queued = (yield* this.c.records.setupScan).values
-        .filter((e) => e.current_phase === "queued")
-        .sort(
-          (a, b) =>
-            a.updated_at.localeCompare(b.updated_at) ||
-            a.repository_id.localeCompare(b.repository_id),
+  reconcileQueued = Effect.fn("ProjectSetup.reconcileQueued")({ self: this }, function* () {
+    const queued = (yield* this.c.records.setupScan).values
+      .filter((e) => e.current_phase === "queued")
+      .sort(
+        (a, b) =>
+          a.updated_at.localeCompare(b.updated_at) ||
+          a.repository_id.localeCompare(b.repository_id),
+      );
+    for (const request of queued) {
+      const id = request.repository_id;
+      yield* this.c.locks
+        .with(
+          LockKey.make(`setup-${id}`),
+          () =>
+            Effect.gen({ self: this }, function* () {
+              const current = yield* this.c.records.setup(id);
+              if (
+                current?.current_phase !== "queued" ||
+                current.execution_id !== request.execution_id ||
+                !current.supervisor_session_id
+              )
+                return;
+              yield* this.runInternal(id, "prepare", current.supervisor_session_id, true).pipe(
+                Effect.tapError((error) => this.recordFailure(id, error.message)),
+              );
+            }),
+          { waitSeconds: 0 },
+        )
+        .pipe(
+          Effect.catch((error) =>
+            error.code === "LOCKED"
+              ? Effect.void
+              : Effect.logError("AbraCode queued setup", id, error),
+          ),
         );
-      for (const request of queued) {
-        const id = request.repository_id;
-        yield* this.c.locks
-          .with(
-            LockKey.make(`setup-${id}`),
-            () =>
-              Effect.gen({ self: this }, function* () {
-                const current = yield* this.c.records.setup(id);
-                if (
-                  current?.current_phase !== "queued" ||
-                  current.execution_id !== request.execution_id ||
-                  !current.supervisor_session_id
-                )
-                  return;
-                yield* this.runInternal(id, "prepare", current.supervisor_session_id, true).pipe(
-                  Effect.tapError((error) => this.recordFailure(id, error.message)),
-                );
-              }),
-            { waitSeconds: 0 },
-          )
-          .pipe(
-            Effect.catch((error) =>
-              error.code === "LOCKED"
-                ? Effect.void
-                : Effect.logError("AbraCode queued setup", id, error),
-            ),
-          );
-      }
-    }.bind(this),
-  );
+    }
+  });
 
   private admitSetup(
     id: RepositoryId,
@@ -197,48 +190,49 @@ export class ProjectSetup {
         );
       }
       return yield* this.c.records.withActiveIndex(() =>
-        domainEffect(
-          Effect.gen({ self: this }, function* () {
-            const scan = yield* this.c.records.capacityRecords();
-            if (scan.diagnostics.length) return yield* unknownCapacity();
-            const retained = [...scan.executions, ...scan.setups].filter(consumesRetained);
-            const reason =
-              retained.length >= this.c.config.max_executions
-                ? "Waiting for global execution slot capacity"
-                : retained.filter((x) => x.repository_id === id).length >= registered.max_executions
-                  ? "Waiting for repository execution slot capacity"
-                  : undefined;
-            if (waiting) {
-              if (reason === waiting.error_or_recovery_reason && reason) return waiting;
-              waiting.error_or_recovery_reason = reason;
-              waiting.current_phase = reason ? "queued" : "provisioning";
-              return yield* this.save(waiting, ["current_phase", "error_or_recovery_reason"]);
-            }
-            const executionID = ExecutionId.make(`abra-setup-${randomUUID()}`);
-            const setup = yield* createConfiguredExecution(
-              registered,
-              {
-                issue_id: IssueId.make(`setup-${id}`),
-                repository_id: id,
-                execution_id: executionID,
-                workflow_policy: "full-openspec",
-                current_phase: reason ? "queued" : "provisioning",
-                setup: true,
-                branch: BranchName.make(`setup/${executionID}`),
-                openspec_change: "",
-                supervisor_session_id: supervisor,
-              },
-              this.c.config,
-            ).pipe(
-              Effect.updateContext((caller: Context.Context<never>) =>
-                Context.merge(Context.make(Agents, this.c.catalog), caller),
-              ),
-            );
-            setup.error_or_recovery_reason = reason;
-            yield* this.c.records.create(setup);
-            return setup;
-          }),
-        ),
+        Effect.gen({ self: this }, function* () {
+          const scan = yield* this.c.records.capacityRecords();
+          if (scan.diagnostics.length) return yield* unknownCapacity();
+          const retained = [...scan.executions, ...scan.setups].filter(consumesRetained);
+          const reason =
+            retained.length >= this.c.config.max_executions
+              ? "Waiting for global execution slot capacity"
+              : retained.filter((x) => x.repository_id === id).length >= registered.max_executions
+                ? "Waiting for repository execution slot capacity"
+                : undefined;
+          if (waiting) {
+            if (reason === waiting.error_or_recovery_reason && reason) return waiting;
+            waiting = {
+              ...waiting,
+              error_or_recovery_reason: reason,
+              current_phase: reason ? "queued" : "provisioning",
+            };
+            return yield* this.save(waiting, ["current_phase", "error_or_recovery_reason"]);
+          }
+          const executionID = ExecutionId.make(`abra-setup-${randomUUID()}`);
+          let setup = yield* createConfiguredExecution(
+            registered,
+            {
+              issue_id: IssueId.make(`setup-${id}`),
+              repository_id: id,
+              execution_id: executionID,
+              workflow_policy: "full-openspec",
+              current_phase: reason ? "queued" : "provisioning",
+              setup: true,
+              branch: BranchName.make(`setup/${executionID}`),
+              openspec_change: "",
+              supervisor_session_id: supervisor,
+            },
+            this.c.config,
+          ).pipe(
+            Effect.updateContext((caller: Context.Context<never>) =>
+              Context.merge(Context.make(Agents, this.c.catalog), caller),
+            ),
+          );
+          setup = { ...setup, error_or_recovery_reason: reason };
+          setup = yield* this.c.records.create(setup);
+          return setup;
+        }),
       );
     });
   }
@@ -247,18 +241,17 @@ export class ProjectSetup {
     return Effect.gen({ self: this }, function* () {
       if (e.current_phase !== "provisioning") return e;
       if (!p.project_id) {
-        p.project_id = yield* this.c.runtime.project(p.path);
+        p = { ...p, project_id: yield* this.c.runtime.project(p.path) };
         yield* this.c.records.saveProject({ ...registered, project_id: p.project_id });
       }
       if (!e.base_commit) {
         const base = yield* this.c.sources.base(p, e.execution_id);
-        e.base_commit = base.commit;
-        e.target_branch = base.target_branch;
-        yield* this.save(e, ["base_commit", "target_branch"]);
+        e = { ...e, base_commit: base.commit, target_branch: base.target_branch };
+        e = yield* this.save(e, ["base_commit", "target_branch"]);
       }
       if (
         !e.worktree_directory &&
-        (yield* this.c.sources.inspect(p.path, e.base_commit)).openspec_config !== null
+        (yield* this.c.sources.inspect(p.path, e.base_commit!)).openspec_config !== null
       ) {
         yield* this.c.records.saveProject({
           ...registered,
@@ -267,12 +260,14 @@ export class ProjectSetup {
           target_branch: e.target_branch ?? registered.target_branch,
           inspected_commit: e.base_commit,
         });
-        e.current_phase = "completed";
+        e = { ...e, current_phase: "completed" };
         return yield* this.save(e, ["current_phase"]);
       }
-      yield* this.c.workspaces.provision(p, e, (fields) => this.save(e, fields));
+      e = yield* this.c.workspaces.provision(p, e, this.save);
       const path = e.worktree_directory;
-      if (!path) return yield* new CrewError("WORKTREE", "Prepare the setup worktree first");
+      const base = e.base_commit;
+      if (!path || !base)
+        return yield* new CrewError("WORKTREE", "Prepare the setup worktree and base commit first");
       if (!(yield* retainedEntry(join(path, "openspec/config.yaml"), "file"))) {
         yield* this.c.git.runner.run(
           this.c.config.commands.openspec,
@@ -281,7 +276,7 @@ export class ProjectSetup {
         );
       }
       const files = [
-        yield* this.c.git.run(path, ["diff", "--name-only", e.base_commit, "--"]),
+        yield* this.c.git.run(path, ["diff", "--name-only", base, "--"]),
         yield* this.c.git.run(path, ["ls-files", "--others", "--exclude-standard"]),
       ].flatMap((output) => output.split("\n").filter(Boolean));
       if (!(files.length > 0 && files.every((name) => allowedSetupFiles.has(name)))) {
@@ -299,7 +294,7 @@ export class ProjectSetup {
         ),
         "Generated OpenSpec configuration",
       );
-      if (!(config && typeof config.schema === "string")) {
+      if (!config || typeof config.schema !== "string") {
         return yield* new CrewError(
           "SETUP_CONFIG",
           "Generated OpenSpec configuration must name a schema",
@@ -319,8 +314,7 @@ export class ProjectSetup {
         );
       }
       yield* this.c.git.run(path, ["add", "--", ...files]);
-      e.archived_tree = yield* this.c.git.tree(path);
-      e.current_phase = "planning";
+      e = { ...e, archived_tree: yield* this.c.git.tree(path), current_phase: "planning" };
       return yield* this.save(e, ["archived_tree", "current_phase"]);
     });
   }
@@ -334,26 +328,24 @@ export class ProjectSetup {
       }
       yield* this.c.git.validate(p, e);
       if (
-        !(
-          e.archived_tree &&
-          (yield* this.c.git.tree(worktree)) === e.archived_tree &&
-          !(yield* this.c.git.run(worktree, ["diff", "--name-only"])) &&
-          !(yield* this.c.git.run(worktree, ["ls-files", "--others", "--exclude-standard"]))
-        )
+        !e.archived_tree ||
+        (yield* this.c.git.tree(worktree)) !== e.archived_tree ||
+        (yield* this.c.git.run(worktree, ["diff", "--name-only"])) ||
+        (yield* this.c.git.run(worktree, ["ls-files", "--others", "--exclude-standard"]))
       ) {
         return yield* new CrewError(
           "SETUP_CHANGED",
           "Prepared setup content changed; preserve it for inspection",
         );
       }
-      e.current_phase = "delivering";
-      yield* this.save(e, ["current_phase"]);
+      e = { ...e, current_phase: "delivering" };
+      e = yield* this.save(e, ["current_phase"]);
       const commit = yield* this.c.git.commit(
         worktree,
         e.issue_id,
         `Initialize OpenSpec for ${p.id}`,
       );
-      yield* this.c.git.assertCommitTree(worktree, commit, e.archived_tree);
+      yield* this.c.git.assertCommitTree(worktree, commit, e.archived_tree!);
       const result = yield* this.c.delivery.deliver(p, e, {
         commit,
         destination: { kind: "initial", pr: e.pull_request_reference },
@@ -364,9 +356,12 @@ export class ProjectSetup {
           "Published setup commit differs from the reviewed tree",
         );
       }
-      e.delivered_commit = commit;
-      e.pull_request_reference = result.pr;
-      e.current_phase = "awaiting_merge";
+      e = {
+        ...e,
+        delivered_commit: commit,
+        pull_request_reference: result.pr,
+        current_phase: "awaiting_merge",
+      };
       return yield* this.save(e, ["delivered_commit", "pull_request_reference", "current_phase"]);
     });
   }
@@ -377,10 +372,8 @@ export class ProjectSetup {
       if (!worktree) return yield* new CrewError("WORKTREE", "Prepare the setup worktree first");
       yield* this.c.git.validate(p, e);
       if (
-        !(
-          (yield* this.c.git.head(worktree)) === e.delivered_commit &&
-          !(yield* this.c.git.dirty(worktree))
-        )
+        (yield* this.c.git.head(worktree)) !== e.delivered_commit ||
+        (yield* this.c.git.dirty(worktree))
       ) {
         return yield* new CrewError("SETUP_CHANGED", "Delivered setup worktree changed");
       }
@@ -395,7 +388,7 @@ export class ProjectSetup {
       if (!["awaiting_merge", "cleaning"].includes(e.current_phase)) {
         return yield* new CrewError("SETUP_PHASE", "Deliver setup before approval or cleanup");
       }
-      if (e.current_phase !== "awaiting_merge") return undefined;
+      if (e.current_phase !== "awaiting_merge") return { setup: e };
       yield* this.verifyDeliveredWorktree(p, e);
       if (p.delivery !== "github-pr") {
         return yield* new CrewError(
@@ -405,33 +398,33 @@ export class ProjectSetup {
       }
       const pr = yield* this.c.delivery.inspect(p, e);
       if (
-        !(
-          pr &&
-          pr.url === e.pull_request_reference &&
-          pr.headRefOid === e.delivered_commit &&
-          pr.baseRefName === e.target_branch
-        )
+        !pr ||
+        pr.url !== e.pull_request_reference ||
+        pr.headRefOid !== e.delivered_commit ||
+        pr.baseRefName !== e.target_branch
       ) {
         return yield* new CrewError("PR_HEAD", "Setup PR identity changed before approval");
       }
       if (!e.delivered_commit) {
         return yield* new CrewError("SETUP_PHASE", "Deliver setup before approval or cleanup");
       }
-      yield* this.readiness(p, e);
-      const { decision, receipt } = yield* collectForm(
+      const delivered = e.delivered_commit;
+      e = yield* this.readiness(p, e);
+      const { decision, receipt, execution } = yield* collectForm(
         e,
         this.c.records,
         this.c.runtime,
-        { kind: "merge", session_id: supervisor, fingerprint: e.delivered_commit },
+        { kind: "merge", session_id: supervisor, fingerprint: delivered },
         `Authorize OpenSpec setup merge for ${id}`,
       );
+      e = execution;
       if (decision === "pending") {
         return { setup: e, approval_required: true as const, form_id: receipt.form_id };
       }
       if (decision === "rejected") {
         return yield* new CrewError("APPROVAL_REJECTED", "Human rejected the setup merge");
       }
-      return undefined;
+      return { setup: e };
     });
   }
 
@@ -450,11 +443,9 @@ export class ProjectSetup {
           (yield* this.c.delivery.inspect(p, e))?.state !== "MERGED"
         ) {
           if (
-            !(
-              e.merge_approval_required === false ||
-              e.approval_receipts.some(
-                (a) => a.fingerprint === e.delivered_commit && a.authorized_at,
-              )
+            e.merge_approval_required !== false &&
+            !e.approval_receipts.some(
+              (a) => a.fingerprint === e.delivered_commit && a.authorized_at,
             )
           ) {
             return yield* new CrewError(
@@ -462,18 +453,28 @@ export class ProjectSetup {
               "Human authorization is required before setup merge",
             );
           }
-          yield* this.readiness(p, e);
-          const result = yield* this.c.delivery.merge(p, e, undefined, () => this.readiness(p, e));
+          e = yield* this.readiness(p, e);
+          const result = yield* this.c.delivery.merge(p, e, undefined, () =>
+            this.readiness(p, e).pipe(
+              Effect.map((saved) => {
+                e = saved;
+              }),
+            ),
+          );
           if (result.category !== "completed") {
-            e.error_or_recovery_reason = result.reason;
+            e = { ...e, error_or_recovery_reason: result.reason };
             return yield* this.save(e, ["error_or_recovery_reason"]);
           }
         }
-        e.delivery_receipt = yield* this.c.delivery.evidence(p, e);
-        e.current_phase = "cleaning";
-        yield* this.save(e, ["delivery_receipt", "current_phase"]);
+        e = {
+          ...e,
+          delivery_receipt: yield* this.c.delivery.evidence(p, e),
+          current_phase: "cleaning",
+        };
+        e = yield* this.save(e, ["delivery_receipt", "current_phase"]);
       }
-      const blocker = yield* this.c.workspaces.retire(p, e, (fields) => this.save(e, fields));
+      const { execution, blocker } = yield* this.c.workspaces.retire(p, e, this.save);
+      e = execution;
       if (blocker) {
         return yield* new CrewError(
           blocker.paths.some((path) => path.category === "untracked")
@@ -495,19 +496,14 @@ export class ProjectSetup {
         target_branch: base.target_branch,
         inspected_commit: base.commit,
       });
-      e.current_phase = "completed";
+      e = { ...e, current_phase: "completed" };
       return yield* this.save(e, ["current_phase"]);
     });
   }
 
   private runInternal = Effect.fn("ProjectSetup.runInternal")(
-    function* (
-      this: ProjectSetup,
-      id: RepositoryId,
-      action: SetupAction,
-      supervisor: SessionId,
-      initialize: boolean,
-    ) {
+    { self: this },
+    function* (id: RepositoryId, action: SetupAction, supervisor: SessionId, initialize: boolean) {
       const registered = yield* this.c.records.project(id);
       if (!registered) {
         return yield* new CrewError("PROJECT_MISSING", "Repository is not registered");
@@ -533,7 +529,7 @@ export class ProjectSetup {
         expected: `Reconcile setup ${action} against retained native branch/worktree and delivery identities`,
         started_at: yield* Clock.currentTimeMillis,
       };
-      yield* this.c.records.beginOperation(e, operation);
+      e = yield* this.c.records.beginOperation(e, operation);
       yield* progress({ stage: "setup", status: "started" });
       switch (action) {
         case "prepare":
@@ -541,14 +537,13 @@ export class ProjectSetup {
         case "deliver":
           return yield* this.deliver(p, e);
         case "approve": {
-          const pending = yield* this.approve(id, p, e, supervisor);
-          if (pending) return pending;
-          return yield* this.finish(registered, p, e, true);
+          const approval = yield* this.approve(id, p, e, supervisor);
+          if (approval.approval_required) return approval;
+          return yield* this.finish(registered, p, approval.setup, true);
         }
         case "finish":
           return yield* this.finish(registered, p, e, false);
       }
-    }.bind(this),
-    domainEffect,
+    },
   );
 }

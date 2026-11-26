@@ -1,13 +1,14 @@
+import { sha256 } from "../digest.ts";
+import { tryDomainValue } from "../effect.ts";
+import { GitError } from "../errors.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { readFile } from "../filesystem.ts";
-import { Effect, Schema } from "effect";
-import { createHash } from "node:crypto";
+import { Config, Effect, Schema } from "effect";
 import { Commit, GitRemote, Timestamp, type RepositoryId } from "@abracode/contracts/identities";
 import { Positive, Count } from "@abracode/contracts/primitives";
-import { CrewError, ensure, type Project } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
+import { ensure, type Project } from "../domain.ts";
 import { decode, decodeJSON } from "../decode.ts";
 import { Forge } from "./forge.ts";
 import { remoteIdentity } from "./source.ts";
@@ -70,16 +71,22 @@ const common =
   "id number url title state updatedAt author { login } labels(first:100){ nodes { name } pageInfo { hasNextPage endCursor } }";
 const options = { deadline_ms: 15000, max_output_bytes: 2 * 1024 * 1024 };
 export type InboxOrigin = { host: string; owner: string; name: string };
-export const githubHosts = Effect.suspend(() => {
+const hostSetting = (name: string) =>
+  Config.String(name).pipe(
+    Config.withDefault(""),
+    Effect.mapError((cause) => new GitError("INBOX_CONFIG", `Cannot read ${name}`, cause)),
+  );
+export const githubHosts = Effect.gen(function* () {
   const config =
-    process.env.GH_CONFIG_DIR ||
-    join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "gh");
-  return readFile(join(config, "hosts.yml"), "utf8").pipe(
+    (yield* hostSetting("GH_CONFIG_DIR")) ||
+    join((yield* hostSetting("XDG_CONFIG_HOME")) || join(homedir(), ".config"), "gh");
+  const activeHost = yield* hostSetting("GH_HOST");
+  return yield* readFile(join(config, "hosts.yml"), "utf8").pipe(
     Effect.flatMap((text) =>
       Effect.try({
         try: () => Object.keys(parse(text) ?? {}),
         catch: (cause) =>
-          new CrewError(
+          new GitError(
             "INBOX_CONFIG",
             `Invalid GitHub CLI hosts configuration: ${cause instanceof Error ? cause.message : String(cause)}`,
           ),
@@ -94,7 +101,7 @@ export const githubHosts = Effect.suspend(() => {
         new Set([
           "github.com",
           ...hosts.map((h) => h.toLowerCase()),
-          ...(process.env.GH_HOST ? [process.env.GH_HOST.toLowerCase()] : []),
+          ...(activeHost ? [activeHost.toLowerCase()] : []),
         ]),
     ),
   );
@@ -147,16 +154,12 @@ export class InboxForge {
       .run(p, ["auth", "token", "--hostname", origin.host], { deadline_ms: 5000 })
       .pipe(
         Effect.mapError(
-          () => new CrewError("INBOX_AUTH", "GitHub credentials unavailable for " + origin.host),
+          () => new GitError("INBOX_AUTH", "GitHub credentials unavailable for " + origin.host),
         ),
         Effect.flatMap((token) =>
           token.trim()
-            ? Effect.succeed(
-                createHash("sha256")
-                  .update(origin.host + "\0" + token.trim())
-                  .digest("hex"),
-              )
-            : Effect.fail(new CrewError("INBOX_AUTH", "Sign in to GitHub to see this repository")),
+            ? Effect.succeed(sha256(origin.host + "\0" + token.trim()))
+            : Effect.fail(new GitError("INBOX_AUTH", "Sign in to GitHub to see this repository")),
         ),
       );
   }
@@ -188,12 +191,12 @@ export class InboxForge {
       .pipe(
         Effect.mapError((err) =>
           /rate.limit|retry.after|abuse detection/i.test(err.message)
-            ? new CrewError("INBOX_LIMIT", "GitHub rate limit reached")
+            ? new GitError("INBOX_LIMIT", "GitHub rate limit reached")
             : /forbidden|unauthorized|could not resolve to a repository|not found|HTTP (401|403|404)/i.test(
                   err.message,
                 )
-              ? new CrewError("INBOX_ACCESS", "GitHub repository access unavailable")
-              : new CrewError("INBOX_READ", "GitHub observation unavailable"),
+              ? new GitError("INBOX_ACCESS", "GitHub repository access unavailable")
+              : new GitError("INBOX_READ", "GitHub observation unavailable"),
         ),
         Effect.flatMap((raw) => decodeJSON(schema, raw, "GitHub inbox response")),
       );
@@ -227,44 +230,45 @@ export class InboxForge {
       common +
       (pr ? " isDraft" : "") +
       "} pageInfo{hasNextPage endCursor}}}}";
-    return domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const r = yield* this.graphql(p, o, listEnvelope, query, [
-          ...(cursor ? ["-f", "cursor=" + cursor] : []),
-          ...(label ? ["-f", "label=" + label] : []),
-        ]);
-        const repo = r.data.repository;
-        const repoRemote = repo
-          ? yield* decode(GitRemote, repo.url, "GitHub repository URL")
-          : undefined;
-        ensure(
-          repo &&
-            repoRemote &&
-            remoteIdentity(repoRemote, p.path) === remoteIdentity(p.remote, p.path),
+    return Effect.gen({ self: this }, function* () {
+      const r = yield* this.graphql(p, o, listEnvelope, query, [
+        ...(cursor ? ["-f", "cursor=" + cursor] : []),
+        ...(label ? ["-f", "label=" + label] : []),
+      ]);
+      const repo = r.data.repository;
+      const repoRemote = repo
+        ? yield* decode(GitRemote, repo.url, "GitHub repository URL")
+        : undefined;
+      if (
+        !repo ||
+        !repoRemote ||
+        (yield* tryDomainValue(remoteIdentity, repoRemote, p.path)) !==
+          (yield* tryDomainValue(remoteIdentity, p.remote, p.path))
+      )
+        return yield* new GitError(
           "INBOX_ACCESS",
           "Incomplete or mismatched repository observation",
         );
-        ensure(!r.errors?.length, "INBOX_READ", "GitHub returned incomplete results");
-        const items = repo.items.nodes.map((row) => {
+      if (r.errors?.length)
+        return yield* new GitError("INBOX_READ", "GitHub returned incomplete results");
+      const items = yield* tryDomainValue(() =>
+        repo.items.nodes.map((row) => {
           const item = normalize(row, p.id, repo.id, kind, o);
           return label && !item.labels_complete && !item.labels.includes(label)
             ? { ...item, labels: [...item.labels, label] }
             : item;
-        });
-        const { hasNextPage, endCursor } = repo.items.pageInfo;
-        ensure(
-          !hasNextPage || (endCursor && endCursor !== cursor),
-          "INBOX_CURSOR",
-          "GitHub returned an invalid continuation",
-        );
-        return {
-          items,
-          repo: repo.id,
-          viewer: r.data.viewer.id,
-          cursor: hasNextPage ? endCursor! : undefined,
-        };
-      }),
-    );
+        }),
+      );
+      const { hasNextPage, endCursor } = repo.items.pageInfo;
+      if (hasNextPage && (!endCursor || endCursor === cursor))
+        return yield* new GitError("INBOX_CURSOR", "GitHub returned an invalid continuation");
+      return {
+        items,
+        repo: repo.id,
+        viewer: r.data.viewer.id,
+        cursor: hasNextPage ? endCursor! : undefined,
+      };
+    });
   }
   detail(p: Project, o: InboxOrigin, target: InboxTarget) {
     const pr = target.kind === "pr";
@@ -276,48 +280,44 @@ export class InboxForge {
       " body comments(last:10){totalCount nodes{author{login} body}} " +
       (pr ? "isDraft baseRefOid headRefOid changedFiles" : "") +
       "}}}";
-    return domainEffect(
-      Effect.gen({ self: this }, function* () {
-        const response = yield* this.graphql(p, o, detailEnvelope, query, [
-          "-F",
-          "number=" + target.number,
-        ]);
-        const repo = response.data.repository,
-          row = repo?.item;
-        const repoRemote = repo
-          ? yield* decode(GitRemote, repo.url, "GitHub repository URL")
-          : undefined;
-        ensure(
-          repo &&
-            repoRemote &&
-            repo.id === target.repo_node &&
-            remoteIdentity(repoRemote, p.path) === remoteIdentity(p.remote, p.path),
-          "INBOX_ACCESS",
-          "GitHub repository identity or access changed",
-        );
-        ensure(!response.errors?.length, "INBOX_READ", "GitHub returned incomplete item details");
-        ensure(
-          row?.id === target.item_node && row.number === target.number,
-          "INBOX_IDENTITY",
-          "Item identity or access changed",
-        );
-        const comments = row.comments.nodes.map((x) => ({
-          author: x.author?.login ?? "Unknown",
-          body: x.body.slice(0, 8192),
-        }));
-        return {
-          ...normalize(row, p.id, repo.id, target.kind, o),
-          body: row.body.slice(0, 65536),
-          comments,
-          comments_complete:
-            comments.length === row.comments.totalCount &&
-            row.comments.nodes.every((x) => x.body.length <= 8192),
-          base: row.baseRefOid,
-          head: row.headRefOid,
-          changed_files: row.changedFiles,
-        };
-      }),
-    );
+    return Effect.gen({ self: this }, function* () {
+      const response = yield* this.graphql(p, o, detailEnvelope, query, [
+        "-F",
+        "number=" + target.number,
+      ]);
+      const repo = response.data.repository,
+        row = repo?.item;
+      const repoRemote = repo
+        ? yield* decode(GitRemote, repo.url, "GitHub repository URL")
+        : undefined;
+      if (
+        !repo ||
+        !repoRemote ||
+        repo.id !== target.repo_node ||
+        (yield* tryDomainValue(remoteIdentity, repoRemote, p.path)) !==
+          (yield* tryDomainValue(remoteIdentity, p.remote, p.path))
+      )
+        return yield* new GitError("INBOX_ACCESS", "GitHub repository identity or access changed");
+      if (response.errors?.length)
+        return yield* new GitError("INBOX_READ", "GitHub returned incomplete item details");
+      if (row?.id !== target.item_node || row.number !== target.number)
+        return yield* new GitError("INBOX_IDENTITY", "Item identity or access changed");
+      const comments = row.comments.nodes.map((x) => ({
+        author: x.author?.login ?? "Unknown",
+        body: x.body.slice(0, 8192),
+      }));
+      return {
+        ...(yield* tryDomainValue(normalize, row, p.id, repo.id, target.kind, o)),
+        body: row.body.slice(0, 65536),
+        comments,
+        comments_complete:
+          comments.length === row.comments.totalCount &&
+          row.comments.nodes.every((x) => x.body.length <= 8192),
+        base: row.baseRefOid,
+        head: row.headRefOid,
+        changed_files: row.changedFiles,
+      };
+    });
   }
   files(p: Project, o: InboxOrigin, num: number, count: number) {
     const file = Schema.Struct({
@@ -326,57 +326,55 @@ export class InboxForge {
       additions: Count,
       deletions: Count,
     });
-    return domainEffect(
-      Effect.gen({ self: this }, function* () {
-        let seen = 0,
-          partial = false,
-          bytes = 0;
-        const blocks: string[] = [];
-        for (let page = 1; seen < count && page <= 30; page++) {
-          const batch = yield* this.forge.json(
-            p,
-            Schema.Array(file),
-            [
-              "api",
-              "--hostname",
-              o.host,
-              "repos/" +
-                o.owner +
-                "/" +
-                o.name +
-                "/pulls/" +
-                num +
-                "/files?per_page=100&page=" +
-                page,
-            ],
-            options,
-          );
-          for (const f of batch) {
-            seen++;
-            const patch = f.patch ?? "";
-            const lines = patch.split("\n");
-            if (
-              !patch ||
-              lines.filter((x) => x.startsWith("+")).length !== f.additions ||
-              lines.filter((x) => x.startsWith("-")).length !== f.deletions
-            )
-              partial = true;
-            const block = f.filename + "\n" + patch;
-            if (bytes + Buffer.byteLength(block) > 65536) {
-              partial = true;
-              break;
-            }
-            blocks.push(block);
-            bytes += Buffer.byteLength(block);
+    return Effect.gen({ self: this }, function* () {
+      let seen = 0,
+        partial = false,
+        bytes = 0;
+      const blocks: string[] = [];
+      for (let page = 1; seen < count && page <= 30; page++) {
+        const batch = yield* this.forge.json(
+          p,
+          Schema.Array(file),
+          [
+            "api",
+            "--hostname",
+            o.host,
+            "repos/" +
+              o.owner +
+              "/" +
+              o.name +
+              "/pulls/" +
+              num +
+              "/files?per_page=100&page=" +
+              page,
+          ],
+          options,
+        );
+        for (const f of batch) {
+          seen++;
+          const patch = f.patch ?? "";
+          const lines = patch.split("\n");
+          if (
+            !patch ||
+            lines.filter((x) => x.startsWith("+")).length !== f.additions ||
+            lines.filter((x) => x.startsWith("-")).length !== f.deletions
+          )
+            partial = true;
+          const block = f.filename + "\n" + patch;
+          if (bytes + Buffer.byteLength(block) > 65536) {
+            partial = true;
+            break;
           }
-          if (batch.length < 100 || blocks.length < seen) break;
+          blocks.push(block);
+          bytes += Buffer.byteLength(block);
         }
-        return {
-          text: blocks.join("\n\n"),
-          complete: !partial && seen === count,
-          files: blocks.length,
-        };
-      }),
-    );
+        if (batch.length < 100 || blocks.length < seen) break;
+      }
+      return {
+        text: blocks.join("\n\n"),
+        complete: !partial && seen === count,
+        files: blocks.length,
+      };
+    });
   }
 }

@@ -205,7 +205,7 @@ test.skipIf(!process.env.ABRACODE_TEST_BM)(
       '#!/bin/sh\nif [ "$1" = mcp ]; then echo "$$" > pid; fi\nexec ./pinned "$@"\n',
       { mode: 0o700 },
     );
-    const provider = new MemoryProvider(entry);
+    const provider = await Effect.runPromise(MemoryProvider.make(entry));
     t.onTestFinished(() => Effect.runPromise(provider.closeEffect));
     const list = () =>
       Effect.runPromise(provider.callEffect(root, "bm_project", { command: "list" }), {

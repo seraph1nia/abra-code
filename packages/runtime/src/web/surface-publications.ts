@@ -10,7 +10,6 @@ import type { PresentationAssociations } from "../presentation/associations.ts";
 import { Effect, Schema } from "effect";
 import { CrewError } from "../domain.ts";
 import { decode } from "../decode.ts";
-import { domainEffect } from "../effect.ts";
 import {
   ContentHash,
   LockKey,
@@ -27,9 +26,9 @@ import {
   PresentationAttachmentSchema,
 } from "@abracode/contracts/web/workspace-wire";
 import { validateSurface, type WorkSurface } from "@abracode/contracts/web/surfaces";
-import { ComponentId } from "@abracode/contracts/web/catalog";
+import { SurfaceId } from "@abracode/contracts/web/catalog";
 import { WorkItemSchema } from "@abracode/contracts/web/wire";
-import { compactSurface, loadSurfaceRecord, observedSurface } from "./surface-records.ts";
+import { compactSurface, observedSurface } from "./surface-records.ts";
 import type { SurfaceRecord } from "./contracts.ts";
 import { PublicationStore } from "./publication-store.ts";
 
@@ -67,7 +66,7 @@ const PublicationSchema = Schema.Struct({
 const HeadSchema = Schema.Struct({
   schema_version: Schema.Literal(1),
   session_id: SessionId,
-  surface_id: ComponentId,
+  surface_id: SurfaceId,
   next_revision: positive,
   committed_revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   pending: Schema.optional(PublicationSchema),
@@ -99,7 +98,7 @@ const publicationKey = (session: string, id: ContentHash) =>
   StorageKey.make(`web/surface-publication/${session}/${id}`);
 const headKey = (session: string, surface: string) =>
   StorageKey.make(`web/surface-head/${session}/${surface}`);
-const latestKey = (session: string, surface: string) =>
+const legacyLatestKey = (session: string, surface: string) =>
   StorageKey.make(`web/surface/${session}/${surface}`);
 const revisionKey = (session: string, surface: string, revision: number) =>
   StorageKey.make(`web/surface-revision/${session}/${surface}/${revision}`);
@@ -110,7 +109,7 @@ const conflict = (message: string) => new CrewError("UI_SURFACE_CONFLICT", messa
 /** One owner for immutable layout publication and its repairable indexes.
  * Reads never repair or publish. Native startup/retry performs bounded recovery. */
 export class SurfacePublications {
-  private readonly publications: PublicationStore;
+  private readonly publications: PublicationStore<typeof HeadSchema.Type>;
   constructor(
     private store: Store,
     locks: Locks,
@@ -124,6 +123,9 @@ export class SurfacePublications {
       conflict,
       headPrefix: (session) => StoragePrefix.make(`web/surface-head/${session}/`),
       maxHeads: 16,
+      limit: () =>
+        new CrewError("UI_SURFACE_LIMIT", "At most 16 retained surfaces per Abra conversation"),
+      decodeHead: (session, id, raw) => decodeHead(raw, session, id),
       headKey,
     });
   }
@@ -153,9 +155,7 @@ export class SurfacePublications {
       const session = SessionId.make(record.session_id),
         surface = record.surface.createSurface.surfaceId;
       const identity = callHash(message_id, call_id);
-      const head = yield* this.publications.readHead(session, surface, (raw) =>
-        decodeHead(raw, session, surface),
-      );
+      const head = yield* this.publications.readHead(session, surface);
       if (head?.pending && head.pending.record.tool_call_id !== record.tool_call_id)
         return yield* conflict("Another presentation reservation needs reconciliation");
       yield* this.immutable(publicationKey(session, identity), publication);
@@ -167,17 +167,6 @@ export class SurfacePublications {
         revision: record.revision,
         input_hash: publication.input_hash,
       });
-      const current = yield* this.store.get(latestKey(session, surface));
-      if (current === undefined) yield* this.store.set(latestKey(session, surface), record);
-      else {
-        const latest = loadSurfaceRecord(current, latestKey(session, surface));
-        if ("unavailable" in latest)
-          return yield* conflict("Retained latest surface is unavailable; preserve its evidence");
-        if (latest.revision < record.revision)
-          yield* this.store.set(latestKey(session, surface), record);
-        else if (latest.revision === record.revision && latest.tool_call_id !== record.tool_call_id)
-          return yield* conflict("Surface revision is already owned by another native call");
-      }
       yield* this.associate({
         session_id: session,
         message_id,
@@ -199,10 +188,6 @@ export class SurfacePublications {
     // publication-history scan is needed to repair a missing receipt/association.
     return this.publications.recover(session, {
       isolate,
-      decodeHead: (surface, raw) =>
-        decodeHead(raw, session, surface).pipe(
-          Effect.map((head) => ({ head, pending: head.pending })),
-        ),
       commit: (pending, key) =>
         this.publication(pending, key).pipe(Effect.flatMap((pub) => this.commit(pub))),
       onFailure: (surface) =>
@@ -251,12 +236,12 @@ export class SurfacePublications {
   }
   private committedRevision(session: SessionId, surface: string, metadataOnly = false) {
     return Effect.gen({ self: this }, function* () {
-      yield* decode(ComponentId, surface, "Surface selection");
+      yield* decode(SurfaceId, surface, "Surface selection");
       const key = headKey(session, surface);
       const raw = yield* this.store.get(key);
       if (raw === undefined) {
         if (metadataOnly) return yield* conflict("Surface association has no committed head");
-        const latest = yield* this.store.get(latestKey(session, surface));
+        const latest = yield* this.store.get(legacyLatestKey(session, surface));
         if (latest === undefined) return 0;
         // A publisher may have reserved the first revision between these two reads.
         const reserved = yield* this.store.get(key);
@@ -269,18 +254,24 @@ export class SurfacePublications {
   }
   list(session: SessionId) {
     return Effect.gen({ self: this }, function* () {
-      const prefix = StoragePrefix.make(`web/surface/${session}/`);
-      const rows = yield* this.store.entries(prefix);
       const entries = [];
-      for (const row of rows) {
-        const id = row.key.slice(prefix.length);
+      const heads = yield* this.publications.heads(session);
+      for (const { id, read } of heads) {
         const observed = yield* Effect.gen({ self: this }, function* () {
-          const revision = yield* this.committedRevision(session, id);
+          const { committed_revision: revision } = yield* read;
           if (revision) return compactSurface(yield* this.rawRecord(session, id, revision));
         }).pipe(Effect.result);
         if (observed._tag === "Failure")
           entries.push({ surface_id: id, unavailable: observed.failure.message });
         else if (observed.success) entries.push(observed.success);
+      }
+      // Older releases kept a latest layout. A headless layout is diagnostic evidence only.
+      const known = new Set(heads.map((head) => head.id));
+      for (const id of yield* this.publications.legacyIds(
+        StoragePrefix.make(`web/surface/${session}/`),
+      )) {
+        if (!known.has(id))
+          entries.push({ surface_id: id, unavailable: "Missing committed surface head" });
       }
       return entries;
     });
@@ -334,106 +325,85 @@ export class SurfacePublications {
     observe: SurfaceObservation,
   ) {
     return this.publications.withLock(() =>
-      domainEffect(
-        Effect.gen({ self: this }, function* () {
-          yield* this.recoverPending(input.session_id);
-          const surface = yield* Effect.try({
-            try: () => validateSurface(input.surface),
-            catch: () => new CrewError("UI_SURFACE", "Invalid surface layout"),
-          });
-          const identity = callHash(input.message_id, input.call_id),
-            key = publicationKey(input.session_id, identity);
-          const inputHash = hash(surface),
-            prior = yield* this.store.get(key);
-          if (prior !== undefined) {
-            const publication = yield* this.publication(prior, key);
-            if (publication.input_hash !== inputHash)
-              return yield* conflict("Native tool call identity is bound to another surface");
-            yield* this.commit(publication);
-            return {
-              surface_id: publication.record.surface.createSurface.surfaceId,
-              revision: publication.record.revision,
-              version: "1.0" as const,
-            };
-          }
-          if ((yield* this.store.get(receiptKey(input.session_id, identity))) !== undefined)
-            return yield* conflict("Missing publication for retained call receipt");
-          const id = surface.createSurface.surfaceId,
-            latest = yield* this.store.get(latestKey(input.session_id, id));
-          const rawHead = yield* this.store.get(headKey(input.session_id, id));
-          const head =
-            rawHead === undefined ? undefined : yield* decodeHead(rawHead, input.session_id, id);
-          const previous =
-            latest === undefined
-              ? undefined
-              : loadSurfaceRecord(latest, latestKey(input.session_id, id));
-          if (previous && "unavailable" in previous)
-            return yield* conflict("Previous surface is unavailable; preserve its evidence");
-          if ((latest === undefined) !== (head === undefined))
-            return yield* conflict("Latest layout and committed surface head disagree");
-          if (!head) {
-            const retained = yield* this.store.entries(
-              this.publications.headPrefix(input.session_id),
-            );
-            if (retained.length >= 16)
-              return yield* new CrewError(
-                "UI_SURFACE_LIMIT",
-                "At most 16 retained surfaces per Abra conversation",
-              );
-          }
-          const snapshot = yield* checkSurfaceDraft(surface, observe);
-          const selected = selectBindingRows(
-            bindingRequirements(surface),
-            snapshot.work,
-            snapshot.binding_coverage?.total,
-          );
-          const captured = yield* decode(
-            Schema.Array(WorkItemSchema),
-            selected.rows,
-            "Surface observations",
-          );
-          if (head && previous && previous.revision !== head.committed_revision)
-            return yield* conflict("Latest layout and committed surface head disagree");
-          const committed = head?.committed_revision ?? 0;
-          const revision = committed + 1;
-          const record: SurfaceRecord = {
-            session_id: input.session_id,
-            message_id: input.message_id,
-            tool_call_id: `${input.message_id}/${input.call_id}`,
-            history: "immutable",
-            revision,
-            at: snapshot.at,
-            surface,
-            snapshot: captured,
-            coverage: {
-              ...selected.coverage,
-              ...(snapshot.binding_coverage ? { status: snapshot.binding_coverage.status } : {}),
-            },
+      Effect.gen({ self: this }, function* () {
+        yield* this.recoverPending(input.session_id);
+        const surface = yield* Effect.try({
+          try: () => validateSurface(input.surface),
+          catch: () => new CrewError("UI_SURFACE", "Invalid surface layout"),
+        });
+        const identity = callHash(input.message_id, input.call_id),
+          key = publicationKey(input.session_id, identity);
+        const inputHash = hash(surface),
+          prior = yield* this.store.get(key);
+        if (prior !== undefined) {
+          const publication = yield* this.publication(prior, key);
+          if (publication.input_hash !== inputHash)
+            return yield* conflict("Native tool call identity is bound to another surface");
+          yield* this.commit(publication);
+          return {
+            surface_id: publication.record.surface.createSurface.surfaceId,
+            revision: publication.record.revision,
+            version: "1.0" as const,
           };
-          const publication: Publication = {
+        }
+        if ((yield* this.store.get(receiptKey(input.session_id, identity))) !== undefined)
+          return yield* conflict("Missing publication for retained call receipt");
+        const id = surface.createSurface.surfaceId;
+        const head = yield* this.publications.headForPublication(input.session_id, id);
+        if (!head) {
+          if ((yield* this.store.get(legacyLatestKey(input.session_id, id))) !== undefined)
+            return yield* conflict("Missing committed surface head");
+        }
+        const snapshot = yield* checkSurfaceDraft(surface, observe);
+        const selected = selectBindingRows(
+          bindingRequirements(surface),
+          snapshot.work,
+          snapshot.binding_coverage?.total,
+        );
+        const captured = yield* decode(
+          Schema.Array(WorkItemSchema),
+          selected.rows,
+          "Surface observations",
+        );
+        const committed = head?.committed_revision ?? 0;
+        const revision = committed + 1;
+        const record: SurfaceRecord = {
+          session_id: input.session_id,
+          message_id: input.message_id,
+          tool_call_id: `${input.message_id}/${input.call_id}`,
+          history: "immutable",
+          revision,
+          at: snapshot.at,
+          surface,
+          snapshot: captured,
+          coverage: {
+            ...selected.coverage,
+            ...(snapshot.binding_coverage ? { status: snapshot.binding_coverage.status } : {}),
+          },
+        };
+        const publication: Publication = {
+          schema_version: 1,
+          input_hash: inputHash,
+          record_hash: hash(record),
+          message_id: input.message_id,
+          call_id: input.call_id,
+          record,
+        };
+        yield* this.publications.reserveAndCommit(
+          input.session_id,
+          id,
+          {
             schema_version: 1,
-            input_hash: inputHash,
-            record_hash: hash(record),
-            message_id: input.message_id,
-            call_id: input.call_id,
-            record,
-          };
-          yield* this.publications.reserveAndCommit(
-            input.session_id,
-            id,
-            {
-              schema_version: 1,
-              session_id: input.session_id,
-              surface_id: id,
-              next_revision: revision + 1,
-              committed_revision: committed,
-              pending: publication,
-            },
-            () => this.commit(publication),
-          );
-          return { surface_id: id, revision, version: "1.0" as const };
-        }),
-      ),
+            session_id: input.session_id,
+            surface_id: id,
+            next_revision: revision + 1,
+            committed_revision: committed,
+            pending: publication,
+          },
+          () => this.commit(publication),
+        );
+        return { surface_id: id, revision, version: "1.0" as const };
+      }),
     );
   }
 }

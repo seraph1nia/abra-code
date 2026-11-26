@@ -1,5 +1,8 @@
 import { useMemo } from "react";
-import { readReportDocument } from "@abracode/contracts/presentation/report-document";
+import {
+  type ReportDocument,
+  readReportDocument,
+} from "@abracode/contracts/presentation/report-document";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import type { DocumentArtifactSchema } from "@abracode/contracts/web/wire";
 import { GeneratedSurface } from "./surfaces.tsx";
@@ -29,7 +32,27 @@ export function ReportDocumentView({
     }
   }, [artifact]);
   if (!result.supported) return <output>{result.reason}</output>;
-  const document = result.document;
+  return (
+    <FrozenReportDocument
+      document={result.document}
+      hash={artifact.hash}
+      inspect={inspect}
+      preparedDiagrams={preparedDiagrams}
+    />
+  );
+}
+
+export function FrozenReportDocument({
+  document,
+  hash,
+  inspect,
+  preparedDiagrams,
+}: {
+  document: ReportDocument;
+  hash: typeof DocumentArtifactSchema.Type.hash;
+  inspect?: (target: ResourceSelection) => void;
+  preparedDiagrams?: readonly PreparedReportDiagram[];
+}) {
   return (
     <article className="frozen-report" data-report-document={document.document_id}>
       <h2>{document.title}</h2>
@@ -47,7 +70,7 @@ export function ReportDocumentView({
           Revision {document.revision} · {document.provenance.execution_id} · Generation{" "}
           {document.provenance.generation}
         </p>
-        <code>{artifact.hash}</code>
+        <code>{hash}</code>
         <ul>
           {document.limitations.map((limitation, index) => (
             <li key={index}>{limitation}</li>
@@ -55,13 +78,13 @@ export function ReportDocumentView({
         </ul>
       </details>
       <GeneratedSurface
-        key={artifact.hash}
+        key={hash}
         frozen
         diagramRequest={{
           kind: "report",
           issue_id: document.provenance.issue_id,
           request_id: document.document_id,
-          hash: artifact.hash,
+          hash: hash,
         }}
         work={document.data.work}
         liveCoverage={document.data.live_coverage}
@@ -70,6 +93,7 @@ export function ReportDocumentView({
         preparedDiagrams={preparedDiagrams}
         record={{
           surface: document.surface,
+          surface_hash: hash,
           snapshot: document.data.snapshot_work ?? document.data.work,
           revision: document.revision,
           at: document.captured_at,

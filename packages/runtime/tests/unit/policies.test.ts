@@ -1,6 +1,6 @@
 import { workBriefing } from "../../src/visibility/briefing.ts";
 import { createWorkflow } from "../../src/opencode/application.ts";
-import { deliveryOutcome } from "../../src/workflow/delivery-outcome.ts";
+import { deliveryOutcome } from "../../src/visibility/delivery-outcome.ts";
 import * as Id from "@abracode/contracts/identities";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
@@ -94,16 +94,20 @@ test("research runs without OpenSpec/checks and retains a hashed report and sess
   assert.equal(done.pull_request_reference, undefined);
   assert.equal(done.delivery_receipt, undefined);
   await assert.rejects(access(e.worktree_directory!));
-  const c = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const c = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   assert.match(await run(c.queries.report(issue.id)), /SQLite owns/);
   const detail = await run(new Visibility(c).detail(issue.id));
@@ -286,20 +290,24 @@ test("uncertain report publication reconciles the existing bytes rather than rep
   const receipt = await run(
     f.controller.researchReport(e.research_session_id!, report(0, e.base_commit!)),
   );
-  const current = await run(f.controller.get(issue.id));
-  delete current.report_receipt;
+  let current = await run(f.controller.get(issue.id));
+  current = { ...current, report_receipt: undefined };
   await run(f.records.save(current));
   f.runtime.success(e.research_session_id!);
-  const c = createWorkflow(
-    f.catalog,
-    f.config,
-    f.records,
-    f.work,
-    f.spec,
-    f.git,
-    f.runtime,
-    f.delivery,
-    f.locks,
+  const c = (
+    await run(
+      createWorkflow(
+        f.catalog,
+        f.config,
+        f.records,
+        f.work,
+        f.spec,
+        f.git,
+        f.runtime,
+        f.delivery,
+        f.locks,
+      ),
+    )
   ).controller;
   const done = (await run(c.reconcile(issue.id)))[0];
   assert.equal(done.current_phase, "completed");
@@ -397,7 +405,7 @@ for (const drift of ["reconcile", "pause"] as const)
 test("a stale reconciliation snapshot cannot erase a concurrently published research report", async (t) => {
   const { f, issue } = await setup("research-only");
   t.onTestFinished(() => run(f.close()));
-  const stale = await run(f.controller.start(issue.id));
+  let stale = await run(f.controller.start(issue.id));
   const receipt = await run(
     f.controller.researchReport(
       stale.research_session_id!,
@@ -405,8 +413,8 @@ test("a stale reconciliation snapshot cannot erase a concurrently published rese
     ),
   );
   await assert.rejects(run(f.records.save(stale)), /revision changed/);
-  stale.error_or_recovery_reason = "Independent late observation";
-  await run(f.records.saveOwned(stale, ["error_or_recovery_reason"]));
+  stale = { ...stale, error_or_recovery_reason: "Independent late observation" };
+  stale = await run(f.records.saveOwned(stale, ["error_or_recovery_reason"]));
   const saved = await run(f.controller.get(issue.id));
   assert.equal(saved.report_receipt?.hash, receipt.hash);
   assert.equal(saved.report_intent?.receipt.hash, receipt.hash);

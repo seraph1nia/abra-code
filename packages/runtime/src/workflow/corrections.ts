@@ -1,16 +1,17 @@
+import { sha256 } from "../digest.ts";
+import { WorkflowError } from "../errors.ts";
+import { tryDomainValue } from "../effect.ts";
 import { externalOwns } from "@abracode/contracts/validation/contracts";
 import { ObligationKey, RoundId, FindingId, ChangeName } from "@abracode/contracts/identities";
 import { Clock, Effect } from "effect";
-import { createHash } from "node:crypto";
-import { CrewError, type Execution, type Config } from "../domain.ts";
-import { domainEffect } from "../effect.ts";
+import { type Execution, type Config } from "../domain.ts";
 import { type Records } from "../storage/store.ts";
 import { type Git } from "../git/repository.ts";
-import { type ScopeDispositionSchema } from "./correction-contracts.ts";
+import { type ScopeDispositionSchema } from "@abracode/contracts/workflow/correction-contracts";
 import { openControllerDecision } from "./decision-ledger.ts";
 import { assertTransition, resetDeliveryArtifactsPatch } from "./transitions.ts";
 
-const hash = (text: string) => createHash("sha256").update(text).digest("hex");
+const hash = (text: string) => sha256(text);
 
 export class Corrections {
   constructor(
@@ -19,43 +20,47 @@ export class Corrections {
     private config: Config,
   ) {}
   decision = Effect.fn("Corrections.decision")(
-    function* (this: Corrections, e: Execution, reason: string) {
+    { self: this },
+    function* (e: Execution, reason: string) {
       return yield* openControllerDecision(this.records, e, {
         key: ObligationKey.make(`correction-${hash(reason).slice(0, 32)}`),
         question: reason,
         staleMessage: "Correction decision was superseded",
       });
-    }.bind(this),
-    domainEffect,
+    },
   );
   prepare = Effect.fn("Corrections.prepare")(
+    { self: this },
     function* (
-      this: Corrections,
       e: Execution,
       source: "check" | "review" | "forge",
       findings: readonly FindingId[],
       instructions: string,
       scope: typeof ScopeDispositionSchema.Type,
+      resumeIssue = false,
     ) {
       if (externalOwns(e))
-        return yield* new CrewError(
+        return yield* new WorkflowError(
           "EXTERNAL_CUSTODY",
           "Return external branch custody before admitting a native writer or changing its scope",
         );
-      if (!(e.workflow_policy !== "research-only" && !e.stop_status))
-        return yield* new CrewError(
+      if (e.workflow_policy === "research-only" || e.stop_status)
+        return yield* new WorkflowError(
           "CORRECTION_POLICY",
           "Coding correction cannot resume paused/research work",
         );
       if (!e.plan_fingerprint)
-        return yield* new CrewError("CORRECTION_PLAN", "Approved planning identity is required");
+        return yield* new WorkflowError(
+          "CORRECTION_PLAN",
+          "Approved planning identity is required",
+        );
       const budget =
         this.config.supervision_mode === "manual" ? 0 : e.effective_policy.repair_rounds;
       const head = yield* this.git.head(e.worktree_directory!);
       const ids = [...new Set(findings)].sort();
       const duplicate = e.rounds?.some((r) => r.findings.some((id) => ids.includes(id)));
       if (scope !== "in_scope" || (e.rounds?.length ?? 0) >= budget || duplicate) {
-        yield* this.decision(
+        const decision = yield* this.decision(
           e,
           scope !== "in_scope"
             ? `Correction requires ${scope === "scope_change" ? "revised scope approval" : "clarification"}: ${instructions}`
@@ -63,7 +68,7 @@ export class Corrections {
               ? `Repeated correction finding requires inspection: ${instructions}`
               : `Correction budget exhausted (${e.rounds?.length ?? 0}/${budget}): ${instructions}`,
         );
-        return undefined;
+        return { execution: decision.execution, role: undefined };
       }
       const ordinal = (e.rounds?.length ?? 0) + 1;
       const postArchive = !!e.archive_path || !!e.delivered_commit;
@@ -90,8 +95,8 @@ export class Corrections {
       };
       const revision = e.workflow_policy === "full-openspec" && postArchive;
       const nextPhase = revision ? ("planning" as const) : ("applying" as const);
-      assertTransition(e.current_phase, nextPhase);
-      yield* this.records.commitOwned(e, {
+      yield* tryDomainValue(assertTransition, e, nextPhase, "correction");
+      e = yield* this.records.commitOwned(e, {
         ...resetDeliveryArtifactsPatch({
           clearDeliveryArtifacts: true,
           clearDeliveredCommit: true,
@@ -107,13 +112,14 @@ export class Corrections {
           planning_base_commit: head,
         }),
         current_phase: nextPhase,
+        ...(resumeIssue && { pending_issue_status: "in_progress" }),
       });
-      return revision ? ("explore" as const) : ("apply" as const);
-    }.bind(this),
-    domainEffect,
+      return { execution: e, role: revision ? ("explore" as const) : ("apply" as const) };
+    },
   );
   assertArchives = Effect.fn("Corrections.assertArchives")(
-    function* (this: Corrections, e: Execution) {
+    { self: this },
+    function* (e: Execution) {
       const archived = [
         ...(e.rounds ?? []),
         ...(e.finishing?.synchronization?.map((a) => ({
@@ -148,7 +154,7 @@ export class Corrections {
             Effect.flatMap(([changed, untracked]) =>
               changed || untracked
                 ? Effect.fail(
-                    new CrewError(
+                    new WorkflowError(
                       "ARCHIVE_CHANGED",
                       "Previous correction archives must remain immutable",
                     ),
@@ -158,7 +164,6 @@ export class Corrections {
           ),
         { concurrency: 4 },
       );
-    }.bind(this),
-    domainEffect,
+    },
   );
 }

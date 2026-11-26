@@ -1,5 +1,5 @@
 import * as Id from "@abracode/contracts/identities";
-import { domainEffect } from "../../src/effect.ts";
+import { domainEffect } from "../effects.ts";
 import { Effect, Schema, Semaphore } from "effect";
 import { type Store } from "../../src/storage/store.ts";
 import { CrewError } from "../../src/domain.ts";
