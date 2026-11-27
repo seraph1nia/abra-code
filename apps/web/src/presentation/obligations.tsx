@@ -170,9 +170,11 @@ function WaitCard({ wait }: { wait: typeof DeclaredWaitSchema.Type }) {
   );
 }
 export function CommunicationPanel({ issue, inspect }: { issue: IssueId; inspect: Inspect }) {
+  const resource = useSearch({ from: "__root__" }).resource;
+  const selected = resource?.action === "open_task" ? resource.request : undefined;
   const [offset, setOffset] = useState(0);
   return (
-    <RequestState query={queries.messages(issue, offset)}>
+    <RequestState query={queries.messages(issue, selected?.offset ?? offset)}>
       {(page) => (
         <>
           <p>
@@ -180,18 +182,31 @@ export function CommunicationPanel({ issue, inspect }: { issue: IssueId; inspect
           </p>
           <p className="muted">Observed {new Date(page.observed_at).toLocaleString()}</p>
           <div className="space-y-4">
-            {page.entries.map((entry) => (
-              <Thread key={entry.record.request_id} entry={entry} issue={issue} inspect={inspect} />
-            ))}
+            {selected &&
+              !page.entries.some((entry) => entry.record.request_id === selected.request_id) && (
+                <output>This exact request is unavailable.</output>
+              )}
+            {page.entries
+              .filter((entry) => !selected || entry.record.request_id === selected.request_id)
+              .map((entry) => (
+                <Thread
+                  key={entry.record.request_id}
+                  entry={entry}
+                  issue={issue}
+                  inspect={inspect}
+                />
+              ))}
           </div>
           {!page.entries.length && <p>No retained communication on this page.</p>}
-          <PaginationBar
-            label="Communication pages"
-            previousLabel="Previous communication"
-            nextLabel="Next communication"
-            previous={offset ? () => setOffset(Math.max(0, offset - page.limit)) : undefined}
-            next={page.next_offset === undefined ? undefined : () => setOffset(page.next_offset!)}
-          />
+          {!selected && (
+            <PaginationBar
+              label="Communication pages"
+              previousLabel="Previous communication"
+              nextLabel="Next communication"
+              previous={offset ? () => setOffset(Math.max(0, offset - page.limit)) : undefined}
+              next={page.next_offset === undefined ? undefined : () => setOffset(page.next_offset!)}
+            />
+          )}
         </>
       )}
     </RequestState>

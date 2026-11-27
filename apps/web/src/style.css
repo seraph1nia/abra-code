@@ -1806,3 +1806,83 @@
     min-height: 44px;
   }
 }
+
+.work-task-page .canvas-heading h2 {
+  font-size: clamp(1.2rem, 2.6vw, 2rem);
+  line-height: 1.18;
+}
+.work-task-page .inspector-content > *,
+.work-task-page .task-summary {
+  width: min(100%, 64rem);
+  margin-inline: auto;
+}
+.task-summary {
+  padding: 0.5rem clamp(1rem, 3vw, 2.5rem);
+  overflow: auto;
+  max-height: min(22vh, 12rem);
+}
+.task-summary p,
+.task-report > p {
+  overflow-wrap: anywhere;
+}
+.task-summary dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.75rem;
+  margin: 0.65rem 0;
+}
+.task-summary dt {
+  font-size: 0.75rem;
+  color: var(--ink-secondary);
+}
+.task-summary dd {
+  margin: 0;
+}
+.task-report {
+  padding-block: 1rem;
+  overflow-wrap: anywhere;
+}
+.task-report h3 {
+  font-size: 1.35rem;
+}
+
+.work-task-page .inspector-header,
+.work-task-page .inspector-tab-bar {
+  padding-inline: max(1rem, calc((100% - 64rem) / 2));
+}
+.work-task-page .task-summary {
+  padding-inline: 0;
+  width: min(calc(100% - 2rem), 64rem);
+}
+.plan-progress {
+  width: 100%;
+  height: 0.4rem;
+  accent-color: var(--primary);
+  margin-block: 0.65rem;
+}
+.plan-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.plan-steps li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+  padding-block: 0.65rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.plan-steps li > span:nth-child(2) {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.plan-steps li[data-complete="true"] > span:first-child {
+  color: var(--primary);
+}
+.accepted-proposal summary,
+.work-task-page details > summary {
+  cursor: pointer;
+}
+.task-summary dd {
+  text-transform: capitalize;
+}

@@ -4,6 +4,7 @@ import { useCallback, useLayoutEffect, useRef } from "react";
 import { resourceFromSearch, type InspectorTab, type WorkspaceSearch } from "../navigation.ts";
 export function useWorkspaceNavigation(route: WorkspaceSearch, beforeNavigate: () => void) {
   const navigate = useWorkspaceNavigate();
+  const collectionPosition = useRef<{ element: HTMLElement; top: number } | undefined>(undefined);
   const inspectorOrigin = useRef<HTMLElement | null>(null);
   const returnInspectorFocus = () => {
     const origin = inspectorOrigin.current;
@@ -18,7 +19,11 @@ export function useWorkspaceNavigation(route: WorkspaceSearch, beforeNavigate: (
   };
   const onOpen = useCallback(
     (origin: HTMLElement | null) => {
-      inspectorOrigin.current = origin;
+      const element = origin?.closest<HTMLElement>(".collection-page");
+      if (element) {
+        collectionPosition.current = { element, top: element.scrollTop };
+        inspectorOrigin.current = origin;
+      } else if (!collectionPosition.current) inspectorOrigin.current = origin;
       beforeNavigate();
     },
     [beforeNavigate],
@@ -40,8 +45,15 @@ export function useWorkspaceNavigation(route: WorkspaceSearch, beforeNavigate: (
   const inspecting = Boolean(selected || route.surface || route.retained || route.review);
   useLayoutEffect(() => {
     const origin = inspectorOrigin.current;
-    if (wasInspecting.current && !inspecting && origin?.checkVisibility())
-      origin.focus({ preventScroll: true });
+    if (wasInspecting.current && !inspecting) {
+      const previous = collectionPosition.current;
+      collectionPosition.current = undefined;
+      if (previous)
+        requestAnimationFrame(() => {
+          previous.element.scrollTop = previous.top;
+        });
+      if (origin?.checkVisibility()) origin.focus({ preventScroll: true });
+    }
     wasInspecting.current = inspecting;
   }, [inspecting]);
   const setTab = (tab: InspectorTab) => {

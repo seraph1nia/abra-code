@@ -38,6 +38,8 @@ import { Overview } from "./inspector/overview.tsx";
 import { PlanPanel, PlanPassagePanel } from "./inspector/plan.tsx";
 import { DiffPanel } from "./inspector/diff.tsx";
 import { ActivityPanel } from "./inspector/activity.tsx";
+import { TaskSummary, OutcomeReport } from "./inspector/task-summary.tsx";
+import { SessionsPanel } from "./presentation/sessions.tsx";
 import { Reports } from "./inspector/reports.tsx";
 
 const tabIcons = {
@@ -50,6 +52,8 @@ const tabIcons = {
 } as const;
 
 type Props = {
+  taskPage?: boolean;
+  openChat?: () => void;
   work?: WorkItem;
   issue: IssueId;
   tab: InspectorTab;
@@ -264,6 +268,8 @@ function InspectorContent({
   focusForm,
   inspect,
   refresh,
+  taskPage,
+  openChat,
 }: ContentProps) {
   const route = useSearch({ from: "__root__" });
   const target = route.resource;
@@ -288,24 +294,36 @@ function InspectorContent({
       item.checkpoint.issue_id === work.issue_id &&
       (item.checkpoint.kind === "plan" || item.checkpoint.kind === "merge"),
   );
+  const primaryTab =
+    taskPage && tab === "Overview" ? "Plan" : taskPage && tab === "Verification" ? "Reports" : tab;
   const showApprovalBar =
-    Boolean(boundApproval) && (tab === "Overview" || tab === "Plan" || tab === "Diff");
+    Boolean(boundApproval) && (taskPage || tab === "Overview" || tab === "Plan" || tab === "Diff");
 
   return (
-    <aside className="inspector" aria-label="Work inspector">
+    <aside
+      className={taskPage ? "inspector work-task-page" : "inspector"}
+      aria-label="Work inspector"
+    >
       <header className="inspector-header">
         <div className="canvas-heading">
-          <h2>{title}</h2>
+          <h2>{taskPage ? work.title : title}</h2>
           <small title={work.issue_id}>
-            {title === work.title ? (work.repository_id ?? "Work") : work.title} · {work.issue_id}
+            {taskPage || title === work.title ? (work.repository_id ?? "Work") : work.title} ·{" "}
+            {work.issue_id}
           </small>
         </div>
         <div className="inspector-controls">
+          {taskPage && (
+            <Button size="sm" variant="outline" onClick={openChat}>
+              Ask Abra
+            </Button>
+          )}
           <CanvasControls close={close} />
         </div>
       </header>
+      {taskPage && <TaskSummary work={work} forms={forms} focusForm={focusForm} />}
       <Tabs
-        value={tab}
+        value={primaryTab}
         onValueChange={(value) => {
           const next = inspectorTabs.find((name) => name === value);
           if (next) setTab(next);
@@ -317,15 +335,29 @@ function InspectorContent({
           className="tabs w-full overflow-x-auto justify-start"
           aria-label="Work details"
         >
-          {inspectorTabs.map((name) => {
-            const Icon = tabIcons[name];
-            return (
-              <TabsTrigger key={name} value={name}>
-                <Icon aria-hidden="true" />
-                <span>{name}</span>
-              </TabsTrigger>
-            );
-          })}
+          {(taskPage ? (["Plan", "Diff", "Reports", "Activity"] as const) : inspectorTabs).map(
+            (name) => {
+              const Icon = tabIcons[name];
+              return (
+                <TabsTrigger
+                  key={name}
+                  value={name}
+                  onClick={() => {
+                    if (
+                      taskPage &&
+                      name === primaryTab &&
+                      (tab === "Verification" ||
+                        (tab === "Activity" && route.activity && route.activity !== "sessions"))
+                    )
+                      setTab(name);
+                  }}
+                >
+                  <Icon aria-hidden="true" />
+                  <span>{taskPage && name === "Activity" ? "Live session" : name}</span>
+                </TabsTrigger>
+              );
+            },
+          )}
         </TabsList>
       </Tabs>
       {showApprovalBar && boundApproval && (
@@ -339,6 +371,12 @@ function InspectorContent({
               </span>
             </span>
             <div className="contextual-approval-actions">
+              {boundApproval.checkpoint?.kind === "merge" && tab !== "Reports" && (
+                <Button variant="outline" size="sm" onClick={() => setTab("Reports")}>
+                  Review delivery evidence
+                </Button>
+              )}
+
               <Button
                 size="sm"
                 variant={approvalOpen ? "outline" : "default"}
@@ -364,6 +402,7 @@ function InspectorContent({
       <div className="inspector-content" key={`${work.issue_id}:${tab}`}>
         <InspectorPanel
           work={work}
+          taskPage={taskPage}
           tab={tab}
           ask={ask}
           forms={forms}
@@ -378,19 +417,62 @@ function InspectorContent({
 function InspectorPanel({
   work,
   tab,
+  taskPage,
   ask,
   forms,
   focusForm,
   inspect,
-}: Pick<ContentProps, "work" | "tab" | "ask" | "forms" | "focusForm" | "inspect">) {
+}: Pick<ContentProps, "taskPage" | "work" | "tab" | "ask" | "forms" | "focusForm" | "inspect">) {
   const search = useSearch({ from: "__root__" });
   const target = search.resource;
+  const [detailsOpen, setDetailsOpen] = useState(false);
   if (target?.action === "open_finding")
     return <SelectedFinding target={target} inspect={inspect} />;
   if (target?.action === "open_decision")
     return <DecisionsPanel issue={work.issue_id} forms={forms} focusForm={focusForm} />;
   if (target?.action === "open_passage")
     return <PlanPassagePanel issue={work.issue_id} target={target} />;
+  if (taskPage && tab === "Activity" && (!search.activity || search.activity === "sessions"))
+    return <SessionsPanel work={work} inspect={inspect} />;
+  if (taskPage && (tab === "Overview" || tab === "Plan"))
+    return (
+      <>
+        <PlanPanel work={work} />
+        <details open={detailsOpen} onToggle={(event) => setDetailsOpen(event.currentTarget.open)}>
+          <summary>Task details and decisions</summary>
+          {detailsOpen && (
+            <>
+              <RequestState query={queries.overview(work.issue_id)}>
+                {(detail) => (
+                  <Overview detail={detail} ask={ask} forms={forms} focusForm={focusForm} />
+                )}
+              </RequestState>
+              <DecisionsPanel issue={work.issue_id} forms={forms} focusForm={focusForm} />
+              {(["communication", "checks", "leads"] as const).map((activity) => (
+                <Button
+                  key={activity}
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    inspect({
+                      action: "open_task",
+                      issue_id: work.issue_id,
+                      section: "activity",
+                      activity,
+                      ...(activity === "communication" && work.communication?.first
+                        ? { request: work.communication.first }
+                        : {}),
+                    })
+                  }
+                >
+                  {activity}
+                </Button>
+              ))}
+            </>
+          )}
+        </details>
+      </>
+    );
   switch (tab) {
     case "Verification":
       return (
@@ -426,7 +508,14 @@ function InspectorPanel({
     case "Activity":
       return <ActivityPanel key={work.issue_id} work={work} inspect={inspect} />;
     case "Reports":
-      return <Reports key={work.issue_id} issue={work.issue_id} inspect={inspect} />;
+      return (
+        <>
+          {target?.action !== "open_artifact" && (
+            <OutcomeReport work={work} inspect={inspect} focusForm={focusForm} />
+          )}
+          <Reports key={work.issue_id} issue={work.issue_id} inspect={inspect} />
+        </>
+      );
     default:
       tab satisfies never;
   }

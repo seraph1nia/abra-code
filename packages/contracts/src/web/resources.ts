@@ -84,14 +84,18 @@ export const ResourceSelectionSchema = Schema.Union([
     action: Schema.Literal("open_task"),
     issue_id: IssueId,
     section: Schema.optionalKey(TaskSectionSchema),
+    request: Schema.optionalKey(Schema.Struct({ request_id: RequestId, offset: Count })),
     activity: Schema.optionalKey(Schema.Literals(["sessions", "communication", "checks", "leads"])),
   })
     .check(
       Schema.makeFilter(
         (target) =>
-          !target.activity ||
-          target.section === "activity" ||
-          "Activity selection requires the activity section",
+          (target.request && target.activity !== "communication"
+            ? "Request selection requires communication"
+            : undefined) ??
+          (!target.activity ||
+            target.section === "activity" ||
+            "Activity selection requires the activity section"),
       ),
     )
     .annotate(exact),

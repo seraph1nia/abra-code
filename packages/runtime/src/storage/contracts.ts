@@ -1,3 +1,4 @@
+import { PlanStepsSchema } from "@abracode/contracts/visibility/document-contracts";
 import {
   RetainedReferenceSchema,
   EvidenceReceiptSchema,
@@ -270,6 +271,9 @@ const fields = {
       error: WorkerErrorSchema,
       at: Timestamp,
     }),
+  ),
+  retained_steps: Schema.optional(
+    Schema.Struct({ change: ChangeName, fingerprint: Fingerprint, steps: PlanStepsSchema }),
   ),
   plan_fingerprint: Schema.optional(Fingerprint),
   worker_references: Schema.optional(

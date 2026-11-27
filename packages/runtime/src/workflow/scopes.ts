@@ -44,7 +44,7 @@ export class Scopes {
                   generation: e.control_generation,
                   scope: e.workflow_policy,
                   question:
-                    "Provide the scoped work contract as JSON with goal, nonempty acceptance array, and constraints array. This answer does not approve the scope.",
+                    "Complete the goal, observable acceptance criteria and any constraints for this task.",
                   openedAt: yield* Clock.currentTimeMillis,
                 }),
               ),

@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { ChangeScopeSchema, type ChangeScope } from "@abracode/contracts/web/changes";
-import type { IssueId } from "@abracode/contracts/identities";
+import { type IssueId, SessionId } from "@abracode/contracts/identities";
 
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -57,6 +57,8 @@ export function nativeChangeScope(
     return;
   if (session !== supervisor) {
     const issue = workerIssue(session);
+    if (issue && incrementalStreamingEvents.has(event.type))
+      return { sessions: [SessionId.make(session)] };
     return issue &&
       (event.type.startsWith("session.") ||
         event.type.startsWith("form.") ||

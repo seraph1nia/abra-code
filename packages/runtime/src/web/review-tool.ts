@@ -6,6 +6,7 @@ import {
   ReviewSourceSchema,
   ReviewPublishSchema,
   ReviewSelectionSchema,
+  ReviewSubmitSchema,
   ReviewReferenceSchema,
   ReviewViewSchema,
   type ReviewSource,
@@ -119,15 +120,20 @@ export function reviewTool({ reviews, resolveSource }: NativeReviewOwner) {
     name: "review_ui",
     diagnostic: true,
     description:
-      "Publish app-only interactive review controls beside an exact plan, saved report or generated surface. First use action source to obtain exact source/hash/generation. action publish takes review {review_id,title,source,fields:[{component:SingleSelect|MultiSelect|DesignChoiceGroup|CommentField,id,label,required?,options?}],responds_to?}, previews?:[{id,path}] relative to the source worktree. Options use {value,label,description?}; design options also require preview matching a supplied preview ID. PNG/JPEG/WebP only, 2 MiB each/8 MiB total. Reusing review_id publishes a new revision; never reuse a native call with changed input. action read returns an exact retained review and source excerpt. Use responds_to with the submitted feedback request_id for a resulting revision. No approvals or executable actions. Offline reports unchanged.",
+      "Publish app-only interactive review controls beside an exact plan, saved report or generated surface. First use action source to obtain exact source/hash/generation. action publish takes review {review_id,title,source,fields:[{component:SingleSelect|MultiSelect|DesignChoiceGroup|CommentField,id,label,required?,options?}],responds_to?}, previews?:[{id,path}] relative to the source worktree. Options use {value,label,description?}; design options also require preview matching a supplied preview ID. PNG/JPEG/WebP only, 2 MiB each/8 MiB total. Reusing review_id publishes a new revision; never reuse a native call with changed input. action read returns an exact retained review and source excerpt. action response takes request_id and retrieves the admitted choices for this conversation. Use responds_to with the submitted feedback request_id for a resulting revision. No approvals or executable actions. Offline reports unchanged.",
     input: Schema.Union([
       Schema.Struct({ action: Schema.Literal("publish"), ...ReviewPublishSchema.fields }),
+      Schema.Struct({
+        action: Schema.Literal("response"),
+        request_id: ReviewSubmitSchema.fields.request_id,
+      }),
       Schema.Struct({ action: Schema.Literal("read"), ...ReviewSelectionSchema.fields }),
       Schema.Struct({ action: Schema.Literal("source"), source: sourceQuery }),
     ]),
     output: Schema.Union([
       ReviewReferenceSchema,
       ReviewViewSchema,
+      ReviewSubmitSchema,
       Schema.Struct({ source: ReviewSourceSchema }),
     ]),
     run: (input, session, call) =>
@@ -137,6 +143,7 @@ export function reviewTool({ reviews, resolveSource }: NativeReviewOwner) {
             review: input.review,
             ...(input.previews ? { previews: input.previews } : {}),
           });
+        if (input.action === "response") return yield* reviews.response(session, input.request_id);
         if (input.action === "read") return yield* reviews.read(session, input);
         const source = yield* resolveSource(session, input.source);
         return { source };

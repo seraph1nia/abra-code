@@ -6,16 +6,20 @@ import { type Config, type Execution, type Issue } from "../domain.ts";
 import { diagnosticText } from "../opencode/diagnostics.ts";
 import { deliveryOutcome } from "./delivery-outcome.ts";
 import { retainedOverviewBlockers } from "../workflow/read-model/snapshot.ts";
-import { historicalWorkers } from "../workflow/worker-assignment.ts";
+import { historicalWorkers, workerSessionID } from "../workflow/worker-assignment.ts";
 import { executionContract } from "../workflow/read-model/execution-contract.ts";
 import { type WorkItem } from "./protocol.ts";
 
 export { retainedOverviewBlockers };
 
 export function communication(e?: Execution): NonNullable<WorkItem["communication"]> {
+  const messages = e?.messages ?? [];
+  const outstanding = messageRequests(messages).filter(requiresResponse);
+  const first = outstanding[0];
   return {
-    total: e?.messages?.length ?? 0,
-    outstanding: messageRequests(e?.messages).filter(requiresResponse).length,
+    total: messages.length,
+    outstanding: outstanding.length,
+    ...(first && { first: { request_id: first.request_id, offset: messages.indexOf(first) } }),
   };
 }
 
@@ -31,6 +35,9 @@ export function sessions(e?: Execution): WorkItem["sessions"] {
 
 export function supervision(mode: Config["supervision_mode"], e?: Execution) {
   return {
+    active_session_id:
+      e && !e.session_intent && e.current_phase !== "completed" ? workerSessionID(e) : undefined,
+    provisioning_role: e?.session_intent?.role,
     ...(e?.worker_evidence?.length && { latest_evidence: e.worker_evidence.at(-1)?.request_id }),
     ...(e?.verification_receipt && { last_check: e.verification_receipt.fingerprint }),
     ...(e?.review_receipt && {

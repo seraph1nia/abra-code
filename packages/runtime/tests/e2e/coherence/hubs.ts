@@ -362,6 +362,7 @@ test("chat stays mounted while the finder searches retained pages, preserving dr
   await page.clock.resume();
   await page.getByRole("button", { name: /Closed task 55/ }).click();
   await page.getByRole("heading", { name: "Closed task 55", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Ask Abra", exact: true }).click();
   assert.equal(await composer.getAttribute("data-mount-identity"), "same-composer");
   assert.equal(await page.getByRole("log").getAttribute("data-mount-identity"), "same-chat");
   assert.equal(await composer.inputValue(), "Keep this draft while I inspect work");
@@ -643,7 +644,7 @@ test("GitHub finder loads on demand, preserves drafts on inspection and exposes 
   assert.equal(reads.length, before);
 });
 
-test("Work opens each real reader alongside one live chat and sending preserves the selected diff", async (t) => {
+test("Work opens the task first and optional chat beside each reader and sending preserves the selected diff", async (t) => {
   const f = await fixture();
   t.onTestFinished(f.close);
   const page = await f.browser.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -652,8 +653,10 @@ test("Work opens each real reader alongside one live chat and sending preserves 
   await task.click();
   const input = page.getByLabel("Message Abra", { exact: true });
   const sections = page.getByRole("tablist", { name: "Work details", exact: true });
+  await input.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Ask Abra", exact: true }).click();
   await input.fill("Explain the selected diff");
-  for (const tab of ["Plan", "Verification", "Diff"]) {
+  for (const tab of ["Reports", "Plan", "Diff"]) {
     await sections.getByRole("tab", { name: tab, exact: true }).click();
     await page.waitForURL((url) => url.pathname === "/work" && url.searchParams.get("tab") === tab);
     assert.equal(await input.inputValue(), "Explain the selected diff");
@@ -667,6 +670,7 @@ test("Work opens each real reader alongside one live chat and sending preserves 
   assert.equal(new URL(page.url()).searchParams.get("tab"), "Diff");
   await page.reload();
   await file.waitFor();
+  await page.getByRole("button", { name: "Ask Abra", exact: true }).click();
   await input.fill("Second question");
   for (const width of [1250, 761, 760, 1251]) {
     await page.setViewportSize({ width, height: 900 });

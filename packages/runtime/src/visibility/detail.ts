@@ -1,3 +1,4 @@
+import { planSteps } from "../openspec/plan-steps.ts";
 import { tryDomainValue } from "../effect.ts";
 import { Clock, Effect } from "effect";
 import { type IssueId } from "@abracode/contracts/identities";
@@ -43,11 +44,43 @@ export function observeOverview(queries: Queries, issueID: IssueId) {
         ? { phase: "recovery_required" as const, error: task.execution_unavailable }
         : {}),
     };
+    const research =
+      e?.report_intent &&
+      e.report_receipt?.hash === e.report_intent.receipt.hash &&
+      e.report_receipt.scope_fingerprint === e.scope?.fingerprint
+        ? e.report_intent.evidence
+        : undefined;
+    const current = e?.delivered_commit;
+    const publication = e?.finishing?.publication;
+    const destination = publication?.commit === current ? publication?.destination : undefined;
+    const previous =
+      destination && destination.kind !== "initial"
+        ? destination.predecessor
+        : e?.rounds?.findLast(
+            (round) => round.prior_delivered_commit && round.prior_delivered_commit !== current,
+          )?.prior_delivered_commit;
+    const repository = e?.pull_request_reference?.match(
+      /^(https:\/\/github\.com\/[\w.-]+\/[\w.-]+)\/pull\/\d+\/?$/i,
+    )?.[1];
     return {
       execution: e,
       overview: {
         work,
         description: issue.description ?? "",
+        intent: {
+          goal:
+            e?.scope?.contract.goal || e?.intent?.description || issue.description || issue.title,
+          criteria: e?.scope?.contract.acceptance ?? [],
+          ...(research && { results: research.acceptance, limitations: research.limitations }),
+          comparison:
+            previous && current && previous !== current
+              ? {
+                  previous,
+                  current,
+                  url: repository && repository + "/compare/" + previous + "..." + current,
+                }
+              : undefined,
+        },
         ...(issue.thought_source && { thought_source: issue.thought_source }),
         errors: task.execution_unavailable ? [task.execution_unavailable] : [],
       },
@@ -83,6 +116,20 @@ export function buildDetail(
       const archive = yield* queries.planDocuments(e).pipe(Effect.result);
       if (archive._tag === "Failure") result.errors.push(diagnosticText(archive.failure.message));
       else {
+        const proposal = archive.success.paths.find((path) => path === "proposal.md");
+        if (proposal) {
+          const doc = yield* archive.success.read(proposal).pipe(Effect.result);
+          if (doc._tag === "Success") result.proposal = doc.success;
+          else result.errors.push(diagnosticText(doc.failure.message));
+        }
+        const retained = e.retained_steps;
+        if (
+          retained &&
+          retained.change === e.openspec_change &&
+          retained.fingerprint === e.plan_fingerprint
+        )
+          result.steps = retained.steps;
+        else result.errors.push("Historical checklist unavailable for this revision.");
         result.documents = archive.success.paths;
         result.planning = archive.success.observation;
       }
@@ -123,11 +170,13 @@ export function buildDetail(
         ),
         applyPart: queries.specApply(e).pipe(
           Effect.map((apply) => ({
+            steps: apply.taskTrackingConfigured ? planSteps(e, apply) : undefined,
             progress: apply.taskTrackingConfigured ? apply.progress : undefined,
             error: undefined as string | undefined,
           })),
           Effect.catch((error) =>
             Effect.succeed({
+              steps: undefined,
               progress: undefined,
               error: diagnosticText(error.message),
             }),
@@ -140,6 +189,7 @@ export function buildDetail(
     if (statusPart.artifacts) result.artifacts = statusPart.artifacts;
     if (statusPart.proposal !== undefined) result.proposal = statusPart.proposal;
     result.errors.push(...statusPart.errors);
+    result.steps = applyPart.steps;
     if (applyPart.progress !== undefined) result.progress = applyPart.progress;
     if (applyPart.error) result.errors.push(applyPart.error);
     if (documentsPart._tag === "Failure")

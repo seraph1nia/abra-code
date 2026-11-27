@@ -67,13 +67,7 @@ export class ExecutionRecovery {
       const approvals = yield* this.c.authorizations.collectPending(e);
       e = approvals.execution;
       const { rejected } = approvals;
-      if (rejected) {
-        if (rejected === "plan") e = yield* this.c.transitions.move(e, "planning");
-        return yield* this.c.transitions.fail(
-          e,
-          new WorkflowError("APPROVAL_REJECTED", "Human rejected this checkpoint"),
-        );
-      }
+      if (rejected) return yield* this.c.transitions.rejectCheckpoint(e, rejected);
       if (
         e.current_phase === "awaiting_plan_approval" &&
         (e.plan_approval_required === false || this.c.checkpoints.status(e, "plan") === "approved")

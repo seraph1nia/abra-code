@@ -440,3 +440,49 @@ for (const kind of ["repeated", "exhausted", "scope-change"] as const)
     assert.deepEqual(retained.decisions, e.decisions);
     assert.equal(f.runtime.prompts, prompts);
   });
+
+test("private merge feedback is replayable for one head and consumes the existing repair budget", async (t) => {
+  const f = await newFixture();
+  t.onTestFinished(() => run(f.close()));
+  await budget(f, 1);
+  const e = await run(delivered(f));
+  const session = Id.SessionId.make("ses_supervisor");
+  const pending = await run(f.controller.approve(e.issue_id, "merge", session));
+  assert.ok("form_id" in pending);
+  const form = pending.form_id,
+    head = e.delivered_commit!;
+  const reserve = (
+    response: { authorize: true } | { authorize: false; feedback: string },
+    answered = false,
+    fingerprint: string = head,
+  ) =>
+    run(
+      f.controller.reserveCheckpointResponse(
+        e.issue_id,
+        session,
+        form,
+        fingerprint,
+        response,
+        answered,
+      ),
+    );
+  const change = { authorize: false as const, feedback: "Handle the empty collection." };
+  await assert.rejects(reserve(change, false, "another head"), /changed/);
+  await reserve(change);
+  await assert.rejects(reserve({ authorize: true }), /Another response/);
+  f.runtime.forms.set(form, "rejected");
+  const [blocked] = await run(f.controller.reconcile(e.issue_id));
+  assert.match(blocked!.error_or_recovery_reason!, /Handle the empty collection/);
+  await reserve(change, true);
+  const input = {
+    issue_id: e.issue_id,
+    expected_head: head,
+    finding_ids: [Id.FindingId.make("checkpoint-" + form)],
+    scope: "in_scope" as const,
+    instructions: change.feedback,
+  };
+  const corrected = await run(f.controller.correct(input));
+  assert.equal(corrected.current_phase, "planning");
+  assert.equal(corrected.rounds?.at(-1)?.source, "checkpoint");
+  assert.equal((await run(f.controller.correct(input))).rounds?.length, 1);
+});

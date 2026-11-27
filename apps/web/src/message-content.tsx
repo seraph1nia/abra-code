@@ -25,6 +25,13 @@ const MessageAttachment = deferred<
     })),
   "Retained presentation",
 );
+const FeedbackReceipt = deferred<{ message: TranscriptMessage }>(
+  () =>
+    import("./presentation/feedback-receipt.tsx").then((module) => ({
+      default: module.FeedbackReceipt,
+    })),
+  "Review feedback",
+);
 const HistoricalThought = deferred<{ message: TranscriptMessage; request: string }>(
   () => import("./historical-thought.tsx"),
   "Notebook source",
@@ -54,6 +61,7 @@ export const MessageContent = memo(function MessageContent({
   attachments: readonly (typeof PresentationAttachmentSchema.Type)[];
   diagnostics: readonly (typeof PresentationDiagnosticSchema.Type)[];
 }) {
+  const feedback = message.role === "user" && message.text.startsWith("Review feedback ");
   const request =
     message.role === "user" && !thoughtReceipt ? thoughtSubmission(message.text) : undefined;
   const byTool = useMemo(() => {
@@ -115,7 +123,9 @@ export const MessageContent = memo(function MessageContent({
               ) : null;
             })
           : message.text &&
-            (message.role === "user" && message.text.includes(selectionMarker) ? (
+            (feedback ? (
+              <FeedbackReceipt message={message} />
+            ) : message.role === "user" && message.text.includes(selectionMarker) ? (
               <SelectedMessage message={message} />
             ) : (
               <div className="message-text">

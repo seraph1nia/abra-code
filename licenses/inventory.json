@@ -29641,7 +29641,7 @@
     },
     {
       "file": "packages/agents/assets/skills/openspec-execution/SKILL.md",
-      "sha256": "eb0442ab4760184c8bcea67dd7741e2dd44e1c787856b255c8753a531b8be2de",
+      "sha256": "6565e80ea018fa5054664a43c493f84c36238496b530680813c0377f61ca653d",
       "license": "MIT",
       "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v1.13.2",
       "notice": "licenses/openspec.txt",
@@ -29838,6 +29838,38 @@
       "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v2.0.0",
       "notice": "licenses/openspec.txt",
       "modifications": "AbraCode compact schema fork: three-artifact planning with verification guidance; upstream copyright retained in notice"
+    },
+    {
+      "file": "openspec/schemas/abra-compact-v2/schema.yaml",
+      "sha256": "3c4e9107119dc6f259e028aad866a2daeafeb9e5e0e58d3d862f590d3025617d",
+      "license": "MIT",
+      "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v2.0.0",
+      "notice": "licenses/openspec.txt",
+      "modifications": "AbraCode compact schema with concise proposals and observable task labels"
+    },
+    {
+      "file": "openspec/schemas/abra-compact-v2/templates/proposal.md",
+      "sha256": "79d1b83a57349ea44ae64359797704ce5fc96dd734998ded665a50dfbbe8583f",
+      "license": "MIT",
+      "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v2.0.0",
+      "notice": "licenses/openspec.txt",
+      "modifications": "AbraCode compact schema with concise proposals and observable task labels"
+    },
+    {
+      "file": "openspec/schemas/abra-compact-v2/templates/spec.md",
+      "sha256": "03607a9324f832dc0c3f0f48bd1d251fb3377f8c453c5c015c0c9a9b4b08a7fb",
+      "license": "MIT",
+      "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v2.0.0",
+      "notice": "licenses/openspec.txt",
+      "modifications": "AbraCode compact schema with concise proposals and observable task labels"
+    },
+    {
+      "file": "openspec/schemas/abra-compact-v2/templates/tasks.md",
+      "sha256": "710e4d32f9dd3e01f67665ba850a0b7920e6a8674daccbc39fbe42127dd87490",
+      "license": "MIT",
+      "upstream": "https://github.com/Fission-AI/OpenSpec/tree/v2.0.0",
+      "notice": "licenses/openspec.txt",
+      "modifications": "AbraCode compact schema with concise proposals and observable task labels"
     },
     {
       "file": "packages/agents/assets/skills/open-code-review-delegate/SKILL.md",

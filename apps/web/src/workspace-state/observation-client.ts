@@ -155,6 +155,7 @@ export class WorkspaceObservation {
       changes.fleet ||
       changes.presentations ||
       changes.admissions ||
+      changes.sessions?.length ||
       changes.issues?.length
     ) {
       this.pending = mergeChanges(this.pending, changes);

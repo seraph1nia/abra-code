@@ -25,7 +25,7 @@ test("browser task codecs preserve native supervision, delivery, decisions and o
   const snapshot = Schema.decodeSync(codec)(JSON.stringify(native));
   const task = snapshot.work.find((item) => item.issue_id === execution.issue_id)!;
   assert.equal(task.supervision?.primary, "human_decision");
-  assert.equal(task.outcome?.approval.state, "unavailable");
+  assert.equal(task.outcome?.approval.state, "pending");
   assert.equal(task.outcome?.delivery.state, "unconfirmed");
   assert.equal(task.outcome?.cleanup.state, "not_started");
   assert.equal(task.outcome?.closure, "open");

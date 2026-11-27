@@ -180,12 +180,16 @@ export async function simplifyLoopJourney(o: {
     openspec_schema: "spec-driven",
     require_plan_approval: true,
   });
+  const started = performance.now();
   await o.invoke("abra_work_start", { issue_id: stronger.id });
   const planned = await wait(
     stronger.id,
-    (s) => s.execution.current_phase === "awaiting_plan_approval",
+    (s) =>
+      s.execution.current_phase === "awaiting_plan_approval" &&
+      s.execution.approval_receipts.some((r: any) => r.kind === "plan" && r.delivered_at),
     "awaiting_plan_approval",
   );
+  const deliveryMs = Math.round(performance.now() - started);
   const plan = await o.invoke("abra_work_approve", { issue_id: stronger.id, kind: "plan" });
   assert.ok(plan.form_id);
   assert.equal(planned.execution_contract.plan_approval.source, "task_requirement");
@@ -221,6 +225,7 @@ export async function simplifyLoopJourney(o: {
   o.observe({
     stronger_plan: {
       schema: "spec-driven",
+      start_to_observed_plan_form_ms: deliveryMs,
       form: plan.form_id,
       restored: true,
       dependent_blocked: true,

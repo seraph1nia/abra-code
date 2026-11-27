@@ -45,7 +45,7 @@ test("phone destinations follow bookmarks and history at the 760px boundary", as
     else {
       await page.getByRole("dialog").waitFor({ state: "hidden" });
       await reader.waitFor();
-      await draft.waitFor({ state: width > 1250 ? "visible" : "hidden" });
+      await draft.waitFor({ state: "hidden" });
     }
   }
   await nav.getByRole("link", { name: "Chat" }).click();

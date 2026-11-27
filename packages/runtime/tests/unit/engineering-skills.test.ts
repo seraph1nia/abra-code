@@ -12,14 +12,14 @@ import { Agent } from "@opencode/schema/agent";
 import { Model } from "@opencode/schema/model";
 import { Provider } from "@opencode/schema/provider";
 import { type Context } from "@opencode/plugin/effect/plugin";
-import { AbsolutePath } from "@abracode/contracts/identities";
+import { AbsolutePath, ObligationKey } from "@abracode/contracts/identities";
 import { registerSkills } from "@abracode/agents/native";
 import { bundledSkills } from "@abracode/agents/bundled";
 import { platformLayer } from "../../src/platform.ts";
 import { capabilityRequirements } from "../../src/opencode/role-policy.ts";
 import { engineeringGuidance } from "@abracode/agents/engineering-skills";
 import { resolveSkills, resolveCapturedSkills } from "../../src/opencode/worker-environment.ts";
-import { workerPrompt } from "../../src/workflow/worker-context.ts";
+import { assignmentDecisions, workerPrompt } from "../../src/workflow/worker-context.ts";
 import { fixture } from "../fixtures.ts";
 import { access, cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import { run } from "../effects.ts";
@@ -167,6 +167,32 @@ test("conditional prompts and role leaves retain policy-specific assignments", a
   const { id } = await run(f.work.create(workGoal("engineering-prompt")));
   const e = await run(f.controller.start(id));
   const issue = await run(f.work.show(id));
+  const decision = {
+    key: ObligationKey.make("storage"),
+    scope: "Storage",
+    schema_version: 1 as const,
+    question: "Choose storage",
+    owner: "user" as const,
+    session_id: "controller" as const,
+    status: "answered" as const,
+    opened_at: 1,
+    answer: "SQLite",
+    generation: 2,
+  };
+  const active = {
+    ...e,
+    control_generation: 2,
+    decisions: [{ ...decision, generation: 1, answer: "Redis" }, decision],
+  };
+  const prompt = workerPrompt(active, issue, "apply");
+  assert.match(prompt, /SQLite/);
+  assert.doesNotMatch(prompt, /Redis/);
+  assert.equal(assignmentDecisions(active)[0].basis, "current_generation");
+  assert.throws(
+    () =>
+      assignmentDecisions({ ...active, decisions: [decision, { ...decision, answer: "Other" }] }),
+    /Conflicting current answers/,
+  );
   for (const role of ["explore", "apply", "review", "research"] as const) {
     const workflow = role === "research" ? "research-only" : "full-openspec";
     const prompt = workerPrompt({ ...e, workflow_policy: workflow }, issue, role);

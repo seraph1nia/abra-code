@@ -1,3 +1,4 @@
+import { PlanStepsSchema, TaskIntentSchema } from "../visibility/document-contracts.ts";
 import { ThoughtSource } from "../visibility/thoughts.ts";
 import { FilePatchId } from "./resources.ts";
 import { Count } from "../primitives.ts";
@@ -40,6 +41,7 @@ export const WorkSnapshotSchema = Schema.Struct({
 export const WorkOverviewSchema = Schema.Struct({
   work: WorkItemSchema,
   description: Schema.String,
+  intent: Schema.optional(TaskIntentSchema),
   thought_source: Schema.optional(ThoughtSource),
   errors: strings,
 });
@@ -50,6 +52,7 @@ export const WorkDetailSchema = Schema.Struct({
   artifacts: Schema.Array(
     Schema.Struct({ id: Schema.String, status: Schema.String, path: RelativePath }),
   ),
+  steps: Schema.optional(PlanStepsSchema),
   proposal: Schema.optional(Schema.String),
   documents: Schema.optional(Schema.Array(RelativePath)),
   planning: Schema.optional(PlanningObservationSchema),

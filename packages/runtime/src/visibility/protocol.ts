@@ -1,3 +1,7 @@
+import {
+  PlanStepsSchema,
+  TaskIntentSchema,
+} from "@abracode/contracts/visibility/document-contracts";
 import { exactParseOptions } from "@abracode/contracts/primitives";
 import {
   WorkQuery,
@@ -142,7 +146,7 @@ const work = Schema.Struct({
       Schema.Struct({
         id: RoundId,
         ordinal: Positive,
-        source: Schema.Literals(["check", "review", "forge"]),
+        source: Schema.Literals(["check", "review", "forge", "checkpoint"]),
         starting_head: Commit,
         archive_path: Schema.optional(RelativePath),
         instructions: Schema.String,
@@ -179,6 +183,7 @@ const snapshot = Schema.Struct({
 const overview = Schema.Struct({
   work,
   description: Schema.String,
+  intent: Schema.optional(TaskIntentSchema),
   thought_source: Schema.optional(ThoughtSource),
   errors: strings,
 });
@@ -190,6 +195,7 @@ const detail = Schema.Struct({
     Schema.Struct({ id: ArtifactId, status: SpecArtifactSchema.fields.status, path: RelativePath }),
   ),
   progress: Schema.optional(TaskProgressSchema),
+  steps: Schema.optional(PlanStepsSchema),
   proposal: Schema.optional(Schema.String),
   documents: Schema.optional(Schema.Array(RelativePath)),
   planning: Schema.optional(PlanningObservationSchema),

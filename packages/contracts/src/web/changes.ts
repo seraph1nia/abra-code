@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { IssueId } from "../identities.ts";
+import { IssueId, SessionId } from "../identities.ts";
 
 /** Resource hints after a commit. They never confer mutation authority. */
 export const ChangeScopeSchema = Schema.Struct({
@@ -12,14 +12,21 @@ export const ChangeScopeSchema = Schema.Struct({
   finder: Schema.optional(Schema.Boolean),
   fleet: Schema.optional(Schema.Boolean),
   work_all: Schema.optional(Schema.Boolean),
+  sessions: Schema.optional(Schema.Array(SessionId).check(Schema.isMaxLength(256))),
   issues: Schema.optional(Schema.Array(IssueId).check(Schema.isMaxLength(256))),
 });
 export type ChangeScope = typeof ChangeScopeSchema.Type;
 export function mergeChanges(a: ChangeScope, b: ChangeScope): ChangeScope {
   if (a.all || b.all)
-    return a.work_all || b.work_all || a.issues?.length || b.issues?.length
+    return a.work_all ||
+      b.work_all ||
+      a.issues?.length ||
+      b.issues?.length ||
+      a.sessions?.length ||
+      b.sessions?.length
       ? { all: true, work_all: true }
       : { all: true };
+  const sessions = [...new Set([...(a.sessions ?? []), ...(b.sessions ?? [])])];
   const issues = [...new Set([...(a.issues ?? []), ...(b.issues ?? [])])];
   return {
     transcript: a.transcript || b.transcript || undefined,
@@ -29,7 +36,8 @@ export function mergeChanges(a: ChangeScope, b: ChangeScope): ChangeScope {
     projects: a.projects || b.projects || undefined,
     finder: a.finder || b.finder || undefined,
     ...(a.fleet || b.fleet ? { fleet: true } : {}),
-    work_all: a.work_all || b.work_all || issues.length > 256 || undefined,
+    ...(sessions.length && sessions.length <= 256 ? { sessions } : {}),
+    work_all: sessions.length > 256 || a.work_all || b.work_all || issues.length > 256 || undefined,
     issues: issues.length > 256 ? undefined : issues,
   };
 }
@@ -48,6 +56,7 @@ export function workInvalidationKeys(scope: ChangeScope): string[] {
     ...(scope.all || scope.finder || scope.fleet || scope.work_all || scope.projects
       ? ["work-finder"]
       : []),
+    ...(scope.sessions ?? []).map((session) => `session:${session}`),
     ...(scope.issues ?? []).map((issue) => `work:${issue}`),
   ];
 }

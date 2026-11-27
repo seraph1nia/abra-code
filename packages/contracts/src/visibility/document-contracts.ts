@@ -1,7 +1,32 @@
 import { Schema } from "effect";
-import { Commit, Timestamp, RelativePath } from "../identities.ts";
+import { Commit, Timestamp, RelativePath, SafeRelativePath } from "../identities.ts";
 import { FilePatchId } from "../web/resources.ts";
 import { Count } from "../primitives.ts";
+export const TaskIntentSchema = Schema.Struct({
+  goal: Schema.String,
+  criteria: Schema.Array(Schema.String),
+  results: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({ criterion: Schema.String, met: Schema.Boolean, evidence: Schema.String }),
+    ),
+  ),
+  limitations: Schema.optionalKey(Schema.Array(Schema.String)),
+  comparison: Schema.optional(
+    Schema.Struct({ previous: Commit, current: Commit, url: Schema.optional(Schema.String) }),
+  ),
+});
+export const PlanStepsSchema = Schema.Struct({
+  total: Count,
+  complete: Count,
+  rows: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      label: Schema.String,
+      done: Schema.Boolean,
+      source: Schema.optional(Schema.Struct({ path: SafeRelativePath, line: Count })),
+    }),
+  ).check(Schema.isMaxLength(100)),
+});
 export const PlanningObservationSchema = Schema.Struct({
   source: Schema.Literals(["worktree", "archive"]),
   commit: Schema.optional(Commit),

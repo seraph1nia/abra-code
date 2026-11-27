@@ -269,7 +269,7 @@ test("the memory slash command and Ctrl+K open scoped notes without sending or c
   const page = await f.browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(f.origin);
   const draft = page.getByLabel("Message Abra", { exact: true });
-  await draft.pressSequentially("Keep my question /memory");
+  await draft.and(page.locator(":enabled")).pressSequentially("Keep my question /memory");
   await page.getByRole("option", { name: /\/memory/ }).waitFor();
   await draft.press("Enter");
   const search = page.getByLabel("Search work and commands");

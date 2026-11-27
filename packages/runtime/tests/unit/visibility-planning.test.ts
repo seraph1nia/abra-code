@@ -228,7 +228,8 @@ test("retired planning reads exact archive blobs and excludes symbolic links and
   assert.equal(detail.planning?.commit, e.delivered_commit);
   assert.ok(detail.documents?.includes(Id.RelativePath.make("proposal.md")));
   assert.ok(!detail.documents?.includes(Id.RelativePath.make("foreign.md")));
-  assert.deepEqual(detail.errors, []);
+  assert.deepEqual(detail.errors, ["Historical checklist unavailable for this revision."]);
+  assert.match(detail.proposal!, /Original retained evidence/);
   const document = await run(view.document(e.issue_id, Id.RelativePath.make("proposal.md")));
   assert.equal(document.content, "# The delivered plan\n\nOriginal retained evidence.\n");
   await assert.rejects(
@@ -241,6 +242,23 @@ test("retired planning reads exact archive blobs and excludes symbolic links and
     /Select a document/,
   );
   assert.deepEqual(await run(f.records.execution(e.issue_id)), before);
+  const steps = {
+    total: 1,
+    complete: 1,
+    rows: [{ id: "1", label: "Retain archived checklist", done: true }],
+  };
+  e = await run(
+    f.records.save({
+      ...before!,
+      retained_steps: {
+        change: Id.ChangeName.make(e.openspec_change),
+        fingerprint: e.plan_fingerprint!,
+        steps,
+      },
+    }),
+  );
+  assert.deepEqual((await run(view.detail(e.issue_id))).steps, steps);
+
   e = {
     ...e,
     archive_path: Id.RelativePath.make("openspec/changes/archive/2026-11-15-another-change"),
@@ -349,4 +367,35 @@ test("schema, approval provenance and repair observations preserve exact pending
   assert.deepEqual(await run(f.records.execution(e.issue_id)), legacy);
   assert.equal(f.runtime.forms.size, 1);
   assert.equal(f.runtime.prompts, 1);
+});
+
+test("Plan reads native task order, checked state and only contained source locations", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const e = await run(planned(f));
+  const root = join(e.worktree_directory!, "openspec/changes", e.openspec_change);
+  const apply = await run(f.spec.apply());
+  let done = false;
+  f.spec.apply = () =>
+    Effect.succeed({
+      ...apply,
+      progress: { total: 3, complete: done ? 1 : 0, remaining: done ? 2 : 3 },
+      tasks: ["tasks.md", "more.md", "../outside.md"].map((file, i) => ({
+        id: Id.TaskId.make(String(i)),
+        description: "Step " + i,
+        sourcePath: join(root, file),
+        line: i + 1,
+        done: i === 0 && done,
+      })),
+    });
+  const view = new Visibility(f.controller);
+  const read = async () => (await run(view.detail(e.issue_id))).steps!;
+  const first = await read();
+  assert.deepEqual(
+    first.rows.map((r) => r.source?.path),
+    ["tasks.md", "more.md", undefined],
+  );
+  assert.equal(first.rows[0].label, "Step 0");
+  done = true;
+  assert.equal((await read()).rows[0].done, true);
 });

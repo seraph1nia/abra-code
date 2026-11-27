@@ -1,3 +1,4 @@
+import { planSteps } from "../openspec/plan-steps.ts";
 import { WorkflowError } from "../errors.ts";
 import { tryDomainValue } from "../effect.ts";
 import { measureReconcile } from "../observability.ts";
@@ -169,8 +170,9 @@ export class Advancement {
           this.c.records.commitControl(record),
         );
         if (revised.pending_issue_status) yield* this.c.operations.reflectIssue(revised);
+        const delivered = yield* this.c.authorizations.reconcilePlan(revised);
         yield* this.c.operations.notifyControl(id);
-        return revised;
+        return delivered;
       }),
     );
   correctFailure = Effect.fn("Advancement.correctFailure")(
@@ -242,7 +244,7 @@ export class Advancement {
         if (!scope.ready) return e;
         e = yield* this.c.transitions.move(e, "awaiting_plan_approval");
         if (e.plan_approval_required === false) return yield* this.beginApply(e, p);
-        return e;
+        return yield* this.c.authorizations.reconcilePlan(e);
       }
       yield* this.c.spec.plan(e);
       yield* this.c.planning.assertDelta(e);
@@ -256,11 +258,7 @@ export class Advancement {
         plan_fingerprint: yield* this.c.checkpoints.plan(e),
       });
       if (e.plan_approval_required === false) return yield* this.beginApply(e, p);
-      yield* this.c.transitions.notice(
-        e,
-        "Planning validated. Request approval with abra_work_approve.",
-      );
-      return e;
+      return yield* this.c.authorizations.reconcilePlan(e);
     },
   );
   private checkpointApplying = Effect.fn("Advancement.checkpointApplying")(
@@ -333,9 +331,24 @@ export class Advancement {
           "VERIFICATION_STALE",
           "Repository checks do not cover current content",
         );
-      if (e.workflow_policy === "full-openspec") yield* this.c.spec.implemented(e);
+      const steps =
+        e.workflow_policy === "full-openspec"
+          ? planSteps(e, yield* this.c.spec.implemented(e))
+          : undefined;
       yield* this.assertPlan(e);
-      e = yield* this.c.transitions.move(e, "archiving");
+      e = yield* this.c.transitions.move(
+        e,
+        "archiving",
+        steps
+          ? {
+              retained_steps: {
+                change: e.openspec_change,
+                fingerprint: e.plan_fingerprint!,
+                steps,
+              },
+            }
+          : {},
+      );
       return yield* this.c.finalization.archive(e, p);
     },
   );
@@ -429,6 +442,8 @@ export class Advancement {
     this.c.checks.reviewChanges(...args);
   reviewReport = (...args: Parameters<CodingChecks["reviewReport"]>) =>
     this.c.checks.reviewReport(...args);
+  reserveCheckpointResponse = (...args: Parameters<Authorizations["reserveResponse"]>) =>
+    this.c.authorizations.reserveResponse(...args);
   approve = Effect.fn("Advancement.approve")(
     { self: this },
     function* (id: IssueId, kind: "plan" | "merge", supervisor: SessionId) {
@@ -460,14 +475,7 @@ export class Advancement {
           if (decision === "pending")
             return { execution: e, approval_required: true, form_id: receipt.form_id };
           if (decision === "rejected") {
-            if (kind === "plan") e = yield* this.c.transitions.move(e, "planning");
-            e = yield* this.c.transitions.fail(
-              e,
-              new WorkflowError(
-                "APPROVAL_REJECTED",
-                "Human rejected this checkpoint; revise before requesting approval",
-              ),
-            );
+            yield* this.c.transitions.rejectCheckpoint(e, kind);
             return yield* new WorkflowError("APPROVAL_REJECTED", "Human rejected this checkpoint");
           }
           return yield* kind === "plan" ? this.beginApply(e, p) : Effect.succeed(e);

@@ -28,9 +28,18 @@ export const PolicySchema = Schema.Literals(["full-openspec", "research-only", "
 export const RoleSchema = Schema.Literals(["explore", "apply", "review", "research"]);
 export const CommandArgs = Schema.Array(NonEmpty).check(Schema.isMinLength(1));
 export const WorkerModelSchema = Model.Ref;
+export const CheckpointResponseSchema = Schema.Union([
+  Schema.Struct({ authorize: Schema.Literal(true) }),
+  Schema.Struct({
+    authorize: Schema.Literal(false),
+    feedback: NonEmpty.check(Schema.isMaxLength(4096)),
+  }),
+]);
 const approvalFields = {
+  response_intent: Schema.optional(CheckpointResponseSchema),
   form_id: FormId,
   session_id: SessionId,
+  delivered_at: Schema.optional(Timestamp),
   authorized_at: Schema.mutableKey(Schema.optional(Timestamp)),
   rejected_at: Schema.mutableKey(Schema.optional(Timestamp)),
 };

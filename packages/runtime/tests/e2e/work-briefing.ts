@@ -120,8 +120,7 @@ export async function runBriefingBrowser(input: {
   await ab("wait", "--text", "Controller checks");
   await ab("find", "role", "button", "click", "--name", "Close inspector", "--exact");
   await ab("find", "role", "link", "click", "--name", "Open decision", "--exact");
-  await ab("find", "role", "checkbox", "check", "--name", "Authorize this exact checkpoint");
-  await ab("find", "role", "button", "click", "--name", "Submit checkpoint decision", "--exact");
+  await ab("find", "role", "button", "click", "--name", "Approve merge", "--exact");
   const after = await input.eventually(async () => {
     const brief = await read();
     return !brief.decisions.entries.some((row) => row.issue_id === issue.id) ? brief : undefined;

@@ -1,3 +1,4 @@
+import { usableForm } from "@abracode/contracts/visibility/attention";
 import { WorkspaceActions } from "./workspace-actions.ts";
 import { LiveActivities } from "./presentation/activity-reference.tsx";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -120,7 +121,14 @@ function Workspace({
   } = view;
   const wide = useMediaQuery("(min-width: 1251px)");
   const [thoughtToken, setThoughtToken] = useState<{ text: string; start: number; end: number }>();
-  const [expanded, setExpanded] = useState(false);
+  const layoutKey = destination + "/" + (resourceFromSearch(route)?.issue_id ?? "");
+  const taskPage = destination === "/work" && Boolean(resourceFromSearch(route)?.issue_id);
+  const [layout, setLayout] = useState<{ key: string; expanded: boolean }>();
+  const expanded = layout?.key === layoutKey ? layout.expanded : taskPage;
+  const setExpanded = useCallback(
+    (expanded: boolean) => setLayout({ key: layoutKey, expanded }),
+    [layoutKey],
+  );
 
   const navigate = useNavigate();
   const inspecting = Boolean(
@@ -157,11 +165,10 @@ function Workspace({
   usePhoneEscape(phoneCanvas, Boolean(palette), closeInspector);
 
   const setDraft = useAtomSet(workspaceDraft(initial.session_id));
-  const managementAttention = workspace.work.management?.entries ?? [];
-  const attention =
-    workspace.forms.filter((item) => item.active).length + workspace.permissions.length;
+
+  const attention = workspace.forms.filter(usableForm).length + workspace.permissions.length;
   const workAttention = unmatchedWorkAttention(workspace);
-  const totalAttention = attention + workAttention.length + managementAttention.length;
+
   const activeWorkCount = workspace.work.work.filter(
     (item) => item.issue_status !== "closed",
   ).length;
@@ -199,7 +206,7 @@ function Workspace({
     if (desktopExpanded) setExpanded(false);
     focusComposer();
     return false;
-  }, [desktopExpanded, focusComposer, setError]);
+  }, [desktopExpanded, focusComposer, setError, setExpanded]);
   const attach = useCallback(
     (attachment: DraftAttachment) => {
       if (!canPrepare()) return;
@@ -207,7 +214,7 @@ function Workspace({
       if (desktopExpanded) setExpanded(false);
       focusComposer();
     },
-    [canPrepare, setDraft, desktopExpanded, focusComposer],
+    [canPrepare, setDraft, desktopExpanded, focusComposer, setExpanded],
   );
   const ask = useCallback(
     (text: string) => {
@@ -216,7 +223,7 @@ function Workspace({
       if (desktopExpanded) setExpanded(false);
       focusComposer();
     },
-    [canPrepare, setDraft, desktopExpanded, focusComposer],
+    [canPrepare, setDraft, desktopExpanded, focusComposer, setExpanded],
   );
 
   const actions = useMemo(
@@ -269,6 +276,11 @@ function Workspace({
   );
   const inspectorView = (selected || route.surface || route.retained || route.review) && (
     <Inspector
+      taskPage={taskPage}
+      openChat={() => {
+        setExpanded(false);
+        focusComposer();
+      }}
       picker={sheet ? picker : undefined}
       issue={selected}
       surface={route.surface}
@@ -313,7 +325,7 @@ function Workspace({
             connectionError={connectionError}
             wide={wide}
             activeWorkCount={activeWorkCount}
-            totalAttention={totalAttention}
+            totalAttention={attention}
             desktopCanvasOpen={desktopCanvasOpen}
             desktopExpanded={desktopExpanded}
             showExpand={desktopCanvasOpen && !route.canvas}
@@ -356,7 +368,7 @@ function Workspace({
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        const form = workspace.forms.find((f) => f.active);
+                        const form = workspace.forms.find(usableForm);
                         if (form) focusForm(form.form.id);
                         else
                           void navigate({

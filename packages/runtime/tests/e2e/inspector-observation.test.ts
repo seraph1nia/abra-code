@@ -1,3 +1,4 @@
+import { nativeChangeScope } from "../../src/web/change-scopes.ts";
 import { Effect } from "effect";
 import { CrewError } from "../../src/domain.ts";
 import { Form } from "@opencode/schema/form";
@@ -6,7 +7,7 @@ import { Schema } from "effect";
 import { ReceiptSchema, selectionMarker } from "@abracode/contracts/web/workspace-wire";
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { IssueId } from "@abracode/contracts/identities";
+import { IssueId, SessionId } from "@abracode/contracts/identities";
 import { launchReportBrowser } from "@abracode/report-export/browser";
 import { workspaceBrowserFixture } from "../helpers/workspace-browser.ts";
 
@@ -700,4 +701,186 @@ test("a briefing source opens its bound form and offers the next decision when t
   await page.getByRole("link", { name: "Chat", exact: true }).click();
   await page.getByText(/This form is no longer current/).waitFor();
   assert.equal(await page.getByRole("link", { name: "Open decision", exact: true }).count(), 0);
+});
+
+test("a legacy checkbox requires an explicit decision and preserves revision drafts on dismissal", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const work = f.source.value.work.work[0];
+  const id = Form.ID.make("frm_legacy_checkpoint");
+  f.source.value = {
+    ...f.source.value,
+    forms: [
+      {
+        active: true,
+        binding: "bound",
+        checkpoint: { active: true, issue_id: work.issue_id, kind: "plan", fingerprint: "hash" },
+        form: {
+          sessionID: f.source.sessionID,
+          id,
+          title: "Review the plan",
+          fields: [{ key: "authorize", type: "boolean", required: true, default: false }],
+        },
+      },
+    ],
+  };
+  const page = await f.browser.newPage();
+  await page.goto(f.origin + "/attention");
+  await page.getByRole("button", { name: "Request changes", exact: true }).click();
+  await page.getByLabel("Requested changes").fill("Include offline behavior");
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  assert.equal(f.replies.length, 0);
+  await page.goBack();
+  assert.equal(await page.getByLabel("Requested changes").inputValue(), "Include offline behavior");
+  assert.equal(await page.locator('[data-native-form-id="frm_legacy_checkpoint"]').count(), 1);
+  await page.getByRole("button", { name: "Send change request" }).click();
+  await page.waitForFunction(
+    () => !document.querySelector('[data-native-form-id="frm_legacy_checkpoint"]'),
+  );
+  assert.deepEqual(
+    f.replies.map((r) => r.answer),
+    [{ authorize: false, feedback: "Include offline behavior" }],
+  );
+});
+
+test("structured clarification preserves prefilled scope and field errors until a valid answer", async (t) => {
+  const { scopeFields } = await import("../../src/opencode/forms.ts");
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const id = Form.ID.make("frm_scope_fields"),
+    scope = { goal: "Read existing output", constraints: ["Preserve formatting"] };
+  f.source.value = {
+    ...f.source.value,
+    forms: [
+      {
+        active: true,
+        binding: "scoped",
+        checkpoint: { kind: "decision", active: true },
+        form: {
+          sessionID: f.source.sessionID,
+          id,
+          title: "Complete the scope",
+          metadata: { decision_identity: "ticket:0:scope-contract" },
+          fields: scopeFields(scope),
+        },
+      },
+    ],
+  };
+  const page = await f.browser.newPage();
+  await page.goto(f.origin + "/attention");
+  const goal = page.getByLabel("Goal", { exact: false }).first();
+  assert.equal(await goal.inputValue(), scope.goal);
+  await page.getByRole("button", { name: "Submit answer" }).click();
+  assert.equal(f.replies.length, 0);
+  assert.equal(await goal.inputValue(), scope.goal);
+  assert.equal(
+    await page.getByLabel("Constraints (one per line)").inputValue(),
+    "Preserve formatting",
+  );
+  await page.getByLabel("Acceptance criteria (one per line)").fill("Returns the expected text");
+  await page.getByRole("button", { name: "Submit answer" }).click();
+  await page.waitForFunction(
+    () => !document.querySelector('[data-native-form-id="frm_scope_fields"]'),
+  );
+  assert.deepEqual(f.replies[0]?.answer, { ...scope, acceptance: ["Returns the expected text"] });
+});
+
+test("Work task keeps evidence and draft through optional chat and scopes live token reads", async (t) => {
+  const f = await workspaceBrowserFixture();
+  t.onTestFinished(f.close);
+  const issue = f.source.value.work.work[0];
+  const worker = SessionId.make("ses_repair_two");
+  f.source.value = {
+    ...f.source.value,
+    work: {
+      ...f.source.value.work,
+      work: [
+        {
+          ...issue,
+          active_role: "apply",
+          active_session_id: worker,
+          sessions: [{ id: worker, role: "apply" }],
+        },
+      ],
+    },
+  };
+  const detail = (done: boolean) => ({
+    steps: {
+      total: 1,
+      complete: Number(done),
+      rows: [{ id: "1", label: "Exercise worker observation", done }],
+    },
+  });
+  f.detailOverrides.set(issue.issue_id, detail(false));
+  const sessionPage = (text: string) => ({
+    session_id: worker,
+    observed_at: f.source.value.at,
+    messages: [
+      { id: "msg_current", role: "assistant", text, at: f.source.value.at, limited: false },
+    ],
+  });
+  f.workerPages.set(worker + "/", sessionPage("Before tokens"));
+  const context = await f.browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  await page.goto(f.origin + "/work?issue=" + issue.issue_id);
+  await page.getByText("Exercise worker observation").waitFor();
+  const tabs = page.getByRole("tablist", { name: "Work details" });
+  assert.deepEqual(await tabs.getByRole("tab").allTextContents(), [
+    "Plan",
+    "Diff",
+    "Reports",
+    "Live session",
+  ]);
+  await page.getByRole("button", { name: "Ask Abra", exact: true }).click();
+  const draft = page.locator(".main-pane textarea");
+  await draft.fill("Keep this draft");
+  await tabs.getByRole("tab", { name: "Diff" }).click();
+  await page.getByRole("button", { name: "Expand canvas" }).click();
+  await page.getByRole("button", { name: "Ask Abra", exact: true }).click();
+  assert.equal(await draft.inputValue(), "Keep this draft");
+  await tabs.getByRole("tab", { name: "Reports" }).click();
+  await page.getByRole("heading", { name: "Outcome report" }).waitFor();
+  await tabs.getByRole("tab", { name: "Plan" }).click();
+  await page.getByLabel("Implementation steps").waitFor();
+  const finder = await context.newPage();
+  await finder.goto(f.origin + "/work");
+  await finder
+    .getByRole("navigation", { name: "Work results" })
+    .getByRole("button")
+    .first()
+    .waitFor();
+  const diff = await context.newPage();
+  await diff.goto(f.origin + "/work?issue=" + issue.issue_id + "&tab=Diff");
+  await diff.getByRole("region", { name: "source.ts", exact: true }).waitFor();
+  const live = await context.newPage();
+  await live.goto(f.origin + "/work?issue=" + issue.issue_id + "&tab=Workers");
+  await live.getByText("Before tokens").waitFor();
+  // Each new browser observer first invalidates its mounted reads against its baseline.
+  // Measure the burst only after two coalescing windows of settled HTTP observations.
+  let settled = f.calls.length;
+  for (let i = 0; i < 10; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    if (f.calls.length === settled) break;
+    settled = f.calls.length;
+  }
+  const start = f.calls.length;
+  const workerEvent = (type: string) =>
+    nativeChangeScope({ type, data: { sessionID: worker } }, "/fixture", "ses_abra", (id) =>
+      id === worker ? issue.issue_id : undefined,
+    )!;
+  f.workerPages.set(worker + "/", sessionPage("After tokens"));
+  for (let i = 0; i < 30; i++) await f.changed(workerEvent("session.text.delta"));
+  await live.getByText("After tokens").waitFor();
+  const tokenReads = f.calls
+    .slice(start)
+    .filter((call) => ["find", "detail", "diff"].includes(call.name));
+  assert.deepEqual(tokenReads, []);
+  f.detailOverrides.set(issue.issue_id, detail(true));
+  await f.changed(workerEvent("session.tool.success"));
+  await page.getByLabel("Implementation steps").getByText("1 of 1 complete").waitFor();
+  assert.ok(f.calls.slice(start).some((call) => call.name === "detail"));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByLabel("Implementation steps").getByText("1 of 1 complete").waitFor();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  assert.equal(f.source.submissions, 0);
 });

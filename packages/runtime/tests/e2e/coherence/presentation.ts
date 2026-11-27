@@ -305,8 +305,9 @@ test("owned session bookmarks render paginated tools and refresh queued/unknown 
   const work = {
     ...original,
     active_role: "apply" as const,
+    active_session_id: "ses_current",
     sessions: [
-      { id: "ses_past", role: "explore" as const },
+      { id: "ses_past", role: "apply" as const },
       { id: "ses_current", role: "apply" as const },
     ],
   };
@@ -373,6 +374,8 @@ test("owned session bookmarks render paginated tools and refresh queued/unknown 
   const page = await f.browser.newPage({ viewport: { width: 1440, height: 1000 } });
   await page.goto(`${f.origin}/?issue=abra-web&tab=Workers`);
   await page.getByText("Current worker observation", { exact: true }).waitFor();
+  assert.equal(await page.getByLabel("Retained worker sessions").count(), 0);
+  await page.getByRole("button", { name: "Session history (2)" }).click();
   await page
     .getByLabel("Retained worker sessions")
     .locator('[data-presentation="session"]')
@@ -400,6 +403,7 @@ test("owned session bookmarks render paginated tools and refresh queued/unknown 
   await message.waitFor();
   await page.reload();
   await message.waitFor();
+  await page.getByRole("button", { name: "Session history (2)" }).click();
   f.workerStates.set("ses_past", {
     native_activity: "unknown",
     note: "Native activity is unknown",
@@ -415,6 +419,16 @@ test("owned session bookmarks render paginated tools and refresh queued/unknown 
   assert.equal(f.source.submissions, 0);
   assert.equal(f.replies.length, 0);
   await screenshot(page, "typed-worker-transcript.png");
+  f.source.value = Schema.decodeSync(FixtureViewSchema)({
+    ...f.source.value,
+    work: {
+      ...f.source.value.work,
+      work: [{ ...work, active_session_id: undefined, provisioning_role: "apply" }],
+    },
+  });
+  await page.goto(f.origin + "/work?issue=abra-web&tab=Workers");
+  await page.getByText("Waiting for the current worker session.").waitFor();
+  assert.equal(await page.locator("[data-worker-message-id]").count(), 0);
 });
 
 test("typed communication retains response obligations, pages and exact decision/native-form navigation", async (t) => {
@@ -514,6 +528,20 @@ test("typed communication retains response obligations, pages and exact decision
     ],
   };
   const page = await f.browser.newPage({ viewport: { width: 390, height: 844 } });
+  const resource = {
+    action: "open_task",
+    issue_id: "abra-web",
+    section: "activity",
+    activity: "communication",
+    request: { request_id: "request-20", offset: 20 },
+  };
+  await page.goto(f.origin + "/attention?resource=" + encodeURIComponent(JSON.stringify(resource)));
+  await page
+    .locator('[data-slot="card-description"]')
+    .filter({ hasText: /^Retained request 20$/ })
+    .waitFor();
+  assert.equal(await page.locator('[data-presentation="communication"]').count(), 1);
+
   await page.goto(`${f.origin}/?issue=abra-web&tab=Communication`);
   await page.locator('[data-presentation="communication"]').first().waitFor();
   assert.equal(await page.locator('[data-presentation="communication"]').count(), 20);

@@ -15,6 +15,14 @@ For bounded repeated cycles, explicit fault profiles, native timing/resource
 measurements and a separate authorized real-provider procedure, use
 [operational verification](operational.md). Repeated soak cycles are opt-in.
 
+## Actionable workflow
+
+Use three disposable native journeys to cover each decision boundary. Run `planning-recovery` for a revised contract and fresh authorization, `simplify-loop` for a bounded correction and head-bound merge form, and `workspace` to reopen the saved report after native restart and retirement. Set `ABRACODE_TEST_JOURNEY` to the journey name and `ABRACODE_TEST_EVIDENCE_DIR` to a different directory for each invocation of `pnpm test:one packages/runtime/tests/extended/native.test.ts`. The compact journey records elapsed milliseconds from starting the task to observing the automatically delivered form, including planning time.
+
+After `pnpm web:build`, run `pnpm test:one inspector-observation.test -t 'Work task keeps'` for the browser read counts. Work opens on the plan. From that page Diff, Reports and Live session each take one tab selection. Ask Abra takes one click and preserves the draft. The test sends 30 session notifications, observes the updated worker text, checks that finder, plan and diff reads stayed at zero, and then verifies the checklist updates on a work change. Browser read counts come from the instrumented HTTP fixture.
+
+On 2026-11-27 the stronger-policy task took 8,307 ms from start through planning to the first observed approval form. A separate task completed one bounded correction before presenting its head-bound merge form. The workspace journey rejected a stale reply and reopened its saved report after a native restart. Each journey recorded completed cleanup. The provider and remotes were local fixtures.
+
 ## Prepare and check health
 
 Use Node 26.4+ and the frozen pnpm toolchain. From the checkout:

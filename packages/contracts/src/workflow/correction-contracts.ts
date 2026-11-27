@@ -33,7 +33,7 @@ export const RoundSchema = Schema.Struct({
   id: RoundId,
   ordinal: Positive,
   generation: Count,
-  source: Schema.Literals(["check", "review", "forge"]),
+  source: Schema.Literals(["check", "review", "forge", "checkpoint"]),
   starting_head: Commit,
   plan_fingerprint: Fingerprint,
   findings: Schema.Array(FindingId),

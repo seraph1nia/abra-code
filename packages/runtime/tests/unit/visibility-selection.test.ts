@@ -42,7 +42,7 @@ test("overview observes one ticket without reading planning evidence, even with 
     for (const spy of planning) spy.mockRestore();
   });
   const overview = await run(view.overview(e.issue_id));
-  assert.deepEqual(Object.keys(overview).sort(), ["description", "errors", "work"]);
+  assert.deepEqual(Object.keys(overview).sort(), ["description", "errors", "intent", "work"]);
   assert.ok(Schema.is(visibility.methods.overview.output)(overview));
   assert.equal(task.mock.calls.length, 1);
   assert.deepEqual(

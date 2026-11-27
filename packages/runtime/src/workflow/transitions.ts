@@ -235,6 +235,34 @@ export class ExecutionTransitions {
           .pipe(Effect.ignore);
     },
   );
+  rejectCheckpoint = Effect.fn("ExecutionTransitions.rejectCheckpoint")(
+    { self: this },
+    function* (e: Execution, kind: "plan" | "merge") {
+      const receipt = e.approval_receipts.findLast(
+        (r) =>
+          r.kind === kind &&
+          r.rejected_at &&
+          r.fingerprint === (kind === "plan" ? e.plan_fingerprint : e.delivered_commit),
+      );
+      if (kind === "plan") e = yield* this.move(e, "planning");
+      const response = receipt?.response_intent;
+      const route =
+        kind === "merge"
+          ? `Assess this private request against the plan. Use abra_work_correct with finding_ids ["checkpoint-${receipt?.form_id}"] and expected_head ${receipt?.fingerprint}.`
+          : e.workflow_policy === "full-openspec"
+            ? "Revise the plan using controlled replanning or its guarded recovery."
+            : "Revise the short contract using abra_work_scope.";
+      return yield* this.fail(
+        e,
+        new WorkflowError(
+          "APPROVAL_REJECTED",
+          response && !response.authorize
+            ? `Changes requested. ${route} Feedback: ${response.feedback}`
+            : "Human rejected this checkpoint",
+        ),
+      );
+    },
+  );
   fail = Effect.fn("ExecutionTransitions.fail")(
     { self: this },
     function* (e: Execution, error: unknown, phase: Phase = "blocked") {

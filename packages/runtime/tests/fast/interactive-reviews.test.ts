@@ -318,15 +318,31 @@ test("feedback validates source and answers and reuses original admission after 
   f.store.entries = entries;
   assert.equal(receipt.status, "admitted");
   assert.equal(f.prompts(), 1);
-  assert.match(receipt.text, /not plan or merge approval/);
-  assert.match(receipt.text, /Email login/);
+  assert.match(receipt.text, /abra_review_ui action response/);
+  assert.ok(!receipt.text.includes("Keep this focused"));
+  assert.deepEqual(await Effect.runPromise(f.reviews.response(session, input.request_id)), input);
+  await assert.rejects(
+    Effect.runPromise(f.reviews.response(SessionId.make("ses_other"), input.request_id)),
+  );
+  const evidence = await Effect.runPromise(f.reviews.receipt(session, input, f.admissions));
+  assert.ok(evidence?.feedback?.choices.some((c) => c.answer === "Email login"));
+  const legacy = { ...input, request_id: "feedback-original-transport" };
+  const legacyText = "Original queued feedback payload";
+  await Effect.runPromise(
+    f.store.set(StorageKey.make(`web/review/${session}/response/${legacy.request_id}`), {
+      input: legacy,
+      text: legacyText,
+    }),
+  );
+  const replay = await Effect.runPromise(f.reviews.submit(session, legacy, f.admissions));
+  assert.equal(replay.text, legacyText);
   f.setChanged();
   const restarted = new Reviews(f.store, f.locks, f.source);
   assert.deepEqual(
     await Effect.runPromise(restarted.submit(session, input, f.admissions)),
     receipt,
   );
-  assert.equal(f.prompts(), 1);
+  assert.equal(f.prompts(), 2);
   await assert.rejects(
     Effect.runPromise(
       restarted.submit(session, { ...input, request_id: "new-after-change" }, f.admissions),

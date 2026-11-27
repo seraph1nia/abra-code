@@ -66,7 +66,7 @@ export class PRFeedback {
         const prior = e.rounds?.at(-1);
         if (
           !e.delivered_commit &&
-          prior?.source === "forge" &&
+          (prior?.source === "forge" || prior?.source === "checkpoint") &&
           prior.generation === e.control_generation &&
           prior.prior_delivered_commit === input.expected_head &&
           prior.instructions === input.instructions &&
@@ -98,27 +98,38 @@ export class PRFeedback {
             "CORRECTION_HEAD",
             "Correction requires the retained current delivered head",
           );
-        if (typeof this.c.delivery.findings !== "function")
-          return yield* new WorkflowError(
-            "FORGE_FINDINGS",
-            "Delivery adapter does not support authoritative findings",
-          );
-        e = (yield* this.feedback.refresh(e, p, true)).execution;
-        if (this.c.delivery.feedback && !e.feedback?.complete)
-          return yield* new WorkflowError(
-            "FEEDBACK_UNCONFIRMED",
-            "Correction needs complete authoritative feedback",
-          );
-        const findings = e.feedback?.findings ?? (yield* this.c.delivery.findings(p, e));
-        if (
-          !input.finding_ids.every((id) =>
-            findings.some((f) => f.id === id && f.head === input.expected_head),
+        const local = e.approval_receipts.findLast(
+          (r) =>
+            r.kind === "merge" &&
+            r.fingerprint === input.expected_head &&
+            r.rejected_at &&
+            r.response_intent?.authorize === false &&
+            input.finding_ids.length === 1 &&
+            input.finding_ids[0] === `checkpoint-${r.form_id}`,
+        );
+        if (!local) {
+          if (typeof this.c.delivery.findings !== "function")
+            return yield* new WorkflowError(
+              "FORGE_FINDINGS",
+              "Delivery adapter does not support authoritative findings",
+            );
+          e = (yield* this.feedback.refresh(e, p, true)).execution;
+          if (this.c.delivery.feedback && !e.feedback?.complete)
+            return yield* new WorkflowError(
+              "FEEDBACK_UNCONFIRMED",
+              "Correction needs complete authoritative feedback",
+            );
+          const findings = e.feedback?.findings ?? (yield* this.c.delivery.findings(p, e));
+          if (
+            !input.finding_ids.every((id) =>
+              findings.some((f) => f.id === id && f.head === input.expected_head),
+            )
           )
-        )
-          return yield* new WorkflowError(
-            "FINDING_STALE",
-            "Selected findings are missing or stale",
-          );
+            return yield* new WorkflowError(
+              "FINDING_STALE",
+              "Selected findings are missing or stale",
+            );
+        }
         if (
           e.feedback?.actions.some(
             (a) => !["confirmed", "superseded", "rejected"].includes(a.status),
@@ -139,7 +150,7 @@ export class PRFeedback {
         const issue = yield* this.c.work.show(e.issue_id);
         const correction = yield* this.c.corrections.prepare(
           e,
-          "forge",
+          local ? "checkpoint" : "forge",
           input.finding_ids,
           input.instructions,
           input.scope,

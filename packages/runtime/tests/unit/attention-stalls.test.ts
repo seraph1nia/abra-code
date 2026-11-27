@@ -41,7 +41,8 @@ test("a confirmed planning checkpoint releases an admitted old stall without con
   assert.equal(after.attention_turns, before.attention_turns);
   assert.equal(f.runtime.prompts, prompts);
   assert.equal(after.current_phase, "awaiting_plan_approval");
-  assert.equal(after.approval_receipts.length, 0);
+  assert.equal(after.approval_receipts.length, 1);
+  assert.ok(after.approval_receipts[0]?.delivered_at);
 });
 
 test("busy polls don't reset progress; one stall prompt is retained across restart until handled", async (t) => {

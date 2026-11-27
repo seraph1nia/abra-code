@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect";
 import {
+  feedbackMessage,
   ReviewPublishSchema,
   ReviewRecordSchema,
   ReviewSelectionSchema,
@@ -432,6 +433,29 @@ export class Reviews {
       return yield* this.assets.read(session, asset);
     });
   }
+  response(session: SessionId, request: string) {
+    return Effect.gen({ self: this }, function* () {
+      const saved = yield* decode(
+        ResponseSchema,
+        yield* this.store.get(key(session, "response/" + request)),
+        "Retained review feedback",
+      );
+      const receipt = yield* decode(
+        ReceiptSchema,
+        yield* this.store.get(StorageKey.make(`web/receipt/${session}/${request}`)),
+        "Review admission receipt",
+      );
+      if (
+        saved.input.request_id !== request ||
+        receipt.request_id !== request ||
+        receipt.status !== "admitted" ||
+        receipt.text !== saved.text ||
+        receipt.delivery !== "queue"
+      )
+        return yield* fail("No matching admitted response in this conversation");
+      return saved.input;
+    });
+  }
   receipt(
     session: SessionId,
     selection: typeof ReviewResponseQuerySchema.Type,
@@ -451,8 +475,39 @@ export class Reviews {
       if (!receipt) return null;
       if (receipt.text !== saved.text || receipt.delivery !== "queue")
         return yield* fail("Admission receipt conflicts with review response");
+      return yield* this.presentReceipt(session, saved.input, receipt);
+    });
+  }
+  private presentReceipt(session: SessionId, selection: ReviewSubmit, receipt: SubmissionReceipt) {
+    return Effect.gen({ self: this }, function* () {
+      const published = yield* this.committedRecord(session, selection).pipe(Effect.result);
+      const record =
+        published._tag === "Success" && published.success.record.hash === selection.hash
+          ? published.success.record
+          : undefined;
+      const feedback = record && {
+        title: record.review.title,
+        choices: record.review.fields.flatMap((field) => {
+          const answer = selection.answers[field.id];
+          if (answer === undefined) return [];
+          const values = Array.isArray(answer) ? answer : [answer];
+          return [
+            {
+              question: field.label,
+              answer: values
+                .map((value) =>
+                  "options" in field
+                    ? (field.options.find((option) => option.value === value)?.label ?? value)
+                    : value,
+                )
+                .join(", "),
+            },
+          ];
+        }),
+      };
       return {
         ...receipt,
+        feedback,
         review_id: selection.review_id,
         revision: selection.revision,
         hash: selection.hash,
@@ -479,23 +534,7 @@ export class Reviews {
             return yield* fail("Review hash does not match the reviewed version");
           const errors = reviewAnswerErrors(record.review, value.answers);
           if (Object.keys(errors).length) return yield* fail(Object.values(errors).join("; "));
-          const answers = record.review.fields.map((f) => ({
-            question: f.label,
-            field_id: f.id,
-            answer: value.answers[f.id] ?? null,
-            ...("options" in f
-              ? {
-                  selected_options: f.options
-                    .filter((o) => {
-                      const v = value.answers[f.id];
-                      return Array.isArray(v) ? v.includes(o.value) : v === o.value;
-                    })
-                    .map((o) => ({ value: o.value, label: o.label })),
-                }
-              : {}),
-          }));
-          const text = `Please revise the reviewed plan or respond to this report using my feedback. This is review input, not plan or merge approval. Follow the existing controller checkpoints. Read the retained review with abra_review_ui action read for captured source content. Publish a follow-up review with responds_to ${value.request_id} when a revision is available.\n\n${JSON.stringify({ review_id: value.review_id, revision: value.revision, hash: value.hash, source: record.review.source, title: record.review.title, answers }, null, 2)}`;
-          if (text.length > 32768) return yield* fail("Review response exceeds admission limits");
+          const text = feedbackMessage(value);
           const saved = { input: value, text };
           yield* this.immutable(responseKey, saved);
           return saved;
@@ -506,12 +545,7 @@ export class Reviews {
         text: reserved.text,
         delivery: "queue",
       });
-      return {
-        ...receipt,
-        review_id: reserved.input.review_id,
-        revision: reserved.input.revision,
-        hash: reserved.input.hash,
-      };
+      return yield* this.presentReceipt(session, reserved.input, receipt);
     });
   }
 }

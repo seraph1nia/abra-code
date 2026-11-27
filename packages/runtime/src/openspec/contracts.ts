@@ -34,7 +34,15 @@ export const ApplyStatusSchema = Schema.Struct({
   state: Schema.Literals(["blocked", "ready", "all_done"]),
   taskTrackingConfigured: Schema.Boolean,
   progress: ProgressSchema,
-  tasks: Schema.Array(Schema.Struct({ id: TaskId, done: Schema.Boolean })),
+  tasks: Schema.Array(
+    Schema.Struct({
+      id: TaskId,
+      done: Schema.Boolean,
+      description: Schema.optional(Schema.String),
+      sourcePath: Schema.optional(Schema.String),
+      line: Schema.optional(Count),
+    }),
+  ),
   contextFiles: Schema.optional(Schema.Record(Schema.String, Schema.Array(Schema.String))),
   instruction: Schema.optional(Schema.String),
   context: Schema.optional(Schema.String),

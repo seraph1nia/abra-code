@@ -1,4 +1,4 @@
-import { exactParseOptions } from "@abracode/contracts/primitives";
+import { CheckpointResponseSchema, exactParseOptions } from "@abracode/contracts/primitives";
 import {
   ScopedMemorySearch,
   ScopedMemoryRead,
@@ -26,7 +26,7 @@ import { DiagramPreparationSchema } from "@abracode/contracts/presentation/diagr
 import { ReportExportSchema } from "@abracode/contracts/presentation/report-export-contract";
 import { Rpc } from "@opencode/plugin/rpc";
 import { Schema } from "effect";
-import { SessionId, IssueId, MessageId } from "@abracode/contracts/identities";
+import { FormId, SessionId, IssueId, MessageId } from "@abracode/contracts/identities";
 import { SurfaceId } from "@abracode/contracts/web/catalog";
 import { DocumentArtifactSchema, ArtifactSummarySchema } from "@abracode/contracts/web/wire";
 import {
@@ -184,6 +184,17 @@ export const webGateway = Rpc.define({
       ReceiptLookupSchema,
     ),
     projects: method(Schema.Struct({ session_id: SessionId }), ProjectsSchema),
+    checkpointResponse: method(
+      Schema.Struct({
+        session_id: SessionId,
+        issue_id: IssueId,
+        form_id: FormId,
+        fingerprint: Schema.String,
+        response: CheckpointResponseSchema,
+        answered: Schema.Boolean,
+      }),
+      Schema.Boolean,
+    ),
     checkpoint: method(
       Schema.Struct({ session_id: SessionId, form_id: Schema.String }),
       CheckpointSchema,

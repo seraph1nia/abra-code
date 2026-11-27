@@ -24,6 +24,7 @@ export const DecisionSummarySchema = Schema.Struct({
   opened_at: Count,
   status: Schema.Literals(["open", "answered", "cancelled", "superseded"]),
   form_id: Schema.optional(FormId),
+  form_observed: Schema.optionalKey(Schema.Boolean),
   form_session: Schema.optional(SessionId),
   answer: Schema.optional(bounded),
   resolved_at: Schema.optional(Count),

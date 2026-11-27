@@ -88,7 +88,7 @@ Historical executions without schema-content evidence remain readable with unava
 
 ## Compact planning and schema revisions
 
-This repository's default for new changes is the owned `abra-compact-v1` schema:
+New changes use `abra-compact-v2` for a short Plan with an outcome, boundaries, acceptance and links to source scenarios. The reader shows checklist progress and derives the Report from controller evidence. The schema tracks
 proposal, behavioral specs and trackable `tasks.md`, with no design prerequisite.
 Brief implementation choices and scope boundaries belong in the proposal. Every
 tracked task includes observable completion evidence. Behavioral deltas, strict
@@ -103,7 +103,7 @@ selection; changing the default does not convert them. Schema selection does not
 enable automatic supervision or weaken approval policy in any repository.
 
 The compact definition and its referenced templates are a named contract. Make
-incompatible updates under a new name, such as `abra-compact-v2`, and validate
+incompatible updates under a new name, such as a new version of the compact schema, and validate
 real planning, task tracking and archival before adopting it. Active executions
 retain content evidence and block on definition/template drift; restore their
 original inputs instead of rebinding them. To roll back future defaults, change

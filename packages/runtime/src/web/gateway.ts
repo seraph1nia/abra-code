@@ -407,6 +407,18 @@ export function registerWebGateway(
             })
             .pipe(Effect.map(artifactSummary)),
       ),
+      checkpointResponse: sessionHandler((i) =>
+        controller
+          .reserveCheckpointResponse(
+            i.issue_id,
+            i.session_id,
+            i.form_id,
+            i.fingerprint,
+            i.response,
+            i.answered,
+          )
+          .pipe(Effect.as(true)),
+      ),
       checkpoint: sessionHandler(({ session_id, form_id }) =>
         controller.queries.checkpoint(session_id, form_id),
       ),

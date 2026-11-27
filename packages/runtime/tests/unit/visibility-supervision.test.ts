@@ -28,7 +28,7 @@ test("observer joins WorkGraph, blockers and role sessions without advancing a w
   assert.equal(detail.progress?.complete, 0);
   assert.deepEqual(await run(f.records.execution(e.issue_id)), before);
   assert.equal(f.runtime.creates, 1);
-  assert.equal(f.runtime.forms.size, 0);
+  assert.equal(f.runtime.forms.size, 1);
   assert.ok(Schema.is(visibility.methods.snapshot.output)(snapshot));
   assert.ok(Schema.is(visibility.methods.detail.output)(detail));
 });
@@ -138,7 +138,11 @@ test("older closed issue detail preserves communication counts outside the loade
   );
   const visible = (await run(view.snapshot(1))).work.find((w) => w.issue_id === e.issue_id)!;
   const detail = await run(view.detail(e.issue_id));
-  assert.deepEqual(detail.work.communication, { total: 3, outstanding: 1 });
+  assert.deepEqual(detail.work.communication, {
+    total: 3,
+    outstanding: 1,
+    first: { offset: 1, request_id: "awaiting-answer" },
+  });
   assert.deepEqual(detail.work.communication, visible.communication);
   assert.deepEqual((await run(view.detail(empty))).work.communication, {
     total: 0,

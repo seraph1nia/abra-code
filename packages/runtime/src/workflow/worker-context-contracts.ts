@@ -24,6 +24,13 @@ export const contextDigest = (value: object) =>
     ),
   );
 
+const decisionReference = Schema.Struct({
+  key: Schema.String,
+  status: Schema.String,
+  scope: Schema.optionalKey(Schema.String),
+  generation: Schema.optionalKey(Count),
+  basis: Schema.optionalKey(Schema.Literals(["current_generation", "accepted_contract"])),
+});
 const reference = Schema.Struct({
   path: Schema.String,
   status: Schema.Literals(["discovered", "declared", "unavailable"]),
@@ -48,7 +55,7 @@ const WorkerContextV1 = Schema.Struct({
   scope_fingerprint: Schema.optional(Fingerprint),
   approvals: Schema.Array(ApprovalSchema),
   references: Schema.Array(reference),
-  decisions: Schema.Array(Schema.Struct({ key: Schema.String, status: Schema.String })),
+  decisions: Schema.Array(decisionReference),
   at: Timestamp,
 }).check(
   Schema.makeFilter(
@@ -112,7 +119,7 @@ export const WorkerContextSummarySchema = Schema.Struct({
   references: Schema.Array(reference),
   skills: WorkerEnvironmentSchema.fields.skills,
   required_tools: WorkerEnvironmentSchema.fields.tools,
-  decisions: Schema.Array(Schema.Struct({ key: Schema.String, status: Schema.String })),
+  decisions: Schema.Array(decisionReference),
   omitted: Count,
   current_inventory: Schema.Literal("not_observed"),
   native_context: Schema.Literal("not_captured"),

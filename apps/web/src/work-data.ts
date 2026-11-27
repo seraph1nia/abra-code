@@ -86,6 +86,7 @@ export const queries = {
     WorkspaceApi.query("work", "worker", {
       query: { issue_id: IssueId.make(issue), session_id: SessionId.make(session) },
       ...queryOptions(issue),
+      reactivityKeys: [...queryOptions(issue).reactivityKeys, `session:${session}`],
     }),
   workerHistory: (issue: string, session: string, cursor?: string) =>
     WorkspaceApi.query("work", "worker-history", {
@@ -95,6 +96,7 @@ export const queries = {
         ...(cursor ? { cursor } : {}),
       },
       ...queryOptions(issue),
+      reactivityKeys: [...queryOptions(issue).reactivityKeys, `session:${session}`],
     }),
   messages: (issue: string, offset = 0) =>
     WorkspaceApi.query("work", "messages", {

@@ -65,6 +65,7 @@ export type WorkspaceSearch = {
   tab?: InspectorTab;
   activity?: ActivitySection;
   file?: string;
+  line?: number;
   scope?: "all" | "uncommitted";
   resource?: ResourceSelection;
   canvas?: boolean;
@@ -127,6 +128,9 @@ export function workspaceSearch(value: Record<string, unknown>): WorkspaceSearch
       : {}),
     ...(tab ? { tab } : {}),
     ...(activity ? { activity } : {}),
+    ...(Number.isSafeInteger(value.line) && Number(value.line) > 0
+      ? { line: Number(value.line) }
+      : {}),
     ...(typeof value.file === "string" && value.file.length <= 4096 ? { file: value.file } : {}),
     ...(value.scope === "uncommitted" ? { scope: "uncommitted" as const } : {}),
     ...(typeof value.artifact_offset === "number" &&

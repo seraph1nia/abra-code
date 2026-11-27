@@ -1,7 +1,7 @@
 import { Count } from "../primitives.ts";
 import { Schema } from "effect";
 import { ExecutionContractSchema } from "./execution-contract.ts";
-import { IssueId, SessionId, RepositoryId, Timestamp } from "../identities.ts";
+import { RequestId, IssueId, SessionId, RepositoryId, Timestamp } from "../identities.ts";
 import { RoleSchema, PhaseSchema, Priority, PolicySchema } from "../primitives.ts";
 import {
   DecisionObservationSchema as DecisionSchema,
@@ -13,6 +13,7 @@ import { SupervisionSummarySchema } from "./supervision.ts";
 import { DeliveryOutcomeSchema } from "../workflow/delivery-contracts.ts";
 import { DeliveryWaitSchema } from "../workflow/operation-contracts.ts";
 const strings = Schema.Array(Schema.String);
+export const RequestLocationSchema = Schema.Struct({ request_id: RequestId, offset: Count });
 /** Bounded observation data; full native/controller records remain with their owners. */
 export const WorkSummarySchema = Schema.Struct({
   issue_id: IssueId,
@@ -21,6 +22,8 @@ export const WorkSummarySchema = Schema.Struct({
   priority: Priority,
   issue_status: Schema.Literals(["open", "in_progress", "blocked", "closed", "unavailable"]),
   phase: Schema.optional(PhaseSchema),
+  active_session_id: Schema.optional(SessionId),
+  provisioning_role: Schema.optional(RoleSchema),
   active_role: Schema.optional(RoleSchema),
   generation: Schema.optional(Count),
   policy: Schema.optional(PolicySchema),
@@ -66,6 +69,12 @@ export const WorkSummarySchema = Schema.Struct({
   closed_at: Schema.optional(Timestamp),
   decision_count: Schema.optional(Count),
   wait_count: Schema.optional(Count),
-  communication: Schema.optional(Schema.Struct({ total: Count, outstanding: Count })),
+  communication: Schema.optional(
+    Schema.Struct({
+      total: Count,
+      outstanding: Count,
+      first: Schema.optionalKey(RequestLocationSchema),
+    }),
+  ),
 });
 export type WorkSummary = typeof WorkSummarySchema.Type;

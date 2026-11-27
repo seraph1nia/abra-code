@@ -75,7 +75,7 @@ export function AttentionPanel({
   }, [hash, attentionOpen, bound]);
   const nextForm = workspace.forms.find((item) => item.active && item.checkpoint?.active);
   const owners = [...new Set(workAttention.map((entry) => entry.owner))];
-  const totalCount = attention + workAttention.length + managementAttention.length;
+  const totalCount = attention;
 
   return (
     <section
@@ -108,9 +108,15 @@ export function AttentionPanel({
       {(workspace.forms.length > 0 || workspace.permissions.length > 0) && (
         <div className="inspector-stack">
           <h3 className="eyebrow">Your forms and permissions</h3>
-          {workspace.forms.map((item) => (
-            <NativeForm key={`${item.form.id}-${item.binding}`} item={item} refresh={refresh} />
-          ))}
+          {workspace.forms
+            .filter(
+              (item) =>
+                attentionOpen ||
+                (item.checkpoint?.kind !== "plan" && item.checkpoint?.kind !== "merge"),
+            )
+            .map((item) => (
+              <NativeForm key={`${item.form.id}-${item.binding}`} item={item} refresh={refresh} />
+            ))}
           {workspace.permissions.map((item) => (
             <NativePermission key={item.request.id} item={item} refresh={refresh} />
           ))}
@@ -131,7 +137,17 @@ export function AttentionPanel({
                     <Button
                       variant="ghost"
                       className="work-attention-btn h-auto whitespace-normal"
-                      onClick={() => open(entry.issue_id)}
+                      onClick={() =>
+                        entry.key === "communication"
+                          ? inspect({
+                              action: "open_task",
+                              issue_id: entry.issue_id,
+                              section: "activity",
+                              activity: "communication",
+                              ...(entry.request && { request: entry.request }),
+                            })
+                          : open(entry.issue_id)
+                      }
                     >
                       {entry.title} · {entry.reason}
                     </Button>

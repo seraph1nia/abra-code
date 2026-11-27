@@ -51,7 +51,7 @@ test("primary supervision counts are exclusive projections; native queued and un
       "recovery_required",
     ],
     [{ current_phase: "interrupted" }, "paused"],
-    [{ current_phase: "awaiting_plan_approval" }, "human_decision"],
+    [{ current_phase: "awaiting_plan_approval" }, "supervisor_decision"],
     [
       {
         decisions: [

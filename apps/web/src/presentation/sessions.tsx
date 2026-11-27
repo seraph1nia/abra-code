@@ -17,34 +17,22 @@ export function SessionsPanel({ work, inspect }: { work: WebWorkItem; inspect: I
   const [page, setPage] = useState(0);
   const selectId = useId();
   const target = route.resource?.action === "open_session" ? route.resource.session_id : undefined;
+  const [showHistory, setShowHistory] = useState(false);
   const selected =
     target ??
-    work.sessions.find((session) => session.role === work.active_role)?.id ??
-    work.sessions.at(-1)?.id;
-  if (!work.sessions.length && !target)
-    return <p className="muted">No worker sessions retained.</p>;
+    work.active_session_id ??
+    (!work.provisioning_role && !work.active_role ? work.sessions.at(-1)?.id : undefined);
   return (
     <div className="inspector-stack">
       <p className="muted">
         Worker inspection is read-only. Give instructions to Abra in the main conversation.
       </p>
-      <div className="inspector-stack" aria-label="Retained worker sessions">
-        {work.sessions.slice(page * 8, (page + 1) * 8).map((session) => (
-          <RequestState key={session.id} query={queries.worker(work.issue_id, session.id)}>
-            {(observation) => (
-              <SessionCard session={observation} issue={work.issue_id} inspect={inspect} />
-            )}
-          </RequestState>
-        ))}
-      </div>
-      {work.sessions.length > 8 && (
-        <PaginationBar
-          label="Worker summary pages"
-          previousLabel="Previous sessions"
-          nextLabel="Next sessions"
-          previous={page ? () => setPage(page - 1) : undefined}
-          next={(page + 1) * 8 < work.sessions.length ? () => setPage(page + 1) : undefined}
-        />
+      {!selected && (
+        <p>
+          {work.provisioning_role || work.active_role
+            ? "Waiting for the current worker session."
+            : "No worker sessions retained."}
+        </p>
       )}
       {selected && (
         <SectionCard
@@ -82,6 +70,40 @@ export function SessionsPanel({ work, inspect }: { work: WebWorkItem; inspect: I
         >
           <WorkerTranscript key={selected} work={work} session={selected} inspect={inspect} />
         </SectionCard>
+      )}
+      {!!work.sessions.length && (
+        <>
+          <Button
+            variant="outline"
+            aria-expanded={showHistory}
+            onClick={() => setShowHistory((v) => !v)}
+          >
+            Session history ({work.sessions.length})
+          </Button>
+          {showHistory && (
+            <>
+              {" "}
+              <div className="inspector-stack" aria-label="Retained worker sessions">
+                {work.sessions.slice(page * 8, (page + 1) * 8).map((session) => (
+                  <RequestState key={session.id} query={queries.worker(work.issue_id, session.id)}>
+                    {(observation) => (
+                      <SessionCard session={observation} issue={work.issue_id} inspect={inspect} />
+                    )}
+                  </RequestState>
+                ))}
+              </div>
+              {work.sessions.length > 8 && (
+                <PaginationBar
+                  label="Worker summary pages"
+                  previousLabel="Previous sessions"
+                  nextLabel="Next sessions"
+                  previous={page ? () => setPage(page - 1) : undefined}
+                  next={(page + 1) * 8 < work.sessions.length ? () => setPage(page + 1) : undefined}
+                />
+              )}
+            </>
+          )}
+        </>
       )}
     </div>
   );

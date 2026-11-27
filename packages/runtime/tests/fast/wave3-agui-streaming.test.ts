@@ -230,7 +230,7 @@ test("nativeChangeScope skips transcript refresh for live incremental streaming 
     assert.deepEqual(read(structuralType), { transcript: true });
   }
   assert.deepEqual(read("session.inbox.enqueued"), { admissions: true, transcript: true });
-  assert.deepEqual(read("session.text.delta", "ses_worker"), { issues: [issue], finder: true });
+  assert.deepEqual(read("session.text.delta", "ses_worker"), { sessions: ["ses_worker"] });
 });
 
 test("NativeSessionProjection memoizes unchanged messages and accepts pre-decoded events", () => {

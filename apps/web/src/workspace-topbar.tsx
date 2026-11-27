@@ -2,7 +2,6 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Bell, Expand, Minimize2, PanelRight } from "@abracode/presentation/icons";
 import { SearchTrigger } from "./search-trigger.tsx";
 import { destinations, type Destination, type WorkspaceSearch } from "./navigation.ts";
-import type { Dispatch, SetStateAction } from "react";
 
 export function WorkspaceTopbar({
   destination,
@@ -27,7 +26,7 @@ export function WorkspaceTopbar({
   desktopExpanded: boolean;
   showExpand: boolean;
   lastInspection?: WorkspaceSearch;
-  setExpanded: Dispatch<SetStateAction<boolean>>;
+  setExpanded: (expanded: boolean) => void;
 }) {
   const navigate = useNavigate();
   return (
@@ -117,7 +116,7 @@ export function WorkspaceTopbar({
                   type="button"
                   className={desktopExpanded ? "layout-mode-btn is-active" : "layout-mode-btn"}
                   aria-label={desktopExpanded ? "Show chat beside canvas" : "Expand canvas"}
-                  onClick={() => setExpanded((value) => !value)}
+                  onClick={() => setExpanded(!desktopExpanded)}
                 >
                   {desktopExpanded ? (
                     <Minimize2 aria-hidden="true" />

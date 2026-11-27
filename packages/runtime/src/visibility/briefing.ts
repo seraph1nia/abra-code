@@ -6,7 +6,7 @@ import {
   type WorkBriefing,
 } from "@abracode/contracts/visibility/briefing";
 import { fleetLabels, fleetState } from "./fleet.ts";
-import { taskAttention } from "@abracode/contracts/visibility/attention";
+import { humanDecision, taskAttention } from "@abracode/contracts/visibility/attention";
 import type { Controller } from "../workflow/controller.ts";
 import { buildSnapshot } from "./snapshot.ts";
 import { timestamp } from "@abracode/contracts/identities";
@@ -61,7 +61,8 @@ function workSections(snapshot: WorkSnapshot, bundle: ReadBundle, scope: Query) 
       waits: e?.waits,
       attention: e?.attention,
     });
-    for (const item of attention.filter((item) => item.owner === "user")) {
+    const actionable = attention.filter((item) => humanDecision(item.owner, Boolean(item.form_id)));
+    for (const item of actionable) {
       const decision = e?.decisions?.find((d) => item.key === `decision:${d.key}:${d.generation}`);
       const kind =
         item.key === "merge-approval" ? "merge" : item.key === "plan-approval" ? "plan" : undefined;
@@ -99,7 +100,7 @@ function workSections(snapshot: WorkSnapshot, bundle: ReadBundle, scope: Query) 
             },
       });
     }
-    if (attention.some((i) => i.owner === "user")) continue;
+    if (actionable.length) continue;
     const queued = !e || ["dependency_wait", "capacity_wait", "ready"].includes(state);
     const facts = [
       fleetLabels[state],
@@ -110,13 +111,16 @@ function workSections(snapshot: WorkSnapshot, bundle: ReadBundle, scope: Query) 
       ...attention.map((i) => i.reason),
       ...(queued ? work.blockers : []),
     ];
+    const request = work.communication?.first;
     (queued ? queue : ongoing).push({
       ...base,
       source: [issue_id, work.phase ?? work.issue_status, e?.control_generation]
         .filter((x) => x !== undefined)
         .join("/"),
       fact: facts.filter(Boolean).join(" · ").slice(0, 768),
-      target: { action: "open_task", issue_id, section: "summary" },
+      target: request
+        ? { action: "open_task", issue_id, section: "activity", activity: "communication", request }
+        : { action: "open_task", issue_id, section: "summary" },
     });
   }
   const outcomes: BriefingItem[] = [];

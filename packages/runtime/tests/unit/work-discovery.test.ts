@@ -19,6 +19,7 @@ test("work discovery searches all retained tasks and keeps fleet totals independ
     f.seed.close(id);
   }
   const execution = await run(planned(f, undefined, {}, [IssueId.make("history-55")]));
+  const formsBeforeRead = [...f.runtime.forms];
   const view = new Visibility(f.controller);
   const first = Schema.decodeSync(WorkPageSchema)(
     await run(view.find({ state: "closed", limit: 20 })),
@@ -57,7 +58,7 @@ test("work discovery searches all retained tasks and keeps fleet totals independ
   assert.deepEqual(dependent.work.dependencies, ["history-55"]);
   assert.equal(dependent.work.dependency_count, 1);
   assert.deepEqual(detail.work.dependencies, []);
-  assert.equal(f.runtime.forms.size, 0);
+  assert.deepEqual([...f.runtime.forms], formsBeforeRead);
 });
 
 test("discovery bounds are checked before observation and do not silently clamp invalid requests", async (t) => {

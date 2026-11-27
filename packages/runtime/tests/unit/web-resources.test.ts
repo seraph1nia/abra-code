@@ -14,6 +14,7 @@ test("resource resolution accepts owned sessions and rejects foreign sessions an
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
   const e = await run(planned(f));
+  const formsBeforeRead = [...f.runtime.forms];
   const owned = {
     action: "open_session",
     issue_id: e.issue_id,
@@ -39,7 +40,7 @@ test("resource resolution accepts owned sessions and rejects foreign sessions an
     await assert.rejects(run(resolveOwnedResource(f.controller.queries, target)), /does not own/);
   }
   assert.equal(f.runtime.creates, creates);
-  assert.equal(f.runtime.forms.size, 0);
+  assert.deepEqual([...f.runtime.forms], formsBeforeRead);
 });
 
 test("invalid resource capabilities are rejected before any ownership read", async (t) => {

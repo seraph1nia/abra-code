@@ -39,8 +39,18 @@ export function supervisionSummary(options: {
   else if (e?.current_phase === "recovery_required" || e?.stop_status === "requested")
     primary = "recovery_required";
   else if (e?.current_phase === "interrupted" || e?.stop_status === "confirmed") primary = "paused";
+  else if (e?.current_phase === "awaiting_plan_approval" && e.plan_approval_required !== false)
+    primary = e.approval_receipts.some(
+      (r) =>
+        r.kind === "plan" &&
+        r.fingerprint === e.plan_fingerprint &&
+        r.delivered_at &&
+        !r.rejected_at &&
+        !r.authorized_at,
+    )
+      ? "human_decision"
+      : "supervisor_decision";
   else if (
-    e?.current_phase === "awaiting_plan_approval" ||
     (e?.current_phase === "awaiting_merge" &&
       !e.delivery_wait &&
       e.merge_approval_required &&

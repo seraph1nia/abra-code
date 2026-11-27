@@ -64,6 +64,7 @@ test("research runs without OpenSpec/checks and retains a hashed report and sess
     Effect.fail(new CrewError("UNEXPECTED_SPEC", "Research must not create OpenSpec"));
   const e = await run(f.controller.start(issue.id));
   assert.equal(e.current_phase, "researching");
+  assert.equal(f.runtime.forms.size, 0);
   assert.ok(e.research_session_id);
   assert.equal(e.explore_session_id, undefined);
   const receipt = await run(
@@ -214,7 +215,7 @@ test("incomplete scoped work creates a durable clarification before any worker; 
       ),
     )
   ).issue;
-  let e = await run(f.controller.start(issue.id));
+  let e = await run(f.controller.start(issue.id, Id.SessionId.make("ses_supervisor")));
   assert.equal(e.current_phase, "planning");
   assert.equal(f.runtime.creates, 0);
   assert.equal(e.decisions![0].owner, "user");
@@ -224,11 +225,14 @@ test("incomplete scoped work creates a durable clarification before any worker; 
     f.controller.approve(issue.id, "plan", Id.SessionId.make("ses_supervisor")),
   );
   assert.ok("form_id" in pending);
+  assert.equal(e.approval_receipts[0]?.form_id, pending.form_id);
+  assert.ok(e.approval_receipts[0]?.delivered_at);
   const old = e.plan_fingerprint;
   e = await run(
     f.controller.reviseScope(issue.id, { ...scope, goal: "Revised goal", constraints: [] }),
   );
   assert.notEqual(e.plan_fingerprint, old);
+  assert.ok(e.approval_receipts.find((r) => r.fingerprint === e.plan_fingerprint)?.delivered_at);
   f.runtime.forms.set(pending.form_id, "approved");
   const revised = await run(
     f.controller.approve(issue.id, "plan", Id.SessionId.make("ses_supervisor")),
@@ -422,4 +426,35 @@ test("a stale reconciliation snapshot cannot erase a concurrently published rese
   f.runtime.success(stale.research_session_id!);
   const [done] = await run(f.controller.reconcile(issue.id));
   assert.equal(done.current_phase, "completed");
+});
+
+test("a retained legacy scope answer feeds its own required approval gate", async (t) => {
+  const { f } = await setup("lightweight-fix", true);
+  t.onTestFinished(() => run(f.close()));
+  const session = Id.SessionId.make("ses_supervisor");
+  const { issue } = await run(
+    f.controller.createWork(
+      {
+        repository_id: Id.RepositoryId.make("api"),
+        title: "Complete contract",
+        description: "Clarify observable behavior",
+        workflow_policy: "lightweight-fix",
+        scope: { goal: scope.goal, constraints: scope.constraints },
+        request_id: Id.RequestId.make("legacy-scope"),
+      },
+      session,
+    ),
+  );
+  let e = await run(f.controller.start(issue.id, session));
+  const decision = e.decisions![0];
+  const request = () =>
+    run(f.controller.decision(issue.id, decision.key, decision.generation, session, "collect"));
+  const d = await request();
+  f.runtime.questions.set(d.form_id!, { status: "answered", answer: JSON.stringify(scope) });
+  await request();
+  [e] = await run(f.controller.reconcile(issue.id));
+  assert.deepEqual(e.scope?.contract, scope);
+  assert.equal(e.current_phase, "awaiting_plan_approval");
+  assert.equal(e.apply_session_id, undefined);
+  assert.equal(e.approval_receipts.length, 1);
 });

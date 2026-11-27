@@ -27,6 +27,7 @@ import { Input } from "@abracode/presentation/ui/input";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
 import { Textarea } from "@abracode/presentation/ui/textarea";
 
+const revisionDrafts = new Map<string, string>();
 export function NativeForm(props: { item: AttentionForm; refresh: () => void }) {
   return <FormContent key={`${props.item.form.id}:${props.item.binding}`} {...props} />;
 }
@@ -36,6 +37,10 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
   const [customText, setCustomText] = useState(() => initialCustomChoices(form.fields));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [result, reply] = useAtom(formReply(`${form.id}:${item.binding}`), { mode: "promiseExit" });
+  const checkpoint = item.checkpoint?.kind === "plan" || item.checkpoint?.kind === "merge";
+  const draftKey = form.sessionID + "/" + form.id + "/" + item.binding;
+  const [feedback, setFeedback] = useState(() => revisionDrafts.get(draftKey) ?? "");
+  const [editing, setEditing] = useState(() => revisionDrafts.has(draftKey));
   const submitting = useRef(false);
   const enabled = activeFields(form.fields, editingValues(form.fields, values, customText));
   function set(key: string, value: Form.Value | undefined) {
@@ -51,10 +56,29 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
       return next;
     });
   }
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function submit(authorize?: boolean) {
     if (submitting.current || !item.active) return;
-    const prepared = prepareAnswer(form.fields, values, customText);
+    if (checkpoint && authorize === undefined) return;
+    const prepared = checkpoint
+      ? {
+          answer: authorize ? { authorize: true } : { authorize: false, feedback: feedback.trim() },
+          errors: {} as Record<string, string>,
+        }
+      : prepareAnswer(form.fields, values, customText);
+    if (checkpoint && !authorize && !feedback.trim())
+      prepared.errors.feedback = "Describe the change you want.";
+
+    if (
+      String(form.metadata?.decision_identity).endsWith(":scope-contract") &&
+      form.fields.some((field) => field.key === "goal")
+    ) {
+      if (!String(prepared.answer.goal ?? "").trim()) prepared.errors.goal = "Enter the goal.";
+      if (
+        JSON.stringify({ ...prepared.answer, constraints: prepared.answer.constraints ?? [] })
+          .length > 8192
+      )
+        prepared.errors.acceptance = "Shorten the scope to fit 8,192 characters.";
+    }
     setErrors(prepared.errors);
     const first = Object.keys(prepared.errors)[0];
     if (first) {
@@ -65,6 +89,7 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
     try {
       const response = await reply({ id: form.id, binding: item.binding, answer: prepared.answer });
       if (Exit.isSuccess(response)) {
+        revisionDrafts.delete(draftKey);
         toast.success(item.checkpoint ? "Checkpoint decision submitted" : "Answer submitted", {
           description: form.title,
         });
@@ -104,41 +129,71 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
         )}
         <form
           onSubmit={(event) => {
-            void submit(event);
+            event.preventDefault();
+            if (!checkpoint) void submit();
           }}
           noValidate
         >
           <fieldset disabled={result.waiting || !item.active} className="space-y-5">
-            {form.fields
-              .filter(
-                (field) => enabled.has(field.key) && (field.type === "external" || !field.hidden),
-              )
-              .map((field) => (
-                <NativeField
-                  key={field.key}
-                  field={field}
-                  id={`${form.id}-${field.key}`}
-                  values={values}
-                  set={set}
-                  customText={customText[field.key] ?? ""}
-                  setCustomText={(text) => {
-                    setCustomText((previous) => ({ ...previous, [field.key]: text }));
-                    setErrors((previous) => {
-                      const next = { ...previous };
-                      delete next[field.key];
-                      return next;
-                    });
-                  }}
-                  error={errors[field.key]}
-                />
-              ))}
-            <Button type="submit">
-              {result.waiting
-                ? "Submitting…"
-                : item.checkpoint?.kind === "plan" || item.checkpoint?.kind === "merge"
-                  ? "Submit checkpoint decision"
-                  : "Submit answer"}
-            </Button>
+            {checkpoint ? (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" onClick={() => void submit(true)}>
+                    Approve {item.checkpoint?.kind}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setEditing(true)}>
+                    Request changes
+                  </Button>
+                </div>
+                {editing && (
+                  <Field>
+                    <FieldLabel htmlFor={form.id + "-feedback"}>Requested changes</FieldLabel>
+                    <Textarea
+                      id={form.id + "-feedback"}
+                      maxLength={4096}
+                      value={feedback}
+                      onChange={(event) => {
+                        const text = event.target.value;
+                        setFeedback(text);
+                        revisionDrafts.set(draftKey, text);
+                      }}
+                    />
+                    {errors.feedback && <FieldError>{errors.feedback}</FieldError>}
+                    <Button type="button" onClick={() => void submit(false)}>
+                      Send change request
+                    </Button>
+                  </Field>
+                )}
+              </>
+            ) : (
+              <>
+                {form.fields
+                  .filter(
+                    (field) =>
+                      enabled.has(field.key) && (field.type === "external" || !field.hidden),
+                  )
+                  .map((field) => (
+                    <NativeField
+                      key={field.key}
+                      field={field}
+                      id={`${form.id}-${field.key}`}
+                      values={values}
+                      set={set}
+                      customText={customText[field.key] ?? ""}
+                      setCustomText={(text) => {
+                        setCustomText((previous) => ({ ...previous, [field.key]: text }));
+                        setErrors((previous) => {
+                          const next = { ...previous };
+                          delete next[field.key];
+                          return next;
+                        });
+                      }}
+                      error={errors[field.key]}
+                    />
+                  ))}
+                <Button type="submit">{result.waiting ? "Submitting…" : "Submit answer"}</Button>
+              </>
+            )}
           </fieldset>
           {Object.keys(errors).length > 0 && (
             <p className="text-destructive mt-3" role="alert">
@@ -329,7 +384,11 @@ function NativeField({
           </div>
           {field.custom && (
             <div className="mt-3">
-              <FieldLabel htmlFor={`${id}-custom`}>Additional choices, one per line</FieldLabel>
+              <FieldLabel htmlFor={`${id}-custom`}>
+                {field.title && !field.options.length
+                  ? field.title + " (one per line)"
+                  : "Additional choices, one per line"}
+              </FieldLabel>
               <Textarea
                 id={`${id}-custom`}
                 aria-invalid={Boolean(error)}

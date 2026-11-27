@@ -1,3 +1,4 @@
+import { ScopeSchema, type ScopeDraft } from "../work/scope.ts";
 import { sha256 } from "../digest.ts";
 import { nativeDomain, nativeError } from "./native-call.ts";
 import { Effect } from "effect";
@@ -182,12 +183,45 @@ export const readDisposition = (
     return { status: "answered" as const, answer };
   });
 
+export const scopeFields = (scope: ScopeDraft): NativeFormInput["fields"] => [
+  {
+    key: "goal",
+    title: "Goal",
+    type: "string",
+    required: true,
+    minLength: 1,
+    maxLength: 8192,
+    default: scope.goal,
+  },
+  {
+    key: "acceptance",
+    title: "Acceptance criteria",
+    type: "multiselect",
+    custom: true,
+    options: [],
+    required: true,
+    minItems: 1,
+    maxItems: 64,
+    default: scope.acceptance,
+  },
+  {
+    key: "constraints",
+    title: "Constraints",
+    type: "multiselect",
+    custom: true,
+    options: [],
+    maxItems: 64,
+    default: scope.constraints,
+  },
+];
+
 export const requestQuestion = (
   client: OpenCodeClient,
   session: SessionId,
   id: FormId,
   question: string,
   identity: QuestionIdentity,
+  scope?: ScopeDraft,
 ) =>
   ensureForm(
     client,
@@ -196,16 +230,18 @@ export const requestQuestion = (
       id,
       title: question.slice(0, 512),
       metadata: { source: "abracode", decision_identity: identity },
-      fields: [
-        {
-          key: "answer",
-          type: "string",
-          required: true,
-          minLength: 1,
-          maxLength: 8192,
-          title: "Answer this question",
-        },
-      ],
+      fields: scope
+        ? scopeFields(scope)
+        : [
+            {
+              key: "answer",
+              type: "string",
+              required: true,
+              minLength: 1,
+              maxLength: 8192,
+              title: "Answer this question",
+            },
+          ],
     },
     new CrewError("DECISION_FORM", "Form belongs to another question"),
   );
@@ -222,7 +258,22 @@ export const readQuestionAnswer = (
     });
     if (form.state.status === "cancelled") return { status: "cancelled" as const };
     if (form.state.status !== "answered") return { status: "pending" as const };
-    const answer = form.state.answer.answer;
+    const values = form.state.answer;
+    const answer =
+      form.fields.some((field) => field.key === "goal") &&
+      String(form.metadata?.decision_identity).endsWith(":scope-contract")
+        ? JSON.stringify(
+            yield* decode(
+              ScopeSchema,
+              {
+                goal: values.goal,
+                acceptance: values.acceptance,
+                constraints: values.constraints ?? [],
+              },
+              "short scope",
+            ),
+          )
+        : values.answer;
     if (typeof answer !== "string" || !(answer.length > 0) || !(answer.length <= 8192))
       return yield* new CrewError("DECISION_ANSWER", "Invalid native question answer");
     return { status: "answered" as const, answer };

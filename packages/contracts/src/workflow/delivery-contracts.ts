@@ -46,6 +46,7 @@ export const DeliveryOutcomeSchema = Schema.Struct({
   finishing: Schema.optional(FinishingOutcomeSchema),
   approval: Schema.Struct({
     kind: Schema.Literals(["plan", "merge"]),
+    form_id: Schema.optional(FormId),
     state: Schema.Literals(["recorded", "pending", "rejected", "not_required", "unavailable"]),
     evidence_at: Schema.optional(Timestamp),
   }),

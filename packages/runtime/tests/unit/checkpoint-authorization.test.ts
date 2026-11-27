@@ -34,7 +34,7 @@ test("approval checks the central principal before writing checkpoint state", as
     await assert.rejects(run(f.controller.approve(first.issue_id, kind, lead)), /central Abra/);
   }
   assert.deepEqual(await run(f.records.execution(first.issue_id)), before);
-  assert.equal(f.runtime.forms.size, 0);
+  assert.equal(f.runtime.forms.size, 2);
 });
 
 test("a form answered during its first request commits authorization before Apply admission", async (t) => {
@@ -69,31 +69,36 @@ test("a form answered during its first request commits authorization before Appl
   assert.ok(retained.approval_receipts[0]!.authorized_at);
 });
 
-test("checkpoint observation, lost form response, restart and admission share exact content evidence", async (t) => {
+test("automatic delivery survives a lost creation reply and a Supervisor outage at the same plan gate", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));
-  const e = await run(planned(f));
+  const id = IssueId.make("automatic-plan");
   const requested: FormId[] = [];
   const request = f.runtime.requestApproval.bind(f.runtime);
-  let loseResponse = true;
   f.runtime.requestApproval = (session, form) =>
     Effect.gen(function* () {
-      const retained = (yield* f.records.execution(e.issue_id))!;
+      const retained = (yield* f.records.execution(id))!;
       const receipt = retained.approval_receipts.find((a) => a.form_id === form);
       assert.equal(receipt?.session_id, session, "Form identity must be durable before request");
-      assert.equal(receipt?.fingerprint, e.plan_fingerprint);
+      assert.equal(receipt?.fingerprint, retained.plan_fingerprint);
       requested.push(form);
       yield* request(session, form);
-      if (loseResponse) {
-        loseResponse = false;
+      if (requested.length === 1)
         return yield* new CrewError("FORM_RESPONSE_LOST", "Native form response lost");
-      }
       return form;
     });
-  await assert.rejects(run(f.controller.approve(e.issue_id, "plan", supervisor)), /response lost/);
-  const receipt = (await run(f.records.execution(e.issue_id)))!.approval_receipts[0]!;
+  const e = await run(planned(f, id));
+  const receipt = e.approval_receipts[0]!;
+  assert.equal(e.current_phase, "awaiting_plan_approval");
+  assert.equal(receipt.delivered_at, undefined);
   assert.equal(receipt.authorized_at, undefined);
   assert.equal(f.runtime.forms.get(receipt.form_id), "pending");
+  const central = f.runtime.sessions.get(supervisor)!;
+  f.runtime.sessions.delete(supervisor);
+  const [held] = await run(f.controller.reconcile(id));
+  assert.equal(held?.current_phase, "awaiting_plan_approval");
+  assert.equal(held?.apply_session_id, undefined);
+  f.runtime.sessions.set(supervisor, central);
 
   await run(f.controller.close());
   const restarted = (
@@ -112,9 +117,9 @@ test("checkpoint observation, lost form response, restart and admission share ex
     )
   ).controller;
   t.onTestFinished(() => run(restarted.close()));
-  const pending = await run(restarted.approve(e.issue_id, "plan", supervisor));
-  assert.ok("form_id" in pending);
-  assert.equal(pending.form_id, receipt.form_id);
+  const [redelivered] = await run(restarted.reconcile(id));
+  assert.equal(redelivered?.approval_receipts[0]?.form_id, receipt.form_id);
+  assert.ok(redelivered?.approval_receipts[0]?.delivered_at);
   f.runtime.forms.set(receipt.form_id, "approved");
   const observe = () => run(restarted.queries.checkpoint(supervisor, receipt.form_id));
   const before = await run(f.records.execution(e.issue_id));

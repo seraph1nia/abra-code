@@ -98,13 +98,17 @@ export function deliveryOutcome(
       : undefined,
     approval: {
       kind,
+      form_id:
+        approval?.delivered_at && !approval.authorized_at && !approval.rejected_at
+          ? approval.form_id
+          : undefined,
       state: approval?.authorized_at
         ? "recorded"
         : approval?.rejected_at
           ? "rejected"
-          : !required
+          : required === false
             ? "not_required"
-            : approval
+            : approval?.delivered_at
               ? "pending"
               : "unavailable",
       evidence_at: approval?.authorized_at ?? approval?.rejected_at,

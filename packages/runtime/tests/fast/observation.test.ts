@@ -134,8 +134,7 @@ test("native event scopes respect controller home and session ownership across n
     transcript: true,
   });
   assert.deepEqual(read("session.text.delta", { sessionID: "ses_worker" }, "/managed/repo"), {
-    issues: [issue],
-    finder: true,
+    sessions: ["ses_worker"],
   });
   for (const type of ["session.reasoning.delta", "session.viewed", "session.skill.activated"])
     assert.equal(read(type, { sessionID: "ses_abra" }), undefined);

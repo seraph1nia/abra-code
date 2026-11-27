@@ -137,6 +137,7 @@ export interface Runtime {
     formID: FormId,
     question: string,
     identity: QuestionIdentity,
+    scope?: import("../work/scope.ts").ScopeDraft,
   ): Effect.Effect<FormId, CrewError>;
   questionAnswer(session: SessionId, formID: FormId): Effect.Effect<QuestionAnswer, CrewError>;
   requestApproval(
@@ -561,8 +562,14 @@ export class NativeRuntime implements Runtime {
 
   requestQuestion = Effect.fn("NativeRuntime.requestQuestion")(
     { self: this },
-    function* (session: SessionId, id: FormId, question: string, identity: QuestionIdentity) {
-      return yield* requestQuestion(yield* this.client(), session, id, question, identity);
+    function* (
+      session: SessionId,
+      id: FormId,
+      question: string,
+      identity: QuestionIdentity,
+      scope?: import("../work/scope.ts").ScopeDraft,
+    ) {
+      return yield* requestQuestion(yield* this.client(), session, id, question, identity, scope);
     },
   );
 

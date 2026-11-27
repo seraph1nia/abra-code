@@ -57,6 +57,7 @@ test("typed inspector URLs render Pierre, preserve navigation and theme across r
     .getByRole("tablist", { name: "Work details", exact: true })
     .getByRole("tab", { name: "Plan", exact: true })
     .click();
+  await page.getByText("Planning sources", { exact: true }).click();
   await page.getByRole("button", { name: "proposal.md", exact: true }).click();
   await page.getByRole("heading", { name: "Retained proposal", exact: true }).waitFor();
   await page.goBack();
@@ -235,10 +236,6 @@ test("late inspector responses cannot replace a new selection and live updates i
     .filter({ hasText: "Couldn’t open this work item" });
   await failure.getByRole("button", { name: "Retry" }).click();
   await page.waitForURL((url) => url.searchParams.get("issue") === "abra-web");
-  await page
-    .getByRole("tablist", { name: "Work details", exact: true })
-    .getByRole("tab", { name: "Overview", exact: true })
-    .click();
   await page.getByText("Details for Another issue", { exact: true }).waitFor();
   await page.waitForTimeout(700);
   assert.equal(await page.getByText("Details for Slow issue", { exact: true }).count(), 0);
@@ -430,6 +427,7 @@ test("policy-specific planning and independent outcomes remain usable when a doc
   await page.goto(`${f.origin}/?issue=abra-full&tab=Plan`);
   await page.getByText(/Retained archive at/).waitFor();
   await page.getByText("One retained document is unavailable", { exact: true }).waitFor();
+  await page.getByText("Planning sources", { exact: true }).click();
   await page.getByRole("button", { name: "proposal.md", exact: true }).click();
   await page.getByRole("heading", { name: "Retained proposal", exact: true }).waitFor();
   await page
@@ -443,6 +441,32 @@ test("policy-specific planning and independent outcomes remain usable when a doc
       .locator("dd")
       .allTextContents(),
     ["Recorded", "Verified", "In progress", "Open"],
+  );
+  await page.goto(f.origin + "/work?issue=abra-full&tab=Reports");
+  const report = page.getByLabel("Outcome report");
+  await report.getByText(/Branch preserved/).waitFor();
+  await report.getByText("In progress", { exact: true }).waitFor();
+  await page.reload();
+  await report.getByText(/Clean up retained resources/).waitFor();
+  const previous = "a".repeat(40),
+    current = "b".repeat(40);
+  const comparison = "https://github.com/example/fixture/compare/" + previous + "..." + current;
+  f.detailOverrides.set("abra-fix", {
+    proposal: "# Recorded fix scope",
+    documents: undefined,
+    intent: {
+      goal: "Retain existing behavior",
+      criteria: ["Keep the result"],
+      comparison: { previous, current, url: comparison },
+    },
+  });
+  await page.goto(f.origin + "/work?issue=abra-fix&tab=Reports");
+  await report.getByText(/Keep the result · No criterion-level verdict recorded/).waitFor();
+  assert.equal(
+    await report
+      .getByRole("link", { name: "Compare with the previous delivery" })
+      .getAttribute("href"),
+    comparison,
   );
   for (const [issue, title] of [
     ["abra-fix", "Recorded fix scope"],

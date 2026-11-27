@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { IssueId, FormId } from "../identities.ts";
-import type { WorkSummary } from "./work-summary.ts";
+import { RequestLocationSchema, type WorkSummary } from "./work-summary.ts";
 
 export const TaskAttentionSchema = Schema.Struct({
   issue_id: IssueId,
@@ -10,13 +10,29 @@ export const TaskAttentionSchema = Schema.Struct({
   owner: Schema.String,
   next_action: Schema.String,
   form_id: Schema.optional(FormId),
+  request: Schema.optionalKey(RequestLocationSchema),
 });
 export type TaskAttention = typeof TaskAttentionSchema.Type;
+
+/** A human decision requires an identifiable, available native input. */
+export function humanDecision(owner: string, available: boolean) {
+  return owner === "user" && available;
+}
+export function usableForm(form: { active: boolean; checkpoint?: { active: boolean } }) {
+  return humanDecision("user", form.active && form.checkpoint?.active !== false);
+}
 
 /** Unresolved observations only; incident history alone is never an obligation. */
 export function taskAttention(work: WorkSummary): TaskAttention[] {
   const entries: TaskAttention[] = [];
-  const add = (key: string, reason: string, owner: string, next_action: string, form_id?: FormId) =>
+  const add = (
+    key: string,
+    reason: string,
+    owner: string,
+    next_action: string,
+    form_id?: FormId,
+    request?: typeof RequestLocationSchema.Type,
+  ) =>
     entries.push({
       issue_id: work.issue_id,
       title: work.title,
@@ -24,27 +40,39 @@ export function taskAttention(work: WorkSummary): TaskAttention[] {
       reason,
       owner,
       next_action,
+      ...(request && { request }),
       ...(form_id ? { form_id } : {}),
     });
   const current = (generation: number | undefined) =>
     work.generation === undefined || generation === undefined || generation === work.generation;
-  if (work.phase === "awaiting_plan_approval")
+  if (
+    work.phase === "awaiting_plan_approval" &&
+    !["not_required", "recorded", "rejected"].includes(work.outcome?.approval.state ?? "")
+  ) {
+    const available = work.outcome?.approval.state === "pending";
     add(
       "plan-approval",
-      "Plan approval required",
-      "user",
-      "Review the plan and answer the current native approval form in Abra.",
+      available ? "Plan approval required" : "Waiting for approval form delivery",
+      available ? "user" : "supervisor",
+      available
+        ? "Review the plan and answer its approval form."
+        : "Reconnect the central Abra session and reconcile this task.",
+      work.outcome?.approval.form_id,
     );
+  }
   if (
     work.phase === "awaiting_merge" &&
     (!work.delivery_wait || work.outcome?.approval.state === "pending") &&
-    !["recorded", "not_required"].includes(work.outcome?.approval.state ?? "")
+    !["recorded", "not_required", "rejected"].includes(work.outcome?.approval.state ?? "")
   )
     add(
       "merge-approval",
-      "Merge approval requires review",
-      "user",
+      work.outcome?.approval.form_id
+        ? "Merge approval requires review"
+        : "Waiting for merge approval form delivery",
+      work.outcome?.approval.form_id ? "user" : "supervisor",
       "Inspect the delivery evidence and current native approval form in Abra.",
+      work.outcome?.approval.form_id,
     );
   for (const decision of work.decisions ?? []) {
     if (decision.status !== "open" || !current(decision.generation)) continue;
@@ -55,7 +83,7 @@ export function taskAttention(work: WorkSummary): TaskAttention[] {
       decision.owner === "user"
         ? "Answer the current native decision form in Abra."
         : "Abra must resolve the existing decision within its authority.",
-      decision.form_id,
+      decision.form_observed ? decision.form_id : undefined,
     );
   }
   for (const wait of work.waits ?? []) {
@@ -73,6 +101,8 @@ export function taskAttention(work: WorkSummary): TaskAttention[] {
       `${work.communication.outstanding} unanswered request(s)`,
       "request recipient",
       "Inspect communication for the recipient, required response and response-recovery state.",
+      undefined,
+      work.communication.first,
     );
   if (work.outcome?.cleanup.state === "blocked")
     add("cleanup", "Delivery verified; cleanup blocked", "user", work.outcome.next_action);

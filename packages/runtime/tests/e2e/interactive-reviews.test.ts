@@ -237,5 +237,24 @@ test("interactive A2UI review shares drafts, enlarges designs, restores feedback
     "",
   );
   assert.equal(fixture.source.submissions, 1);
+  const text = receipt.native_text ?? receipt.text;
+  fixture.source.value = {
+    ...fixture.source.value,
+    messages: [
+      ...fixture.source.value.messages.filter((m) => m.id !== receipt.message_id),
+      { id: receipt.message_id, at: receipt.at, text, role: "user" },
+      { id: "msg_lookalike", at: receipt.at, text, role: "user" },
+    ],
+  };
+  await page.goto(fixture.origin);
+  await page
+    .getByLabel("Submitted review feedback")
+    .getByText("Email login, Password reset")
+    .waitFor();
+  await page
+    .getByLabel("Submitted review feedback")
+    .getByRole("link", { name: "Open follow-up · revision 2" })
+    .waitFor();
+  assert.equal(await page.locator("#message-msg_lookalike .message-text").innerText(), text);
   assert.deepEqual(errors, []);
 });

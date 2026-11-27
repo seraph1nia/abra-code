@@ -60,7 +60,7 @@ export function reviewTools(c: Controller): DefinedTool[] {
       diagnostic: true,
       output: toolOutputs.work_correct,
       description:
-        "Classify selected current-head forge findings against approved scope; enabled finite repair policy may admit a round. Uncertain/scope-changing findings create a decision.",
+        "Assess current-head forge findings or a private checkpoint change request against the approved plan; enabled finite repair policy may admit a round. Uncertain/scope-changing findings create a decision.",
       input: CorrectionInputSchema,
       run: (a) => c.correct(a),
     }),

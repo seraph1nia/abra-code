@@ -1,6 +1,8 @@
 import { WorkflowError } from "../errors.ts";
 import {
   type AbsolutePath,
+  type FormId,
+  type IssueId,
   SessionId,
   Fingerprint,
   Commit,
@@ -149,10 +151,68 @@ export class Authorizations {
     private validatePlanning?: (e: Execution) => Effect.Effect<void, CrewError>,
   ) {}
 
+  reserveResponse = Effect.fn("Authorizations.reserveResponse")(
+    { self: this },
+    function* (
+      issue: IssueId,
+      session: SessionId,
+      form: FormId,
+      fingerprint: string,
+      response: NonNullable<Approval["response_intent"]>,
+      answered: boolean,
+    ) {
+      yield* this.assertActor(session);
+      const e = yield* this.records.execution(issue);
+      if (!e)
+        return yield* new WorkflowError("EXECUTION_MISSING", "No execution for this checkpoint");
+      const observed = yield* this.evidence.observe(e, session, form);
+      if (observed?.fingerprint !== fingerprint)
+        return yield* new WorkflowError("STALE_FORM", "Checkpoint changed");
+      yield* this.records.update(issue, (current) => {
+        const receipt = current.approval_receipts.find(
+          (r) => r.form_id === form && r.session_id === session && r.fingerprint === fingerprint,
+        );
+        ensure(receipt, "STALE_FORM", "Checkpoint changed");
+        if (receipt.response_intent) {
+          ensure(
+            receipt.response_intent.authorize === response.authorize &&
+              (receipt.response_intent.authorize ||
+                (!response.authorize && receipt.response_intent.feedback === response.feedback)),
+            "FORM_CONFLICT",
+            "Another response was reserved for this checkpoint",
+          );
+          return;
+        }
+        ensure(
+          !answered &&
+            observed.active &&
+            current.control_generation === e.control_generation &&
+            current.current_phase === e.current_phase &&
+            !receipt.authorized_at &&
+            !receipt.rejected_at &&
+            retainedIdentity(current, receipt.kind) === fingerprint,
+          "STALE_FORM",
+          "Checkpoint is no longer answerable",
+        );
+        return {
+          ...current,
+          approval_receipts: current.approval_receipts.map((r) =>
+            r === receipt ? { ...r, response_intent: response } : r,
+          ),
+        };
+      });
+    },
+  );
+
   collect = Effect.fn("Authorizations.collect")(
     { self: this },
     function* (e: Execution, kind: Kind, supervisor: SessionId) {
       yield* this.assertActor(supervisor);
+      const rejected = e.approval_receipts.findLast(
+        (r) => r.kind === kind && r.fingerprint === retainedIdentity(e, kind),
+      );
+      if (rejected?.rejected_at && rejected.response_intent?.authorize === false)
+        return { execution: e, decision: "rejected" as const, receipt: rejected };
       if (kind === "plan") {
         if (e.workflow_policy === "full-openspec") yield* this.validatePlanning?.(e) ?? Effect.void;
         const fingerprint = yield* this.evidence.plan(e);
@@ -174,26 +234,57 @@ export class Authorizations {
     },
   );
 
+  /** A native outage keeps the gate retryable at the same reserved identity. */
+  reconcilePlan = Effect.fn("Authorizations.reconcilePlan")(
+    { self: this },
+    function* (e: Execution) {
+      const fingerprint = e.plan_fingerprint;
+      const receipt = e.approval_receipts.findLast(
+        (r) => r.kind === "plan" && r.fingerprint === fingerprint,
+      );
+      const session = receipt?.session_id ?? e.supervisor_session_id;
+      if (
+        e.plan_approval_required === false ||
+        !fingerprint ||
+        !session ||
+        receipt?.authorized_at ||
+        receipt?.rejected_at
+      )
+        return e;
+      const actor = yield* this.assertActor(session).pipe(Effect.result);
+      if (actor._tag === "Failure")
+        return receipt?.delivered_at ? yield* markDelivery(this.records, e, receipt, undefined) : e;
+      if (!receipt?.delivered_at && (yield* this.evidence.plan(e)) !== fingerprint)
+        return yield* new WorkflowError("STALE_CHECKPOINT", "Checkpoint changed");
+      const result = yield* this.collectIdentity(e, session, { kind: "plan", fingerprint }, true);
+      return result.execution;
+    },
+  );
+
   /** Recollect retained forms without reauthorizing content; later admission rechecks it. */
   collectPending = Effect.fn("Authorizations.collectPending")(
     { self: this },
     function* (e: Execution) {
-      const kind =
-        e.current_phase === "awaiting_plan_approval"
-          ? "plan"
-          : e.current_phase === "awaiting_merge"
-            ? "merge"
-            : undefined;
-      if (!kind) return { execution: e };
-      for (const receipt of currentReceipts(e, kind).filter((a) => !a.authorized_at)) {
+      if (e.current_phase === "awaiting_plan_approval") {
+        e = yield* this.reconcilePlan(e);
+        const rejected = e.approval_receipts.findLast(
+          (r) => r.kind === "plan" && r.fingerprint === e.plan_fingerprint,
+        )?.rejected_at;
+        return { execution: e, rejected: rejected ? ("plan" as const) : undefined };
+      }
+      if (e.current_phase !== "awaiting_merge") return { execution: e };
+      if (
+        e.approval_receipts.findLast(
+          (r) => r.kind === "merge" && r.fingerprint === e.delivered_commit,
+        )?.rejected_at
+      )
+        return { execution: e, rejected: "merge" as const };
+      for (const receipt of currentReceipts(e, "merge")) {
+        if (receipt.kind !== "merge" || receipt.authorized_at) continue;
         yield* this.assertActor(receipt.session_id);
-        const target: ApprovalTarget =
-          receipt.kind === "plan"
-            ? { kind: "plan", fingerprint: receipt.fingerprint }
-            : { kind: "merge", fingerprint: receipt.fingerprint };
-        const result = yield* this.collectIdentity(e, receipt.session_id, target);
+        const result = yield* this.collectIdentity(e, receipt.session_id, receipt);
         e = result.execution;
-        if (result.decision === "rejected") return { execution: e, rejected: kind };
+        if (result.decision === "rejected") return { execution: e, rejected: "merge" as const };
       }
       return { execution: e };
     },
@@ -201,7 +292,7 @@ export class Authorizations {
 
   private collectIdentity = Effect.fn("Authorizations.collectIdentity")(
     { self: this },
-    function* (e: Execution, supervisor: SessionId, target: ApprovalTarget) {
+    function* (e: Execution, supervisor: SessionId, target: ApprovalTarget, automatic = false) {
       const checkpoint: ApprovalCheckpoint =
         target.kind === "plan"
           ? { kind: "plan", fingerprint: target.fingerprint, session_id: supervisor }
@@ -212,13 +303,34 @@ export class Authorizations {
         this.runtime,
         checkpoint,
         `Authorize ${target.kind} for ${e.issue_id} (${target.fingerprint.slice(0, 12)})`,
-        target.kind === "plan" && e.workflow_policy === "full-openspec"
-          ? () => this.validatePlanning?.(e) ?? Effect.void
+        target.kind === "plan"
+          ? () =>
+              Effect.gen({ self: this }, function* () {
+                if ((yield* this.evidence.plan(e)) !== target.fingerprint)
+                  return yield* new WorkflowError("STALE_CHECKPOINT", "Checkpoint changed");
+                if (e.workflow_policy === "full-openspec")
+                  yield* this.validatePlanning?.(e) ?? Effect.void;
+              })
           : undefined,
+        automatic,
       );
     },
   );
 }
+
+const markDelivery = <E extends ManagedExecution>(
+  records: Records,
+  e: E,
+  receipt: Approval,
+  delivered_at: Approval["delivered_at"],
+) =>
+  records.commitOwned(e, (current) => ({
+    approval_receipts: current.approval_receipts.map((r) =>
+      r.form_id === receipt.form_id && r.session_id === receipt.session_id
+        ? { ...r, delivered_at }
+        : r,
+    ),
+  }));
 
 export const collectForm = Effect.fn("Authorizations.collectForm")(function* <
   E extends ManagedExecution,
@@ -229,6 +341,7 @@ export const collectForm = Effect.fn("Authorizations.collectForm")(function* <
   checkpoint: ApprovalCheckpoint,
   title: string,
   validate?: () => Effect.Effect<void, CrewError>,
+  automatic = false,
 ) {
   const { kind, fingerprint } = checkpoint;
   const active = (receipt: Approval) =>
@@ -263,9 +376,28 @@ export const collectForm = Effect.fn("Authorizations.collectForm")(function* <
   const receipt = reserved.approval_receipts.find(active)!;
   if (receipt.authorized_at) return { execution: reserved, decision: "approved" as const, receipt };
   const { session_id, form_id } = receipt;
-  yield* runtime.requestApproval(session_id, form_id, title, fingerprint);
-  const decision = yield* runtime.approval(session_id, form_id);
-  if (decision === "pending") return { execution: reserved, decision, receipt };
+  const observed = yield* runtime.requestApproval(session_id, form_id, title, fingerprint).pipe(
+    Effect.andThen(() => runtime.approval(session_id, form_id)),
+    Effect.result,
+  );
+  if (observed._tag === "Failure") {
+    if (!automatic) return yield* observed.failure;
+    const held = receipt.delivered_at
+      ? yield* markDelivery(records, reserved, receipt, undefined)
+      : reserved;
+    return { execution: held, decision: "pending" as const, receipt };
+  }
+  const decision = observed.success;
+  if (decision === "pending") {
+    const execution = receipt.delivered_at
+      ? reserved
+      : yield* markDelivery(records, reserved, receipt, yield* timestamp);
+    return {
+      execution,
+      decision,
+      receipt: execution.approval_receipts.find((r) => r.form_id === form_id)!,
+    };
+  }
   if (decision === "approved" && validate) yield* validate();
   const at = yield* timestamp;
   const matches = (r: Approval) =>

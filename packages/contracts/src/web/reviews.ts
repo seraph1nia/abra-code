@@ -185,8 +185,13 @@ export const ReviewSubmitSchema = Schema.Struct({
     ),
   );
 export type ReviewSubmit = typeof ReviewSubmitSchema.Type;
+export const FeedbackSummarySchema = Schema.Struct({
+  title: Schema.String,
+  choices: Schema.Array(Schema.Struct({ question: Schema.String, answer: Schema.String })),
+});
 export const ReviewReceiptSchema = Schema.Struct({
   ...ReceiptSchema.fields,
+  feedback: Schema.optional(FeedbackSummarySchema),
   review_id: Identifier,
   revision: positive,
   hash: ContentHash,
@@ -198,6 +203,24 @@ export const ReviewResponseQuerySchema = Schema.Struct({
   request_id: SubmissionSchema.fields.request_id,
 }).annotate(exact);
 export const ReviewReceiptLookupSchema = Schema.NullOr(ReviewReceiptSchema);
+
+export function feedbackMessage(input: typeof ReviewResponseQuerySchema.Type) {
+  return `Review feedback ${input.request_id} for ${input.review_id} revision ${input.revision} (${input.hash}). Retrieve my choices with abra_review_ui action response.`;
+}
+export function feedbackReference(text: string) {
+  const match =
+    /^Review feedback (\S+) for (\S+) revision (\d+) \(([a-f0-9]{64})\)\. Retrieve my choices with abra_review_ui action response\.$/.exec(
+      text,
+    );
+  if (!match) return;
+  const ref = {
+    request_id: match[1],
+    review_id: match[2],
+    revision: Number(match[3]),
+    hash: match[4],
+  };
+  return Schema.is(ReviewResponseQuerySchema)(ref) ? ref : undefined;
+}
 
 /** The same field constraints drive client errors and authoritative native validation. */
 export function reviewAnswerErrors(review: ReviewDefinition, answers: ReviewAnswers) {

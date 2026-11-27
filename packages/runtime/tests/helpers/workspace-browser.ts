@@ -1,3 +1,4 @@
+import type { ChangeScope } from "@abracode/contracts/web/changes";
 import { EvidenceDataSchema } from "@abracode/contracts/web/worker-evidence";
 import { VerificationViewSchema } from "@abracode/contracts/web/verification";
 import { selectBindingRows } from "@abracode/contracts/web/bindings";
@@ -35,7 +36,7 @@ import { launchReportBrowser } from "@abracode/report-export/browser";
 type Browser = Awaited<ReturnType<typeof launchReportBrowser>>;
 export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
   const source = new WorkspaceFixture();
-  const signals = await Effect.runPromise(PubSub.unbounded<void>());
+  const signals = await Effect.runPromise(PubSub.unbounded<ChangeScope | void>());
   const scope = await Effect.runPromise(Scope.make());
   const calls: { name: WorkReadName; input: Record<string, string>; title?: string }[] = [];
   let retained: readonly WebWorkItem[] | undefined;
@@ -425,7 +426,7 @@ export async function workspaceBrowserFixture(sharedBrowser?: Browser) {
     },
     browser,
     origin: web.origin,
-    changed: () => Effect.runPromise(PubSub.publish(signals, undefined)),
+    changed: (change?: ChangeScope) => Effect.runPromise(PubSub.publish(signals, change)),
     close: async () => {
       try {
         await browser.close();

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { Schema } from "effect";
-import { taskAttention } from "@abracode/contracts/visibility/attention";
+import { humanDecision, taskAttention, usableForm } from "@abracode/contracts/visibility/attention";
 import { WorkSummarySchema } from "@abracode/contracts/visibility/work-summary";
 
 const work = (fields: Record<string, unknown>) =>
@@ -18,7 +18,7 @@ const work = (fields: Record<string, unknown>) =>
   });
 
 test("plan approvals are actionable without an incident, while handled and superseded history stays quiet", () => {
-  assert.equal(taskAttention(work({ phase: "awaiting_plan_approval" }))[0].owner, "user");
+  assert.equal(taskAttention(work({ phase: "awaiting_plan_approval" }))[0].owner, "supervisor");
   const quiet = work({
     attention: [
       { id: "incident-one", status: "handled", code: "worker_failure", generation: 2 },
@@ -118,4 +118,39 @@ test("delivery, cleanup and closure stay independent and quiet waits do not ask 
     ),
     [],
   );
+});
+
+test("only a delivered input for the human enters the action count", () => {
+  const entries = taskAttention(
+    work({
+      phase: "awaiting_plan_approval",
+      communication: {
+        total: 21,
+        outstanding: 1,
+        first: { request_id: "question-21", offset: 20 },
+      },
+      outcome: {
+        execution_id: "e",
+        generation: 2,
+        observed_at: 1,
+        approval: { kind: "plan", state: "pending", form_id: "frm_plan" },
+        delivery: { kind: "branch", state: "unconfirmed" },
+        cleanup: { state: "not_started", generated_paths: [] },
+        closure: "open",
+        next_action: "Review the plan",
+      },
+    }),
+  );
+  assert.deepEqual(
+    entries
+      .filter((item) => humanDecision(item.owner, Boolean(item.form_id)))
+      .map((item) => item.form_id),
+    ["frm_plan"],
+  );
+  assert.deepEqual(entries.find((item) => item.key === "communication")?.request, {
+    request_id: "question-21",
+    offset: 20,
+  });
+  assert.equal(usableForm({ active: true, checkpoint: { active: false } }), false);
+  assert.equal(usableForm({ active: true }), true);
 });

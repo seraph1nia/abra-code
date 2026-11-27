@@ -39,6 +39,7 @@ export interface AdmissionCommands {
 export interface ExecutionCommands {
   start(id: IssueId, supervisor?: SessionId): Result<Execution>;
   advance(id: IssueId): Result<Execution>;
+  reserveCheckpointResponse: import("./authorization.ts").Authorizations["reserveResponse"];
   approve(
     id: IssueId,
     kind: "plan" | "merge",

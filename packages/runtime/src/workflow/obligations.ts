@@ -329,6 +329,30 @@ export class Obligations {
             return next;
           }),
         );
+        const pending = () =>
+          this.records
+            .update(id, (current) => {
+              if (current.control_generation !== generation) return;
+              const match = current.decisions?.find(
+                (d) =>
+                  d.key === key &&
+                  d.generation === generation &&
+                  d.status === "open" &&
+                  d.form_id === retained.form_id,
+              );
+              if (!match || match.form_observed) return;
+              return {
+                ...current,
+                decisions: current.decisions!.map((d) =>
+                  d === match ? { ...d, form_observed: true } : d,
+                ),
+              };
+            })
+            .pipe(
+              Effect.map((current) =>
+                current.decisions!.find((d) => d.key === key && d.generation === generation)!,
+              ),
+            );
         const identity = QuestionIdentity.make(`${id}:${generation}:${key}`);
         if (retained.finishing_target) {
           if (!this.runtime.requestDisposition || !this.runtime.disposition)
@@ -349,7 +373,7 @@ export class Obligations {
             identity,
             retained.finishing_target,
           );
-          if (result.status === "pending") return retained;
+          if (result.status === "pending") return yield* pending();
           action = result.status === "answered" ? "answer" : "cancel";
           finishingAnswer = result.status === "answered" ? result.answer : undefined;
           if (finishingAnswer && !validFinishingAnswer(retained.finishing_target, finishingAnswer))
@@ -364,12 +388,15 @@ export class Obligations {
             retained.form_id!,
             retained.question,
             identity,
+            retained.key === "scope-contract" && retained.session_id === "controller"
+              ? ((yield* this.work.show(id)).scope ?? {})
+              : undefined,
           );
           const result = yield* this.runtime.questionAnswer(
             retained.form_session!,
             retained.form_id!,
           );
-          if (result.status === "pending") return retained;
+          if (result.status === "pending") return yield* pending();
           action = result.status === "answered" ? "answer" : "cancel";
           answer = result.answer;
         }

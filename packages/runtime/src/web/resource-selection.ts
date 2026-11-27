@@ -28,6 +28,18 @@ export function resolveOwnedResource(
           "The selected file is unavailable at the reported revision",
         );
     }
+    if (target.action === "open_task" && target.request) {
+      const e = yield* queries.execution(target.issue_id);
+      const offset = e?.messages?.findIndex(
+        (record) => record.request_id === target.request?.request_id,
+      );
+      if (offset === undefined || offset < 0)
+        return yield* new CrewError(
+          "INVALID_SELECTION",
+          "The retained task does not own this request",
+        );
+      return { ...target, request: { ...target.request, offset } };
+    }
     if (target.action === "open_task" || target.action === "open_changes") return target;
     const execution = yield* queries.execution(target.issue_id);
     if (!execution)

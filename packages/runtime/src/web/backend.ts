@@ -483,16 +483,50 @@ export class NativeWebBackend implements WebBackend {
             "STALE_FORM",
             "This form changed or was cancelled; refresh attention",
           );
-        if (state.status === "answered") {
-          if (fingerprint(state.answer) === fingerprint(input.answer)) return;
-          return yield* new CrewError("FORM_CONFLICT", "The form already has another answer");
-        }
-        if (!current.active)
+        if (!current.active && state.status !== "answered")
           return yield* new CrewError(
             "STALE_FORM",
             "Controller checkpoint changed; ask Abra for the current form",
           );
-        const answer = yield* Schema.decodeEffect(Form.Answer)(input.answer);
+        let answer = input.answer;
+        const checkpoint = current.checkpoint;
+        if (
+          (checkpoint?.kind === "plan" || checkpoint?.kind === "merge") &&
+          checkpoint.issue_id &&
+          checkpoint.fingerprint
+        ) {
+          const { authorize, feedback } = answer;
+          if (
+            typeof authorize !== "boolean" ||
+            (!authorize &&
+              (typeof feedback !== "string" || !feedback.trim() || feedback.length > 4096))
+          )
+            return yield* new CrewError(
+              "CHECKPOINT_RESPONSE",
+              "Choose an action and describe the requested changes",
+            );
+          answer = { authorize };
+          if (state.status === "answered" && fingerprint(state.answer) !== fingerprint(answer))
+            return yield* new CrewError("FORM_CONFLICT", "The form already has another answer");
+          yield* this.gateway(client).checkpointResponse(
+            {
+              session_id: this.sessionID,
+              issue_id: IssueId.make(checkpoint.issue_id),
+              form_id: form.id,
+              fingerprint: checkpoint.fingerprint,
+              response: authorize
+                ? { authorize: true }
+                : { authorize: false, feedback: String(feedback).trim() },
+              answered: state.status === "answered",
+            },
+            this.location(),
+          );
+        }
+        if (state.status === "answered") {
+          if (fingerprint(state.answer) === fingerprint(answer)) return;
+          return yield* new CrewError("FORM_CONFLICT", "The form already has another answer");
+        }
+        answer = yield* Schema.decodeEffect(Form.Answer)(answer);
         yield* client.session.form.reply({ sessionID: this.sessionID, formID: form.id, answer });
       }),
     );

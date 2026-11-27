@@ -57,6 +57,7 @@ const hasScopeChange = (scope: ChangeScope) =>
     scope.work_all ||
     scope.finder ||
     scope.fleet ||
+    scope.sessions?.length ||
     scope.issues?.length,
   );
 function diffWorkspace(
@@ -114,6 +115,7 @@ function diffWorkspace(
     identityChanged ||
     !!changes.fleet ||
     !!changes.work_all ||
+    !!changes.sessions?.length ||
     !!changes.issues?.length;
   return { changes, changed };
 }

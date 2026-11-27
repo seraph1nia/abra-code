@@ -516,8 +516,7 @@ export async function checkWorkspaceDelivery(
       const forms = page
         .locator(".attention-card")
         .filter({ has: page.getByText(new RegExp(`Authorize ${kind} for ${issue}`)) });
-      await forms.getByRole("checkbox", { name: /Authorize this exact checkpoint/ }).check();
-      const submit = forms.getByRole("button", { name: "Submit checkpoint decision" });
+      const submit = forms.getByRole("button", { name: `Approve ${kind}` });
       assert.equal(await submit.isEnabled(), true, await forms.innerText());
       try {
         const [response] = await Promise.all([

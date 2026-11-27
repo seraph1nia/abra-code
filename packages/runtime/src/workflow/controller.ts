@@ -127,6 +127,9 @@ export class Controller {
     this.services.execution.reviewChanges(...args);
   reviewReport = (...args: Parameters<ExecutionCommands["reviewReport"]>) =>
     this.services.execution.reviewReport(...args);
+  reserveCheckpointResponse = (
+    ...args: Parameters<ExecutionCommands["reserveCheckpointResponse"]>
+  ) => this.services.execution.reserveCheckpointResponse(...args);
   approve = (...args: Parameters<ExecutionCommands["approve"]>) =>
     this.services.execution.approve(...args);
   finish = (...args: Parameters<PublicationCommands["finish"]>) =>

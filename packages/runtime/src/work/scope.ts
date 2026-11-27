@@ -9,6 +9,7 @@ export const ScopeDraftSchema = Schema.Struct({
   acceptance: Schema.optional(list),
   constraints: Schema.optional(list),
 });
+export type ScopeDraft = typeof ScopeDraftSchema.Type;
 export const ScopeSchema = Schema.Struct({
   goal: text,
   acceptance: list.check(Schema.isMinLength(1)),

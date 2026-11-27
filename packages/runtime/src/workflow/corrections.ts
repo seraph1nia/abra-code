@@ -33,7 +33,7 @@ export class Corrections {
     { self: this },
     function* (
       e: Execution,
-      source: "check" | "review" | "forge",
+      source: "check" | "review" | "forge" | "checkpoint",
       findings: readonly FindingId[],
       instructions: string,
       scope: typeof ScopeDispositionSchema.Type,
