@@ -23,6 +23,21 @@ After `pnpm web:build`, run `pnpm test:one inspector-observation.test -t 'Work t
 
 On 2026-11-27 the stronger-policy task took 8,307 ms from start through planning to the first observed approval form. A separate task completed one bounded correction before presenting its head-bound merge form. The workspace journey rejected a stale reply and reopened its saved report after a native restart. Each journey recorded completed cleanup. The provider and remotes were local fixtures.
 
+### Reading and clicks for decisions
+
+The browser fixture on 2026-11-28 used the same content at 1440 and 390 CSS pixels. Word counts cover the rendered decision or task panel, including its controls and selected options. Collapsed evidence and the surrounding Chat transcript are excluded. The four journeys opened zero source documents.
+
+| Journey and starting point                               | Words shown | Desktop clicks | Phone taps |
+| -------------------------------------------------------- | ----------: | -------------: | ---------: |
+| Accept two Explore recommendations from idle Chat        |          41 |              1 |          2 |
+| Review and approve the first plan while drafting in Chat |          40 |              2 |          2 |
+| Review and approve a revision while drafting in Chat     |          39 |              2 |          2 |
+| Read the outcome from an open Work task                  |          76 |              1 |          1 |
+
+Desktop keeps Chat and the decision in one split view. Phone moves from Chat to the decision in one tap. Both plan journeys use **Review decision** and **Approve plan**. The report journey selects **Reports** within the task. These counts describe the fixture copy. A longer project brief or a custom answer changes the reading or interaction cost.
+
+After `pnpm web:build`, run `ABRACODE_TEST_EVIDENCE_DIR=$(mktemp -d) pnpm test:one focused-decisions.test` to capture both widths, or set the variable to an existing directory of your choice. The [native cockpit journey](#contextual-cockpit) exercises an edited recommendation through the controller.
+
 ## Prepare and check health
 
 Use Node 26.4+ and the frozen pnpm toolchain. From the checkout:

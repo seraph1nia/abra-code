@@ -1,8 +1,8 @@
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ArrowUpRight } from "@abracode/presentation/icons";
 import { useAtom } from "@effect/atom-react";
 import { toast } from "./notifications.tsx";
-import { Exit } from "effect";
+import { Exit, Schema } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import type { Form } from "@opencode/schema/form";
 import type { AttentionForm, AttentionPermission } from "@abracode/contracts/web/contracts";
@@ -27,16 +27,39 @@ import { Input } from "@abracode/presentation/ui/input";
 import { NativeSelect } from "@abracode/presentation/ui/native-select";
 import { Textarea } from "@abracode/presentation/ui/textarea";
 
+import { readRetained, writeRetained } from "./retained-input.ts";
+
+const designDraft = Schema.Record(Schema.String, Schema.String.check(Schema.isMaxLength(512)));
 const revisionDrafts = new Map<string, string>();
-export function NativeForm(props: { item: AttentionForm; refresh: () => void }) {
+export function NativeForm(props: { item: AttentionForm; refresh: () => void; focus?: boolean }) {
   return <FormContent key={`${props.item.form.id}:${props.item.binding}`} {...props} />;
 }
-function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => void }) {
+function FormContent({
+  item,
+  refresh,
+  focus,
+}: {
+  item: AttentionForm;
+  refresh: () => void;
+  focus?: boolean;
+}) {
   const { form } = item;
-  const [values, setValues] = useState(() => initialValues(form.fields));
+  const card = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (focus && !document.activeElement?.matches("input, textarea, [contenteditable=true]"))
+      card.current?.focus({ preventScroll: true });
+  }, [focus]);
+  const designChoices = Boolean(item.checkpoint?.active && form.metadata?.design_choices);
+  const designDraftKey = "abra-design-draft/" + form.sessionID + "/" + form.id + "/" + item.binding;
+  const [values, setValues] = useState(
+    () =>
+      (designChoices && readRetained(designDraftKey, designDraft)) || initialValues(form.fields),
+  );
   const [customText, setCustomText] = useState(() => initialCustomChoices(form.fields));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [result, reply] = useAtom(formReply(`${form.id}:${item.binding}`), { mode: "promiseExit" });
+  const recommended =
+    designChoices && form.fields.every((f) => f.type === "string" && values[f.key] === f.default);
   const checkpoint = item.checkpoint?.kind === "plan" || item.checkpoint?.kind === "merge";
   const draftKey = form.sessionID + "/" + form.id + "/" + item.binding;
   const [feedback, setFeedback] = useState(() => revisionDrafts.get(draftKey) ?? "");
@@ -44,12 +67,11 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
   const submitting = useRef(false);
   const enabled = activeFields(form.fields, editingValues(form.fields, values, customText));
   function set(key: string, value: Form.Value | undefined) {
-    setValues((previous) => {
-      const next = { ...previous };
-      if (value === undefined) delete next[key];
-      else next[key] = value;
-      return next;
-    });
+    const next = { ...values };
+    if (value === undefined) delete next[key];
+    else next[key] = value;
+    setValues(next);
+    if (designChoices) writeRetained(designDraftKey, next);
     setErrors((previous) => {
       const next = { ...previous };
       delete next[key];
@@ -90,7 +112,8 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
       const response = await reply({ id: form.id, binding: item.binding, answer: prepared.answer });
       if (Exit.isSuccess(response)) {
         revisionDrafts.delete(draftKey);
-        toast.success(item.checkpoint ? "Checkpoint decision submitted" : "Answer submitted", {
+        if (designChoices) writeRetained(designDraftKey, null);
+        toast.success(checkpoint ? "Checkpoint decision submitted" : "Answer submitted", {
           description: form.title,
         });
         refresh();
@@ -101,6 +124,7 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
   }
   return (
     <Card
+      ref={card}
       className="attention-card"
       id={"form-" + form.id + "-" + item.binding}
       data-native-form-id={form.id}
@@ -109,14 +133,17 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
       <CardHeader>
         <div className="eyebrow">
           {item.checkpoint
-            ? `${item.checkpoint.kind} decision · ${item.checkpoint.issue_id}`
+            ? `${item.checkpoint.kind === "decision" ? "Decision" : item.checkpoint.kind + " approval"} · ${item.checkpoint.issue_id}`
             : "Abra needs your input"}
         </div>
         <CardTitle>
           <h3>{form.title}</h3>
         </CardTitle>
         {item.checkpoint?.fingerprint && (
-          <code className="fingerprint">{item.checkpoint.fingerprint}</code>
+          <details>
+            <summary>Revision</summary>
+            <code className="fingerprint">{item.checkpoint.fingerprint}</code>
+          </details>
         )}
       </CardHeader>
       <CardContent>
@@ -175,6 +202,7 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
                   .map((field) => (
                     <NativeField
                       key={field.key}
+                      designChoice={designChoices}
                       field={field}
                       id={`${form.id}-${field.key}`}
                       values={values}
@@ -191,7 +219,15 @@ function FormContent({ item, refresh }: { item: AttentionForm; refresh: () => vo
                       error={errors[field.key]}
                     />
                   ))}
-                <Button type="submit">{result.waiting ? "Submitting…" : "Submit answer"}</Button>
+                <Button type="submit">
+                  {result.waiting
+                    ? "Submitting…"
+                    : recommended
+                      ? "Accept recommendations"
+                      : designChoices
+                        ? "Submit choices"
+                        : "Submit answer"}
+                </Button>
               </>
             )}
           </fieldset>
@@ -217,8 +253,10 @@ function NativeField({
   set,
   error,
   customText,
+  designChoice,
   setCustomText,
 }: {
+  designChoice: boolean;
   field: Form.Field;
   id: string;
   values: FormValues;
@@ -228,6 +266,12 @@ function NativeField({
   setCustomText: (value: string) => void;
 }) {
   const value = values[field.key];
+  const [customChoice, setCustomChoice] = useState(
+    () =>
+      designChoice &&
+      field.type === "string" &&
+      !field.options?.some((option) => option.value === value),
+  );
   const title = field.title ?? field.key;
   const control = {
     id,
@@ -277,7 +321,34 @@ function NativeField({
       break;
     case "string":
       content =
-        field.options && !field.custom ? (
+        designChoice && field.options ? (
+          <>
+            <NativeSelect
+              {...control}
+              value={customChoice ? "" : String(value ?? "")}
+              onChange={(event) => {
+                const next = event.target.value;
+                setCustomChoice(!next);
+                set(field.key, next);
+              }}
+            >
+              {field.options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+              <option value="">My own answer</option>
+            </NativeSelect>
+            {customChoice && (
+              <Input
+                aria-label={title + " — my own answer"}
+                value={String(value ?? "")}
+                maxLength={field.maxLength}
+                onChange={(event) => set(field.key, event.target.value)}
+              />
+            )}
+          </>
+        ) : field.options && !field.custom ? (
           <NativeSelect
             {...control}
             required={field.required}

@@ -1,3 +1,4 @@
+import { canonicalJSON } from "../../presentation/identity.ts";
 import { sha256 } from "../../digest.ts";
 import { WorkflowError } from "../../errors.ts";
 import { Effect } from "effect";
@@ -75,11 +76,19 @@ export function observeCheckpoint(
           );
           if (!decision) return undefined;
           return {
-            active: decision.status === "open" && decision.generation === e.control_generation,
+            active:
+              decision.status === "open" &&
+              decision.generation === e.control_generation &&
+              (!decision.proposal_fingerprint ||
+                (e.current_phase === "awaiting_plan_approval" &&
+                  decision.proposal_fingerprint === e.plan_fingerprint &&
+                  (yield* deps.checkpoints.plan(e).pipe(Effect.orElseSucceed(() => undefined))) ===
+                    e.plan_fingerprint)),
             issue_id: e.issue_id,
             kind: "decision" as const,
             identity: `${e.issue_id}:${decision.generation}:${decision.key}`,
             generation: e.control_generation,
+            ...(decision.choices && { design_choices: sha256(canonicalJSON(decision.choices)) }),
             ...(decision.finishing_target
               ? {
                   finishing_target: sha256(JSON.stringify(decision.finishing_target)),

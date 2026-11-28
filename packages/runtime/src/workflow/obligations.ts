@@ -1,6 +1,6 @@
 import { WorkflowError } from "../errors.ts";
 import { tryDomainValue } from "../effect.ts";
-import type { ApprovalActorCheck } from "./authorization.ts";
+import type { ApprovalActorCheck, CheckpointEvidence } from "./authorization.ts";
 import type { Git } from "../git/repository.ts";
 import { captureEvidence, captureReference } from "./worker-evidence.ts";
 import {
@@ -54,6 +54,7 @@ export class Obligations {
     private home: AbsolutePath,
     private git: Git,
     private assertActor: ApprovalActorCheck,
+    private checkpoints: CheckpointEvidence,
   ) {}
   /** Fresh absence resolves only the residue questions inspected by the owning operation. */
   supersedeResidue = (e: Execution, keys: readonly ObligationKey[]) =>
@@ -76,11 +77,22 @@ export class Obligations {
     this.coordination.with(() =>
       Effect.gen({ self: this }, function* () {
         const a = yield* decode(QuestionInputSchema, input, "worker question");
+        if (a.key.startsWith("reader-"))
+          return yield* new WorkflowError(
+            "DECISION_KEY",
+            "This decision key is reserved for the proposal reviewer",
+          );
         let e = yield* this.assigned(session, a.generation);
+        if (a.choices && (a.owner !== "user" || e.active_role !== "explore"))
+          return yield* new WorkflowError(
+            "DECISION_OWNER",
+            "Design choices require Explore and a user answer",
+          );
         const existing = e.decisions?.find((d) => d.key === a.key && d.generation === a.generation);
         if (existing) {
           if (
             existing.question !== a.question ||
+            canonicalJSON(existing.choices ?? []) !== canonicalJSON(a.choices ?? []) ||
             existing.scope !== a.scope ||
             existing.owner !== a.owner ||
             existing.session_id !== session
@@ -298,6 +310,13 @@ export class Obligations {
       let d = e.decisions?.find((d) => d.key === key && d.generation === generation);
       if (!d || e.control_generation !== generation)
         return yield* new WorkflowError("DECISION_STALE", "Decision generation is stale");
+      if (
+        d.proposal_fingerprint &&
+        (e.current_phase !== "awaiting_plan_approval" ||
+          e.plan_fingerprint !== d.proposal_fingerprint ||
+          (yield* this.checkpoints.plan(e)) !== d.proposal_fingerprint)
+      )
+        return yield* new WorkflowError("DECISION_STALE", "Proposal review decision is stale");
       if (action === "reconsider")
         return yield* reconsiderFinishingDecision(this.records, e, d, key, generation);
       if (d.status !== "open") return d;
@@ -391,6 +410,7 @@ export class Obligations {
             retained.key === "scope-contract" && retained.session_id === "controller"
               ? ((yield* this.work.show(id)).scope ?? {})
               : undefined,
+            retained.choices,
           );
           const result = yield* this.runtime.questionAnswer(
             retained.form_session!,
@@ -414,6 +434,12 @@ export class Obligations {
           if (e?.control_generation !== generation)
             return yield* new WorkflowError("DECISION_STALE", "Decision superseded");
           const current = e.decisions!.find((d) => d.key === key && d.generation === generation)!;
+          if (
+            current.proposal_fingerprint &&
+            (current.proposal_fingerprint !== e.plan_fingerprint ||
+              e.current_phase !== "awaiting_plan_approval")
+          )
+            return yield* new WorkflowError("DECISION_STALE", "Proposal review revision changed");
           if (current.status !== "open") return current;
           if (action === "answer") {
             if (!(answer && answer.length <= 8192))
@@ -430,7 +456,7 @@ export class Obligations {
             finishing_answer: finishingAnswer,
             resolved_at: yield* Clock.currentTimeMillis,
           };
-          if (next.status === "answered" && !next.finishing_target)
+          if (next.status === "answered" && !next.finishing_target && !next.proposal_fingerprint)
             e = { ...e, resume_after_decision: true };
           if (next.finishing_target) {
             e = {
@@ -531,7 +557,9 @@ export class Obligations {
     { self: this },
     function* (e: Execution, now: number, closed: ReadonlyMap<IssueId, boolean>) {
       const decisions = (e.decisions ?? []).map((d) =>
-        d.status === "open" && d.generation !== e.control_generation
+        d.status === "open" &&
+        (d.generation !== e.control_generation ||
+          (d.proposal_fingerprint && d.proposal_fingerprint !== e.plan_fingerprint))
           ? { ...d, status: "superseded" as const, resolved_at: now }
           : d,
       );

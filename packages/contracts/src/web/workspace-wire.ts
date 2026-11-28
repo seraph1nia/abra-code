@@ -1,3 +1,4 @@
+import { ProposalReviewSource } from "../visibility/proposal-review.ts";
 import { ThoughtReference } from "../visibility/thoughts.ts";
 import { LinkedCheckSchema } from "../workflow/message-contracts.ts";
 import { WorkSelectionSchema } from "./resources.ts";
@@ -94,8 +95,10 @@ export const CheckpointSchema = Schema.Struct({
   identity: Schema.optional(Schema.String),
   generation: Schema.optional(Schema.Int),
   finishing_target: Schema.optional(Schema.String),
+  design_choices: Schema.optionalKey(Schema.String),
 });
 export const SurfaceRecordSchema = Schema.Struct({
+  proposal_review: Schema.optionalKey(ProposalReviewSource),
   session_id: Schema.String,
   tool_call_id: Schema.String,
   message_id: Schema.optional(MessageId),

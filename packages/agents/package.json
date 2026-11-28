@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./bundled": "./src/bundled.ts",
+    "./proposal-reader": "./src/proposal-reader.ts",
     "./policy": "./src/policy.ts",
     "./tool-boundary": "./src/tool-boundary.ts",
     "./skills": "./src/skills.ts",

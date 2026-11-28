@@ -1,3 +1,4 @@
+import { proposalReviewView } from "./proposal-review.ts";
 import { planSteps } from "../openspec/plan-steps.ts";
 import { tryDomainValue } from "../effect.ts";
 import { Clock, Effect } from "effect";
@@ -103,6 +104,11 @@ export function buildDetail(
       change: e?.openspec_change,
       archive: e?.archive_path,
       artifacts: [],
+      ...(e?.proposal_reviews && {
+        proposal_reviews: e.proposal_reviews.map((r) => proposalReviewView(e, r)),
+      }),
+      ...(e?.plan_brief &&
+        e.plan_brief.fingerprint === e.plan_fingerprint && { plan_brief: e.plan_brief }),
     };
     if (e && e.workflow_policy !== "full-openspec") {
       result.change = undefined;

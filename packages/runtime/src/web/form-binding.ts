@@ -12,6 +12,7 @@ export function checkpointMatchesForm(
         checkpoint.fingerprint === form.metadata?.fingerprint) &&
       (checkpoint.identity === undefined ||
         checkpoint.identity === form.metadata?.decision_identity) &&
+      checkpoint.design_choices === form.metadata?.design_choices &&
       (checkpoint.finishing_target === undefined ||
         checkpoint.finishing_target === form.metadata?.finishing_target))
   );

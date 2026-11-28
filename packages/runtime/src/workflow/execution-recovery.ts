@@ -1,3 +1,5 @@
+import { reviewSatisfied } from "./proposal-review-contracts.ts";
+import { type ProposalReviews } from "./proposal-reviews.ts";
 import { WorkflowError } from "../errors.ts";
 import type { WorkGraph } from "../work/graph.ts";
 import type { OpenSpec } from "../openspec/adapter.ts";
@@ -19,6 +21,7 @@ import type { Capacity } from "./capacity.ts";
 import { initialRole, phaseRole } from "./worker-assignment.ts";
 import type { Authorizations, CheckpointEvidence } from "./authorization.ts";
 interface Dependencies {
+  readonly proposalReviews: ProposalReviews;
   readonly capacity: Capacity;
   readonly authorizations: Authorizations;
   readonly checkpoints: CheckpointEvidence;
@@ -64,6 +67,10 @@ export class ExecutionRecovery {
         (yield* this.c.delivery.inspect(p, e))?.state === "OPEN"
       )
         e = (yield* this.c.authorizations.collect(e, "merge", e.supervisor_session_id)).execution;
+      if (e.current_phase === "awaiting_plan_approval" && e.proposal_review) {
+        e = yield* this.c.proposalReviews.reconcile(e, p);
+        if (!reviewSatisfied(e)) return e;
+      }
       const approvals = yield* this.c.authorizations.collectPending(e);
       e = approvals.execution;
       const { rejected } = approvals;

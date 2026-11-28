@@ -726,6 +726,7 @@ test("a legacy checkbox requires an explicit decision and preserves revision dra
   };
   const page = await f.browser.newPage();
   await page.goto(f.origin + "/attention");
+  await page.getByRole("button", { name: "Review the plan", exact: true }).click();
   await page.getByRole("button", { name: "Request changes", exact: true }).click();
   await page.getByLabel("Requested changes").fill("Include offline behavior");
   await page.getByRole("link", { name: "Chat", exact: true }).click();
@@ -823,6 +824,7 @@ test("Work task keeps evidence and draft through optional chat and scopes live t
   const context = await f.browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   await page.goto(f.origin + "/work?issue=" + issue.issue_id);
+  await page.getByText(/Implementation steps · 0 of 1 complete/).click();
   await page.getByText("Exercise worker observation").waitFor();
   const tabs = page.getByRole("tablist", { name: "Work details" });
   assert.deepEqual(await tabs.getByRole("tab").allTextContents(), [

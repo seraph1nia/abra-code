@@ -1,3 +1,4 @@
+import { currentReview } from "./proposal-review-contracts.ts";
 import { WorkflowError } from "../errors.ts";
 import type { SessionInspection } from "./worker-assignment.ts";
 import type { PlanningBaselines } from "./planning.ts";
@@ -490,6 +491,14 @@ export class WorkerSessions {
   confirmStopped = Effect.fn("WorkerSessions.confirmStopped")(
     { self: this },
     function* (e: Execution) {
+      const reader = currentReview(e);
+      if (reader && e.capacity_reservation?.session_id === reader.session)
+        yield* this.runtime.interrupt(reader.session, reader.prompt).pipe(
+          Effect.catchIf(
+            (error) => error.code === "SESSION_NOT_FOUND",
+            () => Effect.void,
+          ),
+        );
       const intent = nativeSessionIntent(e);
       if (intent) {
         const state = yield* this.runtime.session(intent.id);

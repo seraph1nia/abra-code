@@ -53,6 +53,16 @@ export class FakeSpec extends OpenSpec {
           isPlanningComplete: this.planned,
           isComplete: this.planned,
           artifacts: [
+            ...(e.proposal_review
+              ? [
+                  {
+                    id: "proposal",
+                    status: this.planned ? "done" : "ready",
+                    outputPath: "proposal.md",
+                    requires: [],
+                  },
+                ]
+              : []),
             {
               id: "tasks",
               status: this.planned ? ("done" as const) : ("ready" as const),

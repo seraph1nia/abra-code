@@ -195,6 +195,9 @@ export class WorkAdmission {
               },
               quality_profile: candidate.issue.quality_profile,
               openspec_schema: candidate.issue.openspec_schema,
+              ...(candidate.issue.proposal_review && {
+                proposal_review: candidate.issue.proposal_review,
+              }),
               require_plan_approval: candidate.issue.require_plan_approval,
               dispatch: candidate.issue.dispatch,
               privateReview:

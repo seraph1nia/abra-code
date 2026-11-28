@@ -15,7 +15,7 @@ import { workspaceDraft } from "./workspace-state/draft.ts";
 import { EvidenceKind } from "@abracode/contracts/visibility/discovery-contracts";
 import { bootstrapQuery, exportDocument } from "./data.ts";
 import { queries } from "./work-data.ts";
-import { destinations, destinationFor, type WorkspaceSearch } from "./navigation.ts";
+import { formLocation, destinations, destinationFor, type WorkspaceSearch } from "./navigation.ts";
 import { RunCommand, composerCommands, snippetDraft, workControl } from "./workspace-commands.ts";
 
 import {
@@ -273,8 +273,7 @@ function WorkspacePalette({
         form.form.title,
         "Native form",
         "Open form",
-        () =>
-          void navigate({ to: "/attention", hash: "form-" + form.form.id + "-" + form.binding }),
+        () => void navigate(formLocation(form)),
       );
   for (const p of current?.permissions ?? [])
     add(

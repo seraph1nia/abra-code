@@ -1,4 +1,9 @@
-import { PlanStepsSchema } from "@abracode/contracts/visibility/document-contracts";
+import { ProposalReviewSelection } from "@abracode/contracts/visibility/proposal-review";
+import { ReviewRevision } from "../workflow/proposal-review-contracts.ts";
+import {
+  PlanBriefSchema,
+  PlanStepsSchema,
+} from "@abracode/contracts/visibility/document-contracts";
 import {
   RetainedReferenceSchema,
   EvidenceReceiptSchema,
@@ -244,6 +249,8 @@ const fields = {
   explore_session_id: Schema.optional(SessionId),
   apply_session_id: Schema.optional(SessionId),
   review_session_id: Schema.optional(SessionId),
+  proposal_reviews: Schema.optional(Schema.Array(ReviewRevision)),
+  proposal_review: Schema.optional(ProposalReviewSelection),
   plan_approval_required: Schema.Boolean,
   merge_approval_required: Schema.Boolean,
   delivery_policy: DeliveryPolicySchema,
@@ -272,6 +279,7 @@ const fields = {
       at: Timestamp,
     }),
   ),
+  plan_brief: Schema.optional(PlanBriefSchema),
   retained_steps: Schema.optional(
     Schema.Struct({ change: ChangeName, fingerprint: Fingerprint, steps: PlanStepsSchema }),
   ),

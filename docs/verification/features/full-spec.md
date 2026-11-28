@@ -1,5 +1,18 @@
 # Full-spec approval and behavioral proof
 
+## Independent proposal review
+
+Set `ABRACODE_TEST_JOURNEY=proposal-review` and a fresh external
+`ABRACODE_TEST_EVIDENCE_DIR` when running
+`pnpm test:one packages/runtime/tests/extended/native.test.ts`. The scripted
+provider records the reader's actual input and tools. The journey answers a
+scope question, revises the plan, restarts the service, reopens the first saved
+dashboard and attempts to collect its superseded decision. The evidence directory
+retains the native observations and teardown record. To capture the historical
+dashboard in a browser, build the web app and run
+`pnpm test:one packages/runtime/tests/e2e/proposal-review-dashboard.test.ts`
+with the same evidence directory.
+
 ## Controlled replanning and prospective recovery
 
 Run `ABRACODE_TEST_JOURNEY=planning-recovery` with the native test command and

@@ -284,3 +284,47 @@ test("worker capture owns its scratch files and retains one exact image across r
     /unavailable/,
   );
 });
+
+test("a design batch delivers one bound form, rejects changed recommendations and retains answers once", async (t) => {
+  const f = await run(fixture);
+  t.onTestFinished(() => run(f.close()));
+  const { id } = await run(f.work.create(workGoal("abra-batch")));
+  const supervisor = Id.SessionId.make("ses_supervisor");
+  const e = await run(f.controller.start(id, supervisor));
+  const ask = {
+    ...question,
+    owner: "user" as const,
+    choices: [
+      {
+        question: "Which storage?",
+        recommended: "SQLite",
+        reason: "Keep it local.",
+        alternatives: ["Remote"],
+      },
+    ],
+  };
+  await run(f.controller.workerQuestion(e.explore_session_id!, ask));
+  await assert.rejects(
+    run(
+      f.controller.workerQuestion(e.explore_session_id!, {
+        ...ask,
+        choices: [{ ...ask.choices[0], reason: "Changed rationale" }],
+      }),
+    ),
+    /different question/,
+  );
+  await run(f.controller.reconcile(id));
+  const batch = (await run(f.controller.get(id))).decisions![0];
+  assert.ok(batch.form_id);
+  assert.equal(batch.form_session, supervisor);
+  f.runtime.questions.clear();
+  await run(f.controller.reconcile(id));
+  assert.equal(f.runtime.questions.size, 1);
+  const answer = JSON.stringify([{ question: "Which storage?", answer: "Remote" }]);
+  f.runtime.questions.set(batch.form_id, { status: "answered", answer });
+  await run(f.controller.reconcile(id));
+  const saved = await run(f.controller.get(id));
+  assert.equal(saved.decisions!.length, 1);
+  assert.equal(saved.decisions![0].answer, answer);
+  assert.equal(saved.approval_receipts.length, 0);
+});

@@ -88,7 +88,7 @@ Historical executions without schema-content evidence remain readable with unava
 
 ## Compact planning and schema revisions
 
-New changes use `abra-compact-v2` for a short Plan with an outcome, boundaries, acceptance and links to source scenarios. The reader shows checklist progress and derives the Report from controller evidence. The schema tracks
+New changes use `abra-compact-v2` for a short Plan with an outcome, boundaries, acceptance and links to source scenarios. The first review summarizes outcomes, the recommendation, risks and alternatives considered. A revision opens with what changed and why it matters. Expand the full brief or checklist for detail. Explore groups consequential design questions and gives a recommendation and reason for each. The schema tracks
 proposal, behavioral specs and trackable `tasks.md`, with no design prerequisite.
 Brief implementation choices and scope boundaries belong in the proposal. Every
 tracked task includes observable completion evidence. Behavioral deltas, strict

@@ -1,3 +1,4 @@
+import { formLocation } from "../navigation.ts";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@abracode/presentation/ui/button";
 import { ThoughtSource } from "../thought-source.tsx";
@@ -110,7 +111,14 @@ function BriefingSources({
                 {link.title} · {link.label}
               </Button>
               {form ? (
-                <Link to="/attention" hash={"form-" + form.form.id + "-" + form.binding}>
+                <Link
+                  {...formLocation(form)}
+                  onClick={() =>
+                    document
+                      .getElementById("form-" + form.form.id + "-" + form.binding)
+                      ?.focus({ preventScroll: true })
+                  }
+                >
                   Open decision
                 </Link>
               ) : (

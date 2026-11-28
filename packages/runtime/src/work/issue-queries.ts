@@ -112,6 +112,7 @@ export class IssueQueries {
         IssueSchema,
         {
           ...row,
+          proposal_review: row.proposal_review ?? undefined,
           scope,
           report_reference,
           ...(thought_source !== undefined ? { thought_source } : {}),
@@ -131,7 +132,8 @@ export class IssueQueries {
     if (!ids.length) return [];
     const encoded = JSON.stringify(ids);
     return this.hydrate(
-      this.sql.all`SELECT * FROM issues WHERE id IN (SELECT value FROM json_each(${encoded}))`,
+      this.sql
+        .all`SELECT *, json_extract(request_input, '$.proposal_review') AS proposal_review FROM issues WHERE id IN (SELECT value FROM json_each(${encoded}))`,
       this.sql
         .all`SELECT issue_id, dependency_id FROM dependencies WHERE issue_id IN (SELECT value FROM json_each(${encoded})) ORDER BY issue_id, dependency_id`,
     );
@@ -143,7 +145,8 @@ export class IssueQueries {
   }
   allIssues(): Issue[] {
     return this.hydrate(
-      this.sql.all`SELECT * FROM issues ORDER BY priority, id`,
+      this.sql
+        .all`SELECT *, json_extract(request_input, '$.proposal_review') AS proposal_review FROM issues ORDER BY priority, id`,
       this.sql
         .all`SELECT issue_id, dependency_id FROM dependencies ORDER BY issue_id, dependency_id`,
     );
@@ -200,7 +203,7 @@ export class IssueQueries {
           const rankValues = search ? [rawSearch, search] : [];
           const rows = this.db
             .prepare(
-              `SELECT * FROM issues WHERE ${condition} ORDER BY ${rank}priority, id LIMIT ? OFFSET ?`,
+              `SELECT *, json_extract(request_input, '$.proposal_review') AS proposal_review FROM issues WHERE ${condition} ORDER BY ${rank}priority, id LIMIT ? OFFSET ?`,
             )
             .all(...values, ...rankValues, limit, offset);
           return {

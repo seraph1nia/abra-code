@@ -1,3 +1,4 @@
+import { proposalReader, readerInstructions, readerPermissions } from "./proposal-reader.ts";
 import { Context, Effect, Layer, Schema } from "effect";
 import type { Context as PluginContext } from "@opencode/plugin/effect/plugin";
 import { Agent as NativeAgent } from "@opencode/schema/agent";
@@ -127,6 +128,14 @@ export const OpenCodeAgentsLive = (
                 agent.hidden = true;
               });
         }
+        editor.update(NativeAgent.ID.make(proposalReader), (agent) => {
+          agent.name = NativeAgent.Name.make(proposalReader);
+          agent.description = "Independent read-only proposal reviewer";
+          agent.mode = "subagent";
+          agent.hidden = true;
+          agent.system = readerInstructions;
+          agent.permissions = [...readerPermissions()];
+        });
         for (const profile of profiles.values())
           editor.update(profile.id, (agent) => {
             agent.name = NativeAgent.Name.make(profile.definition);

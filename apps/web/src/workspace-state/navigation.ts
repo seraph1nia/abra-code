@@ -70,6 +70,17 @@ export function useWorkspaceNavigation(route: WorkspaceSearch, beforeNavigate: (
       });
     });
   };
+  const focusDecision = useCallback(
+    (issue: string, decision: NonNullable<WorkspaceSearch["decision"]>) => {
+      cancel();
+      onOpen(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+      void navigate({
+        search: { collection: route.collection, issue, decision },
+        resetScroll: false,
+      });
+    },
+    [cancel, onOpen, navigate, route.collection],
+  );
   const focusForm = (id: string, binding: string) => {
     cancel();
     void navigate({ to: "/attention", search: {}, hash: "form-" + id + "-" + binding });
@@ -83,5 +94,6 @@ export function useWorkspaceNavigation(route: WorkspaceSearch, beforeNavigate: (
     closeInspector,
     returnInspectorFocus,
     focusForm,
+    focusDecision,
   };
 }

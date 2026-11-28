@@ -1,3 +1,13 @@
+import { deferred } from "@abracode/presentation/deferred";
+import type { Inspect } from "@abracode/presentation/cards";
+import type { ComponentProps } from "react";
+const ProposalReviewsPanel = deferred<
+  ComponentProps<typeof import("./proposal-reviews.tsx").ProposalReviewsPanel>
+>(
+  () => import("./proposal-reviews.tsx").then((m) => ({ default: m.ProposalReviewsPanel })),
+  "Independent review",
+);
+import { PlanBriefView } from "./plan-brief.tsx";
 import { useState } from "react";
 import { useWorkspaceNavigate } from "../use-workspace-navigate.ts";
 import { useSearch } from "@tanstack/react-router";
@@ -45,7 +55,7 @@ export function PlanPassagePanel({
   );
 }
 
-export function PlanPanel({ work }: { work: WorkItem }) {
+export function PlanPanel({ work, inspect }: { work: WorkItem; inspect: Inspect }) {
   const search = useSearch({ from: "__root__" });
   const navigate = useWorkspaceNavigate();
   const file = search.file ?? "";
@@ -94,7 +104,9 @@ export function PlanPanel({ work }: { work: WorkItem }) {
             ? "Research contract"
             : work.policy === "lightweight-fix"
               ? "Lightweight scope"
-              : "Planning artifacts";
+              : detail.plan_brief
+                ? "Plan"
+                : "Planning artifacts";
         const content =
           detail.proposal ??
           (detail.documents?.length
@@ -141,42 +153,53 @@ export function PlanPanel({ work }: { work: WorkItem }) {
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               ))}
+              {!!detail.proposal_reviews?.length && (
+                <ProposalReviewsPanel
+                  reviews={detail.proposal_reviews}
+                  work={work}
+                  inspect={inspect}
+                />
+              )}
+              {detail.plan_brief && <PlanBriefView brief={detail.plan_brief} />}
               {detail.steps && (
                 <section aria-label="Implementation steps">
-                  <h3>Implementation steps</h3>
-                  <p>
-                    {detail.steps.complete} of {detail.steps.total} complete
-                  </p>
-                  {detail.steps.total > 0 && (
-                    <progress
-                      className="plan-progress"
-                      aria-label="Implementation progress"
-                      max={detail.steps.total}
-                      value={detail.steps.complete}
-                    />
-                  )}
-                  <ol className="plan-steps">
-                    {detail.steps.rows.map((row) => (
-                      <li key={row.id} data-complete={row.done}>
-                        <span aria-label={row.done ? "Complete" : "Open"}>
-                          {row.done ? "✓" : "○"}
-                        </span>{" "}
-                        <span>{row.label}</span>
-                        {row.source && detail.documents?.includes(row.source.path) && (
-                          <Button
-                            size="sm"
-                            variant="link"
-                            onClick={() => selectFile(row.source!.path, row.source!.line)}
-                          >
-                            {row.source.path} · {row.source.line}
-                          </Button>
-                        )}
-                      </li>
-                    ))}
-                  </ol>
-                  {detail.steps.rows.length < detail.steps.total && (
-                    <p>Showing the first {detail.steps.rows.length} steps.</p>
-                  )}
+                  <details>
+                    <summary>
+                      Implementation steps · {detail.steps.complete} of {detail.steps.total}{" "}
+                      complete
+                    </summary>
+
+                    {detail.steps.total > 0 && (
+                      <progress
+                        className="plan-progress"
+                        aria-label="Implementation progress"
+                        max={detail.steps.total}
+                        value={detail.steps.complete}
+                      />
+                    )}
+                    <ol className="plan-steps">
+                      {detail.steps.rows.map((row) => (
+                        <li key={row.id} data-complete={row.done}>
+                          <span aria-label={row.done ? "Complete" : "Open"}>
+                            {row.done ? "✓" : "○"}
+                          </span>{" "}
+                          <span>{row.label}</span>
+                          {row.source && detail.documents?.includes(row.source.path) && (
+                            <Button
+                              size="sm"
+                              variant="link"
+                              onClick={() => selectFile(row.source!.path, row.source!.line)}
+                            >
+                              {row.source.path} · {row.source.line}
+                            </Button>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
+                    {detail.steps.rows.length < detail.steps.total && (
+                      <p>Showing the first {detail.steps.rows.length} steps.</p>
+                    )}
+                  </details>
                 </section>
               )}
               {detail.documents && detail.documents.length > 0 && (
@@ -201,7 +224,7 @@ export function PlanPanel({ work }: { work: WorkItem }) {
                   </div>
                 </details>
               )}
-              {detail.steps && detail.proposal ? (
+              {(detail.steps || detail.plan_brief) && detail.proposal ? (
                 <details className="accepted-proposal">
                   <summary>Proposal and scope choices</summary>
                   <Markdown className="prose" content={content} mode="static" />

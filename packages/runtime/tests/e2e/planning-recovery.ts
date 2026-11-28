@@ -150,6 +150,10 @@ export async function planningRecoveryJourney(o: {
   let e = await begin("retained");
   const initialPlan = e.plan_fingerprint,
     originalApproval = e.approval_receipts[0];
+  assert.equal(e.plan_brief.fingerprint, initialPlan);
+  assert.ok(
+    e.plan_brief.sections.some((section: { title: string }) => section.title === "Outcomes"),
+  );
   const root = AbsolutePath.make(e.worktree_directory);
   const originalHead = await run(git.head(root));
   const replan = {
@@ -164,6 +168,9 @@ export async function planningRecoveryJourney(o: {
   const baseline = structuredClone(e.planning.attempts[0]);
   assert.equal(baseline.admissions.length, 1);
   assert.notEqual(e.plan_fingerprint, initialPlan);
+  assert.equal(e.plan_brief.previous, initialPlan);
+  assert.equal(e.plan_brief.fingerprint, e.plan_fingerprint);
+  const presentedBrief = structuredClone(e.plan_brief);
   assert.equal(await readFile(join(root, "source.txt"), "utf8"), "broken sample\n");
   assert.equal(
     await readFile(join(root, "native-proof.txt"), "utf8"),
@@ -175,6 +182,7 @@ export async function planningRecoveryJourney(o: {
   await o.restart();
   e = await status(e.issue_id);
   assert.deepEqual(e.planning.attempts[0], baseline);
+  assert.deepEqual(e.plan_brief, presentedBrief);
   assert.equal(e.current_phase, "awaiting_plan_approval");
   const recreated = await o.invoke("abra_work_approve", { issue_id: e.issue_id, kind: "plan" });
   assert.equal(recreated.form_id, freshForm.form_id);

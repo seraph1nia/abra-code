@@ -2,8 +2,9 @@ import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { Option } from "effect";
-import { useSearch } from "@tanstack/react-router";
+import { Link, useSearch } from "@tanstack/react-router";
 import type { IssueId } from "@abracode/contracts/identities";
+import { usableForm } from "@abracode/contracts/visibility/attention";
 import type { AttentionForm } from "@abracode/contracts/web/contracts";
 import type { WebWorkItem as WorkItem } from "@abracode/contracts/web/wire";
 import type { Inspect } from "@abracode/presentation/cards";
@@ -32,9 +33,15 @@ import { DecisionsPanel } from "./presentation/obligations.tsx";
 import { NativeForm } from "./native-attention.tsx";
 import { queries } from "./work-data.ts";
 import { RequestState } from "./request-state.tsx";
-import { inspectorTabs, type InspectorTab, type WorkspaceSearch } from "./navigation.ts";
+import {
+  formLocation,
+  inspectorTabs,
+  type InspectorTab,
+  type WorkspaceSearch,
+} from "./navigation.ts";
 import { useMediaQuery } from "./use-media-query.ts";
 import { Overview } from "./inspector/overview.tsx";
+import { PlanBriefView } from "./inspector/plan-brief.tsx";
 import { PlanPanel, PlanPassagePanel } from "./inspector/plan.tsx";
 import { DiffPanel } from "./inspector/diff.tsx";
 import { ActivityPanel } from "./inspector/activity.tsx";
@@ -273,7 +280,6 @@ function InspectorContent({
 }: ContentProps) {
   const route = useSearch({ from: "__root__" });
   const target = route.resource;
-  const [approvalOpen, setApprovalOpen] = useState(false);
   const title =
     target?.action === "open_finding"
       ? `Finding · ${target.finding_id}`
@@ -299,6 +305,66 @@ function InspectorContent({
   const showApprovalBar =
     Boolean(boundApproval) && (taskPage || tab === "Overview" || tab === "Plan" || tab === "Diff");
 
+  if (route.decision) {
+    const selected = forms.find(
+      (item) =>
+        item.active &&
+        item.checkpoint?.active &&
+        item.checkpoint.issue_id === work.issue_id &&
+        item.form.id === route.decision?.id &&
+        item.binding === route.decision.binding,
+    );
+    const next = !selected && forms.find(usableForm);
+    return (
+      <aside className="inspector" aria-label="Focused decision">
+        <header className="inspector-header">
+          <div className="canvas-heading">
+            <h2>{work.title}</h2>
+          </div>
+          <CanvasControls close={close} />
+        </header>
+        <div className="inspector-content inspector-stack">
+          {selected && refresh ? (
+            <>
+              {selected.checkpoint?.kind === "plan" && (
+                <RequestState query={queries.decisionPlan(work.issue_id, selected.binding)}>
+                  {(detail) =>
+                    detail.plan_brief?.fingerprint === selected.checkpoint?.fingerprint &&
+                    detail.plan_brief ? (
+                      <PlanBriefView brief={detail.plan_brief} />
+                    ) : (
+                      <p>
+                        {work.policy === "lightweight-fix" || work.policy === "research-only"
+                          ? detail.proposal
+                          : "A brief for this exact plan is unavailable."}
+                      </p>
+                    )
+                  }
+                </RequestState>
+              )}
+              {selected.checkpoint?.kind === "merge" && (
+                <OutcomeReport work={work} inspect={inspect} focusForm={focusForm} />
+              )}
+              <NativeForm focus item={selected} refresh={refresh} />
+            </>
+          ) : (
+            <>
+              <output>This decision has closed or changed.</output>
+              {next && <Link {...formLocation(next)}>Open next decision</Link>}
+            </>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setTab(selected?.checkpoint?.kind === "merge" ? "Reports" : "Plan")}
+          >
+            Open task evidence
+          </Button>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside
       className={taskPage ? "inspector work-task-page" : "inspector"}
@@ -321,7 +387,14 @@ function InspectorContent({
           <CanvasControls close={close} />
         </div>
       </header>
-      {taskPage && <TaskSummary work={work} forms={forms} focusForm={focusForm} />}
+      {taskPage && (
+        <TaskSummary
+          work={work}
+          forms={forms}
+          focusForm={focusForm}
+          showGoal={primaryTab !== "Reports" || target?.action === "open_artifact"}
+        />
+      )}
       <Tabs
         value={primaryTab}
         onValueChange={(value) => {
@@ -377,26 +450,11 @@ function InspectorContent({
                 </Button>
               )}
 
-              <Button
-                size="sm"
-                variant={approvalOpen ? "outline" : "default"}
-                onClick={() => setApprovalOpen((open) => !open)}
-              >
-                {approvalOpen
-                  ? "Hide approval form"
-                  : `Review ${boundApproval.checkpoint!.kind} approval`}
+              <Button size="sm" onClick={() => focusForm(boundApproval.form.id)}>
+                Review {boundApproval.checkpoint!.kind} approval
               </Button>
             </div>
           </div>
-          {approvalOpen && refresh && (
-            <div className="contextual-approval-drawer">
-              <NativeForm
-                key={`${boundApproval.form.id}-${boundApproval.binding}`}
-                item={boundApproval}
-                refresh={refresh}
-              />
-            </div>
-          )}
         </div>
       )}
       <div className="inspector-content" key={`${work.issue_id}:${tab}`}>
@@ -437,7 +495,7 @@ function InspectorPanel({
   if (taskPage && (tab === "Overview" || tab === "Plan"))
     return (
       <>
-        <PlanPanel work={work} />
+        <PlanPanel work={work} inspect={inspect} />
         <details open={detailsOpen} onToggle={(event) => setDetailsOpen(event.currentTarget.open)}>
           <summary>Task details and decisions</summary>
           {detailsOpen && (
@@ -502,7 +560,7 @@ function InspectorPanel({
         </RequestState>
       );
     case "Plan":
-      return <PlanPanel work={work} />;
+      return <PlanPanel work={work} inspect={inspect} />;
     case "Diff":
       return <DiffPanel issue={work.issue_id} />;
     case "Activity":

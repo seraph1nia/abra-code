@@ -1,3 +1,8 @@
+import { awaitWorkerPluginActivation } from "./plugin-activation.ts";
+import { readerSession } from "./proposal-reader-guards.ts";
+import { ensureProposalReader, readProposalReport } from "./proposal-reader.ts";
+import type { ReviewRevision } from "../workflow/proposal-review-contracts.ts";
+import type { DesignChoices } from "@abracode/contracts/workflow/obligation-summary";
 import { Config as Env, Effect, Option } from "effect";
 import { Agent } from "@opencode/client/effect";
 import { Service } from "@opencode/client/effect/service";
@@ -60,6 +65,11 @@ export type SessionIdentity = {
   metadata?: Record<string, unknown>;
 };
 export interface Runtime {
+  ensureProposalReader?(
+    e: import("../domain.ts").Execution,
+    revision: ReviewRevision,
+  ): Effect.Effect<void, CrewError>;
+  readProposalReport?(revision: ReviewRevision): Effect.Effect<string, CrewError>;
   managementSession(
     id: SessionId,
     parent: SessionId,
@@ -138,6 +148,7 @@ export interface Runtime {
     question: string,
     identity: QuestionIdentity,
     scope?: import("../work/scope.ts").ScopeDraft,
+    choices?: DesignChoices,
   ): Effect.Effect<FormId, CrewError>;
   questionAnswer(session: SessionId, formID: FormId): Effect.Effect<QuestionAnswer, CrewError>;
   requestApproval(
@@ -294,6 +305,15 @@ export class NativeRuntime implements Runtime {
       yield* nativeSession(this.ctx).update({ sessionID: id, permissions });
     },
   );
+
+  ensureProposalReader = (e: import("../domain.ts").Execution, revision: ReviewRevision) =>
+    ensureProposalReader(
+      this.ctx,
+      e,
+      revision,
+      workerProfile(e, "review", this.config)?.model ?? e.worker_model,
+    );
+  readProposalReport = (revision: ReviewRevision) => readProposalReport(this.ctx, revision);
 
   managementSession = Effect.fn("NativeRuntime.managementSession")(
     { self: this },
@@ -479,6 +499,15 @@ export class NativeRuntime implements Runtime {
   prompt = Effect.fn("NativeRuntime.prompt")(
     { self: this },
     function* (sessionID: SessionId, text: string, id: MessageId, steer = false) {
+      if (readerSession(sessionID)) {
+        const { location } = yield* nativeSession(this.ctx).get({ sessionID });
+        const client = yield* this.client();
+        yield* awaitWorkerPluginActivation(
+          nativeDomain(client.plugin)
+            .list({ location })
+            .pipe(Effect.map((result) => result.data)),
+        );
+      }
       yield* nativeSession(this.ctx)
         .prompt({
           sessionID,
@@ -568,8 +597,17 @@ export class NativeRuntime implements Runtime {
       question: string,
       identity: QuestionIdentity,
       scope?: import("../work/scope.ts").ScopeDraft,
+      choices?: DesignChoices,
     ) {
-      return yield* requestQuestion(yield* this.client(), session, id, question, identity, scope);
+      return yield* requestQuestion(
+        yield* this.client(),
+        session,
+        id,
+        question,
+        identity,
+        scope,
+        choices,
+      );
     },
   );
 

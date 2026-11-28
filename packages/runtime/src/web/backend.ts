@@ -1,3 +1,4 @@
+import { encodeDesignAnswers } from "../opencode/forms.ts";
 import { sha256 } from "../digest.ts";
 import type {
   ScopedMemorySearch,
@@ -489,6 +490,7 @@ export class NativeWebBackend implements WebBackend {
             "Controller checkpoint changed; ask Abra for the current form",
           );
         let answer = input.answer;
+        if (current.checkpoint?.design_choices) yield* encodeDesignAnswers(form.fields, answer);
         const checkpoint = current.checkpoint;
         if (
           (checkpoint?.kind === "plan" || checkpoint?.kind === "merge") &&

@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { Commit, Timestamp, RelativePath, SafeRelativePath } from "../identities.ts";
+import { Commit, Fingerprint, Timestamp, RelativePath, SafeRelativePath } from "../identities.ts";
 import { FilePatchId } from "../web/resources.ts";
 import { Count } from "../primitives.ts";
 export const TaskIntentSchema = Schema.Struct({
@@ -15,6 +15,16 @@ export const TaskIntentSchema = Schema.Struct({
     Schema.Struct({ previous: Commit, current: Commit, url: Schema.optional(Schema.String) }),
   ),
 });
+/** The brief is captured at the validated plan checkpoint, before Apply can change tasks. */
+export const PlanBriefSchema = Schema.Struct({
+  fingerprint: Fingerprint,
+  sections: Schema.Array(Schema.Struct({ title: Schema.String, text: Schema.String })),
+  previous: Schema.optionalKey(Fingerprint),
+  revised: Schema.Boolean,
+  changes: Schema.optionalKey(Schema.String),
+  significance: Schema.optionalKey(Schema.String),
+});
+export type PlanBrief = typeof PlanBriefSchema.Type;
 export const PlanStepsSchema = Schema.Struct({
   total: Count,
   complete: Count,

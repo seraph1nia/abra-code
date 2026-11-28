@@ -399,3 +399,29 @@ test("Plan reads native task order, checked state and only contained source loca
   done = true;
   assert.equal((await read()).rows[0].done, true);
 });
+
+test("a brief compares exact revisions and identifies missing prior evidence", async () => {
+  const { capturePlanBrief } = await import("../../src/openspec/plan-brief.ts");
+  const first = Id.Fingerprint.make("first"),
+    next = Id.Fingerprint.make("next");
+  const prior = capturePlanBrief(
+    first,
+    "## Outcome\nRead plans\n## Risks\nScroll fatigue",
+    undefined,
+    false,
+  );
+  const revised = capturePlanBrief(
+    next,
+    "## Outcome\nRead decisions\n## Why it matters\nSave a click",
+    prior,
+    true,
+  );
+  assert.equal(revised.previous, first);
+  assert.match(revised.changes!, /Read decisions/);
+  assert.match(revised.changes!, /Risks was removed/);
+  assert.equal(revised.significance, "Save a click");
+  assert.equal(capturePlanBrief(next, "", revised, true), revised);
+  const missing = capturePlanBrief(next, "## Outcomes\nCurrent plan", undefined, true);
+  assert.equal(missing.previous, undefined);
+  assert.equal(missing.revised, true);
+});

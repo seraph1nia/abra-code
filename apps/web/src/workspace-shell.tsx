@@ -39,6 +39,24 @@ const railIcons = {
   "/attention": Bell,
 } as const;
 
+function ThemeToggle() {
+  const { resolved, setTheme } = useTheme();
+  const next = resolved === "dark" ? "light" : "dark";
+  const label = `Switch to ${next} theme`;
+  const Icon = next === "light" ? Sun : Moon;
+  return (
+    <button
+      type="button"
+      className="rail-link theme-toggle"
+      title={label}
+      aria-label={label}
+      onClick={() => setTheme(next)}
+    >
+      <Icon aria-hidden="true" />
+    </button>
+  );
+}
+
 export function WorkspaceShell() {
   const path = useRouterState({ select: (state) => state.location.pathname });
   const destination = destinationFor(path);
@@ -84,7 +102,6 @@ export function WorkspaceShell() {
   const settings = useMatch({ from: "/settings", shouldThrow: false });
   const phone = useMediaQuery("(max-width: 760px)");
   const shell = useRef<HTMLDivElement>(null);
-  const { resolved, setTheme } = useTheme();
 
   const navigate = useNavigate();
   const [search, setSearch] = useState<{ origin: HTMLElement; source?: "memory" }>();
@@ -201,6 +218,7 @@ export function WorkspaceShell() {
                     <Bell aria-hidden="true" />
                     <span>Attention</span>
                   </Link>
+                  <ThemeToggle />
                 </header>
                 <PhoneNavigation
                   shell={shell}
@@ -209,31 +227,22 @@ export function WorkspaceShell() {
                 />
               </>
             ) : tablet ? (
-              <details key={path} className="destination-menu">
-                <summary>Destinations</summary>
-                <nav aria-label="Workspace">
-                  {menuLinks}
-                  <Link to="/settings">Settings</Link>
-                </nav>
-              </details>
+              <div className="tablet-tools">
+                <details key={path} className="destination-menu">
+                  <summary>Destinations</summary>
+                  <nav aria-label="Workspace">
+                    {menuLinks}
+                    <Link to="/settings">Settings</Link>
+                  </nav>
+                </details>
+                <ThemeToggle />
+              </div>
             ) : (
               <nav className="destination-rail" aria-label="Workspace">
                 <div className="rail-group">{railLinks}</div>
                 <div className="rail-spacer" />
                 <div className="rail-footer">
-                  <button
-                    type="button"
-                    className="rail-link rail-action"
-                    data-tip={
-                      resolved === "dark" ? "Switch to light theme" : "Switch to dark theme"
-                    }
-                    aria-label={
-                      resolved === "dark" ? "Switch to light theme" : "Switch to dark theme"
-                    }
-                    onClick={() => setTheme(resolved === "dark" ? "light" : "dark")}
-                  >
-                    {resolved === "dark" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
-                  </button>
+                  <ThemeToggle />
                   <Link
                     to="/settings"
                     className="rail-link"

@@ -461,6 +461,7 @@ test("policy-specific planning and independent outcomes remain usable when a doc
     },
   });
   await page.goto(f.origin + "/work?issue=abra-fix&tab=Reports");
+  await report.getByText("Delivery and acceptance evidence", { exact: true }).click();
   await report.getByText(/Keep the result · No criterion-level verdict recorded/).waitFor();
   assert.equal(
     await report

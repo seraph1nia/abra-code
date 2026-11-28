@@ -508,14 +508,24 @@ export function assignmentDecisions(e: Execution) {
       generation: number;
       scope: string;
       answer: string;
-      basis: "current_generation" | "accepted_contract";
+      basis: "current_generation" | "accepted_contract" | "reviewed_plan";
     }
   >();
   for (const decision of e.decisions ?? []) {
     if (decision.status !== "answered" || !decision.answer || decision.finishing_target) continue;
+    if (
+      decision.proposal_fingerprint &&
+      e.plan_fingerprint &&
+      decision.proposal_fingerprint !== e.plan_fingerprint
+    )
+      continue;
     const current = decision.generation === e.control_generation;
     const contract = decision.key === "scope-contract" && decision.session_id === "controller";
-    if (!current && !contract) continue;
+    const reviewedPlan =
+      decision.session_id === "controller" &&
+      !!decision.proposal_fingerprint &&
+      decision.proposal_fingerprint === e.plan_fingerprint;
+    if (!current && !contract && !reviewedPlan) continue;
     if (contract && e.scope) {
       let matches = false;
       try {
@@ -531,7 +541,7 @@ export function assignmentDecisions(e: Execution) {
           );
         continue;
       }
-    } else if (!current) continue;
+    } else if (!current && !reviewedPlan) continue;
     const prior = selected.get(decision.key);
     if (
       prior &&
@@ -548,7 +558,11 @@ export function assignmentDecisions(e: Execution) {
         generation: decision.generation,
         scope: decision.scope,
         answer: decision.answer,
-        basis: current ? "current_generation" : "accepted_contract",
+        basis: current
+          ? "current_generation"
+          : reviewedPlan
+            ? "reviewed_plan"
+            : "accepted_contract",
       });
   }
   return [...selected.values()];
@@ -597,5 +611,9 @@ ${engineeringGuidance(role, e.workflow_policy)}`;
     review:
       "Review this approved change and current implementation/proof read-only. Submit abra_review_report with full-spec verification evidence.",
   };
-  return common + reviewGuide + task[role];
+  const preceding =
+    role === "explore" && e.plan_brief
+      ? "\nPreceding plan brief: " + JSON.stringify(e.plan_brief)
+      : "";
+  return common + reviewGuide + task[role] + preceding;
 }

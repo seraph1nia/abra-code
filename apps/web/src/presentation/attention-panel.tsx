@@ -22,6 +22,7 @@ export function AttentionPanel({
   refresh,
   open,
   inspect,
+  focusForm,
 }: {
   workspace: WorkspaceSnapshot;
   workAttention: NonNullable<WorkspaceSnapshot["work"]["fleet"]>["attention"];
@@ -30,6 +31,7 @@ export function AttentionPanel({
   refresh: () => void;
   open: (id: string) => void;
   inspect: (target: ResourceSelection) => void;
+  focusForm: (id: string, binding?: string) => void;
 }) {
   const managementAttention = workspace.work.management?.entries ?? [];
   const section = useRef<HTMLElement>(null);
@@ -109,14 +111,22 @@ export function AttentionPanel({
         <div className="inspector-stack">
           <h3 className="eyebrow">Your forms and permissions</h3>
           {workspace.forms
-            .filter(
-              (item) =>
-                attentionOpen ||
-                (item.checkpoint?.kind !== "plan" && item.checkpoint?.kind !== "merge"),
-            )
-            .map((item) => (
-              <NativeForm key={`${item.form.id}-${item.binding}`} item={item} refresh={refresh} />
-            ))}
+            .filter((item) => attentionOpen || !item.checkpoint?.issue_id)
+            .map((item) =>
+              item.active &&
+              item.checkpoint?.issue_id &&
+              hash !== "form-" + item.form.id + "-" + item.binding ? (
+                <Button
+                  key={item.form.id}
+                  variant="outline"
+                  onClick={() => focusForm(item.form.id, item.binding)}
+                >
+                  {item.form.title}
+                </Button>
+              ) : (
+                <NativeForm key={`${item.form.id}-${item.binding}`} item={item} refresh={refresh} />
+              ),
+            )}
           {workspace.permissions.map((item) => (
             <NativePermission key={item.request.id} item={item} refresh={refresh} />
           ))}

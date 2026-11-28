@@ -67,6 +67,20 @@ export async function cockpitJourney(input: {
     generation: other.control_generation,
     scope: "B",
     question: "Which behavior should B keep?",
+    choices: [
+      {
+        question: "Where should results appear?",
+        recommended: "Canvas",
+        reason: "Keep evidence beside Chat",
+        alternatives: ["Chat"],
+      },
+      {
+        question: "When should results open?",
+        recommended: "When idle",
+        reason: "Preserve ongoing work",
+        alternatives: ["On demand"],
+      },
+    ],
     owner: "user",
   });
   const decision = await invoke("abra_work_decision", {
@@ -120,7 +134,25 @@ export async function cockpitJourney(input: {
     await page.reload();
     const form = page.getByRole("button", { name: "Answer in native form" });
     await form.click();
-    await page.locator(`[data-native-form-id="${decision.form_id}"]:focus`).waitFor();
+    const editor = page.locator(`[data-native-form-id="${decision.form_id}"]`);
+    await editor.getByRole("button", { name: "Accept recommendations" }).waitFor();
+    await editor
+      .getByLabel("When should results open?", { exact: false })
+      .selectOption("On demand");
+    await editor.getByRole("button", { name: "Submit choices" }).click();
+    const answered = await eventually(async () => {
+      const saved = await invoke("abra_work_decision", {
+        action: "collect",
+        issue_id: b,
+        key: "fixture-choice",
+        generation: other.control_generation,
+      });
+      return saved.status === "answered" ? saved.answer : undefined;
+    });
+    assert.deepEqual(JSON.parse(answered), [
+      { question: "Where should results appear?", answer: "Canvas" },
+      { question: "When should results open?", answer: "On demand" },
+    ]);
     assert.equal(await page.getByLabel("Message Abra").inputValue(), "Why this deadline?");
     await input.holdAbra();
     const queued = await Effect.runPromise(
@@ -182,6 +214,7 @@ export async function cockpitJourney(input: {
         await ab("open", web.origin + "/?issue=" + a + "&tab=Verification");
         await ab("set", "viewport", "1550", "940");
         await ab("wait", "--text", "Inspect changes");
+        await ab("wait", "--text", "cockpit.txt · additions 1–1 · Captured selection");
         await ab("find", "text", "cockpit.txt · additions 1–1 · Captured selection", "click");
         await ab("wait", "--text", "The captured deadline was 50ms.");
         await ab("screenshot", join(input.evidence, "desktop.png"));

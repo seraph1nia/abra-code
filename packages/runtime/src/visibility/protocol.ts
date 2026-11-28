@@ -1,4 +1,6 @@
+import { ProposalReviewView } from "@abracode/contracts/visibility/proposal-review";
 import {
+  PlanBriefSchema,
   PlanStepsSchema,
   TaskIntentSchema,
 } from "@abracode/contracts/visibility/document-contracts";
@@ -195,6 +197,8 @@ const detail = Schema.Struct({
     Schema.Struct({ id: ArtifactId, status: SpecArtifactSchema.fields.status, path: RelativePath }),
   ),
   progress: Schema.optional(TaskProgressSchema),
+  proposal_reviews: Schema.optionalKey(Schema.Array(ProposalReviewView)),
+  plan_brief: Schema.optional(PlanBriefSchema),
   steps: Schema.optional(PlanStepsSchema),
   proposal: Schema.optional(Schema.String),
   documents: Schema.optional(Schema.Array(RelativePath)),

@@ -1,32 +1,54 @@
 schema: abra-compact-v2
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  During change planning, we prefer questions in small batches. Check consequential
+  assumptions against the current code, specs and tests first. For open decisions,
+  ask up to four related, independent questions together. Give a recommendation
+  and a short reason for each. Ask a pivotal question on its own when its answer
+  determines what to ask next.
+  Use a concrete example or failure case to check what success means. Follow up
+  where an answer changes scope, compatibility or acceptance. Once those are clear,
+  leave routine implementation choices to the implementer.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - >-
+      For consequential changes, have a separate read-only agent review the
+      written proposal before presenting it. Start a fresh session with only
+      the proposal path and the review question. Give it no planning discussion
+      or author summary. Ask it to explain the goal, boundaries and observable
+      success from the proposal alone, then consult cited sources to challenge
+      the riskiest assumption or suggest a simpler alternative. Use material
+      findings to revise the proposal or raise a decision. If fresh-agent review
+      is unavailable, tell the user it is pending.
+  # Trial for the next three new changes. Revisit the task rules after reviewing
+  # their checklists and any implementation pauses caused by a prescribed approach.
+  tasks:
+    - >-
+      Write each task around an observable result or acceptance scenario. Leave
+      the implementation approach open wherever the accepted constraints allow it.
+      If a task requires a particular mechanism, point to the decision or constraint
+      that requires it. At plan review, ask whether a simpler implementation could
+      meet every accepted constraint and still earn the checkbox.
+    - >-
+      When a planning discovery would save repeated investigation, add a brief
+      optional hint beside the relevant task, outside its checkbox. Point to the
+      finding or source and say why it matters. Leave the implementer free to
+      choose the approach and sequence.
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+operations:
+  apply:
+    guidance:
+      - >-
+        Before editing, establish a baseline for the affected behavior. Reuse a
+        relevant result for the same starting state when available. Run a broader
+        baseline if existing evidence leaves a meaningful regression hard to attribute.
+      - >-
+        After a meaningful behavior change, run the quickest check that exercises it,
+        such as one named scenario or test file. During implementation, widen coverage
+        only for a concrete uncertainty the focused check cannot resolve, such as a
+        change crossing a package or process boundary.
+      - >-
+        Run the repository's required final checks once on the finished change
+        (see AGENTS.md and the testing skill). After a subsequent edit, rerun the
+        checks whose evidence it invalidates.

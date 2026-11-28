@@ -321,7 +321,13 @@ export class SurfacePublications {
     });
   }
   publish(
-    input: { session_id: SessionId; message_id: MessageId; call_id: string; surface: WorkSurface },
+    input: {
+      session_id: SessionId;
+      message_id: MessageId;
+      call_id: string;
+      surface: WorkSurface;
+      proposal_review?: SurfaceRecord["proposal_review"];
+    },
     observe: SurfaceObservation,
   ) {
     return this.publications.withLock(() =>
@@ -372,6 +378,7 @@ export class SurfacePublications {
           message_id: input.message_id,
           tool_call_id: `${input.message_id}/${input.call_id}`,
           history: "immutable",
+          ...(input.proposal_review && { proposal_review: input.proposal_review }),
           revision,
           at: snapshot.at,
           surface,

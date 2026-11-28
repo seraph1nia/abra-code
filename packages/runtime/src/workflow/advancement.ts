@@ -1,3 +1,6 @@
+import { reviewSatisfied } from "./proposal-review-contracts.ts";
+import { selectReview, type ProposalReviews } from "./proposal-reviews.ts";
+import { capturePlanBrief } from "../openspec/plan-brief.ts";
 import { planSteps } from "../openspec/plan-steps.ts";
 import { WorkflowError } from "../errors.ts";
 import { tryDomainValue } from "../effect.ts";
@@ -57,6 +60,7 @@ import { WorkerSessions, workerSessionID } from "./sessions.ts";
 import { Operations } from "./operations.ts";
 
 export interface AdvancementDependencies {
+  readonly proposalReviews: ProposalReviews;
   readonly config: Config;
   readonly planning: PlanningBaselines;
   readonly authorizations: Authorizations;
@@ -246,7 +250,7 @@ export class Advancement {
         if (e.plan_approval_required === false) return yield* this.beginApply(e, p);
         return yield* this.c.authorizations.reconcilePlan(e);
       }
-      yield* this.c.spec.plan(e);
+      const { status } = yield* this.c.spec.plan(e);
       yield* this.c.planning.assertDelta(e);
       yield* this.c.git.run(e.worktree_directory!, [
         "add",
@@ -254,9 +258,38 @@ export class Advancement {
         `openspec/changes/${e.openspec_change}`,
       ]);
       e = yield* this.c.planning.planned(e);
-      e = yield* this.c.transitions.move(e, "awaiting_plan_approval", {
-        plan_fingerprint: yield* this.c.checkpoints.plan(e),
+      const artifact = status.artifacts.find((a) => a.id === "proposal" && a.status === "done");
+      let proposal = "";
+      const fingerprint = yield* this.c.checkpoints.plan(e, (path, content) => {
+        if (path === artifact?.outputPath) proposal = content;
       });
+      e = yield* this.c.transitions.move(e, "awaiting_plan_approval", {
+        plan_fingerprint: fingerprint,
+        ...(e.proposal_review &&
+          fingerprint && {
+            proposal_reviews: selectReview(e, fingerprint, artifact?.outputPath ?? "", proposal),
+          }),
+        ...(fingerprint && {
+          plan_brief: capturePlanBrief(
+            fingerprint,
+            proposal.slice(0, 65536),
+            e.plan_brief,
+            e.approval_receipts.some((r) => r.kind === "plan" && r.fingerprint !== fingerprint),
+          ),
+        }),
+      });
+      if (e.proposal_review) {
+        e = yield* this.c.proposalReviews.reconcile(e, p);
+        if (!reviewSatisfied(e)) return e;
+      }
+      if (e.plan_brief?.revised && e.plan_approval_required === false)
+        yield* this.c.transitions.notice(
+          e,
+          "Plan revised. " +
+            (e.plan_brief.changes?.split("\n")[0]?.slice(0, 240) ||
+              "The updated brief is available in Plan.") +
+            " Work can continue under the current approval policy.",
+        );
       if (e.plan_approval_required === false) return yield* this.beginApply(e, p);
       return yield* this.c.authorizations.reconcilePlan(e);
     },
@@ -425,6 +458,10 @@ export class Advancement {
   beginApply = Effect.fn("Advancement.beginApply")(
     { self: this },
     function* (e: Execution, p: Project) {
+      if (e.proposal_review) {
+        e = yield* this.c.proposalReviews.reconcile(e, p);
+        if (!reviewSatisfied(e)) return e;
+      }
       if (e.workflow_policy === "full-openspec") yield* this.c.spec.plan(e);
       yield* this.assertPlan(e);
       if (activeSynchronization(e)) {
@@ -469,6 +506,7 @@ export class Advancement {
             e = finishing.execution;
             if (!finishing.ready) return e;
           }
+          if (kind === "plan" && !reviewSatisfied(e)) return e;
           const collected = yield* this.c.authorizations.collect(e, kind, supervisor);
           e = collected.execution;
           const { decision, receipt } = collected;
@@ -560,6 +598,8 @@ export class Advancement {
           "MESSAGE_ID",
           "Planning control requires a stable request identity and trusted sender",
         );
+      if (e.proposal_review && e.current_phase === "awaiting_plan_approval")
+        e = yield* this.c.proposalReviews.supersede(e);
       const prepared = yield* this.c.planning.prepare(
         e,
         yield* this.project(e),

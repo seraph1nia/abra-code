@@ -1,3 +1,4 @@
+import { ReviewRevision } from "../workflow/proposal-review-contracts.ts";
 import { MemoryBody, MemoryPage } from "@abracode/contracts/visibility/memory";
 import { ReviewChangesPage } from "../git/review-changes.ts";
 import { EvidenceDataSchema, EvidenceReceiptSchema } from "@abracode/contracts/web/worker-evidence";
@@ -46,12 +47,15 @@ import { VisualBuildSummarySchema, ReportReceiptSchema } from "../reporting/repo
 import { SpecStatusSchema, ApplyStatusSchema, InstructionsSchema } from "../openspec/contracts.ts";
 import { VerificationSchema } from "../config/contracts.ts";
 import { WorkEventSchema } from "../work/graph.ts";
+const { proposal: _readerInput, ...reviewSummary } = ReviewRevision.fields;
 const execution = Schema.Struct({
   ...ExecutionStateSchema.fields,
+  proposal_reviews: Schema.optional(Schema.Array(Schema.Struct(reviewSummary))),
   visual_reports: Schema.optional(Schema.Array(VisualBuildSummarySchema)),
 });
 const {
   messages: _messages,
+  proposal_reviews: _reviewHistory,
   report_intent: _reportIntent,
   ...bulkExecutionFields
 } = execution.fields;

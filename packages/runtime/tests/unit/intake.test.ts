@@ -30,6 +30,7 @@ test("requested goals create associated WorkGraph work that can immediately star
   assert.equal(e.current_phase, "exploring");
   const persisted = await run(f.records.execution(created.issue.id));
   assert.equal(persisted?.schema_version, 1);
+  assert.equal(persisted?.proposal_review, undefined);
   assert.deepEqual(persisted?.effective_policy, e.effective_policy);
   assert.ok(e.worktree_directory && e.explore_session_id);
   assert.equal(
@@ -38,6 +39,43 @@ test("requested goals create associated WorkGraph work that can immediately star
   );
   assert.equal((await run(f.work.list)).length, 1);
 });
+test.for(["supervisor", "user"] as const)(
+  "retains %s proposal review across intake replay and execution reads",
+  async (selection, t) => {
+    const f = await run(fixture);
+    t.onTestFinished(() => run(f.close()));
+    const sender = Id.SessionId.make("ses_supervisor");
+    const input = { ...goal, proposal_review: selection };
+    const { issue } = await run(f.controller.createWork(input, sender));
+    assert.equal(
+      (await run(f.controller.createWork(input, sender))).issue.proposal_review,
+      selection,
+    );
+    await assert.rejects(run(f.controller.createWork(goal, sender)), /different goal/);
+    await assert.rejects(
+      run(f.controller.createWork({ ...input, workflow_policy: "lightweight-fix" }, sender)),
+      /full-openspec/,
+    );
+    await run(f.controller.start(issue.id, sender));
+    const restarted = (
+      await run(
+        createWorkflow(
+          f.catalog,
+          f.config,
+          f.records,
+          f.work,
+          f.spec,
+          f.git,
+          f.runtime,
+          f.delivery,
+          f.locks,
+        ),
+      )
+    ).controller;
+    assert.equal((await run(restarted.get(issue.id))).proposal_review, selection);
+  },
+);
+
 test("creation validates repository, goal, priority and dependencies before mutating WorkGraph", async (t) => {
   const f = await run(fixture);
   t.onTestFinished(() => run(f.close()));

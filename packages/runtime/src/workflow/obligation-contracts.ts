@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { Count } from "@abracode/contracts/primitives";
-import { FormId, SessionId } from "@abracode/contracts/identities";
+import { Fingerprint, FormId, SessionId } from "@abracode/contracts/identities";
 import { FinishingTargetSchema, FinishingAnswerSchema } from "./finishing/contracts.ts";
 import { DecisionSummarySchema } from "@abracode/contracts/workflow/obligation-summary";
 import { DeclaredWaitSchema } from "@abracode/contracts/workflow/obligation-summary";
@@ -12,6 +12,7 @@ export {
 } from "@abracode/contracts/workflow/obligation-summary";
 export const DecisionSchema = Schema.Struct({
   ...DecisionSummarySchema.fields,
+  proposal_fingerprint: Schema.optional(Fingerprint),
   finishing_target: Schema.optional(FinishingTargetSchema),
   finishing_answer: Schema.optional(FinishingAnswerSchema),
   finishing_history: Schema.optional(

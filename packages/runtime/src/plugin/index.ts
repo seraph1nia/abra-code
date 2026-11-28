@@ -1,3 +1,4 @@
+import { installReaderGuards } from "../opencode/proposal-reader-guards.ts";
 import { registerWebGateway } from "../web/gateway.ts";
 import { readAgentCatalog } from "../web/agent-settings.ts";
 import { nativeReviews } from "../web/review-tool.ts";
@@ -47,6 +48,7 @@ export const createPlugin = (
         const reviews = nativeReviews(c, application.store, locks, application.surfaces);
         if (central) yield* locks.acquire(LockKey.make("scheduler-leader"));
         yield* installGuards(ctx, c, provide);
+        yield* installReaderGuards(ctx, c, provide);
         yield* registerTools(
           ctx,
           c,

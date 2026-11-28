@@ -1,4 +1,4 @@
-import { MessageId, SessionId } from "@abracode/contracts/identities";
+import { FormId, MessageId, SessionId } from "@abracode/contracts/identities";
 import {
   RetainedTarget,
   WorkDiscoveryQuery,
@@ -8,6 +8,15 @@ import { ThoughtQuery, ThoughtReference } from "@abracode/contracts/visibility/t
 import { SurfaceDestinationSchema } from "@abracode/contracts/web/surface-destination";
 import { Schema } from "effect";
 import { ResourceSelectionSchema, type ResourceSelection } from "@abracode/contracts/web/resources";
+
+import type { AttentionForm } from "@abracode/contracts/web/contracts";
+
+export function formLocation(item: AttentionForm) {
+  const issue = item.checkpoint?.issue_id;
+  return issue
+    ? { to: "/" as const, search: { issue, decision: { id: item.form.id, binding: item.binding } } }
+    : { to: "/attention" as const, hash: "form-" + item.form.id + "-" + item.binding };
+}
 
 export const inspectorTabs = [
   "Overview",
@@ -54,7 +63,12 @@ const CollectionState = Schema.Struct({
   ),
 });
 export type CollectionState = typeof CollectionState.Type;
+const FocusedForm = Schema.Struct({
+  id: FormId,
+  binding: Schema.String.check(Schema.isMaxLength(512)),
+});
 export type WorkspaceSearch = {
+  decision?: typeof FocusedForm.Type;
   collection?: CollectionState;
   view?: "finder" | "canvas";
   message?: { session_id: SessionId; message_id: MessageId };
@@ -121,7 +135,10 @@ export function workspaceSearch(value: Record<string, unknown>): WorkspaceSearch
       /* Invalid bookmarks grant no read capability. */
     }
   }
+  const decision = Schema.decodeUnknownOption(FocusedForm)(value.decision);
   const result = {
+    ...(decision._tag === "Some" &&
+      typeof value.issue === "string" && { decision: decision.value }),
     ...context,
     ...(typeof value.issue === "string" && value.issue.length <= 1024
       ? { issue: value.issue }

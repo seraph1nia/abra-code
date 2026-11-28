@@ -1,4 +1,9 @@
-import { PlanStepsSchema, TaskIntentSchema } from "../visibility/document-contracts.ts";
+import { ProposalReviewView } from "../visibility/proposal-review.ts";
+import {
+  PlanBriefSchema,
+  PlanStepsSchema,
+  TaskIntentSchema,
+} from "../visibility/document-contracts.ts";
 import { ThoughtSource } from "../visibility/thoughts.ts";
 import { FilePatchId } from "./resources.ts";
 import { Count } from "../primitives.ts";
@@ -52,6 +57,8 @@ export const WorkDetailSchema = Schema.Struct({
   artifacts: Schema.Array(
     Schema.Struct({ id: Schema.String, status: Schema.String, path: RelativePath }),
   ),
+  proposal_reviews: Schema.optionalKey(Schema.Array(ProposalReviewView)),
+  plan_brief: Schema.optional(PlanBriefSchema),
   steps: Schema.optional(PlanStepsSchema),
   proposal: Schema.optional(Schema.String),
   documents: Schema.optional(Schema.Array(RelativePath)),

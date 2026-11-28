@@ -1,3 +1,5 @@
+import type { Form } from "@opencode/schema/form";
+import type { DesignChoices } from "@abracode/contracts/workflow/obligation-summary";
 import { ScopeSchema, type ScopeDraft } from "../work/scope.ts";
 import { sha256 } from "../digest.ts";
 import { nativeDomain, nativeError } from "./native-call.ts";
@@ -215,6 +217,23 @@ export const scopeFields = (scope: ScopeDraft): NativeFormInput["fields"] => [
   },
 ];
 
+export function designFields(choices: DesignChoices): NativeFormInput["fields"] {
+  const field = (choice: DesignChoices[number], i: number): NativeFormInput["fields"][number] => ({
+    key: "choice_" + (i + 1),
+    type: "string",
+    required: true,
+    custom: true,
+    minLength: 1,
+    maxLength: 512,
+    pattern: ".*\\S.*",
+    title: choice.question,
+    description: "Recommended: " + choice.recommended + ". " + choice.reason,
+    default: choice.recommended,
+    options: [choice.recommended, ...choice.alternatives].map((value) => ({ value, label: value })),
+  });
+  return [field(choices[0]!, 0), ...choices.slice(1).map((choice, i) => field(choice, i + 1))];
+}
+
 export const requestQuestion = (
   client: OpenCodeClient,
   session: SessionId,
@@ -222,6 +241,7 @@ export const requestQuestion = (
   question: string,
   identity: QuestionIdentity,
   scope?: ScopeDraft,
+  choices?: DesignChoices,
 ) =>
   ensureForm(
     client,
@@ -229,22 +249,50 @@ export const requestQuestion = (
       sessionID: session,
       id,
       title: question.slice(0, 512),
-      metadata: { source: "abracode", decision_identity: identity },
-      fields: scope
-        ? scopeFields(scope)
-        : [
-            {
-              key: "answer",
-              type: "string",
-              required: true,
-              minLength: 1,
-              maxLength: 8192,
-              title: "Answer this question",
-            },
-          ],
+      metadata: {
+        source: "abracode",
+        decision_identity: identity,
+        ...(choices && { design_choices: sha256(canonicalJSON(choices)) }),
+      },
+      fields: choices
+        ? designFields(choices)
+        : scope
+          ? scopeFields(scope)
+          : [
+              {
+                key: "answer",
+                type: "string",
+                required: true,
+                minLength: 1,
+                maxLength: 8192,
+                title: "Answer this question",
+              },
+            ],
     },
     new CrewError("DECISION_FORM", "Form belongs to another question"),
   );
+
+export const encodeDesignAnswers = Effect.fn("NativeForm.encodeDesignAnswers")(function* (
+  fields: readonly Form.Field[],
+  values: Form.Answer,
+) {
+  const answers = [];
+  if (Object.keys(values).length !== fields.length)
+    return yield* new CrewError("DECISION_ANSWER", "Answer each question in this batch");
+  for (const field of fields) {
+    const value = values[field.key];
+    if (typeof value !== "string" || !value.trim() || value.length > 512)
+      return yield* new CrewError("DECISION_ANSWER", "Answer each design question");
+    answers.push({ question: field.title, answer: value.trim() });
+  }
+  const answer = JSON.stringify(answers);
+  if (answer.length > 8192)
+    return yield* new CrewError(
+      "DECISION_ANSWER",
+      "Shorten the design answers to fit 8192 characters",
+    );
+  return answer;
+});
 
 export const readQuestionAnswer = (
   client: OpenCodeClient,
@@ -259,6 +307,10 @@ export const readQuestionAnswer = (
     if (form.state.status === "cancelled") return { status: "cancelled" as const };
     if (form.state.status !== "answered") return { status: "pending" as const };
     const values = form.state.answer;
+    if (form.metadata?.design_choices) {
+      const answer = yield* encodeDesignAnswers(form.fields, values);
+      return { status: "answered" as const, answer };
+    }
     const answer =
       form.fields.some((field) => field.key === "goal") &&
       String(form.metadata?.decision_identity).endsWith(":scope-contract")

@@ -1,4 +1,5 @@
 import type { WorkSummary } from "@abracode/contracts/visibility/work-summary";
+import { designAnswerRows } from "@abracode/contracts/workflow/obligation-summary";
 import type { ReactNode } from "react";
 import type { ResourceSelection } from "@abracode/contracts/web/resources";
 import type {
@@ -181,6 +182,7 @@ export function DecisionCard({
   inspect?: Inspect;
   children?: ReactNode;
 }) {
+  const rows = decision.choices && decision.answer ? designAnswerRows(decision.answer) : undefined;
   const tone: StatusTone =
     decision.status === "open"
       ? "attention"
@@ -222,7 +224,18 @@ export function DecisionCard({
       {children}
       <Evidence>
         <p>{decision.scope}</p>
-        {decision.answer && <p>Answer: {decision.answer}</p>}
+        {rows?._tag === "Some" ? (
+          <dl>
+            {rows.value.map((row, index) => (
+              <div key={index}>
+                <dt>{row.question}</dt>
+                <dd>{row.answer}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          decision.answer && <p>Answer: {decision.answer}</p>
+        )}
         <p>
           Decision: <code>{decision.key}</code> · Generation {decision.generation}
         </p>

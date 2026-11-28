@@ -12,6 +12,7 @@ import {
   CheckpointEvidence,
 } from "../workflow/authorization.ts";
 import { WorkAdmission } from "../workflow/admission.ts";
+import { ProposalReviews } from "../workflow/proposal-reviews.ts";
 import { Advancement } from "../workflow/advancement.ts";
 import { readWorkerContext } from "../workflow/worker-context.ts";
 import { Obligations } from "../workflow/obligations.ts";
@@ -86,6 +87,7 @@ function createInfrastructure(
   const workspaces = new Workspaces(git, sources, runtime, config.worktree_root);
   const coordination = records.coordination;
   const assertActor = assertApprovalActor(records, runtime, config.home);
+  const checkpoints = new CheckpointEvidence(git);
   const obligations = new Obligations(
     records,
     runtime,
@@ -94,13 +96,13 @@ function createInfrastructure(
     config.home,
     git,
     assertActor,
+    checkpoints,
   );
   const attention = new AttentionService(config, records, runtime, coordination, locks);
   const operations = resources.operations;
   const capacity = new Capacity(config, records);
   const scopes = new Scopes(records);
   const corrections = new Corrections(records, git, config);
-  const checkpoints = new CheckpointEvidence(git);
   const inspection = new SessionInspection(runtime);
   const thoughts = resources?.thoughts ?? new PersonalThoughts(config, work);
   const memory = resources?.memory ?? new AgentMemory(config, records, thoughts);
@@ -309,7 +311,14 @@ function createWorkflowControl(
     sessions: core.sessions,
     workspaces: infra.workspaces,
   });
+  const proposalReviews = new ProposalReviews(
+    records,
+    runtime,
+    infra.capacity,
+    config.progress_timeout_ms.review,
+  );
   const recovery = new ExecutionRecovery({
+    proposalReviews,
     capacity: infra.capacity,
     authorizations: core.authorizations,
     checkpoints: infra.checkpoints,
@@ -329,6 +338,7 @@ function createWorkflowControl(
     checks: core.checks,
   });
   const advancement = new Advancement({
+    proposalReviews,
     config,
     planning: core.planning,
     authorizations: core.authorizations,

@@ -165,9 +165,12 @@ test("finder projects selected rows and uses only matching retained capacity", a
   assert.deepEqual(row?.blockers, expected.blockers);
   assert.deepEqual(row?.dependencies, [dependency.id]);
   assert.equal(native.mock.calls.length, 0);
-  assert.equal(prepare.mock.calls.filter(([sql]) => /SELECT \* FROM issues\b/.test(sql)).length, 1);
   assert.equal(
-    prepare.mock.calls.some(([sql]) => /SELECT \* FROM issues ORDER BY/.test(sql)),
+    prepare.mock.calls.filter(([sql]) => /^SELECT \*.* FROM issues\b/.test(sql)).length,
+    1,
+  );
+  assert.equal(
+    prepare.mock.calls.some(([sql]) => /^SELECT \*.* FROM issues ORDER BY/.test(sql)),
     false,
   );
   const project = await run(f.records.project(item.repository_id));

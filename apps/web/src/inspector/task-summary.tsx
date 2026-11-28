@@ -14,10 +14,12 @@ import { VerificationPanel } from "../presentation/verification.tsx";
 export function TaskSummary({
   work,
   forms,
+  showGoal,
   focusForm,
 }: {
   work: WebWorkItem;
   forms: readonly AttentionForm[];
+  showGoal: boolean;
   focusForm: (id: string) => void;
 }) {
   const human = forms.find((f) => usableForm(f) && f.checkpoint?.issue_id === work.issue_id);
@@ -33,7 +35,7 @@ export function TaskSummary({
       <RequestState query={queries.overview(work.issue_id)}>
         {(detail) => (
           <>
-            <p>{detail.intent?.goal || detail.description || work.title}</p>
+            {showGoal && <p>{detail.intent?.goal || detail.description || work.title}</p>}
             {detail.thought_source && (
               <ThoughtSource
                 reference={detail.thought_source.reference}
@@ -97,45 +99,67 @@ export function OutcomeReport({
                     {outcome.next_action}
                   </p>
                   {outcome.delivered_commit && (
-                    <p>
-                      Delivery revision <code>{outcome.delivered_commit}</code>
-                    </p>
+                    <details>
+                      <summary>Delivery revision</summary>
+                      <p>
+                        Delivery revision <code>{outcome.delivered_commit}</code>
+                      </p>
+                    </details>
                   )}
                 </>
               )}
-              {intent?.comparison ? (
-                <p>
-                  {intent.comparison.url ? (
-                    <a href={intent.comparison.url}>Compare with the previous delivery</a>
-                  ) : (
-                    "Comparison link unavailable"
-                  )}{" "}
-                  ·{" "}
-                  <code>
-                    {intent.comparison.previous.slice(0, 12)} …{" "}
-                    {intent.comparison.current.slice(0, 12)}
-                  </code>
-                </p>
-              ) : (
-                work.phase === "awaiting_merge" && <p>No prior delivery comparison is available.</p>
-              )}
-              {intent?.criteria.length ? (
-                <>
-                  <h4>Acceptance criteria</h4>
+              {intent?.results?.some((result) => !result.met) && (
+                <section>
+                  <h4>Unmet acceptance criteria</h4>
                   <ul>
-                    {intent.criteria.map((criterion, i) => {
-                      const result = intent.results?.find((row) => row.criterion === criterion);
-                      return (
-                        <li key={i}>
-                          {criterion} ·{" "}
-                          {result
-                            ? (result.met ? "Met" : "Unmet") + " — " + result.evidence
-                            : "No criterion-level verdict recorded"}
-                        </li>
-                      );
-                    })}
+                    {intent.results
+                      .filter((result) => !result.met)
+                      .map((result) => (
+                        <li key={result.criterion}>{result.criterion}</li>
+                      ))}
                   </ul>
-                </>
+                </section>
+              )}
+              {intent?.comparison || intent?.criteria.length || work.phase === "awaiting_merge" ? (
+                <details>
+                  <summary>Delivery and acceptance evidence</summary>
+                  {intent?.comparison ? (
+                    <p>
+                      {intent.comparison.url ? (
+                        <a href={intent.comparison.url}>Compare with the previous delivery</a>
+                      ) : (
+                        "Comparison link unavailable"
+                      )}{" "}
+                      ·{" "}
+                      <code>
+                        {intent.comparison.previous.slice(0, 12)} …{" "}
+                        {intent.comparison.current.slice(0, 12)}
+                      </code>
+                    </p>
+                  ) : (
+                    work.phase === "awaiting_merge" && (
+                      <p>No prior delivery comparison is available.</p>
+                    )
+                  )}
+                  {intent?.criteria.length ? (
+                    <>
+                      <h4>Acceptance criteria</h4>
+                      <ul>
+                        {intent.criteria.map((criterion, i) => {
+                          const result = intent.results?.find((row) => row.criterion === criterion);
+                          return (
+                            <li key={i}>
+                              {criterion} ·{" "}
+                              {result
+                                ? (result.met ? "Met" : "Unmet") + " — " + result.evidence
+                                : "No criterion-level verdict recorded"}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </>
+                  ) : null}
+                </details>
               ) : null}
               {intent?.limitations?.length ? (
                 <>
@@ -147,11 +171,6 @@ export function OutcomeReport({
                   </ul>
                 </>
               ) : null}
-              <p className="muted">
-                {work.policy === "research-only"
-                  ? "See the retained investigation report for criterion results and limitations."
-                  : "Individual criteria have no separately recorded verdict. Review the checks and independent findings below."}
-              </p>
             </>
           );
         }}
@@ -212,7 +231,7 @@ export function OutcomeReport({
         </RequestState>
       )}
       {work.policy !== "research-only" && (
-        <VerificationPanel work={work} inspect={inspect} focusForm={focusForm} />
+        <VerificationPanel compact work={work} inspect={inspect} focusForm={focusForm} />
       )}
     </section>
   );

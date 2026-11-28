@@ -1,3 +1,4 @@
+import { reviewSatisfied } from "./proposal-review-contracts.ts";
 import { WorkflowError } from "../errors.ts";
 import {
   type AbsolutePath,
@@ -43,10 +44,13 @@ const currentReceipts = (e: Execution, kind: Kind) =>
 export class CheckpointEvidence {
   constructor(private git: Git) {}
 
-  plan(e: Execution) {
+  plan(
+    e: Execution,
+    observeDocument?: (relative: string, content: string) => void,
+  ): Effect.Effect<Fingerprint | undefined, CrewError> {
     if (e.workflow_policy !== "full-openspec")
       return Effect.succeed(e.scope && scopeIdentity(e.scope.revision, e.scope.contract));
-    return this.git.planFingerprint(e.worktree_directory!, e.openspec_change).pipe(
+    return this.git.planFingerprint(e.worktree_directory!, e.openspec_change, observeDocument).pipe(
       Effect.map((content) =>
         currentPlanning(e)
           ? Fingerprint.make(
@@ -115,6 +119,11 @@ export class CheckpointEvidence {
       return yield* new WorkflowError(
         "PLAN_CHANGED",
         "Approved planning artifacts changed; prepare a new approval",
+      );
+    if (!reviewSatisfied(e))
+      return yield* new WorkflowError(
+        "PROPOSAL_REVIEW_PENDING",
+        "Independent proposal review is pending",
       );
     if (e.plan_approval_required !== false && this.status(e, "plan") !== "approved")
       return yield* new WorkflowError("APPROVAL_REQUIRED", "Plan approval is missing or stale");

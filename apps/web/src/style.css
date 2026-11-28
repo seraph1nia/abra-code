@@ -1602,9 +1602,12 @@
 
 /* ============ TABLET (761px – 1250px) ============ */
 @media (min-width: 761px) and (max-width: 1250px) {
-  .destination-menu {
+  .tablet-tools {
+    display: flex;
+    align-items: center;
+    gap: 4px;
     position: absolute;
-    top: 6px;
+    top: 4px;
     left: 10px;
     z-index: 25;
   }
@@ -1619,7 +1622,9 @@
     list-style: none;
   }
   .destination-menu nav {
-    margin-top: 6px;
+    position: absolute;
+    top: 100%;
+    left: 0;
     display: flex;
     flex-direction: column;
     gap: 3px;
@@ -1644,7 +1649,11 @@
   }
   .workspace .topbar,
   .settings-page .topbar {
-    padding-left: 136px;
+    padding-left: 174px;
+  }
+  .topbar-center {
+    flex: 1 1 0;
+    max-width: 320px;
   }
 }
 
@@ -1671,7 +1680,13 @@
     background: var(--surface-0);
     padding: env(safe-area-inset-top) 12px 0;
   }
+  .phone-tools .theme-toggle {
+    width: 44px;
+    height: 44px;
+    margin-inline-start: 6px;
+  }
   .phone-attention-link {
+    margin-inline-start: auto;
     min-height: 44px;
     display: inline-flex;
     align-items: center;

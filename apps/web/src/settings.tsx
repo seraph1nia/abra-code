@@ -334,10 +334,7 @@ export function AppearanceSettings() {
     <div className="settings-stack">
       <h1>Appearance</h1>
       <SectionCard title="Color theme">
-        <p className="muted">
-          Choose Light, Dark, or follow your operating system. You can also toggle theme directly
-          from the bottom of the desktop rail.
-        </p>
+        <p className="muted">Choose Light, Dark, or follow your operating system.</p>
         <div className="appearance-control">
           <NativeSelect
             aria-label="Color theme"

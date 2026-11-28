@@ -166,6 +166,53 @@ function Workspace({
 
   const setDraft = useAtomSet(workspaceDraft(initial.session_id));
 
+  const nextDecision = workspace.forms.find(
+    (item) => item.checkpoint?.issue_id && usableForm(item),
+  );
+  const nextForm = nextDecision ?? workspace.forms.find(usableForm);
+  const focusDecision = navigation.focusDecision;
+  const observedDecision = useRef(new Set<string>());
+  useEffect(() => {
+    const issue = nextDecision?.checkpoint?.issue_id;
+    if (!issue || !nextDecision || !active || !isReady) return;
+    const { form, binding } = nextDecision;
+    const key = "abra-opened-decision/" + form.sessionID + "/" + form.id + "/" + binding;
+    if (observedDecision.current.has(key)) return;
+    observedDecision.current.add(key);
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {
+      /* In-memory observation still prevents reopening. */
+    }
+    const scroll = viewport.scroller.current;
+    if (
+      !wide ||
+      inspecting ||
+      destination !== "/" ||
+      palette ||
+      selectedMessage ||
+      document.visibilityState !== "visible" ||
+      composerRef.current?.value ||
+      document.activeElement?.matches("textarea,input,select,[contenteditable=true]") ||
+      (scroll && scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight > 80)
+    )
+      return;
+    focusDecision(issue, { id: form.id, binding });
+  }, [
+    active,
+    isReady,
+    wide,
+    inspecting,
+    destination,
+    palette,
+    selectedMessage,
+    nextDecision,
+    focusDecision,
+    composerRef,
+    viewport.scroller,
+  ]);
+
   const attention = workspace.forms.filter(usableForm).length + workspace.permissions.length;
   const workAttention = unmatchedWorkAttention(workspace);
 
@@ -193,7 +240,10 @@ function Workspace({
       );
       return;
     }
-    navigation.focusForm(id, form.binding);
+    if (form.checkpoint?.issue_id) {
+      setExpanded(false);
+      focusDecision(form.checkpoint.issue_id, { id: form.form.id, binding: form.binding });
+    } else navigation.focusForm(id, form.binding);
   }
 
   const draftLocked = useRef(true);
@@ -255,6 +305,7 @@ function Workspace({
     <WorkspaceHubs
       destination={destination}
       collectionVisible={collectionVisible}
+      focusForm={focusForm}
       attentionOpen={attentionOpen}
       workspace={workspace}
       route={route}
@@ -354,38 +405,42 @@ function Workspace({
               )}
 
               <WorkspaceTranscript view={view} viewport={viewport} inspect={inspect} />
-              {attention > 0 && (
-                <div className="composer-attention-dock">
-                  <div className="composer-attention-bar">
-                    <span className="composer-attention-text">
-                      <Bell aria-hidden="true" />
-                      <strong>
-                        {attention} pending {attention === 1 ? "decision" : "decisions"}
-                      </strong>
-                    </span>
-                    <Button
-                      className="attention-shortcut"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const form = workspace.forms.find(usableForm);
-                        if (form) focusForm(form.form.id);
-                        else
-                          void navigate({
-                            to: "/attention",
-                            hash:
-                              "permission-" +
-                              workspace.permissions[0]?.request.id +
-                              "-" +
-                              workspace.permissions[0]?.binding,
-                          });
-                      }}
-                    >
-                      Review next
-                    </Button>
+              {attention > 0 &&
+                (!nextDecision ||
+                  route.decision?.id !== nextDecision.form.id ||
+                  route.decision.binding !== nextDecision.binding) && (
+                  <div className="composer-attention-dock">
+                    <div className="composer-attention-bar">
+                      <span className="composer-attention-text">
+                        <Bell aria-hidden="true" />
+                        <strong>
+                          {nextDecision
+                            ? nextDecision.form.title
+                            : `${attention} pending ${attention === 1 ? "decision" : "decisions"}`}
+                        </strong>
+                      </span>
+                      <Button
+                        className="attention-shortcut"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          if (nextForm) focusForm(nextForm.form.id);
+                          else
+                            void navigate({
+                              to: "/attention",
+                              hash:
+                                "permission-" +
+                                workspace.permissions[0]?.request.id +
+                                "-" +
+                                workspace.permissions[0]?.binding,
+                            });
+                        }}
+                      >
+                        {nextDecision ? "Review decision" : "Review next"}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
               {workspace.inbox.length > 0 && (
                 <div className="composer-queue-dock">
                   {workspace.inbox.map((item) => (

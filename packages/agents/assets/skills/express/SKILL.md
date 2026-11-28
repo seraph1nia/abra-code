@@ -11,6 +11,8 @@ For “Can you show me why?”, carry forward the subject and evidence from the 
 - **“Show me what changed between these plans.”** Read the two revisions. Give each consequential change a row in a `Table`, with the actual revision labels above the old and proposed behavior. Put longer supporting excerpts in a `Disclosure` when they help explain a row.
 - **“Keep these release issues in view.”** Use a live `WorkTable` scoped to the specified issue IDs. For “Add pending decisions,” publish the existing layout plus a live `DecisionSummary` for those same IDs under the original `surface_id`.
 
+For selected independent proposal reviews, publish the findings from `abra_work_status` using `abra_render_ui` with `proposal_review: {issue_id, fingerprint}` and a stable `surface_id` for the task. Reuse the surface ID for later revisions. Its decision links open the native forms.
+
 ## Compose and publish
 
 Choose a stable `surface_id`. Put the complete Express body in `source`, with one `root` assignment. Use arrays for fixed children and List templates for repeated data. Nest components directly or assign reusable names to individual children. Place each child once. Express assigns inline component IDs. Use named components with short identifiers for deep layouts.

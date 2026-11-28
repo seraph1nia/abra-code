@@ -20,6 +20,7 @@ type NewExecution = {
   dispatch?: Dispatch;
   privateReview?: boolean;
   openspec_schema?: SpecSchemaName;
+  proposal_review?: Execution["proposal_review"];
   require_plan_approval?: true;
 } & Pick<
   ManagedExecution,

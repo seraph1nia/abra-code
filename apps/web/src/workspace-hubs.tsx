@@ -86,6 +86,7 @@ export function WorkspaceHubs({
             attention={attention}
             attentionOpen={attentionOpen}
             refresh={attentionProps.refresh}
+            focusForm={attentionProps.focusForm}
             open={open}
             inspect={inspect}
           />

@@ -230,12 +230,14 @@ export const collectPendingDecisions = Effect.fn("FinishingDispositions.collectP
     );
     const session =
       d.form_session ??
-      (d.finishing_target ? (e.supervisor_session_id ?? (yield* records.supervisor)) : undefined);
+      (d.finishing_target || d.choices || d.proposal_fingerprint
+        ? (e.supervisor_session_id ?? (yield* records.supervisor))
+        : undefined);
     if (
       d.status === "open" &&
       d.generation === e.control_generation &&
       d.owner === "user" &&
-      (d.form_session || d.finishing_target) &&
+      (d.form_session || d.finishing_target || d.choices || d.proposal_fingerprint) &&
       (!route ||
         (route.next_check_at <= now &&
           (route.status === "pending" || route.attempts < MAX_OUTBOX_ATTEMPTS)))

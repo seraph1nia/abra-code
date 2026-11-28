@@ -206,6 +206,33 @@ test("theme resolves before application loading and follows system changes witho
   );
 });
 
+test("one theme button switches and remembers the palette across workspace layouts", async (t) => {
+  const f = await fixture();
+  t.onTestFinished(f.close);
+  const page = await f.browser.newPage({ colorScheme: "light" });
+  await page.goto(f.origin);
+  const draft = page.getByRole("textbox", { name: "Message Abra" });
+  await draft.fill("Keep my place");
+  for (const [width, next] of [
+    [1440, "dark"],
+    [900, "light"],
+    [390, "dark"],
+  ] as const) {
+    await page.setViewportSize({ width, height: 844 });
+    const toggle = page.getByRole("button", { name: `Switch to ${next} theme`, exact: true });
+    await toggle.click();
+    await page.waitForFunction((theme) => document.documentElement.dataset.theme === theme, next);
+    assert.equal(
+      await page.getByRole("button", { name: /Switch to (light|dark) theme/ }).count(),
+      1,
+    );
+    assert.equal(await draft.inputValue(), "Keep my place");
+  }
+  await page.reload();
+  await page.getByRole("button", { name: "Switch to light theme", exact: true }).press("Enter");
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+});
+
 test("custom native choices retain raw lines across refresh and normalize only on submit", async (t) => {
   const f = await fixture();
   t.onTestFinished(f.close);

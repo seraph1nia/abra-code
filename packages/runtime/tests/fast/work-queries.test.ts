@@ -9,6 +9,8 @@ import { run } from "../effects.ts";
 import { workGraphAt, workDatabase } from "../helpers/work-database.ts";
 import { goal } from "../helpers/work-goal.ts";
 
+const selectsIssueRows = (sql: string) => /^SELECT \*.* FROM issues\b/i.test(sql);
+
 test("real in-memory finder pages preserve search, totals, ordering, dependencies and complete-population readiness with constant SQL calls", async (t) => {
   const { graph } = await workGraphAt(t);
   const dependency = await run(graph.create(goal("dependency")));
@@ -59,8 +61,7 @@ test("real in-memory finder pages preserve search, totals, ordering, dependencie
     assert.ok(prepare.mock.calls.length <= 6, "Page must use a bounded number of SQL operations");
     for (const [sql] of prepare.mock.calls) {
       assert.doesNotMatch(sql, /^SELECT id FROM issues/);
-      if (sql.includes("SELECT * FROM issues"))
-        assert.match(sql, /ORDER BY .*priority, id LIMIT \? OFFSET \?/);
+      if (selectsIssueRows(sql)) assert.match(sql, /ORDER BY .*priority, id LIMIT \? OFFSET \?/);
     }
     const state = query.state ?? "active",
       search = query.search?.trim().toLowerCase() ?? "";
@@ -120,7 +121,8 @@ test("1,000 inserts use no rank allocator and each finder page uses an ordering 
   ] as const) {
     prepare.mockClear();
     await run(graph.find(query));
-    const sql = prepare.mock.calls.find(([sql]) => sql.includes("SELECT * FROM issues"))![0];
+    const sql = prepare.mock.calls.find(([sql]) => selectsIssueRows(sql))?.[0];
+    assert.ok(sql, "Expected a finder page query selecting issue rows");
     const plan = db
       .prepare("EXPLAIN QUERY PLAN " + sql)
       .all(...("repository_id" in query ? [query.repository_id] : []), 5, 0);

@@ -1,3 +1,4 @@
+import { proposalReviewJourney } from "./proposal-review.ts";
 import { thoughtsJourney } from "../memos-thoughts.ts";
 import { inboxJourney } from "../github-inbox.ts";
 import { cockpitJourney } from "../cockpit.ts";
@@ -33,6 +34,11 @@ export async function runSelectedJourney(h: NativeHarness, companions: Companion
   const { providerRequests, memory, streamProof, releaseStreamProof, controls } = h.mock;
   const { runParallel, runModels, runLeads, runReports, runAcceptance, runReplyRecovery } =
     companions;
+  if (journey === "proposal-review") {
+    controls.failFirstExplore = false;
+    await proposalReviewJourney(h);
+    return true;
+  }
   if (journey === "planning-recovery") {
     controls.failFirstExplore = false;
     engineeringEvidence.push(

@@ -22,6 +22,8 @@
     "./presentation/work-state": "./src/presentation/work-state.ts",
     "./primitives": "./src/primitives.ts",
     "./validation/contracts": "./src/validation/contracts.ts",
+    "./visibility/proposal-review": "./src/visibility/proposal-review.ts",
+    "./web/proposal-review-surface": "./src/web/proposal-review-surface.ts",
     "./visibility/memory": "./src/visibility/memory.ts",
     "./visibility/thoughts": "./src/visibility/thoughts.ts",
     "./visibility/github-inbox": "./src/visibility/github-inbox.ts",

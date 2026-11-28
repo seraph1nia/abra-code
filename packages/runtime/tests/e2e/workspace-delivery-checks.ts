@@ -513,6 +513,9 @@ export async function checkWorkspaceDelivery(
       const dock = page.getByRole("link", { name: "Attention", exact: true });
       if (!(await dock.isVisible())) await page.getByText("Destinations", { exact: true }).click();
       await dock.click();
+      await page
+        .getByRole("button", { name: new RegExp(`Authorize ${kind} for ${issue}`) })
+        .click();
       const forms = page
         .locator(".attention-card")
         .filter({ has: page.getByText(new RegExp(`Authorize ${kind} for ${issue}`)) });

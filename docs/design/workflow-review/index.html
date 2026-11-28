@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AbraCode • Workflow review</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #192731;
+        --sub: #465967;
+        --rule: #c8d0d3;
+        --accent: #195878;
+        --wash: #e9f2f6;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: #f8fafb;
+        font:
+          16px/1.52 "Instrument Sans",
+          "Adwaita Sans",
+          system-ui,
+          sans-serif;
+      }
+      main {
+        width: min(100% - 40px, 920px);
+        margin: 0 auto 5rem;
+      }
+      header {
+        padding: 2rem 0 1.3rem;
+        border-bottom: 2px solid var(--ink);
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0 0 0.65rem;
+      }
+      h1,
+      h2 {
+        font-family: "STIX Two Text", Georgia, serif;
+        font-weight: 500;
+        line-height: 1.1;
+      }
+      h1 {
+        font-size: clamp(2.3rem, 6vw, 4.4rem);
+        letter-spacing: -0.045em;
+      }
+      h2 {
+        font-size: clamp(1.6rem, 4vw, 2.4rem);
+        margin-top: 1.6rem;
+      }
+      h3 {
+        font-size: 1.12rem;
+        line-height: 1.35;
+      }
+      p,
+      li {
+        max-width: 78ch;
+      }
+      a {
+        color: var(--accent);
+        text-underline-offset: 0.18em;
+      }
+      a:focus-visible,
+      button:focus-visible,
+      select:focus-visible,
+      summary:focus-visible {
+        outline: 3px solid #0074a0;
+        outline-offset: 3px;
+      }
+      .meta,
+      small,
+      .source {
+        color: var(--sub);
+        font-size: 0.88rem;
+      }
+      header p {
+        margin: 0;
+        font-size: 1.12rem;
+        max-width: 66ch;
+      }
+      section {
+        margin-top: 1.4rem;
+      }
+      nav,
+      .demohead,
+      .views {
+        display: flex;
+        gap: 0.7rem 1.3rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      nav {
+        margin-top: 1rem;
+      }
+      .demo {
+        margin: 1.5rem 0 2.4rem;
+        border: 1px solid var(--rule);
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .demohead {
+        padding: 1rem 1.4rem;
+        background: var(--ink);
+        color: white;
+        justify-content: space-between;
+      }
+      .demohead label {
+        display: flex;
+        gap: 0.6em;
+        align-items: center;
+      }
+      select {
+        padding: 0.35rem;
+        font: inherit;
+        background: white;
+        border-radius: 4px;
+        color: var(--ink);
+      }
+      .task {
+        padding: 1.3rem 1.4rem 1.5rem;
+      }
+      .task h2 {
+        margin: 0 0 0.55rem;
+      }
+      .decision {
+        padding: 0.65rem 0.85rem;
+        background: var(--wash);
+        border-left: 3px solid var(--accent);
+        margin: 0.8rem 0;
+      }
+      .views {
+        gap: 0.25rem;
+        border-bottom: 1px solid var(--rule);
+        margin: 1.1rem 0 0.9rem;
+      }
+      .decision-actions {
+        margin-top: 1em;
+        padding-top: 1em;
+        border-top: 1px solid var(--rule);
+      }
+      .decision-actions button {
+        font: inherit;
+        border: 1px solid var(--accent);
+        border-radius: 4px;
+        color: var(--accent);
+        background: white;
+        padding: 0.4em 0.7em;
+        margin: 0.3em 0.4em 0.3em 0;
+        cursor: pointer;
+      }
+      .decision-actions button:first-child {
+        background: var(--accent);
+        color: white;
+      }
+      .decision-actions textarea {
+        display: block;
+        width: min(100%, 36em);
+        padding: 0.5em;
+        margin: 0.5em 0;
+        font: inherit;
+      }
+      .views button {
+        font: inherit;
+        color: var(--sub);
+        border: 0;
+        border-bottom: 3px solid transparent;
+        padding: 0.4rem 0.65rem;
+        background: none;
+        cursor: pointer;
+      }
+      .views button[aria-pressed="true"] {
+        color: var(--accent);
+        border-bottom-color: currentColor;
+        font-weight: 700;
+      }
+      progress {
+        width: min(100%, 24rem);
+        accent-color: var(--accent);
+        display: block;
+        height: 0.6rem;
+        margin: 0.6rem 0;
+      }
+      ul,
+      ol {
+        padding-left: 1.4rem;
+      }
+      .task ol {
+        list-style: none;
+        padding: 0;
+        margin: 0.8rem 0;
+      }
+      .task li {
+        padding: 0.15em 0;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        padding: 1rem;
+        background: #f2f5f6;
+      }
+      details {
+        padding: 0.85rem 0;
+        border-bottom: 1px solid var(--rule);
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 650;
+      }
+      details p:first-of-type {
+        margin-top: 0.65rem;
+      }
+      .rank {
+        display: inline-block;
+        min-width: 2.3rem;
+        font:
+          600 0.83rem "IBM Plex Mono",
+          monospace;
+        color: var(--accent);
+      }
+      .rank.first {
+        color: #942e21;
+      }
+      .flow {
+        display: grid;
+        grid-template-columns: minmax(7rem, 1fr) 3fr;
+        margin: 0;
+      }
+      .flow dt,
+      .flow dd {
+        margin: 0;
+        padding: 0.65rem 0.25rem;
+        border-bottom: 1px solid var(--rule);
+      }
+      .flow dt {
+        font-weight: 650;
+      }
+      code {
+        overflow-wrap: anywhere;
+        font:
+          0.92em "IBM Plex Mono",
+          monospace;
+      }
+      @media (max-width: 560px) {
+        main {
+          width: calc(100% - 28px);
+        }
+        .views {
+          gap: 0;
+        }
+        .views button {
+          padding: 0.45rem 0.42rem;
+        }
+        .task,
+        .demohead {
+          padding: 1rem;
+        }
+        .flow {
+          grid-template-columns: 1fr;
+        }
+        .flow dt {
+          border: 0;
+          padding-bottom: 0;
+        }
+      }
+      @media print {
+        details::details-content {
+          display: contents;
+        }
+        nav {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="meta">AbraCode · Review of main at <code>289b700</code> · 27 November 2026</p>
+        <h1>The human workflow</h1>
+        <p>
+          Keep OpenSpec for tracked work. Let the person follow one task from the outcome they asked
+          for to the evidence that it shipped.
+        </p>
+        <nav aria-label="Review sections">
+          <a href="#example">Task page example</a><a href="#findings">Findings</a
+          ><a href="#handoffs">Human decisions</a><a href="#plan">Implementation order</a>
+        </nav>
+      </header>
+      <section class="demo" id="example" aria-label="Illustrative task page">
+        <div class="demohead">
+          <strong>Task page example</strong
+          ><label
+            >View at
+            <select id="stage">
+              <option value="planning">Plan review</option>
+              <option value="working" selected>Implementation</option>
+              <option value="merge">Merge review</option>
+            </select></label
+          >
+        </div>
+        <div class="task">
+          <h2>Restore an unfinished draft</h2>
+          <p>Keep the text and selected task when the writer returns to the same browser.</p>
+          <p id="handoff" class="decision" aria-live="polite"></p>
+          <div class="views" role="group" aria-label="Example views">
+            <button type="button" data-view="plan">Plan</button
+            ><button type="button" data-view="diff">Diff</button
+            ><button type="button" data-view="report">Report</button
+            ><button type="button" data-view="session">Live session</button>
+          </div>
+          <div id="planView">
+            <strong id="progressLabel"></strong
+            ><progress id="bar" max="3" aria-labelledby="progressLabel"></progress>
+            <ol id="steps"></ol>
+            <details>
+              <summary>Acceptance and scope</summary>
+              <p>
+                Reloading restores the last edit and its task. Removing a draft keeps it removed.
+                Cross-device sync is outside this change.
+              </p>
+            </details>
+          </div>
+          <div id="diffView" hidden>
+            <h3>Changes in this revision</h3>
+            <p id="diffText"></p>
+          </div>
+          <div id="reportView" hidden>
+            <h3>Evidence for the requested outcome</h3>
+            <p id="reportText"></p>
+            <p id="limitation"></p>
+          </div>
+          <div id="sessionView" hidden>
+            <h3>Worker session · Read only</h3>
+            <p id="workerText"></p>
+          </div>
+          <div class="decision-actions" id="decisionActions" hidden>
+            <button id="approve" type="button">Approve plan</button>
+            <button id="revise" type="button">Request changes</button>
+            <form id="feedback" hidden>
+              <label for="note">What needs to change?</label>
+              <textarea id="note" required rows="2"></textarea>
+              <button type="submit">Return for revision</button>
+            </form>
+          </div>
+        </div>
+      </section>
+      <section id="findings">
+        <h2>Findings</h2>
+        <p>
+          The first three have disposable reproductions. The remaining entries trace behavior
+          through the UI and its data sources.
+        </p>
+        <details open>
+          <summary>
+            <span class="rank first">P1</span>A checkpoint can record opposite decisions
+          </summary>
+          <p>
+            The browser reserves feedback in the controller, then answers the native form in a
+            separate call. I interrupted that sequence after reserving “Request changes.” A retry
+            with one punctuation change failed. I simulated an approval through the other native
+            surface and reconciled. The controller started Apply with both the original rejection
+            intent and an authorization timestamp on the same receipt.
+          </p>
+          <p>
+            Use one controller operation to resume the exact reserved answer across clients and
+            reconnects. Compare the observed native answer with the reservation before advancing. A
+            disagreement needs a visible resolution. Test crashes on either side of the native
+            reply, conflicting answers in both orders, and existing native-only receipts. The
+            browser currently keeps the rejection draft in a module-level Map, which a reload
+            discards.
+          </p>
+          <p class="source">
+            <a href="../../../packages/runtime/src/web/backend.ts">Web form reply</a> ·
+            <a href="../../../packages/runtime/src/workflow/authorization.ts"
+              >Reservation and collection</a
+            >
+            · <a href="../../../apps/web/src/attention.tsx">Checkpoint editor</a>
+          </p>
+        </details>
+        <details>
+          <summary>
+            <span class="rank">P2</span>A busy worker can freeze its own Live session
+          </summary>
+          <p>
+            I opened a worker’s transcript, gave subsequent history reads 850 ms latency, and sent
+            60 session notifications 100 ms apart. During the burst, 18 new reads started and zero
+            finished. After the burst, the updated text appeared. The fixture counted 18 interrupted
+            reads in total. Slow service is where a person most needs the window to keep moving.
+          </p>
+          <p>
+            Allow one history read to finish and remember one pending refresh, as the overview
+            reader already does. Invalidate the latest page for the active session. Keep the earlier
+            page someone is reading stable. The current browser test fires 30 events back-to-back
+            and checks unrelated reads. Add a sustained-stream case that requires fresh worker text
+            while events are still arriving.
+          </p>
+          <p class="source">
+            <a href="../../../apps/web/src/work-data.ts">Query policies</a> ·
+            <a href="../../../packages/contracts/src/web/changes.ts">Invalidation keys</a> ·
+            <a href="../../../packages/runtime/tests/e2e/inspector-observation.test.ts"
+              >Existing burst test</a
+            >
+          </p>
+        </details>
+        <details>
+          <summary>
+            <span class="rank">P2</span>A supported checklist can invalidate its own approval
+          </summary>
+          <p>
+            I copied the compact schema to a temporary repository and configured its task artifact
+            and tracking path as <code>implementation.md</code>. OpenSpec 2.0 correctly reported 0/1
+            and then 1/1 when the checkbox changed. AbraCode computed a different plan fingerprint.
+            The same edit in <code>tasks.md</code> kept its fingerprint. A custom-schema task can
+            therefore complete a legitimate step and fail its next plan check.
+          </p>
+          <p>
+            Have the OpenSpec adapter identify tracked task markers from the bound schema. Normalize
+            only those markers for approval identity. Version that calculation for new executions
+            and preserve existing fingerprint semantics for active receipts. Exercise approval,
+            completion and archive with an alternate tracking path.
+          </p>
+          <p class="source">
+            <a href="../../../packages/runtime/src/git/repository.ts">Plan fingerprint</a> ·
+            <a href="../../../packages/runtime/src/openspec/plan-steps.ts">Checklist projection</a>
+            · <a href="../../../packages/runtime/src/workflow/authorization.ts">Plan check</a>
+          </p>
+        </details>
+        <details>
+          <summary>
+            <span class="rank">P2</span>Attention can show the approval without the evidence
+          </summary>
+          <p>
+            The inbox renders a task ID, fingerprint and buttons. Its deduplication removes the
+            matching task row, and the form itself has no link to the plan or merge report. The task
+            page has more context, so the amount of information available when approving depends on
+            how someone arrived. Other owners’ obligations can also appear under “Needs your
+            attention” with a human count of zero.
+          </p>
+          <p>
+            Make each inbox item open the bound question on its task, anchored beside the evidence.
+            Show the decision, what changed, the consequence of approval, and the exact target. Keep
+            generic permissions directly answerable. Use one shared projection of the next actor and
+            action for briefing, count, inbox and task header. Today the header infers the owner
+            from a form or active role and otherwise says “Abra,” even for an external delivery
+            wait.
+          </p>
+          <p class="source">
+            <a href="../../../apps/web/src/presentation/attention-panel.tsx">Inbox</a> ·
+            <a href="../../../apps/web/src/workspace-state/use-transcript-scroll.ts"
+              >Deduplication</a
+            >
+            · <a href="../../../apps/web/src/inspector/task-summary.tsx">Task header</a> ·
+            <a href="../../../packages/runtime/src/visibility/briefing.ts">Briefing</a>
+          </p>
+        </details>
+        <details>
+          <summary>
+            <span class="rank">P2</span>“Ask Abra” loses the subject of the question
+          </summary>
+          <p>
+            I opened a task on a 390 px viewport and chose “Ask Abra.” The app opened the central
+            chat with an empty composer and no task chip. On desktop the task remains visible, but
+            the header action still only opens and focuses the composer. A question such as “Does
+            this cover reconnecting?” carries a task reference only if the person separately
+            attached a selection or supplied it in the text.
+          </p>
+          <p>
+            Capture the originating task and revision as a visible, removable reference on that
+            draft. Preserve any existing text and deliberate selection. Extend the existing
+            attachment and submission path. Verify what reaches Abra when two tasks are open, after
+            navigating Back, and after reload.
+          </p>
+          <p class="source">
+            <a href="../../../apps/web/src/workspace.tsx">Header handoff</a> ·
+            <a href="../../../apps/web/src/workspace-state/use-transcript-scroll.ts"
+              >Phone navigation</a
+            >
+            · <a href="../../../apps/web/src/workspace-state/admission.ts">Actual submission</a>
+          </p>
+        </details>
+        <details>
+          <summary>
+            <span class="rank">P2</span>The outcome report loses the accepted full-spec criteria
+          </summary>
+          <p>
+            The overview takes criteria from the short scope and falls back to the original
+            description for the goal. An ordinary full-spec plan keeps its accepted choices and
+            acceptance text in planning artifacts. Those can evolve after intake. The verification
+            wire exposes pass, findings, session and fingerprint, while the independent reviewer can
+            also record completeness, correctness, coherence and conflicts. The report cannot join
+            much of that evidence back to what the person approved.
+          </p>
+          <p>
+            At plan acceptance, capture a small display projection of the accepted revision with
+            source references. At review, reuse check receipts and review assessments, linking each
+            criterion to evidence when that evidence exists. Leave unassessed criteria visible. Bind
+            completion evidence to the delivered revision so a retired task can reopen the same
+            report.
+          </p>
+          <p class="source">
+            <a href="../../../packages/runtime/src/visibility/detail.ts">Goal and criteria</a> ·
+            <a href="../../../packages/contracts/src/workflow/review-contracts.ts"
+              >Reviewer’s evidence</a
+            >
+            · <a href="../../../packages/contracts/src/web/verification.ts">Browser contract</a> ·
+            <a href="../../../apps/web/src/inspector/task-summary.tsx">Outcome report</a>
+          </p>
+        </details>
+      </section>
+      <section id="handoffs">
+        <h2>When to involve the human</h2>
+        <dl class="flow">
+          <dt>Intake</dt>
+          <dd>
+            Abra captures outcome, scope and observable success. Resolve material ambiguity in one
+            short question. A bounded fix uses the existing short contract. Research gets a question
+            and a report. A change to durable behavior gets a tracked plan.
+          </dd>
+          <dt>Before Apply</dt>
+          <dd>
+            When policy requires approval, show intended behavior, boundaries and consequential
+            choices alongside Approve plan and Request changes. On revision, show the difference
+            from the last proposal. A missing or undelivered form means Abra owes the next action.
+          </dd>
+          <dt>During work</dt>
+          <dd>
+            Show observed checklist progress, the current worker and the last meaningful update.
+            Expose diffs and read-only sessions on demand. Bring the person back for a blocking
+            decision or scope change. A worker owing another agent an answer belongs in task
+            activity.
+          </dd>
+          <dt>Before merge</dt>
+          <dd>
+            Show the head being approved, changes since the prior reviewed head, check freshness,
+            independent findings and unresolved risk. Keep the actual decision beside that report. A
+            request for changes should reopen the task with the person’s words and an attributable
+            revision.
+          </dd>
+          <dt>After delivery</dt>
+          <dd>
+            Distinguish merged, branch preserved and research delivered. Show the accepted outcome
+            and the supporting revision or report. Surface remaining cleanup only when it requires
+            action. Keep the report readable after worktree retirement.
+          </dd>
+        </dl>
+      </section>
+      <section>
+        <h2>Two artifacts are enough for the person</h2>
+        <p>
+          <strong>Plan</strong> answers “What did we agree to, and how far has it got?”
+          <strong>Report</strong> answers “What actually happened, how do we know, and what
+          remains?” Diff and Live session are evidence views. Keep the summary above the four views
+          so it travels with the task.
+        </p>
+        <p>
+          The current change itself has 2,798 whitespace-delimited words across its proposal,
+          checklist and four delta specs. It was authored against compact v1. This repository now
+          defaults to compact v2, with no mandatory design artifact. Other managed repositories
+          select their own default. The v2 proposal already asks for outcome, scope and acceptance.
+          Shorter templates can improve authoring, but cannot repair a missing handoff from the
+          accepted plan to the report.
+        </p>
+        <p>
+          Retain OpenSpec’s revisioned source, tracking, validation and archive for work that needs
+          these capabilities. Keep deeper scenarios behind “Planning sources.” Let simple fixes and
+          investigations use AbraCode’s existing short scope. Reconsider replacing the planner if
+          two routes, given equally concise inputs, show a material difference in authoring turns,
+          time to approved intent or correction frequency. Measure on comparable tasks first.
+        </p>
+        <p>
+          Firstmate’s applicable ideas are one liaison, a visible crew, and escalation of decisions
+          with plain outcomes. Its Calm presentation hides operational inputs while retaining the
+          session history. AbraCode can adopt that presentation rule in the web client while keeping
+          its controller and exact approval receipts.
+        </p>
+        <p class="source">
+          <a href="../../../openspec/changes/make-workflow-decisions-actionable/.openspec.yaml"
+            >Reviewed change identity</a
+          >
+          ·
+          <a href="../../../openspec/schemas/abra-compact-v2/templates/proposal.md"
+            >Compact proposal</a
+          >
+          · <a href="../../openspec.md">Schema and migration boundaries</a> ·
+          <a
+            href="https://github.com/kunchenguid/firstmate/blob/1aa2a21ec35e2d0644ac836b7b5d3cb36669ef33/README.md"
+            >Pinned Firstmate documentation</a
+          >
+        </p>
+      </section>
+      <section id="plan">
+        <h2>Implementation order</h2>
+        <ol>
+          <li>
+            <strong>Make decisions recoverable.</strong> Preserve existing native-only receipts. Use
+            a single resumable response operation for web and native reconciliation. Ship the
+            interrupted-reply regression before changing the inbox.
+          </li>
+          <li>
+            <strong>Fix what progress means.</strong> Give the live transcript a bounded refresh
+            queue and the plan a schema-aware identity. Test a sustained stream and a real
+            custom-schema checkbox through the checkpoint.
+          </li>
+          <li>
+            <strong>Build one task reader.</strong> Resolve legacy Overview, Activity and
+            Verification links at the routing boundary. The task page, chat split and phone sheet
+            should host the same four sections and exact evidence targets. Currently the inspector
+            translates tab names, reinterprets clicks on a selected tab and chooses a different
+            component depending on entry point. This adds more complexity than the sidebar’s
+            styling.
+          </li>
+          <li>
+            <strong>Use the same facts everywhere.</strong> Extend the current visibility model with
+            accepted criteria, the next owner, action and evidence target. Have Plan and its header
+            share an observation. The header requests overview while detail independently builds
+            that overview again. Keep each store authoritative for its existing data.
+          </li>
+          <li>
+            <strong>Quiet the default surfaces.</strong> Give Work and Attention the main reading
+            area. Keep the rail for destinations and one actionable count. Put the summary once at
+            the top. On Report, show available results first and disclose attachments, source
+            documents, history and identifiers. In the browser fixture, opening Report produced six
+            evidence headings even with no check or Review receipt.
+          </li>
+          <li>
+            <strong>Shorten agent handoffs at their source.</strong> Keep distinct message states
+            for admitted, acknowledged and answered. Only surface the state that changes a human
+            decision. A clarified short scope can enter the next worker prompt twice, as a
+            serialized decision answer and as the accepted contract. Supply the contract once and
+            reference its provenance. Represent requested revisions as typed receipt references.
+            Currently the controller builds an error message telling Abra to manufacture a
+            <code>checkpoint-</code> finding ID and the correction path interprets that string
+            again.
+          </li>
+        </ol>
+        <p class="source">
+          <a href="../../../apps/web/src/inspector.tsx">Tab translation and layout</a> ·
+          <a href="../../../apps/web/src/work-data.ts">Reader queries</a> ·
+          <a href="../../../packages/runtime/src/workflow/worker-context.ts">Worker assignments</a>
+          · <a href="../../../packages/runtime/src/workflow/transitions.ts">Revision notice</a> ·
+          <a href="../../../packages/runtime/src/workflow/pr/supervision.ts">Correction routing</a>
+        </p>
+      </section>
+      <section>
+        <h2>Verification</h2>
+        <p>
+          Reviewed main against its local origin/main, one commit, 106 changed files. No changed
+          TypeScript or TSX file crossed 1,000 lines. The existing web stylesheet grew from 1,808 to
+          1,888 lines. The important decomposition is receipt ownership, data selection and
+          rendering.
+        </p>
+        <p>
+          On the reviewed application revision, <code>pnpm check</code> passed.
+          <code>pnpm test:all</code> passed 990 tests across 167 files, with two skipped. The
+          additional checks used disposable controller, Git, OpenSpec and browser fixtures. Desktop
+          Work, Plan and Report, phone-to-chat navigation, and a delayed live worker were inspected
+          in a named browser session. Firstmate was assessed from its pinned documentation.
+          Autonomous worker judgment, token savings and comparative completion time remain
+          unmeasured.
+        </p>
+      </section>
+    </main>
+    <script>
+      const stages = {
+        planning: {
+          done: 0,
+          handoff: "Your approval will release plan revision 1 for implementation.",
+          diff: "Implementation begins after plan approval.",
+          report: "Implementation evidence will appear as checks finish.",
+          limit: "The proposed scope covers this browser only.",
+          worker: "Explore finished the plan. The task is waiting for your decision.",
+        },
+        working: {
+          done: 2,
+          handoff: "Apply is checking that removing a draft also clears the restored selection.",
+          diff: "draft.ts and composer.tsx contain the draft storage and restore changes.",
+          report:
+            "The reload check passed. The clear-draft check and independent review are pending.",
+          limit: "Cross-device draft sync is outside the agreed scope.",
+          worker:
+            "Apply · “The draft and its task survived reload. I’m checking the removal case now.”",
+        },
+        merge: {
+          done: 3,
+          handoff:
+            "Your approval will authorize merge of revision 8b3c291. Delivery is still pending.",
+          diff: "Since plan approval, draft.ts and composer.tsx gained browser-local persistence. The final change clears the stored task with the draft.",
+          report:
+            "Both reload and clear-draft checks passed on the proposed revision. Independent review found no unresolved issues.",
+          limit: "Verified in one browser profile. Cross-device sync remains outside scope.",
+          worker:
+            "Review finished. The read-only transcript and previous Apply session remain available.",
+        },
+      };
+      const steps = [
+        "Save text with its task reference",
+        "Restore both after a reload",
+        "Verify that clearing the draft clears both",
+      ];
+      const stage = document.getElementById("stage");
+      const views = [...document.querySelectorAll(".views button")];
+      function selectView(name) {
+        for (const button of views) {
+          const active = button.dataset.view === name;
+          button.setAttribute("aria-pressed", String(active));
+          document.getElementById(button.dataset.view + "View").hidden = !active;
+        }
+      }
+      function showStage() {
+        const current = stages[stage.value];
+        document.getElementById("decisionActions").hidden = stage.value === "working";
+        document.getElementById("approve").textContent =
+          stage.value === "merge" ? "Approve merge" : "Approve plan";
+        document.getElementById("feedback").hidden = true;
+        document.getElementById("note").value = "";
+        for (const [id, value] of Object.entries({
+          handoff: current.handoff,
+          diffText: current.diff,
+          reportText: current.report,
+          limitation: current.limit,
+          workerText: current.worker,
+          progressLabel: current.done + " of 3 steps complete",
+        }))
+          document.getElementById(id).textContent = value;
+        document.getElementById("bar").value = current.done;
+        document.getElementById("steps").replaceChildren(
+          ...steps.map((step, i) => {
+            const row = document.createElement("li");
+            row.textContent = (i < current.done ? "✓ " : "○ ") + step;
+            row.setAttribute("aria-label", (i < current.done ? "Complete. " : "Open. ") + step);
+            return row;
+          }),
+        );
+        selectView(stage.value === "merge" ? "report" : "plan");
+      }
+      for (const button of views)
+        button.addEventListener("click", () => selectView(button.dataset.view));
+      document.getElementById("approve").addEventListener("click", () => {
+        if (stage.value === "planning") {
+          stage.value = "working";
+          showStage();
+        } else {
+          document.getElementById("handoff").textContent =
+            "You approved revision 8b3c291. Abra is confirming delivery.";
+          document.getElementById("decisionActions").hidden = true;
+        }
+      });
+      document.getElementById("revise").addEventListener("click", () => {
+        document.getElementById("feedback").hidden = false;
+        document.getElementById("note").focus();
+      });
+      document.getElementById("feedback").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const note = document.getElementById("note").value.trim();
+        if (!note) return;
+        document.getElementById("handoff").textContent =
+          "Abra owes you a revision. Your request was “" + note + "”";
+        document.getElementById("decisionActions").hidden = true;
+      });
+      stage.addEventListener("change", showStage);
+      showStage();
+    </script>
+  </body>
+</html>

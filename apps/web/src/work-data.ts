@@ -68,6 +68,12 @@ export const queries = {
   verification: ticketQuery((options) => WorkspaceApi.query("work", "verification", options)),
   overview: ticketQuery((options) => WorkspaceApi.query("work", "overview", options)),
   detail: ticketQuery((options) => WorkspaceApi.query("work", "detail", options)),
+  decisionPlan: (issue: IssueId, binding: string) =>
+    WorkspaceApi.query("work", "detail", {
+      query: { issue_id: issue },
+      ...queryOptions(issue),
+      reactivityKeys: [...queryOptions(issue).reactivityKeys, "decision-plan:" + binding],
+    }),
   document: (issue: string, path: string) =>
     WorkspaceApi.query("work", "document", {
       query: { issue_id: IssueId.make(issue), path: RelativePath.make(path) },

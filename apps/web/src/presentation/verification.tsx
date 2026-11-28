@@ -13,11 +13,13 @@ export function VerificationPanel({
   work,
   inspect,
   decision,
+  compact = false,
   focusForm,
 }: {
   work: WebWorkItem;
   inspect: Inspect;
   decision?: string;
+  compact?: boolean;
   focusForm: (id: string) => void;
 }) {
   const research = work.policy === "research-only";
@@ -80,7 +82,7 @@ export function VerificationPanel({
                 ? "success"
                 : "attention"
               : "danger";
-          return (
+          const evidence = (
             <div className="inspector-stack">
               <div className="bento-2">
                 <SectionCard
@@ -235,6 +237,30 @@ export function VerificationPanel({
                 </SectionCard>
               )}
             </div>
+          );
+          if (!compact) return evidence;
+          const check = checksCurrent
+            ? "Checks passed on this revision."
+            : result.checks.length
+              ? "Earlier checks passed. This revision is unconfirmed."
+              : "No check receipt yet.";
+          const review = !result.review
+            ? "Independent review is pending."
+            : result.review.fingerprint !== result.observed
+              ? "The independent review covers an earlier or unconfirmed revision."
+              : result.review.passed
+                ? "Independent review passed."
+                : "Independent review found issues.";
+          return (
+            <>
+              <p>
+                {check} {review}
+              </p>
+              <details>
+                <summary>Checks and independent review</summary>
+                {evidence}
+              </details>
+            </>
           );
         }}
       </RequestState>

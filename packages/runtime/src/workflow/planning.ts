@@ -332,7 +332,21 @@ export class PlanningBaselines {
       input: Fingerprint,
     ) {
       const prior = currentPlanning(e);
-      if (action !== "recover_planning" && prior && prior.stage !== "applying")
+      const revisingReviewedPlan =
+        action === "replan" &&
+        !!e.proposal_review &&
+        e.current_phase === "awaiting_plan_approval" &&
+        prior?.stage === "planned" &&
+        !!prior.source &&
+        !!prior.pinned &&
+        prior.admissions.length > 0 &&
+        !prior.violations.length;
+      if (
+        action !== "recover_planning" &&
+        prior &&
+        prior.stage !== "applying" &&
+        !revisingReviewedPlan
+      )
         return yield* new WorkflowError(
           "PLANNING_UNRESOLVED",
           "An unresolved planning intent/violation cannot be replaced by replan",
@@ -350,14 +364,16 @@ export class PlanningBaselines {
       const observed = yield* this.observe(e);
       let provenance: PlanningAttempt["provenance"];
       let source = observed;
-      if (action === "replan") provenance = yield* this.provenance(e, observed);
+      if (action === "replan" && !revisingReviewedPlan)
+        provenance = yield* this.provenance(e, observed);
       else if (
         prior?.source &&
         prior.pinned &&
         prior.admissions.length &&
         !prior.violations.length &&
         prior.stage !== "applying" &&
-        prior.provenance.kind !== "prospective_adoption"
+        (prior.provenance.kind !== "prospective_adoption" ||
+          (revisingReviewedPlan && !!prior.authorization))
       ) {
         yield* this.binding(e, prior);
         yield* this.delta(e, prior, observed);

@@ -267,7 +267,11 @@ export class Git {
   );
   planFingerprint = Effect.fn("Git.planFingerprint")(
     { self: this },
-    function* (path: AbsolutePath, change: ChangeName) {
+    function* (
+      path: AbsolutePath,
+      change: ChangeName,
+      observeDocument?: (relative: string, content: string) => void,
+    ) {
       // Tasks' checkboxes change during Apply; the approved requirements and design must not.
       const root = AbsolutePath.make(join(path, "openspec/changes", change));
       const hash = createHash("sha256");
@@ -285,6 +289,7 @@ export class Git {
                   "OpenSpec artifacts must be regular files",
                 );
               let content = yield* readFile(name, "utf8");
+              observeDocument?.(name.slice(root.length + 1), content);
               if (item.name === "tasks.md") content = content.replace(/\[[xX ]\]/g, "[ ]");
               hash.update(name.slice(root.length)).update(content);
             }

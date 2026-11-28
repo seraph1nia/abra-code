@@ -11,7 +11,9 @@ import { decodeSync } from "../decode.ts";
 
 import { QualityProfile } from "../config/policy.ts";
 
+import { ProposalReviewSelection } from "@abracode/contracts/visibility/proposal-review";
 export const OpenSpecWorkFields = {
+  proposal_review: Schema.optional(ProposalReviewSelection),
   openspec_schema: Schema.optional(SchemaName),
   require_plan_approval: Schema.optional(Schema.Literal(true)),
 };
@@ -83,11 +85,14 @@ export function normalizeIssue(value: unknown): NewIssue {
   const workflow_policy = input.workflow_policy ?? "full-openspec";
   ensure(
     workflow_policy === "full-openspec" ||
-      (input.openspec_schema === undefined && input.require_plan_approval === undefined),
+      (input.openspec_schema === undefined &&
+        input.require_plan_approval === undefined &&
+        input.proposal_review === undefined),
     "OPENSPEC_WORKFLOW",
     "OpenSpec schema and human plan requirements require full-openspec work",
   );
   return {
+    ...(input.proposal_review && { proposal_review: input.proposal_review }),
     ...(input.openspec_schema === undefined ? {} : { openspec_schema: input.openspec_schema }),
     ...(input.require_plan_approval === undefined
       ? {}

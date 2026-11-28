@@ -10,12 +10,35 @@ import {
 import { Schema } from "effect";
 import { Count, NonEmpty, Positive } from "../primitives.ts";
 const bounded = NonEmpty.check(Schema.isMaxLength(8192));
+const designText = NonEmpty.check(Schema.isPattern(/\S/));
+const choiceLabel = designText.check(Schema.isMaxLength(120));
+const DesignChoiceSchema = Schema.Struct({
+  question: designText.check(Schema.isMaxLength(200)),
+  recommended: choiceLabel,
+  reason: designText.check(Schema.isMaxLength(320)),
+  alternatives: Schema.Array(choiceLabel).check(Schema.isMinLength(1), Schema.isMaxLength(4)),
+}).check(
+  Schema.makeFilter(
+    (choice) =>
+      new Set([choice.recommended, ...choice.alternatives]).size ===
+        choice.alternatives.length + 1 || "Each option must be distinct",
+  ),
+);
+export const DesignChoicesSchema = Schema.Array(DesignChoiceSchema).check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(4),
+);
+export const designAnswerRows = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Array(Schema.Struct({ question: NonEmpty, answer: NonEmpty }))),
+);
+export type DesignChoices = typeof DesignChoicesSchema.Type;
 export const QuestionInputSchema = Schema.Struct({
   key: ObligationKey,
   generation: Count,
   scope: bounded,
   question: bounded,
   owner: Schema.Literals(["user", "supervisor"]),
+  choices: Schema.optionalKey(DesignChoicesSchema),
 });
 export const DecisionSummarySchema = Schema.Struct({
   schema_version: Schema.Literal(1),

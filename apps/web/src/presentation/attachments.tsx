@@ -1,3 +1,4 @@
+import { queries } from "../work-data.ts";
 export { MessageAttachment } from "./activity-reference.tsx";
 import { WorkspaceActions } from "../workspace-actions.ts";
 import { ReviewAttachment, ReviewsForSource } from "./interactive-review-loader.tsx";
@@ -210,6 +211,19 @@ export function ExactSurface({
 function BoundSurface({ record, inspect }: { record: SurfaceRecord; inspect: Inspect }) {
   return (
     <>
+      {record.proposal_review && (
+        <RequestState query={queries.detail(record.proposal_review.issue_id)}>
+          {(detail) => (
+            <p>
+              {detail.proposal_reviews?.some(
+                (r) => r.current && r.fingerprint === record.proposal_review!.fingerprint,
+              )
+                ? "Snapshot of the current plan review"
+                : "Historical plan review"}
+            </p>
+          )}
+        </RequestState>
+      )}
       <BoundSurfaceContent record={record} inspect={inspect} />
       <ReviewsForSource
         source={{

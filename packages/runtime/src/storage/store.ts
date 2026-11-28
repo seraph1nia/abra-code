@@ -61,6 +61,7 @@ export type ExecutionOwnedField = Exclude<
   | "control_generation"
   | "effective_policy"
   | "configuration_snapshot"
+  | "proposal_review"
   | "openspec_schema"
   | "setup"
 >;

@@ -29,7 +29,9 @@ const decisionReference = Schema.Struct({
   status: Schema.String,
   scope: Schema.optionalKey(Schema.String),
   generation: Schema.optionalKey(Count),
-  basis: Schema.optionalKey(Schema.Literals(["current_generation", "accepted_contract"])),
+  basis: Schema.optionalKey(
+    Schema.Literals(["current_generation", "accepted_contract", "reviewed_plan"]),
+  ),
 });
 const reference = Schema.Struct({
   path: Schema.String,

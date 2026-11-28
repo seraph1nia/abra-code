@@ -86,6 +86,32 @@ export async function startMockProvider(
       )?.content ??
       messages.findLast((m: any) => m.role === "user")?.content ??
       "";
+    const independent =
+      journey === "proposal-review" &&
+      typeof user === "string" &&
+      user.startsWith("What goal, boundaries and observable success");
+    if (independent) {
+      const tools = (input.tools ?? []).map((t: any) => t.function?.name);
+      const users = messages.filter((m: any) => m.role === "user");
+      const clean =
+        users.length === 1 &&
+        !JSON.stringify(messages).includes("AUTHOR_CONTEXT_ONLY") &&
+        tools.length === 1 &&
+        tools[0] === "read";
+      engineeringEvidence.push({
+        reader_input: user,
+        tools,
+        clean,
+        system: messages.filter((m: any) => m.role === "system").map((m: any) => m.content),
+      });
+      if (!clean) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({ error: { message: "Reader received context outside the proposal" } }),
+        );
+        return;
+      }
+    }
     const change = /OpenSpec change: ([^. ]+)\./.exec(user)?.[1];
     const role = user.includes("AbraCode explore")
       ? "explore"
@@ -716,17 +742,28 @@ export async function startMockProvider(
           {
             delta: {
               role: "assistant",
-              content: briefing
-                ? briefingFixtureAnswer(user, scopedMessages)
-                : roadDiscussion &&
-                    messages.some(
-                      (m: any) =>
-                        m.role === "tool" && JSON.stringify(m.content).includes(roadExcerpt),
-                    )
-                  ? "I found the weekly planning thought."
-                  : user.includes("browser-acceptance")
-                    ? "Observed the browser counter change from 0 to 1, captured and read scratch screenshot evidence, and closed the assigned browser. Completed assigned role."
-                    : "Completed assigned role.",
+              content: independent
+                ? JSON.stringify({
+                    reading: "The proposal adds a sample response.",
+                    findings: [
+                      {
+                        owner: "human",
+                        question: "Should previews include the sample?",
+                        evidence: "The proposal describes only a sample response.",
+                      },
+                    ],
+                  })
+                : briefing
+                  ? briefingFixtureAnswer(user, scopedMessages)
+                  : roadDiscussion &&
+                      messages.some(
+                        (m: any) =>
+                          m.role === "tool" && JSON.stringify(m.content).includes(roadExcerpt),
+                      )
+                    ? "I found the weekly planning thought."
+                    : user.includes("browser-acceptance")
+                      ? "Observed the browser counter change from 0 to 1, captured and read scratch screenshot evidence, and closed the assigned browser. Completed assigned role."
+                      : "Completed assigned role.",
             },
             finish_reason: "stop",
           },
